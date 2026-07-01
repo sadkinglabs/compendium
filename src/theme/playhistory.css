@@ -1,0 +1,68 @@
+/* playhistory.css — VERBATIM port of Vitarum's Match-History screen
+   (.rec-* hero/donut/minis/bars + .match-* cards). Source: Vitarum www/index.html
+   CSS L804-1104. Scoped under `.mh` so it can't collide with the rest of the app;
+   Vitarum's own token values are inlined (the Play pillar is the Vitarum world). */
+
+.mh .rec-hero { position:relative; overflow:hidden; display:flex; align-items:center; gap:18px; padding:18px; border-radius:18px; margin-bottom:14px; background:linear-gradient(180deg,rgba(30,52,38,.6),rgba(14,28,20,.5)); border:1px solid rgba(120,190,150,.18); }
+.mh .rec-hero-bg { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 18%; opacity:.12; filter:saturate(.7); pointer-events:none; }
+.mh .rec-ring { position:relative; z-index:1; width:98px; height:98px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex:none; }
+.mh .rec-ring-inner { width:76px; height:76px; border-radius:50%; background:#0c1712; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.mh .rec-ring-pct { font-family:'Cinzel',serif; font-size:23px; font-weight:700; color:#e9e2cf; line-height:1; }
+.mh .rec-ring-label { font-size:9px; font-weight:500; color:#7f8d81; letter-spacing:.1em; margin-top:3px; }
+.mh .rec-hero-right { position:relative; z-index:1; flex:1; min-width:0; }
+.mh .rec-wl { font-family:'Cinzel',serif; font-size:34px; font-weight:700; color:#e9e2cf; line-height:1; }
+.mh .rec-wl .sep { color:#5a6b60; }
+.mh .rec-total { font-size:11px; font-weight:500; color:#7f8d81; letter-spacing:.08em; margin:6px 0 12px; }
+.mh .rec-streak { display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:7px; font-size:11px; font-weight:600; background:rgba(77,179,138,.16); border:1px solid rgba(77,179,138,.32); color:#7fd3ad; }
+.mh .rec-streak.none { background:rgba(255,255,255,.04); border-color:rgba(120,180,140,.16); color:#7f8d81; }
+
+.mh .rec-minis { display:flex; gap:10px; margin-bottom:18px; }
+.mh .rec-mini { flex:1; padding:13px; border-radius:14px; background:#14261b; border:1px solid rgba(120,190,150,.12); }
+.mh .rec-mini-val { font-family:'Cinzel',serif; font-size:19px; font-weight:700; color:#dcb86f; line-height:1; }
+.mh .rec-mini-label { font-size:10px; font-weight:500; color:#7f8d81; letter-spacing:.06em; margin-top:5px; }
+
+.mh .rec-section { font-size:10px; font-weight:600; color:#8aa896; letter-spacing:.16em; text-transform:uppercase; margin:0 0 12px; }
+.mh .rec-bars { display:flex; flex-direction:column; gap:9px; margin-bottom:20px; }
+.mh .rec-bar { display:flex; align-items:center; gap:9px; }
+.mh .rec-bar-art { width:24px; height:24px; border-radius:6px; flex:none; overflow:hidden; background:#1e3a29; }
+.mh .rec-bar-art img { width:100%; height:100%; object-fit:cover; object-position:center 28%; transform:scale(1.5); transform-origin:center 35%; }
+.mh .rec-bar-name { font-family:'EB Garamond',serif; font-size:12px; color:#cdd6cf; width:96px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mh .rec-bar-track { flex:1; height:7px; border-radius:4px; background:rgba(255,255,255,.06); overflow:hidden; }
+.mh .rec-bar-fill { height:100%; background:linear-gradient(90deg,#4db38a,#7fd3ad); }
+.mh .rec-bar-rec { font-family:'IBM Plex Mono',monospace; font-size:11px; color:#9aa79c; width:38px; text-align:right; flex:none; }
+.mh .rec-bar-tap { cursor:pointer; border-radius:8px; padding:3px; margin:-3px; -webkit-tap-highlight-color:transparent; }
+.mh .rec-bar-tap:active { background:rgba(220,184,111,.07); }
+.mh .rec-opp-badge { width:24px; height:24px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; background:linear-gradient(180deg,rgba(207,154,74,.28),rgba(140,90,42,.14)); border:1px solid rgba(220,184,111,.25); color:#e9d49a; font:700 11px/1 'Hanken Grotesk',sans-serif; }
+.mh .rec-section-toggle { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; background:none; border:none; text-align:left; padding:0; cursor:pointer; -webkit-tap-highlight-color:transparent; color:#8aa896; }
+.mh .rec-chevron { color:#7f8d81; font-size:10px; transition:transform .2s; }
+.mh .rec-collapse.collapsed .rec-chevron { transform:rotate(-90deg); }
+.mh .rec-collapse.collapsed .rec-bars { display:none; }
+
+.mh .match-entry { padding:11px 12px; border-radius:12px; background:#14261b; border:1px solid rgba(120,190,150,.12); margin-bottom:8px; }
+.mh .match-entry-top { display:flex; align-items:center; gap:11px; margin-bottom:8px; }
+.mh .match-matchup { flex:1; min-width:0; display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
+.mh .match-you { font-family:'EB Garamond',serif; font-size:14px; font-weight:600; color:#e9d49a; }
+.mh .match-vs  { font-family:'EB Garamond',serif; font-size:11px; font-weight:400; color:#5a6b60; }
+.mh .match-opp { font-family:'EB Garamond',serif; font-size:14px; font-weight:500; color:#e3ddca; }
+.mh .match-when { font-size:10px; font-weight:500; color:#6a7a6f; flex:none; }
+.mh .match-badge { font-size:12px; font-weight:700; flex-shrink:0; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:1px solid transparent; }
+.mh .match-badge.win  { background:rgba(77,179,138,.18); border-color:rgba(77,179,138,.4); color:#7fd3ad; }
+.mh .match-badge.loss { background:rgba(224,120,106,.16); border-color:rgba(224,120,106,.4); color:#e0786a; }
+.mh .match-badge.draw { background:rgba(154,167,156,.14); border-color:rgba(120,180,140,.16); color:#9aa79c; }
+.mh .match-meta { display:flex; align-items:center; gap:7px; font-size:11px; color:#7f8d81; flex-wrap:wrap; }
+.mh .match-meta .lbl { opacity:.7; }
+.mh .match-meta .you-life { font-family:'IBM Plex Mono',monospace; color:#dcb86f; font-weight:500; }
+.mh .match-meta .opp-life { font-family:'IBM Plex Mono',monospace; color:#e3ddca; font-weight:500; }
+.mh .match-meta .dd { color:#e0786a; }
+.mh .match-dot { opacity:.4; }
+.mh .match-notes-text { font-family:'EB Garamond',serif; font-size:13px; color:#9aa79c; font-style:italic; margin-top:8px; line-height:1.5; }
+.mh .match-opp-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 9px 3px 7px; border-radius:11px; background:linear-gradient(180deg,rgba(207,154,74,.28),rgba(140,90,42,.14)); border:1px solid rgba(220,184,111,.25); font:600 11px/1 'Hanken Grotesk',sans-serif; color:#e9d49a; -webkit-tap-highlight-color:transparent; }
+.mh .match-opp-tag svg { width:11px; height:11px; opacity:.85; }
+.mh .match-opp-tag:active { opacity:.75; }
+.mh .match-actions { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:10px; }
+.mh .match-actions-right { display:flex; gap:6px; }
+.mh .match-action-btn { display:flex; align-items:center; justify-content:center; gap:5px; background:none; border:1px solid rgba(154,167,156,.28); color:rgba(154,167,156,.85); font-size:11px; font-weight:600; padding:8px 11px; min-height:40px; border-radius:8px; transition:border-color .15s, color .15s; font-family:'Hanken Grotesk',sans-serif; cursor:pointer; }
+.mh .match-action-btn:active { border-color:rgba(154,167,156,.6); color:#dfe6e1; }
+.mh .match-action-btn.danger { border-color:rgba(224,120,106,.3); color:rgba(224,120,106,.82); }
+.mh .match-action-btn.danger:active { border-color:rgba(224,120,106,.5); color:#e0786a; }
+.mh .match-action-btn svg { width:12px; height:12px; flex-shrink:0; }

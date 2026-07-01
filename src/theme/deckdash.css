@@ -1,0 +1,101 @@
+/* deckdash.css — Current Deck dashboard (My Deck panel). VERBATIM port of
+   Arcanum's avatar hero + zone list cards (templates/index.html L137-148,
+   258-347). Scoped `.arc`; carries Arcanum's amethyst tokens. */
+
+/* Avatar hero */
+.arc .avatar-hero { position: relative; overflow: hidden; min-height: 140px; }
+.arc .avatar-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 33%; opacity: .28; }
+.arc .avatar-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(11,7,20,.1) 0%, rgba(11,7,20,.45) 60%, var(--bg) 100%); }
+.arc .avatar-hero-content { position: relative; z-index: 1; padding: 24px 16px 16px; text-align: center; }
+.arc .hero-deck-name { font-size: 28px; font-weight: 700; font-family: 'Cinzel', Georgia, serif; letter-spacing: .08em; color: var(--text); margin-bottom: 12px; overflow-wrap: anywhere; line-height: 1.18; }
+.arc .hero-avatar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; justify-content: center; }
+.arc .hero-avatar-name { font-size: 14px; font-weight: 600; color: var(--gold); font-family: 'Hanken Grotesk', sans-serif; cursor: pointer; }
+.arc .hero-avatar-sep { color: var(--faint); font-size: 16px; line-height: 1; }
+.arc .hero-stat-bar { display: inline-flex; align-items: center; background: rgba(24,16,40,.55); border: 1px solid rgba(160,110,220,.2); border-radius: 999px; overflow: hidden; }
+.arc .hero-stat-item { font-size: 11px; font-weight: 600; font-family: 'Hanken Grotesk', sans-serif; padding: 6px 14px; white-space: nowrap; }
+.arc .hero-stat-divider { width: 1px; height: 16px; background: rgba(160,110,220,.2); flex-shrink: 0; }
+
+/* Zone list cards (Spellbook / Atlas / Collection) */
+.arc .chart-card { background: rgba(24,16,40,.6); border: 1px solid rgba(160,110,220,.14); border-radius: 18px; margin: 0 12px 12px; overflow: hidden; }
+.arc .chart-card.cc-list { background: linear-gradient(180deg,rgba(36,24,54,.5),rgba(20,12,34,.4)); border-color: rgba(160,110,220,.14); padding: 17px 16px; }
+.arc .cc-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.arc .cc-hdr.collapsible { cursor: pointer; }
+.arc .cc-title { font: 600 11px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; color: #dcb86f; text-transform: uppercase; }
+.arc .cc-count { font: 500 11px/1 'IBM Plex Mono', monospace; color: #6e6286; }
+.arc .cc-count.warn { color: #e07c5e; }
+.arc .cc-count.ok { color: #8fd3a8; }
+.arc .cc-chevron { margin-left: auto; color: #7a6e96; font-size: 11px; font-family: 'Hanken Grotesk', sans-serif; }
+.arc .cc-sb-group-label { font: 600 10px/1 'Hanken Grotesk', sans-serif; letter-spacing: .1em; color: #a87fd6; text-transform: uppercase; padding: 10px 0 5px; }
+.arc .cc-sb-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 1px solid rgba(160,110,220,.08); cursor: pointer; }
+.arc .cc-sb-row:last-child { border-bottom: none; }
+.arc .cc-sb-qty { font: 700 14px/1 'Hanken Grotesk', sans-serif; color: #a87fd6; width: 22px; flex-shrink: 0; }
+.arc .cc-sb-name { font: 500 15px/1.2 'EB Garamond', Georgia, serif; color: #ece4f5; flex: 1; min-width: 0; }
+.arc .cc-thresh { display: flex; gap: 2px; align-items: center; padding: 0 4px; }
+.arc .cc-thresh img { width: 14px; height: 14px; flex-shrink: 0; }
+.arc .cc-sb-coin { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(160,110,220,.22); background: rgba(18,12,30,.6); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #c9bfdc; }
+.arc .cc-empty { font: italic 14px 'EB Garamond', serif; color: #6e6286; padding: 8px 0; }
+
+/* Random Hand */
+.arc .cc-hand-draw-btn { padding: 7px 15px; border-radius: 13px; border: 1px solid rgba(157,106,214,.4); background: rgba(157,106,214,.14); color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; margin-left: auto; }
+.arc .cc-hand-empty { font: italic 400 14px/1.5 'EB Garamond', Georgia, serif; color: #6e6286; padding: 8px 0 4px; }
+.arc .cc-hand-section-lbl { font: 600 9px/1 'Hanken Grotesk', sans-serif; letter-spacing: .16em; color: #8a7ba6; text-transform: uppercase; margin: 12px 0 7px; }
+.arc .cc-hand-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
+.arc .cc-hand-tile { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid rgba(160,110,220,.2); background: rgba(36,24,54,.7); }
+.arc .cc-hand-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Notes */
+.arc .chart-card-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(160,110,220,.1); }
+.arc .chart-card-header h3 { flex: 1; margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: #dcb86f; font-family: 'Cinzel', Georgia, serif; }
+.arc .cc-notes-area { width: 100%; min-height: 90px; background: var(--bg); border: 1px solid rgba(201,168,76,.3); border-radius: 8px; padding: 10px; color: var(--text); font: 400 13px/1.5 'EB Garamond', Georgia, serif; resize: vertical; outline: none; box-sizing: border-box; }
+
+/* ── Stats cards (Arcanum .cc-stat suite) — verbatim from templates/index.html
+   L296-370. The Stats view uses Arcanum's design (grimoire stays elsewhere). ── */
+.arc .chart-card.cc-stat { background: radial-gradient(120% 82% at 50% 0%,rgba(58,38,92,.46),rgba(18,11,30,.42)); border-color: rgba(160,110,220,.16); padding: 17px 16px; }
+.arc .cc-toggle-pill { display: flex; background: rgba(18,12,30,.7); border: 1px solid rgba(160,110,220,.14); border-radius: 11px; padding: 3px; margin-left: auto; }
+.arc .cc-toggle-seg { font: 600 11px/1 'Hanken Grotesk', sans-serif; padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer; transition: background .15s,color .15s; background: transparent; color: #7a6e96; }
+.arc .cc-toggle-seg.on { background: linear-gradient(180deg,rgba(157,106,214,.4),rgba(122,71,184,.25)); color: #f0e9d8; }
+.arc .cc-body-row { display: flex; align-items: flex-start; gap: 18px; }
+.arc .cc-donut-wrap { position: relative; width: 116px; height: 116px; flex-shrink: 0; border-radius: 50%; }
+.arc .cc-donut-hole { position: absolute; inset: 15px; border-radius: 50%; background: radial-gradient(circle at 50% 36%,#221636,#120b1e); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.arc .cc-donut-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: #f0e9d8; }
+.arc .cc-donut-lbl { font: 500 8px/1 'Hanken Grotesk', sans-serif; letter-spacing: .18em; color: #8a7ba6; margin-top: 3px; }
+.arc .cc-bar-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.arc .cc-bar-label-row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.arc .cc-bar-name { font: 400 13px/1.1 'EB Garamond', Georgia, serif; color: #c9bfdc; flex: 1; }
+.arc .cc-bar-count { font: 500 11px/1 'IBM Plex Mono', monospace; color: #8a7ba6; }
+.arc .cc-bar-track { height: 7px; border-radius: 4px; background: rgba(255,255,255,.05); overflow: hidden; display: flex; }
+.arc .cc-bar-seg { height: 100%; flex-shrink: 0; }
+.arc .cc-bar-fill { height: 100%; background: linear-gradient(90deg,#7a47b8,#c79af0); }
+.arc .cc-key { display: flex; flex-wrap: wrap; gap: 7px 14px; margin-top: 14px; padding-top: 13px; border-top: 1px solid rgba(160,110,220,.12); }
+.arc .cc-key-item { display: flex; align-items: center; gap: 6px; font: 500 11px/1 'Hanken Grotesk', sans-serif; color: #9a8cae; }
+.arc .cc-key-dot { width: 9px; height: 9px; border-radius: 3px; flex-shrink: 0; }
+.arc .cc-avg { font: 500 11px/1 'IBM Plex Mono', monospace; color: #8a7ba6; margin-left: auto; }
+.arc .cc-wl { font-family: 'Cinzel', Georgia, serif; font-size: 44px; font-weight: 700; line-height: 1; text-align: center; margin: 8px 0 6px; display: flex; align-items: baseline; justify-content: center; gap: 10px; }
+.arc .cc-wl-w { color: #8fd3a8; text-shadow: 0 2px 16px rgba(143,211,168,.4); }
+.arc .cc-wl-sep { color: #5a5470; font-size: 26px; }
+.arc .cc-wl-l { color: #e0907c; text-shadow: 0 2px 16px rgba(224,144,124,.35); }
+.arc .cc-steppers { display: flex; gap: 12px; }
+.arc .cc-stepper-card { flex: 1; border-radius: 14px; padding: 13px 10px; text-align: center; }
+.arc .cc-stepper-card.wins { border: 1px solid rgba(120,200,150,.22); background: rgba(40,70,52,.2); }
+.arc .cc-stepper-card.losses { border: 1px solid rgba(220,140,124,.22); background: rgba(70,40,40,.2); }
+.arc .cc-stepper-cap { font: 600 10px/1 'Hanken Grotesk', sans-serif; letter-spacing: .14em; text-transform: uppercase; margin-bottom: 10px; }
+.arc .cc-stepper-cap.wins { color: #8fd3a8; } .arc .cc-stepper-cap.losses { color: #e0907c; }
+.arc .cc-stepper-btns { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.arc .cc-step-num { font: 700 26px/1 'Cinzel', Georgia, serif; min-width: 32px; text-align: center; }
+.arc .cc-step-num.wins { color: #8fd3a8; } .arc .cc-step-num.losses { color: #e0907c; }
+.arc .cc-step-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; line-height: 1; border: none; }
+.arc .cc-step-minus { background: rgba(24,16,40,.4); border: 1px solid rgba(160,110,220,.2); color: #9a8cae; }
+.arc .cc-step-plus-w { background: rgba(63,154,106,.18); border: 1px solid rgba(143,211,168,.5); color: #8fd3a8; }
+.arc .cc-step-plus-l { background: rgba(194,96,79,.16); border: 1px solid rgba(224,144,124,.5); color: #e0907c; }
+.arc .cc-avg-cost-num { font: 700 34px/1 'Cinzel', Georgia, serif; color: #dcb86f; text-shadow: 0 2px 14px rgba(220,184,111,.35); }
+.arc .cc-avg-cost-lbl { font: italic 400 12px/1 'EB Garamond', Georgia, serif; color: #9a8cae; }
+.arc .cc-odds-head { text-align: center; margin-bottom: 10px; }
+.arc .cc-turn-line { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.arc .cc-turn-btn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(160,110,220,.28); background: rgba(24,16,40,.5); color: #c9a9f0; font: 400 18px/1 'Hanken Grotesk', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.arc .cc-turn-btn:active { background: rgba(157,106,214,.22); }
+.arc .cc-turn-btn:disabled { opacity: .4; cursor: default; }
+.arc .cc-turn-pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 18px; border-radius: 13px; background: linear-gradient(180deg,#e8c976,#cda24f); box-shadow: 0 0 14px rgba(220,184,111,.3); }
+.arc .cc-turn-cap { font: 700 8px/1 'Hanken Grotesk', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #7a5a1e; }
+.arc .cc-turn-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: #1a1206; }
+.arc .cc-need-row { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
+.arc .cc-stat-empty { font: italic 400 13px/1.5 'EB Garamond', Georgia, serif; color: #6e6286; text-align: center; padding: 10px 0; }

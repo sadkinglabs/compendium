@@ -1,0 +1,527 @@
+import React, { useEffect, useState, useRef } from 'react';
+import { openDatabase } from './store/db.js';
+import {
+  initProfiles, getActiveProfile, listProfiles,
+  createProfile, switchProfile, renameProfile, deleteProfile,
+} from './store/profileRepository.js';
+import { seedCatalogIfNeeded } from './store/catalog.js';
+import { resolveByName } from './store/codexRepository.js';
+import { searchAll } from './store/searchRepository.js';
+import Codex from './pillars/Codex.jsx';
+import CodexDetail from './pillars/CodexDetail.jsx';
+import Decks, { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
+import DecksPager from './pillars/DecksPager.jsx';
+import DeckDetail from './pillars/DeckDetail.jsx';
+import Fab, { FabGlyph } from './components/Fab.jsx';
+import CreateDeckWizard from './components/CreateDeckWizard.jsx';
+import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
+import DeckAddCards from './pillars/DeckAddCards.jsx';
+import Play from './pillars/Play.jsx';
+import LifeCounter from './pillars/LifeCounter.jsx';
+import AvatarPicker from './pillars/AvatarPicker.jsx';
+import Home from './pillars/Home.jsx';
+import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
+import { setResume } from './store/homeRepository.js';
+import { exportToFile, pickAndImport } from './store/profileTransfer.js';
+import { onBackButton, exitApp } from './native.js';
+import { ListRow, SectionLabel, BottomSheet, IconButton, Chip, ChipRow } from './components/ui.jsx';
+
+const PILLARS = [
+  { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
+  { key: 'codex', glyph: '▤', label: 'Codex', eyebrow: 'RULES & CARDS',     accent: 'var(--accent-gold)' },
+  { key: 'decks', glyph: '◈', label: 'Decks', eyebrow: 'YOUR DECKS',        accent: 'var(--accent-violet)' },
+  { key: 'play',  glyph: '♥', label: 'Play',  eyebrow: 'DUEL & TRACK LIFE', accent: 'var(--accent-jade)' },
+];
+
+export default function App() {
+  const [boot, setBoot] = useState({ status: 'loading' });
+  const [tab, setTab] = useState('home');
+  const [detail, setDetail] = useState(null);     // {kind,id,title}
+  const [history, setHistory] = useState([]);
+  const [query, setQuery] = useState('');
+  const [scope, setScope] = useState('all');
+  const [codexView, setCodexView] = useState('list');
+  const [rev, setRev] = useState(0);
+  const [profileSheet, setProfileSheet] = useState(false);
+  const [profile, setProfile] = useState(null);
+  const [addMode, setAddMode] = useState(null);     // {deckId, deckName}
+  const [addQuery, setAddQuery] = useState('');
+  const [addFilterOpen, setAddFilterOpen] = useState(false);
+  const [addFilterCount, setAddFilterCount] = useState(0);
+  const [match, setMatch] = useState(null);          // {mode, settings, you, opp}
+  const [preMatch, setPreMatch] = useState(null);    // {mode, settings} — avatar picker step
+  const [settingsSheet, setSettingsSheet] = useState(false);
+  const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
+  const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
+  const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
+  const booted = useRef(false);
+  const backRef = useRef(null);   // latest hardware-back handler (set each render)
+  useEffect(() => onBackButton(() => backRef.current?.()), []);
+
+  useEffect(() => {
+    if (booted.current) return;   // run boot once (StrictMode double-invokes effects)
+    booted.current = true;
+    (async () => {
+      try {
+        await openDatabase();
+        const { counts } = await seedCatalogIfNeeded();
+        const p = await initProfiles();
+        setProfile(p);
+        if (import.meta.env.DEV) {
+          window.__cx = {
+            transfer: await import('./store/profileTransfer.js'),
+            deck: await import('./store/deckRepository.js'),
+            codex: await import('./store/codexRepository.js'),
+            profile: await import('./store/profileRepository.js'),
+          };
+        }
+        setBoot({ status: 'ready', counts });
+      } catch (e) {
+        setBoot({ status: 'error', error: String(e?.message || e) });
+      }
+    })();
+  }, []);
+
+  if (boot.status === 'loading') return <Splash text="Opening the grimoire…" />;
+  if (boot.status === 'error') return <Splash text={'Store error: ' + boot.error} error />;
+
+  const addActive = !!addMode;
+  const hasQuery = query.trim().length > 0 && !addActive;
+  const viewDetail = detail && !hasQuery && !addActive;
+  const pillar = PILLARS.find((p) => p.key === tab);
+
+  const goTab = (t) => { setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); };
+  const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
+  const exitAdd = () => { setAddMode(null); bump(); };
+  const startMatch = async (mode) => {
+    const settings = await getSettings();
+    if (mode === 'quick') setMatch({ mode, settings, you: null, opp: null });
+    else setPreMatch({ mode, settings });
+  };
+  const beginMatch = (you, opp) => { setMatch({ ...preMatch, you, opp }); setPreMatch(null); };
+  const endMatch = async (result) => { await recordMatch(result); setMatch(null); bump(); };
+  const open = (kind, id, title) => {
+    setHistory((h) => [...h, { detail, query }]);
+    setDetail({ kind, id, title }); setQuery('');
+    if (['card', 'rule', 'deck'].includes(kind) && title) setResume(kind, id, title).catch(() => {});
+  };
+  const back = () => {
+    setHistory((h) => {
+      const n = [...h]; const prev = n.pop();
+      setDetail(prev ? prev.detail : null);
+      return n;
+    });
+  };
+  const openName = async (name) => {
+    const t = await resolveByName(name);
+    if (t) open(t.kind, t.id, name);
+  };
+  const bump = () => setRev((r) => r + 1);
+
+  async function reloadProfile() { setProfile(await getActiveProfile()); }
+  async function onSwitchProfile(id) {
+    await switchProfile(id);
+    await reloadProfile();
+    setProfileSheet(false); setDetail(null); setHistory([]); setQuery(''); setTab('home'); bump();
+  }
+
+  const initial = (profile?.name || '?').charAt(0).toUpperCase();
+  const searchable = true;   // universal search on every pillar
+  const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', decks: 'Search decks…', play: 'Search duels…' };
+
+  // Hardware back: close the topmost layer, else go home, else exit.
+  backRef.current = () => {
+    if (match) return setMatch(null);
+    if (preMatch) return setPreMatch(null);
+    if (deckWizard) return setDeckWizard(false);
+    if (importMode) return setImportMode(null);
+    if (settingsSheet) return setSettingsSheet(false);
+    if (profileSheet) return setProfileSheet(false);
+    if (addActive) return exitAdd();
+    if (hasQuery) return setQuery('');
+    if (viewDetail) return back();
+    if (tab !== 'home') return goTab('home');
+    return exitApp();
+  };
+
+  // Per-pillar top-down colour wash (over pure black). Exact source hues:
+  // Home=gold · Codex=Lexicum brown · Decks=Arcanum amethyst · Play=Vitarum green.
+  const WASH = { home: '#33260e', codex: '#241a12', decks: '#2a1c44', play: '#18301f' };
+  // Frosted-chrome tint + edge that morph to the pillar (search pill, etc.).
+  const CHROME = {
+    home:  { tint: 'rgba(28,21,8,.74)',  edge: 'rgba(220,184,111,.30)' },
+    codex: { tint: 'rgba(26,19,12,.74)', edge: 'rgba(220,184,111,.26)' },
+    decks: { tint: 'rgba(22,15,36,.74)', edge: 'rgba(196,154,240,.30)' },
+    play:  { tint: 'rgba(14,28,18,.74)', edge: 'rgba(143,211,168,.28)' },
+  };
+  const chrome = CHROME[tab] || CHROME.home;
+  // Canonical list-row accent, morphing per pillar (grimoire gold default;
+  // amethyst in Decks, jade in Play) — consumed by ListRow via --list-accent.
+  const LIST = {
+    home:  { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
+    codex: { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
+    decks: { a: 'var(--accent-violet)', g: 'rgba(199,154,208,.5)' },
+    play:  { a: 'var(--accent-jade)',   g: 'rgba(143,211,168,.5)' },
+  };
+  const list = LIST[tab] || LIST.home;
+  // The Decks pillar is now Arcanum's single-page pager, which owns its own
+  // panels, search bars and FAB. App chrome (bottom search, FAB) steps aside for it.
+  const deckPagerActive = tab === 'decks' && !viewDetail && !hasQuery && !addActive;
+  // Search bar only on Codex (and add-cards); Decks/Home/Play have none in App chrome.
+  const showSearch = addActive || (!viewDetail && !preMatch && tab === 'codex');
+  const searchVal = addActive ? addQuery : query;
+  const setSearchVal = addActive ? setAddQuery : setQuery;
+  const searchPlaceholder = addActive ? 'Search cards to add…' : (placeholders[tab] || 'Search…');
+
+  return (
+    <div className="cx-app" style={{ ...S.app, '--wash': WASH[tab] || WASH.home, '--chrome-tint': chrome.tint, '--chrome-edge': chrome.edge, '--list-accent': list.a, '--list-glow': list.g }}>
+      {/* BRAND BAR */}
+      <div style={S.brandBar}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+          <span style={S.diamond} />
+          <span style={S.wordmark}>Compendium</span>
+        </div>
+        <button onClick={() => setProfileSheet(true)} style={S.profileChip} title={profile?.name}>{initial}</button>
+      </div>
+
+      {/* CONTEXT HEADER (no eyebrow) — shown on every screen except the immersive
+          life tracker. The avatar picker keeps its own in-body header, so we only
+          show the brand bar + divider above it. */}
+      {addActive ? (
+        <div style={S.detailHeader}>
+          <button onClick={exitAdd} style={S.back}>‹ Done</button>
+          <div style={S.addEyebrow}>ADDING TO · {addMode.deckName}</div>
+          <span style={{ width: 56 }} />
+        </div>
+      ) : viewDetail ? (
+        <div style={S.detailHeader}>
+          <button onClick={back} style={S.back}>‹ Back</button>
+          <div style={S.detailTitle}>{detail.kind === 'deck' ? '' : (detail.title || '')}</div>
+          <span style={{ width: 44 }} />
+        </div>
+      ) : (
+        <div style={S.contextHeader}>
+          <div style={S.title}>{pillar.label}</div>
+        </div>
+      )}
+
+      {/* BODY — Decks pillar is the full-height single-page pager; everything
+          else scrolls in the standard body. */}
+      {deckPagerActive ? (
+        <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
+          deckOpen={deckOpen} onOpenDeck={setDeckOpen}
+          onAddCards={() => deckOpen && enterAdd(deckOpen.id, deckOpen.name)} rev={rev} />
+      ) : (
+      <div className="cx-scroll" style={S.body}>
+        {addActive ? (
+          <DeckAddCards deckId={addMode.deckId} q={addQuery} setQ={setAddQuery}
+            filterOpen={addFilterOpen} setFilterOpen={setAddFilterOpen}
+            onChanged={bump} registerCount={setAddFilterCount} />
+        ) : hasQuery ? (
+          <SearchResults query={query} onOpen={open} onDuel={() => goTab('play')} />
+        ) : viewDetail ? (
+          detail.kind === 'deck' ? (
+            <DeckDetail deckId={detail.id} rev={rev} onEnterAdd={enterAdd}
+              onOpenCard={(id, name) => open('card', id, name)} onChanged={bump}
+              onDeleted={() => { setDetail(null); setHistory([]); }} />
+          ) : (
+            <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName} onChanged={bump} />
+          )
+        ) : tab === 'codex' ? (
+          <Codex scope={scope} setScope={setScope} codexView={codexView} setCodexView={setCodexView}
+                 onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
+        ) : tab === 'decks' ? (
+          <Decks onOpenDeck={(id, name) => open('deck', id, name)}
+            onNew={() => setDeckWizard(true)} onImport={() => setImportSheet(true)} rev={rev} />
+        ) : tab === 'play' ? (
+          <Play onStart={startMatch} rev={rev} />
+        ) : (
+          <Home onOpen={(t, id, title) => open(t, id, title)} rev={rev} />
+        )}
+      </div>
+      )}
+
+      {/* BOTTOM SEARCH — frosted pill in line with the FAB; tint morphs per page. */}
+      {showSearch && (
+        <div className="cx-searchbar">
+          <div className="cx-search-pill">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <input value={searchVal} onChange={(e) => setSearchVal(e.target.value)} placeholder={searchPlaceholder} autoComplete="off" />
+            {searchVal && <button className="cx-search-clear" onClick={() => setSearchVal('')} aria-label="Clear">✕</button>}
+          </div>
+        </div>
+      )}
+
+      {/* GLOBAL CONTEXT FAB — the gold interaction spine, on every page. Its icon
+          mutates by context: Decks library = + (New/Import menu); deck editing /
+          Codex = filter sliders; Home / Play = three dots. Actions beyond the
+          Decks menu + add-cards filters are TBD. Hidden on the avatar picker. */}
+      {/* App-owned FAB contexts. Codex (filters) and DeckDetail (deck actions)
+          render their OWN FAB since those actions live inside them. */}
+      {!preMatch && (addActive ? (
+        <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters & sort"
+          onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
+      ) : tab === 'home' && !viewDetail && !hasQuery ? (
+        <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="User options" items={[
+          { label: 'Export User', onClick: async () => { try { await exportToFile(profile.id); } catch (e) { alert('Export failed: ' + e.message); } } },
+          { label: 'Import User', onClick: async () => { try { const pid = await pickAndImport(); if (pid) await onSwitchProfile(pid); } catch (e) { alert('Import failed: ' + e.message); } } },
+        ]} />
+      ) : tab === 'play' && !viewDetail && !hasQuery ? (
+        <Fab variant="lib" icon="+" label="Match options" items={[
+          { label: 'New Match', prominent: true, onClick: () => startMatch('full') },
+          { label: 'Quick Match', onClick: () => startMatch('quick') },
+        ]} />
+      ) : null)}
+
+      {/* BOTTOM NAV — verbatim Arcanum shell, bigger icons: house / book /
+          stacked squares / crossed swords. */}
+      <nav className="cx-nav">
+        {PILLARS.map((p) => {
+          const active = !viewDetail && !hasQuery && !addActive && !preMatch && p.key === tab;
+          return (
+            <button key={p.key} className={`cx-nav-btn${active ? ' active' : ''}`} onClick={() => goTab(p.key)}>
+              <NavIcon icon={p.key} />
+              {p.label}
+            </button>
+          );
+        })}
+      </nav>
+      <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
+        onSwitch={onSwitchProfile} onChanged={reloadProfile}
+        onSettings={() => { setProfileSheet(false); setSettingsSheet(true); }}
+        onExport={async () => { try { await exportToFile(profile.id); } catch (e) { alert('Export failed: ' + e.message); } }}
+        onImport={async () => { try { const pid = await pickAndImport(); if (pid) await onSwitchProfile(pid); } catch (e) { alert('Import failed: ' + e.message); } }} />
+      <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} />
+
+      {/* Create-deck wizard (mandatory name → avatar) */}
+      {deckWizard && (
+        <CreateDeckWizard onClose={() => setDeckWizard(false)}
+          onCreated={(id, name) => { setDeckWizard(false); bump(); goTab('decks'); setDeckOpen({ id, name }); }} />
+      )}
+
+      {/* Import from Curiosa URL — separate flow, lands on the deck in the pager */}
+      <ImportUrlSheet open={importMode === 'url'} onClose={() => setImportMode(null)}
+        onImportUrl={async (url) => {
+          const { id, name, warnings } = await importCuriosaUrl(url);
+          setImportMode(null); bump();
+          if (warnings.length) alert(`Imported “${name}”. Unrecognised: ${warnings.join(', ')}`);
+          goTab('decks'); setDeckOpen({ id, name });
+        }} />
+
+      {/* Import from pasted text (Arcanum Format) */}
+      <ImportTextSheet open={importMode === 'text'} onClose={() => setImportMode(null)}
+        onImport={async (text, name) => {
+          const { id, unresolved } = await importFromText(text, name); setImportMode(null); bump();
+          if (unresolved) alert(`Imported. ${unresolved} card(s) weren’t recognised and are kept as placeholders.`);
+          goTab('decks'); setDeckOpen({ id, name: name || 'Imported deck' });
+        }} />
+
+      {/* Pre-match avatar picker — centered modal over the (dimmed) app, so it
+          doesn't take over the interface. Scrim tap cancels. */}
+      {preMatch && (
+        <div className="cx-picker-modal" onClick={() => setPreMatch(null)}>
+          <div className="cx-picker-box" onClick={(e) => e.stopPropagation()}>
+            <AvatarPicker onConfirm={beginMatch} onCancel={() => setPreMatch(null)} />
+          </div>
+        </div>
+      )}
+      {match && (
+        <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
+          onEnd={endMatch} onExit={() => setMatch(null)} />
+      )}
+    </div>
+  );
+}
+
+// Bottom-nav icons — house · book · stacked squares (Arcanum's deck icon) ·
+// crossed swords (Lucide).
+function NavIcon({ icon }) {
+  const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  if (icon === 'home') return <svg viewBox="0 0 24 24" {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
+  if (icon === 'codex') return <svg viewBox="0 0 24 24" {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>;
+  if (icon === 'decks') return <svg viewBox="0 0 24 24" {...p}><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg>;
+  // play — crossed swords
+  return <svg viewBox="0 0 24 24" {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" /><line x1="5" y1="14" x2="9" y2="18" /><line x1="7" y1="17" x2="4" y2="20" /><line x1="3" y1="19" x2="5" y2="21" /></svg>;
+}
+
+function SearchResults({ query, onOpen, onDuel }) {
+  const [res, setRes] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const t = setTimeout(() => searchAll(query.trim()).then((r) => alive && setRes(r)), 130);
+    return () => { alive = false; clearTimeout(t); };
+  }, [query]);
+  if (!res) return <div style={{ padding: 24, color: 'var(--ink-faint)' }}>…</div>;
+  const total = res.codex.length + res.decks.length + res.duels.length + (res.marginalia?.length || 0);
+  if (total === 0) return <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>;
+  const group = (label, dot, items, onItem) => items.length > 0 && (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 7, font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />{label}
+        </span>
+        <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{items.length}</span>
+      </div>
+      {items.map((it) => <ListRow key={(it.kind || it.glyph) + it.id} icon={it.glyph || (it.kind === 'card' ? '◈' : '§')} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
+    </div>
+  );
+  return (
+    <div style={{ padding: '6px 20px 26px' }}>
+      {group('CODEX', 'var(--accent-gold)', res.codex, (it) => onOpen(it.kind, it.id, it.name))}
+      {group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], (it) => onOpen(it.kind, it.id, it.name))}
+      {group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name))}
+      {group('DUELS', 'var(--accent-jade)', res.duels, () => onDuel())}
+    </div>
+  );
+}
+
+function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, onExport, onImport }) {
+  const [list, setList] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState('');
+  async function refresh() { if (open) setList(await listProfiles()); }
+  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [open]);
+  async function add() {
+    if (!name.trim()) return;
+    await createProfile(name.trim()); setName(''); setAdding(false); refresh();
+  }
+  async function rename(p) {
+    const nn = prompt('Rename profile', p.name);
+    if (nn && nn.trim()) { await renameProfile(p.id, nn.trim()); await onChanged(); refresh(); }
+  }
+  async function remove(p) {
+    if (list.length <= 1) return;
+    if (!confirm(`Delete profile “${p.name}” and all its data?`)) return;
+    await deleteProfile(p.id); await onChanged(); refresh();
+  }
+  return (
+    <BottomSheet open={open} title="PROFILES" onClose={onClose}>
+      {list.map((p) => (
+        <div key={p.id} className="cx-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', borderBottom: '1px solid var(--hair-12)' }}>
+          <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 13px/1 var(--f-display)", color: '#1a1410', flex: 'none' }}>{p.name.charAt(0).toUpperCase()}</span>
+          <span onClick={() => onSwitch(p.id)} style={{ flex: 1, font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', cursor: 'pointer' }}>{p.name}{p.id === active?.id ? <span style={{ color: 'var(--gold-leaf)', fontSize: 12, marginLeft: 8 }}>● active</span> : null}</span>
+          <IconButton glyph="✎" tone="muted" size={26} onClick={() => rename(p)} title="Rename" />
+          {list.length > 1 && <IconButton glyph="✕" tone="danger" size={26} onClick={() => remove(p)} title="Delete" />}
+        </div>
+      ))}
+      {adding ? (
+        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+          <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Profile name…" style={S.input} />
+          <button onClick={add} style={S.btnGold}>Create</button>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 14, width: '100%' }}>＋ New profile</button>
+      )}
+      <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+        <button onClick={onExport} style={{ ...S.btnGhost, flex: 1 }}>⤓ Export</button>
+        <button onClick={onImport} style={{ ...S.btnGhost, flex: 1 }}>⤒ Import</button>
+      </div>
+      <button onClick={onSettings} style={{ ...S.btnGhost, marginTop: 10, width: '100%' }}>⚙ Settings</button>
+    </BottomSheet>
+  );
+}
+
+function SettingsSheet({ open, onClose }) {
+  const [s, setS] = useState(null);
+  useEffect(() => { if (open) getSettings().then(setS); }, [open]);
+  async function put(key, value) { setS((p) => ({ ...p, [key]: value })); await setSetting(key, value); }
+  if (!open) return null;
+  const Toggle = ({ label, k }) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 2px', borderBottom: '1px solid var(--hair-12)' }}>
+      <span style={{ font: "500 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
+      <button onClick={() => put(k, s[k] ? 0 : 1)} style={{ width: 46, height: 26, borderRadius: 13, border: '1px solid var(--hair-30)', background: s?.[k] ? 'var(--gold-leaf)' : 'transparent', position: 'relative', cursor: 'pointer' }}>
+        <span style={{ position: 'absolute', top: 2, left: s?.[k] ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: s?.[k] ? '#1a1410' : 'var(--ink-faint)', transition: 'left .15s' }} />
+      </button>
+    </div>
+  );
+  const label = (t) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '16px 0 10px' }}>{t}</div>;
+  return (
+    <BottomSheet open={open} title="SETTINGS" onClose={onClose}>
+      {s == null ? <div style={{ color: 'var(--ink-faint)' }}>…</div> : (
+        <div>
+          {label('ACCENT METAL')}
+          <ChipRow>
+            {[['gilded', 'Gilded'], ['verdigris', 'Verdigris'], ['pewter', 'Pewter']].map(([k, l]) => (
+              <Chip key={k} label={l} active={s.accent_metal === k} onClick={() => put('accent_metal', k)} />
+            ))}
+          </ChipRow>
+          {label('DEFAULT LIFE')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+            <IconButton glyph="−" tone="muted" size={34} onClick={() => put('default_max_life', Math.max(1, (s.default_max_life || 20) - 1))} />
+            <span style={{ font: "700 26px/1 var(--f-display)", color: 'var(--gold-leaf)', minWidth: 44, textAlign: 'center' }}>{Math.min(20, s.default_max_life)}</span>
+            <IconButton glyph="+" size={34} onClick={() => put('default_max_life', Math.min(20, (s.default_max_life || 20) + 1))} />
+          </div>
+          {label('DIE')}
+          <ChipRow>
+            {[4, 6, 8, 10, 12, 20].map((d) => <Chip key={d} label={'d' + d} active={s.die_type === d} onClick={() => put('die_type', d)} />)}
+          </ChipRow>
+          {label('PREFERENCES')}
+          <Toggle label="Film grain" k="film_grain" />
+          <Toggle label="Keep screen on" k="keep_awake" />
+          <Toggle label="Hide status bar" k="immersive" />
+          <Toggle label="Haptics" k="haptics" />
+          <Toggle label="Rarity colours" k="rarity_colors" />
+        </div>
+      )}
+    </BottomSheet>
+  );
+}
+
+function PillarPlaceholder({ pillar, profile, counts }) {
+  return (
+    <div style={{ padding: '24px 20px', animation: 'cxfade .2s ease' }}>
+      <div style={S.card}>
+        <SectionLabel glyph="✦" label={pillar.label.toUpperCase()} />
+        <p style={{ font: "400 15.5px/1.55 var(--f-read)", color: 'var(--ink-body-2)', margin: 0 }}>
+          {pillar.label} is next in the build. Unified store open · active profile <b style={{ color: 'var(--ink-head)' }}>{profile?.name}</b>. Codex is live — browse it from the nav.
+        </p>
+      </div>
+      <div style={{ ...S.card, marginTop: 14 }}>
+        <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.2em', color: 'var(--ink-muted)', marginBottom: 10 }}>CATALOG (shared, read-only)</div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[['Cards', counts.cards], ['Rules', counts.rules], ['FAQs', counts.faqs], ['Links', counts.links]].map(([l, v]) => (
+            <div key={l} style={{ flex: 1, textAlign: 'center', border: '1px solid var(--hair-16)', borderRadius: 11, padding: '11px 0', background: 'var(--surface-well)' }}>
+              <div style={{ font: "600 19px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{v ?? '–'}</div>
+              <div style={{ font: "500 9px/1 var(--f-ui)", letterSpacing: '.12em', color: 'var(--ink-faint)', marginTop: 6 }}>{l.toUpperCase()}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Splash({ text, error }) {
+  return (
+    <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ font: "600 16px/1.4 var(--f-display)", color: error ? 'var(--destructive)' : 'var(--gold-leaf)', textAlign: 'center', padding: 24 }}>{text}</div>
+    </div>
+  );
+}
+
+const S = {
+  app: { height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--ink-body)', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', position: 'relative', overflow: 'hidden' },
+  brandBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px 10px' },
+  diamond: { width: 14, height: 14, transform: 'rotate(45deg)', border: '1.5px solid var(--gold-leaf)', borderRadius: 3, boxShadow: '0 0 8px rgba(201,163,90,.35)' },
+  wordmark: { font: "600 20px/1 var(--f-display)", color: 'var(--ink-head)', letterSpacing: '.01em' },
+  profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
+  contextHeader: { padding: '4px 20px 12px' },
+  detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px' },
+  back: { background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, textAlign: 'left' },
+  detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  fab: { position: 'absolute', right: 16, bottom: 84, width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', border: 'none', cursor: 'pointer', boxShadow: '0 10px 26px -8px rgba(201,163,90,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 25 },
+  fabBadge: { position: 'absolute', top: -4, right: -4, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, background: 'var(--bg-base)', border: '1px solid var(--gold-leaf)', color: 'var(--gold-leaf)', font: "700 11px/20px var(--f-mono)", textAlign: 'center' },
+  eyebrow: { font: "600 10px/1 var(--f-ui)", letterSpacing: '.24em', color: 'var(--ink-muted)', marginBottom: 6 },
+  title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
+  searchWrap: { display: 'flex', alignItems: 'center', gap: 10, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px' },
+  searchInput: { flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
+  body: { flex: 1, overflowY: 'auto', paddingBottom: 'calc(62px + env(safe-area-inset-bottom) + 92px)' },
+  card: { border: '1px solid var(--hair-14)', borderRadius: 'var(--r-card)', background: 'var(--surface-card)', padding: 16 },
+  nav: { display: 'flex', borderTop: '1px solid var(--hair-12)', background: 'var(--surface-nav)', backdropFilter: 'blur(8px)' },
+  navItem: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 0 12px', background: 'none', border: 'none', cursor: 'pointer', minHeight: 48 },
+  accentDot: { position: 'absolute', top: -3, right: -6, width: 5, height: 5, borderRadius: '50%' },
+  input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
+  btnGold: { padding: '12px 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', flex: 'none' },
+  btnGhost: { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' },
+};

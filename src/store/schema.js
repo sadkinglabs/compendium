@@ -1,0 +1,194 @@
+// Compendium SQLite schema — see COMPENDIUM_DATA_MODEL.md.
+// Catalog = shared, read-only (no profile_id). Everything user-created carries
+// profile_id and is reachable only through the active-profile gate.
+// Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
+
+export const SCHEMA_VERSION = 1;
+
+export const MIGRATIONS = [
+  {
+    version: 1,
+    sql: `
+    PRAGMA foreign_keys = ON;
+
+    /* ---------- catalog (shared, read-only) ---------- */
+    CREATE TABLE IF NOT EXISTS cards (
+      card_id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT,
+      sub_types TEXT,            -- json string[]
+      rarity TEXT,
+      elements TEXT,             -- json string[]
+      cost INTEGER, attack INTEGER, defence INTEGER, life INTEGER,
+      thresholds TEXT,           -- json {air,earth,fire,water}
+      rules_text TEXT,
+      is_avatar INTEGER DEFAULT 0,
+      is_site INTEGER DEFAULT 0,
+      sets TEXT,                 -- json [{name,code}]
+      variants TEXT,             -- json [{slug,finish,set,artist,flavorText}]
+      image_slug TEXT,
+      system TEXT DEFAULT 'sorcery'
+    );
+    CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
+    CREATE INDEX IF NOT EXISTS idx_cards_type ON cards(type);
+
+    CREATE TABLE IF NOT EXISTS rules (
+      rule_id TEXT PRIMARY KEY,
+      parent_id TEXT,            -- null = article; else sub-entry of an article
+      title TEXT, content TEXT,
+      system TEXT DEFAULT 'sorcery'
+    );
+    CREATE INDEX IF NOT EXISTS idx_rules_parent ON rules(parent_id);
+
+    CREATE TABLE IF NOT EXISTS faqs (
+      faq_id TEXT PRIMARY KEY,
+      question TEXT, answer TEXT,
+      card_ids TEXT,             -- json string[]
+      source TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS link_graph (
+      source_id TEXT, source_type TEXT,
+      target_id TEXT, target_type TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS catalog_meta (key TEXT PRIMARY KEY, value TEXT);
+
+    /* ---------- profiles (the spine) ---------- */
+    CREATE TABLE IF NOT EXISTS profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      avatar TEXT,               -- json {kind:'initial'|'card', value} | null
+      accent TEXT DEFAULT 'gold',
+      system TEXT DEFAULT 'sorcery',
+      schema_version INTEGER NOT NULL,
+      created_at TEXT, updated_at TEXT
+    );
+
+    /* ---------- profile data (every row owns one profile_id) ---------- */
+    CREATE TABLE IF NOT EXISTS decks (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, slug TEXT, archetype TEXT,
+      avatar_card_id TEXT, avatar_slug TEXT, cover_slug TEXT,
+      notes TEXT, curiosa_url TEXT,
+      wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0,
+      starred INTEGER DEFAULT 0, lib_order INTEGER DEFAULT 0,
+      created_at TEXT, updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_decks_profile ON decks(profile_id);
+
+    CREATE TABLE IF NOT EXISTS deck_entries (
+      id TEXT PRIMARY KEY,
+      deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+      zone TEXT NOT NULL,        -- spellbook | atlas | collection
+      card_id TEXT,              -- null = unresolved placeholder (graceful)
+      quantity INTEGER DEFAULT 1,
+      variant_slug TEXT DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_deck_entries_deck ON deck_entries(deck_id);
+
+    CREATE TABLE IF NOT EXISTS deck_history (
+      id TEXT PRIMARY KEY,
+      deck_id TEXT NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+      ts TEXT, text TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS saved (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      target_type TEXT, target_id TEXT, created_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_saved_profile ON saved(profile_id);
+
+    CREATE TABLE IF NOT EXISTS notes (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      target_type TEXT, target_id TEXT,
+      body TEXT, created_at TEXT, updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_notes_profile ON notes(profile_id);
+    CREATE INDEX IF NOT EXISTS idx_notes_target ON notes(target_type, target_id);
+
+    CREATE TABLE IF NOT EXISTS highlights (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      target_type TEXT, target_id TEXT,
+      text TEXT, comment TEXT, created_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_highlights_profile ON highlights(profile_id);
+
+    CREATE TABLE IF NOT EXISTS collections (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name TEXT, created_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_collections_profile ON collections(profile_id);
+
+    CREATE TABLE IF NOT EXISTS collection_items (
+      id TEXT PRIMARY KEY,
+      collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+      target_type TEXT, target_id TEXT, added_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS links (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      kind TEXT,                 -- card_card | card_article | article_article
+      a_type TEXT, a_id TEXT, b_type TEXT, b_id TEXT,
+      description TEXT, created_at TEXT, updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_links_profile ON links(profile_id);
+
+    CREATE TABLE IF NOT EXISTS matches (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      played_at TEXT, mode TEXT,
+      player_avatar TEXT, opponent_name TEXT, opponent_avatar TEXT,
+      player_final_life INTEGER, opponent_final_life INTEGER,
+      winner TEXT, duration_sec INTEGER, notes TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_matches_profile ON matches(profile_id);
+
+    CREATE TABLE IF NOT EXISTS match_log_entries (
+      id TEXT PRIMARY KEY,
+      match_id TEXT NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+      t TEXT, who TEXT, kind TEXT,   -- life | max
+      delta INTEGER, to_life INTEGER, to_max INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_matchlog_match ON match_log_entries(match_id);
+
+    CREATE TABLE IF NOT EXISTS dashboard_blocks (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      type TEXT, width TEXT, config TEXT, sort_order INTEGER, created_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_dash_blocks_profile ON dashboard_blocks(profile_id);
+
+    CREATE TABLE IF NOT EXISTS dashboard_layouts (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      name TEXT, blocks TEXT, saved_at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS resume (
+      profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+      target_type TEXT, target_id TEXT, title TEXT, at TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS settings (
+      profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
+      accent_metal TEXT DEFAULT 'gilded',
+      film_grain INTEGER DEFAULT 1,
+      keep_awake INTEGER DEFAULT 0,
+      immersive INTEGER DEFAULT 1,
+      default_max_life INTEGER DEFAULT 20,
+      die_type INTEGER DEFAULT 6,
+      haptics INTEGER DEFAULT 1,
+      rarity_colors INTEGER DEFAULT 0,
+      theme TEXT DEFAULT 'grimoire',
+      persist_search INTEGER DEFAULT 0
+    );
+    `,
+  },
+];

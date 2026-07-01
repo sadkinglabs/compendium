@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.vite/
+
+# Capacitor native projects are tracked (Cap generates their own .gitignore for
+# build artifacts). Remove the lines below if you'd rather regenerate them.
+# android/
+# ios/

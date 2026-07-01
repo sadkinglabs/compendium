@@ -1,0 +1,11 @@
+{
+  "appId": "com.sorcerycompendium.compendium",
+  "appName": "Compendium",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorSQLite": {
+      "iosDatabaseLocation": "Library/CapacitorDatabase",
+      "androidIsEncryption": false
+    }
+  }
+}

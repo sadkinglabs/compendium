@@ -1,0 +1,3453 @@
+[
+  {
+    "source": "abilities-that-reference-the-cards-own-name",
+    "target_type": "card",
+    "target": "Adept Illusionist"
+  },
+  {
+    "source": "abilities-that-reference-the-cards-own-name",
+    "target_type": "card",
+    "target": "Locusts of Illyria"
+  },
+  {
+    "source": "abilities-that-reference-the-cards-own-name",
+    "target_type": "card",
+    "target": "Adept Illusionist"
+  },
+  {
+    "source": "abilities-that-reference-the-cards-own-name",
+    "target_type": "card",
+    "target": "Vivien the Enchantress"
+  },
+  {
+    "source": "abilities-that-reference-the-cards-own-name",
+    "target_type": "card",
+    "target": "Grigori Rasputin"
+  },
+  {
+    "source": "abilities-that-reference-the-cards-own-name",
+    "target_type": "card",
+    "target": "Locusts of Illyria"
+  },
+  {
+    "source": "ability",
+    "target_type": "card",
+    "target": "Black Obelisk"
+  },
+  {
+    "source": "activated-ability",
+    "target_type": "card",
+    "target": "Field Laborers"
+  },
+  {
+    "source": "activated-ability",
+    "target_type": "card",
+    "target": "Queen Guinevere"
+  },
+  {
+    "source": "adjacent",
+    "target_type": "card",
+    "target": "Lord of the Void"
+  },
+  {
+    "source": "adjacent",
+    "target_type": "card",
+    "target": "Frontier Settlers"
+  },
+  {
+    "source": "adjacent",
+    "target_type": "card",
+    "target": "Dodge Roll"
+  },
+  {
+    "source": "airborne",
+    "target_type": "card",
+    "target": "Disenchant"
+  },
+  {
+    "source": "ally",
+    "target_type": "card",
+    "target": "Cast into Exile"
+  },
+  {
+    "source": "ally",
+    "target_type": "card",
+    "target": "Holy Nova"
+  },
+  {
+    "source": "animate",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "artifact",
+    "target_type": "card",
+    "target": "Spear of Destiny"
+  },
+  {
+    "source": "artifact",
+    "target_type": "card",
+    "target": "Philosopher's Stone"
+  },
+  {
+    "source": "artifact",
+    "target_type": "card",
+    "target": "Sword and Shield"
+  },
+  {
+    "source": "artifact",
+    "target_type": "subentry",
+    "target": "characteristics__artifact-characteristics",
+    "target_title": "artifact characteristics"
+  },
+  {
+    "source": "artifact",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-artifacts",
+    "target_title": "Casting Artifacts"
+  },
+  {
+    "source": "artifact__automaton",
+    "target_type": "card",
+    "target": "Crave Golem"
+  },
+  {
+    "source": "artifact__monument",
+    "target_type": "card",
+    "target": "The Immortal Throne"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "Minecart Madness"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "Waypoint Portal"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "East-West Dragon"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "Dalcean Phalanx"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "Waypoint Portal"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "Wall of Ice"
+  },
+  {
+    "source": "as-if-adjacent",
+    "target_type": "card",
+    "target": "Great Wall"
+  },
+  {
+    "source": "as-if-connected",
+    "target_type": "card",
+    "target": "Polar Explorers"
+  },
+  {
+    "source": "as-if-connected",
+    "target_type": "card",
+    "target": "Poison Nova"
+  },
+  {
+    "source": "as-if-connected",
+    "target_type": "card",
+    "target": "Magellan Globe"
+  },
+  {
+    "source": "as-if-connected",
+    "target_type": "unresolved_article",
+    "target": "the top row, and"
+  },
+  {
+    "source": "as-if-connected",
+    "target_type": "unresolved_article",
+    "target": "the bottom row. That is, those squares are considered adjacent for movement. Importantly, the squares are not actually connected for other effects, so something like [[Poison Nova]] on the top row wouldn't hit the bottom row, since Poison Nova isn't movement. Moving 'as if connected' does cross borders normally, and uses normal cardinal directions. Oversized units that move as if connected and then find themselves spanning the realm will immediately end up on one side or the other. See '((Oversized Units"
+  },
+  {
+    "source": "at-rest",
+    "target_type": "card",
+    "target": "Hillock Basilisk"
+  },
+  {
+    "source": "at-rest",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "at-rest",
+    "target_type": "card",
+    "target": "Windblast"
+  },
+  {
+    "source": "atop",
+    "target_type": "card",
+    "target": "The Base of Babel"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Crave Golem"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Captain Baldassare"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Sir Kay"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Dodge Roll"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Wills-o'-the-Wisp"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Dodge Roll"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Wills-o'-the-Wisp"
+  },
+  {
+    "source": "attack",
+    "target_type": "card",
+    "target": "Dome of Osiros"
+  },
+  {
+    "source": "attack",
+    "target_type": "subentry",
+    "target": "storyline__simultaneous-triggers",
+    "target_title": "simultaneous triggers"
+  },
+  {
+    "source": "aura",
+    "target_type": "card",
+    "target": "Entangle Terrain"
+  },
+  {
+    "source": "aura",
+    "target_type": "subentry",
+    "target": "characteristics__aura-characteristics",
+    "target_title": "aura characteristics"
+  },
+  {
+    "source": "aura",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-auras",
+    "target_title": "Casting Auras"
+  },
+  {
+    "source": "aura__moving-auras",
+    "target_type": "card",
+    "target": "Windblast"
+  },
+  {
+    "source": "aura__moving-auras",
+    "target_type": "card",
+    "target": "Thunderstorm"
+  },
+  {
+    "source": "aura__moving-auras",
+    "target_type": "card",
+    "target": "Wildfire"
+  },
+  {
+    "source": "aura__moving-auras",
+    "target_type": "card",
+    "target": "Thunderstorm"
+  },
+  {
+    "source": "aura__moving-auras",
+    "target_type": "card",
+    "target": "Displace"
+  },
+  {
+    "source": "aura__moving-auras",
+    "target_type": "card",
+    "target": "Windblast"
+  },
+  {
+    "source": "avatar",
+    "target_type": "card",
+    "target": "Sparkmage"
+  },
+  {
+    "source": "avatar",
+    "target_type": "subentry",
+    "target": "characteristics__avatar-characteristics",
+    "target_title": "avatar characteristics"
+  },
+  {
+    "source": "bearer",
+    "target_type": "card",
+    "target": "Sword and Shield"
+  },
+  {
+    "source": "bearer",
+    "target_type": "card",
+    "target": "Clay Golem"
+  },
+  {
+    "source": "bearer",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "body-of-water",
+    "target_type": "card",
+    "target": "Anui Undine"
+  },
+  {
+    "source": "body-of-water",
+    "target_type": "card",
+    "target": "Giant Shark"
+  },
+  {
+    "source": "body-of-water",
+    "target_type": "card",
+    "target": "Marine Voyage"
+  },
+  {
+    "source": "body-of-water",
+    "target_type": "card",
+    "target": "Earthquake"
+  },
+  {
+    "source": "body-of-water",
+    "target_type": "card",
+    "target": "Drought"
+  },
+  {
+    "source": "border",
+    "target_type": "card",
+    "target": "Border Militia"
+  },
+  {
+    "source": "bottom",
+    "target_type": "card",
+    "target": "Autumn River"
+  },
+  {
+    "source": "bottom",
+    "target_type": "card",
+    "target": "Polar Explorers"
+  },
+  {
+    "source": "break-stealth",
+    "target_type": "card",
+    "target": "Asmodeus"
+  },
+  {
+    "source": "break-stealth",
+    "target_type": "card",
+    "target": "Frozen Horror"
+  },
+  {
+    "source": "bruin",
+    "target_type": "card",
+    "target": "Druid"
+  },
+  {
+    "source": "bruin",
+    "target_type": "subentry",
+    "target": "element__earth",
+    "target_title": "earth"
+  },
+  {
+    "source": "burrowed-safely",
+    "target_type": "card",
+    "target": "Awakened Mummies"
+  },
+  {
+    "source": "burrowing",
+    "target_type": "card",
+    "target": "Cave Trolls"
+  },
+  {
+    "source": "burrowing",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "can-vs-cant",
+    "target_type": "card",
+    "target": "Queen Guinevere"
+  },
+  {
+    "source": "can-vs-cant",
+    "target_type": "card",
+    "target": "Rhitta Gawr of Snowdonia"
+  },
+  {
+    "source": "can-vs-cant",
+    "target_type": "card",
+    "target": "Sky Baron"
+  },
+  {
+    "source": "can-vs-cant",
+    "target_type": "card",
+    "target": "Power of Flight"
+  },
+  {
+    "source": "cant-drop",
+    "target_type": "card",
+    "target": "Shameless Squire"
+  },
+  {
+    "source": "cant-drop",
+    "target_type": "card",
+    "target": "Attack by Night"
+  },
+  {
+    "source": "cant-drop",
+    "target_type": "unresolved_article",
+    "target": "be dropped, it may not be chosen for the '((Drop"
+  },
+  {
+    "source": "cant-be-modified",
+    "target_type": "card",
+    "target": "Bedrock"
+  },
+  {
+    "source": "cant-be-modified",
+    "target_type": "card",
+    "target": "Atlantean Fate"
+  },
+  {
+    "source": "cant-be-modified",
+    "target_type": "card",
+    "target": "Abundance"
+  },
+  {
+    "source": "cant-be-modified",
+    "target_type": "card",
+    "target": "Monks of Kobalsa"
+  },
+  {
+    "source": "cant-be-modified",
+    "target_type": "card",
+    "target": "Monks of Kobalsa"
+  },
+  {
+    "source": "cards-with-multiple-types",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "cards-with-multiple-types",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "cards-with-multiple-types",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "carriable-artifact",
+    "target_type": "subentry",
+    "target": "artifact__monument",
+    "target_title": "monument"
+  },
+  {
+    "source": "carriable-artifact",
+    "target_type": "subentry",
+    "target": "artifact__automaton",
+    "target_title": "automaton"
+  },
+  {
+    "source": "carriable-artifact",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-artifacts",
+    "target_title": "Casting Artifacts"
+  },
+  {
+    "source": "carriable-artifact",
+    "target_type": "article",
+    "target": "ownership-and-control",
+    "target_title": "Ownership and Control"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "card",
+    "target": "Ruby Core"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "card",
+    "target": "Fey Changeling"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "card",
+    "target": "Cast into Exile"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "card",
+    "target": "Monster Hunter"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "unresolved_article",
+    "target": "Carriable Artifacts"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-artifacts",
+    "target_title": "Casting Artifacts"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "article",
+    "target": "stealth",
+    "target_title": "Stealth"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "article",
+    "target": "oversized-units",
+    "target_title": "Oversized Units"
+  },
+  {
+    "source": "carrying-artifacts",
+    "target_type": "subentry",
+    "target": "oversized-units__teleporting-oversized-units",
+    "target_title": "Teleporting Oversized Units"
+  },
+  {
+    "source": "carrying-units",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "carrying-units",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "carrying-units",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "carrying-units",
+    "target_type": "card",
+    "target": "Phantom Steed"
+  },
+  {
+    "source": "carrying-units",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "casting-spells",
+    "target_type": "card",
+    "target": "Dodge Roll"
+  },
+  {
+    "source": "casting-spells",
+    "target_type": "card",
+    "target": "River of Flame"
+  },
+  {
+    "source": "casting-spells__casting-minions",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "casting-spells__casting-minions",
+    "target_type": "card",
+    "target": "Autumn Unicorn"
+  },
+  {
+    "source": "casting-spells__casting-magics",
+    "target_type": "card",
+    "target": "Arc Lightning"
+  },
+  {
+    "source": "casting-spells__casting-magics",
+    "target_type": "card",
+    "target": "Overpower"
+  },
+  {
+    "source": "casting-spells__casting-magics",
+    "target_type": "card",
+    "target": "Joust!"
+  },
+  {
+    "source": "closest",
+    "target_type": "card",
+    "target": "Persecutor"
+  },
+  {
+    "source": "collection",
+    "target_type": "card",
+    "target": "Troubled Town"
+  },
+  {
+    "source": "collection",
+    "target_type": "card",
+    "target": "Release the Hounds"
+  },
+  {
+    "source": "collection",
+    "target_type": "card",
+    "target": "Hellhounds"
+  },
+  {
+    "source": "collection",
+    "target_type": "card",
+    "target": "Toolbox"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Mirror Realm"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Selfsame Simulacrum"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Replication"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Archimago"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Orb of Ba'al Berith"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Chaoswish"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Selfsame Simulacrum"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Locusts of Illyria"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Mirror Realm"
+  },
+  {
+    "source": "copy",
+    "target_type": "card",
+    "target": "Bedrock"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Hamlet"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Assorted Animals"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "De Vermis Mysteriis"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Craterize"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Maddening Bells"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Philosopher's Stone"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Deathspeaker"
+  },
+  {
+    "source": "cost",
+    "target_type": "card",
+    "target": "Maddening Bells"
+  },
+  {
+    "source": "cost",
+    "target_type": "article",
+    "target": "for-free",
+    "target_title": "For Free"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Critical Strike"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Golden Harp"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Sir Gawain"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Shield Maidens"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Tufted Turtles"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Lava Salamander"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Mask of Mayhem"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Selfsame Simulacrum"
+  },
+  {
+    "source": "damage__modifying-damage",
+    "target_type": "card",
+    "target": "Sir Gawain"
+  },
+  {
+    "source": "damage__preventing-damage",
+    "target_type": "card",
+    "target": "Shield Maidens"
+  },
+  {
+    "source": "damage__preventing-damage",
+    "target_type": "card",
+    "target": "Goswhit Helmet"
+  },
+  {
+    "source": "damage__preventing-damage",
+    "target_type": "card",
+    "target": "Lava Salamander"
+  },
+  {
+    "source": "damage__preventing-damage",
+    "target_type": "article",
+    "target": "ward",
+    "target_title": "Ward"
+  },
+  {
+    "source": "damage-grid",
+    "target_type": "card",
+    "target": "Craterize"
+  },
+  {
+    "source": "damage-grid",
+    "target_type": "card",
+    "target": "Cone of Flame"
+  },
+  {
+    "source": "damage-grid",
+    "target_type": "card",
+    "target": "Mester Stoor Worm"
+  },
+  {
+    "source": "damage-grid",
+    "target_type": "card",
+    "target": "Flame Wave"
+  },
+  {
+    "source": "damage-grid",
+    "target_type": "card",
+    "target": "Craterize"
+  },
+  {
+    "source": "deathrite",
+    "target_type": "article",
+    "target": "die",
+    "target_title": "die"
+  },
+  {
+    "source": "deathrite",
+    "target_type": "article",
+    "target": "attack",
+    "target_title": "attack"
+  },
+  {
+    "source": "defend",
+    "target_type": "card",
+    "target": "Crave Golem"
+  },
+  {
+    "source": "defend",
+    "target_type": "article",
+    "target": "attack",
+    "target_title": "attack"
+  },
+  {
+    "source": "defend__when-exactly-is-a-unit-allowed-to-defend",
+    "target_type": "article",
+    "target": "range-of-motion",
+    "target_title": "range of motion"
+  },
+  {
+    "source": "die",
+    "target_type": "card",
+    "target": "Gilded Aegis"
+  },
+  {
+    "source": "die",
+    "target_type": "card",
+    "target": "Lady Iseult"
+  },
+  {
+    "source": "die",
+    "target_type": "card",
+    "target": "Fey Changeling"
+  },
+  {
+    "source": "die",
+    "target_type": "card",
+    "target": "The Geistwood"
+  },
+  {
+    "source": "disabled",
+    "target_type": "card",
+    "target": "Raze"
+  },
+  {
+    "source": "disabled",
+    "target_type": "card",
+    "target": "Trial by Water"
+  },
+  {
+    "source": "disabled",
+    "target_type": "card",
+    "target": "Silence"
+  },
+  {
+    "source": "discard",
+    "target_type": "card",
+    "target": "Dreadwing"
+  },
+  {
+    "source": "discard",
+    "target_type": "card",
+    "target": "Morgana le Fay"
+  },
+  {
+    "source": "draw",
+    "target_type": "card",
+    "target": "Common Sense"
+  },
+  {
+    "source": "draw",
+    "target_type": "card",
+    "target": "Pact with the Devil"
+  },
+  {
+    "source": "draw",
+    "target_type": "card",
+    "target": "Chains of Prometheus"
+  },
+  {
+    "source": "drop",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "earth-site",
+    "target_type": "card",
+    "target": "Aqueduct"
+  },
+  {
+    "source": "element",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "element",
+    "target_type": "card",
+    "target": "Castle Servants"
+  },
+  {
+    "source": "element",
+    "target_type": "card",
+    "target": "Purple Knight"
+  },
+  {
+    "source": "element",
+    "target_type": "card",
+    "target": "Lava Salamander"
+  },
+  {
+    "source": "element",
+    "target_type": "card",
+    "target": "Ruins"
+  },
+  {
+    "source": "element",
+    "target_type": "card",
+    "target": "Avatar of Earth"
+  },
+  {
+    "source": "element__air",
+    "target_type": "unresolved_article",
+    "target": ", dabbling in forces beyond mortal"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Arid Desert"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Blacksmith Family"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Castle Servants"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Common Cottagers"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Blacksmith Family"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Fisherman's Family"
+  },
+  {
+    "source": "elemental-threshold-and-affinity",
+    "target_type": "card",
+    "target": "Ancient Dragon"
+  },
+  {
+    "source": "enemy",
+    "target_type": "card",
+    "target": "Fade"
+  },
+  {
+    "source": "enter",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "enter",
+    "target_type": "card",
+    "target": "Mountain Giant"
+  },
+  {
+    "source": "enter",
+    "target_type": "article",
+    "target": "oversized-units",
+    "target_title": "Oversized Units"
+  },
+  {
+    "source": "evil",
+    "target_type": "card",
+    "target": "Day of Judgment"
+  },
+  {
+    "source": "fight",
+    "target_type": "card",
+    "target": "Albespine Pikemen"
+  },
+  {
+    "source": "fireball",
+    "target_type": "card",
+    "target": "Fireball"
+  },
+  {
+    "source": "fireball",
+    "target_type": "card",
+    "target": "Avatar of Fire"
+  },
+  {
+    "source": "flooded",
+    "target_type": "card",
+    "target": "Humble Village"
+  },
+  {
+    "source": "flooded",
+    "target_type": "card",
+    "target": "Geyser"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Avatar of Air"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Siege Giant"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Perilous Bridge"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Great Wall"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Wall of Brambles"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Sky Baron"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Bottomless Pit"
+  },
+  {
+    "source": "fly",
+    "target_type": "card",
+    "target": "Cloud City"
+  },
+  {
+    "source": "foot-soldier-token",
+    "target_type": "card",
+    "target": "Common Village"
+  },
+  {
+    "source": "foot-soldier-token",
+    "target_type": "subentry",
+    "target": "element__earth",
+    "target_title": "earth"
+  },
+  {
+    "source": "for-free",
+    "target_type": "card",
+    "target": "Arcane Barrage"
+  },
+  {
+    "source": "for-free",
+    "target_type": "card",
+    "target": "Twist of Fate"
+  },
+  {
+    "source": "forced-movement",
+    "target_type": "card",
+    "target": "Windblast"
+  },
+  {
+    "source": "forced-movement",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "forced-movement",
+    "target_type": "card",
+    "target": "Unland Eel"
+  },
+  {
+    "source": "forced-movement",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "forced-movement",
+    "target_type": "card",
+    "target": "Led Astray"
+  },
+  {
+    "source": "forced-movement",
+    "target_type": "card",
+    "target": "Coy Nixie"
+  },
+  {
+    "source": "forward",
+    "target_type": "card",
+    "target": "Dalcean Phalanx"
+  },
+  {
+    "source": "frog-token",
+    "target_type": "card",
+    "target": "Pollimorph"
+  },
+  {
+    "source": "frog-token",
+    "target_type": "subentry",
+    "target": "element__water",
+    "target_title": "water"
+  },
+  {
+    "source": "fully-heal",
+    "target_type": "card",
+    "target": "River of Blood"
+  },
+  {
+    "source": "healing",
+    "target_type": "card",
+    "target": "Divine Healing"
+  },
+  {
+    "source": "healing",
+    "target_type": "card",
+    "target": "Twist of Fate"
+  },
+  {
+    "source": "here",
+    "target_type": "card",
+    "target": "Fey Changeling"
+  },
+  {
+    "source": "here",
+    "target_type": "card",
+    "target": "A Midsummer Night's Dream"
+  },
+  {
+    "source": "here",
+    "target_type": "card",
+    "target": "Evil Presence"
+  },
+  {
+    "source": "here",
+    "target_type": "card",
+    "target": "Dome of Osiros"
+  },
+  {
+    "source": "immobile",
+    "target_type": "card",
+    "target": "Leap Attack"
+  },
+  {
+    "source": "immobile",
+    "target_type": "card",
+    "target": "Blink"
+  },
+  {
+    "source": "immobile",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "interact",
+    "target_type": "card",
+    "target": "Infernal Legion"
+  },
+  {
+    "source": "interact",
+    "target_type": "card",
+    "target": "Colicky Dragonettes"
+  },
+  {
+    "source": "interact",
+    "target_type": "card",
+    "target": "Redbreast Robin"
+  },
+  {
+    "source": "interact",
+    "target_type": "unresolved_article",
+    "target": "activated abilities"
+  },
+  {
+    "source": "interact",
+    "target_type": "article",
+    "target": "special-ability",
+    "target_title": "special ability"
+  },
+  {
+    "source": "interact",
+    "target_type": "article",
+    "target": "basic-ability",
+    "target_title": "basic ability"
+  },
+  {
+    "source": "intercept__intercept-as-a-deterrent",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "intercept__intercept-as-a-deterrent",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "intercept__intercept-as-a-deterrent",
+    "target_type": "card",
+    "target": "Queen of Midland"
+  },
+  {
+    "source": "intercept__intercept-as-a-deterrent",
+    "target_type": "card",
+    "target": "Queen Guinevere"
+  },
+  {
+    "source": "intercept__intercept-as-a-deterrent",
+    "target_type": "card",
+    "target": "Poison Nova"
+  },
+  {
+    "source": "intercept__intercept-vs-movement-x",
+    "target_type": "card",
+    "target": "Rimland Nomads"
+  },
+  {
+    "source": "intercept__intercept-vs-movement-x",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "intercept__the-final-location-is-key",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "intercept__only-move-and-attack-can-trigger-intercept",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "intercept__only-move-and-attack-can-trigger-intercept",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "intercept__only-move-and-attack-can-trigger-intercept",
+    "target_type": "card",
+    "target": "Blink"
+  },
+  {
+    "source": "intercept__intercept-without-moving",
+    "target_type": "card",
+    "target": "Mesmerism"
+  },
+  {
+    "source": "intercept__intercept-without-moving",
+    "target_type": "card",
+    "target": "Amazon Warriors"
+  },
+  {
+    "source": "intercept__intercept-without-moving",
+    "target_type": "card",
+    "target": "Autumn Unicorn"
+  },
+  {
+    "source": "intercept__intercept-without-moving",
+    "target_type": "card",
+    "target": "Autumn Unicorn"
+  },
+  {
+    "source": "keyword-ability",
+    "target_type": "card",
+    "target": "Plumed Pegasus"
+  },
+  {
+    "source": "keyword-ability",
+    "target_type": "card",
+    "target": "Power of Flight"
+  },
+  {
+    "source": "keyword-ability",
+    "target_type": "card",
+    "target": "Thankless Squire"
+  },
+  {
+    "source": "kill-credit",
+    "target_type": "card",
+    "target": "Crown of the Victor"
+  },
+  {
+    "source": "kill-credit",
+    "target_type": "card",
+    "target": "Vile Imp"
+  },
+  {
+    "source": "kill-credit",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "kill-credit",
+    "target_type": "card",
+    "target": "Asmodeus"
+  },
+  {
+    "source": "kill-credit",
+    "target_type": "card",
+    "target": "Payload Trebuchet"
+  },
+  {
+    "source": "kill-credit",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "lance",
+    "target_type": "card",
+    "target": "Lance"
+  },
+  {
+    "source": "lasts-3-of-your-turns",
+    "target_type": "card",
+    "target": "Entangle Terrain"
+  },
+  {
+    "source": "lasts-3-of-your-turns",
+    "target_type": "card",
+    "target": "Falling Star"
+  },
+  {
+    "source": "lasts-3-of-your-turns",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "lethal",
+    "target_type": "card",
+    "target": "Pit Vipers"
+  },
+  {
+    "source": "lethal",
+    "target_type": "card",
+    "target": "Amazon Warriors"
+  },
+  {
+    "source": "lethal",
+    "target_type": "card",
+    "target": "Shield Maidens"
+  },
+  {
+    "source": "lethal",
+    "target_type": "card",
+    "target": "Firebolts"
+  },
+  {
+    "source": "lethal",
+    "target_type": "card",
+    "target": "Firebolts"
+  },
+  {
+    "source": "lethal",
+    "target_type": "card",
+    "target": "Poison Nova"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Sky Baron"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Wings of Invention"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Sisters of Silence"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Silence"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Entangle Terrain"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Sky Baron"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Atlantean Fate"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Scent Hounds"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Hounds of Ondaros"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Master Tracker"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Magnetic Muzzle"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Smokestacks of Gnaak"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Watchtower"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Hunting Party"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Sir Bors the Younger"
+  },
+  {
+    "source": "lose",
+    "target_type": "card",
+    "target": "Pebbled Paths"
+  },
+  {
+    "source": "magic",
+    "target_type": "card",
+    "target": "Heat Ray"
+  },
+  {
+    "source": "magic",
+    "target_type": "subentry",
+    "target": "characteristics__magic-characteristics",
+    "target_title": "magic characteristics"
+  },
+  {
+    "source": "magic",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-magics",
+    "target_title": "Casting Magics"
+  },
+  {
+    "source": "mana-cost",
+    "target_type": "article",
+    "target": "cost",
+    "target_title": "Cost"
+  },
+  {
+    "source": "mandatory-actions",
+    "target_type": "card",
+    "target": "Mask of Mayhem"
+  },
+  {
+    "source": "mandatory-actions",
+    "target_type": "card",
+    "target": "The Green Knight"
+  },
+  {
+    "source": "mandatory-actions",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "mandatory-actions",
+    "target_type": "card",
+    "target": "The Green Knight"
+  },
+  {
+    "source": "mandatory-actions",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "mandatory-actions",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "may-and-can",
+    "target_type": "card",
+    "target": "Aramos Mercenaries"
+  },
+  {
+    "source": "may-and-can",
+    "target_type": "card",
+    "target": "Felbog Frog Men"
+  },
+  {
+    "source": "may-and-can",
+    "target_type": "card",
+    "target": "Dalcean Phalanx"
+  },
+  {
+    "source": "may-and-can",
+    "target_type": "card",
+    "target": "Morgana le Fay"
+  },
+  {
+    "source": "minion",
+    "target_type": "card",
+    "target": "Plumed Pegasus"
+  },
+  {
+    "source": "minion",
+    "target_type": "subentry",
+    "target": "characteristics__minion-characteristics",
+    "target_title": "minion characteristics"
+  },
+  {
+    "source": "minion",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-minions",
+    "target_title": "Casting Minions"
+  },
+  {
+    "source": "move__moving-to-a-specific-location-via-a-special-ability-or-magic",
+    "target_type": "card",
+    "target": "Giant Shark"
+  },
+  {
+    "source": "move__moving-to-a-specific-location-via-a-special-ability-or-magic",
+    "target_type": "card",
+    "target": "Mount Ussar Sanctuary"
+  },
+  {
+    "source": "move__moving-to-a-specific-location-via-a-special-ability-or-magic",
+    "target_type": "card",
+    "target": "Guardian Angel"
+  },
+  {
+    "source": "move__moving-to-a-specific-location-via-a-special-ability-or-magic",
+    "target_type": "card",
+    "target": "Harpyon Urge"
+  },
+  {
+    "source": "move__moving-to-a-specific-location-via-a-special-ability-or-magic",
+    "target_type": "article",
+    "target": "range-of-motion",
+    "target_title": "Range of Motion"
+  },
+  {
+    "source": "move-and-attack__movement",
+    "target_type": "card",
+    "target": "Felbog Frog Men"
+  },
+  {
+    "source": "move-and-attack__declaring-the-attack-target",
+    "target_type": "article",
+    "target": "attack",
+    "target_title": "attack"
+  },
+  {
+    "source": "movement-x",
+    "target_type": "card",
+    "target": "Rimland Nomads"
+  },
+  {
+    "source": "movement-x",
+    "target_type": "card",
+    "target": "Rimland Nomads"
+  },
+  {
+    "source": "movement-x",
+    "target_type": "card",
+    "target": "Mad Dash"
+  },
+  {
+    "source": "moves-freely__examples-of-moves-freely",
+    "target_type": "card",
+    "target": "Sir Pelleas"
+  },
+  {
+    "source": "moves-freely__examples-of-moves-freely",
+    "target_type": "card",
+    "target": "Sir Pelleas"
+  },
+  {
+    "source": "moves-freely__examples-of-moves-freely",
+    "target_type": "card",
+    "target": "Sir Pelleas"
+  },
+  {
+    "source": "moves-freely__examples-of-moves-freely",
+    "target_type": "card",
+    "target": "Sir Pelleas"
+  },
+  {
+    "source": "moves-freely__examples-of-moves-freely",
+    "target_type": "card",
+    "target": "Sir Pelleas"
+  },
+  {
+    "source": "moves-freely__examples-of-moves-freely",
+    "target_type": "card",
+    "target": "Sir Pelleas"
+  },
+  {
+    "source": "must-be-cast",
+    "target_type": "card",
+    "target": "Drowned"
+  },
+  {
+    "source": "must-be-cast",
+    "target_type": "card",
+    "target": "Mephistopheles"
+  },
+  {
+    "source": "must-be-cast",
+    "target_type": "card",
+    "target": "Cerberus in Chains"
+  },
+  {
+    "source": "must-be-cast",
+    "target_type": "card",
+    "target": "Algor Omphalos"
+  },
+  {
+    "source": "must-be-cast",
+    "target_type": "card",
+    "target": "Raise Dead"
+  },
+  {
+    "source": "must-be-cast",
+    "target_type": "card",
+    "target": "Boneyard"
+  },
+  {
+    "source": "nearby",
+    "target_type": "card",
+    "target": "Ultimate Horror"
+  },
+  {
+    "source": "nearby",
+    "target_type": "card",
+    "target": "Belfry"
+  },
+  {
+    "source": "ongoing-effect",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ongoing-effect",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "ongoing-effect",
+    "target_type": "card",
+    "target": "Quagmire"
+  },
+  {
+    "source": "ongoing-effect__apply-all-ongoing-effects-before-checking-for-minions-dying",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "ongoing-effect__apply-all-ongoing-effects-before-checking-for-minions-dying",
+    "target_type": "card",
+    "target": "Wicked Witch"
+  },
+  {
+    "source": "ongoing-effect__apply-all-ongoing-effects-before-checking-for-minions-dying",
+    "target_type": "card",
+    "target": "House Arn Bannerman"
+  },
+  {
+    "source": "only-it-can-cast",
+    "target_type": "card",
+    "target": "Char Omphalos"
+  },
+  {
+    "source": "only-it-can-cast",
+    "target_type": "card",
+    "target": "Morgana Le Fay"
+  },
+  {
+    "source": "only-it-can-cast",
+    "target_type": "card",
+    "target": "Archangel Gabriel"
+  },
+  {
+    "source": "only-it-can-cast",
+    "target_type": "card",
+    "target": "Archangel Gabriel"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Mirror Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Selfsame Simulacrum"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Assimilator Snail"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Bower of Bliss"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Corruptor"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Tombstone Wardens"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Root Spider"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Sisters of Silence"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Watchtower"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Smokestacks of Gnaak"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Mesmerism"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Power of Flight"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Tide Naiads"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Drought"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Shrink"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Overpower"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Warp Spasm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Root Spider"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Floodplain"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Bog"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Boneyard"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Land Deed"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Fields of Phyxis"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Infusion Factory"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Sword and Shield"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Pied Piper of Hameln"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "House Arn Bannerman"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Bound Spirit"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system",
+    "target_type": "card",
+    "target": "Eerie Coral"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__effects-cannot-remove-themselves-once-applied",
+    "target_type": "card",
+    "target": "Silence"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__dependencies-in-control-effects",
+    "target_type": "card",
+    "target": "Kings of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__dependencies-in-control-effects",
+    "target_type": "card",
+    "target": "Mesmerism"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__dependencies-in-control-effects",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__dependencies-in-control-effects",
+    "target_type": "card",
+    "target": "Mesmerism"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__minions-disabled-while-at-rest",
+    "target_type": "card",
+    "target": "Hillock Basilisk"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__minions-disabled-while-at-rest",
+    "target_type": "card",
+    "target": "Stone-gaze Gorgons"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---two-kings-of-the-realm",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---two-kings-of-the-realm",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---two-smokestacks-of-gnaak",
+    "target_type": "card",
+    "target": "Smokestacks of Gnaak"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---flood-vs-drought",
+    "target_type": "card",
+    "target": "Flood"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---flood-vs-drought",
+    "target_type": "card",
+    "target": "Drought"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---flood-vs-drought",
+    "target_type": "card",
+    "target": "Floodplain"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---flood-vs-drought",
+    "target_type": "card",
+    "target": "Drought"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---pallid-bust-vs-acid-rain",
+    "target_type": "card",
+    "target": "Pallid Bust"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---pallid-bust-vs-acid-rain",
+    "target_type": "card",
+    "target": "Sisters of Silence"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---pallid-bust-vs-acid-rain",
+    "target_type": "card",
+    "target": "Acid Rain"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---list-of-cards-with-conditional-ongoing-effects",
+    "target_type": "card",
+    "target": "Bound Spirit"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---list-of-cards-with-conditional-ongoing-effects",
+    "target_type": "card",
+    "target": "Pied Piper of Hameln"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---list-of-cards-with-conditional-ongoing-effects",
+    "target_type": "card",
+    "target": "Plate of the Whale"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---list-of-cards-with-conditional-ongoing-effects",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "ordering-ongoing-effects---the-layer-system__example---list-of-cards-with-conditional-ongoing-effects",
+    "target_type": "card",
+    "target": "Returned King"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Mountain Giant"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Megamoeba"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "The Rack"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Mountain Giant"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Silence"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Major Explosion"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Megamoeba"
+  },
+  {
+    "source": "oversized-units__teleporting-oversized-units",
+    "target_type": "card",
+    "target": "Mountain Giant"
+  },
+  {
+    "source": "oversized-units__teleporting-oversized-units",
+    "target_type": "card",
+    "target": "Blink"
+  },
+  {
+    "source": "oversized-units__cards-that-assume-units-occupy-only-one-location",
+    "target_type": "card",
+    "target": "Spin Attack"
+  },
+  {
+    "source": "oversized-units__cards-that-assume-units-occupy-only-one-location",
+    "target_type": "card",
+    "target": "Leap Attack"
+  },
+  {
+    "source": "oversized-units__cards-that-assume-units-occupy-only-one-location",
+    "target_type": "card",
+    "target": "Recall"
+  },
+  {
+    "source": "ownership-and-control",
+    "target_type": "card",
+    "target": "Mesmerism"
+  },
+  {
+    "source": "ownership-and-control",
+    "target_type": "card",
+    "target": "King Arthur"
+  },
+  {
+    "source": "ownership-and-control",
+    "target_type": "article",
+    "target": "token",
+    "target_title": "Token"
+  },
+  {
+    "source": "passive-ability",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "passive-ability",
+    "target_type": "article",
+    "target": "ongoing-effect",
+    "target_title": "ongoing effect"
+  },
+  {
+    "source": "path",
+    "target_type": "unresolved_article",
+    "target": "projectiles"
+  },
+  {
+    "source": "path__example---declaring-a-seemingly-illegal-movement-path",
+    "target_type": "card",
+    "target": "Rimland Nomads"
+  },
+  {
+    "source": "path__example---declaring-a-seemingly-illegal-movement-path",
+    "target_type": "card",
+    "target": "Silence"
+  },
+  {
+    "source": "phrases-that-are-synonymous",
+    "target_type": "card",
+    "target": "Font of Life"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Pudge Butcher"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Gyre Hippogriffs"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Giant Shark"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Band of Thieves"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Crave Golem"
+  },
+  {
+    "source": "phrases-with-subtle-meanings",
+    "target_type": "card",
+    "target": "Spin Attack"
+  },
+  {
+    "source": "pick-up",
+    "target_type": "card",
+    "target": "War Horse"
+  },
+  {
+    "source": "pick-up",
+    "target_type": "article",
+    "target": "carrying-units",
+    "target_title": "Carrying Units"
+  },
+  {
+    "source": "power",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "power",
+    "target_type": "article",
+    "target": "zero",
+    "target_title": "zero"
+  },
+  {
+    "source": "prevention-effect",
+    "target_type": "card",
+    "target": "Tufted Turtle"
+  },
+  {
+    "source": "prevention-effect",
+    "target_type": "card",
+    "target": "Critical Strike"
+  },
+  {
+    "source": "prevention-effect",
+    "target_type": "article",
+    "target": "damage",
+    "target_title": "Damage"
+  },
+  {
+    "source": "projectile",
+    "target_type": "card",
+    "target": "Snowball"
+  },
+  {
+    "source": "projectile__projectiles-that-cause-forced-movement",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "projectile__projectiles-that-cause-forced-movement",
+    "target_type": "card",
+    "target": "Pudge Butcher"
+  },
+  {
+    "source": "projectile__projectiles-that-cause-forced-movement",
+    "target_type": "card",
+    "target": "Magellan Globe"
+  },
+  {
+    "source": "projectile__projectiles-that-cause-forced-movement",
+    "target_type": "card",
+    "target": "Ruler of Thul"
+  },
+  {
+    "source": "projectile__projectiles-that-cause-forced-movement",
+    "target_type": "subentry",
+    "target": "storyline__movement-on-the-storyline",
+    "target_title": "Movement on the Storyline"
+  },
+  {
+    "source": "random",
+    "target_type": "card",
+    "target": "Salmon of Knowledge"
+  },
+  {
+    "source": "random",
+    "target_type": "card",
+    "target": "Lightning Bolt"
+  },
+  {
+    "source": "random",
+    "target_type": "unresolved_article",
+    "target": ", e.g. [[Salmon of Knowledge]]. To determine a random outcome, use any reasonable method, such as rolling a"
+  },
+  {
+    "source": "random",
+    "target_type": "unresolved_article",
+    "target": ", assigning equal probability to each possible outcome. For example, if there are three units at the location you target with [[Lightning Bolt]], you could assign 1-2 to the first unit, 3-4 to the second unit, and 5-6 to the third unit, then roll a six-sided"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "The Green Knight"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Magellan Globe"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Waypoint Portal"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Bottomless Pit"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Rimland Nomads"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Giant Shark"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Bog"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Phantom Steed"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Poisonous Dagger"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Amazon Warriors"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Mask of Mayhem"
+  },
+  {
+    "source": "range-of-motion",
+    "target_type": "card",
+    "target": "Mariner's Curse"
+  },
+  {
+    "source": "ranged-ranged-x-and-x-range",
+    "target_type": "card",
+    "target": "Fail-not Bow"
+  },
+  {
+    "source": "ranged-ranged-x-and-x-range",
+    "target_type": "card",
+    "target": "Vantage Hills"
+  },
+  {
+    "source": "replacement-effect",
+    "target_type": "card",
+    "target": "Gilded Aegis"
+  },
+  {
+    "source": "replacement-effect",
+    "target_type": "article",
+    "target": "damage",
+    "target_title": "Damage"
+  },
+  {
+    "source": "royalty",
+    "target_type": "card",
+    "target": "Crown Prince"
+  },
+  {
+    "source": "royalty",
+    "target_type": "card",
+    "target": "The Faerie Queene"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "Sinkhole"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "Lady Iseult"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "Gilded Aegis"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "The Doom of Dilmun"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "Bluecap Knockers"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "Sinkhole"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "card",
+    "target": "Moon Clan Werewolf"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "article",
+    "target": "ward",
+    "target_title": "Ward"
+  },
+  {
+    "source": "sacrifice",
+    "target_type": "article",
+    "target": "can-vs-cant",
+    "target_title": "Can vs. Can't"
+  },
+  {
+    "source": "search",
+    "target_type": "card",
+    "target": "Adept Illusionist"
+  },
+  {
+    "source": "search",
+    "target_type": "card",
+    "target": "Adept Illusionist"
+  },
+  {
+    "source": "silenced",
+    "target_type": "article",
+    "target": "lose",
+    "target_title": "lose"
+  },
+  {
+    "source": "site",
+    "target_type": "card",
+    "target": "Maelstr\u00f6m"
+  },
+  {
+    "source": "site",
+    "target_type": "card",
+    "target": "Frontier Settlers"
+  },
+  {
+    "source": "site",
+    "target_type": "card",
+    "target": "Sorcerer"
+  },
+  {
+    "source": "site",
+    "target_type": "card",
+    "target": "Pathfinder"
+  },
+  {
+    "source": "site",
+    "target_type": "subentry",
+    "target": "characteristics__site-characteristics",
+    "target_title": "site characteristics"
+  },
+  {
+    "source": "site",
+    "target_type": "article",
+    "target": "adjacent",
+    "target_title": "adjacent"
+  },
+  {
+    "source": "site",
+    "target_type": "article",
+    "target": "nearby",
+    "target_title": "nearby"
+  },
+  {
+    "source": "skeleton-token",
+    "target_type": "card",
+    "target": "Open Mausoleum"
+  },
+  {
+    "source": "skeleton-token",
+    "target_type": "subentry",
+    "target": "element__air",
+    "target_title": "air"
+  },
+  {
+    "source": "span-of-land",
+    "target_type": "card",
+    "target": "Minecart Madness"
+  },
+  {
+    "source": "span-of-land",
+    "target_type": "card",
+    "target": "Earthquake"
+  },
+  {
+    "source": "span-of-land",
+    "target_type": "card",
+    "target": "Flood"
+  },
+  {
+    "source": "special-ability",
+    "target_type": "card",
+    "target": "Charge!"
+  },
+  {
+    "source": "spellcaster",
+    "target_type": "card",
+    "target": "Lava Salamander"
+  },
+  {
+    "source": "split-power",
+    "target_type": "card",
+    "target": "White Knight"
+  },
+  {
+    "source": "split-power",
+    "target_type": "card",
+    "target": "White Knight"
+  },
+  {
+    "source": "split-power",
+    "target_type": "card",
+    "target": "White Knight"
+  },
+  {
+    "source": "split-power",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "split-power",
+    "target_type": "card",
+    "target": "Chaos Twister"
+  },
+  {
+    "source": "split-power",
+    "target_type": "card",
+    "target": "Brother Knight"
+  },
+  {
+    "source": "square",
+    "target_type": "card",
+    "target": "Chaos Twister"
+  },
+  {
+    "source": "stealth__when-exactly-is-after",
+    "target_type": "card",
+    "target": "Daperyll Vampire"
+  },
+  {
+    "source": "stealth__when-exactly-is-after",
+    "target_type": "card",
+    "target": "Shield Maidens"
+  },
+  {
+    "source": "stealth__when-exactly-is-after",
+    "target_type": "card",
+    "target": "Daperyll Vampire"
+  },
+  {
+    "source": "stealth__when-exactly-is-after",
+    "target_type": "card",
+    "target": "Grandmaster Wizard"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Dispel"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Leap Attack"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Payload Trebuchet"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Sleep"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Whirlwind"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Wind Sylph"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Guile Sirens"
+  },
+  {
+    "source": "step",
+    "target_type": "card",
+    "target": "Leap Attack"
+  },
+  {
+    "source": "stops",
+    "target_type": "card",
+    "target": "Snowball"
+  },
+  {
+    "source": "stops",
+    "target_type": "card",
+    "target": "Blink"
+  },
+  {
+    "source": "stops",
+    "target_type": "card",
+    "target": "Orb of Ba'al Berith"
+  },
+  {
+    "source": "storyline__most-effects-use-the-storyline",
+    "target_type": "card",
+    "target": "Plumed Pegasus"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Firebolts"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Tactical Move"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Azuridge Caravan"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Summer River"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Lady Iseult"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Enchantress"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Fenvale Muse"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Ring of Morrigan"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Druid"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Red Desert"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Brother Knight"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Giant Shark"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "card",
+    "target": "Bottomless Pit"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "subentry",
+    "target": "storyline__new-events-interrupt-the-storyline",
+    "target_title": "new events interrupt the storyline"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "subentry",
+    "target": "storyline__movement-on-the-storyline",
+    "target_title": "movement on the storyline"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "subentry",
+    "target": "storyline__new-events-interrupt-the-storyline",
+    "target_title": "new events interrupt the storyline"
+  },
+  {
+    "source": "storyline__splitting-events-on-the-storyline",
+    "target_type": "subentry",
+    "target": "storyline__new-events-interrupt-the-storyline",
+    "target_title": "new events interrupt the storyline"
+  },
+  {
+    "source": "storyline__movement-on-the-storyline",
+    "target_type": "card",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "storyline__movement-on-the-storyline",
+    "target_type": "card",
+    "target": "Giant Shark"
+  },
+  {
+    "source": "storyline__movement-on-the-storyline",
+    "target_type": "card",
+    "target": "Iceberg"
+  },
+  {
+    "source": "storyline__movement-on-the-storyline",
+    "target_type": "subentry",
+    "target": "storyline__splitting-events-on-the-storyline",
+    "target_title": "Splitting Events on the Storyline"
+  },
+  {
+    "source": "storyline__movement-on-the-storyline",
+    "target_type": "subentry",
+    "target": "projectile__projectiles-that-cause-forced-movement",
+    "target_title": "Projectiles That Cause Forced Movement"
+  },
+  {
+    "source": "storyline__new-events-interrupt-the-storyline",
+    "target_type": "card",
+    "target": "Plumed Pegasus"
+  },
+  {
+    "source": "storyline__new-events-interrupt-the-storyline",
+    "target_type": "card",
+    "target": "Ring of Morrigan"
+  },
+  {
+    "source": "storyline__simultaneous-triggers",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "storyline__simultaneous-triggers",
+    "target_type": "card",
+    "target": "Bottomless Pit"
+  },
+  {
+    "source": "storyline__simultaneous-triggers",
+    "target_type": "card",
+    "target": "Mariner's Curse"
+  },
+  {
+    "source": "storyline__simultaneous-triggers",
+    "target_type": "subentry",
+    "target": "storyline__source-is-no-longer-in-the-realm",
+    "target_title": "Source is No Longer in the Realm"
+  },
+  {
+    "source": "storyline__simultaneous-effects",
+    "target_type": "card",
+    "target": "Windblast"
+  },
+  {
+    "source": "storyline__simultaneous-effects",
+    "target_type": "card",
+    "target": "Peasant Revolt"
+  },
+  {
+    "source": "storyline__simultaneous-effects",
+    "target_type": "card",
+    "target": "Maelstr\u00f6m"
+  },
+  {
+    "source": "storyline__simultaneous-effects",
+    "target_type": "card",
+    "target": "Boneyard"
+  },
+  {
+    "source": "storyline__simultaneous-effects",
+    "target_type": "card",
+    "target": "Tactical Move"
+  },
+  {
+    "source": "storyline__simultaneous-effects",
+    "target_type": "subentry",
+    "target": "storyline__simultaneous-triggers",
+    "target_title": "simultaneous triggers"
+  },
+  {
+    "source": "storyline__source-is-no-longer-in-the-realm",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "storyline__source-is-no-longer-in-the-realm",
+    "target_type": "card",
+    "target": "Bottomless Pit"
+  },
+  {
+    "source": "storyline__source-is-no-longer-in-the-realm",
+    "target_type": "card",
+    "target": "Mariner's Curse"
+  },
+  {
+    "source": "storyline__source-is-no-longer-in-the-realm",
+    "target_type": "unresolved_article",
+    "target": "Multiple Simultaneous Triggers"
+  },
+  {
+    "source": "storyline__source-is-no-longer-in-the-realm",
+    "target_type": "subentry",
+    "target": "storyline__splitting-events-on-the-storyline",
+    "target_title": "Splitting Events on the Storyline"
+  },
+  {
+    "source": "strike",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "strike",
+    "target_type": "card",
+    "target": "Mask of Mayhem"
+  },
+  {
+    "source": "strike__strikes-for-zero-damage",
+    "target_type": "card",
+    "target": "Grandmaster Wizard"
+  },
+  {
+    "source": "strike__multiple-simultaneous-strikes",
+    "target_type": "card",
+    "target": "Whirling Blades"
+  },
+  {
+    "source": "strike__multiple-simultaneous-strikes",
+    "target_type": "card",
+    "target": "Leap Attack"
+  },
+  {
+    "source": "strike__multiple-simultaneous-strikes",
+    "target_type": "card",
+    "target": "Spin Attack"
+  },
+  {
+    "source": "submerge",
+    "target_type": "card",
+    "target": "Coral-reef Kelpie"
+  },
+  {
+    "source": "submerge",
+    "target_type": "card",
+    "target": "Drown"
+  },
+  {
+    "source": "subtypes",
+    "target_type": "card",
+    "target": "Roaming Monster"
+  },
+  {
+    "source": "subtypes",
+    "target_type": "card",
+    "target": "King of the Realm"
+  },
+  {
+    "source": "subtypes",
+    "target_type": "subentry",
+    "target": "artifact__automaton",
+    "target_title": "Automaton"
+  },
+  {
+    "source": "subtypes",
+    "target_type": "subentry",
+    "target": "artifact__monument",
+    "target_title": "Monument"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Mother Nature"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Brother Knight"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Knighthood"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Mother Nature"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Raise Dead"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Plague of Frogs"
+  },
+  {
+    "source": "summon",
+    "target_type": "card",
+    "target": "Gnome Hollows"
+  },
+  {
+    "source": "summoning-sickness",
+    "target_type": "unresolved_article",
+    "target": "sickness until the end of turn. A minion suffering from"
+  },
+  {
+    "source": "surface",
+    "target_type": "card",
+    "target": "Buried Treasure"
+  },
+  {
+    "source": "surface",
+    "target_type": "card",
+    "target": "Teleport"
+  },
+  {
+    "source": "surface",
+    "target_type": "card",
+    "target": "Bone Rabble"
+  },
+  {
+    "source": "surface",
+    "target_type": "card",
+    "target": "Diluvian Kraken"
+  },
+  {
+    "source": "surface",
+    "target_type": "card",
+    "target": "Iceberg"
+  },
+  {
+    "source": "surface",
+    "target_type": "card",
+    "target": "Mudflow"
+  },
+  {
+    "source": "tap",
+    "target_type": "card",
+    "target": "Grievous Insult"
+  },
+  {
+    "source": "target",
+    "target_type": "card",
+    "target": "Arc Lightning"
+  },
+  {
+    "source": "target",
+    "target_type": "card",
+    "target": "Red Desert"
+  },
+  {
+    "source": "target",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "target",
+    "target_type": "card",
+    "target": "Vile Imp"
+  },
+  {
+    "source": "target",
+    "target_type": "subentry",
+    "target": "casting-spells__casting-magics",
+    "target_title": "Casting Magics"
+  },
+  {
+    "source": "tawny",
+    "target_type": "card",
+    "target": "Druid"
+  },
+  {
+    "source": "tawny",
+    "target_type": "subentry",
+    "target": "element__air",
+    "target_title": "air"
+  },
+  {
+    "source": "teleport",
+    "target_type": "card",
+    "target": "Flanking Maneuver"
+  },
+  {
+    "source": "teleport",
+    "target_type": "card",
+    "target": "Blink"
+  },
+  {
+    "source": "teleport",
+    "target_type": "card",
+    "target": "Displace"
+  },
+  {
+    "source": "there",
+    "target_type": "card",
+    "target": "Backstab"
+  },
+  {
+    "source": "there",
+    "target_type": "card",
+    "target": "Upwelling"
+  },
+  {
+    "source": "token",
+    "target_type": "card",
+    "target": "Pollimorph"
+  },
+  {
+    "source": "token",
+    "target_type": "card",
+    "target": "Degradation"
+  },
+  {
+    "source": "top",
+    "target_type": "card",
+    "target": "Mother Nature"
+  },
+  {
+    "source": "top",
+    "target_type": "card",
+    "target": "Polar Explorers"
+  },
+  {
+    "source": "top-border",
+    "target_type": "card",
+    "target": "Perilous Bridge"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Pollimorph"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Island Leviathan"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Pollimorph"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Kettletop Leprechaun"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Descrate"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Desecrated Ground"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Mimic"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Plumed Pegasus"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Shapeshift"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Great Old One"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Power of Flight"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Shapeshift"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Great Old One"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Shapeshift"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Band of Thieves"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Great Old One"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Fade"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Shapeshift"
+  },
+  {
+    "source": "transform",
+    "target_type": "card",
+    "target": "Great Old One"
+  },
+  {
+    "source": "traverse",
+    "target_type": "card",
+    "target": "Wall of Brambles"
+  },
+  {
+    "source": "traverse",
+    "target_type": "card",
+    "target": "Perilous Bridge"
+  },
+  {
+    "source": "traverse__on-the-ground",
+    "target_type": "card",
+    "target": "Wall of Brambles"
+  },
+  {
+    "source": "triggered-ability",
+    "target_type": "card",
+    "target": "Scourge Zombies"
+  },
+  {
+    "source": "unburrow",
+    "target_type": "card",
+    "target": "Mudflow"
+  },
+  {
+    "source": "uncontrolled",
+    "target_type": "card",
+    "target": "Angel's Egg"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Druid"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Infiltrate"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Daperyll Vampire"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Blood Ravens"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Sir Galahad"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Mask of Mayhem"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Grim Guisarme"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Seirawan Hydra"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Bosk Troll"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Deathspeaker"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Bottomless Pit"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Silence"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Sisters of Silence"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Magnetic Muzzle"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Heat Ray"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Ice Lance"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Rhongomyniad"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Askelon Phoenix"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Vivien the Enchantress"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Pudge Butcher"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Monastery Gargoyle"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Purge Juggernaut"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Squirming Mass"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Updraft Ridge"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Awakened Mummies"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Torshammar Trinket"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Truesight Crossbow"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "article",
+    "target": "silenced",
+    "target_title": "Silenced"
+  },
+  {
+    "source": "voidwalk",
+    "target_type": "card",
+    "target": "Hounds of Ondaros"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Persecutor"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Daperyll Vampire"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Apprentice Wizard"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Grievous Insult"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Ring of Morrigan"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Geyser"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Craterize"
+  },
+  {
+    "source": "ward",
+    "target_type": "card",
+    "target": "Abaddon Succubus"
+  },
+  {
+    "source": "when-it-arrives",
+    "target_type": "unresolved_article",
+    "target": "Grapple Shot"
+  },
+  {
+    "source": "winning-the-game",
+    "target_type": "card",
+    "target": "Wedding Hall"
+  },
+  {
+    "source": "you",
+    "target_type": "card",
+    "target": "Sparkmage"
+  },
+  {
+    "source": "you",
+    "target_type": "card",
+    "target": "Bone Rabble"
+  },
+  {
+    "source": "you",
+    "target_type": "card",
+    "target": "Frontier Settlers"
+  },
+  {
+    "source": "you",
+    "target_type": "card",
+    "target": "Cerberus in Chains"
+  },
+  {
+    "source": "you",
+    "target_type": "card",
+    "target": "Avatar of Earth"
+  },
+  {
+    "source": "zero",
+    "target_type": "card",
+    "target": "Grandmaster Wizard"
+  },
+  {
+    "source": "zero",
+    "target_type": "card",
+    "target": "Phantasmal Shade"
+  },
+  {
+    "source": "zero",
+    "target_type": "card",
+    "target": "Grandmaster Wizard"
+  },
+  {
+    "source": "zone",
+    "target_type": "card",
+    "target": "Morgana le Fay"
+  },
+  {
+    "source": "zone",
+    "target_type": "card",
+    "target": "Druid"
+  }
+]
