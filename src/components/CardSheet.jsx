@@ -12,7 +12,7 @@ const BASE = import.meta.env.BASE_URL;
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
 const RARITY = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 
-export default function CardSheet({ cardId, deckId, onChange, onClose }) {
+export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCodex }) {
   const [c, setC] = useState(null);
   const [counts, setCounts] = useState({ main: 0, collection: 0 });
   const [pop, setPop] = useState({ main: 0, collection: 0 });
@@ -97,6 +97,11 @@ export default function CardSheet({ cardId, deckId, onChange, onClose }) {
                 <StepRow label={c.is_site ? 'Atlas' : 'Spellbook'} which="main" />
                 <StepRow label="Collection" which="collection" />
               </div>
+            )}
+            {onOpenCodex && (
+              <button className="sheet-codex-link" onClick={() => { onClose?.(); onOpenCodex(c.card_id, c.name); }}>
+                Open in Codex — rulings & FAQ ›
+              </button>
             )}
           </>
         )}

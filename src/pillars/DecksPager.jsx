@@ -17,7 +17,7 @@ import '../theme/deckpager.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onChanged, rev }) {
+export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, rev }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
   const [decks, setDecks] = useState(null);
@@ -131,7 +131,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
           {deckOpen ? (
             <>
               <div className="dpage-scroll">
-                <DeckDashboard deckId={deckOpen.id} rev={rev} statTab={statTab} rarityOn={rarityOn} onChanged={onChanged} />
+                <DeckDashboard deckId={deckOpen.id} rev={rev} statTab={statTab} rarityOn={rarityOn} onChanged={onChanged} onOpenCodex={onOpenCodex} />
               </div>
               <div className="deck-pip-bar">
                 <div className="pip-seg" onClick={() => setStatTab('list')}>

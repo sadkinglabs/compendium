@@ -155,6 +155,27 @@ export async function totalQty(deckId, cardId) {
   return r[0]?.n || 0;
 }
 
+/** Which of the active profile's decks run this card (Codex "In your decks").
+    One row per deck·zone, plus decks where it's the avatar. */
+export async function decksWithCard(cardId) {
+  const pid = activeProfileId();
+  const rows = await query(
+    `SELECT d.id, d.name, e.zone, e.quantity FROM deck_entries e
+     JOIN decks d ON d.id = e.deck_id
+     WHERE d.profile_id=? AND e.card_id=? AND e.quantity>0
+     ORDER BY d.name, e.zone;`,
+    [pid, cardId]
+  );
+  const avatars = await query(
+    'SELECT id, name FROM decks WHERE profile_id=? AND avatar_card_id=? ORDER BY name;',
+    [pid, cardId]
+  );
+  return [
+    ...avatars.map((d) => ({ id: d.id, name: d.name, zone: 'avatar', quantity: 1 })),
+    ...rows,
+  ];
+}
+
 /** Change a card's quantity in a zone; enforces rarity copy-limit and collection cap. */
 export async function changeQty(deckId, zone, card, delta) {
   if (delta > 0) {

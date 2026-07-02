@@ -244,7 +244,7 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   );
 }
 
-export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn = false, onChanged }) {
+export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn = false, onChanged, onOpenCodex }) {
   const [deck, setDeck] = useState(null);
   const [zones, setZones] = useState({ spellbook: [], atlas: [], collection: [] });
   const [collapsed, setCollapsed] = useState(() => new Set());
@@ -324,7 +324,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         </div>
       )}
 
-      <CardSheet cardId={sheetCardId} deckId={deckId} onChange={() => setLocalRev((r) => r + 1)} onClose={() => setSheetCardId(null)} />
+      <CardSheet cardId={sheetCardId} deckId={deckId} onChange={() => setLocalRev((r) => r + 1)} onClose={() => setSheetCardId(null)} onOpenCodex={onOpenCodex} />
       {avatarOpen && (
         <ChangeAvatarSheet deckId={deckId} current={deck.avatar_card_id} onClose={() => setAvatarOpen(false)}
           onSaved={() => { setLocalRev((r) => r + 1); onChanged?.(); }} />

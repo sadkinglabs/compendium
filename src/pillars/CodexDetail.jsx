@@ -9,6 +9,7 @@ import {
   listCollections, createCollection, collectionsForTarget, toggleCollectionItem,
   linksFor, addLink, deleteLink, searchCodex,
 } from '../store/codexRepository.js';
+import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RichText } from '../components/ui.jsx';
@@ -17,11 +18,12 @@ import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
-export default function CodexDetail({ kind, id, onOpenName, onChanged }) {
+export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChanged }) {
   const [data, setData] = useState(null);
   const [composer, setComposer] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [picker, setPicker] = useState(false);
+  const [deckAdd, setDeckAdd] = useState(false);
   const bodyRef = useRef(null);
   const [selection, setSelection] = useState('');
 
@@ -29,10 +31,10 @@ export default function CodexDetail({ kind, id, onOpenName, onChanged }) {
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [related, faqs, notes, highlights, saved, links] = await Promise.all([
-        relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), highlightsFor(id), isSaved(id), linksFor(id),
+      const [related, faqs, notes, highlights, saved, links, inDecks] = await Promise.all([
+        relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), highlightsFor(id), isSaved(id), linksFor(id), decksWithCard(id),
       ]);
-      setData({ kind, card: c, related, faqs, notes, highlights, saved, links });
+      setData({ kind, card: c, related, faqs, notes, highlights, saved, links, inDecks });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
@@ -91,6 +93,22 @@ export default function CodexDetail({ kind, id, onOpenName, onChanged }) {
       {kind === 'card' ? <CardBody card={data.card} faqs={data.faqs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} />
                        : <RuleBody rule={data.rule} subs={data.subs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} />}
 
+      {/* in your decks — the unification payoff: this card in the profile's decks */}
+      {kind === 'card' && data.inDecks.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <SectionLabel glyph="◈" label="IN YOUR DECKS" count={data.inDecks.length} />
+          {data.inDecks.map((d, i) => (
+            <div key={d.id + d.zone} onClick={() => onOpenDeck?.(d.id, d.name)} className="cx-row"
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', borderBottom: i < data.inDecks.length - 1 ? '1px solid var(--hair-12)' : 'none', cursor: 'pointer' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-violet)', flex: 'none' }} />
+              <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+              <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{d.zone === 'avatar' ? 'Avatar' : `${d.zone.charAt(0).toUpperCase() + d.zone.slice(1)} · ${d.quantity}×`}</span>
+              <span style={{ color: 'var(--ink-faint)', fontSize: 13 }}>›</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* highlights */}
       {data.highlights.length > 0 && (
         <div style={{ marginTop: 18 }}>
@@ -140,11 +158,15 @@ export default function CodexDetail({ kind, id, onOpenName, onChanged }) {
       <MarginaliaComposer open={composer} onClose={() => setComposer(false)}
         noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={id} />
       <CollectionPicker open={picker} targetType={targetType} targetId={id} onClose={() => { setPicker(false); load(); }} />
+      {kind === 'card' && !data.card.is_avatar && (
+        <AddToDeckSheet open={deckAdd} card={data.card} onClose={() => { setDeckAdd(false); load(); onChanged?.(); }} />
+      )}
 
-      {/* Save / Collect live in a FAB (consistent app-wide), not inline buttons. */}
+      {/* Save / Collect / Add-to-deck live in a FAB (consistent app-wide), not inline buttons. */}
       <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Entry options" items={[
         { label: data.saved ? 'Saved' : 'Save', keepOpen: true, state: data.saved ? '★' : '☆', onClick: onStar },
         { label: 'Collect', onClick: () => setPicker(true) },
+        ...(kind === 'card' && !data.card.is_avatar ? [{ label: 'Add to a deck', onClick: () => setDeckAdd(true) }] : []),
       ]} />
     </div>
   );
@@ -293,6 +315,62 @@ function MarginaliaComposer({ open, onClose, noteText, setNoteText, onSaveNote, 
           </div>
         </>
       )}
+    </BottomSheet>
+  );
+}
+
+// Add this card to one of your decks, right from its Codex page. Steppers
+// write to the card's home zone (Atlas for sites, Spellbook otherwise) via the
+// same changeQty machinery as the deckbuilder — rarity/zone limits included.
+function AddToDeckSheet({ open, card, onClose }) {
+  const [decks, setDecks] = useState(null);
+  const [qtys, setQtys] = useState({});          // deckId → qty in home zone
+  const [msg, setMsg] = useState('');
+  const zone = card.is_site ? 'atlas' : 'spellbook';
+  const zoneLabel = card.is_site ? 'Atlas' : 'Spellbook';
+
+  useEffect(() => {
+    if (!open) { setMsg(''); return; }
+    let alive = true;
+    (async () => {
+      const ds = await listDecks();
+      const q = {};
+      for (const d of ds) q[d.id] = await deckQty(d.id, zone, card.card_id);
+      if (alive) { setDecks(ds); setQtys(q); }
+    })();
+    return () => { alive = false; };
+    /* eslint-disable-next-line */
+  }, [open]);
+
+  async function step(deck, delta) {
+    const prev = qtys[deck.id] || 0;
+    if (prev + delta < 0) return;
+    const res = await changeQty(deck.id, zone, card, delta);
+    if (!res.ok) { setMsg(res.reason || 'Not allowed'); return; }
+    setMsg('');
+    setQtys((m) => ({ ...m, [deck.id]: prev + delta }));
+  }
+
+  return (
+    <BottomSheet open={open} title={`ADD TO A DECK · ${zoneLabel.toUpperCase()}`} onClose={onClose}>
+      {decks == null ? <div style={{ color: 'var(--ink-faint)' }}>…</div>
+        : decks.length === 0 ? (
+          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '8px 0' }}>
+            No decks yet — build one in Decks first.
+          </div>
+        ) : (
+          <>
+            {msg && <div style={{ font: "500 12.5px/1.4 var(--f-read)", color: 'var(--destructive)', marginBottom: 10 }}>{msg}</div>}
+            {decks.map((d) => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', borderBottom: '1px solid var(--hair-12)' }}>
+                <span style={{ flex: 1, minWidth: 0, font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+                <IconButton glyph="−" tone="muted" size={28} onClick={() => step(d, -1)} />
+                <span style={{ font: "700 15px/1 var(--f-mono)", color: (qtys[d.id] || 0) > 0 ? 'var(--gold-leaf)' : 'var(--ink-faint)', minWidth: 20, textAlign: 'center' }}>{qtys[d.id] || 0}</span>
+                <IconButton glyph="+" size={28} onClick={() => step(d, 1)} />
+              </div>
+            ))}
+          </>
+        )}
     </BottomSheet>
   );
 }

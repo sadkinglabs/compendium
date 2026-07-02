@@ -228,6 +228,7 @@ export default function App() {
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
           deckOpen={deckOpen} onOpenDeck={setDeckOpen} onChanged={bump}
+          onOpenCodex={(id, name) => open('card', id, name)}
           onAddCards={() => deckOpen && enterAdd(deckOpen.id, deckOpen.name)} rev={rev} />
       ) : (
       <div className="cx-scroll" style={S.body}>
@@ -238,7 +239,8 @@ export default function App() {
         ) : hasQuery ? (
           <SearchResults query={query} onOpen={open} onDuel={() => goTab('play')} />
         ) : viewDetail ? (
-          <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName} onChanged={bump} />
+          <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName}
+            onOpenDeck={(id, name) => open('deck', id, name)} onChanged={bump} />
         ) : tab === 'codex' ? (
           <Codex scope={scope} setScope={setScope}
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
