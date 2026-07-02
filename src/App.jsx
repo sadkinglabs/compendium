@@ -104,14 +104,14 @@ export default function App() {
     setOngoing(null); clearOngoing();
     openNewMatch(mode);
   };
-  const beginMatch = (you, opp) => { setMatch({ ...preMatch, you, opp }); setPreMatch(null); };
+  const beginMatch = (you, opp, deck) => { setMatch({ ...preMatch, you, opp, deck: deck || null }); setPreMatch(null); };
   // Ongoing-match lifecycle: minimize preserves a resumable snapshot; resume
   // re-opens the counter from it; record saves to history (counter stays open);
   // exit / new discard the in-progress game.
   const minimizeMatch = (snap) => { setOngoing(snap); saveOngoing(snap); setMatch(null); };
   const resumeMatch = () => {
     if (!ongoing) return;
-    setMatch({ mode: ongoing.mode, settings: ongoing.settings, you: ongoing.you, opp: ongoing.opp, resume: ongoing });
+    setMatch({ mode: ongoing.mode, settings: ongoing.settings, you: ongoing.you, opp: ongoing.opp, deck: ongoing.deck || null, resume: ongoing });
     setOngoing(null); clearOngoing();
   };
   const recordMatchResult = async (result) => { await recordMatch(result); bump(); };
@@ -245,7 +245,8 @@ export default function App() {
           <Codex scope={scope} setScope={setScope}
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
         ) : tab === 'play' ? (
-          <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch} rev={rev} />
+          <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch}
+            onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} />
         ) : (
           <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch} rev={rev} />
         )}
@@ -338,7 +339,7 @@ export default function App() {
       )}
       {match && (
         <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
-          resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
+          deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
           onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
       )}
     </div>

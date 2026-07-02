@@ -1,23 +1,33 @@
 // Avatar picker — VERBATIM visual port of Vitarum's #picker-screen (see counter.css).
-// Uses Compendium's catalogue avatar cards for the grid data.
+// Uses Compendium's catalogue avatar cards for the grid data, plus a Compendium
+// addition: pilot one of YOUR DECKS (sets your avatar and links the match to
+// the deck — its W–L ledger updates on record).
 import React, { useEffect, useState } from 'react';
 import '../theme/counter.css';
 import { listAvatars } from '../store/playRepository.js';
+import { listDecks } from '../store/deckRepository.js';
 
 const BASE = import.meta.env.BASE_URL;
 
 export default function AvatarPicker({ onConfirm, onCancel }) {
   const [avatars, setAvatars] = useState([]);
+  const [decks, setDecks] = useState([]);
+  const [deck, setDeck] = useState(null);
   const [q, setQ] = useState('');
   const [you, setYou] = useState(null);
   const [opp, setOpp] = useState(null);
 
-  useEffect(() => { listAvatars().then(setAvatars); }, []);
+  useEffect(() => { listAvatars().then(setAvatars); listDecks().then(setDecks); }, []);
 
   function pick(a) {
     if (you?.card_id === a.card_id) { setYou(null); return; }
     if (opp?.card_id === a.card_id) { setOpp(null); return; }
     if (!you) setYou(a); else if (!opp) setOpp(a);
+  }
+  function pickDeck(d) {
+    if (deck?.id === d.id) { setDeck(null); return; }   // tap again to unlink
+    setDeck({ id: d.id, name: d.name });
+    if (d.avatar) setYou({ card_id: d.avatar.card_id, name: d.avatar.name, image_slug: d.avatar.image_slug });
   }
   const roleClass = (a) => you?.card_id === a.card_id ? ' is-you' : opp?.card_id === a.card_id ? ' is-opp' : '';
   const list = avatars.filter((a) => !q || a.name.toLowerCase().includes(q.toLowerCase()));
@@ -46,6 +56,21 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
           <div className="pm-name">{opp ? opp.name : 'Tap an avatar'}</div>
         </div>
       </div>
+      {/* Pilot one of your decks — Compendium cross-pillar link */}
+      {decks.length > 0 && (
+        <div className="picker-decks">
+          <div className="picker-decks-label">PILOT A DECK</div>
+          <div className="picker-decks-row">
+            {decks.map((d) => (
+              <button key={d.id} className={`picker-deck-chip${deck?.id === d.id ? ' on' : ''}`} onClick={() => pickDeck(d)}>
+                {d.avatar?.image_slug && <img src={`${BASE}cards/${d.avatar.image_slug}`} alt="" />}
+                <span>{d.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="picker-grid-wrap">
         <div className={`picker-search${q ? ' has-text' : ''}`}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -62,7 +87,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         </div>
       </div>
       <div className="picker-confirm">
-        <button className={`picker-confirm-btn${ready ? ' ready' : ''}`} onClick={() => ready && onConfirm(you, opp)}>Continue →</button>
+        <button className={`picker-confirm-btn${ready ? ' ready' : ''}`} onClick={() => ready && onConfirm(you, opp, deck)}>Continue →</button>
       </div>
     </div>
   );

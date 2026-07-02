@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const MIGRATIONS = [
   {
@@ -190,5 +190,12 @@ export const MIGRATIONS = [
       persist_search INTEGER DEFAULT 0
     );
     `,
+  },
+  {
+    // v2 — a match remembers which deck was piloted (Play ↔ Decks link).
+    // Plain TEXT, no FK: matches must survive the deck being deleted (the
+    // deck chip simply disappears — resolved by LEFT JOIN at read time).
+    version: 2,
+    sql: 'ALTER TABLE matches ADD COLUMN deck_id TEXT;',
   },
 ];

@@ -59,6 +59,11 @@
 .mh .match-opp-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 9px 3px 7px; border-radius:11px; background:linear-gradient(180deg,rgba(207,154,74,.28),rgba(140,90,42,.14)); border:1px solid rgba(220,184,111,.25); font:600 11px/1 'Hanken Grotesk',sans-serif; color:#e9d49a; -webkit-tap-highlight-color:transparent; }
 .mh .match-opp-tag svg { width:11px; height:11px; opacity:.85; }
 .mh .match-opp-tag:active { opacity:.75; }
+/* Piloted-deck tag — violet (Decks accent) so the destination reads at a glance. */
+.mh .match-deck-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 9px 3px 7px; border-radius:11px; background:linear-gradient(180deg,rgba(157,106,214,.24),rgba(96,62,140,.12)); border:1px solid rgba(196,154,240,.28); font:600 11px/1 'Hanken Grotesk',sans-serif; color:#cfb2ef; max-width:46%; -webkit-tap-highlight-color:transparent; }
+.mh .match-deck-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
+.mh .match-deck-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.mh .match-deck-tag:active { opacity:.75; }
 .mh .match-actions { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:10px; }
 .mh .match-actions-right { display:flex; gap:6px; }
 .mh .match-action-btn { display:flex; align-items:center; justify-content:center; gap:5px; background:none; border:1px solid rgba(154,167,156,.28); color:rgba(154,167,156,.85); font-size:11px; font-weight:600; padding:8px 11px; min-height:40px; border-radius:8px; transition:border-color .15s, color .15s; font-family:'Hanken Grotesk',sans-serif; cursor:pointer; }

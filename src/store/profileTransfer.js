@@ -78,8 +78,9 @@ export async function importProfile(bundle, { name } = {}) {
   for (const l of bundle.links || [])
     ins('links', ['id', 'profile_id', 'kind', 'a_type', 'a_id', 'b_type', 'b_id', 'description', 'created_at', 'updated_at'], [uuid(), pid, l.kind, l.a_type, l.a_id, l.b_type, l.b_id, l.description, l.created_at, l.updated_at]);
   for (const m of bundle.matches || [])
-    ins('matches', ['id', 'profile_id', 'played_at', 'mode', 'player_avatar', 'opponent_name', 'opponent_avatar', 'player_final_life', 'opponent_final_life', 'winner', 'duration_sec', 'notes'],
-      [matchMap.get(m.id), pid, m.played_at, m.mode, m.player_avatar, m.opponent_name, m.opponent_avatar, m.player_final_life, m.opponent_final_life, m.winner, m.duration_sec, m.notes]);
+    ins('matches', ['id', 'profile_id', 'played_at', 'mode', 'player_avatar', 'opponent_name', 'opponent_avatar', 'player_final_life', 'opponent_final_life', 'winner', 'duration_sec', 'notes', 'deck_id'],
+      [matchMap.get(m.id), pid, m.played_at, m.mode, m.player_avatar, m.opponent_name, m.opponent_avatar, m.player_final_life, m.opponent_final_life, m.winner, m.duration_sec, m.notes,
+        m.deck_id ? (deckMap.get(m.deck_id) || null) : null]);   // piloted deck follows the re-keyed deck
   for (const e of bundle.match_log_entries || [])
     ins('match_log_entries', ['id', 'match_id', 't', 'who', 'kind', 'delta', 'to_life', 'to_max'], [uuid(), matchMap.get(e.match_id), e.t, e.who, e.kind, e.delta, e.to_life, e.to_max]);
   for (const b of bundle.dashboard_blocks || [])

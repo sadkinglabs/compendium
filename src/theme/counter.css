@@ -348,6 +348,16 @@ body.roll-active .dd-pill { display: none !important; }
   background: none; border: none; color: var(--muted);
   font-size: 13px; font-weight: 600; padding: 6px 10px;
 }
+/* Pilot-a-deck rail (Compendium addition) — deck chips above the avatar grid;
+   selecting one links the match to the deck and fills the YOU slot. */
+.picker-decks { padding: 10px 0 2px; }
+.picker-decks-label { font: 600 9px/1 var(--f-ui); letter-spacing: .16em; color: var(--faint); padding: 0 20px 7px; }
+.picker-decks-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 20px 6px; scrollbar-width: none; }
+.picker-decks-row::-webkit-scrollbar { display: none; }
+.picker-deck-chip { flex: none; display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px 0 4px; border-radius: 999px; background: var(--surface); border: 1.5px solid var(--gold-line); color: var(--muted); font: 600 12px/1 var(--f-read); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.picker-deck-chip img { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; object-position: center 18%; }
+.picker-deck-chip span { max-width: 130px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker-deck-chip.on { border-color: rgba(220,184,111,.75); color: var(--gold-head); box-shadow: 0 0 14px rgba(220,184,111,.22); }
 .picker-grid-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .picker-search {
   position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;

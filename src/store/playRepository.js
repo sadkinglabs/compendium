@@ -26,16 +26,19 @@ export async function setSetting(key, value) {
 
 /* ---------------- matches + log ---------------- */
 
-/** Persist a finished match and its full log in one transaction. */
+/** Persist a finished match and its full log in one transaction. When a deck
+    was piloted (m.deckId), the deck's W–L ledger and history log update too —
+    Play feeds Decks, no manual record-keeping. */
 export async function recordMatch(m) {
   const pid = activeProfileId();
   const id = uuid();
+  const winner = m.winner || 'draw';
   const stmts = [[
     `INSERT INTO matches(id,profile_id,played_at,mode,player_avatar,opponent_name,opponent_avatar,
-       player_final_life,opponent_final_life,winner,duration_sec,notes)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?);`,
+       player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`,
     [id, pid, nowIso(), m.mode || 'full', m.playerAvatar || null, m.opponentName || null, m.opponentAvatar || null,
-      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, m.winner || 'draw', m.durationSec || 0, m.notes || ''],
+      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, winner, m.durationSec || 0, m.notes || '', m.deckId || null],
   ]];
   for (const e of m.log || []) {
     stmts.push([
@@ -43,12 +46,25 @@ export async function recordMatch(m) {
       [uuid(), id, e.t, e.who, e.kind || 'life', e.delta ?? null, e.toLife ?? null, e.toMax ?? null],
     ]);
   }
+  if (m.deckId) {
+    if (winner === 'player') stmts.push(['UPDATE decks SET wins=wins+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), m.deckId, pid]]);
+    else if (winner === 'opponent') stmts.push(['UPDATE decks SET losses=losses+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), m.deckId, pid]]);
+    const outcome = winner === 'player' ? 'a win' : winner === 'opponent' ? 'a loss' : 'a draw';
+    const vs = m.opponentName ? ` vs ${m.opponentName}` : '';
+    stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);',
+      [uuid(), m.deckId, nowIso(), `Recorded ${outcome}${vs} (${m.playerFinalLife ?? '–'}–${m.opponentFinalLife ?? '–'})`]]);
+  }
   await tx(stmts);
   return id;
 }
 
 export async function listMatches(limit = 50) {
-  return query('SELECT * FROM matches WHERE profile_id=? ORDER BY played_at DESC LIMIT ?;', [activeProfileId(), limit]);
+  return query(
+    `SELECT m.*, d.name deck_name FROM matches m
+     LEFT JOIN decks d ON d.id = m.deck_id AND d.profile_id = m.profile_id
+     WHERE m.profile_id=? ORDER BY m.played_at DESC LIMIT ?;`,
+    [activeProfileId(), limit]
+  );
 }
 
 export async function matchLog(matchId) {
@@ -76,7 +92,12 @@ export async function recentOpponents() {
 }
 
 export async function getMatch(matchId) {
-  return (await query('SELECT * FROM matches WHERE id=? AND profile_id=?;', [matchId, activeProfileId()]))[0] || null;
+  return (await query(
+    `SELECT m.*, d.name deck_name FROM matches m
+     LEFT JOIN decks d ON d.id = m.deck_id AND d.profile_id = m.profile_id
+     WHERE m.id=? AND m.profile_id=?;`,
+    [matchId, activeProfileId()]
+  ))[0] || null;
 }
 
 export async function setMatchNote(matchId, notes) {

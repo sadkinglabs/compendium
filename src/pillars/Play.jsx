@@ -28,7 +28,7 @@ function relTime(iso) {
   const mo = Math.floor(day / 30); return mo < 12 ? `${mo}mo ago` : `${Math.floor(mo / 12)}y ago`;
 }
 
-export default function Play({ onStart, ongoing, onResume, rev }) {
+export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const [stats, setStats] = useState(null);
   const [matches, setMatches] = useState([]);
   const [avImg, setAvImg] = useState({});           // avatar name → image_slug
@@ -68,7 +68,7 @@ export default function Play({ onStart, ongoing, onResume, rev }) {
   const toggle = (k) => setCollapsed((c) => ({ ...c, [k]: !c[k] }));
 
   const matchSheet = <MatchSheet matchId={matchId} onClose={() => setMatchId(null)}
-    onChanged={refresh} onH2H={(name) => { setMatchId(null); setOppFilter(name); }} />;
+    onChanged={refresh} onH2H={(name) => { setMatchId(null); setOppFilter(name); }} onOpenDeck={onOpenDeck} />;
 
   const cardActions = {
     onNote: (id) => setMatchId(id),
@@ -76,6 +76,7 @@ export default function Play({ onStart, ongoing, onResume, rev }) {
     onShare: async (id) => { try { await shareMatchSnapshot(id, { playerName: 'You' }); } catch (e) { alert('Could not build image: ' + e.message); } },
     onDelete: async (id) => { if (confirm('Delete this match?')) { await deleteMatch(id); refresh(); } },
     onOpp: (name) => setOppFilter(name),
+    onDeck: (id, name) => onOpenDeck?.(id, name),
   };
 
   return (
@@ -165,7 +166,7 @@ export default function Play({ onStart, ongoing, onResume, rev }) {
 }
 
 // One match card — verbatim port of Vitarum's _matchCardHTML.
-function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp }) {
+function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp, onDeck }) {
   const badgeCls = m.winner === 'player' ? 'win' : m.winner === 'opponent' ? 'loss' : 'draw';
   const badgeTxt = m.winner === 'player' ? 'W' : m.winner === 'opponent' ? 'L' : 'D';
   const d = new Date(m.played_at);
@@ -189,6 +190,11 @@ function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp }) {
         {opp && (
           <span className="match-opp-tag" onClick={() => onOpp(opp)} role="button" tabIndex={0}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>{opp}
+          </span>
+        )}
+        {m.deck_id && m.deck_name && (
+          <span className="match-deck-tag" onClick={() => onDeck(m.deck_id, m.deck_name)} role="button" tabIndex={0} title="Open deck">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg><span>{m.deck_name}</span>
           </span>
         )}
         <span><span className="lbl">You</span> <span className={`you-life${pDD ? ' dd' : ''}`}>{m.player_final_life}</span></span>
@@ -220,7 +226,7 @@ function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp }) {
   );
 }
 
-function MatchSheet({ matchId, onClose, onChanged, onH2H }) {
+function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
   const [m, setM] = useState(null);
   const [log, setLog] = useState([]);
   const [edit, setEdit] = useState(false);
@@ -247,6 +253,12 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H }) {
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
             <div style={{ font: "700 28px/1 var(--f-display)", color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
             {(m.player_avatar || m.opponent_avatar) && <div style={{ font: "500 12px/1.2 var(--f-read)", color: 'var(--ink-muted)', marginTop: 6 }}>{m.player_avatar || 'You'} vs {m.opponent_avatar || 'Opponent'}</div>}
+            {m.deck_id && m.deck_name && (
+              <div onClick={() => { onClose(); onOpenDeck?.(m.deck_id, m.deck_name); }}
+                style={{ font: "600 12px/1.2 var(--f-read)", color: 'var(--accent-violet)', marginTop: 6, cursor: 'pointer' }}>
+                ◈ Piloting {m.deck_name} ›
+              </div>
+            )}
             <div style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-faint)', marginTop: 5 }}>{new Date(m.played_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{m.duration_sec ? ` · ${Math.round(m.duration_sec / 60)}m` : ''}</div>
           </div>
 

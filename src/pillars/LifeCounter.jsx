@@ -21,7 +21,7 @@ function fmtDur(secs) {
   return `${s}s`;
 }
 
-export default function LifeCounter({ settings, mode, players = {}, resume = null, onMinimize, onRecord, onExit, onNewMatch, registerApi }) {
+export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onRecord, onExit, onNewMatch, registerApi }) {
   const start = Math.min(20, settings.default_max_life || 20); // Sorcery: life ≤ 20
   const quick = mode === 'quick';
   const skin = settings.accent_metal && settings.accent_metal !== 'gilded' ? settings.accent_metal : undefined;
@@ -53,7 +53,7 @@ export default function LifeCounter({ settings, mode, players = {}, resume = nul
   const elapsedSec = () => Math.round(elapsedBase.current + (Date.now() - startedAt.current) / 1000);
   function buildSnapshot() {
     return {
-      mode, settings, you: players.you || null, opp: players.opp || null,
+      mode, settings, you: players.you || null, opp: players.opp || null, deck,
       pLife: pRef.current.life, pMax: pRef.current.max, eLife: eRef.current.life, eMax: eRef.current.max,
       log, elapsedSec: elapsedSec(), oppName,
     };
@@ -196,7 +196,7 @@ export default function LifeCounter({ settings, mode, players = {}, resume = nul
       mode, winner: r.winner, playerFinalLife: r.pLife, opponentFinalLife: r.eLife,
       durationSec: r.durationSec, log,
       playerAvatar: players.you?.name || null, opponentAvatar: players.opp?.name || null,
-      opponentName: oppName.trim() || null,
+      opponentName: oppName.trim() || null, deckId: deck?.id || null,
     };
     await onRecord?.(result);
     setEndInfo((x) => ({ ...x, recorded: true }));
