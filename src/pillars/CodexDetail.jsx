@@ -328,12 +328,5 @@ function CollectionPicker({ open, targetType, targetId, onClose }) {
 }
 
 const Dot = () => <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(201,163,90,.5)' }} />;
-const qa = (active) => ({
-  flex: 1, padding: '10px 0', borderRadius: 12, cursor: 'pointer',
-  font: "600 12px/1 var(--f-ui)", letterSpacing: '.04em',
-  background: active ? 'rgba(207,154,74,.16)' : 'transparent',
-  color: active ? 'var(--gold-leaf)' : 'var(--ink-status)',
-  border: `1px solid ${active ? 'var(--gold-leaf)' : 'var(--hair-22)'}`,
-});
 const btnGold = { padding: '12px 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', flex: 'none' };
 const btnGhost = { flex: 1, padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };

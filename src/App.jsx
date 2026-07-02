@@ -9,9 +9,8 @@ import { resolveByName } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
 import Codex from './pillars/Codex.jsx';
 import CodexDetail from './pillars/CodexDetail.jsx';
-import Decks, { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
+import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
 import DecksPager from './pillars/DecksPager.jsx';
-import DeckDetail from './pillars/DeckDetail.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
 import CreateDeckWizard from './components/CreateDeckWizard.jsx';
 import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
@@ -25,7 +24,7 @@ import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js'
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport } from './store/profileTransfer.js';
 import { onBackButton, exitApp } from './native.js';
-import { ListRow, SectionLabel, BottomSheet, IconButton, Chip, ChipRow } from './components/ui.jsx';
+import { ListRow, BottomSheet, IconButton, Chip, ChipRow } from './components/ui.jsx';
 
 const PILLARS = [
   { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
@@ -174,14 +173,6 @@ export default function App() {
   // wash) to signal active engagement; Codex=warm gold · Decks=Arcanum amethyst ·
   // Play=Vitarum green.
   const WASH = { home: '#000', codex: '#33260e', decks: '#2a1c44', play: '#18301f' };
-  // Frosted-chrome tint + edge that morph to the pillar (search pill, etc.).
-  const CHROME = {
-    home:  { tint: 'rgba(28,21,8,.74)',  edge: 'rgba(220,184,111,.30)' },
-    codex: { tint: 'rgba(26,19,12,.74)', edge: 'rgba(220,184,111,.26)' },
-    decks: { tint: 'rgba(22,15,36,.74)', edge: 'rgba(196,154,240,.30)' },
-    play:  { tint: 'rgba(14,28,18,.74)', edge: 'rgba(143,211,168,.28)' },
-  };
-  const chrome = CHROME[tab] || CHROME.home;
   // Canonical list-row accent, morphing per pillar (grimoire gold default;
   // amethyst in Decks, jade in Play) — consumed by ListRow via --list-accent.
   const LIST = {
@@ -201,7 +192,7 @@ export default function App() {
   const searchPlaceholder = addActive ? 'Search cards to add…' : (placeholders[tab] || 'Search…');
 
   return (
-    <div className="cx-app" style={{ ...S.app, '--wash': WASH[tab] || WASH.home, '--chrome-tint': chrome.tint, '--chrome-edge': chrome.edge, '--list-accent': list.a, '--list-glow': list.g }}>
+    <div className="cx-app" style={{ ...S.app, '--wash': WASH[tab] || WASH.home, '--list-accent': list.a, '--list-glow': list.g }}>
       {/* BRAND BAR */}
       <div style={S.brandBar}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -223,7 +214,7 @@ export default function App() {
       ) : viewDetail ? (
         <div style={S.detailHeader}>
           <button onClick={back} style={S.back}>‹ Back</button>
-          <div style={S.detailTitle}>{detail.kind === 'deck' ? '' : (detail.title || '')}</div>
+          <div style={S.detailTitle}>{detail.title || ''}</div>
           <span style={{ width: 44 }} />
         </div>
       ) : (
@@ -247,19 +238,10 @@ export default function App() {
         ) : hasQuery ? (
           <SearchResults query={query} onOpen={open} onDuel={() => goTab('play')} />
         ) : viewDetail ? (
-          detail.kind === 'deck' ? (
-            <DeckDetail deckId={detail.id} rev={rev} onEnterAdd={enterAdd}
-              onOpenCard={(id, name) => open('card', id, name)} onChanged={bump}
-              onDeleted={() => { setDetail(null); setHistory([]); }} />
-          ) : (
-            <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName} onChanged={bump} />
-          )
+          <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName} onChanged={bump} />
         ) : tab === 'codex' ? (
           <Codex scope={scope} setScope={setScope}
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
-        ) : tab === 'decks' ? (
-          <Decks onOpenDeck={(id, name) => open('deck', id, name)}
-            onNew={() => setDeckWizard(true)} onImport={() => setImportSheet(true)} rev={rev} />
         ) : tab === 'play' ? (
           <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch} rev={rev} />
         ) : (
@@ -283,8 +265,8 @@ export default function App() {
           mutates by context: Decks library = + (New/Import menu); deck editing /
           Codex = filter sliders; Home / Play = three dots. Actions beyond the
           Decks menu + add-cards filters are TBD. Hidden on the avatar picker. */}
-      {/* App-owned FAB contexts. Codex (filters) and DeckDetail (deck actions)
-          render their OWN FAB since those actions live inside them. */}
+      {/* App-owned FAB contexts. Codex detail and the Decks pager render their
+          OWN FAB since those actions live inside them. */}
       {!preMatch && (addActive ? (
         <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters & sort"
           onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
@@ -495,30 +477,6 @@ function SettingsSheet({ open, onClose }) {
   );
 }
 
-function PillarPlaceholder({ pillar, profile, counts }) {
-  return (
-    <div style={{ padding: '24px 20px', animation: 'cxfade .2s ease' }}>
-      <div style={S.card}>
-        <SectionLabel glyph="✦" label={pillar.label.toUpperCase()} />
-        <p style={{ font: "400 15.5px/1.55 var(--f-read)", color: 'var(--ink-body-2)', margin: 0 }}>
-          {pillar.label} is next in the build. Unified store open · active profile <b style={{ color: 'var(--ink-head)' }}>{profile?.name}</b>. Codex is live — browse it from the nav.
-        </p>
-      </div>
-      <div style={{ ...S.card, marginTop: 14 }}>
-        <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.2em', color: 'var(--ink-muted)', marginBottom: 10 }}>CATALOG (shared, read-only)</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {[['Cards', counts.cards], ['Rules', counts.rules], ['FAQs', counts.faqs], ['Links', counts.links]].map(([l, v]) => (
-            <div key={l} style={{ flex: 1, textAlign: 'center', border: '1px solid var(--hair-16)', borderRadius: 11, padding: '11px 0', background: 'var(--surface-well)' }}>
-              <div style={{ font: "600 19px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{v ?? '–'}</div>
-              <div style={{ font: "500 9px/1 var(--f-ui)", letterSpacing: '.12em', color: 'var(--ink-faint)', marginTop: 6 }}>{l.toUpperCase()}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function Splash({ text, error }) {
   return (
     <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center' }}>
@@ -538,17 +496,8 @@ const S = {
   back: { background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, textAlign: 'left' },
   detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
-  fab: { position: 'absolute', right: 16, bottom: 84, width: 52, height: 52, borderRadius: '50%', background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', border: 'none', cursor: 'pointer', boxShadow: '0 10px 26px -8px rgba(201,163,90,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 25 },
-  fabBadge: { position: 'absolute', top: -4, right: -4, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, background: 'var(--bg-base)', border: '1px solid var(--gold-leaf)', color: 'var(--gold-leaf)', font: "700 11px/20px var(--f-mono)", textAlign: 'center' },
-  eyebrow: { font: "600 10px/1 var(--f-ui)", letterSpacing: '.24em', color: 'var(--ink-muted)', marginBottom: 6 },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
-  searchWrap: { display: 'flex', alignItems: 'center', gap: 10, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px' },
-  searchInput: { flex: 1, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
   body: { flex: 1, overflowY: 'auto', paddingBottom: 'calc(62px + env(safe-area-inset-bottom) + 92px)' },
-  card: { border: '1px solid var(--hair-14)', borderRadius: 'var(--r-card)', background: 'var(--surface-card)', padding: 16 },
-  nav: { display: 'flex', borderTop: '1px solid var(--hair-12)', background: 'var(--surface-nav)', backdropFilter: 'blur(8px)' },
-  navItem: { flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 0 12px', background: 'none', border: 'none', cursor: 'pointer', minHeight: 48 },
-  accentDot: { position: 'absolute', top: -3, right: -6, width: 5, height: 5, borderRadius: '50%' },
   input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
   btnGold: { padding: '12px 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', flex: 'none' },
   btnGhost: { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' },

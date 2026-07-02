@@ -75,11 +75,6 @@ export async function recentOpponents() {
   return seen.slice(0, 10);
 }
 
-/** Set a match's opponent name after the fact (from the record/edit flow). */
-export async function setMatchOpponent(matchId, name) {
-  await run('UPDATE matches SET opponent_name=? WHERE id=? AND profile_id=?;', [name, matchId, activeProfileId()]);
-}
-
 export async function getMatch(matchId) {
   return (await query('SELECT * FROM matches WHERE id=? AND profile_id=?;', [matchId, activeProfileId()]))[0] || null;
 }
@@ -95,23 +90,6 @@ export async function updateMatch(matchId, f) {
      WHERE id=? AND profile_id=?;`,
     [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, f.duration_sec ?? 0, f.notes ?? '', matchId, activeProfileId()]
   );
-}
-
-/** Wins grouped by the player's avatar (top avatars by wins). */
-export async function winsByAvatar() {
-  const rows = await query(
-    "SELECT player_avatar avatar, COUNT(*) wins FROM matches WHERE profile_id=? AND winner='player' AND player_avatar IS NOT NULL AND player_avatar!='' GROUP BY player_avatar ORDER BY wins DESC LIMIT 6;",
-    [activeProfileId()]
-  );
-  return rows;
-}
-
-/** Head-to-head record vs a specific opponent. */
-export async function headToHead(opponent) {
-  const ms = await query('SELECT * FROM matches WHERE profile_id=? AND opponent_name=? ORDER BY played_at DESC;', [activeProfileId(), opponent]);
-  const wins = ms.filter((m) => m.winner === 'player').length;
-  const losses = ms.filter((m) => m.winner === 'opponent').length;
-  return { opponent, matches: ms, wins, losses };
 }
 
 /** Aggregate history stats from the active profile's matches. */

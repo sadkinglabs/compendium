@@ -320,22 +320,3 @@ const inp = { width: '100%', height: 42, background: 'var(--surface-well)', bord
 const chip = { padding: '5px 11px', borderRadius: 16, border: '1px solid var(--hair-22)', font: "500 12px/1 var(--f-read)", color: 'var(--ink-status)', cursor: 'pointer' };
 const ghost = { padding: '11px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 12px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };
 const gold = { padding: '11px 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', flex: 'none' };
-
-const Eyebrow = ({ glyph, label, right }) => (
-  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
-    <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>{glyph} {label}</span>
-    {right ? <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{right}</span> : null}
-  </div>
-);
-const Stat = ({ label, value }) => (
-  <div style={{ flex: 1, textAlign: 'center', border: '1px solid var(--hair-16)', borderRadius: 13, padding: '13px 0', background: 'var(--surface-card)' }}>
-    <div style={{ font: "700 21px/1 var(--f-display)", color: 'var(--accent-jade)' }}>{value}</div>
-    <div style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: 'var(--ink-faint)', marginTop: 8 }}>{label}</div>
-  </div>
-);
-
-const S = {
-  newBtn: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, height: 52, borderRadius: 14, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 14px/1 var(--f-ui)", letterSpacing: '.04em', border: 'none', cursor: 'pointer', boxShadow: '0 8px 22px -10px rgba(201,163,90,.7)' },
-  diamond: { width: 15, height: 15, transform: 'rotate(45deg)', border: '1.5px solid rgba(26,20,16,.7)', borderRadius: 4 },
-  quickBtn: { display: 'flex', alignItems: 'center', gap: 8, height: 52, padding: '0 18px', borderRadius: 14, border: '1px solid var(--hair-30)', background: 'rgba(201,163,90,.06)', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' },
-};

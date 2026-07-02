@@ -95,8 +95,7 @@ body {
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
 
-/* ── Bottom search — frosted see-through pill, in line with the FAB. Tint +
-   edge morph to the active pillar (--chrome-tint / --chrome-edge, transitioned). ── */
+/* ── Bottom search — frosted see-through pill, in line with the FAB. ── */
 .cx-searchbar { position: fixed; left: 16px; right: 84px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px); z-index: 41; }
 /* Uniform black frosted glass — no per-pillar tint (keeps the palette subtle). */
 .cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
