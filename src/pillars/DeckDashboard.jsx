@@ -295,13 +295,20 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
 
   const statColor = (ok) => ok ? 'var(--success)' : 'var(--warn)';
 
-  // Quick-edit stepper (edit mode) — same changeQty machinery as the CardSheet,
-  // so rarity copy-limits and the collection cap hold; rejections toast.
+  // Quick-edit stepper (edit mode) — OPTIMISTIC, like the CardSheet: the row
+  // (and the hero counts derived from zones) update instantly; changeQty then
+  // enforces rarity copy-limits / collection cap in the background, and a
+  // rejection toasts + resyncs from the store (authoritative revert).
   const stepRow = (zone) => async (e, delta) => {
     if (e.quantity + delta < 0) return;
+    setZones((z) => ({
+      ...z,
+      [zone]: z[zone]
+        .map((x) => x.card_id === e.card_id ? { ...x, quantity: x.quantity + delta } : x)
+        .filter((x) => x.quantity > 0),
+    }));
     const res = await changeQty(deckId, zone, e, delta);
-    if (!res.ok) { onToast?.(res.reason || 'Not allowed'); return; }
-    setLocalRev((r) => r + 1);
+    if (!res.ok) { onToast?.(res.reason || 'Not allowed'); setLocalRev((r) => r + 1); }
   };
 
   return (
