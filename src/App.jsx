@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { openDatabase } from './store/db.js';
 import {
-  initProfiles, getActiveProfile, listProfiles,
+  initProfiles, getActiveProfile, listProfiles, profileStats,
   createProfile, switchProfile, renameProfile, deleteProfile,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
@@ -19,12 +19,12 @@ import Play from './pillars/Play.jsx';
 import LifeCounter from './pillars/LifeCounter.jsx';
 import AvatarPicker from './pillars/AvatarPicker.jsx';
 import Home from './pillars/Home.jsx';
-import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
+import { getSettings, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
 import { setResume } from './store/homeRepository.js';
-import { exportToFile, pickAndImport } from './store/profileTransfer.js';
+import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, exitApp } from './native.js';
-import { ListRow, IconButton, Chip, ChipRow, Loading } from './components/ui.jsx';
+import { ListRow, IconButton, Loading } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 
 const PILLARS = [
@@ -53,7 +53,6 @@ export default function App() {
   const [preMatch, setPreMatch] = useState(null);    // {mode, settings} — avatar picker step
   const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
   const counterApi = useRef(null);                   // {minimize} — set by the live counter
-  const [settingsSheet, setSettingsSheet] = useState(false);
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
@@ -154,7 +153,7 @@ export default function App() {
 
   const initial = (profile?.name || '?').charAt(0).toUpperCase();
   const searchable = true;   // universal search on every pillar
-  const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', decks: 'Search decks…', play: 'Search duels…' };
+  const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', decks: 'Search decks…', play: 'Search matches…' };
 
   // Hardware back: close the topmost layer, else go home, else exit.
   backRef.current = () => {
@@ -162,7 +161,6 @@ export default function App() {
     if (preMatch) return setPreMatch(null);
     if (deckWizard) return setDeckWizard(false);
     if (importMode) return setImportMode(null);
-    if (settingsSheet) return setSettingsSheet(false);
     if (profileSheet) return setProfileSheet(false);
     if (addActive) return exitAdd();
     if (hasQuery) return setQuery('');
@@ -187,8 +185,9 @@ export default function App() {
   // The Decks pillar is now Arcanum's single-page pager, which owns its own
   // panels, search bars and FAB. App chrome (bottom search, FAB) steps aside for it.
   const deckPagerActive = tab === 'decks' && !viewDetail && !hasQuery && !addActive;
-  // Search bar only on Codex (and add-cards); Decks/Home/Play have none in App chrome.
-  const showSearch = addActive || (!viewDetail && !preMatch && tab === 'codex');
+  // Search bar only on Codex browse (and add-cards); Decks/Home/Play have none
+  // in App chrome, and the Marginalia scope is a curated list — no search.
+  const showSearch = addActive || (!viewDetail && !preMatch && tab === 'codex' && scope !== 'marginalia');
   const searchVal = addActive ? addQuery : query;
   const setSearchVal = addActive ? setAddQuery : setQuery;
   const searchPlaceholder = addActive ? 'Search cards to add…' : (placeholders[tab] || 'Search…');
@@ -305,10 +304,8 @@ export default function App() {
       </nav>
       <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
         onSwitch={onSwitchProfile} onChanged={reloadProfile}
-        onSettings={() => { setProfileSheet(false); setSettingsSheet(true); }}
         onExport={async () => { try { await exportToFile(profile.id); } catch (e) { alert('Export failed: ' + e.message); } }}
         onImport={async () => { try { const pid = await pickAndImport(); if (pid) await onSwitchProfile(pid); } catch (e) { alert('Import failed: ' + e.message); } }} />
-      <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} />
 
       {/* Create-deck wizard (mandatory name → avatar) */}
       {deckWizard && (
@@ -388,18 +385,32 @@ function SearchResults({ query, onOpen, onDuel }) {
       {group('CODEX', 'var(--accent-gold)', res.codex, (it) => onOpen(it.kind, it.id, it.name))}
       {group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], (it) => onOpen(it.kind, it.id, it.name))}
       {group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name))}
-      {group('DUELS', 'var(--accent-jade)', res.duels, () => onDuel())}
+      {group('MATCHES', 'var(--accent-jade)', res.duels, () => onDuel())}
     </div>
   );
 }
 
-function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, onExport, onImport }) {
+// Profiles — the spine of the app, so the picker earns some ceremony: monogram
+// discs, per-profile digests (decks · matches), gold ring on the active one.
+// The default (oldest) profile is load-bearing and cannot be deleted; any
+// profile can be renamed (data keys off the id — names are just labels),
+// duplicated (full re-keyed copy) or exported.
+function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, onImport }) {
   const [list, setList] = useState([]);
+  const [stats, setStats] = useState({});
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   const [editing, setEditing] = useState(null);   // {id, name} — inline rename
-  async function refresh() { if (open) setList(await listProfiles()); }
-  useEffect(() => { refresh(); if (!open) setEditing(null); /* eslint-disable-next-line */ }, [open]);
+  const [busy, setBusy] = useState(false);
+  async function refresh() {
+    if (!open) return;
+    const ps = await listProfiles();
+    setList(ps);
+    const st = {};
+    for (const p of ps) st[p.id] = await profileStats(p.id);
+    setStats(st);
+  }
+  useEffect(() => { refresh(); if (!open) { setEditing(null); setAdding(false); } /* eslint-disable-next-line */ }, [open]);
   async function add() {
     if (!name.trim()) return;
     await createProfile(name.trim()); setName(''); setAdding(false); refresh();
@@ -409,96 +420,81 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, 
     if (nn) { await renameProfile(editing.id, nn); await onChanged(); refresh(); }
     setEditing(null);
   }
+  async function duplicate(p) {
+    if (busy) return;
+    setBusy(true);
+    try { await duplicateProfile(p.id); await refresh(); }
+    catch (e) { alert('Could not duplicate: ' + e.message); }
+    finally { setBusy(false); }
+  }
   async function remove(p) {
-    if (list.length <= 1) return;
-    if (!confirm(`Delete profile “${p.name}” and all its data?`)) return;
-    await deleteProfile(p.id); await onChanged(); refresh();
+    if (!confirm(`Delete “${p.name}” and everything it owns — decks, matches, marginalia?`)) return;
+    try { await deleteProfile(p.id); await onChanged(); refresh(); }
+    catch (e) { alert(e.message); }
   }
   if (!open) return null;
+  const defaultId = list.find((p) => p.is_default)?.id;   // explicit flag — the protected default
+  const meta = (p) => {
+    const s = stats[p.id];
+    return s ? `${s.decks} deck${s.decks === 1 ? '' : 's'} · ${s.matches} match${s.matches === 1 ? '' : 'es'}` : '…';
+  };
   return (
     <Sheet open={open} title="Profiles" onClose={onClose}>
       <div style={{ padding: '0 16px' }}>
-      {list.map((p) => (
-        <div key={p.id} className="cx-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', borderBottom: '1px solid var(--hair-12)' }}>
-          <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 13px/1 var(--f-display)", color: '#1a1410', flex: 'none' }}>{p.name.charAt(0).toUpperCase()}</span>
-          {editing?.id === p.id ? (
-            <>
-              <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditing(null); }}
-                style={{ ...S.input, height: 36 }} />
-              <IconButton glyph="✓" size={26} onClick={saveRename} title="Save name" />
-            </>
-          ) : (
-            <>
-              <span onClick={() => onSwitch(p.id)} style={{ flex: 1, font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', cursor: 'pointer' }}>{p.name}{p.id === active?.id ? <span style={{ color: 'var(--gold-leaf)', fontSize: 12, marginLeft: 8 }}>● active</span> : null}</span>
-              <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: p.id, name: p.name })} title="Rename" />
-              {list.length > 1 && <IconButton glyph="✕" tone="danger" size={26} onClick={() => remove(p)} title="Delete" />}
-            </>
-          )}
-        </div>
-      ))}
+      {list.map((p) => {
+        const isActive = p.id === active?.id;
+        return (
+          <div key={p.id} className={`pf-row${isActive ? ' active' : ''}`}>
+            <span className="pf-disc" onClick={() => onSwitch(p.id)}>{p.name.charAt(0).toUpperCase()}</span>
+            {editing?.id === p.id ? (
+              <>
+                <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditing(null); }}
+                  style={{ ...S.input, height: 38 }} />
+                <IconButton glyph="✓" size={28} onClick={saveRename} title="Save name" />
+              </>
+            ) : (
+              <>
+                <span className="pf-copy" onClick={() => onSwitch(p.id)}>
+                  <span className="pf-name">
+                    {p.name}
+                    {isActive && <span className="pf-tag">ACTIVE</span>}
+                    {p.id === defaultId && !isActive && <span className="pf-tag dim">DEFAULT</span>}
+                  </span>
+                  <span className="pf-meta">{meta(p)}</span>
+                </span>
+                <span className="pf-actions">
+                  <IconButton glyph="✎" tone="muted" size={27} onClick={() => setEditing({ id: p.id, name: p.name })} title="Rename" />
+                  <IconButton glyph="⧉" tone="muted" size={27} onClick={() => duplicate(p)} title="Duplicate" />
+                  {p.id !== defaultId && list.length > 1 && <IconButton glyph="✕" tone="danger" size={27} onClick={() => remove(p)} title="Delete" />}
+                </span>
+              </>
+            )}
+          </div>
+        );
+      })}
+      {busy && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '8px 0' }}>Duplicating…</div>}
       {adding ? (
-        <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-          <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Profile name…" style={S.input} />
+        <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+          <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Profile name…"
+            onKeyDown={(e) => { if (e.key === 'Enter') add(); }} style={S.input} />
           <button onClick={add} style={S.btnGold}>Create</button>
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 14, width: '100%' }}>＋ New profile</button>
+        <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 16, width: '100%' }}>＋ New profile</button>
       )}
-      <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
         <button onClick={onExport} style={{ ...S.btnGhost, flex: 1 }}>⤓ Export</button>
         <button onClick={onImport} style={{ ...S.btnGhost, flex: 1 }}>⤒ Import</button>
       </div>
-      <button onClick={onSettings} style={{ ...S.btnGhost, marginTop: 10, width: '100%' }}>⚙ Settings</button>
       </div>
     </Sheet>
   );
 }
 
-function SettingsSheet({ open, onClose }) {
-  const [s, setS] = useState(null);
-  useEffect(() => { if (open) getSettings().then(setS); }, [open]);
-  async function put(key, value) { setS((p) => ({ ...p, [key]: value })); await setSetting(key, value); }
-  if (!open) return null;
-  const Toggle = ({ label, k }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 2px', borderBottom: '1px solid var(--hair-12)' }}>
-      <span style={{ font: "500 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
-      <button onClick={() => put(k, s[k] ? 0 : 1)} style={{ width: 46, height: 26, borderRadius: 13, border: '1px solid var(--hair-30)', background: s?.[k] ? 'var(--gold-leaf)' : 'transparent', position: 'relative', cursor: 'pointer' }}>
-        <span style={{ position: 'absolute', top: 2, left: s?.[k] ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: s?.[k] ? '#1a1410' : 'var(--ink-faint)', transition: 'left .15s' }} />
-      </button>
-    </div>
-  );
-  const label = (t) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '16px 0 10px' }}>{t}</div>;
-  return (
-    <Sheet open={open} title="Settings" onClose={onClose}>
-      {s == null ? <Loading /> : (
-        <div style={{ padding: '0 16px' }}>
-          {label('ACCENT METAL')}
-          <ChipRow>
-            {[['gilded', 'Gilded'], ['verdigris', 'Verdigris'], ['pewter', 'Pewter']].map(([k, l]) => (
-              <Chip key={k} label={l} active={s.accent_metal === k} onClick={() => put('accent_metal', k)} />
-            ))}
-          </ChipRow>
-          {label('DEFAULT LIFE')}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-            <IconButton glyph="−" tone="muted" size={34} onClick={() => put('default_max_life', Math.max(1, (s.default_max_life || 20) - 1))} />
-            <span style={{ font: "700 26px/1 var(--f-display)", color: 'var(--gold-leaf)', minWidth: 44, textAlign: 'center' }}>{Math.min(20, s.default_max_life)}</span>
-            <IconButton glyph="+" size={34} onClick={() => put('default_max_life', Math.min(20, (s.default_max_life || 20) + 1))} />
-          </div>
-          {label('DIE')}
-          <ChipRow>
-            {[4, 6, 8, 10, 12, 20].map((d) => <Chip key={d} label={'d' + d} active={s.die_type === d} onClick={() => put('die_type', d)} />)}
-          </ChipRow>
-          {/* Counter comforts (keep awake / hide status bar / film grain) live in
-              the life tracker's Tweaks (player FAB), not here — Vitarum's home. */}
-          {label('PREFERENCES')}
-          <Toggle label="Haptics" k="haptics" />
-          <Toggle label="Rarity colours" k="rarity_colors" />
-        </div>
-      )}
-    </Sheet>
-  );
-}
+// NOTE: the old SettingsSheet was removed — counter comforts live in the life
+// tracker's Tweaks (player FAB); a proper Settings surface off the profile
+// sheet is planned but not yet designed.
 
 function Splash({ text, error }) {
   return (

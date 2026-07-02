@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const MIGRATIONS = [
   {
@@ -197,5 +197,16 @@ export const MIGRATIONS = [
     // deck chip simply disappears — resolved by LEFT JOIN at read time).
     version: 2,
     sql: 'ALTER TABLE matches ADD COLUMN deck_id TEXT;',
+  },
+  {
+    // v3 — the default profile is marked EXPLICITLY (an "oldest created_at"
+    // heuristic proved deletable under timestamp ties). Best-effort mark of
+    // the oldest existing profile here; initProfiles() re-asserts the
+    // exactly-one-default invariant on every boot.
+    version: 3,
+    sql: `
+    ALTER TABLE profiles ADD COLUMN is_default INTEGER DEFAULT 0;
+    UPDATE profiles SET is_default=1 WHERE id=(SELECT id FROM profiles ORDER BY created_at ASC, rowid ASC LIMIT 1);
+    `,
   },
 ];

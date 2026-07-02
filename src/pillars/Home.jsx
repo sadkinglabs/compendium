@@ -99,7 +99,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
       </div>
       <div className="cx-ov-glance">
         <Tile val={g.decks} lbl="DECKS" onClick={() => onGoTab('decks')} />
-        <Tile val={g.duels} lbl="DUELS" onClick={() => onGoTab('play')} />
+        <Tile val={g.duels} lbl="MATCHES" onClick={() => onGoTab('play')} />
         <Tile val={pct != null ? pct + '%' : '—'} lbl="WIN RATE" onClick={() => onGoTab('play')} />
         <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onAllNotes} />
       </div>
@@ -137,8 +137,8 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
         )}
       </Sec>
 
-      <Sec id="duels" title="RECENT DUELS" count={s.total} onAll={() => onGoTab('play')}>
-        {s.total === 0 ? <EmptyCta text="No duels yet." cta="Start a match" onClick={() => onGoTab('play')} /> : (
+      <Sec id="duels" title="RECENT MATCHES" count={s.total} onAll={() => onGoTab('play')}>
+        {s.total === 0 ? <EmptyCta text="No matches yet." cta="Start a match" onClick={() => onGoTab('play')} /> : (
           <>
             <div className="cx-ov-rec" onClick={() => onGoTab('play')} role="button">
               <div className="cx-ov-ring" style={{ background: ring }}>

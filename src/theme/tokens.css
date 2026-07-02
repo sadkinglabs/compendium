@@ -155,7 +155,7 @@ body {
 .cx-ov-sec.closed .cx-ov-sec-chev { transform: rotate(-90deg); }
 .cx-ov-sec-body { overflow: hidden; }
 .cx-ov-sec.closed .cx-ov-sec-body { display: none; }
-/* Duel record card — black, jade kept as accent only (palette rule). */
+/* Match record card — black, jade kept as accent only (palette rule). */
 .cx-ov-rec { display: flex; align-items: center; gap: 16px; border: 1px solid var(--hair-14); border-radius: 16px; background: rgba(15,15,18,.85); padding: 13px 15px; margin-bottom: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-ring { width: 56px; height: 56px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; }
 .cx-ov-ring-inner { width: 44px; height: 44px; border-radius: 50%; background: #0d0d10; display: flex; align-items: center; justify-content: center; font: 700 13px/1 var(--f-mono); color: #8fd3a8; }
@@ -172,6 +172,19 @@ body {
 .cx-ov-duel-name { flex: 1; min-width: 0; font: 600 13.5px/1.2 var(--f-read); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-ov-duel-deck { font: 500 10px/1 var(--f-ui); color: var(--accent-violet); max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-ov-duel-score { font: 500 12px/1 var(--f-mono); color: var(--ink-muted); }
+
+/* ── Profile picker — monogram discs, per-profile digests, gold ring on the
+   active one. Classy over busy: black rows, gold only where it means something. ── */
+.pf-row { display: flex; align-items: center; gap: 13px; padding: 13px 2px; border-bottom: 1px solid var(--hair-12); }
+.pf-row:last-of-type { border-bottom: none; }
+.pf-disc { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 600 18px/1 'Cinzel', Georgia, serif; color: #1a1410; background: linear-gradient(140deg, #cf9a4a, #8c5a2a); cursor: pointer; border: 2px solid transparent; transition: box-shadow .2s ease, border-color .2s ease; }
+.pf-row.active .pf-disc { border-color: rgba(220,184,111,.85); box-shadow: 0 0 14px rgba(220,184,111,.35); }
+.pf-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
+.pf-name { display: flex; align-items: center; gap: 8px; font: 600 16px/1.15 var(--f-read); color: var(--ink-body); overflow: hidden; }
+.pf-tag { flex: none; font: 700 8.5px/1 var(--f-ui); letter-spacing: .14em; color: var(--gold-leaf); border: 1px solid rgba(220,184,111,.4); border-radius: 8px; padding: 3px 7px; }
+.pf-tag.dim { color: var(--ink-faint); border-color: var(--hair-22); }
+.pf-meta { font: 500 11px/1 var(--f-ui); color: var(--ink-muted); }
+.pf-actions { display: flex; gap: 5px; flex: none; }
 
 /* Avatar picker as a centered modal — the app (incl. header/nav) stays visible
    behind a dim scrim; the picker floats in a rounded card and no longer takes

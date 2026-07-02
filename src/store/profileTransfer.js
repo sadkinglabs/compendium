@@ -43,6 +43,13 @@ export async function exportProfile(profileId = activeProfileId()) {
   };
 }
 
+/** Duplicate a profile — the export/import round-trip re-keys every id, so the
+ *  copy is fully independent of the original. Returns the new profileId. */
+export async function duplicateProfile(profileId) {
+  const bundle = await exportProfile(profileId);
+  return importProfile(bundle, { name: `${bundle.profile?.name || 'Profile'} (copy)` });
+}
+
 /** Import a bundle into a brand-new profile. Returns the new profileId. */
 export async function importProfile(bundle, { name } = {}) {
   if (!bundle || bundle.app !== 'compendium') throw new Error('Not a Compendium profile file.');

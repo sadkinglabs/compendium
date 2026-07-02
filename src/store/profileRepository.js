@@ -17,15 +17,21 @@ export function activeProfileId() {
   return activeId;
 }
 
-/** Resolve (or create) the active profile on boot. Guarantees >=1 profile. */
+/** Resolve (or create) the active profile on boot. Guarantees >=1 profile and
+ *  EXACTLY one default (the is_default flag is the deletion shield — asserted
+ *  every boot so it can never be lost to migrations or imports). */
 export async function initProfiles() {
-  const profiles = await listProfiles();
+  let profiles = await listProfiles();
   if (profiles.length === 0) {
-    const p = await createProfile('Default');
+    const p = await createProfile('Default', { isDefault: true });
     activeId = p.id;
+    profiles = await listProfiles();
   } else {
     const stored = (await Preferences.get({ key: ACTIVE_KEY })).value;
     activeId = profiles.some((p) => p.id === stored) ? stored : profiles[0].id;
+  }
+  if (!profiles.some((p) => p.is_default)) {
+    await run('UPDATE profiles SET is_default=1 WHERE id=?;', [profiles[0].id]);
   }
   await Preferences.set({ key: ACTIVE_KEY, value: activeId });
   return getActiveProfile();
@@ -35,18 +41,32 @@ export async function listProfiles() {
   return query('SELECT * FROM profiles ORDER BY created_at ASC;');
 }
 
+/** The DEFAULT profile (explicit is_default flag — set at boot creation and
+ *  re-asserted by initProfiles). It is load-bearing — the app always has it to
+ *  fall back to — so it can be renamed and duplicated but never deleted. */
+export async function defaultProfileId() {
+  return (await query('SELECT id FROM profiles WHERE is_default=1 LIMIT 1;'))[0]?.id || null;
+}
+
+/** Cross-profile digest for the profile picker (decks · matches per profile). */
+export async function profileStats(id) {
+  const decks = (await query('SELECT COUNT(*) c FROM decks WHERE profile_id=?;', [id]))[0].c;
+  const matches = (await query('SELECT COUNT(*) c FROM matches WHERE profile_id=?;', [id]))[0].c;
+  return { decks, matches };
+}
+
 export async function getActiveProfile() {
   const rows = await query('SELECT * FROM profiles WHERE id=?;', [activeProfileId()]);
   return rows[0] || null;
 }
 
-export async function createProfile(name, { accent = 'gold', avatar = null } = {}) {
+export async function createProfile(name, { accent = 'gold', avatar = null, isDefault = false } = {}) {
   const id = uuid();
   const ts = nowIso();
   await run(
-    `INSERT INTO profiles(id,name,avatar,accent,system,schema_version,created_at,updated_at)
-     VALUES(?,?,?,?,?,?,?,?);`,
-    [id, name, avatar ? JSON.stringify(avatar) : null, accent, 'sorcery', SCHEMA_VERSION, ts, ts]
+    `INSERT INTO profiles(id,name,avatar,accent,system,schema_version,is_default,created_at,updated_at)
+     VALUES(?,?,?,?,?,?,?,?,?);`,
+    [id, name, avatar ? JSON.stringify(avatar) : null, accent, 'sorcery', SCHEMA_VERSION, isDefault ? 1 : 0, ts, ts]
   );
   // Seed this profile's settings row with defaults.
   await run('INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [id]);
@@ -66,11 +86,13 @@ export async function switchProfile(id) {
   return getActiveProfile();
 }
 
-/** Delete a profile (cascades all its data). Cannot delete the last one; if the
+/** Delete a profile (cascades all its data). The default profile (explicit
+ *  is_default flag) and the last remaining profile are protected; if the
  *  active profile is deleted, fall back to another existing profile. */
 export async function deleteProfile(id) {
   const profiles = await listProfiles();
   if (profiles.length <= 1) throw new Error('Cannot delete the only profile.');
+  if (profiles.find((p) => p.id === id)?.is_default) throw new Error('The default profile cannot be deleted.');
   await run('DELETE FROM profiles WHERE id=?;', [id]); // ON DELETE CASCADE clears data
   await persist();
   if (activeId === id) {

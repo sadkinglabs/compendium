@@ -11,7 +11,7 @@ import { listMatches, historyStats } from './playRepository.js';
 // full Lexicum set (+ cross-pillar decks/duels). configurable -> shows a ⚙.
 export const WIDGETS = [
   { kind: 'saved', title: 'Saved' },
-  { kind: 'duels', title: 'Recent Duels' },
+  { kind: 'duels', title: 'Recent Matches' },
   { kind: 'random', title: 'Random Card' },
   { kind: 'notes', title: 'Notes & Rulings' },
   { kind: 'decks', title: 'Your Decks' },
@@ -173,7 +173,7 @@ export async function widgetData(block) {
   }
   if (k === 'duels') {
     const ms = await listMatches(6); const s = await historyStats();
-    return { count: s.total, record: `${s.wins}–${s.losses}`, items: ms.map((m) => ({ name: m.opponent_name ? `vs. ${m.opponent_name}` : 'Match', won: m.winner === 'player', draw: m.winner === 'draw', score: `${m.player_final_life}–${m.opponent_final_life}` })), empty: 'No duels yet.' };
+    return { count: s.total, record: `${s.wins}–${s.losses}`, items: ms.map((m) => ({ name: m.opponent_name ? `vs. ${m.opponent_name}` : 'Match', won: m.winner === 'player', draw: m.winner === 'draw', score: `${m.player_final_life}–${m.opponent_final_life}` })), empty: 'No matches yet.' };
   }
   if (k === 'text') return { text: block.config?.text || '' };
   if (k === 'urls') return { links: block.config?.links || [] };

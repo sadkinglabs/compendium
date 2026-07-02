@@ -95,10 +95,12 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
   );
 }
 
-/* ── Marginalia — the whole personal layer, editable in one place ── */
+/* ── Marginalia — the whole personal layer in one place. Read-only until the
+   user enters Edit mode; then delete/rename affordances appear. ── */
 function MarginaliaView({ onOpen, rev }) {
   const [d, setD] = useState(null);
   const [cols, setCols] = useState(null);
+  const [edit, setEdit] = useState(false);                     // edit mode gates all destructive affordances
   const [openCols, setOpenCols] = useState(() => new Set());   // expanded collections
   const [items, setItems] = useState({});                      // collectionId → items
   const [editing, setEditing] = useState(null);                // {id, name} — inline rename
@@ -139,16 +141,23 @@ function MarginaliaView({ onOpen, rev }) {
 
   return (
     <div style={{ paddingTop: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <button onClick={() => { setEdit((v) => !v); setEditing(null); }}
+          style={{ padding: '7px 16px', borderRadius: 18, border: '1px solid var(--hair-30)', background: edit ? 'rgba(220,184,111,.14)' : 'transparent', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>
+          {edit ? 'Done' : 'Edit'}
+        </button>
+      </div>
+
       {d.notes.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel glyph="⚜" label="NOTES" count={d.notes.length} />
+          <SectionLabel label="NOTES" count={d.notes.length} />
           {d.notes.map((n) => (
             <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
               <div onClick={() => onOpen(n.target_type, n.target_id, n.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
                 <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
                 {on(n.on)}
               </div>
-              <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteNote(n.id); load(); }} title="Delete note" />
+              {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteNote(n.id); load(); }} title="Delete note" />}
             </div>
           ))}
         </div>
@@ -156,14 +165,14 @@ function MarginaliaView({ onOpen, rev }) {
 
       {d.highlights.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel glyph="✦" label="HIGHLIGHTS" count={d.highlights.length} />
+          <SectionLabel label="HIGHLIGHTS" count={d.highlights.length} />
           {d.highlights.map((h) => (
             <div key={h.id} style={{ borderLeft: '3px solid var(--hl-blue)', background: 'rgba(91,135,214,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
               <div onClick={() => onOpen(h.target_type, h.target_id, h.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
                 <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>“{h.text}”{h.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{h.comment}</span> : null}</div>
                 {on(h.on)}
               </div>
-              <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); load(); }} title="Delete highlight" />
+              {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); load(); }} title="Delete highlight" />}
             </div>
           ))}
         </div>
@@ -171,7 +180,7 @@ function MarginaliaView({ onOpen, rev }) {
 
       {d.links.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel glyph="↔" label="LINKS" count={d.links.length} />
+          <SectionLabel label="LINKS" count={d.links.length} />
           {d.links.map((l) => (
             <div key={l.id} style={{ borderLeft: '2px solid var(--link-violet)', background: 'rgba(199,154,208,.08)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -182,7 +191,7 @@ function MarginaliaView({ onOpen, rev }) {
                 </div>
                 {l.description && <div style={{ font: "400 12.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', fontStyle: 'italic', marginTop: 3 }}>{l.description}</div>}
               </div>
-              <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteLink(l.id); load(); }} title="Delete link" />
+              {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteLink(l.id); load(); }} title="Delete link" />}
             </div>
           ))}
         </div>
@@ -190,11 +199,11 @@ function MarginaliaView({ onOpen, rev }) {
 
       {cols.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <SectionLabel glyph="❧" label="COLLECTIONS" count={cols.length} />
+          <SectionLabel label="COLLECTIONS" count={cols.length} />
           {cols.map((c) => (
             <div key={c.id} style={{ borderBottom: '1px solid var(--hair-12)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 2px' }}>
-                {editing?.id === c.id ? (
+                {edit && editing?.id === c.id ? (
                   <>
                     <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
                       onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditing(null); }}
@@ -208,8 +217,8 @@ function MarginaliaView({ onOpen, rev }) {
                       <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)', flex: 'none' }}>{c.count}</span>
                       <span className="cx-sub-chevron" data-open={openCols.has(c.id) ? 'true' : 'false'} style={{ flex: 'none' }}>⌄</span>
                     </span>
-                    <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: c.id, name: c.name })} title="Rename collection" />
-                    <IconButton glyph="✕" tone="danger" size={26} onClick={() => removeCol(c)} title="Delete collection" />
+                    {edit && <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: c.id, name: c.name })} title="Rename collection" />}
+                    {edit && <IconButton glyph="✕" tone="danger" size={26} onClick={() => removeCol(c)} title="Delete collection" />}
                   </>
                 )}
               </div>
@@ -221,7 +230,7 @@ function MarginaliaView({ onOpen, rev }) {
                       <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 0' }}>
                         <span style={{ color: 'var(--gold)', width: 15, textAlign: 'center', fontSize: 12 }}>{it.target_type === 'card' ? '◈' : '§'}</span>
                         <span onClick={() => onOpen(it.target_type, it.target_id, it.name)} className="cx-row" style={{ flex: 1, minWidth: 0, font: "500 13.5px/1.25 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{it.name}</span>
-                        <IconButton glyph="✕" tone="danger" size={20} onClick={async () => { await toggleCollectionItem(c.id, it.target_type, it.target_id); setItems({ ...items, [c.id]: await collectionItems(c.id) }); load(); }} title="Remove from collection" />
+                        {edit && <IconButton glyph="✕" tone="danger" size={20} onClick={async () => { await toggleCollectionItem(c.id, it.target_type, it.target_id); setItems({ ...items, [c.id]: await collectionItems(c.id) }); load(); }} title="Remove from collection" />}
                       </div>
                     ))}
                 </div>

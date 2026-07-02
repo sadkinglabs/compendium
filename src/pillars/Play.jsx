@@ -1,5 +1,5 @@
 // Play hub — compact New Match + Quick Match, the Match History digest
-// (win-rate / W–L / streak / last-8 pips), and Recent Duels. Calm by design:
+// (win-rate / W–L / streak / last-8 pips), and Recent Matches. Calm by design:
 // the life counter and in-match log live inside an in-progress match, not here.
 import React, { useEffect, useState } from 'react';
 import { historyStats, listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
