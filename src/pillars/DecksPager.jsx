@@ -176,11 +176,12 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
       {view === 'mydeck' && deckOpen && (
         editMode ? (
           // Edit mode: the FAB becomes a magnifying glass — the doorway to the
-          // full searchable card list (the old Edit Deck destination).
-          <Fab key="search" className="fab-enter" variant="deck" icon={<FabGlyph kind="search" />}
+          // full searchable card list. The key forces a remount so the spin-in
+          // (now built into Fab) replays on the role change.
+          <Fab key="search" variant="deck" icon={<FabGlyph kind="search" />}
             label="Search all cards" onClick={onAddCards} />
         ) : (
-          <Fab key="menu" className="fab-enter" variant="deck" icon={<FabGlyph kind="dots" />}
+          <Fab key="menu" variant="deck" icon={<FabGlyph kind="dots" />}
             label="Deck actions" items={deckFabItems} />
         )
       )}

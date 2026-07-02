@@ -46,9 +46,11 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   }, [open]);
 
   // Plain action FAB (no menu) — e.g. a search/filter trigger.
+  // Every FAB spins in on mount (fab-enter) — the context-morph is the point:
+  // arriving on a page, or the FAB changing role, is felt as a small conjuring.
   if (!items) {
     return (
-      <div className={`arc fab-wrap${className ? ' ' + className : ''}`}>
+      <div className={`arc fab-wrap fab-enter${className ? ' ' + className : ''}`}>
         <button className="fab" onClick={onClick} aria-label={label}>{icon}</button>
         {badge > 0 && <span className="fab-badge">{badge}</span>}
       </div>
@@ -62,7 +64,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   return (
     <>
       <div className={`arc fab-scrim${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden="true" />
-      <div className={`arc fab-wrap fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
+      <div className={`arc fab-wrap fab-enter fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
         <div className="fab-menu" role="menu">
           {items.map((it, i) => (
             <button key={i} role="menuitem" className={it.prominent ? 'prominent' : undefined}

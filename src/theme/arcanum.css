@@ -226,8 +226,9 @@
    `.fab-wrap .fab` (0,2,0, dark green) that loads later and would otherwise win
    at equal specificity. This bump guarantees the gold FAB always applies. */
 .arc.fab-wrap { position:fixed; bottom:calc(var(--nav-h, 62px) + env(safe-area-inset-bottom,0px) + 16px); right:16px; z-index:50; }
-/* Context morph — when the FAB's role changes (deck menu ⇄ card search) the
-   new incarnation spins in, so the change of power is felt, not just seen. */
+/* Context morph — applied by Fab on EVERY mount (all pages): arriving
+   somewhere new, or the FAB changing role (deck menu ⇄ card search), the
+   incarnation spins in, so the change of power is felt, not just seen. */
 .arc.fab-wrap.fab-enter .fab { animation: fabSwapIn .34s cubic-bezier(.34,1.45,.6,1); }
 @keyframes fabSwapIn { from { transform: scale(.35) rotate(-120deg); opacity: 0; } to { transform: scale(1) rotate(0deg); opacity: 1; } }
 /* Entering the full card search — the page rises to meet you. */
