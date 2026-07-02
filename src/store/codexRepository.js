@@ -233,6 +233,27 @@ export async function searchPersonal(q) {
   return out;
 }
 
+/** Everything in the personal layer at once — the Codex Marginalia section.
+ *  Notes, highlights and links profile-wide, each resolved to the entry it
+ *  annotates so rows can tap through. */
+export async function marginaliaAll() {
+  const pid = activeProfileId();
+  const notes = await query('SELECT id, target_type, target_id, body, updated_at FROM notes WHERE profile_id=? ORDER BY updated_at DESC;', [pid]);
+  const highlights = await query('SELECT id, target_type, target_id, text, comment, created_at FROM highlights WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
+  const links = await query('SELECT * FROM links WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
+  for (const n of notes) n.on = await nameOf(n.target_type, n.target_id);
+  for (const h of highlights) h.on = await nameOf(h.target_type, h.target_id);
+  const linkRows = [];
+  for (const l of links) {
+    linkRows.push({
+      id: l.id, description: l.description,
+      aType: l.a_type, aId: l.a_id, aName: await nameOf(l.a_type, l.a_id),
+      bType: l.b_type, bId: l.b_id, bName: await nameOf(l.b_type, l.b_id),
+    });
+  }
+  return { notes, highlights, links: linkRows };
+}
+
 /* collections */
 export async function listCollections() {
   const pid = activeProfileId();
@@ -259,6 +280,22 @@ export async function collectionsForTarget(targetId) {
      FROM collections c WHERE c.profile_id=? ORDER BY c.created_at DESC;`,
     [targetId, activeProfileId()]
   );
+}
+
+export async function renameCollection(id, name) {
+  await run('UPDATE collections SET name=? WHERE id=? AND profile_id=?;', [name, id, activeProfileId()]);
+}
+
+export async function deleteCollection(id) {
+  await run('DELETE FROM collection_items WHERE collection_id=?;', [id]);   // explicit — don't rely on FK cascade
+  await run('DELETE FROM collections WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
+}
+
+/** A collection's items, resolved to names for display. */
+export async function collectionItems(collectionId) {
+  const rows = await query('SELECT id, target_type, target_id FROM collection_items WHERE collection_id=? ORDER BY added_at DESC;', [collectionId]);
+  for (const r of rows) r.name = await nameOf(r.target_type, r.target_id);
+  return rows;
 }
 
 export async function toggleCollectionItem(collectionId, targetType, targetId) {
