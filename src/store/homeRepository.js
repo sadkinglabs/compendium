@@ -187,13 +187,41 @@ export async function setResume(type, id, title) {
     [activeProfileId(), type, id, title, nowIso()]);
 }
 
+// Overview = the welcome screen: key stats (doorways into every pillar) +
+// tightly CAPPED sections. Caps are hard — libraries, marginalia and match
+// history can grow huge; Overview always shows a digest and redirects to the
+// pillar where the items actually live.
+const OV_DECKS = 8, OV_NOTES = 3, OV_DUELS = 3;
+
 export async function overview() {
   const pid = activeProfileId();
   const resume = (await query('SELECT * FROM resume WHERE profile_id=?;', [pid]))[0] || null;
-  const decks = (await listDecks()).slice(0, 6);
-  const notes = await widgetData({ type: 'notes', config: {} });
-  const duels = await widgetData({ type: 'duels', config: {} });
-  return { resume, decks, notes, duels };
+  const allDecks = await listDecks();
+  const stats = await historyStats();
+  const duelItems = (await listMatches(OV_DUELS)).map((m) => ({
+    name: m.opponent_name ? `vs. ${m.opponent_name}` : (m.player_avatar ? `${m.player_avatar} vs ${m.opponent_avatar || 'Opponent'}` : 'Match'),
+    deck: m.deck_name || null,
+    won: m.winner === 'player', draw: m.winner === 'draw',
+    score: `${m.player_final_life}–${m.opponent_final_life}`,
+  }));
+  const cnt = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
+  const [savedN, notesN, hlN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('highlights'), cnt('links')]);
+  const noteRows = await query('SELECT body,target_type,target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT ?;', [pid, OV_NOTES]);
+  const notes = [];
+  for (const r of noteRows) { const t = await resolveTarget(r.target_type, r.target_id); notes.push({ body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }); }
+  return {
+    resume,
+    glance: {
+      decks: allDecks.length,
+      duels: stats.total,
+      winPct: stats.winPct,           // null until a game is decided
+      saved: savedN,
+      marginalia: notesN + hlN + linksN,
+    },
+    decks: { total: allDecks.length, items: allDecks.slice(0, OV_DECKS) },
+    duels: { stats, items: duelItems },
+    notes: { count: notesN, items: notes },
+  };
 }
 
 function safeParse(s) { try { return JSON.parse(s || '{}'); } catch { return {}; } }

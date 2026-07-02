@@ -20,10 +20,17 @@ function CodexGlyph({ kind }) {
 const SCOPES = [['rules', 'Rules'], ['cards', 'Cards'], ['all', 'All']];
 const FILTERS = [['fav', 'Saved only'], ['notes', 'Has notes'], ['faq', 'Has FAQ'], ['errata', 'Errata']];
 
-export default function Codex({ scope, setScope, onOpen, rev }) {
+export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied, rev }) {
   const [entries, setEntries] = useState(null);
   const [filters, setFilters] = useState({});
   const [filterSheet, setFilterSheet] = useState(false);
+
+  // One-shot filter preset from elsewhere in the app (e.g. Home "All notes ›"
+  // lands here pre-filtered to entries carrying your marginalia).
+  useEffect(() => {
+    if (preset) { setFilters(preset); onPresetApplied?.(); }
+    // eslint-disable-next-line
+  }, [preset]);
 
   useEffect(() => {
     let alive = true;

@@ -41,6 +41,7 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState('all');
+  const [codexPreset, setCodexPreset] = useState(null);   // one-shot filter preset (e.g. Home "All notes ›")
   const [rev, setRev] = useState(0);
   const [profileSheet, setProfileSheet] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -244,12 +245,15 @@ export default function App() {
             onOpenDeck={(id, name) => open('deck', id, name)} onChanged={bump} />
         ) : tab === 'codex' ? (
           <Codex scope={scope} setScope={setScope}
+                 preset={codexPreset} onPresetApplied={() => setCodexPreset(null)}
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
         ) : tab === 'play' ? (
           <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch}
             onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} />
         ) : (
-          <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch} rev={rev} />
+          <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch}
+            onGoTab={goTab} onAllNotes={() => { setCodexPreset({ notes: true }); goTab('codex'); }}
+            profile={profile} rev={rev} />
         )}
       </div>
       )}

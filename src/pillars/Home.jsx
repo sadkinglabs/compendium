@@ -1,7 +1,9 @@
-// Home — Overview (resume · decks rail · notes · live record) and the
-// customisable Dashboard (all widget kinds, edit mode: resize ½/full, move,
-// remove, add, configure). The payoff of unification: every widget reads the
-// merged, profile-scoped store, so it aggregates across pillars.
+// Home — Overview (the WELCOME screen: greeting, at-a-glance doorway tiles,
+// capped deck rail / duel digest / notes) and the customisable Dashboard
+// (all widget kinds, edit mode: resize ½/full, move, remove, add, configure).
+// Overview is scale-safe by design: every section is hard-capped, collapsible,
+// and redirects to the pillar where the items actually live — the Dashboard
+// is where users compose their own deeper view.
 import React, { useEffect, useState } from 'react';
 import {
   listBlocks, addBlock, removeBlock, resizeBlock, moveBlock, setConfig,
@@ -9,12 +11,12 @@ import {
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { listCollections } from '../store/codexRepository.js';
-import { Chip, ChipRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
+import { Chip, ChipRow, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 
 const BASE = import.meta.env.BASE_URL;
 
-export default function Home({ onOpen, ongoing, onResume, rev }) {
+export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev }) {
   const [tab, setTab] = useState('overview');
   const [edit, setEdit] = useState(false);
   return (
@@ -28,16 +30,57 @@ export default function Home({ onOpen, ongoing, onResume, rev }) {
           <button onClick={() => setEdit((e) => !e)} style={editBtn}>{edit ? 'Done' : 'Edit'}</button>
         )}
       </div>
-      {tab === 'overview' ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} rev={rev} /> : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
+      {tab === 'overview'
+        ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} profile={profile} rev={rev} />
+        : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
     </div>
   );
 }
 
-/* ---------------- Overview ---------------- */
-function Overview({ onOpen, ongoing, onResume, rev }) {
+/* ---------------- Overview — the welcome digest ---------------- */
+function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev }) {
   const [d, setD] = useState(null);
+  // Collapse state persists per profile so a curated Home survives restarts.
+  const colKey = `cx-home-collapse:${profile?.id || 'anon'}`;
+  const [closed, setClosed] = useState({});
+  useEffect(() => { try { setClosed(JSON.parse(localStorage.getItem(colKey) || '{}')); } catch { setClosed({}); } }, [colKey]);
+  const toggle = (k) => setClosed((c) => {
+    const n = { ...c, [k]: !c[k] };
+    try { localStorage.setItem(colKey, JSON.stringify(n)); } catch { /* private mode */ }
+    return n;
+  });
   useEffect(() => { let a = true; overview().then((x) => a && setD(x)); return () => { a = false; }; }, [rev]);
   if (!d) return <Loading />;
+
+  const g = d.glance, s = d.duels.stats;
+  const pct = s.winPct;
+  const ring = `conic-gradient(#4db38a 0% ${pct || 0}%, rgba(255,255,255,.07) ${pct || 0}% 100%)`;
+
+  const Sec = ({ id, title, count, onAll, children }) => (
+    <div className={`cx-ov-sec${closed[id] ? ' closed' : ''}`}>
+      <div className="cx-ov-sec-head" onClick={() => toggle(id)} role="button">
+        <span className="cx-ov-sec-title">{title}</span>
+        {count != null && <span className="cx-ov-sec-count">{count}</span>}
+        <span className="cx-ov-sec-spring" />
+        {onAll && <span className="cx-ov-sec-all" onClick={(e) => { e.stopPropagation(); onAll(); }}>All ›</span>}
+        <span className="cx-ov-sec-chev">▼</span>
+      </div>
+      <div className="cx-ov-sec-body">{children}</div>
+    </div>
+  );
+  const Tile = ({ val, lbl, onClick }) => (
+    <div className="cx-ov-tile" onClick={onClick} role="button">
+      <div className="cx-ov-tile-val">{val}</div>
+      <div className="cx-ov-tile-lbl">{lbl}</div>
+    </div>
+  );
+  const EmptyCta = ({ text, cta, onClick }) => (
+    <div style={{ font: "400 13px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '4px 0' }}>
+      {text}{' '}
+      <span onClick={onClick} style={{ color: 'var(--gold-leaf)', fontStyle: 'normal', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>{cta} ›</span>
+    </div>
+  );
+
   return (
     <div>
       {ongoing && (
@@ -48,6 +91,19 @@ function Overview({ onOpen, ongoing, onResume, rev }) {
           </button>
         </div>
       )}
+
+      {/* Welcome + at-a-glance doorway tiles: each opens the pillar it counts. */}
+      <div className="cx-ov-greet">
+        <div className="cx-ov-greet-eyebrow">WELCOME BACK</div>
+        <div className="cx-ov-greet-name">{profile?.name || 'Sorcerer'}</div>
+      </div>
+      <div className="cx-ov-glance">
+        <Tile val={g.decks} lbl="DECKS" onClick={() => onGoTab('decks')} />
+        <Tile val={g.duels} lbl="DUELS" onClick={() => onGoTab('play')} />
+        <Tile val={pct != null ? pct + '%' : '—'} lbl="WIN RATE" onClick={() => onGoTab('play')} />
+        <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onAllNotes} />
+      </div>
+
       {d.resume && (
         <div onClick={() => onOpen(d.resume.target_type, d.resume.target_id, d.resume.title)} className="cx-row"
           style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid var(--hair-20,rgba(201,163,90,.2))', borderRadius: 16, padding: 14, background: 'linear-gradient(180deg,rgba(42,31,19,.6),rgba(26,19,13,.3))', marginBottom: 24, cursor: 'pointer' }}>
@@ -55,45 +111,66 @@ function Overview({ onOpen, ongoing, onResume, rev }) {
             <div style={{ font: "600 16px/1.1 var(--f-read)", color: 'var(--ink-body)', marginTop: 5 }}>{d.resume.title}</div></div>
         </div>
       )}
-      <div style={{ marginBottom: 24 }}>
-        <SectionLabel label="YOUR DECKS" count={d.decks.length} />
-        {d.decks.length === 0 ? <Empty text="No decks yet — build one in Decks." />
-          : (
-            <div className="cx-deck-carousel">
-              {d.decks.map((dk) => (
-                <div key={dk.id} className="cx-deck-card" onClick={() => onOpen('deck', dk.id, dk.name)}>
-                  {dk.avatar?.image_slug && <img className="cx-deck-card-bg" src={`${BASE}cards/${dk.avatar.image_slug}`} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
-                  <div className="cx-deck-card-grad" />
-                  <div className="cx-deck-card-info">
-                    <div className="cx-deck-card-name">{dk.name}</div>
-                    <div className="cx-deck-card-sub">{dk.archetype || dk.record}</div>
-                  </div>
+
+      <Sec id="decks" title="YOUR DECKS" count={d.decks.total} onAll={() => onGoTab('decks')}>
+        {d.decks.items.length === 0 ? <EmptyCta text="No decks yet." cta="Build your first deck" onClick={() => onGoTab('decks')} /> : (
+          <div className="cx-deck-carousel">
+            {d.decks.items.map((dk) => (
+              <div key={dk.id} className="cx-deck-card" onClick={() => onOpen('deck', dk.id, dk.name)}>
+                {dk.avatar?.image_slug && <img className="cx-deck-card-bg" src={`${BASE}cards/${dk.avatar.image_slug}`} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                <div className="cx-deck-card-grad" />
+                <div className="cx-deck-card-info">
+                  <div className="cx-deck-card-name">{dk.name}</div>
+                  <div className="cx-deck-card-sub">{dk.archetype || dk.record}</div>
                 </div>
-              ))}
+              </div>
+            ))}
+            {d.decks.total > d.decks.items.length && (
+              <div className="cx-deck-card cx-deck-card-all" onClick={() => onGoTab('decks')}>
+                <span>All {d.decks.total} decks ›</span>
+              </div>
+            )}
+          </div>
+        )}
+      </Sec>
+
+      <Sec id="duels" title="RECENT DUELS" count={s.total} onAll={() => onGoTab('play')}>
+        {s.total === 0 ? <EmptyCta text="No duels yet." cta="Start a match" onClick={() => onGoTab('play')} /> : (
+          <>
+            <div className="cx-ov-rec" onClick={() => onGoTab('play')} role="button">
+              <div className="cx-ov-ring" style={{ background: ring }}>
+                <div className="cx-ov-ring-inner">{pct != null ? pct + '%' : '—'}</div>
+              </div>
+              <div className="cx-ov-rec-right">
+                <div className="cx-ov-rec-wl">{s.wins}–{s.losses}</div>
+                <div className="cx-ov-rec-sub">{s.total} PLAYED{s.streak > 0 ? ` · ${s.streak} WIN STREAK` : ''}</div>
+                <div className="cx-ov-pips">
+                  {s.last8.map((r, i) => <span key={i} className={`cx-ov-pip${r === 'W' ? ' w' : r === 'L' ? ' l' : ''}`} />)}
+                </div>
+              </div>
             </div>
-          )}
-      </div>
-      <div style={{ marginBottom: 24 }}>
-        <SectionLabel label="NOTES & RULINGS" count={d.notes.count} />
-        {d.notes.items.length === 0 ? <Empty text="No marginalia yet." />
-          : d.notes.items.slice(0, 3).map((n, i) => (
+            {d.duels.items.map((m, i) => (
+              <div key={i} className="cx-ov-duel" onClick={() => onGoTab('play')} role="button">
+                <span className="cx-ov-duel-badge" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
+                <span className="cx-ov-duel-name">{m.name}</span>
+                {m.deck && <span className="cx-ov-duel-deck">◈ {m.deck}</span>}
+                <span className="cx-ov-duel-score">{m.score}</span>
+              </div>
+            ))}
+          </>
+        )}
+      </Sec>
+
+      <Sec id="notes" title="NOTES & RULINGS" count={d.notes.count} onAll={onAllNotes}>
+        {d.notes.items.length === 0 ? <EmptyCta text="No marginalia yet." cta="Annotate anything in the Codex" onClick={() => onGoTab('codex')} /> : (
+          d.notes.items.map((n, i) => (
             <div key={i} onClick={() => onOpen(n.type, n.id, n.on)} className="cx-row" style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, cursor: 'pointer' }}>
               <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
               {n.on && <div style={{ font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {n.on}</div>}
             </div>
-          ))}
-      </div>
-      <div>
-        <SectionLabel label="RECENT DUELS" count={d.duels.record} />
-        {d.duels.items.length === 0 ? <Empty text="No duels yet — start a match in Play." />
-          : d.duels.items.slice(0, 4).map((m, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: '1px solid var(--hair-12)' }}>
-              <span style={{ width: 26, height: 26, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', font: "700 12px/1 var(--f-display)", color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f', background: 'rgba(34,26,20,.5)', border: '1px solid var(--hair-16)' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
-              <span style={{ flex: 1, font: "600 14px/1 var(--f-read)", color: 'var(--ink-body)' }}>{m.name}</span>
-              <span style={{ font: "500 12px/1 var(--f-mono)", color: 'var(--ink-muted)' }}>{m.score}</span>
-            </div>
-          ))}
-      </div>
+          ))
+        )}
+      </Sec>
     </div>
   );
 }
@@ -294,7 +371,6 @@ const Row = ({ glyph, name, meta, onClick }) => (
 const Mini = ({ glyph, onClick, disabled, danger }) => (
   <button disabled={disabled} onClick={onClick} style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--hair-22)', background: 'transparent', color: disabled ? 'var(--ink-faint)' : danger ? 'var(--destructive)' : 'var(--ink-status)', cursor: disabled ? 'default' : 'pointer', font: '11px/1', opacity: disabled ? 0.4 : 1 }}>{glyph}</button>
 );
-const Empty = ({ text }) => <div style={{ font: "400 13px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '6px 0' }}>{text}</div>;
 const editBtn = { padding: '7px 16px', borderRadius: 18, border: '1px solid var(--hair-30)', background: 'transparent', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' };
 const addTile = { width: '100%', padding: '18px 0', borderRadius: 16, border: '1px dashed var(--hair-30)', background: 'transparent', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' };
 const goldBtn = { width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer' };
