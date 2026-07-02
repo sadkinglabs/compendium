@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { getDeck, getDeckCards, collectionMax, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar } from '../store/deckRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
+import { Loading } from '../components/ui.jsx';
 import '../theme/deckdash.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -258,7 +259,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   }, [deckId, rev, localRev]);
   const toggle = (z) => setCollapsed((s) => { const n = new Set(s); n.has(z) ? n.delete(z) : n.add(z); return n; });
 
-  if (!deck) return <div style={{ color: 'var(--muted)', padding: '20px' }}>…</div>;
+  if (!deck) return <Loading />;
 
   const sb = sum(zones.spellbook), at = sum(zones.atlas), co = sum(zones.collection);
   const coMax = collectionMax(deck);

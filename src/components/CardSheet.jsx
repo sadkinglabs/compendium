@@ -5,6 +5,7 @@
 // toast for add / remove / limit-reached.
 import React, { useEffect, useRef, useState } from 'react';
 import Sheet from './Sheet.jsx';
+import { Loading } from './ui.jsx';
 import { getCard } from '../store/codexRepository.js';
 import { changeQty, deckQty } from '../store/deckRepository.js';
 
@@ -67,7 +68,7 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
   return (
     <>
       <Sheet open onClose={onClose}>
-        {!c ? <div style={{ color: 'var(--muted)', padding: 16 }}>…</div> : (
+        {!c ? <Loading /> : (
           <>
             {c.image_slug && (c.is_site
               ? <div className="sheet-site-wrap"><img src={`${BASE}cards/${c.image_slug}`} onError={(e) => { e.currentTarget.parentElement.style.display = 'none'; }} alt="" /></div>

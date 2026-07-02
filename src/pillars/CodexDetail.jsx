@@ -12,7 +12,7 @@ import {
 import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
-import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RichText } from '../components/ui.jsx';
+import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RichText, Loading } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
@@ -47,7 +47,7 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
   }
   useEffect(() => { setData(null); load(); /* eslint-disable-next-line */ }, [kind, id]);
 
-  if (!data) return <div style={{ padding: 24, color: 'var(--ink-faint)' }}>…</div>;
+  if (!data) return <Loading />;
   if (data.missing) return <div style={{ padding: 24, color: 'var(--ink-faint)', fontStyle: 'italic' }}>This entry isn’t in the catalog.</div>;
 
   const targetType = kind;
@@ -353,7 +353,7 @@ function AddToDeckSheet({ open, card, onClose }) {
 
   return (
     <BottomSheet open={open} title={`ADD TO A DECK · ${zoneLabel.toUpperCase()}`} onClose={onClose}>
-      {decks == null ? <div style={{ color: 'var(--ink-faint)' }}>…</div>
+      {decks == null ? <Loading />
         : decks.length === 0 ? (
           <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '8px 0' }}>
             No decks yet — build one in Decks first.

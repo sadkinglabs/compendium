@@ -86,6 +86,11 @@ export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
   );
 }
 
+/* Quiet shared loading beat — one treatment for every pillar's "fetching" gap. */
+export function Loading({ pad = 24 }) {
+  return <div style={{ padding: pad, textAlign: 'center', color: 'var(--ink-faint)', font: "400 14px/1 var(--f-read)", fontStyle: 'italic', letterSpacing: '.2em' }} aria-label="Loading">· · ·</div>;
+}
+
 export function ThresholdPips({ runs, size = 12 }) {
   if (!runs?.length) return null;
   return (

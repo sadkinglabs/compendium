@@ -9,7 +9,7 @@ import {
 } from '../store/deckRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
-import { Chip, ChipRow } from '../components/ui.jsx';
+import { Chip, ChipRow, Loading } from '../components/ui.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import Sheet from '../components/Sheet.jsx';
 import DeckDashboard from './DeckDashboard.jsx';
@@ -27,6 +27,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   const [rarityOn, setRarityOn] = useState(false);   // Rarity-colours toggle
   const [exportOpen, setExportOpen] = useState(false);
   const [spreadOpen, setSpreadOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [toast, setToast] = useState('');
   const toastT = useRef();
   function flash(msg, ms = 1900) { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), ms); }
@@ -48,11 +49,12 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
     flash(d.starred ? '★ Favourited' : '☆ Unfavourited');
     refresh();   // library re-sorts starred-first
   }
-  async function actRename() {
-    const n = prompt('Rename deck', deckOpen.name);
-    if (!n || !n.trim() || n.trim() === deckOpen.name) return;
-    await renameDeck(deckOpen.id, n.trim());
-    onOpenDeck({ id: deckOpen.id, name: n.trim() });
+  async function actRename(name) {
+    const n = (name || '').trim();
+    setRenameOpen(false);
+    if (!n || n === deckOpen.name) return;
+    await renameDeck(deckOpen.id, n);
+    onOpenDeck({ id: deckOpen.id, name: n });
     refresh(); onChanged?.(); flash('Deck renamed');   // onChanged bumps app rev → dashboard hero reloads
   }
   async function actDuplicate() {
@@ -82,7 +84,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
     { label: 'Favourite', keepOpen: true, state: meta?.starred ? '★' : '☆', onClick: actFavourite },
     { label: 'Rarity colours', keepOpen: true, state: rarityOn ? '✓' : '✕', onClick: () => setRarityOn((v) => !v) },
     { label: 'Deck Spread', onClick: () => setSpreadOpen(true) },
-    { label: 'Rename', onClick: actRename },
+    { label: 'Rename', onClick: () => setRenameOpen(true) },
     { label: 'Duplicate', onClick: actDuplicate },
     { label: 'Export', onClick: () => setExportOpen(true) },
     { label: 'Share as image', onClick: actShareImage },
@@ -110,7 +112,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
       {view === 'library' ? (
         <div className="dp-view">
           <div className="dpage-scroll">
-            {decks == null ? <div style={{ color: 'var(--muted)', padding: '10px 16px' }}>…</div>
+            {decks == null ? <Loading />
               : libList.length === 0 ? (
                 <div style={{ minHeight: '52vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32 }}>
                   <div style={{ width: 52, height: 52, border: '2px solid rgba(160,110,220,.28)', transform: 'rotate(45deg)', marginBottom: 32, boxShadow: '0 0 28px rgba(157,106,214,.18)' }} />
@@ -170,8 +172,26 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
 
       <ExportSheet open={exportOpen} deckId={deckOpen?.id} onClose={() => setExportOpen(false)} flash={flash} />
       <DeckSpreadSheet open={spreadOpen} deckId={deckOpen?.id} onClose={() => setSpreadOpen(false)} />
+      <RenameSheet open={renameOpen} initial={deckOpen?.name || ''} onClose={() => setRenameOpen(false)} onSave={actRename} />
       <div className={`arc a-toast${toast ? ' show' : ''}`}>{toast}</div>
     </div>
+  );
+}
+
+// Rename — small a-sheet with a single field (replaces the native prompt()).
+function RenameSheet({ open, initial, onClose, onSave }) {
+  const [name, setName] = useState(initial);
+  useEffect(() => { if (open) setName(initial); }, [open, initial]);
+  return (
+    <Sheet open={open} title="Rename Deck" onClose={onClose}>
+      <div style={{ padding: '0 16px', display: 'flex', gap: 10 }}>
+        <input value={name} autoFocus onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') onSave(name); }}
+          style={{ flex: 1, height: 44, background: 'rgba(11,7,20,.7)', border: '1px solid rgba(160,110,220,.25)', borderRadius: 12, padding: '0 14px', color: 'var(--text)', font: "400 15px/1 'EB Garamond',Georgia,serif" }} />
+        <button onClick={() => onSave(name)}
+          style={{ padding: '0 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 'Hanken Grotesk',sans-serif", border: 'none', cursor: 'pointer' }}>Save</button>
+      </div>
+    </Sheet>
   );
 }
 
@@ -255,7 +275,7 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
           <button className={`ds-view-btn${shuf ? ' on' : ''}`} onClick={doShuffle}>⤨ Shuffle</button>
         </div>
       }>
-      {!src ? <div style={{ padding: 24, color: 'var(--muted)' }}>Loading…</div>
+      {!src ? <Loading />
         : empty ? <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No cards in this deck yet.</div>
           : <>{section('Spellbook', src.spellbook)}{section('Atlas', src.atlas)}{section('Collection', src.collection)}</>}
     </Sheet>

@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getDeckCards, setRecord } from '../store/deckRepository.js';
 import * as St from '../store/deckStats.js';
-import { ThresholdPips } from '../components/ui.jsx';
+import { ThresholdPips, Loading } from '../components/ui.jsx';
 
 export default function DeckStats({ deck, rev, onReload }) {
   const [zones, setZones] = useState(null);
@@ -24,7 +24,7 @@ export default function DeckStats({ deck, rev, onReload }) {
   const odds = useMemo(() => atlasMode === 'odds' ? St.atlasOdds(sb, at, atlasTurn, 10000) : null,
     [zones, atlasMode, atlasTurn]); // 10k sims only when on the Odds tab / turn changes
 
-  if (!zones) return <div style={{ padding: 24, color: 'var(--ink-faint)' }}>…</div>;
+  if (!zones) return <Loading />;
 
   const avatarSlug = deck.avatar_card_id || '';
   const decided = deck.wins + deck.losses;

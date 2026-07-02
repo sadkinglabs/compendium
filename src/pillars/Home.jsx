@@ -9,7 +9,7 @@ import {
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { listCollections } from '../store/codexRepository.js';
-import { Chip, ChipRow, SectionLabel, IconButton } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 
 const BASE = import.meta.env.BASE_URL;
@@ -37,7 +37,7 @@ export default function Home({ onOpen, ongoing, onResume, rev }) {
 function Overview({ onOpen, ongoing, onResume, rev }) {
   const [d, setD] = useState(null);
   useEffect(() => { let a = true; overview().then((x) => a && setD(x)); return () => { a = false; }; }, [rev]);
-  if (!d) return <div style={{ color: 'var(--ink-faint)' }}>…</div>;
+  if (!d) return <Loading />;
   return (
     <div>
       {ongoing && (
@@ -116,7 +116,7 @@ function Dashboard({ onOpen, edit, rev }) {
   }
   const refreshLayouts = () => listLayouts().then(setLayouts);
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
-  if (!blocks) return <div style={{ color: 'var(--ink-faint)' }}>…</div>;
+  if (!blocks) return <Loading />;
 
   return (
     <div>

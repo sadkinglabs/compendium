@@ -5,7 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { historyStats, listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
 import { listAvatarCards } from '../store/deckRepository.js';
 import { shareMatchSnapshot } from '../store/matchSnapshot.js';
-import { IconButton, Chip, ChipRow } from '../components/ui.jsx';
+import { IconButton, Chip, ChipRow, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import '../theme/playhistory.css';
 
@@ -249,7 +249,7 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
 
   return (
     <Sheet open title={title} onClose={onClose}>
-      {!m ? <div style={{ color: 'var(--ink-faint)', padding: '0 16px' }}>…</div> : (
+      {!m ? <Loading /> : (
         <div style={{ padding: '0 16px' }}>
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
             <div style={{ font: "700 28px/1 var(--f-display)", color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>

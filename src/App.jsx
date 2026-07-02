@@ -24,7 +24,7 @@ import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js'
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport } from './store/profileTransfer.js';
 import { onBackButton, exitApp } from './native.js';
-import { ListRow, IconButton, Chip, ChipRow } from './components/ui.jsx';
+import { ListRow, IconButton, Chip, ChipRow, Loading } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 
 const PILLARS = [
@@ -365,7 +365,7 @@ function SearchResults({ query, onOpen, onDuel }) {
     const t = setTimeout(() => searchAll(query.trim()).then((r) => alive && setRes(r)), 130);
     return () => { alive = false; clearTimeout(t); };
   }, [query]);
-  if (!res) return <div style={{ padding: 24, color: 'var(--ink-faint)' }}>…</div>;
+  if (!res) return <Loading />;
   const total = res.codex.length + res.decks.length + res.duels.length + (res.marginalia?.length || 0);
   if (total === 0) return <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>;
   const group = (label, dot, items, onItem) => items.length > 0 && (
@@ -393,15 +393,17 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, 
   const [list, setList] = useState([]);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
+  const [editing, setEditing] = useState(null);   // {id, name} — inline rename
   async function refresh() { if (open) setList(await listProfiles()); }
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [open]);
+  useEffect(() => { refresh(); if (!open) setEditing(null); /* eslint-disable-next-line */ }, [open]);
   async function add() {
     if (!name.trim()) return;
     await createProfile(name.trim()); setName(''); setAdding(false); refresh();
   }
-  async function rename(p) {
-    const nn = prompt('Rename profile', p.name);
-    if (nn && nn.trim()) { await renameProfile(p.id, nn.trim()); await onChanged(); refresh(); }
+  async function saveRename() {
+    const nn = editing?.name.trim();
+    if (nn) { await renameProfile(editing.id, nn); await onChanged(); refresh(); }
+    setEditing(null);
   }
   async function remove(p) {
     if (list.length <= 1) return;
@@ -415,9 +417,20 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, 
       {list.map((p) => (
         <div key={p.id} className="cx-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', borderBottom: '1px solid var(--hair-12)' }}>
           <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 13px/1 var(--f-display)", color: '#1a1410', flex: 'none' }}>{p.name.charAt(0).toUpperCase()}</span>
-          <span onClick={() => onSwitch(p.id)} style={{ flex: 1, font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', cursor: 'pointer' }}>{p.name}{p.id === active?.id ? <span style={{ color: 'var(--gold-leaf)', fontSize: 12, marginLeft: 8 }}>● active</span> : null}</span>
-          <IconButton glyph="✎" tone="muted" size={26} onClick={() => rename(p)} title="Rename" />
-          {list.length > 1 && <IconButton glyph="✕" tone="danger" size={26} onClick={() => remove(p)} title="Delete" />}
+          {editing?.id === p.id ? (
+            <>
+              <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditing(null); }}
+                style={{ ...S.input, height: 36 }} />
+              <IconButton glyph="✓" size={26} onClick={saveRename} title="Save name" />
+            </>
+          ) : (
+            <>
+              <span onClick={() => onSwitch(p.id)} style={{ flex: 1, font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', cursor: 'pointer' }}>{p.name}{p.id === active?.id ? <span style={{ color: 'var(--gold-leaf)', fontSize: 12, marginLeft: 8 }}>● active</span> : null}</span>
+              <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: p.id, name: p.name })} title="Rename" />
+              {list.length > 1 && <IconButton glyph="✕" tone="danger" size={26} onClick={() => remove(p)} title="Delete" />}
+            </>
+          )}
         </div>
       ))}
       {adding ? (
@@ -454,7 +467,7 @@ function SettingsSheet({ open, onClose }) {
   const label = (t) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '16px 0 10px' }}>{t}</div>;
   return (
     <Sheet open={open} title="Settings" onClose={onClose}>
-      {s == null ? <div style={{ color: 'var(--ink-faint)', padding: '0 16px' }}>…</div> : (
+      {s == null ? <Loading /> : (
         <div style={{ padding: '0 16px' }}>
           {label('ACCENT METAL')}
           <ChipRow>
