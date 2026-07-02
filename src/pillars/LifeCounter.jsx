@@ -7,8 +7,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import '../theme/counter.css';
-import { recentOpponents } from '../store/playRepository.js';
-import { haptic, setKeepAwake } from '../native.js';
+import { recentOpponents, setSetting } from '../store/playRepository.js';
+import { haptic, setKeepAwake, setImmersive } from '../native.js';
 
 const BASE = import.meta.env.BASE_URL;
 const LOG_GAP_MS = 1200;
@@ -35,7 +35,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [catcher, setCatcher] = useState(false);
   const [fabP, setFabP] = useState(false);
   const [fabE, setFabE] = useState(false);
-  const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'
+  const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
+  // Tweaks — Vitarum's counter-local comforts (keep awake / hide status bar /
+  // film grain). Persisted per profile, applied live to the running match.
+  const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0 });
   const [dice, setDice] = useState({ type: settings.die_type || 6, value: null });
   const [oppName, setOppName] = useState(resume?.oppName || '');
   const [recent, setRecent] = useState([]);
@@ -76,12 +79,23 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     renderLife();
     recentOpponents().then(setRecent);
     if (settings.keep_awake) setKeepAwake(true);
+    if (settings.immersive) setImmersive(true);
     if (!settings.film_grain) document.body.classList.add('grain-off');
     if (!resume) armRollOff();                 // resumed matches already rolled for turn order
     registerApi?.({ minimize: () => onMinimize?.(snapRef.current()) });
-    return () => { clearTimers(); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); registerApi?.(null); };
+    return () => { clearTimers(); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
+
+  // Tweaks toggle — persists to the profile's settings AND applies immediately.
+  function setTweak(key, on) {
+    setTw((t) => ({ ...t, [key]: on }));
+    setSetting(key, on ? 1 : 0).catch(() => {});
+    if (key === 'keep_awake') setKeepAwake(on);
+    if (key === 'immersive') setImmersive(on);
+    if (key === 'film_grain') document.body.classList.toggle('grain-off', !on);
+    haptic('light');
+  }
 
   // body.roll-active while the roll-off pill is up (hides FABs, locks tap zones)
   useEffect(() => { document.body.classList.toggle('roll-active', rollPhase != null); }, [rollPhase]);
@@ -281,6 +295,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
           <button onClick={() => { setFabP(false); setSheet('maxP'); }}>{HeartSvg}Change Max Life</button>
           <button onClick={() => { setFabP(false); reset(); }}>{ResetSvg}Reset Match</button>
           <button onClick={() => { setFabP(false); triggerEnd(null); }}>{FlagSvg}End Match</button>
+          <button onClick={() => { setFabP(false); setSheet('tweaks'); }}>{TweaksSvg}Tweaks</button>
           <button onClick={() => { setFabP(false); minimize(); }}>{HomeSvg}Home</button>
         </div>
         <button className="fab" onClick={(ev) => { ev.stopPropagation(); setFabP((v) => !v); }} aria-label="Options">{DotsSvg}</button>
@@ -301,6 +316,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       <MaxLifeModal open={sheet === 'maxP'} who="player" value={p.max} onClose={() => setSheet(null)} onSet={(v) => setMax('player', v)} />
       <MaxLifeModal open={sheet === 'maxE'} who="opponent" value={e.max} onClose={() => setSheet(null)} onSet={(v) => setMax('opponent', v)} />
       <DiceModal open={sheet === 'dice'} dice={dice} setDice={setDice} onClose={() => setSheet(null)} />
+      <TweaksModal open={sheet === 'tweaks'} tw={tw} onToggle={setTweak} onClose={() => setSheet(null)} />
 
       {/* full-screen end-of-match decision modal */}
       {endInfo && (
@@ -325,6 +341,32 @@ function VModal({ id, title, subtitle, onClose, children, actions }) {
         {actions && <div className="modal-actions">{actions}</div>}
       </div>
     </div>
+  );
+}
+
+// Tweaks — the counter's own comforts, back where Vitarum kept them.
+function TweaksModal({ open, tw, onToggle, onClose }) {
+  if (!open) return null;
+  const rows = [
+    ['keep_awake', 'Keep screen on', 'The screen never sleeps mid-duel'],
+    ['immersive', 'Hide status bar', 'Full-bleed match (on device)'],
+    ['film_grain', 'Film grain', 'Painterly texture over the portraits'],
+  ];
+  return (
+    <VModal title="Tweaks" subtitle="Comforts for the table" onClose={onClose}
+      actions={<button className="modal-btn" onClick={onClose}>Done</button>}>
+      <div className="tw-list">
+        {rows.map(([k, label, hint]) => (
+          <div key={k} className="tw-row" onClick={() => onToggle(k, !tw[k])} role="switch" aria-checked={!!tw[k]}>
+            <div className="tw-copy">
+              <div className="tw-label">{label}</div>
+              <div className="tw-hint">{hint}</div>
+            </div>
+            <div className={`tw-switch${tw[k] ? ' on' : ''}`}><span className="tw-knob" /></div>
+          </div>
+        ))}
+      </div>
+    </VModal>
   );
 }
 
@@ -455,6 +497,7 @@ const LogSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 const ResetSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>;
 const FlagSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>;
 const HomeSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg>;
+const TweaksSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={s}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="17" x2="20" y2="17" /><circle cx="9" cy="7" r="2.2" fill="currentColor" stroke="none" /><circle cx="15" cy="17" r="2.2" fill="currentColor" stroke="none" /></svg>;
 const ClockSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 15" /></svg>;
 const CheckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>;
 const PlusSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12l7-7 7 7" /></svg>;

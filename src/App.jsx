@@ -489,10 +489,9 @@ function SettingsSheet({ open, onClose }) {
           <ChipRow>
             {[4, 6, 8, 10, 12, 20].map((d) => <Chip key={d} label={'d' + d} active={s.die_type === d} onClick={() => put('die_type', d)} />)}
           </ChipRow>
+          {/* Counter comforts (keep awake / hide status bar / film grain) live in
+              the life tracker's Tweaks (player FAB), not here — Vitarum's home. */}
           {label('PREFERENCES')}
-          <Toggle label="Film grain" k="film_grain" />
-          <Toggle label="Keep screen on" k="keep_awake" />
-          <Toggle label="Hide status bar" k="immersive" />
           <Toggle label="Haptics" k="haptics" />
           <Toggle label="Rarity colours" k="rarity_colors" />
         </div>

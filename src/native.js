@@ -80,6 +80,12 @@ export async function shareImage(canvas, filename, title) {
   }, 'image/png'));
 }
 
+/** Hide/show the status bar (immersive match mode). Native only; web no-op. */
+export async function setImmersive(on) {
+  if (!isNative()) return;
+  try { if (on) await StatusBar.hide(); else await StatusBar.show(); } catch { /* not available */ }
+}
+
 /** Keep the screen awake (Web Wake Lock API — works in the WebView too). */
 let wakeLock = null;
 export async function setKeepAwake(on) {

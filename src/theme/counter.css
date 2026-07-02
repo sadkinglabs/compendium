@@ -499,6 +499,18 @@ body.roll-active .dd-pill { display: none !important; }
 .vc-root .maxlife-value { font-family: var(--f-display); font-size: 64px; font-weight: 800; color: var(--text); min-width: 110px; text-align: center; line-height: 1; }
 .vc-root .maxlife-hint { padding: 6px 26px 4px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 
+/* ── Tweaks modal — the counter's own comforts (keep awake / immersive / grain) ── */
+.vc-root .tw-list { padding: 14px 22px 6px; display: flex; flex-direction: column; gap: 4px; }
+.vc-root .tw-row { display: flex; align-items: center; gap: 14px; padding: 11px 2px; cursor: pointer; -webkit-tap-highlight-color: transparent; border-bottom: 1px solid rgba(220,184,111,.1); }
+.vc-root .tw-row:last-child { border-bottom: none; }
+.vc-root .tw-copy { flex: 1; min-width: 0; }
+.vc-root .tw-label { font: 600 14px/1.2 var(--f-ui); color: var(--text); }
+.vc-root .tw-hint { font: 400 11.5px/1.4 var(--f-read); color: var(--muted); margin-top: 3px; }
+.vc-root .tw-switch { width: 44px; height: 25px; border-radius: 13px; border: 1px solid var(--border); background: rgba(255,255,255,.05); position: relative; flex-shrink: 0; transition: background .18s, border-color .18s; }
+.vc-root .tw-switch .tw-knob { position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%; background: var(--muted); transition: left .18s cubic-bezier(.34,1.3,.6,1), background .18s; }
+.vc-root .tw-switch.on { background: rgba(220,184,111,.28); border-color: rgba(220,184,111,.6); }
+.vc-root .tw-switch.on .tw-knob { left: 21px; background: var(--gold); }
+
 /* ── Match Log modal ── */
 .vc-root .log-divider { display: flex; align-items: center; gap: 12px; margin: 9px 22px 2px; }
 .vc-root .log-divider::before, .vc-root .log-divider::after { content: ''; flex: 1; height: 1px; }
