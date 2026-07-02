@@ -11,11 +11,17 @@
 //   onClick : if given (and no items), the FAB is a plain action button
 import React, { useState, useEffect } from 'react';
 
-// FAB glyphs — three vertical dots (menus) · filter sliders (filters/sort).
+// FAB glyphs — three vertical dots (menus) · magnifying glass (search) ·
+// filter sliders (filters/sort).
 export function FabGlyph({ kind }) {
   if (kind === 'dots') return (
     <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 22, height: 22 }}>
       <circle cx="12" cy="5" r="1.7" /><circle cx="12" cy="12" r="1.7" /><circle cx="12" cy="19" r="1.7" />
+    </svg>
+  );
+  if (kind === 'search') return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ width: 21, height: 21 }}>
+      <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" />
     </svg>
   );
   return (
@@ -28,7 +34,7 @@ export function FabGlyph({ kind }) {
   );
 }
 
-export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', items = null, onClick = null, badge = 0 }) {
+export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', items = null, onClick = null, badge = 0, className = '' }) {
   const [open, setOpen] = useState(false);
 
   // Back/Escape closes an open menu first (matches Arcanum's closeFabs routing).
@@ -42,7 +48,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   // Plain action FAB (no menu) — e.g. a search/filter trigger.
   if (!items) {
     return (
-      <div className="arc fab-wrap">
+      <div className={`arc fab-wrap${className ? ' ' + className : ''}`}>
         <button className="fab" onClick={onClick} aria-label={label}>{icon}</button>
         {badge > 0 && <span className="fab-badge">{badge}</span>}
       </div>
@@ -56,7 +62,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   return (
     <>
       <div className={`arc fab-scrim${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden="true" />
-      <div className={`arc fab-wrap fab-${variant}${open ? ' open' : ''}`}>
+      <div className={`arc fab-wrap fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
         <div className="fab-menu" role="menu">
           {items.map((it, i) => (
             <button key={i} role="menuitem" className={it.prominent ? 'prominent' : undefined}

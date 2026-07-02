@@ -20,6 +20,7 @@ const BASE = import.meta.env.BASE_URL;
 export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, rev }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
+  const [editMode, setEditMode] = useState(false);  // in-place quick edit (steppers on rows)
   const [decks, setDecks] = useState(null);
   const [libQ, setLibQ] = useState('');
   // Deck-actions FAB state (Arcanum's #deck-fab menu).
@@ -36,7 +37,9 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
   // Opening/creating/importing a deck (deckOpen changes id) jumps to My Deck;
   // the user can still toggle back to Library freely afterward.
-  useEffect(() => { if (deckOpen) { setView('mydeck'); setStatTab('list'); } }, [deckOpen?.id]);
+  useEffect(() => { if (deckOpen) { setView('mydeck'); setStatTab('list'); } setEditMode(false); }, [deckOpen?.id]);
+  // Leaving the deck (or its list view) always exits edit mode.
+  useEffect(() => { if (view !== 'mydeck' || statTab !== 'list') setEditMode(false); }, [view, statTab]);
   // Keep the loaded-deck meta (name, starred) fresh for the FAB menu.
   useEffect(() => { let a = true; if (deckOpen) getDeck(deckOpen.id).then((d) => a && setMeta(d)); else setMeta(null); return () => { a = false; }; }, [deckOpen?.id, rev]);
 
@@ -104,8 +107,10 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
           <Chip label="My Deck" active={view === 'mydeck'} onClick={() => setView('mydeck')} />
         </ChipRow>
         <div className="dp-topbar-spacer" />
-        {view === 'mydeck' && deckOpen && (
-          <button className="dp-add-pill" onClick={onAddCards}>✎ Edit Deck</button>
+        {view === 'mydeck' && deckOpen && statTab === 'list' && (
+          <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => setEditMode((v) => !v)}>
+            {editMode ? '✓ Done' : '✎ Edit Deck'}
+          </button>
         )}
       </div>
 
@@ -133,9 +138,11 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
           {deckOpen ? (
             <>
               <div className="dpage-scroll">
-                <DeckDashboard deckId={deckOpen.id} rev={rev} statTab={statTab} rarityOn={rarityOn} onChanged={onChanged} onOpenCodex={onOpenCodex} />
+                <DeckDashboard deckId={deckOpen.id} rev={rev} statTab={statTab} rarityOn={rarityOn}
+                  editMode={editMode} onToast={flash} onChanged={onChanged} onOpenCodex={onOpenCodex} />
               </div>
-              <div className="deck-pip-bar">
+              {/* List/Stats pip bar steps aside while editing — edit mode owns the floor. */}
+              <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
                 <div className="pip-seg" onClick={() => setStatTab('list')}>
                   <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
                   <span className={`pip-seg-label${statTab === 'list' ? ' active' : ''}`}>List</span>
@@ -167,7 +174,15 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
         ]} />
       )}
       {view === 'mydeck' && deckOpen && (
-        <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Deck actions" items={deckFabItems} />
+        editMode ? (
+          // Edit mode: the FAB becomes a magnifying glass — the doorway to the
+          // full searchable card list (the old Edit Deck destination).
+          <Fab key="search" className="fab-enter" variant="deck" icon={<FabGlyph kind="search" />}
+            label="Search all cards" onClick={onAddCards} />
+        ) : (
+          <Fab key="menu" className="fab-enter" variant="deck" icon={<FabGlyph kind="dots" />}
+            label="Deck actions" items={deckFabItems} />
+        )
       )}
 
       <ExportSheet open={exportOpen} deckId={deckOpen?.id} onClose={() => setExportOpen(false)} flash={flash} />

@@ -58,9 +58,9 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const afterChange = () => { loadQtys(); onChanged?.(); };
 
   return (
-    <div className="arc" style={{ padding: '4px 16px 26px', animation: 'cxfade .2s ease' }}>
-      {/* view toggle (Arcanum amethyst) — no zone selector; cards auto-route by type */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 12 }}>
+    <div className="arc" style={{ padding: '4px 16px 26px', animation: 'arcRise .32s cubic-bezier(.2,.9,.3,1)' }}>
+      {/* view toggle (Arcanum amethyst), centered — no zone selector; cards auto-route by type */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         <div className="view-toggle-wrap">
           <button className={`view-btn${view === 'list' ? ' on' : ''}`} onClick={() => setView('list')}>≡ List</button>
           <button className={`view-btn${view === 'grid' ? ' on' : ''}`} onClick={() => setView('grid')}>⊞ Card</button>

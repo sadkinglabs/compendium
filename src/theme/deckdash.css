@@ -38,6 +38,11 @@
 .arc .cc-thresh img { width: 14px; height: 14px; flex-shrink: 0; }
 .arc .cc-sb-coin { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(160,110,220,.22); background: rgba(18,12,30,.6); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #c9bfdc; }
 .arc .cc-empty { font: italic 14px 'EB Garamond', serif; color: #6e6286; padding: 8px 0; }
+/* Edit-mode quick steppers — conjured onto each row with a soft cascade. */
+.arc .cc-sb-step { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; animation: ccStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
+@keyframes ccStepIn { from { opacity: 0; transform: translateX(-8px) scale(.75); } }
+.arc .cc-step-mini { width: 25px; height: 25px; border-radius: 50%; border: 1px solid rgba(160,110,220,.32); background: rgba(36,24,54,.6); color: #c9bfdc; font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
+.arc .cc-step-mini:active { background: var(--accent, #9d6ad6); border-color: var(--accent, #9d6ad6); color: #fff; }
 
 /* Random Hand */
 .arc .cc-hand-draw-btn { padding: 7px 15px; border-radius: 13px; border: 1px solid rgba(157,106,214,.4); background: rgba(157,106,214,.14); color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; margin-left: auto; }

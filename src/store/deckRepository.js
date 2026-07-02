@@ -235,7 +235,7 @@ async function deckElementPips(deckId) {
  *  functions expect (cost, attack, type, rarity, elements[], thresholds{}). */
 export async function getDeckCards(deckId) {
   const rows = await query(
-    `SELECT e.zone, e.quantity, c.card_id, c.name, c.cost, c.attack, c.type, c.rarity, c.elements, c.thresholds, c.image_slug, c.is_site
+    `SELECT e.zone, e.quantity, c.card_id, c.name, c.cost, c.attack, c.type, c.rarity, c.elements, c.thresholds, c.image_slug, c.is_site, c.rules_text
      FROM deck_entries e JOIN cards c ON c.card_id=e.card_id WHERE e.deck_id=?;`, [deckId]
   );
   const zones = { spellbook: [], atlas: [], collection: [] };
@@ -243,6 +243,7 @@ export async function getDeckCards(deckId) {
     (zones[r.zone] || (zones[r.zone] = [])).push({
       card_id: r.card_id, name: r.name, quantity: r.quantity, cost: r.cost, attack: r.attack, type: r.type, rarity: r.rarity,
       elements: jp(r.elements, []), thresholds: jp(r.thresholds, {}), image_slug: r.image_slug, is_site: r.is_site,
+      rules_text: r.rules_text,   // copyLimit's "any number of" check needs it
     });
   }
   return zones;

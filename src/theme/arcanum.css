@@ -226,6 +226,12 @@
    `.fab-wrap .fab` (0,2,0, dark green) that loads later and would otherwise win
    at equal specificity. This bump guarantees the gold FAB always applies. */
 .arc.fab-wrap { position:fixed; bottom:calc(var(--nav-h, 62px) + env(safe-area-inset-bottom,0px) + 16px); right:16px; z-index:50; }
+/* Context morph — when the FAB's role changes (deck menu ⇄ card search) the
+   new incarnation spins in, so the change of power is felt, not just seen. */
+.arc.fab-wrap.fab-enter .fab { animation: fabSwapIn .34s cubic-bezier(.34,1.45,.6,1); }
+@keyframes fabSwapIn { from { transform: scale(.35) rotate(-120deg); opacity: 0; } to { transform: scale(1) rotate(0deg); opacity: 1; } }
+/* Entering the full card search — the page rises to meet you. */
+@keyframes arcRise { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
 .arc.fab-wrap.open { z-index:111; }
 .arc.fab-wrap .fab { position:static; width:52px; height:52px; border-radius:50%; background:rgba(12,12,15,.55); border:1px solid rgba(220,184,111,.5); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); color:#dcb86f; font-size:22px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(220,184,111,.1); transition:transform .25s cubic-bezier(.34,1.3,.64,1), background .2s ease, border-color .2s ease; padding:0; }
 .arc.fab-wrap.open .fab { background:rgba(24,20,12,.7); border-color:rgba(220,184,111,.85); }
