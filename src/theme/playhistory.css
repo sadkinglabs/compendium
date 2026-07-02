@@ -64,10 +64,13 @@
 .mh .match-deck-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
 .mh .match-deck-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mh .match-deck-tag:active { opacity:.75; }
-.mh .match-actions { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:10px; }
-.mh .match-actions-right { display:flex; gap:6px; }
-.mh .match-action-btn { display:flex; align-items:center; justify-content:center; gap:5px; background:none; border:1px solid rgba(154,167,156,.28); color:rgba(154,167,156,.85); font-size:11px; font-weight:600; padding:8px 11px; min-height:40px; border-radius:8px; transition:border-color .15s, color .15s; font-family:'Hanken Grotesk',sans-serif; cursor:pointer; }
-.mh .match-action-btn:active { border-color:rgba(154,167,156,.6); color:#dfe6e1; }
-.mh .match-action-btn.danger { border-color:rgba(224,120,106,.3); color:rgba(224,120,106,.82); }
-.mh .match-action-btn.danger:active { border-color:rgba(224,120,106,.5); color:#e0786a; }
-.mh .match-action-btn svg { width:12px; height:12px; flex-shrink:0; }
+/* Pills row — opponent + piloted deck, straight under the matchup line. */
+.mh .match-pills { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+/* Compact icon actions, tucked into the meta line (note · edit · delete). */
+.mh .match-meta-spring { flex:1; }
+.mh .match-mini-group { display:flex; gap:5px; flex:none; margin-left:auto; }
+.mh .match-mini-btn { display:flex; align-items:center; justify-content:center; width:26px; height:26px; background:none; border:1px solid rgba(154,167,156,.22); color:rgba(154,167,156,.75); border-radius:7px; transition:border-color .15s, color .15s; cursor:pointer; flex:none; padding:0; }
+.mh .match-mini-btn:active { border-color:rgba(154,167,156,.55); color:#dfe6e1; }
+.mh .match-mini-btn.danger { border-color:rgba(224,120,106,.25); color:rgba(224,120,106,.7); }
+.mh .match-mini-btn.danger:active { border-color:rgba(224,120,106,.5); color:#e0786a; }
+.mh .match-mini-btn svg { width:11px; height:11px; flex-shrink:0; }

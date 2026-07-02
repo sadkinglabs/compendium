@@ -4,7 +4,6 @@
 import React, { useEffect, useState } from 'react';
 import { historyStats, listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
 import { listAvatarCards } from '../store/deckRepository.js';
-import { shareMatchSnapshot } from '../store/matchSnapshot.js';
 import { IconButton, Chip, ChipRow, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import '../theme/playhistory.css';
@@ -74,7 +73,6 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const cardActions = {
     onNote: (id) => setMatchId(id),
     onEdit: (id) => setMatchId(id),
-    onShare: async (id) => { try { await shareMatchSnapshot(id, { playerName: 'You' }); } catch (e) { alert('Could not build image: ' + e.message); } },
     onDelete: async (id) => { if (confirm('Delete this match?')) { await deleteMatch(id); refresh(); } },
     onOpp: (name) => setOppFilter(name),
     onDeck: (id, name) => onOpenDeck?.(id, name),
@@ -166,8 +164,10 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   );
 }
 
-// One match card — verbatim port of Vitarum's _matchCardHTML.
-function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp, onDeck }) {
+// One match card — Vitarum's _matchCardHTML, reordered: matchup line, then the
+// opponent/deck pills on their own row, then the life/date meta. Actions are
+// compact icon buttons (note · edit · delete — sharing was pruned).
+function MatchCard({ m, onNote, onEdit, onDelete, onOpp, onDeck }) {
   const badgeCls = m.winner === 'player' ? 'win' : m.winner === 'opponent' ? 'loss' : 'draw';
   const badgeTxt = m.winner === 'player' ? 'W' : m.winner === 'opponent' ? 'L' : 'D';
   const d = new Date(m.played_at);
@@ -176,6 +176,7 @@ function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp, onDeck }) {
   const when = relTime(m.played_at);
   const pDD = m.player_final_life <= 0, eDD = m.opponent_final_life <= 0;
   const opp = (m.opponent_name || '').trim();
+  const hasDeck = m.deck_id && m.deck_name;
   return (
     <div className="match-entry">
       <div className="match-entry-top">
@@ -187,42 +188,41 @@ function MatchCard({ m, onNote, onEdit, onShare, onDelete, onOpp, onDeck }) {
         </div>
         {when && <span className="match-when">{when}</span>}
       </div>
+      {(opp || hasDeck) && (
+        <div className="match-pills">
+          {opp && (
+            <span className="match-opp-tag" onClick={() => onOpp(opp)} role="button" tabIndex={0}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>{opp}
+            </span>
+          )}
+          {hasDeck && (
+            <span className="match-deck-tag" onClick={() => onDeck(m.deck_id, m.deck_name)} role="button" tabIndex={0} title="Open deck">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg><span>{m.deck_name}</span>
+            </span>
+          )}
+        </div>
+      )}
       <div className="match-meta">
-        {opp && (
-          <span className="match-opp-tag" onClick={() => onOpp(opp)} role="button" tabIndex={0}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>{opp}
-          </span>
-        )}
-        {m.deck_id && m.deck_name && (
-          <span className="match-deck-tag" onClick={() => onDeck(m.deck_id, m.deck_name)} role="button" tabIndex={0} title="Open deck">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg><span>{m.deck_name}</span>
-          </span>
-        )}
         <span><span className="lbl">You</span> <span className={`you-life${pDD ? ' dd' : ''}`}>{m.player_final_life}</span></span>
         <span className="match-dot">·</span>
         <span><span className="lbl">Opp</span> <span className={`opp-life${eDD ? ' dd' : ''}`}>{m.opponent_final_life}</span></span>
         <span className="match-dot">·</span>
         <span>{date}{time ? ', ' + time : ''}</span>
         {m.duration_sec ? <><span className="match-dot">·</span><span>{fmtSpan(m.duration_sec)}</span></> : null}
-      </div>
-      {m.notes ? <div className="match-notes-text">"{m.notes}"</div> : null}
-      <div className="match-actions">
-        <button className="match-action-btn" onClick={() => onNote(m.id)} title={m.notes ? 'Edit note' : 'Add note'}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-          <span>Note</span>
-        </button>
-        <div className="match-actions-right">
-          <button className="match-action-btn" onClick={() => onEdit(m.id)} title="Edit entry" aria-label="Edit entry">
+        <span className="match-meta-spring" />
+        <span className="match-mini-group">
+          <button className="match-mini-btn" onClick={() => onNote(m.id)} title={m.notes ? 'Edit note' : 'Add note'} aria-label="Note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
+          </button>
+          <button className="match-mini-btn" onClick={() => onEdit(m.id)} title="Edit entry" aria-label="Edit entry">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
           </button>
-          <button className="match-action-btn" onClick={() => onShare(m.id)} title="Share entry" aria-label="Share entry">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.59" y1="13.51" x2="15.42" y2="17.49" /><line x1="15.41" y1="6.51" x2="8.59" y2="10.49" /></svg>
-          </button>
-          <button className="match-action-btn danger" onClick={() => onDelete(m.id)} title="Remove entry" aria-label="Remove entry">
+          <button className="match-mini-btn danger" onClick={() => onDelete(m.id)} title="Remove entry" aria-label="Remove entry">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>
           </button>
-        </div>
+        </span>
       </div>
+      {m.notes ? <div className="match-notes-text">"{m.notes}"</div> : null}
     </div>
   );
 }
@@ -305,7 +305,6 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button onClick={() => setEdit(true)} style={{ ...ghost, flex: 1 }}>✎ Edit</button>
-                <button onClick={async () => { try { await shareMatchSnapshot(matchId, { playerName: 'You' }); } catch (e) { alert('Could not build image: ' + e.message); } }} style={{ ...ghost, flex: 1 }}>▦ Share</button>
                 {m.opponent_name && <button onClick={() => onH2H(m.opponent_name)} style={{ ...ghost, flex: 1 }}>⚔ Record</button>}
                 <button onClick={del} style={{ ...ghost, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.4)' }}>✕ Delete</button>
               </div>

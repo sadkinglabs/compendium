@@ -121,7 +121,10 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
                 <div className="cx-deck-card-grad" />
                 <div className="cx-deck-card-info">
                   <div className="cx-deck-card-name">{dk.name}</div>
-                  <div className="cx-deck-card-sub">{dk.archetype || dk.record}</div>
+                  <div className="cx-deck-card-sub">
+                    {(dk.elems || []).map((e) => <img key={e.el} src={`${BASE}icons/${e.el}.png`} alt={e.el} />)}
+                    <span>{dk.wins}W – {dk.losses}L</span>
+                  </div>
                 </div>
               </div>
             ))}
