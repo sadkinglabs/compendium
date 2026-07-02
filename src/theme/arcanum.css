@@ -96,9 +96,12 @@
    .sheet (templates/index.html L499-583) + .sheet-* card layout + .zone-stepper
    + #toast.
    ════════════════════════════════════════════════════════════════════════ */
-.arc.a-sheet-scrim { position:fixed; inset:0; background:rgba(6,4,12,.7); z-index:600; animation:cxfade .2s ease; }
-.arc.a-sheet { position:fixed; left:0; right:0; bottom:0; z-index:601; max-height:94vh; display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#1c1330,#0e0a1a); border-top:1px solid rgba(160,110,220,.2); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); }
-.arc .a-sheet-handle { width:36px; height:4px; background:rgba(160,110,220,.25); border-radius:2px; margin:10px auto 14px; flex-shrink:0; }
+/* Sheet chassis is BLACK + gold app-wide: the pillar wash flows top→bottom
+   and the bottom of every column is black/gold, so sheets rising from the
+   bottom stay black everywhere. Per-pillar accents live in sheet CONTENT. */
+.arc.a-sheet-scrim { position:fixed; inset:0; background:rgba(5,4,3,.7); z-index:600; animation:cxfade .2s ease; }
+.arc.a-sheet { position:fixed; left:0; right:0; bottom:0; z-index:601; max-height:94vh; display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); }
+.arc .a-sheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; margin:10px auto 14px; flex-shrink:0; }
 .arc .a-sheet-header { display:flex; align-items:center; gap:10px; padding:0 16px 10px; flex-shrink:0; }
 .arc .a-sheet-title { flex:1; font:700 22px/1.12 'Cinzel',Georgia,serif; color:#dcb86f; }
 .arc .a-sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:#dcb86f; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }

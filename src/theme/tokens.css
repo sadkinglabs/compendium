@@ -10,7 +10,7 @@
   --surface-card: rgba(34, 26, 20, .4);
   --surface-card-2: rgba(34, 26, 20, .55);
   --surface-well: rgba(18, 13, 9, .6);
-  --surface-sheet: linear-gradient(180deg, #241a12, #1a130d);
+  --surface-sheet: linear-gradient(180deg, #151310, #0a0908); /* black — all sheets share the black+gold chassis */
   --surface-nav: rgba(14, 10, 7, .7);
   --scrim: rgba(8, 5, 3, .6);
 
