@@ -17,7 +17,7 @@
 .mh .rec-streak.none { background:rgba(255,255,255,.04); border-color:rgba(120,180,140,.16); color:#7f8d81; }
 
 .mh .rec-minis { display:flex; gap:10px; margin-bottom:18px; }
-.mh .rec-mini { flex:1; padding:13px; border-radius:14px; background:#14261b; border:1px solid rgba(120,190,150,.12); }
+.mh .rec-mini { flex:1; padding:13px; border-radius:14px; background:rgba(16,16,19,.9); border:1px solid rgba(255,255,255,.07); }
 .mh .rec-mini-val { font-family:'Cinzel',serif; font-size:19px; font-weight:700; color:#dcb86f; line-height:1; }
 .mh .rec-mini-label { font-size:10px; font-weight:500; color:#7f8d81; letter-spacing:.06em; margin-top:5px; }
 
@@ -38,7 +38,7 @@
 .mh .rec-collapse.collapsed .rec-chevron { transform:rotate(-90deg); }
 .mh .rec-collapse.collapsed .rec-bars { display:none; }
 
-.mh .match-entry { padding:11px 12px; border-radius:12px; background:#14261b; border:1px solid rgba(120,190,150,.12); margin-bottom:8px; }
+.mh .match-entry { padding:11px 12px; border-radius:12px; background:rgba(16,16,19,.9); border:1px solid rgba(255,255,255,.07); margin-bottom:8px; }
 .mh .match-entry-top { display:flex; align-items:center; gap:11px; margin-bottom:8px; }
 .mh .match-matchup { flex:1; min-width:0; display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
 .mh .match-you { font-family:'EB Garamond',serif; font-size:14px; font-weight:600; color:#e9d49a; }

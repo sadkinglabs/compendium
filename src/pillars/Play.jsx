@@ -28,7 +28,7 @@ function relTime(iso) {
   const mo = Math.floor(day / 30); return mo < 12 ? `${mo}mo ago` : `${Math.floor(mo / 12)}y ago`;
 }
 
-export default function Play({ onStart, rev }) {
+export default function Play({ onStart, ongoing, onResume, rev }) {
   const [stats, setStats] = useState(null);
   const [matches, setMatches] = useState([]);
   const [avImg, setAvImg] = useState({});           // avatar name → image_slug
@@ -80,6 +80,14 @@ export default function Play({ onStart, rev }) {
 
   return (
     <div className="mh" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
+      {ongoing && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+          <button className="cx-return-btn" onClick={onResume}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polygon points="10 8 16 12 10 16 10 8" /></svg>
+            Return to Match<span className="cx-live-dot" />
+          </button>
+        </div>
+      )}
       {matches.length === 0 ? (
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '14px 0' }}>
           No matches yet. Start a match to track life and record the result.

@@ -6,7 +6,7 @@
      Play→Vitarum. */
   --bg: #000;
   --bg-base: #000;
-  --wash: #33260e;   /* default (Home) — warm gold */
+  --wash: #000;   /* default (Home) — pure black, no wash */
   --surface-card: rgba(34, 26, 20, .4);
   --surface-card-2: rgba(34, 26, 20, .55);
   --surface-well: rgba(18, 13, 9, .6);
@@ -89,7 +89,7 @@ body {
 
 /* ── Bottom nav — VERBATIM from Arcanum (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
-.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: rgba(8,6,4,.72); border-top: 1px solid rgba(201,163,90,.18); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(201,163,90,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .cx-nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: 'Hanken Grotesk', sans-serif; border: none; background: none; cursor: pointer; transition: color .15s; padding: 0; position: relative; }
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
@@ -98,11 +98,37 @@ body {
 /* ── Bottom search — frosted see-through pill, in line with the FAB. Tint +
    edge morph to the active pillar (--chrome-tint / --chrome-edge, transitioned). ── */
 .cx-searchbar { position: fixed; left: 16px; right: 84px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px); z-index: 41; }
-.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: var(--chrome-tint, rgba(20,16,10,.5)); border: 1px solid var(--chrome-edge, rgba(201,163,90,.3)); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); transition: background .55s ease, border-color .55s ease; }
+/* Uniform black frosted glass — no per-pillar tint (keeps the palette subtle). */
+.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }
 .cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 0; }
+
+/* Codex sticky top bar (scope chips + List/Card toggle stay visible while scrolling). */
+/* Scope chips scroll with the page (transparent) so the header wash stays a full
+   smooth gradient — no sticky black band / hard edge. */
+.cx-codex-topbar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 2px 0 4px; }
+/* Sub-entry disclosure chevron — rotates over its axis when open. */
+.cx-sub-chevron { background: none; border: none; color: var(--ink-muted); font-size: 17px; line-height: 1; cursor: pointer; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; transition: transform .22s ease, color .22s ease; }
+.cx-sub-chevron[data-open="true"] { transform: rotate(180deg); color: var(--gold-leaf); }
+
+/* Return to Match — resume the live tracker (shown in Play + Home while a match is ongoing). */
+.cx-return-btn { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; padding: 11px 18px; border-radius: 22px; background: linear-gradient(180deg, rgba(220,184,111,.2), rgba(140,90,42,.08)); border: 1px solid rgba(220,184,111,.5); color: var(--gold-leaf); font: 700 13px/1 var(--f-ui); cursor: pointer; box-shadow: 0 8px 22px -10px rgba(0,0,0,.6); }
+.cx-return-btn:active { background: linear-gradient(180deg, rgba(220,184,111,.3), rgba(140,90,42,.14)); }
+.cx-return-btn svg { width: 18px; height: 18px; color: var(--gold); flex-shrink: 0; }
+.cx-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-jade, #4db38a); box-shadow: 0 0 8px var(--accent-jade, #4db38a); animation: cx-live-pulse 1.6s ease-in-out infinite; }
+@keyframes cx-live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.82); } }
+
+/* Home decks carousel — swipeable cards backed by the deck's avatar hero art. */
+.cx-deck-carousel { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 2px 20px 6px; }
+.cx-deck-carousel::-webkit-scrollbar { display: none; }
+.cx-deck-card { position: relative; flex: 0 0 74%; max-width: 270px; aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden; scroll-snap-align: start; cursor: pointer; background: #0e0e11; border: 1px solid rgba(220,184,111,.14); }
+.cx-deck-card-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 22%; }
+.cx-deck-card-grad { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,6,8,.12) 0%, rgba(6,6,8,.5) 55%, rgba(6,6,8,.95) 100%); }
+.cx-deck-card-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px; z-index: 1; }
+.cx-deck-card-name { font: 600 17px/1.15 'Cinzel', Georgia, serif; letter-spacing: .04em; color: #f0e9d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-deck-card-sub { font: 500 11px/1 'Hanken Grotesk', sans-serif; color: rgba(220,184,111,.85); margin-top: 5px; }
 
 /* Avatar picker as a centered modal — the app (incl. header/nav) stays visible
    behind a dim scrim; the picker floats in a rounded card and no longer takes

@@ -11,7 +11,9 @@ import {
 import { listCollections } from '../store/codexRepository.js';
 import { Chip, ChipRow, SectionLabel, ListRow, BottomSheet, IconButton } from '../components/ui.jsx';
 
-export default function Home({ onOpen, rev }) {
+const BASE = import.meta.env.BASE_URL;
+
+export default function Home({ onOpen, ongoing, onResume, rev }) {
   const [tab, setTab] = useState('overview');
   const [edit, setEdit] = useState(false);
   return (
@@ -25,33 +27,53 @@ export default function Home({ onOpen, rev }) {
           <button onClick={() => setEdit((e) => !e)} style={editBtn}>{edit ? 'Done' : 'Edit'}</button>
         )}
       </div>
-      {tab === 'overview' ? <Overview onOpen={onOpen} rev={rev} /> : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
+      {tab === 'overview' ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} rev={rev} /> : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
     </div>
   );
 }
 
 /* ---------------- Overview ---------------- */
-function Overview({ onOpen, rev }) {
+function Overview({ onOpen, ongoing, onResume, rev }) {
   const [d, setD] = useState(null);
   useEffect(() => { let a = true; overview().then((x) => a && setD(x)); return () => { a = false; }; }, [rev]);
   if (!d) return <div style={{ color: 'var(--ink-faint)' }}>…</div>;
   return (
     <div>
+      {ongoing && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+          <button className="cx-return-btn" onClick={onResume}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polygon points="10 8 16 12 10 16 10 8" /></svg>
+            Return to Match<span className="cx-live-dot" />
+          </button>
+        </div>
+      )}
       {d.resume && (
         <div onClick={() => onOpen(d.resume.target_type, d.resume.target_id, d.resume.title)} className="cx-row"
           style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid var(--hair-20,rgba(201,163,90,.2))', borderRadius: 16, padding: 14, background: 'linear-gradient(180deg,rgba(42,31,19,.6),rgba(26,19,13,.3))', marginBottom: 24, cursor: 'pointer' }}>
-          <div style={{ width: 40, height: 40, borderRadius: 11, background: 'linear-gradient(150deg,rgba(207,154,74,.25),rgba(140,90,42,.15))', border: '1px solid var(--hair-30)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold-leaf)', fontSize: 17, flex: 'none' }}>↻</div>
           <div><div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.16em', color: 'var(--ink-muted)' }}>JUMP BACK IN</div>
             <div style={{ font: "600 16px/1.1 var(--f-read)", color: 'var(--ink-body)', marginTop: 5 }}>{d.resume.title}</div></div>
         </div>
       )}
       <div style={{ marginBottom: 24 }}>
-        <SectionLabel glyph="◆" label="YOUR DECKS" count={d.decks.length} />
+        <SectionLabel label="YOUR DECKS" count={d.decks.length} />
         {d.decks.length === 0 ? <Empty text="No decks yet — build one in Decks." />
-          : d.decks.map((dk) => <ListRow key={dk.id} icon="◆" title={dk.name} sub={dk.archetype || dk.record} onClick={() => onOpen('deck', dk.id, dk.name)} />)}
+          : (
+            <div className="cx-deck-carousel">
+              {d.decks.map((dk) => (
+                <div key={dk.id} className="cx-deck-card" onClick={() => onOpen('deck', dk.id, dk.name)}>
+                  {dk.avatar?.image_slug && <img className="cx-deck-card-bg" src={`${BASE}cards/${dk.avatar.image_slug}`} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                  <div className="cx-deck-card-grad" />
+                  <div className="cx-deck-card-info">
+                    <div className="cx-deck-card-name">{dk.name}</div>
+                    <div className="cx-deck-card-sub">{dk.archetype || dk.record}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
       </div>
       <div style={{ marginBottom: 24 }}>
-        <SectionLabel glyph="⚜" label="NOTES & RULINGS" count={d.notes.count} />
+        <SectionLabel label="NOTES & RULINGS" count={d.notes.count} />
         {d.notes.items.length === 0 ? <Empty text="No marginalia yet." />
           : d.notes.items.slice(0, 3).map((n, i) => (
             <div key={i} onClick={() => onOpen(n.type, n.id, n.on)} className="cx-row" style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, cursor: 'pointer' }}>
@@ -61,7 +83,7 @@ function Overview({ onOpen, rev }) {
           ))}
       </div>
       <div>
-        <SectionLabel glyph="⚔" label="RECENT DUELS" count={d.duels.record} />
+        <SectionLabel label="RECENT DUELS" count={d.duels.record} />
         {d.duels.items.length === 0 ? <Empty text="No duels yet — start a match in Play." />
           : d.duels.items.slice(0, 4).map((m, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 4px', borderBottom: '1px solid var(--hair-12)' }}>

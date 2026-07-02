@@ -21,6 +21,7 @@ import LifeCounter from './pillars/LifeCounter.jsx';
 import AvatarPicker from './pillars/AvatarPicker.jsx';
 import Home from './pillars/Home.jsx';
 import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
+import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport } from './store/profileTransfer.js';
 import { onBackButton, exitApp } from './native.js';
@@ -40,7 +41,6 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [query, setQuery] = useState('');
   const [scope, setScope] = useState('all');
-  const [codexView, setCodexView] = useState('list');
   const [rev, setRev] = useState(0);
   const [profileSheet, setProfileSheet] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -48,8 +48,10 @@ export default function App() {
   const [addQuery, setAddQuery] = useState('');
   const [addFilterOpen, setAddFilterOpen] = useState(false);
   const [addFilterCount, setAddFilterCount] = useState(0);
-  const [match, setMatch] = useState(null);          // {mode, settings, you, opp}
+  const [match, setMatch] = useState(null);          // {mode, settings, you, opp, resume?}
   const [preMatch, setPreMatch] = useState(null);    // {mode, settings} — avatar picker step
+  const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
+  const counterApi = useRef(null);                   // {minimize} — set by the live counter
   const [settingsSheet, setSettingsSheet] = useState(false);
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
@@ -93,17 +95,40 @@ export default function App() {
   const goTab = (t) => { setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); };
   const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
   const exitAdd = () => { setAddMode(null); bump(); };
-  const startMatch = async (mode) => {
+  const openNewMatch = async (mode) => {
     const settings = await getSettings();
     if (mode === 'quick') setMatch({ mode, settings, you: null, opp: null });
     else setPreMatch({ mode, settings });
   };
+  const startMatch = async (mode) => {
+    if (ongoing && !confirm('You have a match in progress. Start a new one? The current match will be discarded.')) return;
+    setOngoing(null); clearOngoing();
+    openNewMatch(mode);
+  };
   const beginMatch = (you, opp) => { setMatch({ ...preMatch, you, opp }); setPreMatch(null); };
-  const endMatch = async (result) => { await recordMatch(result); setMatch(null); bump(); };
+  // Ongoing-match lifecycle: minimize preserves a resumable snapshot; resume
+  // re-opens the counter from it; record saves to history (counter stays open);
+  // exit / new discard the in-progress game.
+  const minimizeMatch = (snap) => { setOngoing(snap); saveOngoing(snap); setMatch(null); };
+  const resumeMatch = () => {
+    if (!ongoing) return;
+    setMatch({ mode: ongoing.mode, settings: ongoing.settings, you: ongoing.you, opp: ongoing.opp, resume: ongoing });
+    setOngoing(null); clearOngoing();
+  };
+  const recordMatchResult = async (result) => { await recordMatch(result); bump(); };
+  const exitMatch = () => { setMatch(null); setOngoing(null); clearOngoing(); bump(); };
+  const newMatchFromEnd = (mode) => { setMatch(null); setOngoing(null); clearOngoing(); openNewMatch(mode); };
   const open = (kind, id, title) => {
+    // Decks always open in the Decks pager (My Deck), NOT the legacy DeckDetail
+    // route. Every deck link (Home carousel, search, resume, marginalia) lands here.
+    if (kind === 'deck') {
+      if (title) setResume('deck', id, title).catch(() => {});
+      setQuery(''); goTab('decks'); setDeckOpen({ id, name: title });
+      return;
+    }
     setHistory((h) => [...h, { detail, query }]);
     setDetail({ kind, id, title }); setQuery('');
-    if (['card', 'rule', 'deck'].includes(kind) && title) setResume(kind, id, title).catch(() => {});
+    if (['card', 'rule'].includes(kind) && title) setResume(kind, id, title).catch(() => {});
   };
   const back = () => {
     setHistory((h) => {
@@ -122,6 +147,7 @@ export default function App() {
   async function onSwitchProfile(id) {
     await switchProfile(id);
     await reloadProfile();
+    setOngoing(loadOngoing());   // ongoing match is profile-scoped
     setProfileSheet(false); setDetail(null); setHistory([]); setQuery(''); setTab('home'); bump();
   }
 
@@ -131,7 +157,7 @@ export default function App() {
 
   // Hardware back: close the topmost layer, else go home, else exit.
   backRef.current = () => {
-    if (match) return setMatch(null);
+    if (match) return counterApi.current?.minimize?.();   // back preserves the match
     if (preMatch) return setPreMatch(null);
     if (deckWizard) return setDeckWizard(false);
     if (importMode) return setImportMode(null);
@@ -144,9 +170,10 @@ export default function App() {
     return exitApp();
   };
 
-  // Per-pillar top-down colour wash (over pure black). Exact source hues:
-  // Home=gold · Codex=Lexicum brown · Decks=Arcanum amethyst · Play=Vitarum green.
-  const WASH = { home: '#33260e', codex: '#241a12', decks: '#2a1c44', play: '#18301f' };
+  // Per-pillar top-down colour wash (over pure black). Home is pure black (no
+  // wash) to signal active engagement; Codex=warm gold · Decks=Arcanum amethyst ·
+  // Play=Vitarum green.
+  const WASH = { home: '#000', codex: '#33260e', decks: '#2a1c44', play: '#18301f' };
   // Frosted-chrome tint + edge that morph to the pillar (search pill, etc.).
   const CHROME = {
     home:  { tint: 'rgba(28,21,8,.74)',  edge: 'rgba(220,184,111,.30)' },
@@ -190,7 +217,7 @@ export default function App() {
       {addActive ? (
         <div style={S.detailHeader}>
           <button onClick={exitAdd} style={S.back}>‹ Done</button>
-          <div style={S.addEyebrow}>ADDING TO · {addMode.deckName}</div>
+          <div style={S.addEyebrow}>EDITING · {addMode.deckName}</div>
           <span style={{ width: 56 }} />
         </div>
       ) : viewDetail ? (
@@ -209,7 +236,7 @@ export default function App() {
           else scrolls in the standard body. */}
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
-          deckOpen={deckOpen} onOpenDeck={setDeckOpen}
+          deckOpen={deckOpen} onOpenDeck={setDeckOpen} onChanged={bump}
           onAddCards={() => deckOpen && enterAdd(deckOpen.id, deckOpen.name)} rev={rev} />
       ) : (
       <div className="cx-scroll" style={S.body}>
@@ -228,15 +255,15 @@ export default function App() {
             <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName} onChanged={bump} />
           )
         ) : tab === 'codex' ? (
-          <Codex scope={scope} setScope={setScope} codexView={codexView} setCodexView={setCodexView}
+          <Codex scope={scope} setScope={setScope}
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
         ) : tab === 'decks' ? (
           <Decks onOpenDeck={(id, name) => open('deck', id, name)}
             onNew={() => setDeckWizard(true)} onImport={() => setImportSheet(true)} rev={rev} />
         ) : tab === 'play' ? (
-          <Play onStart={startMatch} rev={rev} />
+          <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch} rev={rev} />
         ) : (
-          <Home onOpen={(t, id, title) => open(t, id, title)} rev={rev} />
+          <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch} rev={rev} />
         )}
       </div>
       )}
@@ -327,7 +354,8 @@ export default function App() {
       )}
       {match && (
         <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
-          onEnd={endMatch} onExit={() => setMatch(null)} />
+          resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
+          onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
       )}
     </div>
   );
