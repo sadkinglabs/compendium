@@ -86,6 +86,27 @@ export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
   );
 }
 
+/* Horizontal swipe between paired views (native feel). Ignores gestures that
+   start on inputs, sheets, modals or horizontal scrollers (they own their own
+   horizontal motion), and only fires on decisively horizontal swipes. */
+export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
+  const start = React.useRef(null);
+  const onTouchStart = (e) => {
+    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .a-sheet, .a-sheet-scrim, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
+    const t = e.touches[0];
+    start.current = { x: t.clientX, y: t.clientY };
+  };
+  const onTouchEnd = (e) => {
+    if (!start.current) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.current.x, dy = t.clientY - start.current.y;
+    start.current = null;
+    if (Math.abs(dx) < threshold || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    if (dx < 0) onLeft?.(); else onRight?.();
+  };
+  return { onTouchStart, onTouchEnd };
+}
+
 /* Quiet shared loading beat — one treatment for every pillar's "fetching" gap. */
 export function Loading({ pad = 24 }) {
   return <div style={{ padding: pad, textAlign: 'center', color: 'var(--ink-faint)', font: "400 14px/1 var(--f-read)", fontStyle: 'italic', letterSpacing: '.2em' }} aria-label="Loading">· · ·</div>;

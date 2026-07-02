@@ -10,6 +10,7 @@
 //   items   : [{ label, onClick, danger?, state?, icon? }]  — menu entries
 //   onClick : if given (and no items), the FAB is a plain action button
 import React, { useState, useEffect } from 'react';
+import { haptic } from '../native.js';
 
 // FAB glyphs — three vertical dots (menus) · magnifying glass (search) ·
 // filter sliders (filters/sort).
@@ -59,7 +60,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
 
   // Most items close the menu on tap; toggles (keepOpen) leave it open so their
   // live state (✓/✕, ★/☆) stays visible — matches Arcanum's rarity/star toggles.
-  const run = (it) => { if (!it.keepOpen) setOpen(false); it.onClick?.(); };
+  const run = (it) => { haptic('light'); if (!it.keepOpen) setOpen(false); it.onClick?.(); };
 
   return (
     <>
@@ -75,7 +76,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
             </button>
           ))}
         </div>
-        <button className="fab" onClick={() => setOpen((o) => !o)} aria-haspopup="menu" aria-expanded={open} aria-label={label}>{icon}</button>
+        <button className="fab" onClick={() => { haptic('light'); setOpen((o) => !o); }} aria-haspopup="menu" aria-expanded={open} aria-label={label}>{icon}</button>
       </div>
     </>
   );

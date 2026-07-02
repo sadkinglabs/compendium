@@ -7,6 +7,7 @@ import { getDeck, getDeckCards, collectionMax, setDeckNotes, setCuriosaUrl, getH
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
+import { haptic } from '../native.js';
 import '../theme/deckdash.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -301,6 +302,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   // rejection toasts + resyncs from the store (authoritative revert).
   const stepRow = (zone) => async (e, delta) => {
     if (e.quantity + delta < 0) return;
+    haptic('light');
     setZones((z) => ({
       ...z,
       [zone]: z[zone]

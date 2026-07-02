@@ -15,13 +15,15 @@
 .arc .hero-avatar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; justify-content: center; }
 .arc .hero-avatar-name { font-size: 14px; font-weight: 600; color: var(--gold); font-family: 'Hanken Grotesk', sans-serif; cursor: pointer; }
 .arc .hero-avatar-sep { color: var(--faint); font-size: 16px; line-height: 1; }
-.arc .hero-stat-bar { display: inline-flex; align-items: center; background: rgba(24,16,40,.55); border: 1px solid rgba(160,110,220,.2); border-radius: 999px; overflow: hidden; }
+/* Surfaces lean BLACK (user rule: hues are only a detail) — violet survives in
+   hairlines, labels and small accents, never as a surface fill. */
+.arc .hero-stat-bar { display: inline-flex; align-items: center; background: rgba(13,12,15,.72); border: 1px solid rgba(160,110,220,.18); border-radius: 999px; overflow: hidden; }
 .arc .hero-stat-item { font-size: 11px; font-weight: 600; font-family: 'Hanken Grotesk', sans-serif; padding: 6px 14px; white-space: nowrap; }
 .arc .hero-stat-divider { width: 1px; height: 16px; background: rgba(160,110,220,.2); flex-shrink: 0; }
 
 /* Zone list cards (Spellbook / Atlas / Collection) */
-.arc .chart-card { background: rgba(24,16,40,.6); border: 1px solid rgba(160,110,220,.14); border-radius: 18px; margin: 0 12px 12px; overflow: hidden; }
-.arc .chart-card.cc-list { background: linear-gradient(180deg,rgba(36,24,54,.5),rgba(20,12,34,.4)); border-color: rgba(160,110,220,.14); padding: 17px 16px; }
+.arc .chart-card { background: rgba(15,14,17,.82); border: 1px solid rgba(160,110,220,.14); border-radius: 18px; margin: 0 12px 12px; overflow: hidden; }
+.arc .chart-card.cc-list { background: linear-gradient(180deg,rgba(19,17,23,.78),rgba(10,10,12,.62)); border-color: rgba(160,110,220,.14); padding: 17px 16px; }
 .arc .cc-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .arc .cc-hdr.collapsible { cursor: pointer; }
 .arc .cc-title { font: 600 11px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; color: #dcb86f; text-transform: uppercase; }
@@ -36,12 +38,12 @@
 .arc .cc-sb-name { font: 500 15px/1.2 'EB Garamond', Georgia, serif; color: #ece4f5; flex: 1; min-width: 0; }
 .arc .cc-thresh { display: flex; gap: 2px; align-items: center; padding: 0 4px; }
 .arc .cc-thresh img { width: 14px; height: 14px; flex-shrink: 0; }
-.arc .cc-sb-coin { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(160,110,220,.22); background: rgba(18,12,30,.6); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #c9bfdc; }
+.arc .cc-sb-coin { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(160,110,220,.22); background: rgba(12,12,15,.7); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #c9bfdc; }
 .arc .cc-empty { font: italic 14px 'EB Garamond', serif; color: #6e6286; padding: 8px 0; }
 /* Edit-mode quick steppers — conjured onto each row with a soft cascade. */
 .arc .cc-sb-step { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; animation: ccStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
 @keyframes ccStepIn { from { opacity: 0; transform: translateX(-8px) scale(.75); } }
-.arc .cc-step-mini { width: 25px; height: 25px; border-radius: 50%; border: 1px solid rgba(160,110,220,.32); background: rgba(36,24,54,.6); color: #c9bfdc; font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
+.arc .cc-step-mini { width: 25px; height: 25px; border-radius: 50%; border: 1px solid rgba(160,110,220,.32); background: rgba(15,14,18,.75); color: #c9bfdc; font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
 .arc .cc-step-mini:active { background: var(--accent, #9d6ad6); border-color: var(--accent, #9d6ad6); color: #fff; }
 
 /* Random Hand */
@@ -49,7 +51,7 @@
 .arc .cc-hand-empty { font: italic 400 14px/1.5 'EB Garamond', Georgia, serif; color: #6e6286; padding: 8px 0 4px; }
 .arc .cc-hand-section-lbl { font: 600 9px/1 'Hanken Grotesk', sans-serif; letter-spacing: .16em; color: #8a7ba6; text-transform: uppercase; margin: 12px 0 7px; }
 .arc .cc-hand-tiles { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; }
-.arc .cc-hand-tile { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid rgba(160,110,220,.2); background: rgba(36,24,54,.7); }
+.arc .cc-hand-tile { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid rgba(160,110,220,.2); background: rgba(13,12,16,.8); }
 .arc .cc-hand-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 /* Random Hand — draw-more row */
@@ -67,7 +69,7 @@
 .arc .cc-card-edit-btn { background: none; border: none; color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; padding: 2px 6px; }
 .arc .cc-url-input { width: 100%; background: var(--bg); border: 1px solid rgba(201,168,76,.3); border-radius: 8px; padding: 10px; color: var(--text); font: 400 13px/1.4 'IBM Plex Mono', monospace; outline: none; box-sizing: border-box; }
 .arc .cc-url-btn { padding: 7px 14px; border-radius: 9px; border: 1px solid rgba(160,110,220,.3); background: rgba(157,106,214,.1); color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; }
-.arc .cc-url-btn.primary { border: none; background: linear-gradient(180deg,#e8c976,#d4a83a); color: #1a1206; }
+.arc .cc-url-btn.primary { border: 1px solid rgba(220,184,111,.45); background: rgba(18,16,13,.85); color: #dcb86f; }
 .arc .cc-url-link { display: flex; align-items: center; gap: 8px; color: #c9a9f0; text-decoration: none; font: 500 13px/1.3 'Hanken Grotesk', sans-serif; word-break: break-all; }
 .arc .cc-url-link svg { width: 14px; height: 14px; flex-shrink: 0; }
 .arc .cc-url-empty { font: italic 400 13px/1.4 'EB Garamond', Georgia, serif; color: #6e6286; }
@@ -81,13 +83,13 @@
 
 /* ── Stats cards (Arcanum .cc-stat suite) — verbatim from templates/index.html
    L296-370. The Stats view uses Arcanum's design (grimoire stays elsewhere). ── */
-.arc .chart-card.cc-stat { background: radial-gradient(120% 82% at 50% 0%,rgba(58,38,92,.46),rgba(18,11,30,.42)); border-color: rgba(160,110,220,.16); padding: 17px 16px; }
-.arc .cc-toggle-pill { display: flex; background: rgba(18,12,30,.7); border: 1px solid rgba(160,110,220,.14); border-radius: 11px; padding: 3px; margin-left: auto; }
+.arc .chart-card.cc-stat { background: radial-gradient(120% 82% at 50% 0%,rgba(34,27,46,.4),rgba(11,10,13,.6)); border-color: rgba(160,110,220,.16); padding: 17px 16px; }
+.arc .cc-toggle-pill { display: flex; background: rgba(12,12,15,.75); border: 1px solid rgba(160,110,220,.14); border-radius: 11px; padding: 3px; margin-left: auto; }
 .arc .cc-toggle-seg { font: 600 11px/1 'Hanken Grotesk', sans-serif; padding: 6px 12px; border-radius: 8px; border: none; cursor: pointer; transition: background .15s,color .15s; background: transparent; color: #7a6e96; }
 .arc .cc-toggle-seg.on { background: linear-gradient(180deg,rgba(157,106,214,.4),rgba(122,71,184,.25)); color: #f0e9d8; }
 .arc .cc-body-row { display: flex; align-items: flex-start; gap: 18px; }
 .arc .cc-donut-wrap { position: relative; width: 116px; height: 116px; flex-shrink: 0; border-radius: 50%; }
-.arc .cc-donut-hole { position: absolute; inset: 15px; border-radius: 50%; background: radial-gradient(circle at 50% 36%,#221636,#120b1e); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.arc .cc-donut-hole { position: absolute; inset: 15px; border-radius: 50%; background: radial-gradient(circle at 50% 36%,#1a1621,#0c0b10); display: flex; flex-direction: column; align-items: center; justify-content: center; }
 .arc .cc-donut-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: #f0e9d8; }
 .arc .cc-donut-lbl { font: 500 8px/1 'Hanken Grotesk', sans-serif; letter-spacing: .18em; color: #8a7ba6; margin-top: 3px; }
 .arc .cc-bar-rows { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
@@ -115,18 +117,18 @@
 .arc .cc-step-num { font: 700 26px/1 'Cinzel', Georgia, serif; min-width: 32px; text-align: center; }
 .arc .cc-step-num.wins { color: #8fd3a8; } .arc .cc-step-num.losses { color: #e0907c; }
 .arc .cc-step-btn { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; cursor: pointer; line-height: 1; border: none; }
-.arc .cc-step-minus { background: rgba(24,16,40,.4); border: 1px solid rgba(160,110,220,.2); color: #9a8cae; }
+.arc .cc-step-minus { background: rgba(14,13,17,.6); border: 1px solid rgba(160,110,220,.2); color: #9a8cae; }
 .arc .cc-step-plus-w { background: rgba(63,154,106,.18); border: 1px solid rgba(143,211,168,.5); color: #8fd3a8; }
 .arc .cc-step-plus-l { background: rgba(194,96,79,.16); border: 1px solid rgba(224,144,124,.5); color: #e0907c; }
 .arc .cc-avg-cost-num { font: 700 34px/1 'Cinzel', Georgia, serif; color: #dcb86f; text-shadow: 0 2px 14px rgba(220,184,111,.35); }
 .arc .cc-avg-cost-lbl { font: italic 400 12px/1 'EB Garamond', Georgia, serif; color: #9a8cae; }
 .arc .cc-odds-head { text-align: center; margin-bottom: 10px; }
 .arc .cc-turn-line { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.arc .cc-turn-btn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(160,110,220,.28); background: rgba(24,16,40,.5); color: #c9a9f0; font: 400 18px/1 'Hanken Grotesk', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.arc .cc-turn-btn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(160,110,220,.28); background: rgba(14,13,17,.7); color: #c9a9f0; font: 400 18px/1 'Hanken Grotesk', sans-serif; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .arc .cc-turn-btn:active { background: rgba(157,106,214,.22); }
 .arc .cc-turn-btn:disabled { opacity: .4; cursor: default; }
-.arc .cc-turn-pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 18px; border-radius: 13px; background: linear-gradient(180deg,#e8c976,#cda24f); box-shadow: 0 0 14px rgba(220,184,111,.3); }
-.arc .cc-turn-cap { font: 700 8px/1 'Hanken Grotesk', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #7a5a1e; }
-.arc .cc-turn-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: #1a1206; }
+.arc .cc-turn-pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 18px; border-radius: 13px; background: rgba(18,16,13,.85); border: 1px solid rgba(220,184,111,.45); box-shadow: 0 0 14px rgba(220,184,111,.12); }
+.arc .cc-turn-cap { font: 700 8px/1 'Hanken Grotesk', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #b99b5e; }
+.arc .cc-turn-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: #dcb86f; }
 .arc .cc-need-row { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
 .arc .cc-stat-empty { font: italic 400 13px/1.5 'EB Garamond', Georgia, serif; color: #6e6286; text-align: center; padding: 10px 0; }

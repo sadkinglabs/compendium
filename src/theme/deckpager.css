@@ -34,14 +34,14 @@
 /* Search panel view toggle (List / Card). */
 .arc .view-toggle-row { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px 6px; }
 .arc .view-toggle-wrap { display: inline-flex; background: rgba(11,7,20,.72); border: 1px solid rgba(220,184,111,.22); border-radius: 999px; padding: 3px; gap: 2px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 2px 16px rgba(0,0,0,.4); }
-.arc .view-btn { background: transparent; border: none; color: var(--muted); border-radius: 999px; padding: 7px 22px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 7px; transition: color .18s; font-family: 'Hanken Grotesk', sans-serif; }
-.arc .view-btn.on { background: linear-gradient(180deg,#e8c976 0%,#d4a83a 100%); color: #111; box-shadow: 0 0 12px rgba(220,184,111,.35); }
+.arc .view-btn { background: transparent; border: 1px solid transparent; color: var(--muted); border-radius: 999px; padding: 7px 22px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 7px; transition: color .18s; font-family: 'Hanken Grotesk', sans-serif; }
+.arc .view-btn.on { background: rgba(220,184,111,.14); color: #dcb86f; border: 1px solid rgba(220,184,111,.5); box-shadow: 0 0 12px rgba(220,184,111,.14); }
 
 /* Inner List/Stats pager on the Current Deck panel. */
 .arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
 .arc .deck-inner-pager::-webkit-scrollbar { display: none; }
 .arc .deck-panel { flex: 0 0 100%; width: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 90px); }
-.arc .deck-pip-bar { position: absolute; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px); left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 12px; background: rgba(16,10,28,.82); border: 1px solid rgba(160,110,220,.24); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
+.arc .deck-pip-bar { position: absolute; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px); left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
 /* Edit mode owns the floor — the pip bar bows out downward. */
 .arc .deck-pip-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(22px); pointer-events: none; }
 .arc .pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }

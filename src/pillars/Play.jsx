@@ -331,4 +331,4 @@ function LifeStep({ label, v, set }) {
 const inp = { width: '100%', height: 42, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" };
 const chip = { padding: '5px 11px', borderRadius: 16, border: '1px solid var(--hair-22)', font: "500 12px/1 var(--f-read)", color: 'var(--ink-status)', cursor: 'pointer' };
 const ghost = { padding: '11px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 12px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };
-const gold = { padding: '11px 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', flex: 'none' };
+const gold = { padding: '11px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' };

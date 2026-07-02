@@ -9,7 +9,8 @@ import {
 } from '../store/deckRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
-import { Chip, ChipRow, Loading } from '../components/ui.jsx';
+import { Chip, ChipRow, Loading, useSwipe } from '../components/ui.jsx';
+import { haptic } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import Sheet from '../components/Sheet.jsx';
 import DeckDashboard from './DeckDashboard.jsx';
@@ -99,8 +100,20 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
     || d.name.toLowerCase().includes(libQ.toLowerCase())
     || (d.avatar?.name || '').toLowerCase().includes(libQ.toLowerCase()));
 
+  // Native feel: swipe across the Library ⇄ My Deck (List ⇄ Stats) chain.
+  const swipe = useSwipe(
+    () => {   // swipe left — deeper into the deck
+      if (view === 'library' && deckOpen) { setView('mydeck'); haptic('light'); }
+      else if (view === 'mydeck' && deckOpen && statTab === 'list') { setStatTab('stats'); haptic('light'); }
+    },
+    () => {   // swipe right — back out
+      if (view === 'mydeck' && statTab === 'stats') { setStatTab('list'); haptic('light'); }
+      else if (view === 'mydeck') { setView('library'); haptic('light'); }
+    }
+  );
+
   return (
-    <div className="arc dpager">
+    <div className="arc dpager" {...swipe}>
       <div className="dp-topbar">
         <ChipRow>
           <Chip label="Library" active={view === 'library'} onClick={() => setView('library')} />
@@ -205,7 +218,7 @@ function RenameSheet({ open, initial, onClose, onSave }) {
           onKeyDown={(e) => { if (e.key === 'Enter') onSave(name); }}
           style={{ flex: 1, height: 44, background: 'rgba(11,7,20,.7)', border: '1px solid rgba(160,110,220,.25)', borderRadius: 12, padding: '0 14px', color: 'var(--text)', font: "400 15px/1 'EB Garamond',Georgia,serif" }} />
         <button onClick={() => onSave(name)}
-          style={{ padding: '0 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 'Hanken Grotesk',sans-serif", border: 'none', cursor: 'pointer' }}>Save</button>
+          style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 'Hanken Grotesk',sans-serif", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
       </div>
     </Sheet>
   );

@@ -23,7 +23,7 @@ import { getSettings, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
-import { onBackButton, exitApp } from './native.js';
+import { onBackButton, exitApp, haptic } from './native.js';
 import { ListRow, IconButton, Loading } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 
@@ -92,7 +92,7 @@ export default function App() {
   const viewDetail = detail && !hasQuery && !addActive;
   const pillar = PILLARS.find((p) => p.key === tab);
 
-  const goTab = (t) => { setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); };
+  const goTab = (t) => { if (t !== tab) haptic('light'); setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); };
   const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
   const exitAdd = () => { setAddMode(null); bump(); };
   const openNewMatch = async (mode) => {
@@ -518,6 +518,7 @@ const S = {
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   body: { flex: 1, overflowY: 'auto', paddingBottom: 'calc(62px + env(safe-area-inset-bottom) + 92px)' },
   input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
-  btnGold: { padding: '12px 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', flex: 'none' },
+  // Sheet primary — black glass, gold only in text/border (app rule: sheets stay black).
+  btnGold: { padding: '12px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' },
   btnGhost: { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' },
 };

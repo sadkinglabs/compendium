@@ -8,6 +8,7 @@ import Sheet from './Sheet.jsx';
 import { Loading } from './ui.jsx';
 import { getCard } from '../store/codexRepository.js';
 import { changeQty, deckQty } from '../store/deckRepository.js';
+import { haptic } from '../native.js';
 
 const BASE = import.meta.env.BASE_URL;
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
@@ -37,6 +38,7 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
     const label = which === 'main' ? (c.is_site ? 'Atlas' : 'Spellbook') : 'Collection';
     const prev = counts[which];
     if (prev + delta < 0) return;
+    haptic('light');
     setCounts((m) => ({ ...m, [which]: prev + delta }));           // optimistic — instant
     setPop((p) => ({ ...p, [which]: p[which] + 1 }));
     const res = await changeQty(deckId, zone, c, delta);
