@@ -5,7 +5,8 @@ import React, { useEffect, useState } from 'react';
 import { historyStats, listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
 import { listAvatarCards } from '../store/deckRepository.js';
 import { shareMatchSnapshot } from '../store/matchSnapshot.js';
-import { BottomSheet, IconButton, Chip, ChipRow } from '../components/ui.jsx';
+import { IconButton, Chip, ChipRow } from '../components/ui.jsx';
+import Sheet from '../components/Sheet.jsx';
 import '../theme/playhistory.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -247,9 +248,9 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
   async function del() { if (confirm('Delete this match?')) { await deleteMatch(matchId); onChanged(); onClose(); } }
 
   return (
-    <BottomSheet open title={title.toUpperCase()} onClose={onClose}>
-      {!m ? <div style={{ color: 'var(--ink-faint)' }}>…</div> : (
-        <div>
+    <Sheet open title={title} onClose={onClose}>
+      {!m ? <div style={{ color: 'var(--ink-faint)', padding: '0 16px' }}>…</div> : (
+        <div style={{ padding: '0 16px' }}>
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
             <div style={{ font: "700 28px/1 var(--f-display)", color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
             {(m.player_avatar || m.opponent_avatar) && <div style={{ font: "500 12px/1.2 var(--f-read)", color: 'var(--ink-muted)', marginTop: 6 }}>{m.player_avatar || 'You'} vs {m.opponent_avatar || 'Opponent'}</div>}
@@ -312,7 +313,7 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
           )}
         </div>
       )}
-    </BottomSheet>
+    </Sheet>
   );
 }
 const Lbl = ({ t }) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '2px 0 8px' }}>{t}</div>;

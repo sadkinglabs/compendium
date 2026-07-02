@@ -9,7 +9,8 @@ import {
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { listCollections } from '../store/codexRepository.js';
-import { Chip, ChipRow, SectionLabel, ListRow, BottomSheet, IconButton } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, IconButton } from '../components/ui.jsx';
+import Sheet from '../components/Sheet.jsx';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -152,7 +153,8 @@ function Dashboard({ onOpen, edit, rev }) {
 function LayoutSheet({ open, layouts, onClose, onSave, onLoad, onDelete }) {
   const [name, setName] = useState('');
   return (
-    <BottomSheet open={open} title="DASHBOARD LAYOUTS" onClose={onClose}>
+    <Sheet open={open} title="Dashboard Layouts" onClose={onClose}>
+      <div style={{ padding: '0 16px' }}>
       <div style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 12 }}>
         Save the current dashboard as a named layout, or load one (loading replaces the current widgets).
       </div>
@@ -167,7 +169,8 @@ function LayoutSheet({ open, layouts, onClose, onSave, onLoad, onDelete }) {
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name this layout…" style={{ flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" }} />
         <button onClick={() => { if (name.trim()) { onSave(name.trim()); setName(''); } }} style={{ padding: '0 18px', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer' }}>Save</button>
       </div>
-    </BottomSheet>
+      </div>
+    </Sheet>
   );
 }
 
@@ -226,13 +229,13 @@ function WidgetBody({ block, data, onOpen }) {
 
 function Picker({ open, onClose, onPick }) {
   return (
-    <BottomSheet open={open} title="ADD A WIDGET" onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+    <Sheet open={open} title="Add a Widget" onClose={onClose}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '0 16px' }}>
         {WIDGETS.map((w) => (
           <button key={w.kind} onClick={() => onPick(w.kind)} style={{ padding: '12px 10px', borderRadius: 11, border: '1px solid var(--hair-22)', background: 'var(--surface-card)', color: 'var(--ink-body)', font: "600 12px/1.2 var(--f-ui)", cursor: 'pointer', textAlign: 'left' }}>{w.title}</button>
         ))}
       </div>
-    </BottomSheet>
+    </Sheet>
   );
 }
 
@@ -249,7 +252,8 @@ function ConfigSheet({ block, onClose, onSaved }) {
   if (!block) return null;
   const save = async (config) => { await setConfig(block.id, config); onSaved(); };
   return (
-    <BottomSheet open={!!block} title={'CONFIGURE · ' + widgetTitle(block.type).toUpperCase()} onClose={onClose}>
+    <Sheet open={!!block} title={'Configure · ' + widgetTitle(block.type)} onClose={onClose}>
+      <div style={{ padding: '0 16px' }}>
       {block.type === 'text' && (
         <>
           <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a note…" style={{ width: '100%', height: 100, resize: 'none', background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: 12, color: 'var(--ink-body)', font: "400 14px/1.5 var(--f-read)" }} />
@@ -275,7 +279,8 @@ function ConfigSheet({ block, onClose, onSaved }) {
           <button onClick={() => save({ links: links.filter((l) => l.url) })} style={goldBtn}>Save</button>
         </>
       )}
-    </BottomSheet>
+      </div>
+    </Sheet>
   );
 }
 

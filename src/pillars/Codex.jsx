@@ -3,7 +3,8 @@
 // the deckbuilder).
 import React, { useEffect, useState } from 'react';
 import { getCodexEntries } from '../store/codexRepository.js';
-import { Chip, ChipRow, ListRow, BottomSheet } from '../components/ui.jsx';
+import { Chip, ChipRow, ListRow } from '../components/ui.jsx';
+import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 // Codex row glyphs — card = rectangle (a card), article = three lines of text.
@@ -41,7 +42,8 @@ export default function Codex({ scope, setScope, onOpen, rev }) {
         </ChipRow>
       </div>
 
-      <BottomSheet open={filterSheet} title="FILTERS" onClose={() => setFilterSheet(false)}>
+      <Sheet open={filterSheet} title="Filters" onClose={() => setFilterSheet(false)}>
+        <div style={{ padding: '0 16px' }}>
         {FILTERS.map(([k, label]) => (
           <div key={k} onClick={() => setFilters((f) => ({ ...f, [k]: !f[k] }))} className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
             <span style={{ font: "600 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
@@ -52,7 +54,8 @@ export default function Codex({ scope, setScope, onOpen, rev }) {
           <button onClick={() => setFilters({})} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' }}>Clear</button>
           <button onClick={() => setFilterSheet(false)} style={{ flex: 2, padding: '12px 0', borderRadius: 12, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 14px/1 var(--f-ui)", border: 'none', cursor: 'pointer' }}>Show results</button>
         </div>
-      </BottomSheet>
+        </div>
+      </Sheet>
 
       {entries == null ? (
         <Skeleton />

@@ -1,7 +1,7 @@
 // Decks shared pieces — the library DeckCard (rendered by DecksPager) and the
 // two import sheets (Curiosa URL / pasted text), mounted from App.
 import React, { useEffect, useState } from 'react';
-import { BottomSheet } from '../components/ui.jsx';
+import Sheet from '../components/Sheet.jsx';
 import '../theme/arcanum.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -47,7 +47,8 @@ export function ImportUrlSheet({ open, onClose, onImportUrl }) {
     try { await onImportUrl(url.trim()); } catch (e) { setErr(e.message || 'Import failed'); } finally { setBusy(false); }
   }
   return (
-    <BottomSheet open={open} title="IMPORT FROM CURIOSA" onClose={onClose}>
+    <Sheet open={open} title="Import from Curiosa" onClose={onClose}>
+      <div style={{ padding: '0 16px' }}>
       <div style={{ font: "400 13px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 12px' }}>Paste a Curiosa deck URL to import it.</div>
       <input value={url} autoFocus onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
         placeholder="https://curiosa.io/decks/…" style={S.input} />
@@ -56,7 +57,8 @@ export function ImportUrlSheet({ open, onClose, onImportUrl }) {
         <button onClick={onClose} style={{ ...S.ghost, flex: 1 }}>Cancel</button>
         <button disabled={busy} onClick={go} style={{ ...S.gold, opacity: busy ? 0.6 : 1 }}>{busy ? 'Importing…' : 'Import'}</button>
       </div>
-    </BottomSheet>
+      </div>
+    </Sheet>
   );
 }
 
@@ -81,7 +83,8 @@ export function ImportTextSheet({ open, onClose, onImport }) {
   const [showEg, setShowEg] = useState(false);
   useEffect(() => { if (open) { setName(''); setText(''); setShowEg(false); } }, [open]);
   return (
-    <BottomSheet open={open} title="IMPORT FROM TEXT" onClose={onClose}>
+    <Sheet open={open} title="Import from Text" onClose={onClose}>
+      <div style={{ padding: '0 16px' }}>
       <p style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 12px' }}>
         Paste a deck list. Start with a <b style={{ color: 'var(--ink-body)' }}>#</b> deck name, then <b style={{ color: 'var(--ink-body)' }}>## Avatar / Spellbook / Atlas / Collection</b> sections, each with <b style={{ color: 'var(--ink-body)' }}>N× Card</b> lines.
       </p>
@@ -96,7 +99,8 @@ export function ImportTextSheet({ open, onClose, onImport }) {
         <button onClick={onClose} style={{ ...S.ghost, flex: 1 }}>Cancel</button>
         <button onClick={() => text.trim() && onImport(text, name.trim())} style={S.gold}>Import</button>
       </div>
-    </BottomSheet>
+      </div>
+    </Sheet>
   );
 }
 

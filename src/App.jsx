@@ -24,7 +24,8 @@ import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js'
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport } from './store/profileTransfer.js';
 import { onBackButton, exitApp } from './native.js';
-import { ListRow, BottomSheet, IconButton, Chip, ChipRow } from './components/ui.jsx';
+import { ListRow, IconButton, Chip, ChipRow } from './components/ui.jsx';
+import Sheet from './components/Sheet.jsx';
 
 const PILLARS = [
   { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
@@ -407,8 +408,10 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, 
     if (!confirm(`Delete profile “${p.name}” and all its data?`)) return;
     await deleteProfile(p.id); await onChanged(); refresh();
   }
+  if (!open) return null;
   return (
-    <BottomSheet open={open} title="PROFILES" onClose={onClose}>
+    <Sheet open={open} title="Profiles" onClose={onClose}>
+      <div style={{ padding: '0 16px' }}>
       {list.map((p) => (
         <div key={p.id} className="cx-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 4px', borderBottom: '1px solid var(--hair-12)' }}>
           <span style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 13px/1 var(--f-display)", color: '#1a1410', flex: 'none' }}>{p.name.charAt(0).toUpperCase()}</span>
@@ -430,7 +433,8 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings, 
         <button onClick={onImport} style={{ ...S.btnGhost, flex: 1 }}>⤒ Import</button>
       </div>
       <button onClick={onSettings} style={{ ...S.btnGhost, marginTop: 10, width: '100%' }}>⚙ Settings</button>
-    </BottomSheet>
+      </div>
+    </Sheet>
   );
 }
 
@@ -449,9 +453,9 @@ function SettingsSheet({ open, onClose }) {
   );
   const label = (t) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '16px 0 10px' }}>{t}</div>;
   return (
-    <BottomSheet open={open} title="SETTINGS" onClose={onClose}>
-      {s == null ? <div style={{ color: 'var(--ink-faint)' }}>…</div> : (
-        <div>
+    <Sheet open={open} title="Settings" onClose={onClose}>
+      {s == null ? <div style={{ color: 'var(--ink-faint)', padding: '0 16px' }}>…</div> : (
+        <div style={{ padding: '0 16px' }}>
           {label('ACCENT METAL')}
           <ChipRow>
             {[['gilded', 'Gilded'], ['verdigris', 'Verdigris'], ['pewter', 'Pewter']].map(([k, l]) => (
@@ -476,7 +480,7 @@ function SettingsSheet({ open, onClose }) {
           <Toggle label="Rarity colours" k="rarity_colors" />
         </div>
       )}
-    </BottomSheet>
+    </Sheet>
   );
 }
 
