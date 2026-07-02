@@ -31,12 +31,18 @@ export async function getCodexEntries(scope, filters = {}) {
   const rules = wantRules
     ? await query('SELECT rule_id id, title name FROM rules WHERE parent_id IS NULL;')
     : [];
+  // Sub-entries (children) per top-level rule → the expandable chevron in the list.
+  const subMap = {};
+  if (wantRules && rules.length) {
+    const kids = await query('SELECT rule_id id, title, parent_id FROM rules WHERE parent_id IS NOT NULL ORDER BY title;');
+    for (const k of kids) (subMap[k.parent_id] = subMap[k.parent_id] || []).push({ id: k.id, name: k.title, kind: 'rule' });
+  }
   const cards = wantCards
     ? await query('SELECT card_id id, name, type, cost, image_slug, elements, thresholds FROM cards;')
     : [];
   const { noted, saved } = await indicatorSets();
   const items = [
-    ...rules.map((r) => ({ id: r.id, name: r.name, kind: 'rule', meta: 'Keyword' })),
+    ...rules.map((r) => ({ id: r.id, name: r.name, kind: 'rule', meta: 'Codex Article', subs: subMap[r.id] || [] })),
     ...cards.map((c) => ({
       id: c.id, name: c.name, kind: 'card', meta: cardMeta(c),
       image_slug: c.image_slug, elements: c.elements, thresholds: c.thresholds,
@@ -72,7 +78,7 @@ export async function searchCodex(q) {
   );
   return {
     cards: cards.map((c) => ({ ...c, kind: 'card', meta: cardMeta(c) })),
-    rules: rules.map((r) => ({ ...r, kind: 'rule', meta: 'Keyword' })),
+    rules: rules.map((r) => ({ ...r, kind: 'rule', meta: 'Codex Article' })),
   };
 }
 

@@ -13,9 +13,11 @@ const BASE = import.meta.env.BASE_URL;
 const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
 const TYPES = [['Minion', 'Minions'], ['Aura', 'Auras'], ['Magic', 'Magic'], ['Artifact', 'Artifacts'], ['Site', 'Sites']];
 const RAR = [['Ordinary', 'Ordinary'], ['Exceptional', 'Exceptional'], ['Elite', 'Elite'], ['Unique', 'Unique']];
+const RARITY_COLOR = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 
 export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpen, onChanged, registerCount }) {
   const [view, setView] = useState('list');
+  const [rarityOn, setRarityOn] = useState(false);   // colour card names by rarity (Refine toggle)
   const [sort, setSort] = useState([]);   // [{key,dir}] priority list (Arcanum multi-sort)
   const [els, setEls] = useState([]);
   const [types, setTypes] = useState([]);
@@ -87,8 +89,8 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
             const qty = qtys[c.card_id] || 0;
             return (
               <div key={c.card_id} className="card-row" onClick={() => setSheetCardId(c.card_id)}>
-                <span className="name">{c.name}</span>
                 {qty > 0 && <span className="in-deck-badge">{qty}</span>}
+                <span className="name" style={rarityOn ? { color: RARITY_COLOR[c.rarity] || 'var(--text)' } : undefined}>{c.name}</span>
                 <ThresholdPips runs={thresholdRuns(c)} />
                 {c.cost != null && <div className="cost-badge">{c.cost}</div>}
               </div>
@@ -100,6 +102,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange} />
 
       <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)}
+        rarityOn={rarityOn} setRarityOn={setRarityOn}
         sort={sort} setSort={setSort}
         els={els} setEls={setEls} types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts} multi={multi} setMulti={setMulti}
@@ -137,7 +140,7 @@ function CmpRow({ label, icon, state, set, max }) {
 // Refine sheet — Arcanum's 2-tab (Filters / Sort) amethyst design, full filter set.
 const SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
 
-function FilterSheet({ open, onClose, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,
+function FilterSheet({ open, onClose, rarityOn, setRarityOn, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,
   sets, setSets, setOpts, multi, setMulti, thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, artist, setArtist, artistOpts, onClear }) {
   const [tab, setTab] = useState('filters');
   if (!open) return null;
@@ -198,6 +201,10 @@ function FilterSheet({ open, onClose, sort, setSort, els, setEls, types, setType
                 <div className="pill-group">
                   {RAR.map(([k, l]) => <button key={k} className={`pill${rarities.includes(k) ? ` on rarity-${k}` : ''}`} onClick={() => toggle(rarities, setRarities, k)}>{l}</button>)}
                 </div>
+              </div>
+              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div className="filter-label" style={{ marginBottom: 0 }}>Rarity Colours</div>
+                <button className={`rarity-switch${rarityOn ? ' on' : ''}`} onClick={() => setRarityOn(!rarityOn)} aria-label="Toggle rarity colours" />
               </div>
               {setOpts.length > 0 && (
                 <div className="filter-section">

@@ -86,10 +86,15 @@ export async function createDeck(name, { archetype = '', avatarCardId = null } =
   );
   return id;
 }
-export async function renameDeck(id, name) { await touch(id, 'name=?, slug=?', [name, slugify(name)]); }
+export async function renameDeck(id, name) { await touch(id, 'name=?, slug=?', [name, slugify(name)]); await logHistory(id, `Renamed deck to ${name}`); }
+export async function setCuriosaUrl(id, url) { await touch(id, 'curiosa_url=?', [url]); }
 export async function setArchetype(id, a) { await touch(id, 'archetype=?', [a]); }
 export async function setDeckNotes(id, notes) { await touch(id, 'notes=?', [notes]); }
-export async function setAvatar(id, cardId) { await touch(id, 'avatar_card_id=?', [cardId]); }
+export async function setAvatar(id, cardId) {
+  await touch(id, 'avatar_card_id=?', [cardId]);
+  const c = (await query('SELECT name FROM cards WHERE card_id=?;', [cardId]))[0];
+  await logHistory(id, `Avatar changed to ${c?.name || cardId}`);
+}
 export async function setNotes(id, notes) { await touch(id, 'notes=?', [notes]); }
 export async function toggleStar(id) {
   const d = (await query('SELECT starred FROM decks WHERE id=? AND profile_id=?;', [id, activeProfileId()]))[0];
@@ -110,6 +115,17 @@ export async function duplicateDeck(id) {
     ]));
   }
   return nid;
+}
+
+export async function historyCount(deckId) {
+  const r = await query('SELECT COUNT(*) n FROM deck_history WHERE deck_id=?;', [deckId]);
+  return r[0]?.n || 0;
+}
+export async function getHistory(deckId) {
+  return query('SELECT ts, text FROM deck_history WHERE deck_id=? ORDER BY ts DESC LIMIT 200;', [deckId]);
+}
+export async function clearHistory(deckId) {
+  await run('DELETE FROM deck_history WHERE deck_id=?;', [deckId]);
 }
 
 async function touch(id, setExpr, params) {
@@ -160,6 +176,8 @@ export async function changeQty(deckId, zone, card, delta) {
     await run('UPDATE deck_entries SET quantity=? WHERE deck_id=? AND zone=? AND card_id=?;', [next, deckId, zone, card.card_id]);
   }
   await touch(deckId, 'name=name', []); // bump updated_at
+  const zLabel = zone === 'atlas' ? 'Atlas' : zone === 'collection' ? 'Collection' : 'Spellbook';
+  await logHistory(deckId, delta > 0 ? `Added ${delta}× ${card.name} to ${zLabel}` : `Removed ${-delta}× ${card.name} from ${zLabel}`);
   return { ok: true };
 }
 
@@ -311,15 +329,12 @@ export async function exportMarkdown(deckId) {
   return lines.join('\n');
 }
 
+// Curiosa.io import format: no deck name, no headers, no avatar, no collection —
+// just a flat "qty name" list of Spellbook + Atlas (any header breaks Curiosa's importer).
 export async function exportCuriosa(deckId) {
-  const d = await getDeck(deckId);
   const out = [];
-  if (d.avatar) out.push('// Avatar', `1 ${d.avatar.name}`);
-  const sec = { spellbook: 'Spellbook', atlas: 'Atlas', collection: 'Sideboard' };
-  for (const zone of ZONES) {
+  for (const zone of ['spellbook', 'atlas']) {
     const groups = await zoneGroups(deckId, zone);
-    if (!groups.length) continue;
-    out.push(`// ${sec[zone]}`);
     for (const g of groups) for (const c of g.cards) out.push(`${c.qty} ${c.name}`);
   }
   return out.join('\n');

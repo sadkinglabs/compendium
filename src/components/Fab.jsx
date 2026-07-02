@@ -49,7 +49,9 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
     );
   }
 
-  const run = (fn) => { setOpen(false); fn?.(); };
+  // Most items close the menu on tap; toggles (keepOpen) leave it open so their
+  // live state (✓/✕, ★/☆) stays visible — matches Arcanum's rarity/star toggles.
+  const run = (it) => { if (!it.keepOpen) setOpen(false); it.onClick?.(); };
 
   return (
     <>
@@ -58,7 +60,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
         <div className="fab-menu" role="menu">
           {items.map((it, i) => (
             <button key={i} role="menuitem" className={it.prominent ? 'prominent' : undefined}
-              onClick={() => run(it.onClick)} style={it.danger ? { color: 'var(--danger)' } : undefined}>
+              onClick={() => run(it)} style={it.danger ? { color: 'var(--danger)' } : undefined}>
               {it.icon}
               <span>{it.label}</span>
               {it.state != null && <span className="fab-state">{it.state}</span>}

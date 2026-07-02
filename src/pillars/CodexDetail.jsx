@@ -13,6 +13,7 @@ import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RichText } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
+import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
@@ -76,12 +77,6 @@ export default function CodexDetail({ kind, id, onOpenName, onChanged }) {
 
   return (
     <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
-      {/* quick actions */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
-        <button onClick={onStar} style={qa(data.saved)}>{data.saved ? '★ Saved' : '☆ Save'}</button>
-        <button onClick={() => setPicker(true)} style={qa(false)}>❧ Collect</button>
-      </div>
-
       {related.length > 0 && (
         <ChipRow style={{ marginBottom: 18 }}>
           {related.map((r, i) => (
@@ -145,6 +140,12 @@ export default function CodexDetail({ kind, id, onOpenName, onChanged }) {
       <MarginaliaComposer open={composer} onClose={() => setComposer(false)}
         noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={id} />
       <CollectionPicker open={picker} targetType={targetType} targetId={id} onClose={() => { setPicker(false); load(); }} />
+
+      {/* Save / Collect live in a FAB (consistent app-wide), not inline buttons. */}
+      <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Entry options" items={[
+        { label: data.saved ? 'Saved' : 'Save', keepOpen: true, state: data.saved ? '★' : '☆', onClick: onStar },
+        { label: 'Collect', onClick: () => setPicker(true) },
+      ]} />
     </div>
   );
 }

@@ -12,7 +12,7 @@ export default function DeckStats({ deck, rev, onReload }) {
   const [zones, setZones] = useState(null);
   const [compMode, setCompMode] = useState('element');
   const [atlasMode, setAtlasMode] = useState('supply');
-  const [atlasTurn, setAtlasTurn] = useState(5);
+  const [atlasTurn, setAtlasTurn] = useState(3);   // players draw 3 sites at the start of a match
   const [wl, setWl] = useState({ w: deck.wins, l: deck.losses });
 
   useEffect(() => { let a = true; getDeckCards(deck.id).then((z) => a && setZones(z)); return () => { a = false; }; }, [deck.id, rev]);
@@ -61,7 +61,7 @@ export default function DeckStats({ deck, rev, onReload }) {
       </Card>
 
       {/* balance ledger (record) */}
-      <Card title="Balance Ledger">
+      <Card title="Match Record">
         <div className="cc-wl">
           <span className="cc-wl-w">{wl.w}</span><span className="cc-wl-sep">–</span><span className="cc-wl-l">{wl.l}</span>
         </div>

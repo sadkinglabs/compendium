@@ -22,9 +22,9 @@
 
 /* Bottom search pill (Arcanum .pill-bar-outer / .bottom-pill-bar) — left of the FAB. */
 .arc .pill-bar-outer { position: absolute; left: 16px; right: 80px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px); z-index: 50; pointer-events: none; }
-.arc .bottom-pill-bar { display: flex; align-items: center; gap: 8px; background: rgba(11,7,20,.88); border: 1px solid rgba(160,110,220,.22); border-radius: 999px; padding: 6px 10px 6px 16px; height: 52px; box-sizing: border-box; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 20px rgba(0,0,0,.5); pointer-events: auto; width: 100%; overflow: hidden; }
+.arc .bottom-pill-bar { display: flex; align-items: center; gap: 8px; background: rgba(10,10,12,.72); border: 1px solid rgba(255,255,255,.09); border-radius: 999px; padding: 6px 10px 6px 16px; height: 52px; box-sizing: border-box; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 20px rgba(0,0,0,.5); pointer-events: auto; width: 100%; overflow: hidden; }
 .arc .bottom-pill-bar svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
-.arc .bottom-pill-bar input { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); font-size: 15px; outline: none; padding: 7px 4px; font-family: 'Hanken Grotesk', sans-serif; }
+.arc .bottom-pill-bar input { flex: 1; min-width: 0; background: transparent; border: none; color: var(--text); outline: none; padding: 7px 4px; font: 400 15px/1 var(--f-read); }
 .arc .bottom-pill-bar input::placeholder { color: var(--muted); }
 .arc .bottom-pill-bar input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
 
