@@ -73,6 +73,21 @@ export async function recordMatch(m) {
   return id;
 }
 
+/** Manual history entry (Vitarum's Add Match) — a match that wasn't tracked
+    live. No log; doesn't touch a deck's W–L ledger (it's backfill). */
+export async function addManualMatch(m) {
+  const pid = activeProfileId();
+  const id = uuid();
+  await run(
+    `INSERT INTO matches(id,profile_id,played_at,mode,player_avatar,opponent_name,opponent_avatar,
+       player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+    [id, pid, m.playedAt || nowIso(), 'full', m.playerAvatar || null, m.opponentName || null, m.opponentAvatar || null,
+      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, m.winner || 'draw', m.durationSec || 0, m.notes || '', null]
+  );
+  return id;
+}
+
 export async function listMatches(limit = 50) {
   return query(
     `SELECT m.*, d.name deck_name FROM matches m

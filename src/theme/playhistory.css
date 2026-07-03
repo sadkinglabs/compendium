@@ -74,3 +74,12 @@
 .mh .match-mini-btn.danger { border-color:rgba(224,120,106,.25); color:rgba(224,120,106,.7); }
 .mh .match-mini-btn.danger:active { border-color:rgba(224,120,106,.5); color:#e0786a; }
 .mh .match-mini-btn svg { width:11px; height:11px; flex-shrink:0; }
+
+/* Start-a-match pills — top of Play, where nav pills live. Black chassis, gold
+   hairline; the primary carries a small gold diamond (the New-Match mark). */
+.mh .play-start-row { display:flex; gap:10px; margin-bottom:18px; }
+.mh .play-start-pill { flex:1; display:flex; align-items:center; justify-content:center; gap:9px; height:46px; padding:0 16px; border-radius:14px; background:rgba(18,16,13,.85); border:1px solid var(--hair-22); color:var(--ink-body); font:600 14px/1 var(--f-ui); letter-spacing:.01em; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:border-color .15s, transform .12s; }
+.mh .play-start-pill:active { transform:scale(.975); }
+.mh .play-start-pill.primary { border-color:var(--gold-edge, rgba(198,168,102,.5)); color:var(--gold-leaf); }
+.mh .play-start-pill.primary:active { border-color:var(--gold-leaf); }
+.mh .play-diamond { width:8px; height:8px; flex:none; background:var(--gold-leaf); transform:rotate(45deg); border-radius:1px; }

@@ -313,12 +313,8 @@ export default function App() {
         <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="App options" items={[
           { label: 'Settings', onClick: () => setSettingsSheet(true) },
         ]} />
-      ) : tab === 'play' && !viewDetail && !hasQuery ? (
-        <Fab variant="lib" icon="+" label="Match options" items={[
-          { label: 'New Match', prominent: true, onClick: () => startMatch('full') },
-          { label: 'Quick Match', onClick: () => startMatch('quick') },
-        ]} />
       ) : null)}
+      {/* Play owns its FAB (Add Match) since New/Quick Match are now top pills. */}
 
       {/* BOTTOM NAV — verbatim Arcanum shell, bigger icons: house / book /
           stacked squares / crossed swords. */}

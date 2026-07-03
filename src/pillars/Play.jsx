@@ -2,11 +2,13 @@
 // (win-rate / W–L / streak / last-8 pips), and Recent Matches. Calm by design:
 // the life counter and in-match log live inside an in-progress match, not here.
 import React, { useEffect, useState } from 'react';
-import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
+import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents, addManualMatch, listAvatars } from '../store/playRepository.js';
 import { listAvatarCards } from '../store/deckRepository.js';
 import { IconButton, Chip, ChipRow, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { toast, confirmAction } from '../feedback.js';
+import { haptic } from '../native.js';
 import '../theme/playhistory.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -37,6 +39,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const [matchId, setMatchId] = useState(null);
   const [tick, setTick] = useState(0);
   const [page, setPage] = useState(1);
+  const [addOpen, setAddOpen] = useState(false);   // manual Add Match form
   useEffect(() => {
     let alive = true;
     // Single matches fetch — everything below is derived from it (was a second
@@ -92,6 +95,14 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
 
   return (
     <div className="mh" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
+      {/* Start-a-match pills — where nav pills live (New = tracked full match with
+          avatars & deck; Quick = counter only). */}
+      <div className="play-start-row">
+        <button className="play-start-pill primary" onClick={() => onStart('full')}>
+          <span className="play-diamond" />New Match
+        </button>
+        <button className="play-start-pill" onClick={() => onStart('quick')}>Quick Match</button>
+      </div>
       {ongoing && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
           <button className="cx-return-btn" onClick={onResume}>
@@ -174,6 +185,13 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
           {matchSheet}
         </>
       )}
+
+      {/* Add a match to history by hand (Vitarum's Add Match). */}
+      <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="History options" items={[
+        { label: 'Add Match', prominent: true, onClick: () => setAddOpen(true) },
+      ]} />
+      <AddMatchSheet open={addOpen}
+        onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); refresh(); toast('Match added'); }} />
     </div>
   );
 }
@@ -329,6 +347,79 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
     </Sheet>
   );
 }
+// Manual Add Match — Vitarum's Add Match form ported to the Arcanum Sheet.
+function AddMatchSheet({ open, onClose, onSaved }) {
+  const blank = () => { const now = new Date(); return { winner: 'player', pLife: 20, eLife: 0, opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '' }; };
+  const [f, setF] = useState(blank);
+  const [recent, setRecent] = useState([]);
+  const [avatars, setAvatars] = useState([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setF(blank()); setBusy(false);
+    recentOpponents().then(setRecent);
+    listAvatars().then((a) => setAvatars(a.map((x) => x.name)));
+  }, [open]);
+  if (!open) return null;
+
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const playedAt = f.date ? new Date(`${f.date}T${f.time || '00:00'}`).toISOString() : new Date().toISOString();
+      await addManualMatch({
+        winner: f.winner, playerFinalLife: f.pLife, opponentFinalLife: f.eLife,
+        opponentName: f.opponent.trim() || null, playedAt,
+        playerAvatar: f.pAvatar || null, opponentAvatar: f.eAvatar || null,
+      });
+      haptic('medium');
+      onSaved();
+    } catch (e) { setBusy(false); toast('Could not add match: ' + e.message, { tone: 'danger' }); }
+  }
+
+  const avSelect = (val, set, placeholder) => (
+    <select value={val} onChange={(e) => set(e.target.value)} style={{ ...inp, flex: 1, height: 40, appearance: 'none', WebkitAppearance: 'none' }}>
+      <option value="">{placeholder}</option>
+      {avatars.map((n) => <option key={n} value={n}>{n}</option>)}
+    </select>
+  );
+
+  return (
+    <Sheet open title="Add Match" onClose={onClose}>
+      <div style={{ padding: '0 16px' }}>
+        <Lbl t="RESULT" />
+        <ChipRow style={{ marginBottom: 14 }}>
+          {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
+        </ChipRow>
+        <Lbl t="FINAL LIFE" />
+        <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+          <LifeStep label="You" v={f.pLife} set={(x) => setF({ ...f, pLife: x })} />
+          <LifeStep label="Opp" v={f.eLife} set={(x) => setF({ ...f, eLife: x })} />
+        </div>
+        <Lbl t="AVATARS (optional)" />
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+          {avSelect(f.pAvatar, (v) => setF({ ...f, pAvatar: v }), 'Your avatar')}
+          {avSelect(f.eAvatar, (v) => setF({ ...f, eAvatar: v }), 'Opponent avatar')}
+        </div>
+        <Lbl t="OPPONENT" />
+        <input value={f.opponent} onChange={(e) => setF({ ...f, opponent: e.target.value })} placeholder="Their name…" style={inp} />
+        {recent.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 0' }}>{recent.map((r) => <span key={r} onClick={() => setF({ ...f, opponent: r })} style={chip}>{r}</span>)}</div>}
+        <Lbl t="WHEN" />
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <input type="date" value={f.date} max={localDay(new Date())} onChange={(e) => setF({ ...f, date: e.target.value })} style={{ ...inp, flex: 1 }} />
+          <input type="time" value={f.time} onChange={(e) => setF({ ...f, time: e.target.value })} style={{ ...inp, flex: 'none', width: 120 }} />
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={onClose} style={{ ...ghost, flex: 1 }}>Cancel</button>
+          <button onClick={save} disabled={busy} style={{ ...gold, flex: 1, opacity: busy ? 0.6 : 1 }}>{busy ? 'Adding…' : 'Add Match'}</button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+const localDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const localTime = (d) => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+
 const Lbl = ({ t }) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '2px 0 8px' }}>{t}</div>;
 function LifeStep({ label, v, set }) {
   return (
