@@ -19,6 +19,14 @@ import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
+// Small inline SVG icons — no Unicode glyphs anywhere in the Codex detail.
+const IcoLink = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', verticalAlign: '-1px' }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>;
+const IcoPlus = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ flex: 'none', verticalAlign: '-2px' }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
+const IcoStar = ({ size = 13, fill }) => <svg viewBox="0 0 24 24" width={size} height={size} fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>;
+const CodexTypeIcon = ({ kind, size = 14 }) => kind === 'card'
+  ? <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
+  : <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></svg>;
+
 export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, onChanged }) {
   const [data, setData] = useState(null);
   const [composer, setComposer] = useState(false);
@@ -142,14 +150,14 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
       {/* in your decks — the unification payoff: this card in the profile's decks */}
       {k === 'card' && data.inDecks.length > 0 && (
         <div style={{ marginTop: 18 }}>
-          <SectionLabel glyph="◈" label="IN YOUR DECKS" count={data.inDecks.length} />
+          <SectionLabel label="IN YOUR DECKS" count={data.inDecks.length} />
           {data.inDecks.map((d, i) => (
             <div key={d.id + d.zone} onClick={() => onOpenDeck?.(d.id, d.name)} className="cx-row"
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', borderBottom: i < data.inDecks.length - 1 ? '1px solid var(--hair-12)' : 'none', cursor: 'pointer' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-violet)', flex: 'none' }} />
               <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
               <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{d.zone === 'avatar' ? 'Avatar' : `${d.zone.charAt(0).toUpperCase() + d.zone.slice(1)} · ${d.quantity}×`}</span>
-              <span style={{ color: 'var(--ink-faint)', fontSize: 13 }}>›</span>
+              <span style={{ color: 'var(--ink-faint)', display: 'flex' }}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></span>
             </div>
           ))}
         </div>
@@ -171,11 +179,11 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
       {/* marginalia */}
       <div style={{ marginTop: 18, borderRadius: 16, background: 'linear-gradient(180deg,rgba(30,22,15,.85),rgba(22,16,11,.6))', border: '1px solid var(--hair-16)', padding: 15 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>
-          <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)' }}>⚜ YOUR MARGINALIA</span>
+          <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)' }}>YOUR MARGINALIA</span>
           <IconButton glyph="+" onClick={() => setComposer(true)} title="Add a note or link" />
         </div>
         {data.notes.length === 0 && data.links.length === 0 && (
-          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '6px 0 4px' }}>No marginalia yet. Tap ＋ to add a note or link.</div>
+          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '6px 0 4px' }}>No marginalia yet — add a note or link.</div>
         )}
         {data.notes.map((n) => (
           <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', gap: 8 }}>
@@ -186,7 +194,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
         {data.links.map((l) => (
           <div key={l.id} style={{ borderLeft: '2px solid var(--link-violet)', background: 'rgba(199,154,208,.08)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div onClick={() => onOpenName(l.otherName)} style={{ font: "600 14px/1.3 var(--f-read)", color: 'var(--link-violet)', cursor: 'pointer' }}>↔ {l.otherName}</div>
+              <div onClick={() => onOpenName(l.otherName)} style={{ display: 'flex', alignItems: 'center', gap: 6, font: "600 14px/1.3 var(--f-read)", color: 'var(--link-violet)', cursor: 'pointer' }}><IcoLink />{l.otherName}</div>
               {l.description && <div style={{ font: "400 12.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', fontStyle: 'italic', marginTop: 3 }}>{l.description}</div>}
             </div>
             <IconButton glyph="✕" tone="danger" size={22} onClick={() => delLink(l.id)} />
@@ -197,7 +205,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
       {/* selection -> highlight action */}
       {selection && (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 88, display: 'flex', justifyContent: 'center', zIndex: 24 }}>
-          <button onClick={captureHighlight} style={{ padding: '10px 18px', borderRadius: 22, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', boxShadow: '0 8px 22px -8px rgba(0,0,0,.6)' }}>＋ Highlight selection</button>
+          <button onClick={captureHighlight} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '10px 18px', borderRadius: 22, background: 'linear-gradient(180deg,#dcb86f,#c9a35a)', color: '#1a1410', font: "700 13px/1 var(--f-ui)", border: 'none', cursor: 'pointer', boxShadow: '0 8px 22px -8px rgba(0,0,0,.6)' }}><IcoPlus size={14} />Highlight selection</button>
         </div>
       )}
 
@@ -210,7 +218,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
 
       {/* Save / Collect / Add-to-deck live in a FAB (consistent app-wide), not inline buttons. */}
       <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Entry options" items={[
-        { label: data.saved ? 'Saved' : 'Save', keepOpen: true, state: data.saved ? '★' : '☆', onClick: onStar },
+        { label: data.saved ? 'Saved' : 'Save', keepOpen: true, state: <IcoStar fill={data.saved} />, onClick: onStar },
         { label: 'Collect', onClick: () => setPicker(true) },
         ...(k === 'card' && !data.card.is_avatar ? [{ label: 'Add to a deck', onClick: () => setDeckAdd(true) }] : []),
       ]} />
@@ -298,7 +306,7 @@ function CardBody({ card, faqs, onOpenName, bodyRef, onSelect, marks }) {
 
       {faqs.length > 0 && (
         <div style={{ marginTop: 4 }}>
-          <SectionLabel glyph="§" label="OFFICIAL FAQ" count={faqs.length} />
+          <SectionLabel label="OFFICIAL FAQ" count={faqs.length} />
           {faqs.map((f, i) => (
             <div key={i} style={{ border: '1px solid var(--hair-14)', borderRadius: 12, background: 'var(--surface-card)', padding: '12px 13px', marginBottom: 8 }}>
               <div style={{ font: "600 13.5px/1.4 var(--f-read)", color: 'var(--ink-head)', marginBottom: 6 }}>{f.question}</div>
@@ -347,7 +355,7 @@ function MarginaliaComposer({ open, onClose, noteText, setNoteText, onSaveNote, 
         <>
           {target ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, border: '1px solid var(--hair-22)', marginBottom: 10 }}>
-              <span style={{ flex: 1, font: "600 14px/1 var(--f-read)", color: 'var(--link-violet)' }}>↔ {target.name}</span>
+              <span style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 6, font: "600 14px/1 var(--f-read)", color: 'var(--link-violet)' }}><IcoLink />{target.name}</span>
               <IconButton glyph="✕" tone="muted" size={22} onClick={() => setTarget(null)} />
             </div>
           ) : (
@@ -357,7 +365,7 @@ function MarginaliaComposer({ open, onClose, noteText, setNoteText, onSaveNote, 
               <div style={{ maxHeight: 180, overflowY: 'auto' }} className="cx-scroll">
                 {results.map((r) => (
                   <div key={r.kind + r.id} onClick={() => { setTarget(r); setQ(''); }} className="cx-row" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
-                    <span style={{ color: 'var(--gold)', width: 16, textAlign: 'center' }}>{r.kind === 'card' ? '◈' : '§'}</span>
+                    <span style={{ color: 'var(--gold)', width: 16, display: 'flex', justifyContent: 'center' }}><CodexTypeIcon kind={r.kind} size={14} /></span>
                     <span style={{ flex: 1, font: "500 14px/1 var(--f-read)", color: 'var(--ink-body)' }}>{r.name}</span>
                     <span style={{ font: "500 10px/1 var(--f-ui)", color: 'var(--ink-faint)' }}>{r.meta}</span>
                   </div>
