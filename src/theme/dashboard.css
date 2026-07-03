@@ -16,9 +16,12 @@
 .dw-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); flex: none; }
 .dw-body { padding: 0 13px 13px; }
 .dw-tools { display: flex; gap: 4px; flex: none; }
-.dw-mini { width: 25px; height: 25px; border-radius: 6px; border: 1px solid var(--hair-22); background: rgba(0,0,0,.3); color: var(--ink-status); font: 11px/1 var(--f-ui); display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; }
+.dw-mini { width: 25px; height: 25px; border-radius: 6px; border: 1px solid var(--hair-22); background: rgba(0,0,0,.3); color: var(--ink-status); display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; padding: 0; }
 .dw-mini:disabled { opacity: .35; cursor: default; }
 .dw-mini.danger { color: var(--destructive); border-color: rgba(168,88,74,.4); }
+/* Roll again (Random Card / Article) */
+.dw-roll { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 5px 10px; border-radius: 14px; border: 1px solid rgba(220,184,111,.4); background: rgba(0,0,0,.25); color: var(--gold-leaf); font: 600 11px/1 var(--f-ui); cursor: pointer; }
+.dw-roll:active { border-color: var(--gold-leaf); }
 
 /* ── Art hero (Featured Card · Card of the Day · Deck Spotlight) ── */
 .dw-hero { position: relative; width: 100%; border-radius: 12px; overflow: hidden; background: #141019; aspect-ratio: 16/9; }
@@ -30,8 +33,12 @@
 .dw-hero-sub { display: flex; align-items: center; gap: 7px; font: 500 11px/1 var(--f-ui); color: rgba(255,255,255,.72); margin-top: 5px; letter-spacing: .03em; }
 .dw-hero-sub img { width: 15px; height: 15px; }
 .dw-hero-badge { position: absolute; top: 10px; left: 11px; font: 700 8.5px/1 var(--f-ui); letter-spacing: .14em; color: rgba(255,255,255,.85); background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.18); padding: 5px 8px; border-radius: 7px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.dw-mono { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 800 46px/1 var(--f-display); color: rgba(220,184,111,.34); background: radial-gradient(120% 120% at 50% 28%, rgba(220,184,111,.12), #130d07); }
-.dw[data-pillar="decks"] .dw-mono { color: rgba(199,154,208,.4); background: radial-gradient(120% 120% at 50% 28%, rgba(199,154,208,.13), #120a14); }
+/* Placeholder card silhouette shown behind the art (and in every preview) — a
+   neutral portrait card frame, no glyph. */
+.dw-cardph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 26%, rgba(220,184,111,.07), #17110b); }
+.dw-cardph::before { content: ''; width: 40%; max-width: 74px; aspect-ratio: 5 / 7; border-radius: 8px; border: 1.5px solid rgba(220,184,111,.3); background: linear-gradient(155deg, rgba(220,184,111,.07), rgba(0,0,0,.2)); box-shadow: inset 0 0 0 3px rgba(0,0,0,.16); }
+.dw[data-pillar="decks"] .dw-cardph { background: radial-gradient(120% 120% at 50% 26%, rgba(199,154,208,.08), #150c15); }
+.dw[data-pillar="decks"] .dw-cardph::before { border-color: rgba(199,154,208,.32); background: linear-gradient(155deg, rgba(199,154,208,.08), rgba(0,0,0,.2)); }
 
 /* ── Deck rail (Your Decks) ── */
 .dw-decks { display: flex; gap: 9px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
@@ -41,7 +48,8 @@
 .dw-deckcard .g { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 42%, rgba(0,0,0,.84)); }
 .dw-deckcard .n { position: absolute; left: 8px; right: 8px; bottom: 21px; font: 600 12px/1.15 var(--f-read); color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw-deckcard .r { position: absolute; left: 8px; bottom: 7px; font: 500 10px/1 var(--f-mono); color: rgba(255,255,255,.74); }
-.dw-deckmono { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 800 30px/1 var(--f-display); color: rgba(199,154,208,.42); background: radial-gradient(120% 120% at 50% 30%, rgba(199,154,208,.12), #120a14); }
+.dw-deckph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 30%, rgba(199,154,208,.08), #150c15); }
+.dw-deckph::before { content: ''; width: 58%; aspect-ratio: 5 / 7; border-radius: 6px; border: 1.5px solid rgba(199,154,208,.32); background: linear-gradient(155deg, rgba(199,154,208,.07), rgba(0,0,0,.2)); }
 
 /* ── Element affinity bars ── */
 .dw-el { display: flex; align-items: center; gap: 9px; margin: 8px 0; }
@@ -72,18 +80,20 @@
 /* ── Generic rows / quotes / empties ── */
 .dw-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
 .dw-row.tap { cursor: pointer; }
-.dw-row .gl { width: 16px; text-align: center; color: var(--gold); font-size: 13px; flex: none; }
+.dw-row .gl { width: 16px; flex: none; color: var(--gold); display: flex; align-items: center; justify-content: center; }
 .dw-row .nm { flex: 1; min-width: 0; font: 500 13.5px/1.25 var(--f-read); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw-row .mt { font: 500 10px/1 var(--f-ui); color: var(--ink-faint); flex: none; }
 .dw-quote { font: 400 13px/1.45 var(--f-read); color: var(--ink-body); font-style: italic; padding: 5px 0; cursor: pointer; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .dw-quote .on { display: block; font: 500 10px/1 var(--f-ui); color: var(--ink-muted); font-style: normal; margin-top: 3px; }
 .dw-empty { font: 400 12.5px/1.5 var(--f-read); color: var(--ink-faint); font-style: italic; padding: 6px 0; }
 .dw-note { font: 400 13.5px/1.55 var(--f-read); color: var(--ink-body); font-style: italic; white-space: pre-wrap; word-break: break-word; }
-.dw-link { display: block; font: 500 13px/1.6 var(--f-ui); color: var(--link-violet); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dw-link { display: flex; align-items: center; gap: 7px; font: 500 13px/1.6 var(--f-ui); color: var(--link-violet); overflow: hidden; }
+.dw-link svg { flex: none; }
+.dw-link span, .dw-link { min-width: 0; }
 
 /* ── Structural: title + separator ── */
-.dw-titlecard { padding: 10px 2px 4px; }
-.dw-titlecard .t { font: 700 22px/1.15 var(--f-display); color: var(--gold-head); letter-spacing: .01em; }
+.dw-titlecard { padding: 8px 2px 2px; }
+.dw-titlecard .t { font: 700 22px/1.15 var(--f-display); color: #f4efe6; letter-spacing: .01em; }
 .dw-sep { display: flex; align-items: center; gap: 12px; padding: 14px 4px; }
 .dw-sep .ln { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--hair-30), transparent); }
 .dw-sep .dia { width: 6px; height: 6px; background: var(--gold-leaf); transform: rotate(45deg); flex: none; }
@@ -91,8 +101,8 @@
 .dw-struct-edit { display: flex; gap: 4px; position: absolute; top: 6px; right: 6px; z-index: 2; }
 
 /* ── Add tile + toolbar buttons ── */
-.dw-add { width: 100%; padding: 18px 0; border-radius: 16px; border: 1px dashed var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 13px/1 var(--f-ui); cursor: pointer; }
-.dw-toolbtn { padding: 7px 15px; border-radius: 18px; border: 1px solid var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 12px/1 var(--f-ui); cursor: pointer; }
+.dw-add { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 18px 0; border-radius: 16px; border: 1px dashed var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 13px/1 var(--f-ui); cursor: pointer; }
+.dw-toolbtn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 15px; border-radius: 18px; border: 1px solid var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 12px/1 var(--f-ui); cursor: pointer; }
 
 /* ── Picker with LIVE previews ── */
 .dw-picker { padding: 0 14px 4px; }
@@ -100,12 +110,19 @@
 .dw-pick { border: 1px solid var(--hair-16); border-radius: 14px; overflow: hidden; background: #0b0907; cursor: pointer; text-align: left; padding: 0; -webkit-tap-highlight-color: transparent; display: flex; flex-direction: column; }
 .dw-pick:active { border-color: var(--hair-30); transform: scale(.985); }
 .dw-pick-preview { position: relative; height: 128px; overflow: hidden; pointer-events: none; }
+.dw-pick-preview.short { height: 52px; }
 .dw-pick-preview > .dw { position: absolute; inset: 0; height: auto; min-height: 100%; border: none; border-radius: 0; }
+.dw-pick-preview.short > .dw { display: flex; align-items: center; }
+.dw-pick-preview.short .dw-body { width: 100%; padding-top: 0; padding-bottom: 0; }
+.dw-pick-preview.short .dw-titlecard { padding: 0 2px; }
+.dw-pick-preview.short .dw-titlecard .t { font-size: 18px; }
+.dw-pick-preview.short .dw-sep { padding: 6px 4px; }
 .dw-pick-preview::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 62%, #0b0907); }
+.dw-pick-preview.short::after { display: none; }
 .dw-pick-foot { display: flex; align-items: center; gap: 7px; padding: 9px 11px; border-top: 1px solid var(--hair-12); }
 .dw-pick-foot .pl { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--hair-30); }
 .dw-pick-foot .pl.codex { background: var(--accent-gold); }
 .dw-pick-foot .pl.decks { background: var(--accent-violet); }
 .dw-pick-foot .pl.play  { background: var(--accent-jade); }
 .dw-pick-foot .nm { flex: 1; min-width: 0; font: 600 12px/1.1 var(--f-ui); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dw-pick-foot .add { font: 700 16px/1 var(--f-ui); color: var(--gold-leaf); flex: none; }
+.dw-pick-foot svg { color: var(--gold-leaf); flex: none; }

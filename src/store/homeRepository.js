@@ -20,15 +20,13 @@ export const WIDGETS = [
   // Decks
   { kind: 'deckSpotlight', title: 'Deck Spotlight', pillar: 'decks', blurb: 'A featured deck, in full art' },
   { kind: 'yourDecks', title: 'Your Decks', pillar: 'decks', blurb: 'A rail of your decks' },
-  { kind: 'elementAffinity', title: 'Element Affinity', pillar: 'decks', blurb: 'Which elements you favour' },
   // Codex
-  { kind: 'featuredCard', title: 'Featured Card', pillar: 'codex', blurb: 'A card in the spotlight' },
+  { kind: 'featuredCard', title: 'Random Card', pillar: 'codex', rollable: true, blurb: 'A card to discover — roll for more' },
   { kind: 'cardOfDay', title: 'Card of the Day', pillar: 'codex', blurb: 'A daily card pick' },
   { kind: 'notes', title: 'Notes & Rulings', pillar: 'codex', blurb: 'Your latest marginalia' },
   { kind: 'highlights', title: 'Highlights', pillar: 'codex', blurb: 'Passages you flagged' },
   { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
-  { kind: 'randomRule', title: 'Random Rule', pillar: 'codex', blurb: 'A keyword to revisit' },
-  { kind: 'errata', title: 'Errata Watch', pillar: 'codex', blurb: 'Cards with updated text' },
+  { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit — roll for more' },
   // Neutral
   { kind: 'pinned', title: 'Pinned', pillar: null, blurb: 'Everything you starred' },
   { kind: 'note', title: 'Note', pillar: null, configurable: true, blurb: 'A free-text note' },
@@ -41,6 +39,7 @@ export const widgetMeta = (k) => WIDGETS.find((w) => w.kind === k) || { kind: k,
 export const widgetTitle = (k) => widgetMeta(k).title;
 export const isConfigurable = (k) => !!widgetMeta(k).configurable;
 export const isStructural = (k) => !!widgetMeta(k).structural;
+export const isRollable = (k) => !!widgetMeta(k).rollable;
 export const pillarOf = (k) => widgetMeta(k).pillar || null;
 
 // Old Lexicum-era kinds → their nearest new widget, so dashboards saved before
@@ -49,6 +48,8 @@ const ALIAS = {
   saved: 'pinned', duels: 'recentMatches', decks: 'yourDecks', random: 'featuredCard',
   randomArticle: 'randomRule', text: 'note', urls: 'links', stats: 'winRate',
   resume: 'recentMatches', collection: 'collections',
+  // removed widgets fold into a nearby survivor so old dashboards keep rendering
+  errata: 'notes', elementAffinity: 'yourDecks',
 };
 const normalizeKind = (k) => ALIAS[k] || k;
 
@@ -168,13 +169,6 @@ export async function widgetData(block) {
     const decks = await listDecks();
     return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet — build one in Decks.' };
   }
-  if (k === 'elementAffinity') {
-    const decks = await listDecks();
-    const tot = { fire: 0, water: 0, earth: 0, air: 0 };
-    for (const d of decks) for (const e of (d.elems || [])) if (tot[e.el] != null) tot[e.el]++;
-    const max = Math.max(1, ...Object.values(tot));
-    return { any: Object.values(tot).some((v) => v > 0), affinity: Object.entries(tot).map(([el, n]) => ({ el, n, pct: Math.round((n / max) * 100) })), empty: 'Build decks to reveal your elements.' };
-  }
   if (k === 'featuredCard' || k === 'cardOfDay') {
     const n = (await query('SELECT COUNT(*) c FROM cards;'))[0].c;
     const off = k === 'cardOfDay' ? (Math.floor(Date.now() / 86400000) % Math.max(1, n)) : Math.floor(Math.random() * Math.max(1, n));
@@ -186,10 +180,6 @@ export async function widgetData(block) {
     const off = Math.floor(Math.random() * Math.max(1, n));
     const row = (await query('SELECT rule_id id, title FROM rules WHERE parent_id IS NULL LIMIT 1 OFFSET ?;', [off]))[0];
     return { rule: row ? { id: row.id, name: row.title } : null, empty: '—' };
-  }
-  if (k === 'errata') {
-    const rows = await query("SELECT card_id,name FROM cards WHERE rules_text LIKE 'UPDATED%' ORDER BY name LIMIT 50;");
-    return { count: rows.length, items: rows.map((r) => ({ name: r.name, meta: 'Errata', glyph: '◈', type: 'card', id: r.card_id })), empty: 'No errata — all cards current.' };
   }
   if (k === 'pinned') {
     const rows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT 50;', [pid]);
@@ -212,7 +202,7 @@ export async function widgetData(block) {
   if (k === 'collections') {
     const cols = await query('SELECT id,name FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
     for (const c of cols) c.n = (await query('SELECT COUNT(*) n FROM collection_items WHERE collection_id=?;', [c.id]))[0].n;
-    return { count: cols.length, items: cols.map((c) => ({ name: c.name, meta: `${c.n} item${c.n === 1 ? '' : 's'}`, glyph: '❧' })), empty: 'No collections yet.' };
+    return { count: cols.length, items: cols.map((c) => ({ name: c.name, meta: `${c.n} item${c.n === 1 ? '' : 's'}`, iconType: 'collection' })), empty: 'No collections yet.' };
   }
   if (k === 'note') return { text: block.config?.text || '' };
   if (k === 'links') return { links: block.config?.links || [] };
@@ -221,34 +211,24 @@ export async function widgetData(block) {
 
 /* ---------------- picker previews ---------------- */
 
-// A few real card rows (with art) to make the picker's live previews look true
-// on any profile. Falls back gracefully to the monogram state when a card has
-// no image or the catalogue is empty.
-export async function pickerSamples() {
-  return query("SELECT card_id,name,type,cost,image_slug,rarity FROM cards WHERE image_slug IS NOT NULL AND image_slug!='' ORDER BY RANDOM() LIMIT 4;");
-}
-
 // Representative mock data shaped exactly like widgetData(), used to render the
-// live widget previews in the Add-a-widget sheet (`cards` = pickerSamples()).
-export function sampleData(kind, cards = []) {
+// live widget previews in the Add-a-widget sheet. Art widgets carry NO image —
+// previews render a neutral placeholder card shape, never real card art.
+export function sampleData(kind) {
   const k = normalizeKind(kind);
-  const [c0, c1, c2] = cards;
-  const img = (c) => c?.image_slug || null;
   switch (k) {
     case 'winRate': return { winPct: 68, wins: 17, losses: 8, total: 25, streak: 3, last8: ['W', 'W', 'L', 'W', 'D', 'W', 'L', 'W'] };
     case 'recentMatches': return { items: [{ name: 'vs. Alex', won: true, score: '20–4' }, { name: 'vs. Sam', won: false, score: '0–13' }, { name: 'vs. Robin', won: true, score: '20–9' }] };
     case 'nemesis': return { items: [{ name: 'Alex', w: 4, l: 1, g: 5 }, { name: 'Sam', w: 1, l: 3, g: 4 }, { name: 'Robin', w: 2, l: 2, g: 4 }] };
-    case 'deckSpotlight': return { spotlight: { name: 'Aggro Flare', image: img(c0), record: '12–5', winPct: 71, elems: [{ el: 'fire' }, { el: 'earth' }] } };
-    case 'yourDecks': return { decks: [{ name: 'Aggro Flare', image: img(c0), record: '12–5' }, { name: 'Tide Control', image: img(c1), record: '8–6' }, { name: 'Stone Wall', image: img(c2), record: '5–3' }] };
-    case 'elementAffinity': return { any: true, affinity: [{ el: 'fire', n: 6, pct: 100 }, { el: 'water', n: 4, pct: 66 }, { el: 'earth', n: 3, pct: 50 }, { el: 'air', n: 2, pct: 33 }] };
-    case 'featuredCard': return { card: c0 ? { name: c0.name, type: c0.type, cost: c0.cost, image: c0.image_slug, rarity: c0.rarity } : { name: 'Avatar of Fire', type: 'Avatar', cost: 0, image: null, rarity: 'Elite' } };
-    case 'cardOfDay': { const c = c1 || c0; return { card: c ? { name: c.name, type: c.type, cost: c.cost, image: c.image_slug, rarity: c.rarity } : { name: 'Wildfire', type: 'Magic', cost: 3, image: null } }; }
+    case 'deckSpotlight': return { spotlight: { name: 'Aggro Flare', image: null, record: '12–5', winPct: 71, elems: [{ el: 'fire' }, { el: 'earth' }] } };
+    case 'yourDecks': return { decks: [{ name: 'Aggro Flare', image: null, record: '12–5' }, { name: 'Tide Control', image: null, record: '8–6' }, { name: 'Stone Wall', image: null, record: '5–3' }] };
+    case 'featuredCard': return { card: { name: 'Avatar of Fire', type: 'Avatar', cost: 0, image: null, rarity: 'Elite' } };
+    case 'cardOfDay': return { card: { name: 'Wildfire', type: 'Magic', cost: 3, image: null } };
     case 'notes': return { quotes: true, items: [{ body: 'Rush lets a minion attack the turn it enters play.', on: 'Rush' }, { body: 'Genesis triggers when the card enters.', on: 'Genesis' }] };
     case 'highlights': return { quotes: true, items: [{ body: '“…may bear any number of items.”', on: 'ruling' }, { body: '“Tap to resolve before combat.”', on: 'timing' }] };
-    case 'collections': return { items: [{ name: 'Fire staples', meta: '12 items', glyph: '❧' }, { name: 'Want list', meta: '5 items', glyph: '❧' }] };
+    case 'collections': return { items: [{ name: 'Fire staples', meta: '12 items', iconType: 'collection' }, { name: 'Want list', meta: '5 items', iconType: 'collection' }] };
     case 'randomRule': return { rule: { name: 'Deathrite' } };
-    case 'errata': return { items: [{ name: 'Enchantress', meta: 'Errata', glyph: '◈' }, { name: 'Philosopher’s Stone', meta: 'Errata', glyph: '◈' }] };
-    case 'pinned': return { items: [{ name: 'Sparkmage', meta: 'Card', glyph: '◈' }, { name: 'Charge', meta: 'Keyword', glyph: '§' }, { name: 'Aggro Flare', meta: 'Deck', glyph: '◆' }] };
+    case 'pinned': return { items: [{ name: 'Sparkmage', meta: 'Card', type: 'card' }, { name: 'Charge', meta: 'Keyword', type: 'rule' }, { name: 'Aggro Flare', meta: 'Deck', type: 'deck' }] };
     case 'note': return { text: 'Playtest: side in extra removal vs aggro. Watch the water matchup.' };
     case 'links': return { links: [{ label: 'Curiosa deck', url: 'https://curiosa.io' }, { label: 'Rules PDF', url: 'https://sorcerytcg.com' }] };
     case 'title': return { text: 'My Layout' };

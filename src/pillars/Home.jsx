@@ -7,8 +7,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   listBlocks, addBlock, removeBlock, resizeBlock, moveBlock, setConfig,
-  widgetData, widgetTitle, widgetMeta, isConfigurable, isStructural, pillarOf,
-  sampleData, pickerSamples, overview, WIDGETS,
+  widgetData, widgetMeta, isConfigurable, isStructural, isRollable, pillarOf,
+  sampleData, overview, WIDGETS,
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { safeHref } from '../util.js';
@@ -213,17 +213,19 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
     setData(d);
   }
   const refreshLayouts = () => listLayouts().then(setLayouts);
+  // Re-roll a single widget (Random Card / Random Article) without reloading all.
+  const roll = async (b) => { const d = await widgetData(b); setData((prev) => ({ ...prev, [b.id]: d })); haptic('light'); };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
   if (!blocks) return <Loading />;
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-        <button onClick={() => { setLayoutSheet(true); refreshLayouts(); }} className="dw-toolbtn">⧉ Layouts</button>
+        <button onClick={() => { setLayoutSheet(true); refreshLayouts(); }} className="dw-toolbtn"><IcoLayers size={13} />Layouts</button>
       </div>
       {blocks.length === 0 && (
         <div className="dw-empty" style={{ textAlign: 'center', padding: '34px 12px' }}>
-          A blank canvas. Tap <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>Edit</b>, then ＋ to compose your dashboard.
+          A blank canvas. Tap <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>Edit</b>, then <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>Add a widget</b> to compose your dashboard.
         </div>
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
@@ -241,11 +243,11 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
             <div key={b.id} style={{ width: full ? '100%' : 'calc(50% - 6px)' }}>
               {isStructural(b.type)
                 ? <StructuralBlock {...common} />
-                : <WidgetFrame {...common} data={data[b.id]} onOpen={onOpen} onGoTab={onGoTab} />}
+                : <WidgetFrame {...common} data={data[b.id]} onOpen={onOpen} onGoTab={onGoTab} onRoll={() => roll(b)} />}
             </div>
           );
         })}
-        {edit && <button onClick={() => setPicker(true)} className="dw-add">＋ Add a widget</button>}
+        {edit && <button onClick={() => setPicker(true)} className="dw-add"><IcoPlus size={14} />Add a widget</button>}
       </div>
 
       <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); haptic('light'); load(); }} />
@@ -282,7 +284,7 @@ function LayoutSheet({ open, layouts, onClose, onSave, onLoad, onDelete }) {
   );
 }
 
-function WidgetFrame({ block, data, edit, onOpen, onGoTab, first, last, onResize, onRemove, onUp, onDown, onConfig, preview }) {
+function WidgetFrame({ block, data, edit, onOpen, onGoTab, onRoll, first, last, onResize, onRemove, onUp, onDown, onConfig, preview }) {
   const meta = widgetMeta(block.type);
   const title = block.config?.name || meta.title;
   return (
@@ -290,13 +292,16 @@ function WidgetFrame({ block, data, edit, onOpen, onGoTab, first, last, onResize
       <div className="dw-head">
         <span className="dw-title">{title}</span>
         {!edit && data?.count != null && <span className="dw-count">{data.count}</span>}
+        {!edit && !preview && isRollable(block.type) && (
+          <button className="dw-roll" onClick={onRoll} aria-label="Roll again"><IcoRoll size={12} />Roll</button>
+        )}
         {edit && (
           <div className="dw-tools">
-            <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up">▲</button>
-            <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down">▼</button>
-            <button className="dw-mini" onClick={onResize} aria-label="Resize">{block.width === 'full' ? '½' : '⤢'}</button>
-            <button className="dw-mini" onClick={onConfig} aria-label="Rename or configure">✎</button>
-            <button className="dw-mini danger" onClick={onRemove} aria-label="Remove">✕</button>
+            <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up"><IcoUp size={12} /></button>
+            <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down"><IcoDown size={12} /></button>
+            <button className="dw-mini" onClick={onResize} aria-label="Resize">{block.width === 'full' ? <IcoShrink size={12} /> : <IcoExpand size={12} />}</button>
+            <button className="dw-mini" onClick={onConfig} aria-label="Rename or configure"><IcoEdit size={12} /></button>
+            <button className="dw-mini danger" onClick={onRemove} aria-label="Remove"><IcoClose size={12} /></button>
           </div>
         )}
       </div>
@@ -315,22 +320,23 @@ function StructuralBlock({ block, edit, first, last, onUp, onDown, onRemove, onC
         : <div className="dw-sep"><span className="ln" /><span className="dia" /><span className="ln" /></div>}
       {edit && (
         <div className="dw-struct-edit">
-          <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up">▲</button>
-          <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down">▼</button>
-          {block.type === 'title' && <button className="dw-mini" onClick={onConfig} aria-label="Edit title">✎</button>}
-          <button className="dw-mini danger" onClick={onRemove} aria-label="Remove">✕</button>
+          <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up"><IcoUp size={12} /></button>
+          <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down"><IcoDown size={12} /></button>
+          {block.type === 'title' && <button className="dw-mini" onClick={onConfig} aria-label="Edit title"><IcoEdit size={12} /></button>}
+          <button className="dw-mini danger" onClick={onRemove} aria-label="Remove"><IcoClose size={12} /></button>
         </div>
       )}
     </div>
   );
 }
 
-// Full-bleed card/deck art with a graceful monogram behind it — if the image is
-// absent or fails to load, the gold monogram shows through.
+// Full-bleed card/deck art with a graceful placeholder card-shape behind it — if
+// the image is absent (or fails to load, or we're in a preview) the neutral card
+// silhouette shows instead. No glyphs.
 function ArtHero({ image, name, sub, badge, onClick, tall, deck }) {
   return (
     <div className={`dw-hero${tall ? ' tall' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} style={{ cursor: onClick ? 'pointer' : 'default' }}>
-      <div className="dw-mono">{deck ? '◆' : '◈'}</div>
+      <div className="dw-cardph" />
       {image && <img className="dw-hero-img" src={`${BASE}cards/${image}`} alt="" loading="lazy" onError={hideImg} />}
       <div className="dw-hero-grad" />
       {badge && <span className="dw-hero-badge">{badge}</span>}
@@ -350,14 +356,14 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
   const go = preview ? () => {} : (onGoTab || (() => {}));
 
   if (k === 'featuredCard' || k === 'cardOfDay') return data.card
-    ? <ArtHero image={data.card.image} name={data.card.name}
+    ? <ArtHero image={preview ? null : data.card.image} name={data.card.name}
         badge={k === 'cardOfDay' ? 'CARD OF THE DAY' : (data.card.rarity ? data.card.rarity.toUpperCase() : null)}
         sub={`${data.card.type || 'Card'}${data.card.cost != null ? ` · ${data.card.cost} mana` : ''}`}
         tall={block.width !== 'full'} onClick={() => open('card', data.card.id, data.card.name)} />
     : empty(data.empty);
 
   if (k === 'deckSpotlight') return data.spotlight
-    ? <ArtHero image={data.spotlight.image} name={data.spotlight.name} deck tall={block.width !== 'full'}
+    ? <ArtHero image={preview ? null : data.spotlight.image} name={data.spotlight.name} deck tall={block.width !== 'full'}
         sub={<>{(data.spotlight.elems || []).map((e, i) => <img key={i} src={`${BASE}icons/${e.el}.png`} alt="" onError={hideImg} />)}<span>{data.spotlight.record}{data.spotlight.winPct != null ? ` · ${data.spotlight.winPct}%` : ''}</span></>}
         onClick={() => open('deck', data.spotlight.id, data.spotlight.name)} />
     : empty(data.empty);
@@ -365,17 +371,8 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
   if (k === 'yourDecks') return data.decks?.length
     ? <div className="dw-decks">{data.decks.map((d, i) => (
         <div key={i} className="dw-deckcard" onClick={() => open('deck', d.id, d.name)}>
-          {d.image ? <img src={`${BASE}cards/${d.image}`} alt="" loading="lazy" onError={hideImg} /> : <div className="dw-deckmono">◆</div>}
+          {!preview && d.image ? <img src={`${BASE}cards/${d.image}`} alt="" loading="lazy" onError={hideImg} /> : <div className="dw-deckph" />}
           <div className="g" /><div className="n">{d.name}</div><div className="r">{d.record}</div>
-        </div>))}</div>
-    : empty(data.empty);
-
-  if (k === 'elementAffinity') return data.any
-    ? <div>{data.affinity.map((e) => (
-        <div key={e.el} className="dw-el">
-          <img src={`${BASE}icons/${e.el}.png`} alt={e.el} onError={hideImg} />
-          <div className="dw-el-track"><div className="dw-el-fill" style={{ width: `${e.pct}%`, background: EL_HUE[e.el] }} /></div>
-          <span className="dw-el-n">{e.n}</span>
         </div>))}</div>
     : empty(data.empty);
 
@@ -413,26 +410,26 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
     : empty(data.empty);
 
   if (k === 'randomRule') return data.rule
-    ? <div className="dw-row tap" onClick={() => open('rule', data.rule.id, data.rule.name)}><span className="gl">§</span><span className="nm">{data.rule.name}</span></div>
-    : empty(data.empty || '—');
+    ? <div className="dw-row tap" onClick={() => open('rule', data.rule.id, data.rule.name)}><span className="gl"><RowIcon t="rule" /></span><span className="nm">{data.rule.name}</span></div>
+    : empty(data.empty || 'No articles found.');
 
-  if (k === 'note') return <div className="dw-note">{data.text || 'Empty note — open Edit ✎ to write.'}</div>;
+  if (k === 'note') return <div className="dw-note">{data.text || 'Empty note — open Edit to write.'}</div>;
 
   if (k === 'links') return data.links?.length
     ? data.links.map((l, i) => { const href = safeHref(l.url); return href
-        ? <a key={i} className="dw-link" href={preview ? undefined : href} target="_blank" rel="noreferrer" onClick={preview ? (e) => e.preventDefault() : undefined}>↗ {l.label || l.url}</a>
-        : <div key={i} className="dw-link" style={{ color: 'var(--ink-faint)' }}>↗ {l.label || l.url}</div>; })
-    : empty('No links — open Edit ✎ to add.');
+        ? <a key={i} className="dw-link" href={preview ? undefined : href} target="_blank" rel="noreferrer" onClick={preview ? (e) => e.preventDefault() : undefined}><IcoExternal size={13} />{l.label || l.url}</a>
+        : <div key={i} className="dw-link" style={{ color: 'var(--ink-faint)' }}><IcoExternal size={13} />{l.label || l.url}</div>; })
+    : empty('No links — open Edit to add.');
 
   if (data.quotes) return data.items?.length
     ? data.items.slice(0, 3).map((n, i) => <div key={i} className="dw-quote" onClick={() => open(n.type, n.id, n.on)}>“{n.body}”{n.on && <span className="on">{k === 'highlights' ? n.on : `on ${n.on}`}</span>}</div>)
     : empty(data.empty);
 
-  // list widgets — pinned, collections, errata
+  // list widgets — pinned, collections
   return data.items?.length
     ? data.items.slice(0, 5).map((it, i) => (
         <div key={i} className={`dw-row${it.type ? ' tap' : ''}`} onClick={it.type ? () => open(it.type, it.id, it.name) : undefined}>
-          <span className="gl">{it.glyph || '§'}</span><span className="nm">{it.name}</span>{it.meta && <span className="mt">{it.meta}</span>}
+          <span className="gl"><RowIcon t={it.type || it.iconType} /></span><span className="nm">{it.name}</span>{it.meta && <span className="mt">{it.meta}</span>}
         </div>))
     : empty(data.empty || '—');
 }
@@ -440,8 +437,6 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
 // The Add-a-widget sheet renders a LIVE mini-preview of each widget (fed
 // representative sample data + a few real card images), not just a name tile.
 function Picker({ open, onClose, onPick }) {
-  const [samples, setSamples] = useState([]);
-  useEffect(() => { if (open) pickerSamples().then(setSamples).catch(() => setSamples([])); }, [open]);
   return (
     <Sheet open={open} title="Add a Widget" onClose={onClose}>
       <div className="dw-picker">
@@ -451,20 +446,19 @@ function Picker({ open, onClose, onPick }) {
         <div className="dw-picker-grid">
           {WIDGETS.map((w) => {
             const sample = { id: 'preview', type: w.kind, width: w.structural ? 'full' : 'half', config: {} };
-            const sdata = sampleData(w.kind, samples);
             return (
               <button key={w.kind} className="dw-pick" onClick={() => onPick(w.kind)}>
-                <div className="dw-pick-preview">
+                <div className={`dw-pick-preview${w.structural ? ' short' : ''}`}>
                   {w.kind === 'title'
                     ? <div className="dw"><div className="dw-body"><div className="dw-titlecard"><span className="t">My Layout</span></div></div></div>
                     : w.kind === 'separator'
                       ? <div className="dw"><div className="dw-body"><div className="dw-sep"><span className="ln" /><span className="dia" /><span className="ln" /></div></div></div>
-                      : <WidgetFrame block={sample} data={sdata} edit={false} preview onOpen={() => {}} onGoTab={() => {}} />}
+                      : <WidgetFrame block={sample} data={sampleData(w.kind)} edit={false} preview onOpen={() => {}} onGoTab={() => {}} />}
                 </div>
                 <div className="dw-pick-foot">
                   <span className={`pl ${w.pillar || ''}`} />
                   <span className="nm">{w.title}</span>
-                  <span className="add">＋</span>
+                  <IcoPlus size={15} />
                 </div>
               </button>
             );
@@ -515,7 +509,7 @@ function ConfigSheet({ block, onClose, onSaved }) {
                 <IconButton glyph="✕" tone="danger" size={28} onClick={() => setLinks(links.filter((_, j) => j !== i))} />
               </div>
             ))}
-            <button onClick={() => setLinks([...links, { label: '', url: '' }])} style={{ ...ghostBtn, width: '100%', marginBottom: 2 }}>＋ Add link</button>
+            <button onClick={() => setLinks([...links, { label: '', url: '' }])} style={{ ...ghostBtn, width: '100%', marginBottom: 2, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcoPlus size={13} />Add link</button>
             <div style={{ font: "400 11px/1.4 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginTop: 6 }}>Only http(s) links are kept.</div>
           </>
         )}
@@ -531,5 +525,26 @@ const goldBtn = { ...BTN_GOLD, width: '100%', marginTop: 18, padding: '12px 0', 
 const ghostBtn = { ...BTN_GHOST, padding: '11px 0', font: "600 12px/1 var(--f-ui)" };
 const cfgInput = { flex: 1, minWidth: 0, height: 40, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 10px', color: 'var(--ink-body)', font: "400 13px/1 var(--f-read)" };
 const cfgInputFull = { width: '100%', height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", boxSizing: 'border-box' };
-const EL_HUE = { fire: '#d98a5a', water: '#6fa8d9', earth: '#c9a35a', air: '#cdd0dc' };
 const hideImg = (e) => { e.currentTarget.style.display = 'none'; };
+
+// House SVG icons for the dashboard — no Unicode glyphs anywhere in the widgets.
+const Svg = ({ children, size = 13, fill = 'none', ...p }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill={fill} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...p}>{children}</svg>
+);
+const IcoUp = (p) => <Svg {...p}><polyline points="18 15 12 9 6 15" /></Svg>;
+const IcoDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9" /></Svg>;
+const IcoExpand = (p) => <Svg {...p}><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></Svg>;
+const IcoShrink = (p) => <Svg {...p}><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></Svg>;
+const IcoEdit = (p) => <Svg {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>;
+const IcoClose = (p) => <Svg {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></Svg>;
+const IcoPlus = (p) => <Svg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></Svg>;
+const IcoLayers = (p) => <Svg {...p}><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></Svg>;
+const IcoExternal = (p) => <Svg {...p}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></Svg>;
+const IcoRoll = (p) => <Svg {...p}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></Svg>;
+// Small type markers for list rows (card / rule / deck / collection).
+const RowIcon = ({ t }) => {
+  if (t === 'deck') return <Svg size={13}><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></Svg>;
+  if (t === 'rule') return <Svg size={13}><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></Svg>;
+  if (t === 'collection') return <Svg size={13}><path d="M4 4h16v14l-8-4-8 4Z" /></Svg>;
+  return <Svg size={13}><rect x="4" y="3" width="16" height="18" rx="2" /></Svg>; // card
+};
