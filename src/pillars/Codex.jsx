@@ -189,15 +189,27 @@ function MarginaliaView({ onOpen, rev }) {
       {d.highlights.length > 0 && (
         <div style={{ marginBottom: 22 }}>
           <SectionLabel label="HIGHLIGHTS" count={d.highlights.length} />
-          {d.highlights.map((h) => (
-            <div key={h.id} style={{ borderLeft: '3px solid var(--hl-blue)', background: 'rgba(91,135,214,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
-              <div onClick={() => onOpen(h.target_type, h.target_id, h.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-                <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>“{h.text}”{h.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{h.comment}</span> : null}</div>
-                {on(h.on)}
+          {d.highlights.map((h) => {
+            // Hue by source: card highlights are violet (deck-builder link), rule/
+            // article highlights are gold — the whole point of a mixed list.
+            const isCard = h.target_type === 'card';
+            const line = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
+            const bg = isCard ? 'rgba(199,154,208,.09)' : 'rgba(220,184,111,.09)';
+            return (
+              <div key={h.id} style={{ borderLeft: `3px solid ${line}`, background: bg, borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
+                <div onClick={() => onOpen(h.target_type, h.target_id, h.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                  <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>
+                    <mark className={isCard ? 'cx-hl-violet' : 'cx-hl-gold'}>{h.text}</mark>{h.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{h.comment}</span> : null}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 6 }}>
+                    <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: line }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
+                    {h.on && <span style={{ font: "500 10px/1.2 var(--f-ui)", color: 'var(--ink-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· on {h.on}</span>}
+                  </div>
+                </div>
+                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); load(); }} title="Delete highlight" />}
               </div>
-              {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); load(); }} title="Delete highlight" />}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
