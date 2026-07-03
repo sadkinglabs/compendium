@@ -191,6 +191,55 @@ export function BottomSheet({ open, title, onClose, children }) {
 }
 
 /* Rich text: [[Name]] -> tappable link; first letter -> drop-cap. */
+// Wrap any saved-highlight substrings inside a plain text run with a tinted
+// <mark>. `hue` = 'gold' (rules) | 'violet' (cards). Longest marks first so a
+// mark that contains another wins.
+function markRuns(text, marks, hue, kctr) {
+  if (!marks || !marks.length) return [text];
+  const esc = [...marks].sort((a, b) => b.length - a.length).map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = new RegExp('(' + esc.join('|') + ')', 'g');
+  const cls = hue === 'violet' ? 'cx-hl-violet' : 'cx-hl-gold';
+  return text.split(re).filter((p) => p !== '').map((p) => (
+    marks.includes(p) ? <mark key={kctr.k++} className={cls}>{p}</mark> : <React.Fragment key={kctr.k++}>{p}</React.Fragment>
+  ));
+}
+
+// Inline renderer: [[Name]] → tappable link (gold for rules, violet for cards),
+// with optional highlight marks on the plain runs between links.
+export function inlineNodes(text, onOpenName, hue = 'gold', marks) {
+  const clean = String(text || '');
+  const linkClass = hue === 'violet' ? 'cx-inlink cx-inlink-violet' : 'cx-inlink cx-inlink-gold';
+  const nodes = [];
+  const kctr = { k: 0 };
+  const re = /\[\[([^\]]+)\]\]/g;
+  let last = 0, m;
+  while ((m = re.exec(clean))) {
+    if (m.index > last) nodes.push(...markRuns(clean.slice(last, m.index), marks, hue, kctr));
+    const name = m[1];
+    nodes.push(<span key={kctr.k++} className={linkClass} onClick={() => onOpenName?.(name)}>{name}</span>);
+    last = m.index + m[0].length;
+  }
+  if (last < clean.length) nodes.push(...markRuns(clean.slice(last), marks, hue, kctr));
+  return nodes;
+}
+
+// A formatted article: renders formatArticle() blocks (paragraphs + lists) with
+// inline links + highlight marks. `lead` drop-caps the first paragraph.
+export function Article({ blocks, onOpenName, lead, hue = 'gold', marks }) {
+  return (
+    <div className="cx-article">
+      {(blocks || []).map((b, i) => {
+        if (b.type === 'ul' || b.type === 'ol') {
+          const List = b.type === 'ol' ? 'ol' : 'ul';
+          return <List key={i} className="cx-article-list">{b.items.map((it, j) => <li key={j}>{inlineNodes(it, onOpenName, hue, marks)}</li>)}</List>;
+        }
+        const dc = lead && i === 0;
+        return <p key={i} className={`cx-article-p${dc ? ' lead' : ''}`}>{inlineNodes(b.text, onOpenName, hue, marks)}</p>;
+      })}
+    </div>
+  );
+}
+
 export function RichText({ text, onOpenName, lead }) {
   const clean = String(text || '').replace(/\r/g, '').replace(/\n+/g, ' ').trim();
   const parts = [];

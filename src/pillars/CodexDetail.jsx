@@ -3,7 +3,7 @@
 // save/star, marginalia notes, highlights, collections.
 import React, { useEffect, useState, useRef } from 'react';
 import {
-  getCard, getRule, relatedFor, faqsForCard, resolveByName,
+  getCard, getRule, relatedFor, mentions, faqsForCard, resolveByName,
   isSaved, toggleSaved, notesFor, addNote, deleteNote,
   highlightsFor, addHighlight, deleteHighlight,
   listCollections, createCollection, collectionsForTarget, toggleCollectionItem,
@@ -12,7 +12,8 @@ import {
 import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
-import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RichText, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { formatArticle } from '../store/articleFormat.js';
+import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, Article, inlineNodes, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
@@ -31,18 +32,18 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [related, faqs, notes, highlights, saved, links, inDecks] = await Promise.all([
+      const [appearsIn, faqs, notes, highlights, saved, links, inDecks] = await Promise.all([
         relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), highlightsFor(id), isSaved(id), linksFor(id), decksWithCard(id),
       ]);
-      setData({ kind, card: c, related, faqs, notes, highlights, saved, links, inDecks });
+      setData({ kind, card: c, appearsIn, faqs, notes, highlights, saved, links, inDecks });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
-      const [related, subs, notes, highlights, saved, links] = await Promise.all([
-        relatedFor('rule', id), query('SELECT rule_id id, title, content FROM rules WHERE parent_id=?;', [id]),
+      const [ment, subs, notes, highlights, saved, links] = await Promise.all([
+        mentions(id), query('SELECT rule_id id, title, content FROM rules WHERE parent_id=?;', [id]),
         notesFor(id), highlightsFor(id), isSaved(id), linksFor(id),
       ]);
-      setData({ kind, rule: r, related, subs, notes, highlights, saved, links });
+      setData({ kind, rule: r, mentions: ment, subs, notes, highlights, saved, links });
     }
   }
   useEffect(() => { setData(null); load(); /* eslint-disable-next-line */ }, [kind, id]);
@@ -75,23 +76,52 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
     if (t && bodyRef.current && s.anchorNode && bodyRef.current.contains(s.anchorNode)) setSelection(t);
     else setSelection('');
   }
-  const related = (data.related || []).filter((r) => r.type !== 'unresolved_article');
+  const marks = (data.highlights || []).map((h) => h.text).filter(Boolean);
+  const hue = kind === 'card' ? 'violet' : 'gold';           // card highlights purple, rule gold
+  const appearsIn = kind === 'card' ? (data.appearsIn || []).filter((r) => r.type !== 'unresolved_article') : [];
+  const ment = data.mentions || { cards: [], articles: [] };
 
   return (
     <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
-      {related.length > 0 && (
-        <ChipRow style={{ marginBottom: 18 }}>
-          {related.map((r, i) => (
-            <span key={i} onClick={() => onOpenName(r.name)}
-              style={{ font: "500 12px/1 var(--f-read)", color: 'var(--ink-status)', padding: '6px 11px', border: '1px solid rgba(201,163,90,.26)', borderRadius: 20, cursor: 'pointer' }}>
-              {r.name}
-            </span>
-          ))}
-        </ChipRow>
+      {kind === 'card' ? <CardBody card={data.card} faqs={data.faqs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />
+                       : <RuleBody rule={data.rule} subs={data.subs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />}
+
+      {/* Cards Mentioned — carousel of card art referenced by this article. */}
+      {kind === 'rule' && ment.cards.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <SectionLabel label="CARDS MENTIONED" count={ment.cards.length} />
+          <div className="cx-mention-rail">
+            {ment.cards.map((c) => (
+              <div key={c.card_id} className="cx-mention-card" onClick={() => onOpenName(c.name)}>
+                <CardArt card={c} radius={9} />
+                <div className="cx-mention-name">{c.name}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      {kind === 'card' ? <CardBody card={data.card} faqs={data.faqs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} />
-                       : <RuleBody rule={data.rule} subs={data.subs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} />}
+      {/* Related articles — pills that link to other articles. */}
+      {kind === 'rule' && ment.articles.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <SectionLabel label="RELATED ARTICLES" count={ment.articles.length} />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {ment.articles.map((a) => (
+              <span key={a.id} onClick={() => onOpenName(a.title)} className="cx-relpill">{a.title}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Card: the articles that cite it, as pills. */}
+      {kind === 'card' && appearsIn.length > 0 && (
+        <div style={{ marginTop: 20 }}>
+          <SectionLabel label="MENTIONED IN" count={appearsIn.length} />
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {appearsIn.map((r, i) => <span key={i} onClick={() => onOpenName(r.name)} className="cx-relpill">{r.name}</span>)}
+          </div>
+        </div>
+      )}
 
       {/* in your decks — the unification payoff: this card in the profile's decks */}
       {kind === 'card' && data.inDecks.length > 0 && (
@@ -109,12 +139,12 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
         </div>
       )}
 
-      {/* highlights */}
+      {/* highlights — hued by target: card = violet (deck-builder link), rule = gold */}
       {data.highlights.length > 0 && (
         <div style={{ marginTop: 18 }}>
-          <SectionLabel glyph="✦" label="HIGHLIGHTS" count={data.highlights.length} />
+          <SectionLabel label="HIGHLIGHTS" count={data.highlights.length} />
           {data.highlights.map((h) => (
-            <div key={h.id} style={{ borderLeft: '3px solid var(--hl-blue)', background: 'rgba(91,135,214,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
+            <div key={h.id} style={{ borderLeft: `3px solid ${hue === 'violet' ? 'var(--link-violet)' : 'var(--gold-leaf)'}`, background: hue === 'violet' ? 'rgba(199,154,208,.08)' : 'rgba(220,184,111,.08)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
               <div style={{ flex: 1, font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>“{h.text}”{h.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{h.comment}</span> : null}</div>
               <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); await load(); }} />
             </div>
@@ -172,21 +202,21 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
   );
 }
 
-function RuleBody({ rule, subs, onOpenName, bodyRef, onSelect }) {
+function RuleBody({ rule, subs, onOpenName, bodyRef, onSelect, marks }) {
   return (
     <div ref={bodyRef} onMouseUp={onSelect} onTouchEnd={onSelect}>
-      <RichText text={rule.content} onOpenName={onOpenName} lead />
+      <Article blocks={formatArticle(rule.content)} onOpenName={onOpenName} lead hue="gold" marks={marks} />
       {subs.map((s) => (
-        <div key={s.id} style={{ marginTop: 14 }}>
-          <SectionLabel glyph="❧" label={s.title.toUpperCase()} />
-          <RichText text={s.content} onOpenName={onOpenName} />
+        <div key={s.id} style={{ marginTop: 16 }}>
+          <SectionLabel label={s.title.toUpperCase()} />
+          <Article blocks={formatArticle(s.content)} onOpenName={onOpenName} hue="gold" marks={marks} />
         </div>
       ))}
     </div>
   );
 }
 
-function CardBody({ card, faqs, onOpenName, bodyRef, onSelect }) {
+function CardBody({ card, faqs, onOpenName, bodyRef, onSelect, marks }) {
   const subTypes = jp(card.sub_types, []);
   const sets = jp(card.sets, []);
   const pips = thresholdRuns(card);
@@ -194,15 +224,29 @@ function CardBody({ card, faqs, onOpenName, bodyRef, onSelect }) {
   const stats = [];
   if (card.cost != null) stats.push(['MANA', card.cost]);
   if (pips.length) stats.push(['THRESHOLD', <ThresholdPips runs={pips} />]);
-  if (card.attack != null || card.defence != null) stats.push(['POWER', `${card.attack ?? '–'} / ${card.defence ?? '–'}`]);
+  // Power model (deck-builder parity): a minion whose attack equals its defence
+  // shows a single POWER; if they differ, show ATTACK and DEFENCE separately.
+  if (card.attack != null || card.defence != null) {
+    if (card.attack != null && card.attack === card.defence) stats.push(['POWER', card.attack]);
+    else { stats.push(['ATTACK', card.attack ?? '–']); stats.push(['DEFENCE', card.defence ?? '–']); }
+  }
   if (isAvatar && card.life != null) stats.push(['LIFE', card.life]);
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-        <div style={{ width: 200, boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
-          <CardArt card={card} />
-        </div>
+        {card.is_site ? (
+          // Sites play sideways — show the art rotated 90° in a landscape footprint (deck-builder parity).
+          <div style={{ position: 'relative', width: 264, aspectRatio: '7 / 5' }}>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(264px * 5 / 7)', transform: 'translate(-50%,-50%) rotate(90deg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
+              <CardArt card={card} />
+            </div>
+          </div>
+        ) : (
+          <div style={{ width: 200, boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
+            <CardArt card={card} />
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <span style={{ font: "600 11px/1 var(--f-ui)", letterSpacing: '.06em', color: 'var(--gold-leaf)' }}>{card.type}</span>
@@ -225,7 +269,7 @@ function CardBody({ card, faqs, onOpenName, bodyRef, onSelect }) {
         <div ref={bodyRef} onMouseUp={onSelect} onTouchEnd={onSelect}
           style={{ border: '1px solid var(--hair-16)', borderRadius: 12, background: 'var(--surface-card)', padding: 14, marginBottom: 14 }}>
           {String(card.rules_text).split(/\r?\n/).filter(Boolean).map((line, i) => (
-            <p key={i} style={{ margin: i ? '8px 0 0' : 0, font: "400 15.5px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{line}</p>
+            <p key={i} style={{ margin: i ? '8px 0 0' : 0, font: "400 15.5px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{inlineNodes(line, onOpenName, 'violet', marks)}</p>
           ))}
         </div>
       )}

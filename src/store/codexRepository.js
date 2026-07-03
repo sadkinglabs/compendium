@@ -118,6 +118,33 @@ export async function relatedFor(kind, id, name) {
   return out;
 }
 
+/** Everything an article references, resolved for display below its body:
+    cards (with art) it mentions, and other articles it links to. Fixes the old
+    breakage — article/sub-entry link targets are rule_ids (a sub-entry's id is
+    `parent__slug`), so they resolve by id, not by name; sub-entries fold up to
+    their parent article. Garbage `unresolved_article` edges are dropped. */
+export async function mentions(ruleId) {
+  const rows = await query('SELECT DISTINCT target_id, target_type FROM link_graph WHERE source_id=?;', [ruleId]);
+  const cards = [], articles = [];
+  const seenCard = new Set(), seenArt = new Set();
+  for (const r of rows) {
+    if (r.target_type === 'card') {
+      const key = r.target_id.toLowerCase();
+      if (seenCard.has(key)) continue; seenCard.add(key);
+      const c = (await query('SELECT card_id, name, image_slug, type, cost, is_site, elements, thresholds FROM cards WHERE lower(name)=? LIMIT 1;', [key]))[0];
+      if (c) cards.push(c);
+    } else if (r.target_type === 'article' || r.target_type === 'subentry') {
+      const ru = (await query('SELECT rule_id, parent_id, title FROM rules WHERE rule_id=? LIMIT 1;', [r.target_id]))[0];
+      if (!ru) continue;
+      const openId = ru.parent_id || ru.rule_id;               // sub-entry → its parent article
+      if (seenArt.has(openId)) continue; seenArt.add(openId);
+      const title = ru.parent_id ? ((await query('SELECT title FROM rules WHERE rule_id=?;', [ru.parent_id]))[0]?.title || ru.title) : ru.title;
+      articles.push({ id: openId, title });
+    }
+  }
+  return { cards, articles };
+}
+
 export async function faqsForCard(cardId) {
   // card_ids stored as a JSON array of curiosa slugs (== card_id)
   return query("SELECT question, answer FROM faqs WHERE card_ids LIKE ? ORDER BY rowid LIMIT 50;", [

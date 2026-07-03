@@ -247,7 +247,9 @@ function MarginaliaView({ onOpen, rev }) {
                     <span onClick={() => toggleCol(c.id)} className="cx-row" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                       <span style={{ font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
                       <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)', flex: 'none' }}>{c.count}</span>
-                      <span className="cx-sub-chevron" data-open={openCols.has(c.id) ? 'true' : 'false'} style={{ flex: 'none' }}>⌄</span>
+                      <span className="cx-sub-chevron" data-open={openCols.has(c.id) ? 'true' : 'false'} style={{ flex: 'none' }}>
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+                      </span>
                     </span>
                     {edit && <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: c.id, name: c.name })} title="Rename collection" />}
                     {edit && <IconButton glyph="✕" tone="danger" size={26} onClick={() => removeCol(c)} title="Delete collection" />}
@@ -301,14 +303,16 @@ function AzList({ entries, onOpen }) {
         sub={it.meta}
         note={it.hasNote}
         trailing={hasSubs
-          ? <button className="cx-sub-chevron" data-open={isOpen ? 'true' : 'false'} onClick={(e) => { e.stopPropagation(); toggle(it.id); }} aria-label="Toggle sub-entries">⌄</button>
+          ? <button className="cx-sub-chevron" data-open={isOpen ? 'true' : 'false'} onClick={(e) => { e.stopPropagation(); toggle(it.id); }} aria-label={isOpen ? 'Collapse sub-entries' : `Expand ${it.subs.length} sub-entries`} aria-expanded={isOpen}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+            </button>
           : (it.saved ? <span style={{ color: 'var(--gold-leaf)' }}>★</span> : undefined)}
         onClick={() => onOpen(it.kind, it.id, it.name)}
       />
     );
     if (hasSubs && isOpen) {
-      it.subs.forEach((s) => rows.push(
-        <div key={'sub-' + s.id} style={{ paddingLeft: 26 }}>
+      it.subs.forEach((s, si) => rows.push(
+        <div key={'sub-' + s.id} className="cx-subrow" style={{ animationDelay: `${Math.min(si, 6) * 26}ms` }}>
           <ListRow icon={<CodexGlyph kind="rule" />} title={s.name} onClick={() => onOpen('rule', s.id, s.name)} />
         </div>
       ));
