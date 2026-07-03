@@ -25,7 +25,7 @@ import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, exitApp, haptic } from './native.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
-import { ListRow, IconButton, Loading } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, BTN_GOLD, BTN_GHOST } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
@@ -604,6 +604,6 @@ const S = {
   body: { flex: 1, overflowY: 'auto', paddingBottom: 'calc(62px + env(safe-area-inset-bottom) + 92px)' },
   input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
   // Sheet primary — black glass, gold only in text/border (app rule: sheets stay black).
-  btnGold: { padding: '12px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' },
-  btnGhost: { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' },
+  btnGold: BTN_GOLD,
+  btnGhost: BTN_GHOST,
 };

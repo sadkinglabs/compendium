@@ -3,6 +3,11 @@ import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
 import { GLYPH_ICON } from './icons.jsx';
 
+/* Sheet button recipes — one source of truth for the black-glass primary and
+   the ghost secondary used across every sheet (was copy-pasted in 6 files). */
+export const BTN_GOLD = { padding: '12px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' };
+export const BTN_GHOST = { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };
+
 /* One chip language everywhere: filled-gold active, ghost inactive. */
 export function Chip({ label, active, onClick, dot }) {
   return (

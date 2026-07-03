@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
 import { listAvatarCards } from '../store/deckRepository.js';
-import { IconButton, Chip, ChipRow, Loading } from '../components/ui.jsx';
+import { IconButton, Chip, ChipRow, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import { toast, confirmAction } from '../feedback.js';
 import '../theme/playhistory.css';
@@ -344,5 +344,5 @@ function LifeStep({ label, v, set }) {
 }
 const inp = { width: '100%', height: 42, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" };
 const chip = { padding: '5px 11px', borderRadius: 16, border: '1px solid var(--hair-22)', font: "500 12px/1 var(--f-read)", color: 'var(--ink-status)', cursor: 'pointer' };
-const ghost = { padding: '11px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 12px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };
-const gold = { padding: '11px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' };
+const ghost = { ...BTN_GHOST, padding: '11px 0', font: "600 12px/1 var(--f-ui)" };
+const gold = { ...BTN_GOLD, padding: '11px 18px' };
