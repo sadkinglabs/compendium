@@ -58,7 +58,15 @@ export default function App() {
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
   const booted = useRef(false);
   const backRef = useRef(null);   // latest hardware-back handler (set each render)
+  const [storageFull, setStorageFull] = useState(false);
   useEffect(() => onBackButton(() => backRef.current?.()), []);
+  // Storage-full / persist failure — the DB layer broadcasts when a save is
+  // rejected (quota, blocked). Warn once so the user knows changes aren't saving.
+  useEffect(() => {
+    const h = () => setStorageFull(true);
+    window.addEventListener('cx-storage-error', h);
+    return () => window.removeEventListener('cx-storage-error', h);
+  }, []);
 
   useEffect(() => {
     if (booted.current) return;   // run boot once (StrictMode double-invokes effects)
@@ -206,6 +214,13 @@ export default function App() {
         </div>
         <button onClick={() => setProfileSheet(true)} style={S.profileChip} title={profile?.name}>{initial}</button>
       </div>
+
+      {storageFull && (
+        <div onClick={() => setStorageFull(false)} role="alert"
+          style={{ margin: '0 16px 8px', padding: '10px 14px', borderRadius: 12, background: 'rgba(60,20,16,.9)', border: '1px solid rgba(224,120,106,.5)', color: '#f0c9c2', font: "500 12.5px/1.45 var(--f-ui)", cursor: 'pointer' }}>
+          Storage is full — recent changes may not be saved. Free up space or export a profile, then tap to dismiss.
+        </div>
+      )}
 
       {/* CONTEXT HEADER (no eyebrow) — shown on every screen except the immersive
           life tracker. The avatar picker keeps its own in-body header, so we only

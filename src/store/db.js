@@ -29,9 +29,19 @@ async function runMigrations() {
   const cur = (await query("SELECT value FROM _meta WHERE key='schema_version';"))[0];
   const current = cur ? parseInt(cur.value, 10) : 0;
   for (const m of MIGRATIONS) {
-    if (m.version > current) {
+    if (m.version <= current) continue;
+    // Each migration is atomic: the DDL and the version bump land together or
+    // not at all (SQLite has transactional DDL), so a crash/failure mid-migration
+    // can never leave a half-applied schema with an un-bumped version — the next
+    // boot re-runs the whole migration cleanly.
+    try {
+      await exec('BEGIN;');
       await exec(m.sql);
       await run("INSERT OR REPLACE INTO _meta(key,value) VALUES('schema_version',?);", [String(m.version)]);
+      await exec('COMMIT;');
+    } catch (e) {
+      try { await exec('ROLLBACK;'); } catch { /* nothing to roll back */ }
+      throw e;
     }
   }
 }
@@ -65,7 +75,12 @@ async function webBackend() {
     saveTimer = null;
     const p = pending; pending = null;
     if (!p) return;
-    doSave().then(p.resolve, p.reject);
+    doSave().then(p.resolve, (err) => {
+      // Storage full / write blocked — surface it (a silent failure would lose
+      // data the UI already confirmed). Broadcast so the shell can warn once.
+      try { window.dispatchEvent(new CustomEvent('cx-storage-error', { detail: String(err?.name || err) })); } catch { /* no window */ }
+      p.reject(err);
+    });
   }
   // Durability: flush any pending debounced save when the page is backgrounded/closed.
   const flush = () => { if (saveTimer) { clearTimeout(saveTimer); runSave(); } };

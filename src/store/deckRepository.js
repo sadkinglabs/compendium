@@ -152,8 +152,15 @@ export async function clearHistory(deckId) {
 async function touch(id, setExpr, params) {
   await run(`UPDATE decks SET ${setExpr}, updated_at=? WHERE id=? AND profile_id=?;`, [...params, nowIso(), id, activeProfileId()]);
 }
+// Deck log is capped per deck so it can't grow unbounded (every qty change logs
+// a row) — the newest HISTORY_CAP survive; older rows are trimmed on write.
+export const HISTORY_CAP = 300;
+export const trimHistorySql = (deckId) => ['DELETE FROM deck_history WHERE deck_id=? AND id NOT IN (SELECT id FROM deck_history WHERE deck_id=? ORDER BY ts DESC, rowid DESC LIMIT ?);', [deckId, deckId, HISTORY_CAP]];
+
 async function logHistory(deckId, text) {
   await run('INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);', [uuid(), deckId, nowIso(), text]);
+  const [sql, params] = trimHistorySql(deckId);
+  await run(sql, params);
 }
 
 /* ---------------- entries / zones ---------------- */

@@ -2,7 +2,7 @@
 // (win-rate / W–L / streak / last-8 pips), and Recent Matches. Calm by design:
 // the life counter and in-match log live inside an in-progress match, not here.
 import React, { useEffect, useState } from 'react';
-import { historyStats, listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
+import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents } from '../store/playRepository.js';
 import { listAvatarCards } from '../store/deckRepository.js';
 import { IconButton, Chip, ChipRow, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
@@ -29,29 +29,33 @@ function relTime(iso) {
 }
 
 export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
-  const [stats, setStats] = useState(null);
   const [matches, setMatches] = useState([]);
   const [avImg, setAvImg] = useState({});           // avatar name → image_slug
   const [oppFilter, setOppFilter] = useState(null);  // drill-in on one opponent
   const [collapsed, setCollapsed] = useState({ avatar: false, opponent: false });
   const [matchId, setMatchId] = useState(null);
   const [tick, setTick] = useState(0);
+  const [page, setPage] = useState(1);
   useEffect(() => {
     let alive = true;
-    Promise.all([historyStats(), listMatches(500), listAvatarCards()]).then(([s, m, avs]) => {
+    // Single matches fetch — everything below is derived from it (was a second
+    // full scan via historyStats plus JS re-aggregation of the same rows).
+    Promise.all([listMatches(500), listAvatarCards()]).then(([m, avs]) => {
       if (!alive) return;
-      setStats(s); setMatches(m);
+      setMatches(m);
       const map = {}; for (const a of avs) map[a.name] = a.image_slug; setAvImg(map);
     });
     return () => { alive = false; };
   }, [rev, tick]);
   const refresh = () => setTick((t) => t + 1);
+  useEffect(() => { setPage(1); }, [oppFilter]);   // restart paging when drilling in/out
 
-  // Derived stats (client-side, mirroring Vitarum's renderHistory()).
+  // Derived stats (client-side, mirroring Vitarum's renderHistory()). matches is
+  // ordered newest-first, so the win streak is the leading run of player wins.
   const wins = matches.filter((m) => m.winner === 'player').length;
   const losses = matches.filter((m) => m.winner === 'opponent').length;
-  const pct = stats?.winPct != null ? stats.winPct : (wins + losses ? Math.round((wins / (wins + losses)) * 100) : 0);
-  const streak = stats?.streak || 0;
+  const pct = wins + losses ? Math.round((wins / (wins + losses)) * 100) : 0;
+  let streak = 0; for (const m of matches) { if (m.winner === 'player') streak++; else break; }
   const totalSec = matches.reduce((a, m) => a + (m.duration_sec || 0), 0);
 
   const byAv = {};
@@ -64,6 +68,13 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const oppStats = Object.keys(byOpp).map((o) => { const r = byOpp[o]; const dec = r.w + r.l; return { name: o, pct: dec ? Math.round(r.w / dec * 100) : 0, record: `${r.w}–${r.l}`, w: r.w, games: r.w + r.l + r.t }; }).sort((x, y) => y.games - x.games || y.w - x.w).slice(0, 8);
 
   const shown = oppFilter ? matches.filter((m) => (m.opponent_name || '').trim() === oppFilter) : matches;
+  const PAGE = 40;   // cap the rendered match-card DOM; reveal the rest on demand
+  const visible = shown.slice(0, page * PAGE);
+  const moreBtn = shown.length > visible.length && (
+    <button onClick={() => setPage((p) => p + 1)} style={{ display: 'block', width: '100%', marginTop: 12, padding: '11px 0', borderRadius: 12, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' }}>
+      Show more ({shown.length - visible.length} older)
+    </button>
+  );
   const ring = `conic-gradient(#4db38a 0% ${pct}%, rgba(255,255,255,.07) ${pct}% 100%)`;
   const toggle = (k) => setCollapsed((c) => ({ ...c, [k]: !c[k] }));
 
@@ -96,7 +107,8 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
         <>
           <button onClick={() => setOppFilter(null)} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer', marginBottom: 14 }}>‹ All matches</button>
           <div className="rec-section">vs {oppFilter}</div>
-          {shown.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
+          {visible.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
+          {moreBtn}
           {matchSheet}
         </>
       ) : (
@@ -156,7 +168,8 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
           )}
 
           <div className="rec-section">Recent Matches</div>
-          {shown.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
+          {visible.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
+          {moreBtn}
           {matchSheet}
         </>
       )}

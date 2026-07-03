@@ -2,6 +2,7 @@
 // settings (life/die/accent metal). All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
+import { trimHistorySql } from './deckRepository.js';
 import { uuid, nowIso } from './ids.js';
 
 /* ---------------- settings ---------------- */
@@ -65,6 +66,7 @@ export async function recordMatch(m) {
     const vs = m.opponentName ? ` vs ${m.opponentName}` : '';
     stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);',
       [uuid(), deckId, nowIso(), `Recorded ${outcome}${vs} (${m.playerFinalLife ?? '–'}–${m.opponentFinalLife ?? '–'})`]]);
+    stmts.push(trimHistorySql(deckId));   // keep the deck log bounded
   }
   await tx(stmts);
   return id;
