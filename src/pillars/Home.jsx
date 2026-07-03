@@ -7,14 +7,15 @@
 import React, { useEffect, useState } from 'react';
 import {
   listBlocks, addBlock, removeBlock, resizeBlock, moveBlock, setConfig,
-  widgetData, widgetTitle, isConfigurable, overview, WIDGETS,
+  widgetData, widgetTitle, widgetMeta, isConfigurable, isStructural, pillarOf,
+  sampleData, pickerSamples, overview, WIDGETS,
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
-import { listCollections } from '../store/codexRepository.js';
 import { safeHref } from '../util.js';
 import { Chip, ChipRow, IconButton, Loading, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import { haptic } from '../native.js';
+import '../theme/dashboard.css';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -40,7 +41,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, p
       <div key={tab} className="cx-swipe-pane">
         {tab === 'overview'
           ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} profile={profile} rev={rev} />
-          : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
+          : <Dashboard onOpen={onOpen} onGoTab={onGoTab} edit={edit} rev={rev} />}
       </div>
     </div>
   );
@@ -196,7 +197,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
 }
 
 /* ---------------- Dashboard ---------------- */
-function Dashboard({ onOpen, edit, rev }) {
+function Dashboard({ onOpen, onGoTab, edit, rev }) {
   const [blocks, setBlocks] = useState(null);
   const [data, setData] = useState({});
   const [picker, setPicker] = useState(false);
@@ -218,26 +219,36 @@ function Dashboard({ onOpen, edit, rev }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 10 }}>
-        <button onClick={() => { setLayoutSheet(true); refreshLayouts(); }} style={editBtn}>⧉ Layouts</button>
+        <button onClick={() => { setLayoutSheet(true); refreshLayouts(); }} className="dw-toolbtn">⧉ Layouts</button>
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
-        {blocks.map((b, i) => (
-          <div key={b.id} style={{ width: b.width === 'full' ? '100%' : 'calc(50% - 6px)' }}>
-            <WidgetFrame block={b} data={data[b.id]} edit={edit} onOpen={onOpen}
-              first={i === 0} last={i === blocks.length - 1}
-              onResize={async () => { await resizeBlock(b.id, b.width === 'full' ? 'half' : 'full'); load(); }}
-              onRemove={async () => { await removeBlock(b.id); load(); }}
-              onUp={async () => { await moveBlock(b.id, -1); load(); }}
-              onDown={async () => { await moveBlock(b.id, 1); load(); }}
-              onConfig={() => setCfg(b)} />
-          </div>
-        ))}
-        {edit && (
-          <button onClick={() => setPicker(true)} style={addTile}>＋ Add a widget</button>
-        )}
+      {blocks.length === 0 && (
+        <div className="dw-empty" style={{ textAlign: 'center', padding: '34px 12px' }}>
+          A blank canvas. Tap <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>Edit</b>, then ＋ to compose your dashboard.
+        </div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
+        {blocks.map((b, i) => {
+          const full = b.width === 'full' || isStructural(b.type);
+          const common = {
+            block: b, edit, first: i === 0, last: i === blocks.length - 1,
+            onResize: async () => { await resizeBlock(b.id, b.width === 'full' ? 'half' : 'full'); load(); },
+            onRemove: async () => { await removeBlock(b.id); haptic('light'); load(); },
+            onUp: async () => { await moveBlock(b.id, -1); load(); },
+            onDown: async () => { await moveBlock(b.id, 1); load(); },
+            onConfig: () => setCfg(b),
+          };
+          return (
+            <div key={b.id} style={{ width: full ? '100%' : 'calc(50% - 6px)' }}>
+              {isStructural(b.type)
+                ? <StructuralBlock {...common} />
+                : <WidgetFrame {...common} data={data[b.id]} onOpen={onOpen} onGoTab={onGoTab} />}
+            </div>
+          );
+        })}
+        {edit && <button onClick={() => setPicker(true)} className="dw-add">＋ Add a widget</button>}
       </div>
 
-      <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); load(); }} />
+      <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); haptic('light'); load(); }} />
       <ConfigSheet block={cfg} onClose={() => setCfg(null)} onSaved={() => { setCfg(null); load(); }} />
       <LayoutSheet open={layoutSheet} layouts={layouts} onClose={() => setLayoutSheet(false)}
         onSave={async (name) => { await saveLayout(name); refreshLayouts(); }}
@@ -271,130 +282,254 @@ function LayoutSheet({ open, layouts, onClose, onSave, onLoad, onDelete }) {
   );
 }
 
-function WidgetFrame({ block, data, edit, onOpen, first, last, onResize, onRemove, onUp, onDown, onConfig }) {
+function WidgetFrame({ block, data, edit, onOpen, onGoTab, first, last, onResize, onRemove, onUp, onDown, onConfig, preview }) {
+  const meta = widgetMeta(block.type);
+  const title = block.config?.name || meta.title;
   return (
-    <div style={{ border: '1px solid var(--hair-16)', borderRadius: 16, background: 'linear-gradient(180deg,rgba(34,26,20,.55),rgba(22,16,11,.35))', overflow: 'hidden', height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 13px 8px' }}>
-        <span style={{ flex: 1, font: "600 11px/1 var(--f-display)", letterSpacing: '.1em', color: 'var(--gold-leaf)' }}>{data?.title || widgetTitle(block.type)}</span>
-        {!edit && data?.count != null && <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{data.count}</span>}
+    <div className="dw" data-pillar={pillarOf(block.type) || undefined}>
+      <div className="dw-head">
+        <span className="dw-title">{title}</span>
+        {!edit && data?.count != null && <span className="dw-count">{data.count}</span>}
         {edit && (
-          <div style={{ display: 'flex', gap: 4 }}>
-            <Mini glyph="▲" disabled={first} onClick={onUp} />
-            <Mini glyph="▼" disabled={last} onClick={onDown} />
-            <Mini glyph={block.width === 'full' ? '½' : '1'} onClick={onResize} />
-            {isConfigurable(block.type) && <Mini glyph="⚙" onClick={onConfig} />}
-            <Mini glyph="✕" danger onClick={onRemove} />
+          <div className="dw-tools">
+            <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up">▲</button>
+            <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down">▼</button>
+            <button className="dw-mini" onClick={onResize} aria-label="Resize">{block.width === 'full' ? '½' : '⤢'}</button>
+            <button className="dw-mini" onClick={onConfig} aria-label="Rename or configure">✎</button>
+            <button className="dw-mini danger" onClick={onRemove} aria-label="Remove">✕</button>
           </div>
         )}
       </div>
-      <div style={{ padding: '0 13px 13px' }}><WidgetBody block={block} data={data} onOpen={onOpen} /></div>
+      <div className="dw-body"><WidgetBody block={block} data={data} onOpen={onOpen} onGoTab={onGoTab} preview={preview} /></div>
     </div>
   );
 }
 
-function WidgetBody({ block, data, onOpen }) {
-  const k = block.type;
-  if (!data) return null;
-  const empty = (t) => <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '4px 0' }}>{t}</div>;
-
-  if (k === 'stats') return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-      {data.stats.map(([l, v]) => <div key={l} style={{ textAlign: 'center', border: '1px solid var(--hair-12)', borderRadius: 9, padding: '9px 0' }}><div style={{ font: "700 18px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{v}</div><div style={{ font: "500 9px/1 var(--f-ui)", color: 'var(--ink-faint)', marginTop: 5, letterSpacing: '.08em' }}>{l.toUpperCase()}</div></div>)}
+// Chrome-less layout furniture (Title / Separator). In edit mode a small control
+// strip floats over it for reorder / rename / remove.
+function StructuralBlock({ block, edit, first, last, onUp, onDown, onRemove, onConfig }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      {block.type === 'title'
+        ? <div className="dw-titlecard"><span className="t">{block.config?.name || 'Title'}</span></div>
+        : <div className="dw-sep"><span className="ln" /><span className="dia" /><span className="ln" /></div>}
+      {edit && (
+        <div className="dw-struct-edit">
+          <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up">▲</button>
+          <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down">▼</button>
+          {block.type === 'title' && <button className="dw-mini" onClick={onConfig} aria-label="Edit title">✎</button>}
+          <button className="dw-mini danger" onClick={onRemove} aria-label="Remove">✕</button>
+        </div>
+      )}
     </div>
   );
-  if (k === 'resume') return data.resume
-    ? <Row onClick={() => onOpen(data.resume.type, data.resume.id, data.resume.title)} glyph="↻" name={data.resume.title} />
+}
+
+// Full-bleed card/deck art with a graceful monogram behind it — if the image is
+// absent or fails to load, the gold monogram shows through.
+function ArtHero({ image, name, sub, badge, onClick, tall, deck }) {
+  return (
+    <div className={`dw-hero${tall ? ' tall' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} style={{ cursor: onClick ? 'pointer' : 'default' }}>
+      <div className="dw-mono">{deck ? '◆' : '◈'}</div>
+      {image && <img className="dw-hero-img" src={`${BASE}cards/${image}`} alt="" loading="lazy" onError={hideImg} />}
+      <div className="dw-hero-grad" />
+      {badge && <span className="dw-hero-badge">{badge}</span>}
+      <div className="dw-hero-info">
+        <div className="dw-hero-name">{name}</div>
+        {sub && <div className="dw-hero-sub">{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
+  const k = block.type;
+  if (!data) return null;
+  const empty = (t) => <div className="dw-empty">{t}</div>;
+  const open = preview ? () => {} : (onOpen || (() => {}));
+  const go = preview ? () => {} : (onGoTab || (() => {}));
+
+  if (k === 'featuredCard' || k === 'cardOfDay') return data.card
+    ? <ArtHero image={data.card.image} name={data.card.name}
+        badge={k === 'cardOfDay' ? 'CARD OF THE DAY' : (data.card.rarity ? data.card.rarity.toUpperCase() : null)}
+        sub={`${data.card.type || 'Card'}${data.card.cost != null ? ` · ${data.card.cost} mana` : ''}`}
+        tall={block.width !== 'full'} onClick={() => open('card', data.card.id, data.card.name)} />
     : empty(data.empty);
-  if (k === 'random' || k === 'randomArticle') return data.random
-    ? <Row onClick={() => onOpen(data.random.type, data.random.id, data.random.name)} glyph={k === 'random' ? '◈' : '§'} name={data.random.name} />
-    : empty('—');
-  if (k === 'text') return <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{data.text || 'Empty note — Edit ⚙ to write.'}</div>;
-  if (k === 'urls') return (data.links || []).length
+
+  if (k === 'deckSpotlight') return data.spotlight
+    ? <ArtHero image={data.spotlight.image} name={data.spotlight.name} deck tall={block.width !== 'full'}
+        sub={<>{(data.spotlight.elems || []).map((e, i) => <img key={i} src={`${BASE}icons/${e.el}.png`} alt="" onError={hideImg} />)}<span>{data.spotlight.record}{data.spotlight.winPct != null ? ` · ${data.spotlight.winPct}%` : ''}</span></>}
+        onClick={() => open('deck', data.spotlight.id, data.spotlight.name)} />
+    : empty(data.empty);
+
+  if (k === 'yourDecks') return data.decks?.length
+    ? <div className="dw-decks">{data.decks.map((d, i) => (
+        <div key={i} className="dw-deckcard" onClick={() => open('deck', d.id, d.name)}>
+          {d.image ? <img src={`${BASE}cards/${d.image}`} alt="" loading="lazy" onError={hideImg} /> : <div className="dw-deckmono">◆</div>}
+          <div className="g" /><div className="n">{d.name}</div><div className="r">{d.record}</div>
+        </div>))}</div>
+    : empty(data.empty);
+
+  if (k === 'elementAffinity') return data.any
+    ? <div>{data.affinity.map((e) => (
+        <div key={e.el} className="dw-el">
+          <img src={`${BASE}icons/${e.el}.png`} alt={e.el} onError={hideImg} />
+          <div className="dw-el-track"><div className="dw-el-fill" style={{ width: `${e.pct}%`, background: EL_HUE[e.el] }} /></div>
+          <span className="dw-el-n">{e.n}</span>
+        </div>))}</div>
+    : empty(data.empty);
+
+  if (k === 'winRate') {
+    if (!data.total) return empty(data.empty);
+    const pct = data.winPct;
+    const ring = `conic-gradient(var(--accent-jade) 0% ${pct || 0}%, rgba(255,255,255,.08) ${pct || 0}% 100%)`;
+    return (
+      <div className="dw-ring-wrap" onClick={() => go('play')} style={{ cursor: 'pointer' }}>
+        <div className="dw-ring" style={{ background: ring }}><div className="dw-ring-inner">{pct != null ? pct + '%' : '—'}</div></div>
+        <div className="dw-ring-side">
+          <div className="dw-ring-wl">{data.wins}–{data.losses}</div>
+          <div className="dw-ring-sub">{data.total} PLAYED{data.streak > 0 ? ` · ${data.streak} STREAK` : ''}</div>
+          <div className="dw-pips">{(data.last8 || []).map((r, i) => <span key={i} className={`dw-pip${r === 'W' ? ' w' : r === 'L' ? ' l' : ''}`} />)}</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (k === 'recentMatches') return data.items?.length
+    ? data.items.slice(0, 5).map((m, i) => (
+        <div key={i} className="dw-row tap" onClick={() => go('play')}>
+          <span className="gl" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
+          <span className="nm">{m.name}</span><span className="mt">{m.score}</span>
+        </div>))
+    : empty(data.empty);
+
+  if (k === 'nemesis') return data.items?.length
+    ? data.items.slice(0, 5).map((n, i) => { const tot = (n.w + n.l) || 1; return (
+        <div key={i} className="dw-nem">
+          <span className="nm">{n.name}</span>
+          <span className="bar"><i style={{ width: `${(n.w / tot) * 100}%` }} /></span>
+          <span className="wl">{n.w}–{n.l}</span>
+        </div>); })
+    : empty(data.empty);
+
+  if (k === 'randomRule') return data.rule
+    ? <div className="dw-row tap" onClick={() => open('rule', data.rule.id, data.rule.name)}><span className="gl">§</span><span className="nm">{data.rule.name}</span></div>
+    : empty(data.empty || '—');
+
+  if (k === 'note') return <div className="dw-note">{data.text || 'Empty note — open Edit ✎ to write.'}</div>;
+
+  if (k === 'links') return data.links?.length
     ? data.links.map((l, i) => { const href = safeHref(l.url); return href
-        ? <a key={i} href={href} target="_blank" rel="noreferrer" style={{ display: 'block', font: "500 13px/1.5 var(--f-ui)", color: 'var(--link-violet)' }}>↗ {l.label || l.url}</a>
-        : <div key={i} style={{ font: "500 13px/1.5 var(--f-ui)", color: 'var(--ink-faint)' }}>↗ {l.label || l.url} <span style={{ fontStyle: 'italic', fontSize: 11 }}>(blocked link)</span></div>; })
-    : empty('No links — Edit ⚙ to add.');
-  if (k === 'duels') return data.items?.length
-    ? data.items.slice(0, 4).map((m, i) => <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 0' }}><span style={{ width: 18, font: "700 11px/1 var(--f-display)", color: m.won ? 'var(--accent-jade)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span><span style={{ flex: 1, font: "500 13px/1.3 var(--f-read)", color: 'var(--ink-body)' }}>{m.name}</span><span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-muted)' }}>{m.score}</span></div>)
-    : empty(data.empty);
+        ? <a key={i} className="dw-link" href={preview ? undefined : href} target="_blank" rel="noreferrer" onClick={preview ? (e) => e.preventDefault() : undefined}>↗ {l.label || l.url}</a>
+        : <div key={i} className="dw-link" style={{ color: 'var(--ink-faint)' }}>↗ {l.label || l.url}</div>; })
+    : empty('No links — open Edit ✎ to add.');
+
   if (data.quotes) return data.items?.length
-    ? data.items.slice(0, 3).map((n, i) => <div key={i} onClick={() => onOpen(n.type, n.id, n.on)} className="cx-row" style={{ font: "400 13px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic', padding: '4px 0', cursor: 'pointer' }}>“{n.body}”</div>)
+    ? data.items.slice(0, 3).map((n, i) => <div key={i} className="dw-quote" onClick={() => open(n.type, n.id, n.on)}>“{n.body}”{n.on && <span className="on">{k === 'highlights' ? n.on : `on ${n.on}`}</span>}</div>)
     : empty(data.empty);
-  // list-style widgets (saved, notes-as-rows, collections, errata, decks, collection)
+
+  // list widgets — pinned, collections, errata
   return data.items?.length
-    ? data.items.slice(0, 5).map((it, i) => <Row key={i} glyph={it.glyph || '§'} name={it.name} meta={it.meta} onClick={it.type ? () => onOpen(it.type, it.id, it.name) : undefined} />)
+    ? data.items.slice(0, 5).map((it, i) => (
+        <div key={i} className={`dw-row${it.type ? ' tap' : ''}`} onClick={it.type ? () => open(it.type, it.id, it.name) : undefined}>
+          <span className="gl">{it.glyph || '§'}</span><span className="nm">{it.name}</span>{it.meta && <span className="mt">{it.meta}</span>}
+        </div>))
     : empty(data.empty || '—');
 }
 
+// The Add-a-widget sheet renders a LIVE mini-preview of each widget (fed
+// representative sample data + a few real card images), not just a name tile.
 function Picker({ open, onClose, onPick }) {
+  const [samples, setSamples] = useState([]);
+  useEffect(() => { if (open) pickerSamples().then(setSamples).catch(() => setSamples([])); }, [open]);
   return (
     <Sheet open={open} title="Add a Widget" onClose={onClose}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '0 16px' }}>
-        {WIDGETS.map((w) => (
-          <button key={w.kind} onClick={() => onPick(w.kind)} style={{ padding: '12px 10px', borderRadius: 11, border: '1px solid var(--hair-22)', background: 'var(--surface-card)', color: 'var(--ink-body)', font: "600 12px/1.2 var(--f-ui)", cursor: 'pointer', textAlign: 'left' }}>{w.title}</button>
-        ))}
+      <div className="dw-picker">
+        <div style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', margin: '0 0 14px' }}>
+          Tap a widget to add it. Resize, reorder and rename anything once it’s on your dashboard.
+        </div>
+        <div className="dw-picker-grid">
+          {WIDGETS.map((w) => {
+            const sample = { id: 'preview', type: w.kind, width: w.structural ? 'full' : 'half', config: {} };
+            const sdata = sampleData(w.kind, samples);
+            return (
+              <button key={w.kind} className="dw-pick" onClick={() => onPick(w.kind)}>
+                <div className="dw-pick-preview">
+                  {w.kind === 'title'
+                    ? <div className="dw"><div className="dw-body"><div className="dw-titlecard"><span className="t">My Layout</span></div></div></div>
+                    : w.kind === 'separator'
+                      ? <div className="dw"><div className="dw-body"><div className="dw-sep"><span className="ln" /><span className="dia" /><span className="ln" /></div></div></div>
+                      : <WidgetFrame block={sample} data={sdata} edit={false} preview onOpen={() => {}} onGoTab={() => {}} />}
+                </div>
+                <div className="dw-pick-foot">
+                  <span className={`pl ${w.pillar || ''}`} />
+                  <span className="nm">{w.title}</span>
+                  <span className="add">＋</span>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </Sheet>
   );
 }
 
+// One sheet for both renaming (every widget) and per-kind settings (Note text,
+// Links list, Title text). config.name is the rename override the frame prefers.
 function ConfigSheet({ block, onClose, onSaved }) {
+  const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [links, setLinks] = useState([]);
-  const [cols, setCols] = useState([]);
   useEffect(() => {
     if (!block) return;
+    setName(block.config?.name || '');
     setText(block.config?.text || '');
     setLinks(block.config?.links || []);
-    if (block.type === 'collection') listCollections().then(setCols);
   }, [block]);
   if (!block) return null;
-  const save = async (config) => { await setConfig(block.id, config); onSaved(); };
+  const meta = widgetMeta(block.type);
+  const isTitle = block.type === 'title';
+  const save = () => {
+    const extra = block.type === 'note' ? { text } : block.type === 'links' ? { links: links.filter((l) => l.url || l.label) } : {};
+    setConfig(block.id, { ...block.config, name: name.trim() || undefined, ...extra }).then(onSaved);
+  };
   return (
-    <Sheet open={!!block} title={'Configure · ' + widgetTitle(block.type)} onClose={onClose}>
+    <Sheet open={!!block} title={isTitle ? 'Title' : `Configure · ${meta.title}`} onClose={onClose}>
       <div style={{ padding: '0 16px' }}>
-      {block.type === 'text' && (
-        <>
-          <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a note…" style={{ width: '100%', height: 100, resize: 'none', background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: 12, color: 'var(--ink-body)', font: "400 14px/1.5 var(--f-read)" }} />
-          <button onClick={() => save({ text })} style={goldBtn}>Save</button>
-        </>
-      )}
-      {block.type === 'collection' && (
-        <>
-          {cols.length === 0 && <div style={{ font: "400 13px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 10 }}>No collections yet — make one in Codex.</div>}
-          {cols.map((c) => <div key={c.id} onClick={() => save({ collectionId: c.id })} className="cx-row" style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}><span style={{ font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)' }}>{c.name}</span><span style={{ color: 'var(--ink-faint)' }}>{block.config?.collectionId === c.id ? '✓' : '›'}</span></div>)}
-        </>
-      )}
-      {block.type === 'urls' && (
-        <>
-          {links.map((l, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-              <input value={l.label} onChange={(e) => setLinks(links.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder="Label" style={cfgInput} />
-              <input value={l.url} onChange={(e) => setLinks(links.map((x, j) => j === i ? { ...x, url: e.target.value } : x))} placeholder="https://…" style={cfgInput} />
-              <IconButton glyph="✕" tone="danger" size={28} onClick={() => setLinks(links.filter((_, j) => j !== i))} />
-            </div>
-          ))}
-          <button onClick={() => setLinks([...links, { label: '', url: '' }])} style={{ ...ghostBtn, width: '100%', marginBottom: 10 }}>＋ Add link</button>
-          <button onClick={() => save({ links: links.filter((l) => safeHref(l.url)) })} style={goldBtn}>Save</button>
-        </>
-      )}
+        <Lbl2 t={isTitle ? 'TITLE TEXT' : 'WIDGET NAME'} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={isTitle ? 'Section title…' : meta.title} style={cfgInputFull} />
+        {block.type === 'note' && (
+          <>
+            <Lbl2 t="TEXT" />
+            <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a note…" style={{ ...cfgInputFull, height: 120, padding: 12, resize: 'none' }} />
+          </>
+        )}
+        {block.type === 'links' && (
+          <>
+            <Lbl2 t="LINKS" />
+            {links.map((l, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                <input value={l.label} onChange={(e) => setLinks(links.map((x, j) => j === i ? { ...x, label: e.target.value } : x))} placeholder="Label" style={cfgInput} />
+                <input value={l.url} onChange={(e) => setLinks(links.map((x, j) => j === i ? { ...x, url: e.target.value } : x))} placeholder="https://…" style={cfgInput} />
+                <IconButton glyph="✕" tone="danger" size={28} onClick={() => setLinks(links.filter((_, j) => j !== i))} />
+              </div>
+            ))}
+            <button onClick={() => setLinks([...links, { label: '', url: '' }])} style={{ ...ghostBtn, width: '100%', marginBottom: 2 }}>＋ Add link</button>
+            <div style={{ font: "400 11px/1.4 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginTop: 6 }}>Only http(s) links are kept.</div>
+          </>
+        )}
+        <button onClick={save} style={goldBtn}>Save</button>
       </div>
     </Sheet>
   );
 }
 
-const Row = ({ glyph, name, meta, onClick }) => (
-  <div onClick={onClick} className={onClick ? 'cx-row' : ''} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0', cursor: onClick ? 'pointer' : 'default' }}>
-    <span style={{ color: 'var(--gold)', fontSize: 13, width: 16, textAlign: 'center' }}>{glyph}</span>
-    <span style={{ flex: 1, minWidth: 0, font: "500 13.5px/1.25 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-    {meta && <span style={{ font: "500 10px/1 var(--f-ui)", color: 'var(--ink-faint)' }}>{meta}</span>}
-  </div>
-);
-const Mini = ({ glyph, onClick, disabled, danger }) => (
-  <button disabled={disabled} onClick={onClick} style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--hair-22)', background: 'transparent', color: disabled ? 'var(--ink-faint)' : danger ? 'var(--destructive)' : 'var(--ink-status)', cursor: disabled ? 'default' : 'pointer', font: '11px/1', opacity: disabled ? 0.4 : 1 }}>{glyph}</button>
-);
+const Lbl2 = ({ t }) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '16px 0 8px' }}>{t}</div>;
 const editBtn = { padding: '7px 16px', borderRadius: 18, border: '1px solid var(--hair-30)', background: 'transparent', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' };
-const addTile = { width: '100%', padding: '18px 0', borderRadius: 16, border: '1px dashed var(--hair-30)', background: 'transparent', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' };
-const goldBtn = { ...BTN_GOLD, width: '100%', marginTop: 12, padding: '12px 0', flex: undefined };
+const goldBtn = { ...BTN_GOLD, width: '100%', marginTop: 18, padding: '12px 0', flex: undefined };
 const ghostBtn = { ...BTN_GHOST, padding: '11px 0', font: "600 12px/1 var(--f-ui)" };
 const cfgInput = { flex: 1, minWidth: 0, height: 40, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 10px', color: 'var(--ink-body)', font: "400 13px/1 var(--f-read)" };
+const cfgInputFull = { width: '100%', height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", boxSizing: 'border-box' };
+const EL_HUE = { fire: '#d98a5a', water: '#6fa8d9', earth: '#c9a35a', air: '#cdd0dc' };
+const hideImg = (e) => { e.currentTarget.style.display = 'none'; };

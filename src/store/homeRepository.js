@@ -7,29 +7,55 @@ import { uuid, nowIso } from './ids.js';
 import { listDecks } from './deckRepository.js';
 import { listMatches, historyStats } from './playRepository.js';
 
-// All widget kinds. The first five are the mockup defaults; the rest are the
-// full Lexicum set (+ cross-pillar decks/duels). configurable -> shows a ⚙.
+// The widget catalogue — 16 data-rich cards + two structural blocks (Title,
+// Separator). `pillar` earns a faint hue on Home (codex gold · decks violet ·
+// play jade); `configurable` widgets carry their own settings; `structural`
+// blocks are chrome-less layout furniture. Every widget is renamable (the frame
+// prefers block.config.name over this default title).
 export const WIDGETS = [
-  { kind: 'saved', title: 'Saved' },
-  { kind: 'duels', title: 'Recent Matches' },
-  { kind: 'random', title: 'Random Card' },
-  { kind: 'notes', title: 'Notes & Rulings' },
-  { kind: 'decks', title: 'Your Decks' },
-  { kind: 'highlights', title: 'Highlights' },
-  { kind: 'collections', title: 'Collections' },
-  { kind: 'stats', title: 'At a Glance' },
-  { kind: 'resume', title: 'Jump Back In' },
-  { kind: 'errata', title: 'Errata' },
-  { kind: 'randomArticle', title: 'Random Rule' },
-  { kind: 'text', title: 'Note', configurable: true },
-  { kind: 'collection', title: 'Collection', configurable: true },
-  { kind: 'urls', title: 'Links', configurable: true },
+  // Play
+  { kind: 'winRate', title: 'Win Rate', pillar: 'play', blurb: 'Your record at a glance' },
+  { kind: 'recentMatches', title: 'Recent Matches', pillar: 'play', blurb: 'Last games played' },
+  { kind: 'nemesis', title: 'Nemeses', pillar: 'play', blurb: 'Head-to-head by opponent' },
+  // Decks
+  { kind: 'deckSpotlight', title: 'Deck Spotlight', pillar: 'decks', blurb: 'A featured deck, in full art' },
+  { kind: 'yourDecks', title: 'Your Decks', pillar: 'decks', blurb: 'A rail of your decks' },
+  { kind: 'elementAffinity', title: 'Element Affinity', pillar: 'decks', blurb: 'Which elements you favour' },
+  // Codex
+  { kind: 'featuredCard', title: 'Featured Card', pillar: 'codex', blurb: 'A card in the spotlight' },
+  { kind: 'cardOfDay', title: 'Card of the Day', pillar: 'codex', blurb: 'A daily card pick' },
+  { kind: 'notes', title: 'Notes & Rulings', pillar: 'codex', blurb: 'Your latest marginalia' },
+  { kind: 'highlights', title: 'Highlights', pillar: 'codex', blurb: 'Passages you flagged' },
+  { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
+  { kind: 'randomRule', title: 'Random Rule', pillar: 'codex', blurb: 'A keyword to revisit' },
+  { kind: 'errata', title: 'Errata Watch', pillar: 'codex', blurb: 'Cards with updated text' },
+  // Neutral
+  { kind: 'pinned', title: 'Pinned', pillar: null, blurb: 'Everything you starred' },
+  { kind: 'note', title: 'Note', pillar: null, configurable: true, blurb: 'A free-text note' },
+  { kind: 'links', title: 'Links', pillar: null, configurable: true, blurb: 'External bookmarks' },
+  // Structural
+  { kind: 'title', title: 'Title', pillar: null, structural: true, configurable: true, blurb: 'A heading for a section' },
+  { kind: 'separator', title: 'Separator', pillar: null, structural: true, blurb: 'A dividing line' },
 ];
-export const widgetTitle = (k) => WIDGETS.find((w) => w.kind === k)?.title || k;
-export const isConfigurable = (k) => !!WIDGETS.find((w) => w.kind === k)?.configurable;
+export const widgetMeta = (k) => WIDGETS.find((w) => w.kind === k) || { kind: k, title: k };
+export const widgetTitle = (k) => widgetMeta(k).title;
+export const isConfigurable = (k) => !!widgetMeta(k).configurable;
+export const isStructural = (k) => !!widgetMeta(k).structural;
+export const pillarOf = (k) => widgetMeta(k).pillar || null;
+
+// Old Lexicum-era kinds → their nearest new widget, so dashboards saved before
+// this rewrite keep rendering (remapped at read time, DB left untouched).
+const ALIAS = {
+  saved: 'pinned', duels: 'recentMatches', decks: 'yourDecks', random: 'featuredCard',
+  randomArticle: 'randomRule', text: 'note', urls: 'links', stats: 'winRate',
+  resume: 'recentMatches', collection: 'collections',
+};
+const normalizeKind = (k) => ALIAS[k] || k;
 
 const DEFAULTS = [
-  ['saved', 'full'], ['duels', 'half'], ['random', 'half'], ['notes', 'full'], ['decks', 'half'],
+  ['winRate', 'half'], ['deckSpotlight', 'half'],
+  ['featuredCard', 'full'],
+  ['recentMatches', 'half'], ['notes', 'half'],
 ];
 
 /* ---------------- block CRUD ---------------- */
@@ -54,7 +80,7 @@ export async function listBlocks() {
     await seedingFor;
     rows = await query('SELECT * FROM dashboard_blocks WHERE profile_id=? ORDER BY sort_order ASC;', [pid]);
   }
-  return rows.map((r) => ({ ...r, config: safeParse(r.config) }));
+  return rows.map((r) => ({ ...r, type: normalizeKind(r.type), config: safeParse(r.config) }));
 }
 
 export async function addBlock(kind) {
@@ -113,15 +139,66 @@ async function resolveTarget(type, id) {
 
 export async function widgetData(block) {
   const pid = activeProfileId();
-  const k = block.type;
-  if (k === 'saved') {
+  const k = normalizeKind(block.type);
+
+  if (k === 'title' || k === 'separator') return {};
+
+  if (k === 'winRate') {
+    const s = await historyStats();
+    return { winPct: s.winPct, wins: s.wins, losses: s.losses, total: s.total, streak: s.streak, last8: s.last8, empty: 'No matches yet.' };
+  }
+  if (k === 'recentMatches') {
+    const ms = await listMatches(6); const s = await historyStats();
+    return { count: s.total, items: ms.map((m) => ({ name: m.opponent_name ? `vs. ${m.opponent_name}` : 'Match', won: m.winner === 'player', draw: m.winner === 'draw', score: `${m.player_final_life}–${m.opponent_final_life}` })), empty: 'No matches yet.' };
+  }
+  if (k === 'nemesis') {
+    const rows = await query("SELECT opponent_name, winner FROM matches WHERE profile_id=? AND opponent_name IS NOT NULL AND opponent_name!='';", [pid]);
+    const map = {};
+    for (const r of rows) { const m = (map[r.opponent_name] ||= { name: r.opponent_name, w: 0, l: 0, g: 0 }); m.g++; if (r.winner === 'player') m.w++; else if (r.winner === 'opponent') m.l++; }
+    const items = Object.values(map).sort((a, b) => b.g - a.g).slice(0, 6);
+    return { count: items.length, items, empty: 'Play named opponents to build rivalries.' };
+  }
+  if (k === 'deckSpotlight') {
+    const decks = await listDecks();
+    if (!decks.length) return { empty: 'No decks yet — build one in Decks.' };
+    const pick = decks.find((d) => d.starred) || [...decks].sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses))[0];
+    return { spotlight: { id: pick.id, name: pick.name, image: pick.avatar?.image_slug || null, record: pick.record, winPct: pick.winPct, elems: pick.elems || [] } };
+  }
+  if (k === 'yourDecks') {
+    const decks = await listDecks();
+    return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet — build one in Decks.' };
+  }
+  if (k === 'elementAffinity') {
+    const decks = await listDecks();
+    const tot = { fire: 0, water: 0, earth: 0, air: 0 };
+    for (const d of decks) for (const e of (d.elems || [])) if (tot[e.el] != null) tot[e.el]++;
+    const max = Math.max(1, ...Object.values(tot));
+    return { any: Object.values(tot).some((v) => v > 0), affinity: Object.entries(tot).map(([el, n]) => ({ el, n, pct: Math.round((n / max) * 100) })), empty: 'Build decks to reveal your elements.' };
+  }
+  if (k === 'featuredCard' || k === 'cardOfDay') {
+    const n = (await query('SELECT COUNT(*) c FROM cards;'))[0].c;
+    const off = k === 'cardOfDay' ? (Math.floor(Date.now() / 86400000) % Math.max(1, n)) : Math.floor(Math.random() * Math.max(1, n));
+    const row = (await query('SELECT card_id,name,type,cost,image_slug,rarity FROM cards LIMIT 1 OFFSET ?;', [off]))[0];
+    return { card: row ? { id: row.card_id, name: row.name, type: row.type, cost: row.cost, image: row.image_slug, rarity: row.rarity } : null, empty: 'No cards in the catalogue.' };
+  }
+  if (k === 'randomRule') {
+    const n = (await query('SELECT COUNT(*) c FROM rules WHERE parent_id IS NULL;'))[0].c;
+    const off = Math.floor(Math.random() * Math.max(1, n));
+    const row = (await query('SELECT rule_id id, title FROM rules WHERE parent_id IS NULL LIMIT 1 OFFSET ?;', [off]))[0];
+    return { rule: row ? { id: row.id, name: row.title } : null, empty: '—' };
+  }
+  if (k === 'errata') {
+    const rows = await query("SELECT card_id,name FROM cards WHERE rules_text LIKE 'UPDATED%' ORDER BY name LIMIT 50;");
+    return { count: rows.length, items: rows.map((r) => ({ name: r.name, meta: 'Errata', glyph: '◈', type: 'card', id: r.card_id })), empty: 'No errata — all cards current.' };
+  }
+  if (k === 'pinned') {
     const rows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT 50;', [pid]);
     const items = [];
     for (const r of rows) { const t = await resolveTarget(r.target_type, r.target_id); if (t) items.push({ ...t, type: r.target_type, id: r.target_id }); }
     return { count: items.length, items, empty: 'Star a rule, card, or deck to pin it here.' };
   }
   if (k === 'notes') {
-    const rows = await query('SELECT n.body, n.target_type, n.target_id FROM notes n WHERE n.profile_id=? ORDER BY n.updated_at DESC LIMIT 6;', [pid]);
+    const rows = await query('SELECT body, target_type, target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT 6;', [pid]);
     const count = (await query('SELECT COUNT(*) c FROM notes WHERE profile_id=?;', [pid]))[0].c;
     const items = [];
     for (const r of rows) { const t = await resolveTarget(r.target_type, r.target_id); items.push({ body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }); }
@@ -137,47 +214,47 @@ export async function widgetData(block) {
     for (const c of cols) c.n = (await query('SELECT COUNT(*) n FROM collection_items WHERE collection_id=?;', [c.id]))[0].n;
     return { count: cols.length, items: cols.map((c) => ({ name: c.name, meta: `${c.n} item${c.n === 1 ? '' : 's'}`, glyph: '❧' })), empty: 'No collections yet.' };
   }
-  if (k === 'collection') {
-    const cid = block.config?.collectionId;
-    if (!cid) return { count: 0, items: [], empty: 'Open Edit ⚙ to choose a collection.' };
-    const name = (await query('SELECT name FROM collections WHERE id=?;', [cid]))[0]?.name;
-    const rows = await query('SELECT target_type,target_id FROM collection_items WHERE collection_id=? LIMIT 50;', [cid]);
-    const items = [];
-    for (const r of rows) { const t = await resolveTarget(r.target_type, r.target_id); if (t) items.push({ ...t, type: r.target_type, id: r.target_id }); }
-    return { title: name, count: items.length, items, empty: 'Empty collection.' };
-  }
-  if (k === 'stats') {
-    const one = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
-    return { stats: [['Saved', await one('saved')], ['Notes', await one('notes')], ['Highlights', await one('highlights')], ['Collections', await one('collections')]] };
-  }
-  if (k === 'resume') {
-    const r = (await query('SELECT * FROM resume WHERE profile_id=?;', [pid]))[0];
-    return r ? { resume: { type: r.target_type, id: r.target_id, title: r.title } } : { empty: 'Open a rule, card, or deck and it lands here.' };
-  }
-  if (k === 'errata') {
-    const rows = await query("SELECT card_id,name FROM cards WHERE rules_text LIKE 'UPDATED%' ORDER BY name LIMIT 50;");
-    return { count: rows.length, items: rows.map((r) => ({ name: r.name, meta: 'Errata', glyph: '◈', type: 'card', id: r.card_id })), empty: 'No errata.' };
-  }
-  if (k === 'random' || k === 'randomArticle') {
-    const tbl = k === 'random' ? 'cards' : 'rules';
-    const idCol = k === 'random' ? 'card_id' : 'rule_id';
-    const nameCol = k === 'random' ? 'name' : 'title';
-    const n = (await query(`SELECT COUNT(*) c FROM ${tbl}${k === 'randomArticle' ? ' WHERE parent_id IS NULL' : ''};`))[0].c;
-    const off = Math.floor(Math.random() * Math.max(1, n));
-    const row = (await query(`SELECT ${idCol} id, ${nameCol} name FROM ${tbl}${k === 'randomArticle' ? ' WHERE parent_id IS NULL' : ''} LIMIT 1 OFFSET ?;`, [off]))[0];
-    return { random: row ? { name: row.name, type: k === 'random' ? 'card' : 'rule', id: row.id } : null };
-  }
-  if (k === 'decks') {
-    const decks = await listDecks();
-    return { count: decks.length, items: decks.slice(0, 6).map((d) => ({ name: d.name, meta: d.archetype || d.record, glyph: '◆', type: 'deck', id: d.id })), empty: 'No decks yet.' };
-  }
-  if (k === 'duels') {
-    const ms = await listMatches(6); const s = await historyStats();
-    return { count: s.total, record: `${s.wins}–${s.losses}`, items: ms.map((m) => ({ name: m.opponent_name ? `vs. ${m.opponent_name}` : 'Match', won: m.winner === 'player', draw: m.winner === 'draw', score: `${m.player_final_life}–${m.opponent_final_life}` })), empty: 'No matches yet.' };
-  }
-  if (k === 'text') return { text: block.config?.text || '' };
-  if (k === 'urls') return { links: block.config?.links || [] };
+  if (k === 'note') return { text: block.config?.text || '' };
+  if (k === 'links') return { links: block.config?.links || [] };
   return {};
+}
+
+/* ---------------- picker previews ---------------- */
+
+// A few real card rows (with art) to make the picker's live previews look true
+// on any profile. Falls back gracefully to the monogram state when a card has
+// no image or the catalogue is empty.
+export async function pickerSamples() {
+  return query("SELECT card_id,name,type,cost,image_slug,rarity FROM cards WHERE image_slug IS NOT NULL AND image_slug!='' ORDER BY RANDOM() LIMIT 4;");
+}
+
+// Representative mock data shaped exactly like widgetData(), used to render the
+// live widget previews in the Add-a-widget sheet (`cards` = pickerSamples()).
+export function sampleData(kind, cards = []) {
+  const k = normalizeKind(kind);
+  const [c0, c1, c2] = cards;
+  const img = (c) => c?.image_slug || null;
+  switch (k) {
+    case 'winRate': return { winPct: 68, wins: 17, losses: 8, total: 25, streak: 3, last8: ['W', 'W', 'L', 'W', 'D', 'W', 'L', 'W'] };
+    case 'recentMatches': return { items: [{ name: 'vs. Alex', won: true, score: '20–4' }, { name: 'vs. Sam', won: false, score: '0–13' }, { name: 'vs. Robin', won: true, score: '20–9' }] };
+    case 'nemesis': return { items: [{ name: 'Alex', w: 4, l: 1, g: 5 }, { name: 'Sam', w: 1, l: 3, g: 4 }, { name: 'Robin', w: 2, l: 2, g: 4 }] };
+    case 'deckSpotlight': return { spotlight: { name: 'Aggro Flare', image: img(c0), record: '12–5', winPct: 71, elems: [{ el: 'fire' }, { el: 'earth' }] } };
+    case 'yourDecks': return { decks: [{ name: 'Aggro Flare', image: img(c0), record: '12–5' }, { name: 'Tide Control', image: img(c1), record: '8–6' }, { name: 'Stone Wall', image: img(c2), record: '5–3' }] };
+    case 'elementAffinity': return { any: true, affinity: [{ el: 'fire', n: 6, pct: 100 }, { el: 'water', n: 4, pct: 66 }, { el: 'earth', n: 3, pct: 50 }, { el: 'air', n: 2, pct: 33 }] };
+    case 'featuredCard': return { card: c0 ? { name: c0.name, type: c0.type, cost: c0.cost, image: c0.image_slug, rarity: c0.rarity } : { name: 'Avatar of Fire', type: 'Avatar', cost: 0, image: null, rarity: 'Elite' } };
+    case 'cardOfDay': { const c = c1 || c0; return { card: c ? { name: c.name, type: c.type, cost: c.cost, image: c.image_slug, rarity: c.rarity } : { name: 'Wildfire', type: 'Magic', cost: 3, image: null } }; }
+    case 'notes': return { quotes: true, items: [{ body: 'Rush lets a minion attack the turn it enters play.', on: 'Rush' }, { body: 'Genesis triggers when the card enters.', on: 'Genesis' }] };
+    case 'highlights': return { quotes: true, items: [{ body: '“…may bear any number of items.”', on: 'ruling' }, { body: '“Tap to resolve before combat.”', on: 'timing' }] };
+    case 'collections': return { items: [{ name: 'Fire staples', meta: '12 items', glyph: '❧' }, { name: 'Want list', meta: '5 items', glyph: '❧' }] };
+    case 'randomRule': return { rule: { name: 'Deathrite' } };
+    case 'errata': return { items: [{ name: 'Enchantress', meta: 'Errata', glyph: '◈' }, { name: 'Philosopher’s Stone', meta: 'Errata', glyph: '◈' }] };
+    case 'pinned': return { items: [{ name: 'Sparkmage', meta: 'Card', glyph: '◈' }, { name: 'Charge', meta: 'Keyword', glyph: '§' }, { name: 'Aggro Flare', meta: 'Deck', glyph: '◆' }] };
+    case 'note': return { text: 'Playtest: side in extra removal vs aggro. Watch the water matchup.' };
+    case 'links': return { links: [{ label: 'Curiosa deck', url: 'https://curiosa.io' }, { label: 'Rules PDF', url: 'https://sorcerytcg.com' }] };
+    case 'title': return { text: 'My Layout' };
+    case 'separator': return {};
+    default: return {};
+  }
 }
 
 /* ---------------- resume + overview ---------------- */
