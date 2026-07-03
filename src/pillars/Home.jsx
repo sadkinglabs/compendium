@@ -75,8 +75,8 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
         <span className="cx-ov-sec-title">{title}</span>
         {count != null && <span className="cx-ov-sec-count">{count}</span>}
         <span className="cx-ov-sec-spring" />
-        {onAll && <span className="cx-ov-sec-all" onClick={(e) => { e.stopPropagation(); onAll(); }}>All ›</span>}
-        <span className="cx-ov-sec-chev">▼</span>
+        {onAll && <span className="cx-ov-sec-all" onClick={(e) => { e.stopPropagation(); onAll(); }}>All<IcoChevR size={12} /></span>}
+        <span className="cx-ov-sec-chev"><IcoDown size={13} /></span>
       </div>
       <div className="cx-ov-sec-body">{children}</div>
     </div>
@@ -174,7 +174,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
               <div key={i} className="cx-ov-duel" onClick={() => onGoTab('play')} role="button">
                 <span className="cx-ov-duel-badge" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
                 <span className="cx-ov-duel-name">{m.name}</span>
-                {m.deck && <span className="cx-ov-duel-deck">◈ {m.deck}</span>}
+                {m.deck && <span className="cx-ov-duel-deck"><IcoDeck size={11} />{m.deck}</span>}
                 <span className="cx-ov-duel-score">{m.score}</span>
               </div>
             ))}
@@ -533,6 +533,8 @@ const Svg = ({ children, size = 13, fill = 'none', ...p }) => (
 );
 const IcoUp = (p) => <Svg {...p}><polyline points="18 15 12 9 6 15" /></Svg>;
 const IcoDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9" /></Svg>;
+const IcoChevR = (p) => <Svg {...p}><polyline points="9 18 15 12 9 6" /></Svg>;
+const IcoDeck = (p) => <Svg {...p}><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></Svg>;
 const IcoExpand = (p) => <Svg {...p}><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></Svg>;
 const IcoShrink = (p) => <Svg {...p}><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></Svg>;
 const IcoEdit = (p) => <Svg {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>;

@@ -455,6 +455,7 @@ body.roll-active .dd-pill { display: none !important; }
    (gold is never a button fill). Dimmed until both avatars are chosen. */
 .picker-confirm-btn {
   width: 100%; padding: 15px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
   border-radius: 12px; background: rgba(18,16,13,.85);
   color: var(--gold-head); border: 1px solid rgba(220,184,111,.45);
   font-family: var(--f-ui); font-size: 15px; font-weight: 700;

@@ -85,9 +85,14 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         <div className={`picker-search${q ? ' has-text' : ''}`}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avatars…" autoComplete="off" autoCapitalize="off" spellCheck="false" />
-          <button className="picker-search-clear" onClick={() => setQ('')} aria-label="Clear search">✕</button>
+          <button className="picker-search-clear" onClick={() => setQ('')} aria-label="Clear search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ width: 12, height: 12 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
-        <button className={`picker-confirm-btn${ready ? ' ready' : ''}`} onClick={() => ready && onConfirm(you, opp, deck)}>Continue →</button>
+        <button className={`picker-confirm-btn${ready ? ' ready' : ''}`} onClick={() => ready && onConfirm(you, opp, deck)}>
+          Continue
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+        </button>
       </div>
     </div>
   );

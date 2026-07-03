@@ -196,12 +196,14 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .cx-ov-tile-val { font: 700 19px/1 var(--f-mono); color: var(--gold-leaf); }
 .cx-ov-tile-lbl { font: 600 8.5px/1.2 var(--f-ui); letter-spacing: .1em; color: var(--ink-faint); margin-top: 7px; }
 .cx-ov-sec { margin-bottom: 24px; }
-.cx-ov-sec-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 11px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-ov-sec-head { display: flex; align-items: center; gap: 10px; margin-bottom: 11px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-sec-title { font: 600 11px/1 var(--f-display); letter-spacing: .16em; color: var(--gold-leaf); }
 .cx-ov-sec-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); }
 .cx-ov-sec-spring { flex: 1; }
-.cx-ov-sec-all { font: 600 11px/1 var(--f-ui); color: var(--ink-status); white-space: nowrap; }
-.cx-ov-sec-chev { font-size: 10px; color: var(--ink-faint); transition: transform .18s ease; }
+.cx-ov-sec-all { display: inline-flex; align-items: center; gap: 2px; font: 600 11px/1 var(--f-ui); color: var(--ink-status); white-space: nowrap; }
+/* Disclosure chevron — an SVG so it rotates cleanly about its own centre
+   (open = pointing down at the content; collapsed = rotated to point right). */
+.cx-ov-sec-chev { display: inline-flex; align-items: center; color: var(--ink-faint); transition: transform .2s ease; transform-origin: center; }
 .cx-ov-sec.closed .cx-ov-sec-chev { transform: rotate(-90deg); }
 .cx-ov-sec-body { overflow: hidden; }
 .cx-ov-sec.closed .cx-ov-sec-body { display: none; }
@@ -220,7 +222,8 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .cx-ov-duel:last-child { border-bottom: none; }
 .cx-ov-duel-badge { width: 24px; height: 24px; border-radius: 7px; flex: none; display: flex; align-items: center; justify-content: center; font: 700 11px/1 var(--f-display); background: rgba(16,16,19,.9); border: 1px solid var(--hair-16); }
 .cx-ov-duel-name { flex: 1; min-width: 0; font: 600 13.5px/1.2 var(--f-read); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cx-ov-duel-deck { font: 500 10px/1 var(--f-ui); color: var(--accent-violet); max-width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-ov-duel-deck { display: inline-flex; align-items: center; gap: 4px; font: 500 10px/1 var(--f-ui); color: var(--accent-violet); max-width: 34%; overflow: hidden; white-space: nowrap; flex: none; }
+.cx-ov-duel-deck svg { flex: none; }
 .cx-ov-duel-score { font: 500 12px/1 var(--f-mono); color: var(--ink-muted); }
 
 /* ── Profile picker — monogram discs, per-profile digests, gold ring on the

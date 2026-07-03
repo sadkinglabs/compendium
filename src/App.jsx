@@ -237,13 +237,13 @@ export default function App() {
           show the brand bar + divider above it. */}
       {addActive ? (
         <div style={S.detailHeader}>
-          <button onClick={exitAdd} style={S.back}>‹ Done</button>
+          <button onClick={exitAdd} style={S.back}><IcBack size={15} />Done</button>
           <div style={S.addEyebrow}>EDITING · {addMode.deckName}</div>
           <span style={{ width: 56 }} />
         </div>
       ) : viewDetail ? (
         <div style={S.detailHeader}>
-          <button onClick={back} style={S.back}>‹ Back</button>
+          <button onClick={back} style={S.back}><IcBack size={15} />Back</button>
           <div style={S.detailTitle}>{detail.title || ''}</div>
           <span style={{ width: 44 }} />
         </div>
@@ -293,7 +293,7 @@ export default function App() {
           <div className="cx-search-pill">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={searchVal} onChange={(e) => setSearchVal(e.target.value)} placeholder={searchPlaceholder} autoComplete="off" />
-            {searchVal && <button className="cx-search-clear" onClick={() => setSearchVal('')} aria-label="Clear">✕</button>}
+            {searchVal && <button className="cx-search-clear" onClick={() => setSearchVal('')} aria-label="Clear"><IcX size={13} /></button>}
           </div>
         </div>
       )}
@@ -389,6 +389,20 @@ function NavIcon({ icon }) {
   return <svg viewBox="0 0 24 24" {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" /><line x1="5" y1="14" x2="9" y2="18" /><line x1="7" y1="17" x2="4" y2="20" /><line x1="3" y1="19" x2="5" y2="21" /></svg>;
 }
 
+// House SVG icons for App chrome — no Unicode glyphs.
+const ASvg = ({ children, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
+const IcBack = (p) => <ASvg {...p}><polyline points="15 18 9 12 15 6" /></ASvg>;
+const IcX = (p) => <ASvg {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></ASvg>;
+const IcPlus = (p) => <ASvg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></ASvg>;
+const IcDownload = (p) => <ASvg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></ASvg>;
+const IcUpload = (p) => <ASvg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></ASvg>;
+function ResultIcon({ kind }) {
+  if (kind === 'deck') return <ASvg><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></ASvg>;
+  if (kind === 'match' || kind === 'duel') return <ASvg><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" /></ASvg>;
+  if (kind === 'rule') return <ASvg><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></ASvg>;
+  return <ASvg><rect x="4" y="3" width="16" height="18" rx="2" /></ASvg>; // card
+}
+
 function SearchResults({ query, onOpen, onDuel }) {
   const [res, setRes] = useState(null);
   useEffect(() => {
@@ -399,7 +413,7 @@ function SearchResults({ query, onOpen, onDuel }) {
   if (!res) return <Loading />;
   const total = res.codex.length + res.decks.length + res.duels.length + (res.marginalia?.length || 0);
   if (total === 0) return <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>;
-  const group = (label, dot, items, onItem) => items.length > 0 && (
+  const group = (label, dot, items, onItem, iconKind) => items.length > 0 && (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>
@@ -407,15 +421,15 @@ function SearchResults({ query, onOpen, onDuel }) {
         </span>
         <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{items.length}</span>
       </div>
-      {items.map((it) => <ListRow key={(it.kind || it.glyph) + it.id} icon={it.glyph || (it.kind === 'card' ? '◈' : '§')} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
+      {items.map((it) => <ListRow key={(it.kind || iconKind) + it.id} icon={<ResultIcon kind={it.kind || iconKind} />} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
     </div>
   );
   return (
     <div style={{ padding: '6px 20px 26px' }}>
-      {group('CODEX', 'var(--accent-gold)', res.codex, (it) => onOpen(it.kind, it.id, it.name))}
-      {group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], (it) => onOpen(it.kind, it.id, it.name))}
-      {group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name))}
-      {group('MATCHES', 'var(--accent-jade)', res.duels, () => onDuel())}
+      {group('CODEX', 'var(--accent-gold)', res.codex, (it) => onOpen(it.kind, it.id, it.name), 'card')}
+      {group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], (it) => onOpen(it.kind, it.id, it.name), 'card')}
+      {group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name), 'deck')}
+      {group('MATCHES', 'var(--accent-jade)', res.duels, () => onDuel(), 'match')}
     </div>
   );
 }
@@ -513,11 +527,11 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
           <button onClick={add} disabled={busy} style={{ ...S.btnGold, opacity: busy ? 0.6 : 1 }}>Create</button>
         </div>
       ) : (
-        <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 16, width: '100%' }}>＋ New profile</button>
+        <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 16, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><IcPlus size={14} />New profile</button>
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-        <button onClick={onExport} style={{ ...S.btnGhost, flex: 1 }}>⤓ Export</button>
-        <button onClick={onImport} style={{ ...S.btnGhost, flex: 1 }}>⤒ Import</button>
+        <button onClick={onExport} style={{ ...S.btnGhost, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcDownload size={14} />Export</button>
+        <button onClick={onImport} style={{ ...S.btnGhost, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcUpload size={14} />Import</button>
       </div>
       </div>
     </Sheet>
@@ -595,7 +609,7 @@ const S = {
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px' },
-  back: { background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, textAlign: 'left' },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, padding: 0 },
   detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
