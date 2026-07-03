@@ -63,6 +63,14 @@ const DEFAULTS = [
 
 let seedingFor = null;   // guards default-seed against concurrent callers (StrictMode)
 
+// A persistent, per-profile flag (in catalog_meta, which survives catalog
+// re-seeds) marking that the starter dashboard has been laid down once. Without
+// it we'd re-seed every time the block count hit 0 - so emptying the dashboard
+// on purpose would silently repopulate it.
+const seededKey = (pid) => `dash_seeded:${pid}`;
+async function isSeeded(pid) { return (await query('SELECT 1 FROM catalog_meta WHERE key=?;', [seededKey(pid)])).length > 0; }
+async function markSeeded(pid) { await run("INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?, '1');", [seededKey(pid)]); }
+
 async function seedDefaults(pid) {
   const c = (await query('SELECT COUNT(*) c FROM dashboard_blocks WHERE profile_id=?;', [pid]))[0].c;
   if (c > 0) return;       // re-check inside the guard - never double-seed
@@ -76,11 +84,15 @@ async function seedDefaults(pid) {
 export async function listBlocks() {
   const pid = activeProfileId();
   let rows = await query('SELECT * FROM dashboard_blocks WHERE profile_id=? ORDER BY sort_order ASC;', [pid]);
-  if (rows.length === 0) {
+  const seeded = await isSeeded(pid);
+  // Seed the starter layout ONLY on genuine first run - an empty dashboard the
+  // user cleared themselves is respected, not repopulated.
+  if (rows.length === 0 && !seeded) {
     if (!seedingFor) seedingFor = seedDefaults(pid).finally(() => { seedingFor = null; });
     await seedingFor;
     rows = await query('SELECT * FROM dashboard_blocks WHERE profile_id=? ORDER BY sort_order ASC;', [pid]);
   }
+  if (!seeded) await markSeeded(pid);   // flag on first load (covers pre-existing dashboards too)
   return rows.map((r) => ({ ...r, type: normalizeKind(r.type), config: safeParse(r.config) }));
 }
 
