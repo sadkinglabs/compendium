@@ -19,10 +19,10 @@ import '../theme/deckpager.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, rev }) {
+export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
-  const [editMode, setEditMode] = useState(false);  // in-place quick edit (steppers on rows)
+  const setEditMode = onEditMode;   // lifted to App so it survives the add-cards flow
   const [decks, setDecks] = useState(null);
   const [libQ, setLibQ] = useState('');
   // Deck-actions FAB state (Arcanum's #deck-fab menu).
@@ -38,8 +38,15 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   async function refresh() { setDecks(await listDecks()); }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
   // Opening/creating/importing a deck (deckOpen changes id) jumps to My Deck;
-  // the user can still toggle back to Library freely afterward.
-  useEffect(() => { if (deckOpen) { setView('mydeck'); setStatTab('list'); } setEditMode(false); }, [deckOpen?.id]);
+  // the user can still toggle back to Library freely afterward. editMode is only
+  // dropped on a genuine id change — NOT on the remount after the add-cards flow
+  // (which is why editMode lives in App, not here).
+  const prevIdRef = useRef(deckOpen?.id);
+  useEffect(() => {
+    if (deckOpen) { setView('mydeck'); setStatTab('list'); }
+    if (prevIdRef.current !== deckOpen?.id) { setEditMode(false); prevIdRef.current = deckOpen?.id; }
+    // eslint-disable-next-line
+  }, [deckOpen?.id]);
   // Leaving the deck (or its list view) always exits edit mode.
   useEffect(() => { if (view !== 'mydeck' || statTab !== 'list') setEditMode(false); }, [view, statTab]);
   // Keep the loaded-deck meta (name, starred) fresh for the FAB menu.

@@ -2,12 +2,14 @@
 // List ⇄ Card view, per-card +/- steppers (List) or tap-to-add (Card), and a
 // Filters & Sort sheet built from catalogue values. Enforces rarity/zone limits.
 import React, { useEffect, useState } from 'react';
-import { getPool, getSets, getArtists } from '../store/deckRepository.js';
+import { getPool, getSets, getArtists, changeQty } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import { ThresholdPips } from '../components/ui.jsx';
 import { thresholdRuns } from '../store/cardArt.js';
 import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
+import { haptic } from '../native.js';
+import { toast } from '../feedback.js';
 
 const BASE = import.meta.env.BASE_URL;
 const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
@@ -57,6 +59,20 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
   const afterChange = () => { loadQtys(); onChanged?.(); };
 
+  // Inline quick-add on a list row — optimistic, routes to the card's home zone
+  // (Atlas for sites, else Spellbook), same limits/toasts as the CardSheet, so
+  // adding N copies of a known card no longer needs a sheet round-trip each.
+  async function step(c, delta) {
+    const zone = c.is_site ? 'atlas' : 'spellbook';
+    const prev = qtys[c.card_id] || 0;
+    if (prev + delta < 0) return;
+    haptic('light');
+    setQtys((m) => ({ ...m, [c.card_id]: prev + delta }));
+    const res = await changeQty(deckId, zone, c, delta);
+    if (!res.ok) { setQtys((m) => ({ ...m, [c.card_id]: prev })); toast(res.reason || 'Not allowed'); return; }
+    onChanged?.();
+  }
+
   return (
     <div className="arc" style={{ padding: '4px 16px 26px', animation: 'arcRise .32s cubic-bezier(.2,.9,.3,1)' }}>
       {/* view toggle (Arcanum amethyst), centered — no zone selector; cards auto-route by type */}
@@ -88,11 +104,15 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
           {pool.slice(0, 250).map((c) => {
             const qty = qtys[c.card_id] || 0;
             return (
-              <div key={c.card_id} className="card-row" onClick={() => setSheetCardId(c.card_id)}>
+              <div key={c.card_id} className="card-row">
                 {qty > 0 && <span className="in-deck-badge">{qty}</span>}
-                <span className="name" style={rarityOn ? { color: RARITY_COLOR[c.rarity] || 'var(--text)' } : undefined}>{c.name}</span>
+                <span className="name" onClick={() => setSheetCardId(c.card_id)} style={rarityOn ? { color: RARITY_COLOR[c.rarity] || 'var(--text)' } : undefined}>{c.name}</span>
                 <ThresholdPips runs={thresholdRuns(c)} />
                 {c.cost != null && <div className="cost-badge">{c.cost}</div>}
+                <span className="cr-step" onClick={(e) => e.stopPropagation()}>
+                  <button className="cr-step-btn" onClick={() => step(c, -1)} aria-label="Remove one" disabled={qty === 0}>−</button>
+                  <button className="cr-step-btn" onClick={() => step(c, 1)} aria-label="Add one">+</button>
+                </span>
               </div>
             );
           })}

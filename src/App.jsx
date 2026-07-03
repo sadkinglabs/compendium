@@ -58,6 +58,7 @@ export default function App() {
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
+  const [deckEditMode, setDeckEditMode] = useState(false); // My-Deck quick-edit — lifted so it survives the add-cards flow
   const booted = useRef(false);
   const backRef = useRef(null);   // latest hardware-back handler (set each render)
   const [storageFull, setStorageFull] = useState(false);
@@ -102,7 +103,7 @@ export default function App() {
   const viewDetail = detail && !hasQuery && !addActive;
   const pillar = PILLARS.find((p) => p.key === tab);
 
-  const goTab = (t) => { if (t !== tab) haptic('light'); setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); };
+  const goTab = (t) => { if (t !== tab) haptic('light'); setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); setDeckEditMode(false); };
   const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
   const exitAdd = () => { setAddMode(null); bump(); };
   const openNewMatch = async (mode) => {
@@ -161,7 +162,7 @@ export default function App() {
     // Clear ALL cross-profile UI state — a leaked deckOpen/addMode would edit
     // the previous profile's data (or spin forever on a deck this profile can't see).
     setProfileSheet(false); setDetail(null); setHistory([]); setQuery('');
-    setAddMode(null); setDeckOpen(null); setPreMatch(null); setCodexPreset(null); setScope('all');
+    setAddMode(null); setDeckOpen(null); setDeckEditMode(false); setPreMatch(null); setCodexPreset(null); setScope('all');
     setTab('home'); bump();
   }
 
@@ -251,6 +252,7 @@ export default function App() {
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
           deckOpen={deckOpen} onOpenDeck={setDeckOpen} onChanged={bump}
           onOpenCodex={(id, name) => open('card', id, name)}
+          editMode={deckEditMode} onEditMode={setDeckEditMode}
           onAddCards={() => deckOpen && enterAdd(deckOpen.id, deckOpen.name)} rev={rev} />
       ) : (
       <div className="cx-scroll" style={S.body}>
