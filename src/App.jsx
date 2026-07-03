@@ -19,12 +19,13 @@ import Play from './pillars/Play.jsx';
 import LifeCounter from './pillars/LifeCounter.jsx';
 import AvatarPicker from './pillars/AvatarPicker.jsx';
 import Home from './pillars/Home.jsx';
-import { getSettings, recordMatch } from './store/playRepository.js';
+import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, exitApp, haptic } from './native.js';
-import { ListRow, IconButton, Loading } from './components/ui.jsx';
+import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
+import { ListRow, IconButton, Chip, ChipRow, Loading } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
@@ -55,6 +56,7 @@ export default function App() {
   const [preMatch, setPreMatch] = useState(null);    // {mode, settings} — avatar picker step
   const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
   const counterApi = useRef(null);                   // {minimize} — set by the live counter
+  const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
@@ -80,6 +82,7 @@ export default function App() {
         const { counts } = await seedCatalogIfNeeded();
         const p = await initProfiles();
         setProfile(p);
+        try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
         if (import.meta.env.DEV) {
           window.__cx = {
             transfer: await import('./store/profileTransfer.js'),
@@ -159,6 +162,7 @@ export default function App() {
     await switchProfile(id);
     await reloadProfile();
     setOngoing(loadOngoing());   // ongoing match is profile-scoped
+    try { applyAppearance(await getSettings()); } catch { /* noop */ }   // appearance is per-profile
     // Clear ALL cross-profile UI state — a leaked deckOpen/addMode would edit
     // the previous profile's data (or spin forever on a deck this profile can't see).
     setProfileSheet(false); setDetail(null); setHistory([]); setQuery('');
@@ -176,6 +180,7 @@ export default function App() {
     if (preMatch) return setPreMatch(null);
     if (deckWizard) return setDeckWizard(false);
     if (importMode) return setImportMode(null);
+    if (settingsSheet) return setSettingsSheet(false);
     if (profileSheet) return setProfileSheet(false);
     if (addActive) return exitAdd();
     if (hasQuery) return setQuery('');
@@ -301,9 +306,10 @@ export default function App() {
         <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters & sort"
           onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
       ) : tab === 'home' && !viewDetail && !hasQuery ? (
-        <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="User options" items={[
-          { label: 'Export User', onClick: async () => { try { await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } } },
-          { label: 'Import User', onClick: async () => { try { const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } } },
+        // Export/Import live on the Profiles sheet; the Home FAB is Settings
+        // (accessibility + preferences), extensible with more app-level actions.
+        <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="App options" items={[
+          { label: 'Settings', onClick: () => setSettingsSheet(true) },
         ]} />
       ) : tab === 'play' && !viewDetail && !hasQuery ? (
         <Fab variant="lib" icon="+" label="Match options" items={[
@@ -367,6 +373,7 @@ export default function App() {
           deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
           onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
       )}
+      <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} />
       <ToastHost />
       <ConfirmHost />
     </div>
@@ -519,9 +526,81 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
   );
 }
 
-// NOTE: the old SettingsSheet was removed — counter comforts live in the life
-// tracker's Tweaks (player FAB); a proper Settings surface off the profile
-// sheet is planned but not yet designed.
+// App Settings — reached from the Home FAB. Accessibility (font scale, high
+// contrast, reduced motion) applied live via applyAppearance, plus the
+// per-profile preferences that lost their UI when the old sheet was removed.
+// (Counter comforts — keep-awake / immersive / grain — still live in the
+// tracker's Tweaks.)
+function SettingsSheet({ open, onClose }) {
+  const [s, setS] = useState(null);
+  useEffect(() => { if (open) getSettings().then(setS); }, [open]);
+  async function put(key, value) {
+    setS((p) => { const n = { ...p, [key]: value }; applyAppearance(n); return n; });
+    await setSetting(key, value);
+  }
+  if (!open) return null;
+  const label = (t) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '18px 0 10px' }}>{t}</div>;
+  const Toggle = ({ label: lbl, k, hint }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 2px', borderBottom: '1px solid var(--hair-12)' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)' }}>{lbl}</div>
+        {hint && <div style={{ font: "400 11.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', marginTop: 3 }}>{hint}</div>}
+      </div>
+      <button onClick={() => put(k, s[k] ? 0 : 1)} aria-label={lbl} aria-pressed={!!s?.[k]}
+        style={{ width: 46, height: 28, minWidth: 46, borderRadius: 14, border: '1px solid var(--hair-30)', background: s?.[k] ? 'var(--gold-leaf)' : 'transparent', position: 'relative', cursor: 'pointer', flex: 'none' }}>
+        <span style={{ position: 'absolute', top: 2, left: s?.[k] ? 20 : 2, width: 22, height: 22, borderRadius: '50%', background: s?.[k] ? '#1a1410' : 'var(--ink-faint)', transition: 'left .15s' }} />
+      </button>
+    </div>
+  );
+  const scale = clampFontScale(s?.font_scale);
+  return (
+    <Sheet open={open} title="Settings" onClose={onClose}>
+      {s == null ? <Loading /> : (
+        <div style={{ padding: '0 16px' }}>
+          {label('ACCESSIBILITY')}
+          <div style={{ padding: '4px 2px 12px', borderBottom: '1px solid var(--hair-12)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ font: "500 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>Text &amp; UI size</span>
+              <span style={{ font: "600 12px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{Math.round(scale * 100)}%</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <IconButton glyph="−" tone="muted" size={40} title="Smaller" onClick={() => put('font_scale', clampFontScale(scale - FONT_STEP))} />
+              <input type="range" min={FONT_MIN} max={FONT_MAX} step={FONT_STEP} value={scale}
+                onChange={(e) => put('font_scale', clampFontScale(e.target.value))}
+                aria-label="Text and UI size"
+                style={{ flex: 1, accentColor: 'var(--gold-leaf)' }} />
+              <IconButton glyph="+" size={40} title="Larger" onClick={() => put('font_scale', clampFontScale(scale + FONT_STEP))} />
+            </div>
+          </div>
+          <Toggle label="High contrast" k="high_contrast" hint="Brighter text and stronger outlines." />
+          <Toggle label="Reduce motion" k="reduced_motion" hint="Minimise animations and transitions." />
+
+          {label('MATCH DEFAULTS')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '6px 0 4px' }}>
+            <span style={{ flex: 1, font: "500 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>Starting life</span>
+            <IconButton glyph="−" tone="muted" size={38} title="Less" onClick={() => put('default_max_life', Math.max(1, (s.default_max_life || 20) - 1))} />
+            <span style={{ font: "700 22px/1 var(--f-display)", color: 'var(--gold-leaf)', minWidth: 34, textAlign: 'center' }}>{Math.min(20, s.default_max_life)}</span>
+            <IconButton glyph="+" size={38} title="More" onClick={() => put('default_max_life', Math.min(20, (s.default_max_life || 20) + 1))} />
+          </div>
+          {label('DIE')}
+          <ChipRow>
+            {[4, 6, 8, 10, 12, 20].map((d) => <Chip key={d} label={'d' + d} active={s.die_type === d} onClick={() => put('die_type', d)} />)}
+          </ChipRow>
+
+          {label('PREFERENCES')}
+          <ChipRow>
+            {[['gilded', 'Gilded'], ['verdigris', 'Verdigris'], ['pewter', 'Pewter']].map(([k, l]) => (
+              <Chip key={k} label={l} active={s.accent_metal === k} onClick={() => put('accent_metal', k)} />
+            ))}
+          </ChipRow>
+          <div style={{ height: 12 }} />
+          <Toggle label="Haptics" k="haptics" hint="Subtle vibration on key taps." />
+          <Toggle label="Rarity colours" k="rarity_colors" hint="Tint card names by rarity in decks." />
+        </div>
+      )}
+    </Sheet>
+  );
+}
 
 function Splash({ text, error }) {
   return (

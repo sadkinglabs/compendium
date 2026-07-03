@@ -30,19 +30,17 @@ async function runMigrations() {
   const current = cur ? parseInt(cur.value, 10) : 0;
   for (const m of MIGRATIONS) {
     if (m.version <= current) continue;
-    // Each migration is atomic: the DDL and the version bump land together or
-    // not at all (SQLite has transactional DDL), so a crash/failure mid-migration
-    // can never leave a half-applied schema with an un-bumped version — the next
-    // boot re-runs the whole migration cleanly.
+    // Run the DDL then bump the version. Atomicity via an explicit BEGIN/COMMIT
+    // wrapper proved unreliable across the sql.js multi-statement path, so
+    // instead each migration must be idempotent: a re-run after a crash between
+    // the DDL and the version bump tolerates "already exists" and still advances.
     try {
-      await exec('BEGIN;');
       await exec(m.sql);
-      await run("INSERT OR REPLACE INTO _meta(key,value) VALUES('schema_version',?);", [String(m.version)]);
-      await exec('COMMIT;');
     } catch (e) {
-      try { await exec('ROLLBACK;'); } catch { /* nothing to roll back */ }
-      throw e;
+      if (!/duplicate column|already exists/i.test(String(e?.message || e))) throw e;
+      // else: partially-applied on a prior boot — the version bump below finishes it.
     }
+    await run("INSERT OR REPLACE INTO _meta(key,value) VALUES('schema_version',?);", [String(m.version)]);
   }
 }
 

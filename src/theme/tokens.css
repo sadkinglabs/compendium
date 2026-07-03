@@ -33,7 +33,7 @@
   --ink-body: #e9dcc0;
   --ink-body-2: #e3d8c2;
   --ink-muted: #9a8b6a;
-  --ink-faint: #7a6e5c;
+  --ink-faint: #8f8168;   /* lifted to clear ~4.5:1 on the black canvas */
   --ink-status: #cbbfa8;
 
   /* reserved semantic accents (functional only) */
@@ -70,6 +70,34 @@ body {
   color: var(--ink-body);
   font-family: var(--f-ui);
   -webkit-font-smoothing: antialiased;
+}
+
+/* ── Accessibility (appearance.js sets --ui-scale + body classes) ── */
+/* UI scale: zoom the app container so text AND layout enlarge together
+   (everything is authored in px). Default 1 = no change. */
+.cx-app { zoom: var(--ui-scale, 1); }
+/* High contrast: brighten the muted inks and strengthen hairlines so meta,
+   counts and empty-state guidance clear 4.5:1 on the black canvas. */
+body.hc {
+  --ink-muted: #cdbf9c;
+  --ink-faint: #b3a582;
+  --ink-status: #e7ddc6;
+  --hair-12: rgba(201,163,90,.24);
+  --hair-16: rgba(201,163,90,.30);
+  --hair-22: rgba(201,163,90,.40);
+  --hair-30: rgba(201,163,90,.52);
+  --hair-40: rgba(201,163,90,.62);
+}
+/* Reduced motion: neutralise animations + transitions app-wide. Honoured for
+   the OS setting too (appearance.js adds the class when prefers-reduced-motion). */
+body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after {
+  animation-duration: .001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: .001ms !important;
+  scroll-behavior: auto !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 
 /* Per-pillar section wash: a top-down radial glow of --wash over pure black.

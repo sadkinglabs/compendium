@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const MIGRATIONS = [
   {
@@ -207,6 +207,15 @@ export const MIGRATIONS = [
     sql: `
     ALTER TABLE profiles ADD COLUMN is_default INTEGER DEFAULT 0;
     UPDATE profiles SET is_default=1 WHERE id=(SELECT id FROM profiles ORDER BY created_at ASC, rowid ASC LIMIT 1);
+    `,
+  },
+  {
+    // v4 — accessibility settings (per-profile, applied to the app root).
+    version: 4,
+    sql: `
+    ALTER TABLE settings ADD COLUMN font_scale REAL DEFAULT 1;
+    ALTER TABLE settings ADD COLUMN high_contrast INTEGER DEFAULT 0;
+    ALTER TABLE settings ADD COLUMN reduced_motion INTEGER DEFAULT 0;
     `,
   },
 ];

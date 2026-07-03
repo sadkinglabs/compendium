@@ -10,6 +10,7 @@ import { uuid, nowIso } from './ids.js';
 const DEFAULTS = {
   accent_metal: 'gilded', film_grain: 1, keep_awake: 0, immersive: 1,
   default_max_life: 20, die_type: 6, haptics: 1, rarity_colors: 0, theme: 'grimoire', persist_search: 0,
+  font_scale: 1, high_contrast: 0, reduced_motion: 0,
 };
 
 export async function getSettings() {
