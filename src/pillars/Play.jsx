@@ -6,6 +6,7 @@ import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch
 import { listAvatarCards } from '../store/deckRepository.js';
 import { IconButton, Chip, ChipRow, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import { toast, confirmAction } from '../feedback.js';
 import '../theme/playhistory.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -84,7 +85,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const cardActions = {
     onNote: (id) => setMatchId(id),
     onEdit: (id) => setMatchId(id),
-    onDelete: async (id) => { if (confirm('Delete this match?')) { await deleteMatch(id); refresh(); } },
+    onDelete: async (id) => { if (await confirmAction({ title: 'Delete this match?', body: 'The match and its log are removed. This can’t be undone.', confirmLabel: 'Delete', danger: true })) { await deleteMatch(id); refresh(); toast('Match deleted'); } },
     onOpp: (name) => setOppFilter(name),
     onDeck: (id, name) => onOpenDeck?.(id, name),
   };
@@ -258,7 +259,7 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
   const title = m ? (m.winner === 'player' ? 'Victory' : m.winner === 'draw' ? 'Draw' : 'Defeat') : 'Match';
   async function save() { await updateMatch(matchId, f); onChanged(); setM(await getMatch(matchId)); setEdit(false); }
   async function saveNote(v) { setF((p) => ({ ...p, notes: v })); await setMatchNote(matchId, v); onChanged(); setM(await getMatch(matchId)); }
-  async function del() { if (confirm('Delete this match?')) { await deleteMatch(matchId); onChanged(); onClose(); } }
+  async function del() { if (await confirmAction({ title: 'Delete this match?', body: 'The match and its log are removed. This can’t be undone.', confirmLabel: 'Delete', danger: true })) { await deleteMatch(matchId); onChanged(); onClose(); toast('Match deleted'); } }
 
   return (
     <Sheet open title={title} onClose={onClose}>

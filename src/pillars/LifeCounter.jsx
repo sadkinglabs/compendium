@@ -44,6 +44,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [recent, setRecent] = useState([]);
   const [log, setLog] = useState(resume?.log || []);
   const [endInfo, setEndInfo] = useState(null);          // { winner, pLife, eLife, durationSec, recorded }
+  const [confirm, setConfirm] = useState(null);          // { label, action } — in-world discard confirm
 
   const pNumRef = useRef(null), eNumRef = useRef(null);
   const startedAt = useRef(Date.now());
@@ -75,7 +76,9 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const endRef = useRef(null); endRef.current = endInfo;
   const sheetRef = useRef(null); sheetRef.current = sheet;
   const fabRef = useRef(false); fabRef.current = fabP || fabE;
+  const confirmRef = useRef(null); confirmRef.current = confirm;
   function closeTopmost() {
+    if (confirmRef.current) { setConfirm(null); return; }
     if (endRef.current) { setEndInfo(null); return; }
     if (sheetRef.current) { setSheet(null); return; }
     if (fabRef.current) { setFabP(false); setFabE(false); return; }
@@ -236,18 +239,21 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     finally { recordingRef.current = false; }
   }
   const needConfirm = () => !quick && endInfo && !endInfo.recorded;
+  // In-world confirm (Vitarum centered modal) instead of a native dialog —
+  // gated behind needConfirm so a recorded match skips straight through.
+  function guarded(label, action) {
+    if (needConfirm()) setConfirm({ label, action });
+    else action();
+  }
   function newFromEnd() {
     if (quick) { reset(); return; }                                  // Go Again = fresh quick match
-    if (needConfirm() && !confirm("New match without recording? This match won't be saved.")) return;
-    onNewMatch?.(mode);
+    guarded('New match without recording? This match won’t be saved.', () => onNewMatch?.(mode));
   }
   function resetFromEnd() {
-    if (needConfirm() && !confirm("Reset without recording? This match won't be saved.")) return;
-    reset();
+    guarded('Reset without recording? This match won’t be saved.', () => reset());
   }
   function exitFromEnd() {
-    if (needConfirm() && !confirm('Exit without recording the match?')) return;
-    onExit?.();
+    guarded('Exit without recording the match?', () => onExit?.());
   }
 
   const pImg = players.you ? `${BASE}cards/${players.you.image_slug}` : '';
@@ -312,7 +318,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
           <button onClick={() => { setFabP(false); setSheet('log'); }}>{LogSvg}Match Log</button>
           <button onClick={() => { setFabP(false); setSheet('dice'); }}>{DiceSvg}Roll a Die</button>
           <button onClick={() => { setFabP(false); setSheet('maxP'); }}>{HeartSvg}Change Max Life</button>
-          <button onClick={() => { setFabP(false); reset(); }}>{ResetSvg}Reset Match</button>
+          <button onClick={() => { setFabP(false); if (log.length) setConfirm({ label: 'Reset the match? Life totals and log will be cleared.', action: reset }); else reset(); }}>{ResetSvg}Reset Match</button>
           <button onClick={() => { setFabP(false); triggerEnd(null); }}>{FlagSvg}End Match</button>
           <button onClick={() => { setFabP(false); setSheet('tweaks'); }}>{TweaksSvg}Tweaks</button>
           <button onClick={() => { setFabP(false); minimize(); }}>{HomeSvg}Home</button>
@@ -336,6 +342,15 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       <MaxLifeModal open={sheet === 'maxE'} who="opponent" value={e.max} onClose={() => setSheet(null)} onSet={(v) => setMax('opponent', v)} />
       <DiceModal open={sheet === 'dice'} dice={dice} setDice={setDice} onClose={() => setSheet(null)} />
       <TweaksModal open={sheet === 'tweaks'} tw={tw} onToggle={setTweak} onClose={() => setSheet(null)} />
+      {confirm && (
+        <VModal title="Hold on" onClose={() => setConfirm(null)}
+          actions={<>
+            <button className="modal-btn" onClick={() => setConfirm(null)}>Cancel</button>
+            <button className="modal-btn danger" onClick={() => { const a = confirm.action; setConfirm(null); a?.(); }}>Discard</button>
+          </>}>
+          <div style={{ padding: '18px 22px 4px', textAlign: 'center', font: "400 15px/1.5 'EB Garamond',Georgia,serif", color: 'var(--muted)' }}>{confirm.label}</div>
+        </VModal>
+      )}
 
       {/* full-screen end-of-match decision modal */}
       {endInfo && (

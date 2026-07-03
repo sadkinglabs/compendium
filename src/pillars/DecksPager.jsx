@@ -13,6 +13,7 @@ import { Chip, ChipRow, Loading, useSwipe } from '../components/ui.jsx';
 import { haptic } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import Sheet from '../components/Sheet.jsx';
+import { confirmAction } from '../feedback.js';
 import DeckDashboard from './DeckDashboard.jsx';
 import '../theme/deckpager.css';
 
@@ -76,11 +77,11 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   async function actClearLog() {
     const n = await historyCount(deckOpen.id);
     if (!n) { flash('Log is already empty'); return; }
-    if (!confirm(`Clear deck log? This removes all ${n} log entr${n === 1 ? 'y' : 'ies'}. This can’t be undone.`)) return;
+    if (!(await confirmAction({ title: 'Clear deck log?', body: `This removes all ${n} log entr${n === 1 ? 'y' : 'ies'}. This can’t be undone.`, confirmLabel: 'Clear log', danger: true }))) return;
     await clearHistory(deckOpen.id); flash('Deck log cleared');
   }
   async function actDelete() {
-    if (!confirm(`Delete “${deckOpen.name}”? This can’t be undone.`)) return;
+    if (!(await confirmAction({ title: `Delete “${deckOpen.name}”?`, body: 'The deck and its log are removed for good. This can’t be undone.', confirmLabel: 'Delete deck', danger: true }))) return;
     await deleteDeck(deckOpen.id);
     onOpenDeck(null); setView('library'); refresh(); flash('Deck deleted');
   }

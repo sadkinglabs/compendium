@@ -6,6 +6,7 @@
 // the unified catalogue via listAvatarCards().
 import React, { useEffect, useRef, useState } from 'react';
 import { listAvatarCards, createDeck } from '../store/deckRepository.js';
+import { toast } from '../feedback.js';
 import '../theme/arcanum.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -39,7 +40,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
     try {
       const id = await createDeck(name.trim(), { avatarCardId: sel.card_id });
       onCreated(id, name.trim());
-    } catch (e) { setBusy(false); alert('Could not create deck: ' + e.message); }
+    } catch (e) { setBusy(false); toast('Could not create deck: ' + e.message, { tone: 'danger' }); }
   }
   const nextDisabled = (step === 1 && !name.trim()) || (step === 2 && (!sel || busy));
 

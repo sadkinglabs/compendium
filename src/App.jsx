@@ -26,6 +26,8 @@ import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTr
 import { onBackButton, exitApp, haptic } from './native.js';
 import { ListRow, IconButton, Loading } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
+import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
+import { toast, confirmAction } from './feedback.js';
 
 const PILLARS = [
   { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
@@ -109,7 +111,7 @@ export default function App() {
     else setPreMatch({ mode, settings });
   };
   const startMatch = async (mode) => {
-    if (ongoing && !confirm('You have a match in progress. Start a new one? The current match will be discarded.')) return;
+    if (ongoing && !(await confirmAction({ title: 'Discard match in progress?', body: 'You have a live match. Starting a new one will discard it.', confirmLabel: 'Discard & start', danger: true }))) return;
     setOngoing(null); clearOngoing();
     openNewMatch(mode);
   };
@@ -298,8 +300,8 @@ export default function App() {
           onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
       ) : tab === 'home' && !viewDetail && !hasQuery ? (
         <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="User options" items={[
-          { label: 'Export User', onClick: async () => { try { await exportToFile(profile.id); } catch (e) { alert('Export failed: ' + e.message); } } },
-          { label: 'Import User', onClick: async () => { try { const pid = await pickAndImport(); if (pid) await onSwitchProfile(pid); } catch (e) { alert('Import failed: ' + e.message); } } },
+          { label: 'Export User', onClick: async () => { try { await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } } },
+          { label: 'Import User', onClick: async () => { try { const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } } },
         ]} />
       ) : tab === 'play' && !viewDetail && !hasQuery ? (
         <Fab variant="lib" icon="+" label="Match options" items={[
@@ -323,8 +325,8 @@ export default function App() {
       </nav>
       <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
         onSwitch={onSwitchProfile} onChanged={reloadProfile}
-        onExport={async () => { try { await exportToFile(profile.id); } catch (e) { alert('Export failed: ' + e.message); } }}
-        onImport={async () => { try { const pid = await pickAndImport(); if (pid) await onSwitchProfile(pid); } catch (e) { alert('Import failed: ' + e.message); } }} />
+        onExport={async () => { try { await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } }}
+        onImport={async () => { try { const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } }} />
 
       {/* Create-deck wizard (mandatory name → avatar) */}
       {deckWizard && (
@@ -337,7 +339,7 @@ export default function App() {
         onImportUrl={async (url) => {
           const { id, name, warnings } = await importCuriosaUrl(url);
           setImportMode(null); bump();
-          if (warnings.length) alert(`Imported “${name}”. Unrecognised: ${warnings.join(', ')}`);
+          toast(warnings.length ? `Imported “${name}” · ${warnings.length} card(s) unrecognised` : `Imported “${name}”`);
           goTab('decks'); setDeckOpen({ id, name });
         }} />
 
@@ -345,7 +347,7 @@ export default function App() {
       <ImportTextSheet open={importMode === 'text'} onClose={() => setImportMode(null)}
         onImport={async (text, name) => {
           const { id, unresolved } = await importFromText(text, name); setImportMode(null); bump();
-          if (unresolved) alert(`Imported. ${unresolved} card(s) weren’t recognised and are kept as placeholders.`);
+          toast(unresolved ? `Imported · ${unresolved} card(s) kept as placeholders` : 'Deck imported');
           goTab('decks'); setDeckOpen({ id, name: name || 'Imported deck' });
         }} />
 
@@ -363,6 +365,8 @@ export default function App() {
           deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
           onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
       )}
+      <ToastHost />
+      <ConfirmHost />
     </div>
   );
 }
@@ -444,14 +448,14 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
   async function duplicate(p) {
     if (busy) return;
     setBusy(true);
-    try { await duplicateProfile(p.id); await refresh(); }
-    catch (e) { alert('Could not duplicate: ' + e.message); }
+    try { await duplicateProfile(p.id); await refresh(); toast(`Duplicated “${p.name}”`); }
+    catch (e) { toast('Could not duplicate: ' + e.message, { tone: 'danger' }); }
     finally { setBusy(false); }
   }
   async function remove(p) {
-    if (!confirm(`Delete “${p.name}” and everything it owns — decks, matches, marginalia?`)) return;
-    try { await deleteProfile(p.id); await onChanged(); refresh(); }
-    catch (e) { alert(e.message); }
+    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body: 'This removes the profile and everything it owns — decks, matches, marginalia. This can’t be undone.', confirmLabel: 'Delete profile', danger: true }))) return;
+    try { await deleteProfile(p.id); await onChanged(); refresh(); toast('Profile deleted'); }
+    catch (e) { toast(e.message, { tone: 'danger' }); }
   }
   if (!open) return null;
   const defaultId = list.find((p) => p.is_default)?.id;   // explicit flag — the protected default

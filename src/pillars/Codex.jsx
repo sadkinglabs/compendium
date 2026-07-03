@@ -9,6 +9,7 @@ import {
 import { Chip, ChipRow, ListRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import { toast, confirmAction } from '../feedback.js';
 
 // Codex row glyphs — card = rectangle (a card), article = three lines of text.
 function CodexGlyph({ kind }) {
@@ -126,8 +127,8 @@ function MarginaliaView({ onOpen, rev }) {
     setEditing(null); load();
   }
   async function removeCol(c) {
-    if (!confirm(`Delete collection “${c.name}”? Its ${c.count} item${c.count === 1 ? '' : 's'} stay in the catalogue.`)) return;
-    await deleteCollection(c.id); load();
+    if (!(await confirmAction({ title: `Delete “${c.name}”?`, body: `Its ${c.count} item${c.count === 1 ? '' : 's'} stay in the catalogue — only the collection is removed.`, confirmLabel: 'Delete collection', danger: true }))) return;
+    await deleteCollection(c.id); load(); toast('Collection deleted');
   }
 
   if (!d || !cols) return <Loading />;
