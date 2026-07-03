@@ -37,9 +37,11 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, p
           <button onClick={() => setEdit((e) => !e)} style={editBtn}>{edit ? 'Done' : 'Edit'}</button>
         )}
       </div>
-      {tab === 'overview'
-        ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} profile={profile} rev={rev} />
-        : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
+      <div key={tab} className="cx-swipe-pane">
+        {tab === 'overview'
+          ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} profile={profile} rev={rev} />
+          : <Dashboard onOpen={onOpen} edit={edit} rev={rev} />}
+      </div>
     </div>
   );
 }
@@ -62,6 +64,9 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
   const g = d.glance, s = d.duels.stats;
   const pct = s.winPct;
   const ring = `conic-gradient(#4db38a 0% ${pct || 0}%, rgba(255,255,255,.07) ${pct || 0}% 100%)`;
+  // A brand-new profile with nothing yet gets an orientation line instead of
+  // "welcome back" (they've never been here) — says what the app is for.
+  const firstRun = g.decks === 0 && g.duels === 0 && g.marginalia === 0 && g.saved === 0;
 
   const Sec = ({ id, title, count, onAll, children }) => (
     <div className={`cx-ov-sec${closed[id] ? ' closed' : ''}`}>
@@ -101,8 +106,13 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
 
       {/* Welcome + at-a-glance doorway tiles: each opens the pillar it counts. */}
       <div className="cx-ov-greet">
-        <div className="cx-ov-greet-eyebrow">WELCOME BACK</div>
+        <div className="cx-ov-greet-eyebrow">{firstRun ? 'WELCOME' : 'WELCOME BACK'}</div>
         <div className="cx-ov-greet-name">{profile?.name || 'Sorcerer'}</div>
+        {firstRun && (
+          <div style={{ font: "400 14px/1.55 var(--f-read)", color: 'var(--ink-muted)', marginTop: 9, maxWidth: 340 }}>
+            Your offline companion for <b style={{ color: 'var(--ink-body-2)' }}>Sorcery: Contested Realm</b> — build decks, track life in a duel, and keep every card and ruling at hand. Start below.
+          </div>
+        )}
       </div>
       <div className="cx-ov-glance">
         <Tile val={g.decks} lbl="DECKS" onClick={() => onGoTab('decks')} />

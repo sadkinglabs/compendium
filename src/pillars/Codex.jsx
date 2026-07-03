@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   getCodexEntries, marginaliaAll, deleteNote, deleteHighlight, deleteLink,
-  listCollections, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
+  listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
 import { Chip, ChipRow, ListRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
@@ -106,6 +106,7 @@ function MarginaliaView({ onOpen, rev }) {
   const [items, setItems] = useState({});                      // collectionId → items
   const [editing, setEditing] = useState(null);                // {id, name} — inline rename
 
+  const [newCol, setNewCol] = useState('');
   async function load() {
     const [m, c] = await Promise.all([marginaliaAll(), listCollections()]);
     setD(m); setCols(c);
@@ -114,6 +115,11 @@ function MarginaliaView({ onOpen, rev }) {
     setItems(it);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
+  async function addCollection() {
+    const n = newCol.trim();
+    if (!n) return;
+    await createCollection(n); setNewCol(''); load();
+  }
 
   async function toggleCol(id) {
     const n = new Set(openCols);
@@ -133,11 +139,6 @@ function MarginaliaView({ onOpen, rev }) {
 
   if (!d || !cols) return <Loading />;
   const empty = d.notes.length + d.highlights.length + d.links.length + cols.length === 0;
-  if (empty) return (
-    <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-      Your marginalia lives here — notes, highlights, links and collections you add across the Codex.
-    </div>
-  );
   const on = (t) => <span style={{ display: 'block', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {t}</span>;
 
   return (
@@ -148,6 +149,11 @@ function MarginaliaView({ onOpen, rev }) {
           {edit ? 'Done' : 'Edit'}
         </button>
       </div>
+      {empty && !edit && (
+        <div style={{ padding: '40px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+          Your marginalia lives here — notes, highlights, links and collections you add across the Codex. Tap <span style={{ fontStyle: 'normal', color: 'var(--gold-leaf)' }}>Edit</span> to start a collection.
+        </div>
+      )}
 
       {d.notes.length > 0 && (
         <div style={{ marginBottom: 22 }}>
@@ -198,9 +204,18 @@ function MarginaliaView({ onOpen, rev }) {
         </div>
       )}
 
-      {cols.length > 0 && (
+      {(cols.length > 0 || edit) && (
         <div style={{ marginBottom: 10 }}>
           <SectionLabel label="COLLECTIONS" count={cols.length} />
+          {edit && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+              <input value={newCol} onChange={(e) => setNewCol(e.target.value)} placeholder="New collection…"
+                onKeyDown={(e) => { if (e.key === 'Enter') addCollection(); }}
+                style={{ flex: 1, height: 40, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 12px', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
+              <button onClick={addCollection} style={{ padding: '0 16px', borderRadius: 10, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: 'var(--gold-leaf)', font: "700 12px/1 var(--f-ui)", cursor: 'pointer' }}>Add</button>
+            </div>
+          )}
+          {cols.length === 0 && edit && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No collections yet — name one above, then collect cards & rules into it from their pages.</div>}
           {cols.map((c) => (
             <div key={c.id} style={{ borderBottom: '1px solid var(--hair-12)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 2px' }}>
