@@ -53,20 +53,20 @@ export default function App() {
   const [addFilterOpen, setAddFilterOpen] = useState(false);
   const [addFilterCount, setAddFilterCount] = useState(0);
   const [match, setMatch] = useState(null);          // {mode, settings, you, opp, resume?}
-  const [preMatch, setPreMatch] = useState(null);    // {mode, settings} — avatar picker step
+  const [preMatch, setPreMatch] = useState(null);    // {mode, settings} - avatar picker step
   const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
-  const counterApi = useRef(null);                   // {minimize} — set by the live counter
+  const counterApi = useRef(null);                   // {minimize} - set by the live counter
   const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
-  const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
+  const [importMode, setImportMode] = useState(null);    // 'url' | 'text' - which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
-  const [deckEditMode, setDeckEditMode] = useState(false); // My-Deck quick-edit — lifted so it survives the add-cards flow
+  const [deckEditMode, setDeckEditMode] = useState(false); // My-Deck quick-edit - lifted so it survives the add-cards flow
   const booted = useRef(false);
   const backRef = useRef(null);   // latest hardware-back handler (set each render)
   const [storageFull, setStorageFull] = useState(false);
   useEffect(() => onBackButton(() => backRef.current?.()), []);
-  // Storage-full / persist failure — the DB layer broadcasts when a save is
+  // Storage-full / persist failure - the DB layer broadcasts when a save is
   // rejected (quota, blocked). Warn once so the user knows changes aren't saving.
   useEffect(() => {
     const h = () => setStorageFull(true);
@@ -164,7 +164,7 @@ export default function App() {
     await reloadProfile();
     setOngoing(loadOngoing());   // ongoing match is profile-scoped
     try { applyAppearance(await getSettings()); } catch { /* noop */ }   // appearance is per-profile
-    // Clear ALL cross-profile UI state — a leaked deckOpen/addMode would edit
+    // Clear ALL cross-profile UI state - a leaked deckOpen/addMode would edit
     // the previous profile's data (or spin forever on a deck this profile can't see).
     setProfileSheet(false); setDetail(null); setHistory([]); setQuery('');
     setAddMode(null); setDeckOpen(null); setDeckEditMode(false); setPreMatch(null); setCodexPreset(null); setScope('all');
@@ -175,7 +175,7 @@ export default function App() {
   const searchable = true;   // universal search on every pillar
   const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', decks: 'Search decks…', play: 'Search matches…' };
 
-  // Hardware back peels one layer at a time — the precedence is declared ONCE
+  // Hardware back peels one layer at a time - the precedence is declared ONCE
   // here (top of stack first), instead of a hand-maintained if-ladder. Falls
   // through to "go home", then exit.
   const backStack = [
@@ -198,7 +198,7 @@ export default function App() {
   // Play=Vitarum green.
   const WASH = { home: '#000', codex: '#33260e', decks: '#2a1c44', play: '#18301f' };
   // Canonical list-row accent, morphing per pillar (grimoire gold default;
-  // amethyst in Decks, jade in Play) — consumed by ListRow via --list-accent.
+  // amethyst in Decks, jade in Play) - consumed by ListRow via --list-accent.
   const LIST = {
     home:  { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
     codex: { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
@@ -210,7 +210,7 @@ export default function App() {
   // panels, search bars and FAB. App chrome (bottom search, FAB) steps aside for it.
   const deckPagerActive = tab === 'decks' && !viewDetail && !hasQuery && !addActive;
   // Search bar only on Codex browse (and add-cards); Decks/Home/Play have none
-  // in App chrome, and the Marginalia scope is a curated list — no search.
+  // in App chrome, and the Marginalia scope is a curated list - no search.
   const showSearch = addActive || (!viewDetail && !preMatch && tab === 'codex' && scope !== 'marginalia');
   const searchVal = addActive ? addQuery : query;
   const setSearchVal = addActive ? setAddQuery : setQuery;
@@ -230,11 +230,11 @@ export default function App() {
       {storageFull && (
         <div onClick={() => setStorageFull(false)} role="alert"
           style={{ margin: '0 16px 8px', padding: '10px 14px', borderRadius: 12, background: 'rgba(60,20,16,.9)', border: '1px solid rgba(224,120,106,.5)', color: '#f0c9c2', font: "500 12.5px/1.45 var(--f-ui)", cursor: 'pointer' }}>
-          Storage is full — recent changes may not be saved. Free up space or export a profile, then tap to dismiss.
+          Storage is full - recent changes may not be saved. Free up space or export a profile, then tap to dismiss.
         </div>
       )}
 
-      {/* CONTEXT HEADER (no eyebrow) — shown on every screen except the immersive
+      {/* CONTEXT HEADER (no eyebrow) - shown on every screen except the immersive
           life tracker. The avatar picker keeps its own in-body header, so we only
           show the brand bar + divider above it. */}
       {addActive ? (
@@ -255,7 +255,7 @@ export default function App() {
         </div>
       )}
 
-      {/* BODY — Decks pillar is the full-height single-page pager; everything
+      {/* BODY - Decks pillar is the full-height single-page pager; everything
           else scrolls in the standard body. */}
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
@@ -289,7 +289,7 @@ export default function App() {
       </div>
       )}
 
-      {/* BOTTOM SEARCH — frosted pill in line with the FAB; tint morphs per page. */}
+      {/* BOTTOM SEARCH - frosted pill in line with the FAB; tint morphs per page. */}
       {showSearch && (
         <div className="cx-searchbar">
           <div className="cx-search-pill">
@@ -300,7 +300,7 @@ export default function App() {
         </div>
       )}
 
-      {/* GLOBAL CONTEXT FAB — the gold interaction spine, on every page. Its icon
+      {/* GLOBAL CONTEXT FAB - the gold interaction spine, on every page. Its icon
           mutates by context: Decks library = + (New/Import menu); deck editing /
           Codex = filter sliders; Home / Play = three dots. Actions beyond the
           Decks menu + add-cards filters are TBD. Hidden on the avatar picker. */}
@@ -310,10 +310,10 @@ export default function App() {
         <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters & sort"
           onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
       )}
-      {/* Home owns no app-level FAB — the wordmark opens Settings, and the
+      {/* Home owns no app-level FAB - the wordmark opens Settings, and the
           Dashboard renders its own "+" FAB. Play owns its Add-Match FAB. */}
 
-      {/* BOTTOM NAV — verbatim Arcanum shell, bigger icons: house / book /
+      {/* BOTTOM NAV - verbatim Arcanum shell, bigger icons: house / book /
           stacked squares / crossed swords. */}
       <nav className="cx-nav">
         {PILLARS.map((p) => {
@@ -337,7 +337,7 @@ export default function App() {
           onCreated={(id, name) => { setDeckWizard(false); bump(); goTab('decks'); setDeckOpen({ id, name }); }} />
       )}
 
-      {/* Import from Curiosa URL — separate flow, lands on the deck in the pager */}
+      {/* Import from Curiosa URL - separate flow, lands on the deck in the pager */}
       <ImportUrlSheet open={importMode === 'url'} onClose={() => setImportMode(null)}
         onImportUrl={async (url) => {
           const { id, name, warnings } = await importCuriosaUrl(url);
@@ -354,7 +354,7 @@ export default function App() {
           goTab('decks'); setDeckOpen({ id, name: name || 'Imported deck' });
         }} />
 
-      {/* Pre-match avatar picker — centered modal over the (dimmed) app, so it
+      {/* Pre-match avatar picker - centered modal over the (dimmed) app, so it
           doesn't take over the interface. Scrim tap cancels. */}
       {preMatch && (
         <div className="cx-picker-modal" onClick={() => setPreMatch(null)}>
@@ -376,18 +376,18 @@ export default function App() {
   );
 }
 
-// Bottom-nav icons — house · book · stacked squares (Arcanum's deck icon) ·
+// Bottom-nav icons - house · book · stacked squares (Arcanum's deck icon) ·
 // crossed swords (Lucide).
 function NavIcon({ icon }) {
   const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
   if (icon === 'home') return <svg viewBox="0 0 24 24" {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
   if (icon === 'codex') return <svg viewBox="0 0 24 24" {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>;
   if (icon === 'decks') return <svg viewBox="0 0 24 24" {...p}><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg>;
-  // play — crossed swords
+  // play - crossed swords
   return <svg viewBox="0 0 24 24" {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" /><line x1="5" y1="14" x2="9" y2="18" /><line x1="7" y1="17" x2="4" y2="20" /><line x1="3" y1="19" x2="5" y2="21" /></svg>;
 }
 
-// House SVG icons for App chrome — no Unicode glyphs.
+// House SVG icons for App chrome - no Unicode glyphs.
 const ASvg = ({ children, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 const IcBack = (p) => <ASvg {...p}><polyline points="15 18 9 12 15 6" /></ASvg>;
 const IcX = (p) => <ASvg {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></ASvg>;
@@ -432,17 +432,17 @@ function SearchResults({ query, onOpen, onDuel }) {
   );
 }
 
-// Profiles — the spine of the app, so the picker earns some ceremony: monogram
+// Profiles - the spine of the app, so the picker earns some ceremony: monogram
 // discs, per-profile digests (decks · matches), gold ring on the active one.
 // The default (oldest) profile is load-bearing and cannot be deleted; any
-// profile can be renamed (data keys off the id — names are just labels),
+// profile can be renamed (data keys off the id - names are just labels),
 // duplicated (full re-keyed copy) or exported.
 function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, onImport }) {
   const [list, setList] = useState([]);
   const [stats, setStats] = useState({});
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
-  const [editing, setEditing] = useState(null);   // {id, name} — inline rename
+  const [editing, setEditing] = useState(null);   // {id, name} - inline rename
   const [busy, setBusy] = useState(false);
   async function refresh() {
     if (!open) return;
@@ -472,12 +472,12 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
     finally { setBusy(false); }
   }
   async function remove(p) {
-    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body: 'This removes the profile and everything it owns — decks, matches, marginalia. This can’t be undone.', confirmLabel: 'Delete profile', danger: true }))) return;
+    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body: 'This removes the profile and everything it owns - decks, matches, marginalia. This can’t be undone.', confirmLabel: 'Delete profile', danger: true }))) return;
     try { await deleteProfile(p.id); await onChanged(); refresh(); toast('Profile deleted'); }
     catch (e) { toast(e.message, { tone: 'danger' }); }
   }
   if (!open) return null;
-  const defaultId = list.find((p) => p.is_default)?.id;   // explicit flag — the protected default
+  const defaultId = list.find((p) => p.is_default)?.id;   // explicit flag - the protected default
   const meta = (p) => {
     const s = stats[p.id];
     return s ? `${s.decks} deck${s.decks === 1 ? '' : 's'} · ${s.matches} match${s.matches === 1 ? '' : 'es'}` : '…';
@@ -536,8 +536,8 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
   );
 }
 
-// App Settings — reached from the Home FAB. Accessibility only: font scale,
-// high contrast, reduced motion, haptics — all applied live via applyAppearance.
+// App Settings - reached from the Home FAB. Accessibility only: font scale,
+// high contrast, reduced motion, haptics - all applied live via applyAppearance.
 // Match config (starting life, die) lives in the life tracker; rarity colours
 // is an add-cards filter; accent metal / counter comforts live in the tracker's
 // Tweaks. Settings stays a single, focused surface.
@@ -596,7 +596,7 @@ function SettingsSheet({ open, onClose, onCredits }) {
   );
 }
 
-// Credits / About — a centered modal (not a bottom sheet), ported from Arcanum
+// Credits / About - a centered modal (not a bottom sheet), ported from Arcanum
 // and tailored to Compendium. Black chassis, gold wordmark, IP disclaimer.
 function CreditsModal({ open, onClose }) {
   if (!open) return null;
@@ -616,7 +616,7 @@ function CreditsModal({ open, onClose }) {
           <div style={{ font: "600 27px/1.1 var(--f-display)", color: 'var(--gold-leaf)', letterSpacing: '.01em' }}>Compendium</div>
           <div style={{ font: "500 11px/1 var(--f-mono)", letterSpacing: '.05em', color: '#b08d4e', margin: '8px 0 14px' }}>v1.0.0 beta</div>
           <div style={{ font: "400 13.5px/1.6 var(--f-read)", color: 'var(--ink-muted)' }}>
-            Compendium is an unofficial, fan-made companion app for <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>Sorcery: Contested Realm</strong> — unifying your codex, decks and life tracker in one place.
+            Compendium is an unofficial, fan-made companion app for <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>Sorcery: Contested Realm</strong> - unifying your codex, decks and life tracker in one place.
             <br /><br />
             Sorcery: Contested Realm and all related trademarks, artwork, characters, and intellectual property are owned by Erik&rsquo;s Curiosa. This app is not affiliated with, endorsed, sponsored, or approved by Erik&rsquo;s Curiosa.
             <br /><br />
@@ -650,7 +650,7 @@ const S = {
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   body: { flex: 1, overflowY: 'auto', paddingBottom: 'calc(62px + env(safe-area-inset-bottom) + 92px)' },
   input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
-  // Sheet primary — black glass, gold only in text/border (app rule: sheets stay black).
+  // Sheet primary - black glass, gold only in text/border (app rule: sheets stay black).
   btnGold: BTN_GOLD,
   btnGhost: BTN_GHOST,
 };

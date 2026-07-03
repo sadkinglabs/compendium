@@ -1,8 +1,8 @@
 /* ============================================================================
-   arcanum.css — VERBATIM visual port of the Arcanum deckbuilder UI.
+   arcanum.css - VERBATIM visual port of the Arcanum deckbuilder UI.
    Source of truth: Arcanum/templates/index.html (CSS block ~L11–690).
    ONE RULE: replicate, do not redesign. CSS values below are copied EXACTLY
-   from Arcanum — no reinterpretation, no palette shifts, no corner/blur/shadow
+   from Arcanum - no reinterpretation, no palette shifts, no corner/blur/shadow
    changes.
 
    SCOPING: every rule is scoped under `.arc` so Arcanum's amethyst world does
@@ -12,7 +12,7 @@
    from the rest of the app.
    ============================================================================ */
 
-/* Arcanum :root palette — verbatim, re-homed onto the `.arc` scope so it
+/* Arcanum :root palette - verbatim, re-homed onto the `.arc` scope so it
    overrides Compendium tokens only inside the Decks pillar. */
 .arc {
   /* Brand metal */
@@ -60,7 +60,7 @@
 .arc .dli-action.share { color:var(--gold); }
 .arc .dli-action.del   { color:var(--danger); }
 
-/* Avatar chip used inside the library card meta row — verbatim */
+/* Avatar chip used inside the library card meta row - verbatim */
 .arc .dash-avatar-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(220,184,111,.1); border:1px solid rgba(220,184,111,.35); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; color:var(--gold); cursor:pointer; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); transition:background .15s,border-color .15s; box-shadow:0 0 10px rgba(220,184,111,.1); font-family:'Hanken Grotesk',sans-serif; }
 .arc .dash-avatar-chip:active { background:rgba(220,184,111,.2); border-color:rgba(220,184,111,.6); }
 
@@ -113,7 +113,7 @@
 .arc .a-sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:#dcb86f; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
 .arc .a-sheet-body { overflow-y:auto; flex:1; min-height:0; }
 
-/* Export sheet (#export-sheet) — Markdown/Curiosa toggle + copy */
+/* Export sheet (#export-sheet) - Markdown/Curiosa toggle + copy */
 .arc .es-format-row { display:flex; justify-content:center; padding:4px 12px 6px; }
 .arc .es-format-wrap { display:inline-flex; background:rgba(11,7,20,.72); border:1px solid rgba(220,184,111,.22); border-radius:999px; padding:3px; gap:2px; box-shadow:0 2px 12px rgba(0,0,0,.4); }
 .arc .es-format-btn { background:transparent; border:1px solid transparent; color:#8a7ba6; border-radius:999px; padding:8px 28px; font:600 13px/1 'Hanken Grotesk',sans-serif; cursor:pointer; transition:color .18s; }
@@ -123,7 +123,7 @@
 .arc .es-copy-btn { flex:1; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:#dcb86f; font:700 15px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
 .arc .es-copy-btn:active { background:rgba(220,184,111,.14); }
 
-/* Deck Spread sheet (#deckcards-sheet) — full-art grid, Deck/Shuffle toggle */
+/* Deck Spread sheet (#deckcards-sheet) - full-art grid, Deck/Shuffle toggle */
 .arc .ds-lbl { font:600 10px/1 'Hanken Grotesk',sans-serif; letter-spacing:.14em; text-transform:uppercase; color:#a87fd6; padding:10px 14px 7px; position:sticky; top:0; z-index:2; background:linear-gradient(180deg,#1c1330 70%,rgba(28,19,48,0)); }
 .arc .ds-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:0 12px 12px; }
 .arc .ds-tile { position:relative; border-radius:10px; overflow:hidden; border:1px solid rgba(160,110,220,.2); background:rgba(36,24,54,.7); }
@@ -141,7 +141,7 @@
 
 /* Card detail sheet content */
 .arc .sheet-card-img { width:auto; max-width:min(220px,60vw); max-height:34vh; display:block; margin:4px auto 16px; border-radius:14px; box-shadow:0 12px 32px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.4); }
-/* Sites are landscape — the portrait image is rotated 90° clockwise to read right. */
+/* Sites are landscape - the portrait image is rotated 90° clockwise to read right. */
 .arc .sheet-site-wrap { position:relative; width:min(320px,84vw); aspect-ratio:531/380; margin:4px auto 16px; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.4); }
 .arc .sheet-site-wrap img { position:absolute; top:50%; left:50%; width:calc(100% * 380 / 531); height:calc(100% * 531 / 380); object-fit:cover; transform:translate(-50%,-50%) rotate(90deg); display:block; }
 .arc .sheet-name-row { display:flex; align-items:baseline; gap:8px; padding:0 16px; flex-wrap:wrap; }
@@ -171,7 +171,7 @@
 .arc.a-toast { position:fixed; top:calc(env(safe-area-inset-top,0px) + 16px); left:50%; transform:translateX(-50%) translateY(-16px); background:linear-gradient(180deg,#1a1712,#0e0c0a); border:1px solid rgba(220,184,111,.28); border-radius:20px; padding:9px 18px; font:500 13px/1 'Hanken Grotesk',sans-serif; color:var(--text); z-index:999; opacity:0; transition:opacity .22s, transform .22s; pointer-events:none; white-space:nowrap; box-shadow:0 4px 20px rgba(0,0,0,.5); }
 .arc.a-toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 
-/* ── Refine (filter + sort) sheet — Arcanum #search-sheet (L414-490). ── */
+/* ── Refine (filter + sort) sheet - Arcanum #search-sheet (L414-490). ── */
 .arc.fsheet-scrim { position:fixed; inset:0; z-index:200; background:rgba(6,4,12,.66); animation:cxfade .2s ease; }
 .arc.fsheet { position:fixed; left:0; right:0; bottom:0; z-index:201; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#1c1330,#0e0a1a); border-radius:26px 26px 46px 46px; border-top:1px solid rgba(160,110,220,.25); box-shadow:0 -24px 60px -12px rgba(0,0,0,.7); animation:cxsheet .28s cubic-bezier(.2,.9,.3,1); }
 .arc .fsheet-handle { width:38px; height:4px; background:rgba(160,110,220,.4); border-radius:2px; margin:14px auto 2px; flex-shrink:0; }
@@ -223,23 +223,23 @@
 .arc .filter-select { width:100%; box-sizing:border-box; height:48px; -webkit-appearance:none; appearance:none; border:1px solid rgba(160,110,220,.2); border-radius:13px; padding:0 38px 0 14px; color:#c9bfdc; font:400 15px/1 'EB Garamond',Georgia,serif; outline:none; background:rgba(24,16,40,.5) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239a8cae' stroke-width='2'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 16px center; }
 
 /* ════════════════════════════════════════════════════════════════════════
-   GLOBAL FAB — verbatim from Arcanum (.fab / .fab-wrap / .fab-menu /
+   GLOBAL FAB - verbatim from Arcanum (.fab / .fab-wrap / .fab-menu /
    .fab-scrim, L113,635-651). The FAB is the app's interaction spine: it lives
    on every page and its menu mutates by context. Rendered inside a `.arc`
    wrapper at the app root so it carries Arcanum's tokens and fixed-positions to
    the viewport. Variant classes .fab-lib / .fab-deck drive the open morph.
    ════════════════════════════════════════════════════════════════════════ */
-/* FAB — SOLID GOLD with a bright gold OUTLINE. NOTE: the selector is
-   `.arc.fab-wrap .fab` (0,3,0) on purpose — counter.css leaks a global
+/* FAB - SOLID GOLD with a bright gold OUTLINE. NOTE: the selector is
+   `.arc.fab-wrap .fab` (0,3,0) on purpose - counter.css leaks a global
    `.fab-wrap .fab` (0,2,0, dark green) that loads later and would otherwise win
    at equal specificity. This bump guarantees the gold FAB always applies. */
 .arc.fab-wrap { position:fixed; bottom:calc(var(--nav-h, 62px) + env(safe-area-inset-bottom,0px) + 16px); right:16px; z-index:50; }
-/* Context morph — applied by Fab on EVERY mount (all pages): arriving
+/* Context morph - applied by Fab on EVERY mount (all pages): arriving
    somewhere new, or the FAB changing role (deck menu ⇄ card search), the
    incarnation spins in, so the change of power is felt, not just seen. */
 .arc.fab-wrap.fab-enter .fab { animation: fabSwapIn .34s cubic-bezier(.34,1.45,.6,1); }
 @keyframes fabSwapIn { from { transform: scale(.35) rotate(-120deg); opacity: 0; } to { transform: scale(1) rotate(0deg); opacity: 1; } }
-/* Entering the full card search — the page rises to meet you. */
+/* Entering the full card search - the page rises to meet you. */
 @keyframes arcRise { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
 .arc.fab-wrap.open { z-index:111; }
 .arc.fab-wrap .fab { position:static; width:52px; height:52px; border-radius:50%; background:rgba(12,12,15,.55); border:1px solid rgba(220,184,111,.5); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); color:#dcb86f; font-size:22px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(220,184,111,.1); transition:transform .25s cubic-bezier(.34,1.3,.64,1), background .2s ease, border-color .2s ease; padding:0; }
@@ -251,7 +251,7 @@
 .arc.fab-wrap.fab-deck.open .fab { transform:rotate(90deg); }    /* the vertical dots tilt */
 .arc.fab-scrim { position:fixed; inset:0; z-index:110; background:rgba(6,4,12,.42); opacity:0; pointer-events:none; transition:opacity .2s ease; }
 .arc.fab-scrim.show { opacity:1; pointer-events:auto; }
-/* FAB menu — BLACK glassy (app rule): near-black frosted panel, gold only in
+/* FAB menu - BLACK glassy (app rule): near-black frosted panel, gold only in
    text and hairlines, matching the counter's Vitarum menus. */
 .arc .fab-menu { position:absolute; bottom:calc(100% + 10px); right:0; min-width:170px; background:rgba(10,9,8,.72); border:1px solid rgba(220,184,111,.25); backdrop-filter:blur(16px) saturate(1.15); -webkit-backdrop-filter:blur(16px) saturate(1.15); box-shadow:0 8px 32px rgba(0,0,0,.6); overflow:hidden; transform-origin:bottom right; opacity:0; transform:scale(.18); border-radius:26px; pointer-events:none; transition:transform .25s cubic-bezier(.34,1.3,.64,1), opacity .18s ease, border-radius .25s ease; }
 .arc.fab-wrap.open .fab-menu { opacity:1; transform:scale(1); border-radius:18px; pointer-events:auto; }
@@ -263,7 +263,7 @@
 .arc .fab-menu button .fab-state { margin-left:auto; font-size:13px; opacity:.6; }
 
 /* ════════════════════════════════════════════════════════════════════════
-   CREATE-DECK WIZARD (onboarding) — verbatim from Arcanum (#onboard / .ob-*,
+   CREATE-DECK WIZARD (onboarding) - verbatim from Arcanum (#onboard / .ob-*,
    L208-250, .btn L104-107, sheet handle/close L578/583). Mandatory 2 steps:
    (1) name → (2) pick an avatar (cannot finish without one). IDs became
    classes for React; every value is copied exactly.

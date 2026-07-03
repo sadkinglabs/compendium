@@ -1,4 +1,4 @@
-// Life counter — VERBATIM visual/motion port of Vitarum's counter screen, plus
+// Life counter - VERBATIM visual/motion port of Vitarum's counter screen, plus
 // its full-screen end-match modal and centered secondary modals (Dice / Max Life
 // / Match Log). Supports RESUME: a match can be minimized (leave to check a Codex
 // rule) and returned to, preserving life totals, log and banked elapsed time.
@@ -20,7 +20,7 @@ function fmtDur(secs) {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
-// Digital clock face for the match strip — "12:05" / "1:23:45" (Vitarum _tickClock).
+// Digital clock face for the match strip - "12:05" / "1:23:45" (Vitarum _tickClock).
 function fmtClock(secs) {
   secs = Math.max(0, Math.floor(secs || 0));
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
@@ -44,7 +44,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [fabP, setFabP] = useState(false);
   const [fabE, setFabE] = useState(false);
   const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
-  // Tweaks — Vitarum's counter-local comforts (keep awake / hide status bar /
+  // Tweaks - Vitarum's counter-local comforts (keep awake / hide status bar /
   // film grain). Persisted per profile, applied live to the running match.
   const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0 });
   const [dice, setDice] = useState({ type: settings.die_type || 6, value: null });
@@ -52,7 +52,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [recent, setRecent] = useState([]);
   const [log, setLog] = useState(resume?.log || []);
   const [endInfo, setEndInfo] = useState(null);          // { winner, pLife, eLife, durationSec, recorded }
-  const [confirm, setConfirm] = useState(null);          // { label, action } — in-world discard confirm
+  const [confirm, setConfirm] = useState(null);          // { label, action } - in-world discard confirm
   const [clockOn, setClockOn] = useState(false);         // Vitarum's match clock (left-edge strip)
 
   const pNumRef = useRef(null), eNumRef = useRef(null);
@@ -79,7 +79,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   snapRef.current = buildSnapshot;
   function minimize() { onMinimize?.(snapRef.current()); }
   // Refs mirror the modal layers so the (mount-time) hardware-back handler can
-  // read current state. Hardware back must peel the topmost layer — NOT jump
+  // read current state. Hardware back must peel the topmost layer - NOT jump
   // straight to minimize, which would hide an open (possibly already-recorded)
   // end screen and let it be resumed + recorded a second time.
   const endRef = useRef(null); endRef.current = endInfo;
@@ -113,7 +113,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (!resume) armRollOff();                 // resumed matches already rolled for turn order
     registerApi?.({ minimize: () => onMinimize?.(snapRef.current()), closeTopmost });
     // The Web Wake Lock auto-releases when the app is backgrounded and does NOT
-    // re-acquire on return — and the OS restores the status bar. Re-assert both
+    // re-acquire on return - and the OS restores the status bar. Re-assert both
     // when the match returns to the foreground (the resume flow makes this common).
     const onVisible = () => {
       if (document.visibilityState !== 'visible') return;
@@ -125,7 +125,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // eslint-disable-next-line
   }, []);
 
-  // Tweaks toggle — persists to the profile's settings AND applies immediately.
+  // Tweaks toggle - persists to the profile's settings AND applies immediately.
   function setTweak(key, on) {
     setTw((t) => ({ ...t, [key]: on }));
     setSetting(key, on ? 1 : 0).catch(() => {});
@@ -138,7 +138,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // body.roll-active while the roll-off pill is up (hides FABs, locks tap zones)
   useEffect(() => { document.body.classList.toggle('roll-active', rollPhase != null); }, [rollPhase]);
 
-  // Match clock — re-render once a second while it's showing (elapsedSec() reads
+  // Match clock - re-render once a second while it's showing (elapsedSec() reads
   // live). Stops once the match is decided; CSS hides it during the roll-off.
   useEffect(() => {
     if (!clockOn || endInfo) return;
@@ -170,7 +170,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     el.classList.add(delta > 0 ? 'bump-up' : 'bump-down');
   }
   function change(who, delta) {
-    // A tap while a FAB menu is open just dismisses it — never a stray life edit.
+    // A tap while a FAB menu is open just dismisses it - never a stray life edit.
     if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
     const cur = who === 'player' ? pRef.current : eRef.current;
     if (cur.life <= 0 && delta < 0) { triggerEnd(who === 'player' ? 'opponent' : 'player'); return; }
@@ -254,7 +254,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     setEndInfo({ winner: w, pLife: p.life, eLife: e.life, durationSec: elapsedSec(), recorded: recordedRef.current });
   }
   async function recordFromEnd() {
-    if (recordedRef.current || recordingRef.current) return;   // already saved / in-flight — no double record
+    if (recordedRef.current || recordingRef.current) return;   // already saved / in-flight - no double record
     recordingRef.current = true;
     const r = endInfo;
     const result = {
@@ -267,7 +267,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     finally { recordingRef.current = false; }
   }
   const needConfirm = () => !quick && endInfo && !endInfo.recorded;
-  // In-world confirm (Vitarum centered modal) instead of a native dialog —
+  // In-world confirm (Vitarum centered modal) instead of a native dialog -
   // gated behind needConfirm so a recorded match skips straight through.
   function guarded(label, action) {
     if (needConfirm()) setConfirm({ label, action });
@@ -355,7 +355,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         <button className="fab" onClick={(ev) => { ev.stopPropagation(); setFabP((v) => !v); }} aria-label="Options">{DotsSvg}</button>
       </div>
 
-      {/* Match clock — vertical strip on the left edge, readable by both players.
+      {/* Match clock - vertical strip on the left edge, readable by both players.
           CSS hides it during the roll-off (body.roll-active). */}
       {clockOn && <div id="match-clock">{fmtClock(elapsedSec())}</div>}
 
@@ -411,7 +411,7 @@ function VModal({ id, title, subtitle, onClose, children, actions }) {
   );
 }
 
-// Tweaks — the counter's own comforts, back where Vitarum kept them.
+// Tweaks - the counter's own comforts, back where Vitarum kept them.
 function TweaksModal({ open, tw, onToggle, onClose }) {
   if (!open) return null;
   const rows = [

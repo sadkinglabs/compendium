@@ -11,7 +11,7 @@ const isWeb = Capacitor.getPlatform() === 'web';
 let backend = null;
 let openPromise = null;
 
-/** Singleton open — concurrent callers (React StrictMode) share one open. */
+/** Singleton open - concurrent callers (React StrictMode) share one open. */
 export function openDatabase() {
   if (!openPromise) openPromise = _open();
   return openPromise;
@@ -38,13 +38,13 @@ async function runMigrations() {
       await exec(m.sql);
     } catch (e) {
       if (!/duplicate column|already exists/i.test(String(e?.message || e))) throw e;
-      // else: partially-applied on a prior boot — the version bump below finishes it.
+      // else: partially-applied on a prior boot - the version bump below finishes it.
     }
     await run("INSERT OR REPLACE INTO _meta(key,value) VALUES('schema_version',?);", [String(m.version)]);
   }
 }
 
-/* Public API — delegate to the active backend. */
+/* Public API - delegate to the active backend. */
 export const query = (sql, params = []) => backend.query(sql, params);
 export const run = (sql, params = []) => backend.run(sql, params);
 export const exec = (sql) => backend.exec(sql);
@@ -64,7 +64,7 @@ async function webBackend() {
 
   let saveTimer = null;
   // One shared promise per debounce window: EVERY caller in a burst resolves (or
-  // rejects) together when the single coalesced save actually completes — so an
+  // rejects) together when the single coalesced save actually completes - so an
   // awaited write is durable, and a QuotaExceededError surfaces instead of
   // hanging or becoming an unhandled rejection.
   let pending = null;         // { promise, resolve, reject }
@@ -74,7 +74,7 @@ async function webBackend() {
     const p = pending; pending = null;
     if (!p) return;
     doSave().then(p.resolve, (err) => {
-      // Storage full / write blocked — surface it (a silent failure would lose
+      // Storage full / write blocked - surface it (a silent failure would lose
       // data the UI already confirmed). Broadcast so the shell can warn once.
       try { window.dispatchEvent(new CustomEvent('cx-storage-error', { detail: String(err?.name || err) })); } catch { /* no window */ }
       p.reject(err);
@@ -104,7 +104,7 @@ async function webBackend() {
       catch (e) { sdb.run('ROLLBACK;'); throw e; }
       return api.persist();
     },
-    // Debounced persist — coalesces a burst of writes into one IndexedDB save,
+    // Debounced persist - coalesces a burst of writes into one IndexedDB save,
     // but keeps a SINGLE shared promise so every awaiting caller resolves when
     // the write is durable (short 40ms window shrinks the OS-kill loss gap).
     persist() {

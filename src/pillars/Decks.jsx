@@ -1,4 +1,4 @@
-// Decks shared pieces — the library DeckCard (rendered by DecksPager) and the
+// Decks shared pieces - the library DeckCard (rendered by DecksPager) and the
 // two import sheets (Curiosa URL / pasted text), mounted from App.
 import React, { useEffect, useState } from 'react';
 import Sheet from '../components/Sheet.jsx';
@@ -37,7 +37,7 @@ export function DeckCard({ deck, onClick }) {
   );
 }
 
-// Import from a Curiosa URL — Arcanum's "Paste Curiosa Deck URL" flow.
+// Import from a Curiosa URL - Arcanum's "Paste Curiosa Deck URL" flow.
 export function ImportUrlSheet({ open, onClose, onImportUrl }) {
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
@@ -63,7 +63,7 @@ export function ImportUrlSheet({ open, onClose, onImportUrl }) {
   );
 }
 
-// Import from a pasted list — Arcanum's "Bulk Import" flow (Arcanum Format).
+// Import from a pasted list - Arcanum's "Bulk Import" flow (Arcanum Format).
 const BULK_EXAMPLE = `# My Deck
 
 ## Avatar
@@ -82,7 +82,7 @@ export function ImportTextSheet({ open, onClose, onImport }) {
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [showEg, setShowEg] = useState(false);
-  const [busy, setBusy] = useState(false);   // in-flight guard — no double import
+  const [busy, setBusy] = useState(false);   // in-flight guard - no double import
   useEffect(() => { if (open) { setName(''); setText(''); setShowEg(false); setBusy(false); } }, [open]);
   async function go() {
     if (busy || !text.trim()) return;

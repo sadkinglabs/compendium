@@ -1,4 +1,4 @@
-// Current Deck dashboard (My Deck panel) — VERBATIM port of Arcanum's
+// Current Deck dashboard (My Deck panel) - VERBATIM port of Arcanum's
 // _heroHtml + spellbook/atlas/collection zone lists (templates/index.html
 // L2164-2364). Avatar hero + stat bar, then three collapsible zone cards with
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
@@ -48,7 +48,7 @@ function Row({ e, rarityOn, onCardTap, editMode, onStep, stepDelay = 0 }) {
 
 function Zone({ title, count, need, groups, collapsed, onToggle, rarityOn, onCardTap, editMode, onStep }) {
   const cls = count >= need ? 'ok' : 'warn';
-  let rowIx = 0;   // running index — steppers cascade in top to bottom
+  let rowIx = 0;   // running index - steppers cascade in top to bottom
   return (
     <div className="chart-card cc-list">
       <div className="cc-hdr collapsible" onClick={onToggle}>
@@ -63,13 +63,13 @@ function Zone({ title, count, need, groups, collapsed, onToggle, rarityOn, onCar
             {g.entries.map((e, i) => <Row key={e.name + i} e={e} rarityOn={rarityOn} onCardTap={onCardTap}
               editMode={editMode} onStep={onStep} stepDelay={Math.min(rowIx++ * 22, 260)} />)}
           </div>
-        )) : <div className="cc-empty">No cards — tap ✎ Edit Deck, then the magnifier to search.</div>
+        )) : <div className="cc-empty">No cards - tap ✎ Edit Deck, then the magnifier to search.</div>
       )}
     </div>
   );
 }
 
-// Random Hand — draws an opening hand from the deck pools (Arcanum's drawHand:
+// Random Hand - draws an opening hand from the deck pools (Arcanum's drawHand:
 // 3 spells / 3 sites, ±1 for Spellslinger / Pathfinder avatars), then keeps the
 // rest of each pool so you can "Draw spell" / "Draw site" one card at a time.
 function HandCard({ zones, avatar, onCardTap }) {
@@ -109,8 +109,8 @@ function HandCard({ zones, avatar, onCardTap }) {
       </div>
       {!hand ? <p className="cc-hand-empty">Press Draw to reveal a random opening hand.</p> : (
         <>
-          {sect('Opening — Spells', hand.sb, false)}
-          {sect('Opening — Sites', hand.at, true)}
+          {sect('Opening - Spells', hand.sb, false)}
+          {sect('Opening - Sites', hand.at, true)}
           {sect('Drawn Spells', hand.drawn, false)}
           {sect('Drawn Sites', hand.drawnAt, true)}
           {(hand.rest.length > 0 || hand.restAt.length > 0) && (
@@ -126,7 +126,7 @@ function HandCard({ zones, avatar, onCardTap }) {
   );
 }
 
-// Curiosa URL — autopopulated on import, always editable (Arcanum curiosaCard).
+// Curiosa URL - autopopulated on import, always editable (Arcanum curiosaCard).
 function CuriosaUrlCard({ deckId, initial }) {
   const [url, setUrl] = useState(initial || '');
   const [editing, setEditing] = useState(false);
@@ -157,14 +157,14 @@ function CuriosaUrlCard({ deckId, initial }) {
         ) : hasUrl ? (
           <div className="cc-url-empty">Saved link isn’t a valid web URL.</div>
         ) : (
-          <div className="cc-url-empty">No URL saved — tap ＋ Add to link this deck on Curiosa.</div>
+          <div className="cc-url-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
         )}
       </div>
     </div>
   );
 }
 
-// Deck Log — collapsible activity history (Arcanum historyCard).
+// Deck Log - collapsible activity history (Arcanum historyCard).
 function DeckLogCard({ deckId, rev }) {
   const [rows, setRows] = useState(null);
   const [openLog, setOpenLog] = useState(false);
@@ -202,7 +202,7 @@ function NotesCard({ deckId, initial }) {
   );
 }
 
-// Change Avatar — reuses the create-wizard's avatar grid (Arcanum #onboard step 2)
+// Change Avatar - reuses the create-wizard's avatar grid (Arcanum #onboard step 2)
 // as a modal; on Save it rewrites the deck's avatar so the hero + library art update.
 function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   const [avatars, setAvatars] = useState([]);
@@ -276,7 +276,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   const toggle = (z) => setCollapsed((s) => { const n = new Set(s); n.has(z) ? n.delete(z) : n.add(z); return n; });
 
   if (!deck) return loaded ? (
-    // The deck resolved to nothing — deleted, or a stale resume/link target.
+    // The deck resolved to nothing - deleted, or a stale resume/link target.
     // Offer an escape instead of spinning forever.
     <div style={{ minHeight: '48vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 16 }}>
       <div style={{ font: "600 17px/1.3 'Cinzel',Georgia,serif", color: '#dcb86f' }}>This deck no longer exists</div>
@@ -309,7 +309,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
 
   const statColor = (ok) => ok ? 'var(--success)' : 'var(--warn)';
 
-  // Quick-edit stepper (edit mode) — OPTIMISTIC, like the CardSheet: the row
+  // Quick-edit stepper (edit mode) - OPTIMISTIC, like the CardSheet: the row
   // (and the hero counts derived from zones) update instantly; changeQty then
   // enforces rarity copy-limits / collection cap in the background, and a
   // rejection toasts + resyncs from the store (authoritative revert).

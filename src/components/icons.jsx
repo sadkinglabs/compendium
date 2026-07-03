@@ -1,4 +1,4 @@
-// One house icon set — Lucide-style 24-box strokes, currentColor, so every
+// One house icon set - Lucide-style 24-box strokes, currentColor, so every
 // interactive affordance (edit / delete / add / confirm / duplicate / config /
 // disclosure) reads the same across pillars instead of mixing Unicode glyphs
 // with inline SVGs. Sized by the caller (width/height 1em by default).

@@ -1,18 +1,18 @@
-// Global context FAB — the app's interaction spine, ported from Arcanum.
+// Global context FAB - the app's interaction spine, ported from Arcanum.
 // Lives on every page; its icon + menu mutate by context. Verbatim visual
 // shell (.fab-wrap / .fab / .fab-menu / .fab-scrim in arcanum.css); the open
 // morph is driven by the `variant` class (lib → +↦×, deck → ⋮ tilts 90°).
 //
 // Props:
-//   variant : 'lib' | 'deck'         — which open-rotation morph to use
-//   icon    : node                    — glyph/svg inside the button (default +)
+//   variant : 'lib' | 'deck'         - which open-rotation morph to use
+//   icon    : node                    - glyph/svg inside the button (default +)
 //   label   : aria-label
-//   items   : [{ label, onClick, danger?, state?, icon? }]  — menu entries
+//   items   : [{ label, onClick, danger?, state?, icon? }]  - menu entries
 //   onClick : if given (and no items), the FAB is a plain action button
 import React, { useState, useEffect } from 'react';
 import { haptic } from '../native.js';
 
-// FAB glyphs — three vertical dots (menus) · magnifying glass (search) ·
+// FAB glyphs - three vertical dots (menus) · magnifying glass (search) ·
 // filter sliders (filters/sort).
 export function FabGlyph({ kind }) {
   if (kind === 'dots') return (
@@ -51,8 +51,8 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  // Plain action FAB (no menu) — e.g. a search/filter trigger.
-  // Every FAB spins in on mount (fab-enter) — the context-morph is the point:
+  // Plain action FAB (no menu) - e.g. a search/filter trigger.
+  // Every FAB spins in on mount (fab-enter) - the context-morph is the point:
   // arriving on a page, or the FAB changing role, is felt as a small conjuring.
   if (!items) {
     return (
@@ -64,7 +64,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   }
 
   // Most items close the menu on tap; toggles (keepOpen) leave it open so their
-  // live state (✓/✕, ★/☆) stays visible — matches Arcanum's rarity/star toggles.
+  // live state (✓/✕, ★/☆) stays visible - matches Arcanum's rarity/star toggles.
   const run = (it) => { haptic('light'); if (!it.keepOpen) setOpen(false); it.onClick?.(); };
 
   return (

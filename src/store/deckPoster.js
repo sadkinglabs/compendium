@@ -1,4 +1,4 @@
-// Deck "Illuminated Codex" poster — ported VERBATIM from Arcanum
+// Deck "Illuminated Codex" poster - ported VERBATIM from Arcanum
 // (www/index.html _buildDeckPosterCanvas). Only the data source (Compendium's
 // getDeck/getDeckCards → a deck shim with _cost/_elements/_type/_thresholds) and
 // asset paths (/static → public/ via BASE) are adapted; the drawing is unchanged.

@@ -1,4 +1,4 @@
-// Scoped add-cards flow — pick a zone (Spellbook/Atlas/Collection), search,
+// Scoped add-cards flow - pick a zone (Spellbook/Atlas/Collection), search,
 // List ⇄ Card view, per-card +/- steppers (List) or tap-to-add (Card), and a
 // Filters & Sort sheet built from catalogue values. Enforces rarity/zone limits.
 import React, { useEffect, useState } from 'react';
@@ -59,7 +59,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
   const afterChange = () => { loadQtys(); onChanged?.(); };
 
-  // Inline quick-add on a list row — optimistic, routes to the card's home zone
+  // Inline quick-add on a list row - optimistic, routes to the card's home zone
   // (Atlas for sites, else Spellbook), same limits/toasts as the CardSheet, so
   // adding N copies of a known card no longer needs a sheet round-trip each.
   async function step(c, delta) {
@@ -75,7 +75,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
   return (
     <div className="arc" style={{ padding: '4px 16px 26px', animation: 'arcRise .32s cubic-bezier(.2,.9,.3,1)' }}>
-      {/* view toggle (Arcanum amethyst), centered — no zone selector; cards auto-route by type */}
+      {/* view toggle (Arcanum amethyst), centered - no zone selector; cards auto-route by type */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         <div className="view-toggle-wrap">
           <button className={`view-btn${view === 'list' ? ' on' : ''}`} onClick={() => setView('list')}>≡ List</button>
@@ -84,7 +84,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       </div>
 
       <div style={{ font: "italic 400 12px/1.4 'EB Garamond',serif", color: 'var(--muted)', marginBottom: 12 }}>
-        {pool.length} cards{pool.length > 250 ? ' (showing 250 — refine)' : ''}
+        {pool.length} cards{pool.length > 250 ? ' (showing 250 - refine)' : ''}
       </div>
 
       {view === 'grid' ? (
@@ -135,7 +135,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 const OP_SYM = { '>=': '≥', '<=': '≤', '=': '=' };
 const OP_NEXT = { '>=': '<=', '<=': '=', '=': '>=' };
 
-// Comparator row (operator + Any/0-max stepper) — Arcanum's cmp-atom.
+// Comparator row (operator + Any/0-max stepper) - Arcanum's cmp-atom.
 function CmpRow({ label, icon, state, set, max }) {
   const step = (d) => {
     let v = state.val == null ? (d > 0 ? 0 : null) : state.val + d;
@@ -157,7 +157,7 @@ function CmpRow({ label, icon, state, set, max }) {
   );
 }
 
-// Refine sheet — Arcanum's 2-tab (Filters / Sort) amethyst design, full filter set.
+// Refine sheet - Arcanum's 2-tab (Filters / Sort) amethyst design, full filter set.
 const SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
 
 function FilterSheet({ open, onClose, rarityOn, setRarityOn, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,

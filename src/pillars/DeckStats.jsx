@@ -1,4 +1,4 @@
-// Deck Stats tab — Arcanum's full analysis suite (mana/power curves, composition,
+// Deck Stats tab - Arcanum's full analysis suite (mana/power curves, composition,
 // atlas supply/odds with 10k Monte-Carlo + turn stepper, spellbook odds, random
 // hand), ported faithfully and skinned to the grimoire palette.
 import React, { useEffect, useMemo, useState } from 'react';
@@ -158,7 +158,7 @@ function SpellbookOdds({ sb }) {
   );
 }
 
-/* ---- small bits — Arcanum .cc-stat skin ---- */
+/* ---- small bits - Arcanum .cc-stat skin ---- */
 const Card = ({ title, right, children }) => (
   <div className="chart-card cc-stat">
     <div className="cc-hdr"><span className="cc-title">{title}</span>{right}</div>

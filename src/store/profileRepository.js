@@ -1,4 +1,4 @@
-// ProfileRepository — the active-profile gate and profile lifecycle.
+// ProfileRepository - the active-profile gate and profile lifecycle.
 // Profiles are universal and own every piece of user-created data. Nothing
 // reads profile data without an active profile id; switching is atomic
 // (set active id -> callers reload their partition fully, then render).
@@ -13,12 +13,12 @@ let activeId = null;
 
 /** The id every profile-scoped query must use. Throws if not yet resolved. */
 export function activeProfileId() {
-  if (!activeId) throw new Error('No active profile — call initProfiles() first.');
+  if (!activeId) throw new Error('No active profile - call initProfiles() first.');
   return activeId;
 }
 
 /** Resolve (or create) the active profile on boot. Guarantees >=1 profile and
- *  EXACTLY one default (the is_default flag is the deletion shield — asserted
+ *  EXACTLY one default (the is_default flag is the deletion shield - asserted
  *  every boot so it can never be lost to migrations or imports). */
 export async function initProfiles() {
   let profiles = await listProfiles();

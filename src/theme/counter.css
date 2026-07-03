@@ -1,4 +1,4 @@
-/* Vitarum life-counter + avatar-picker — VERBATIM VISUAL/MOTION PORT.
+/* Vitarum life-counter + avatar-picker - VERBATIM VISUAL/MOTION PORT.
    CSS rule blocks, @keyframes, sizes, easings, opacities and transforms are copied
    unchanged from Vitarum's index.html. The only adaptations: (a) the counter skin
    tokens live on a scoped `.vc-root` wrapper (not global :root) so they don't collide
@@ -207,7 +207,7 @@ body.roll-active #match-clock { display: none !important; }
 #roll-tap-catcher { position: fixed; inset: 0; z-index: 58; display: none; }
 #roll-tap-catcher.show { display: block; }
 
-/* Match clock — vertical strip on the left edge, readable by both players.
+/* Match clock - vertical strip on the left edge, readable by both players.
    Verbatim from Vitarum (www/index.html #match-clock). Mounted only when on. */
 #match-clock {
   position: fixed;
@@ -361,7 +361,7 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-header h2 { font-family: var(--f-display); font-size: 23px; font-weight: 600; color: var(--gold-head); }
 .picker-hint { margin-top: 6px; font: 400 13px/1.4 var(--f-read); color: var(--muted); }
 
-/* Match preview — You (pick) VS Opponent (pick), under the title. */
+/* Match preview - You (pick) VS Opponent (pick), under the title. */
 .picker-matchup { display: flex; align-items: center; gap: 12px; padding: 14px 20px 4px; }
 .pm-slot { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .pm-thumb { width: 58px; height: 58px; border-radius: 15px; overflow: hidden; background: var(--surface); border: 1.5px solid var(--gold-line); display: flex; align-items: center; justify-content: center; color: rgba(220,184,111,.4); font: 400 24px/1 var(--f-display); }
@@ -376,7 +376,7 @@ body.roll-active .dd-pill { display: none !important; }
   background: none; border: none; color: var(--muted);
   font-size: 13px; font-weight: 600; padding: 6px 10px;
 }
-/* Pilot-a-deck rail (Compendium addition) — deck chips above the avatar grid;
+/* Pilot-a-deck rail (Compendium addition) - deck chips above the avatar grid;
    selecting one links the match to the deck and fills the YOU slot. */
 .picker-decks { padding: 10px 0 2px; }
 .picker-decks-label { font: 600 9px/1 var(--f-ui); letter-spacing: .16em; color: var(--faint); padding: 0 20px 7px; }
@@ -446,12 +446,12 @@ body.roll-active .dd-pill { display: none !important; }
   color: rgba(255,255,255,.9); text-align: left; letter-spacing: .2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Footer — search sits above Continue, both flush to the bottom edge. */
+/* Footer - search sits above Continue, both flush to the bottom edge. */
 .picker-footer {
   flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
   padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
 }
-/* Continue — the app-wide sheet-primary: black glass, gold hairline + text
+/* Continue - the app-wide sheet-primary: black glass, gold hairline + text
    (gold is never a button fill). Dimmed until both avatars are chosen. */
 .picker-confirm-btn {
   width: 100%; padding: 15px;
@@ -466,7 +466,7 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-confirm-btn.ready:active { border-color: rgba(220,184,111,.75); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   VITARUM MODALS — centered overlay + modal-box (NOT bottom sheets). Used for
+   VITARUM MODALS - centered overlay + modal-box (NOT bottom sheets). Used for
    the End-Match screen and the counter's Dice / Max Life / Match Log popups.
    Verbatim port of Vitarum's .overlay/.modal-box system, scoped to .vc-root.
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -536,7 +536,7 @@ body.reduce-motion .vc-root .dice-number.rolling { animation: none; }
 .vc-root .maxlife-value { font-family: var(--f-display); font-size: 64px; font-weight: 800; color: var(--text); min-width: 110px; text-align: center; line-height: 1; }
 .vc-root .maxlife-hint { padding: 6px 26px 4px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 
-/* ── Tweaks modal — the counter's own comforts (keep awake / immersive / grain) ── */
+/* ── Tweaks modal - the counter's own comforts (keep awake / immersive / grain) ── */
 .vc-root .tw-list { padding: 14px 22px 6px; display: flex; flex-direction: column; gap: 4px; }
 .vc-root .tw-row { display: flex; align-items: center; gap: 14px; padding: 11px 2px; cursor: pointer; -webkit-tap-highlight-color: transparent; border-bottom: 1px solid rgba(220,184,111,.1); }
 .vc-root .tw-row:last-child { border-bottom: none; }

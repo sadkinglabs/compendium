@@ -1,8 +1,8 @@
-// Article formatter — the reference text arrives as one unformatted blob with
+// Article formatter - the reference text arrives as one unformatted blob with
 // hard line-wraps mid-sentence and no paragraph/list structure. We reflow it and
 // re-segment it semantically into blocks the reader can scan: paragraphs, ordered
 // and unordered lists, and colon-introduced lists. [[Card Name]] markup is left
-// intact for the renderer to linkify. Conservative by design — when in doubt we
+// intact for the renderer to linkify. Conservative by design - when in doubt we
 // keep prose as a paragraph rather than risk mangling it.
 
 // Discourse markers that almost always begin a new thought → a new paragraph.
@@ -29,8 +29,8 @@ function splitNumbered(body) {
   return null;
 }
 function splitBulleted(body) {
-  if (!/(?:^|\s)[•●\-–—\*]\s+\S/.test(body)) return null;
-  const parts = body.split(/\s*(?:^|\s)[•●\-–—\*]\s+/).map((s) => s.trim()).filter(Boolean);
+  if (!/(?:^|\s)[•●\-–\*]\s+\S/.test(body)) return null;
+  const parts = body.split(/\s*(?:^|\s)[•●\-–\*]\s+/).map((s) => s.trim()).filter(Boolean);
   return parts.length >= 2 ? parts : null;
 }
 
@@ -76,7 +76,10 @@ export function formatArticle(text) {
   const units = /\n[ \t]*\n/.test(raw) ? raw.split(/\n[ \t]*\n/) : [raw];
   const blocks = [];
   for (const u of units) {
-    const reflowed = u.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ').trim();
+    // reflow soft wraps, and normalise any em dashes in the source text to spaced
+    // hyphens so no em dash ever reaches the reader (em-dash bullets survive as
+    // hyphen bullets, still detected below).
+    const reflowed = u.replace(/\s*\n\s*/g, ' ').replace(/\s*—\s*/g, ' - ').replace(/[ \t]{2,}/g, ' ').trim();
     if (reflowed) blocks.push(...segment(reflowed));
   }
   return blocks;

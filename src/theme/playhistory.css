@@ -1,4 +1,4 @@
-/* playhistory.css — VERBATIM port of Vitarum's Match-History screen
+/* playhistory.css - VERBATIM port of Vitarum's Match-History screen
    (.rec-* hero/donut/minis/bars + .match-* cards). Source: Vitarum www/index.html
    CSS L804-1104. Scoped under `.mh` so it can't collide with the rest of the app;
    Vitarum's own token values are inlined (the Play pillar is the Vitarum world). */
@@ -59,12 +59,12 @@
 .mh .match-opp-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 9px 3px 7px; border-radius:11px; background:linear-gradient(180deg,rgba(207,154,74,.28),rgba(140,90,42,.14)); border:1px solid rgba(220,184,111,.25); font:600 11px/1 'Hanken Grotesk',sans-serif; color:#e9d49a; -webkit-tap-highlight-color:transparent; }
 .mh .match-opp-tag svg { width:11px; height:11px; opacity:.85; }
 .mh .match-opp-tag:active { opacity:.75; }
-/* Piloted-deck tag — violet (Decks accent) so the destination reads at a glance. */
+/* Piloted-deck tag - violet (Decks accent) so the destination reads at a glance. */
 .mh .match-deck-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 9px 3px 7px; border-radius:11px; background:linear-gradient(180deg,rgba(157,106,214,.24),rgba(96,62,140,.12)); border:1px solid rgba(196,154,240,.28); font:600 11px/1 'Hanken Grotesk',sans-serif; color:#cfb2ef; max-width:46%; -webkit-tap-highlight-color:transparent; }
 .mh .match-deck-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
 .mh .match-deck-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mh .match-deck-tag:active { opacity:.75; }
-/* Pills row — opponent + piloted deck, straight under the matchup line. */
+/* Pills row - opponent + piloted deck, straight under the matchup line. */
 .mh .match-pills { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
 /* Compact icon actions, tucked into the meta line (note · edit · delete). */
 .mh .match-meta-spring { flex:1; }
@@ -75,7 +75,7 @@
 .mh .match-mini-btn.danger:active { border-color:rgba(224,120,106,.5); color:#e0786a; }
 .mh .match-mini-btn svg { width:11px; height:11px; flex-shrink:0; }
 
-/* Start-a-match pills — top of Play, where nav pills live. Black chassis, gold
+/* Start-a-match pills - top of Play, where nav pills live. Black chassis, gold
    hairline; the primary carries a small gold diamond (the New-Match mark). */
 .mh .play-start-row { display:flex; gap:10px; margin-bottom:18px; }
 .mh .play-start-pill { flex:1; display:flex; align-items:center; justify-content:center; gap:9px; height:46px; padding:0 16px; border-radius:14px; background:rgba(18,16,13,.85); border:1px solid var(--hair-22); color:var(--ink-body); font:600 14px/1 var(--f-ui); letter-spacing:.01em; cursor:pointer; -webkit-tap-highlight-color:transparent; transition:border-color .15s, transform .12s; }

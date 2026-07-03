@@ -1,4 +1,4 @@
-// Codex browse — scope chips (Rules · Cards · All · Marginalia) and an A–Z
+// Codex browse - scope chips (Rules · Cards · All · Marginalia) and an A–Z
 // divided list with note-indicator dots. The Marginalia scope gathers the whole
 // personal layer (notes, highlights, links, collections) in one editable place.
 import React, { useEffect, useState } from 'react';
@@ -11,7 +11,7 @@ import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { toast, confirmAction } from '../feedback.js';
 
-// Codex row glyphs — card = rectangle (a card), article = three lines of text.
+// Codex row glyphs - card = rectangle (a card), article = three lines of text.
 function CodexGlyph({ kind }) {
   if (kind === 'card') return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><rect x="5" y="3" width="14" height="18" rx="2" /></svg>
@@ -46,8 +46,8 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
 
   return (
     <div style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
-      {/* Scope (Rules/Cards/All) on the left; Marginalia is a different beast —
-          your personal layer, not a content scope — so it sits apart on the
+      {/* Scope (Rules/Cards/All) on the left; Marginalia is a different beast -
+          your personal layer, not a content scope - so it sits apart on the
           right behind a divider, styled as a distinct bookmarked pill. */}
       <div className="cx-codex-topbar">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
@@ -104,7 +104,7 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
         <AzList entries={entries} onOpen={onOpen} />
       )}
 
-      {/* Codex FAB — opens filters (browse scopes only) */}
+      {/* Codex FAB - opens filters (browse scopes only) */}
       <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters" onClick={() => setFilterSheet(true)} />
       </>
       )}
@@ -112,7 +112,7 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
   );
 }
 
-/* ── Marginalia — the whole personal layer in one place. Read-only until the
+/* ── Marginalia - the whole personal layer in one place. Read-only until the
    user enters Edit mode; then delete/rename affordances appear. ── */
 function MarginaliaView({ onOpen, rev }) {
   const [d, setD] = useState(null);
@@ -120,8 +120,8 @@ function MarginaliaView({ onOpen, rev }) {
   const [edit, setEdit] = useState(false);                     // edit mode gates all destructive affordances
   const [openCols, setOpenCols] = useState(() => new Set());   // expanded collections
   const [items, setItems] = useState({});                      // collectionId → items
-  const [editing, setEditing] = useState(null);                // {id, name} — inline rename
-  // Collapsible categories — with 100+ entries each, users need to fold sections
+  const [editing, setEditing] = useState(null);                // {id, name} - inline rename
+  // Collapsible categories - with 100+ entries each, users need to fold sections
   // away. Persisted (which sections are closed) so a curated view survives.
   const MARG_KEY = 'cx-marg-collapse';
   const [closed, setClosed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(MARG_KEY) || '[]')); } catch { return new Set(); } });
@@ -154,7 +154,7 @@ function MarginaliaView({ onOpen, rev }) {
     setEditing(null); load();
   }
   async function removeCol(c) {
-    if (!(await confirmAction({ title: `Delete “${c.name}”?`, body: `Its ${c.count} item${c.count === 1 ? '' : 's'} stay in the catalogue — only the collection is removed.`, confirmLabel: 'Delete collection', danger: true }))) return;
+    if (!(await confirmAction({ title: `Delete “${c.name}”?`, body: `Its ${c.count} item${c.count === 1 ? '' : 's'} stay in the catalogue - only the collection is removed.`, confirmLabel: 'Delete collection', danger: true }))) return;
     await deleteCollection(c.id); load(); toast('Collection deleted');
   }
 
@@ -185,7 +185,7 @@ function MarginaliaView({ onOpen, rev }) {
       </div>
       {empty && !edit && (
         <div style={{ padding: '40px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          Your marginalia lives here — notes, highlights, links and collections you add across the Codex. Tap <span style={{ fontStyle: 'normal', color: 'var(--gold-leaf)' }}>Edit</span> to start a collection.
+          Your marginalia lives here - notes, highlights, links and collections you add across the Codex. Tap <span style={{ fontStyle: 'normal', color: 'var(--gold-leaf)' }}>Edit</span> to start a collection.
         </div>
       )}
 
@@ -209,7 +209,7 @@ function MarginaliaView({ onOpen, rev }) {
           {secHead('highlights', 'HIGHLIGHTS')}
           {openS('highlights') && d.highlights.map((h) => {
             // Hue by source: card highlights are violet (deck-builder link), rule/
-            // article highlights are gold — the whole point of a mixed list.
+            // article highlights are gold - the whole point of a mixed list.
             const isCard = h.target_type === 'card';
             const line = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
             const bg = isCard ? 'rgba(199,154,208,.09)' : 'rgba(220,184,111,.09)';
@@ -262,7 +262,7 @@ function MarginaliaView({ onOpen, rev }) {
               <button onClick={addCollection} style={{ padding: '0 16px', borderRadius: 10, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: 'var(--gold-leaf)', font: "700 12px/1 var(--f-ui)", cursor: 'pointer' }}>Add</button>
             </div>
           )}
-          {cols.length === 0 && edit && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No collections yet — name one above, then collect cards & rules into it from their pages.</div>}
+          {cols.length === 0 && edit && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No collections yet - name one above, then collect cards & rules into it from their pages.</div>}
           {cols.map((c) => (
             <div key={c.id} style={{ borderBottom: '1px solid var(--hair-12)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 2px' }}>

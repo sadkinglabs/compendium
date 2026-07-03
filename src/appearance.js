@@ -25,7 +25,7 @@ export function initViewportInsets() {
 }
 
 export function applyAppearance(s) {
-  // UI scale — zoom the whole app container proportionally (text + layout).
+  // UI scale - zoom the whole app container proportionally (text + layout).
   // Everything is authored in px, so this is the honest "make it bigger" lever.
   const scale = clampFontScale(s?.font_scale);
   document.documentElement.style.setProperty('--ui-scale', String(scale));

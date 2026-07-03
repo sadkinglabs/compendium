@@ -1,4 +1,4 @@
-// Global, decoupled UI feedback — toast + confirm — so any module (React
+// Global, decoupled UI feedback - toast + confirm - so any module (React
 // component OR store) can request them without prop-drilling. The hosts
 // (ToastHost / ConfirmHost) live in App and render on the black chassis.
 // Falls back to native confirm() only if the host isn't mounted.
@@ -18,7 +18,7 @@ export function confirmAction(opts = {}) {
     try { window.dispatchEvent(new CustomEvent('cx-confirm', { detail: { opts, resolve: done } })); }
     catch { done(window.confirm(opts.body || opts.title || 'Are you sure?')); }
     // If no host is listening, the event does nothing and the promise would
-    // hang — guard with a microtask fallback flag set by the host.
+    // hang - guard with a microtask fallback flag set by the host.
     queueMicrotask(() => { if (!window.__cxConfirmHostMounted && !handled) done(window.confirm(opts.body || opts.title || 'Are you sure?')); });
   });
 }

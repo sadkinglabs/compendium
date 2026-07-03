@@ -1,9 +1,9 @@
-// Shared UI vocabulary — one definition each, reused across pillars (handoff §3/§6).
+// Shared UI vocabulary - one definition each, reused across pillars (handoff §3/§6).
 import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
 import { GLYPH_ICON } from './icons.jsx';
 
-/* Sheet button recipes — one source of truth for the black-glass primary and
+/* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
 export const BTN_GOLD = { padding: '12px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' };
 export const BTN_GHOST = { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };
@@ -116,7 +116,7 @@ export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   return { onTouchStart, onTouchEnd };
 }
 
-/* Quiet shared loading beat — one treatment for every pillar's "fetching" gap. */
+/* Quiet shared loading beat - one treatment for every pillar's "fetching" gap. */
 export function Loading({ pad = 24 }) {
   return <div style={{ padding: pad, textAlign: 'center', color: 'var(--ink-faint)', font: "400 14px/1 var(--f-read)", fontStyle: 'italic', letterSpacing: '.2em' }} aria-label="Loading">· · ·</div>;
 }
@@ -142,7 +142,7 @@ function ElementPip({ el, color, size }) {
   return <span style={{ fontSize: size - 1, lineHeight: 1, color: color || '#9aa6b2' }}>▲</span>;
 }
 
-/* Focus trap for modal surfaces — moves focus into the panel on open, keeps Tab
+/* Focus trap for modal surfaces - moves focus into the panel on open, keeps Tab
    cycling inside it, and restores focus to the opener on close. Accessibility
    for keyboard / switch-access users; a no-op for touch. */
 export function useFocusTrap(active) {
@@ -168,7 +168,7 @@ export function useFocusTrap(active) {
   return ref;
 }
 
-/* Bottom sheet — scrim + slide-up panel. */
+/* Bottom sheet - scrim + slide-up panel. */
 export function BottomSheet({ open, title, onClose, children }) {
   const trapRef = useFocusTrap(open);
   if (!open) return null;
@@ -207,7 +207,9 @@ function markRuns(text, marks, hue, kctr) {
 // Inline renderer: [[Name]] → tappable link (gold for rules, violet for cards),
 // with optional highlight marks on the plain runs between links.
 export function inlineNodes(text, onOpenName, hue = 'gold', marks) {
-  const clean = String(text || '');
+  // Normalise any em dashes in reference text (card rules / articles) to spaced
+  // hyphens - we never render an em dash, even from source data.
+  const clean = String(text || '').replace(/\s*—\s*/g, ' - ');
   const linkClass = hue === 'violet' ? 'cx-inlink cx-inlink-violet' : 'cx-inlink cx-inlink-gold';
   const nodes = [];
   const kctr = { k: 0 };

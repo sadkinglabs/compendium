@@ -1,4 +1,4 @@
-// Card-tap detail sheet — VERBATIM Arcanum #card-sheet layout on the shared
+// Card-tap detail sheet - VERBATIM Arcanum #card-sheet layout on the shared
 // Arcanum Sheet: art · name/type · rarity·subtypes · flavor · stat chips · rules,
 // and (in a deck) zone steppers that add to the card's home zone (Spellbook or
 // Atlas, auto by type) or Collection. Steppers are optimistic (instant) with a
@@ -39,7 +39,7 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
     const prev = counts[which];
     if (prev + delta < 0) return;
     haptic('light');
-    setCounts((m) => ({ ...m, [which]: prev + delta }));           // optimistic — instant
+    setCounts((m) => ({ ...m, [which]: prev + delta }));           // optimistic - instant
     setPop((p) => ({ ...p, [which]: p[which] + 1 }));
     const res = await changeQty(deckId, zone, c, delta);
     if (!res.ok) {
@@ -103,7 +103,7 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
             )}
             {onOpenCodex && (
               <button className="sheet-codex-link" onClick={() => { onClose?.(); onOpenCodex(c.card_id, c.name); }}>
-                Open in Codex — rulings & FAQ ›
+                Open in Codex - rulings & FAQ ›
               </button>
             )}
           </>

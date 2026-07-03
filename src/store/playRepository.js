@@ -1,4 +1,4 @@
-// Play data — matches + persisted match log + history stats + per-profile
+// Play data - matches + persisted match log + history stats + per-profile
 // settings (life/die/accent metal). All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
@@ -20,7 +20,7 @@ export async function getSettings() {
   return { ...DEFAULTS, ...row };
 }
 
-// SQLite can't bind an identifier, so the column name is interpolated — it MUST
+// SQLite can't bind an identifier, so the column name is interpolated - it MUST
 // be whitelisted against known settings columns (never trust a caller's key).
 const SETTING_COLS = new Set(Object.keys(DEFAULTS));
 
@@ -34,7 +34,7 @@ export async function setSetting(key, value) {
 /* ---------------- matches + log ---------------- */
 
 /** Persist a finished match and its full log in one transaction. When a deck
-    was piloted (m.deckId), the deck's W–L ledger and history log update too —
+    was piloted (m.deckId), the deck's W–L ledger and history log update too -
     Play feeds Decks, no manual record-keeping. */
 export async function recordMatch(m) {
   const pid = activeProfileId();
@@ -73,7 +73,7 @@ export async function recordMatch(m) {
   return id;
 }
 
-/** Manual history entry (Vitarum's Add Match) — a match that wasn't tracked
+/** Manual history entry (Vitarum's Add Match) - a match that wasn't tracked
     live. No log; doesn't touch a deck's W–L ledger (it's backfill). */
 export async function addManualMatch(m) {
   const pid = activeProfileId();
@@ -134,7 +134,7 @@ export async function setMatchNote(matchId, notes) {
   await run('UPDATE matches SET notes=? WHERE id=? AND profile_id=?;', [notes, matchId, activeProfileId()]);
 }
 
-/** Recompute a deck's W–L straight from the matches table — the source of
+/** Recompute a deck's W–L straight from the matches table - the source of
     truth. Safe to call any time: the live-record increment keeps wins==COUNT,
     so recompute just re-establishes that invariant after a post-hoc edit. */
 async function syncDeckRecord(deckId, pid) {

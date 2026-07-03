@@ -1,4 +1,4 @@
-// Compendium SQLite schema — see COMPENDIUM_DATA_MODEL.md.
+// Compendium SQLite schema - see COMPENDIUM_DATA_MODEL.md.
 // Catalog = shared, read-only (no profile_id). Everything user-created carries
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
@@ -192,14 +192,14 @@ export const MIGRATIONS = [
     `,
   },
   {
-    // v2 — a match remembers which deck was piloted (Play ↔ Decks link).
+    // v2 - a match remembers which deck was piloted (Play ↔ Decks link).
     // Plain TEXT, no FK: matches must survive the deck being deleted (the
-    // deck chip simply disappears — resolved by LEFT JOIN at read time).
+    // deck chip simply disappears - resolved by LEFT JOIN at read time).
     version: 2,
     sql: 'ALTER TABLE matches ADD COLUMN deck_id TEXT;',
   },
   {
-    // v3 — the default profile is marked EXPLICITLY (an "oldest created_at"
+    // v3 - the default profile is marked EXPLICITLY (an "oldest created_at"
     // heuristic proved deletable under timestamp ties). Best-effort mark of
     // the oldest existing profile here; initProfiles() re-asserts the
     // exactly-one-default invariant on every boot.
@@ -210,7 +210,7 @@ export const MIGRATIONS = [
     `,
   },
   {
-    // v4 — accessibility settings (per-profile, applied to the app root).
+    // v4 - accessibility settings (per-profile, applied to the app root).
     version: 4,
     sql: `
     ALTER TABLE settings ADD COLUMN font_scale REAL DEFAULT 1;

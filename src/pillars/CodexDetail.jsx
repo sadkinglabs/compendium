@@ -1,4 +1,4 @@
-// Codex detail — rule (drop-cap reading + related + sub-entries) or card
+// Codex detail - rule (drop-cap reading + related + sub-entries) or card
 // (art hero, stat boxes, rules, FAQs), plus the per-profile personal layer:
 // save/star, marginalia notes, highlights, collections.
 import React, { useEffect, useState, useRef } from 'react';
@@ -18,8 +18,10 @@ import CardArt from '../components/CardArt.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
+// Never render an em dash, even from reference data - swap for a spaced hyphen.
+const noEm = (s) => String(s || '').replace(/\s*—\s*/g, ' - ');
 
-// Small inline SVG icons — no Unicode glyphs anywhere in the Codex detail.
+// Small inline SVG icons - no Unicode glyphs anywhere in the Codex detail.
 const IcoLink = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', verticalAlign: '-1px' }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>;
 const IcoPlus = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ flex: 'none', verticalAlign: '-2px' }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
 const IcoStar = ({ size = 13, fill }) => <svg viewBox="0 0 24 24" width={size} height={size} fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>;
@@ -59,7 +61,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
   if (!data) return <Loading />;
   if (data.missing) return <div style={{ padding: 24, color: 'var(--ink-faint)', fontStyle: 'italic' }}>This entry isn’t in the catalog.</div>;
 
-  // Render + all writes key off the LOADED entry (data), never the raw props —
+  // Render + all writes key off the LOADED entry (data), never the raw props -
   // the props (kind/id) update a tick before the effect reloads data, so mixing
   // them is what caused the stale-kind crash. data.kind + the entry's own id are
   // always mutually consistent.
@@ -97,7 +99,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
 
   // In-text [[links]] carry only a name. Resolve them against the entry's already-
   // resolved mentions (exact ids) first, and only fall back to name lookup for
-  // anything not in the graph — so a card that shares a name with an article can't
+  // anything not in the graph - so a card that shares a name with an article can't
   // mis-route.
   const linkMap = {};
   for (const c of ment.cards) linkMap[c.name.toLowerCase()] = ['card', c.card_id, c.name];
@@ -109,8 +111,8 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
       {k === 'card' ? <CardBody card={data.card} faqs={data.faqs} onOpenName={openLink} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />
                     : <RuleBody rule={data.rule} subs={data.subs} onOpenName={openLink} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />}
 
-      {/* Cards Mentioned — carousel of card art referenced by this article. Opens
-          by (kind, id) directly — no fragile name resolution. */}
+      {/* Cards Mentioned - carousel of card art referenced by this article. Opens
+          by (kind, id) directly - no fragile name resolution. */}
       {k === 'rule' && ment.cards.length > 0 && (
         <div style={{ marginTop: 20 }}>
           <SectionLabel label="CARDS MENTIONED" count={ment.cards.length} />
@@ -125,7 +127,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
         </div>
       )}
 
-      {/* Related articles — pills that link to other articles by id. */}
+      {/* Related articles - pills that link to other articles by id. */}
       {k === 'rule' && ment.articles.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <SectionLabel label="RELATED ARTICLES" count={ment.articles.length} />
@@ -147,7 +149,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
         </div>
       )}
 
-      {/* in your decks — the unification payoff: this card in the profile's decks */}
+      {/* in your decks - the unification payoff: this card in the profile's decks */}
       {k === 'card' && data.inDecks.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <SectionLabel label="IN YOUR DECKS" count={data.inDecks.length} />
@@ -163,7 +165,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
         </div>
       )}
 
-      {/* highlights — hued by target: card = violet (deck-builder link), rule = gold */}
+      {/* highlights - hued by target: card = violet (deck-builder link), rule = gold */}
       {data.highlights.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <SectionLabel label="HIGHLIGHTS" count={data.highlights.length} />
@@ -183,7 +185,7 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
           <IconButton glyph="+" onClick={() => setComposer(true)} title="Add a note or link" />
         </div>
         {data.notes.length === 0 && data.links.length === 0 && (
-          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '6px 0 4px' }}>No marginalia yet — add a note or link.</div>
+          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '6px 0 4px' }}>No marginalia yet - add a note or link.</div>
         )}
         {data.notes.map((n) => (
           <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', gap: 8 }}>
@@ -260,7 +262,7 @@ function CardBody({ card, faqs, onOpenName, bodyRef, onSelect, marks }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
         {card.is_site ? (
-          // Sites play sideways — show the art rotated 90° in a landscape footprint (deck-builder parity).
+          // Sites play sideways - show the art rotated 90° in a landscape footprint (deck-builder parity).
           <div style={{ position: 'relative', width: 264, aspectRatio: '7 / 5' }}>
             <div style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(264px * 5 / 7)', transform: 'translate(-50%,-50%) rotate(90deg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
               <CardArt card={card} />
@@ -309,8 +311,8 @@ function CardBody({ card, faqs, onOpenName, bodyRef, onSelect, marks }) {
           <SectionLabel label="OFFICIAL FAQ" count={faqs.length} />
           {faqs.map((f, i) => (
             <div key={i} style={{ border: '1px solid var(--hair-14)', borderRadius: 12, background: 'var(--surface-card)', padding: '12px 13px', marginBottom: 8 }}>
-              <div style={{ font: "600 13.5px/1.4 var(--f-read)", color: 'var(--ink-head)', marginBottom: 6 }}>{f.question}</div>
-              <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{f.answer}</div>
+              <div style={{ font: "600 13.5px/1.4 var(--f-read)", color: 'var(--ink-head)', marginBottom: 6 }}>{noEm(f.question)}</div>
+              <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{noEm(f.answer)}</div>
             </div>
           ))}
         </div>
@@ -389,7 +391,7 @@ function MarginaliaComposer({ open, onClose, noteText, setNoteText, onSaveNote, 
 
 // Add this card to one of your decks, right from its Codex page. Steppers
 // write to the card's home zone (Atlas for sites, Spellbook otherwise) via the
-// same changeQty machinery as the deckbuilder — rarity/zone limits included.
+// same changeQty machinery as the deckbuilder - rarity/zone limits included.
 function AddToDeckSheet({ open, card, onClose }) {
   const [decks, setDecks] = useState(null);
   const [qtys, setQtys] = useState({});          // deckId → qty in home zone
@@ -424,7 +426,7 @@ function AddToDeckSheet({ open, card, onClose }) {
       {decks == null ? <Loading />
         : decks.length === 0 ? (
           <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '8px 0' }}>
-            No decks yet — build one in Decks first.
+            No decks yet - build one in Decks first.
           </div>
         ) : (
           <>
@@ -456,7 +458,7 @@ function CollectionPicker({ open, targetType, targetId, onClose }) {
   }
   return (
     <BottomSheet open={open} title="ADD TO COLLECTION" onClose={onClose}>
-      {cols.length === 0 && <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', marginBottom: 12 }}>No collections yet — name one below.</div>}
+      {cols.length === 0 && <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', marginBottom: 12 }}>No collections yet - name one below.</div>}
       {cols.map((c) => (
         <div key={c.id} onClick={async () => { await toggleCollectionItem(c.id, targetType, targetId); refresh(); }}
           className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>

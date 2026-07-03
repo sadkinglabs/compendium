@@ -1,4 +1,4 @@
-// Catalog seeding — loads the shared, read-only reference data (cards, rules,
+// Catalog seeding - loads the shared, read-only reference data (cards, rules,
 // FAQs, link graph) from Lexicum's dataset into the catalog tables on first run.
 // Idempotent: keyed by CATALOG_VERSION in catalog_meta; re-seed clears + reloads.
 import { query, exec, persist } from './db.js';
@@ -8,7 +8,7 @@ const esc = (v) => v === null || v === undefined ? 'NULL'
   : typeof v === 'number' ? String(v)
   : "'" + String(v).replace(/'/g, "''") + "'";
 
-// Build INSERT statement strings (multi-row, chunked) — accumulated and run as
+// Build INSERT statement strings (multi-row, chunked) - accumulated and run as
 // ONE transactional execute, so the whole seed is a single bridge round-trip.
 function insertSql(table, cols, rows, toRow, chunk = 500) {
   const out = [];
@@ -67,7 +67,7 @@ export async function seedCatalogIfNeeded() {
     for (const sub of art.subentries ?? []) ruleRows.push([sub.id, art.id, sub.label, sub.content ?? '', 'sorcery']);
   }
 
-  // Whole seed as ONE transactional script — a single bridge round-trip.
+  // Whole seed as ONE transactional script - a single bridge round-trip.
   const sql = [
     'DELETE FROM cards;', 'DELETE FROM rules;', 'DELETE FROM faqs;', 'DELETE FROM link_graph;',
     ...insertSql('cards',

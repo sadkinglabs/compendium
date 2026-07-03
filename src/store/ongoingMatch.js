@@ -1,4 +1,4 @@
-// Ongoing (in-progress, resumable) match — the snapshot of a live life-tracker
+// Ongoing (in-progress, resumable) match - the snapshot of a live life-tracker
 // game that the user has stepped away from (e.g. to check a Codex rule). It is
 // ephemeral UI state, not match history, so it lives in localStorage (profile-
 // scoped) and survives navigation and app restarts until the match is ended or
@@ -9,11 +9,11 @@ const KEY = () => `cx-ongoing-match:${activeProfileId()}`;
 const SNAP_VERSION = 1;   // bump when the snapshot shape changes (LifeCounter.buildSnapshot)
 
 export function saveOngoing(snapshot) {
-  try { localStorage.setItem(KEY(), JSON.stringify(snapshot)); } catch { /* quota/security — ignore */ }
+  try { localStorage.setItem(KEY(), JSON.stringify(snapshot)); } catch { /* quota/security - ignore */ }
 }
 
 // A stale snapshot (older app version, or corrupt) must NOT resume into
-// undefined life totals — validate the version and the load-bearing numeric
+// undefined life totals - validate the version and the load-bearing numeric
 // fields, and discard anything that doesn't check out.
 function isValidSnapshot(s) {
   return !!s && s.v === SNAP_VERSION

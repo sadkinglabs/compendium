@@ -1,4 +1,4 @@
-// Toast + Confirm hosts — mounted once in App. They listen for the decoupled
+// Toast + Confirm hosts - mounted once in App. They listen for the decoupled
 // window events fired by src/feedback.js and render on the app's black chassis,
 // so every mutation gets consistent feedback and every destructive action gets
 // a real in-app confirm (no OS "localhost says…" dialogs).

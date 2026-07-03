@@ -1,4 +1,4 @@
-/* dashboard.css — the customisable Home Dashboard: data-rich, resizable widgets.
+/* dashboard.css - the customisable Home Dashboard: data-rich, resizable widgets.
    Home rule: pure-black canvas. A widget tied to a pillar earns only a FAINT
    top-down hue wash + border tint (Codex gold · Decks violet · Play jade);
    everything else stays neutral black. Card/deck art is used where it helps and
@@ -33,7 +33,7 @@
 .dw-hero-sub { display: flex; align-items: center; gap: 7px; font: 500 11px/1 var(--f-ui); color: rgba(255,255,255,.72); margin-top: 5px; letter-spacing: .03em; }
 .dw-hero-sub img { width: 15px; height: 15px; }
 .dw-hero-badge { position: absolute; top: 10px; left: 11px; font: 700 8.5px/1 var(--f-ui); letter-spacing: .14em; color: rgba(255,255,255,.85); background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.18); padding: 5px 8px; border-radius: 7px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-/* Placeholder card silhouette shown behind the art (and in every preview) — a
+/* Placeholder card silhouette shown behind the art (and in every preview) - a
    neutral portrait card frame, no glyph. */
 .dw-cardph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 26%, rgba(220,184,111,.07), #17110b); }
 .dw-cardph::before { content: ''; width: 40%; max-width: 74px; aspect-ratio: 5 / 7; border-radius: 8px; border: 1.5px solid rgba(220,184,111,.3); background: linear-gradient(155deg, rgba(220,184,111,.07), rgba(0,0,0,.2)); box-shadow: inset 0 0 0 3px rgba(0,0,0,.16); }
@@ -113,7 +113,7 @@ body.reduce-motion .dw-slot.editing .dw, body.reduce-motion .dw-slot.editing .dw
 
 .dw-edithint { font: 400 11.5px/1.4 var(--f-read); color: var(--ink-faint); font-style: italic; text-align: center; margin: -2px 0 12px; }
 
-/* Bottom-edge control bar — keeps the card title visible while editing. */
+/* Bottom-edge control bar - keeps the card title visible while editing. */
 .dw-editbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hair-14); background: rgba(0,0,0,.34); }
 .dw-struct .dw-editbar { border-top: none; padding-top: 0; }
 

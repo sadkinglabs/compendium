@@ -1,8 +1,8 @@
-// Home — Overview (the WELCOME screen: greeting, at-a-glance doorway tiles,
+// Home - Overview (the WELCOME screen: greeting, at-a-glance doorway tiles,
 // capped deck rail / duel digest / notes) and the customisable Dashboard
 // (all widget kinds, edit mode: resize ½/full, move, remove, add, configure).
 // Overview is scale-safe by design: every section is hard-capped, collapsible,
-// and redirects to the pillar where the items actually live — the Dashboard
+// and redirects to the pillar where the items actually live - the Dashboard
 // is where users compose their own deeper view.
 import React, { useEffect, useState, useRef } from 'react';
 import {
@@ -48,7 +48,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, p
   );
 }
 
-/* ---------------- Overview — the welcome digest ---------------- */
+/* ---------------- Overview - the welcome digest ---------------- */
 function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev }) {
   const [d, setD] = useState(null);
   // Collapse state persists per profile so a curated Home survives restarts.
@@ -67,7 +67,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
   const pct = s.winPct;
   const ring = `conic-gradient(#4db38a 0% ${pct || 0}%, rgba(255,255,255,.07) ${pct || 0}% 100%)`;
   // A brand-new profile with nothing yet gets an orientation line instead of
-  // "welcome back" (they've never been here) — says what the app is for.
+  // "welcome back" (they've never been here) - says what the app is for.
   const firstRun = g.decks === 0 && g.duels === 0 && g.marginalia === 0 && g.saved === 0;
 
   const Sec = ({ id, title, count, onAll, children }) => (
@@ -112,14 +112,14 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
         <div className="cx-ov-greet-name">{profile?.name || 'Sorcerer'}</div>
         {firstRun && (
           <div style={{ font: "400 14px/1.55 var(--f-read)", color: 'var(--ink-muted)', marginTop: 9, maxWidth: 340 }}>
-            Your offline companion for <b style={{ color: 'var(--ink-body-2)' }}>Sorcery: Contested Realm</b> — build decks, track life in a duel, and keep every card and ruling at hand. Start below.
+            Your offline companion for <b style={{ color: 'var(--ink-body-2)' }}>Sorcery: Contested Realm</b> - build decks, track life in a duel, and keep every card and ruling at hand. Start below.
           </div>
         )}
       </div>
       <div className="cx-ov-glance">
         <Tile val={g.decks} lbl="DECKS" onClick={() => onGoTab('decks')} />
         <Tile val={g.duels} lbl="MATCHES" onClick={() => onGoTab('play')} />
-        <Tile val={pct != null ? pct + '%' : '—'} lbl="WIN RATE" onClick={() => onGoTab('play')} />
+        <Tile val={pct != null ? pct + '%' : '-'} lbl="WIN RATE" onClick={() => onGoTab('play')} />
         <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onAllNotes} />
       </div>
 
@@ -161,7 +161,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
           <>
             <div className="cx-ov-rec" onClick={() => onGoTab('play')} role="button">
               <div className="cx-ov-ring" style={{ background: ring }}>
-                <div className="cx-ov-ring-inner">{pct != null ? pct + '%' : '—'}</div>
+                <div className="cx-ov-ring-inner">{pct != null ? pct + '%' : '-'}</div>
               </div>
               <div className="cx-ov-rec-right">
                 <div className="cx-ov-rec-wl">{s.wins}–{s.losses}</div>
@@ -303,7 +303,7 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
         })}
       </div>
 
-      {/* The Dashboard's own FAB — a plain "+" that adds a widget. */}
+      {/* The Dashboard's own FAB - a plain "+" that adds a widget. */}
       <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add a widget" onClick={() => setPicker(true)} />
 
       <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); haptic('light'); load(); }} />
@@ -384,7 +384,7 @@ function StructuralBlock({ block, edit, onResize, onRemove, onConfig }) {
   );
 }
 
-// Full-bleed card/deck art with a graceful placeholder card-shape behind it — if
+// Full-bleed card/deck art with a graceful placeholder card-shape behind it - if
 // the image is absent (or fails to load, or we're in a preview) the neutral card
 // silhouette shows instead. No glyphs.
 function ArtHero({ image, name, sub, badge, onClick, tall, deck }) {
@@ -436,7 +436,7 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
     const ring = `conic-gradient(var(--accent-jade) 0% ${pct || 0}%, rgba(255,255,255,.08) ${pct || 0}% 100%)`;
     return (
       <div className="dw-ring-wrap" onClick={() => go('play')} style={{ cursor: 'pointer' }}>
-        <div className="dw-ring" style={{ background: ring }}><div className="dw-ring-inner">{pct != null ? pct + '%' : '—'}</div></div>
+        <div className="dw-ring" style={{ background: ring }}><div className="dw-ring-inner">{pct != null ? pct + '%' : '-'}</div></div>
         <div className="dw-ring-side">
           <div className="dw-ring-wl">{data.wins}–{data.losses}</div>
           <div className="dw-ring-sub">{data.total} PLAYED{data.streak > 0 ? ` · ${data.streak} STREAK` : ''}</div>
@@ -467,25 +467,25 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
     ? <div className="dw-row tap" onClick={() => open('rule', data.rule.id, data.rule.name)}><span className="gl"><RowIcon t="rule" /></span><span className="nm">{data.rule.name}</span></div>
     : empty(data.empty || 'No articles found.');
 
-  if (k === 'note') return <div className="dw-note">{data.text || 'Empty note — open Edit to write.'}</div>;
+  if (k === 'note') return <div className="dw-note">{data.text || 'Empty note - open Edit to write.'}</div>;
 
   if (k === 'links') return data.links?.length
     ? data.links.map((l, i) => { const href = safeHref(l.url); return href
         ? <a key={i} className="dw-link" href={preview ? undefined : href} target="_blank" rel="noreferrer" onClick={preview ? (e) => e.preventDefault() : undefined}><IcoExternal size={13} />{l.label || l.url}</a>
         : <div key={i} className="dw-link" style={{ color: 'var(--ink-faint)' }}><IcoExternal size={13} />{l.label || l.url}</div>; })
-    : empty('No links — open Edit to add.');
+    : empty('No links - open Edit to add.');
 
   if (data.quotes) return data.items?.length
     ? data.items.slice(0, 3).map((n, i) => <div key={i} className="dw-quote" onClick={() => open(n.type, n.id, n.on)}>“{n.body}”{n.on && <span className="on">{k === 'highlights' ? n.on : `on ${n.on}`}</span>}</div>)
     : empty(data.empty);
 
-  // list widgets — pinned, collections
+  // list widgets - pinned, collections
   return data.items?.length
     ? data.items.slice(0, 5).map((it, i) => (
         <div key={i} className={`dw-row${it.type ? ' tap' : ''}`} onClick={it.type ? () => open(it.type, it.id, it.name) : undefined}>
           <span className="gl"><RowIcon t={it.type || it.iconType} /></span><span className="nm">{it.name}</span>{it.meta && <span className="mt">{it.meta}</span>}
         </div>))
-    : empty(data.empty || '—');
+    : empty(data.empty || '-');
 }
 
 // The Add-a-widget sheet renders a LIVE mini-preview of each widget (fed
@@ -581,7 +581,7 @@ const cfgInput = { flex: 1, minWidth: 0, height: 40, background: 'var(--surface-
 const cfgInputFull = { width: '100%', height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", boxSizing: 'border-box' };
 const hideImg = (e) => { e.currentTarget.style.display = 'none'; };
 
-// House SVG icons for the dashboard — no Unicode glyphs anywhere in the widgets.
+// House SVG icons for the dashboard - no Unicode glyphs anywhere in the widgets.
 const Svg = ({ children, size = 13, fill = 'none', ...p }) => (
   <svg viewBox="0 0 24 24" width={size} height={size} fill={fill} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...p}>{children}</svg>
 );

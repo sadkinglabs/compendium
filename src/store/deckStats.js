@@ -1,4 +1,4 @@
-// Deck statistics — ported faithfully from Arcanum (www/index.html). The
+// Deck statistics - ported faithfully from Arcanum (www/index.html). The
 // algorithms are verbatim; only the palette is mapped to Compendium's element
 // tokens. Pure functions over the {spellbook, atlas, collection} shape from
 // deckRepository.getDeckCards (entries carry cost/attack/type/rarity/elements/thresholds).

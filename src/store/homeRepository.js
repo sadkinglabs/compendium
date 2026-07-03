@@ -1,4 +1,4 @@
-// Home / Dashboard data — customisable widget blocks (the Lexicum dashboard,
+// Home / Dashboard data - customisable widget blocks (the Lexicum dashboard,
 // re-homed) + cross-pillar data providers (Saved, Notes, Highlights, Collections,
 // Stats, Resume, Errata, Random, and the new Decks/Duels widgets). Profile-scoped.
 import { query, run, tx } from './db.js';
@@ -7,7 +7,7 @@ import { uuid, nowIso } from './ids.js';
 import { listDecks } from './deckRepository.js';
 import { listMatches, historyStats } from './playRepository.js';
 
-// The widget catalogue — 16 data-rich cards + two structural blocks (Title,
+// The widget catalogue - 16 data-rich cards + two structural blocks (Title,
 // Separator). `pillar` earns a faint hue on Home (codex gold · decks violet ·
 // play jade); `configurable` widgets carry their own settings; `structural`
 // blocks are chrome-less layout furniture. Every widget is renamable (the frame
@@ -21,12 +21,12 @@ export const WIDGETS = [
   { kind: 'deckSpotlight', title: 'Deck Spotlight', pillar: 'decks', blurb: 'A featured deck, in full art' },
   { kind: 'yourDecks', title: 'Your Decks', pillar: 'decks', blurb: 'A rail of your decks' },
   // Codex
-  { kind: 'featuredCard', title: 'Random Card', pillar: 'codex', rollable: true, blurb: 'A card to discover — roll for more' },
+  { kind: 'featuredCard', title: 'Random Card', pillar: 'codex', rollable: true, blurb: 'A card to discover - roll for more' },
   { kind: 'cardOfDay', title: 'Card of the Day', pillar: 'codex', blurb: 'A daily card pick' },
   { kind: 'notes', title: 'Notes & Rulings', pillar: 'codex', blurb: 'Your latest marginalia' },
   { kind: 'highlights', title: 'Highlights', pillar: 'codex', blurb: 'Passages you flagged' },
   { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
-  { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit — roll for more' },
+  { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit - roll for more' },
   // Neutral
   { kind: 'pinned', title: 'Pinned', pillar: null, blurb: 'Everything you starred' },
   { kind: 'note', title: 'Note', pillar: null, configurable: true, blurb: 'A free-text note' },
@@ -65,7 +65,7 @@ let seedingFor = null;   // guards default-seed against concurrent callers (Stri
 
 async function seedDefaults(pid) {
   const c = (await query('SELECT COUNT(*) c FROM dashboard_blocks WHERE profile_id=?;', [pid]))[0].c;
-  if (c > 0) return;       // re-check inside the guard — never double-seed
+  if (c > 0) return;       // re-check inside the guard - never double-seed
   let i = 0;
   for (const [kind, width] of DEFAULTS) {
     await run('INSERT INTO dashboard_blocks(id,profile_id,type,width,config,sort_order,created_at) VALUES(?,?,?,?,?,?,?);',
@@ -167,13 +167,13 @@ export async function widgetData(block) {
   }
   if (k === 'deckSpotlight') {
     const decks = await listDecks();
-    if (!decks.length) return { empty: 'No decks yet — build one in Decks.' };
+    if (!decks.length) return { empty: 'No decks yet - build one in Decks.' };
     const pick = decks.find((d) => d.starred) || [...decks].sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses))[0];
     return { spotlight: { id: pick.id, name: pick.name, image: pick.avatar?.image_slug || null, record: pick.record, winPct: pick.winPct, elems: pick.elems || [] } };
   }
   if (k === 'yourDecks') {
     const decks = await listDecks();
-    return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet — build one in Decks.' };
+    return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet - build one in Decks.' };
   }
   if (k === 'featuredCard' || k === 'cardOfDay') {
     const n = (await query('SELECT COUNT(*) c FROM cards;'))[0].c;
@@ -185,7 +185,7 @@ export async function widgetData(block) {
     const n = (await query('SELECT COUNT(*) c FROM rules WHERE parent_id IS NULL;'))[0].c;
     const off = Math.floor(Math.random() * Math.max(1, n));
     const row = (await query('SELECT rule_id id, title FROM rules WHERE parent_id IS NULL LIMIT 1 OFFSET ?;', [off]))[0];
-    return { rule: row ? { id: row.id, name: row.title } : null, empty: '—' };
+    return { rule: row ? { id: row.id, name: row.title } : null, empty: '-' };
   }
   if (k === 'pinned') {
     const rows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT 50;', [pid]);
@@ -218,7 +218,7 @@ export async function widgetData(block) {
 /* ---------------- picker previews ---------------- */
 
 // Representative mock data shaped exactly like widgetData(), used to render the
-// live widget previews in the Add-a-widget sheet. Art widgets carry NO image —
+// live widget previews in the Add-a-widget sheet. Art widgets carry NO image -
 // previews render a neutral placeholder card shape, never real card art.
 export function sampleData(kind) {
   const k = normalizeKind(kind);
@@ -251,7 +251,7 @@ export async function setResume(type, id, title) {
 }
 
 // Overview = the welcome screen: key stats (doorways into every pillar) +
-// tightly CAPPED sections. Caps are hard — libraries, marginalia and match
+// tightly CAPPED sections. Caps are hard - libraries, marginalia and match
 // history can grow huge; Overview always shows a digest and redirects to the
 // pillar where the items actually live.
 const OV_DECKS = 8, OV_NOTES = 3, OV_DUELS = 3;
@@ -259,7 +259,7 @@ const OV_DECKS = 8, OV_NOTES = 3, OV_DUELS = 3;
 export async function overview() {
   const pid = activeProfileId();
   let resume = (await query('SELECT * FROM resume WHERE profile_id=?;', [pid]))[0] || null;
-  // Drop a resume target that no longer exists (e.g. deck was deleted) — a dead
+  // Drop a resume target that no longer exists (e.g. deck was deleted) - a dead
   // "Jump back in" tile would otherwise open a deck that can never load.
   if (resume && !(await resolveTarget(resume.target_type, resume.target_id))) {
     await run('DELETE FROM resume WHERE profile_id=?;', [pid]);

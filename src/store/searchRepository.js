@@ -1,4 +1,4 @@
-// Universal search — one query across the unified store: catalogue (rules +
+// Universal search - one query across the unified store: catalogue (rules +
 // cards) and the active profile's decks and duels. The unification payoff:
 // possible only because all three domains share one store.
 import { searchCodex, searchPersonal } from './codexRepository.js';

@@ -1,4 +1,4 @@
-// Play hub — compact New Match + Quick Match, the Match History digest
+// Play hub - compact New Match + Quick Match, the Match History digest
 // (win-rate / W–L / streak / last-8 pips), and Recent Matches. Calm by design:
 // the life counter and in-match log live inside an in-progress match, not here.
 import React, { useEffect, useState } from 'react';
@@ -13,7 +13,7 @@ import '../theme/playhistory.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-// "1h 25m" / "5m 21s" / "12s" — Vitarum's _fmtSpan (seconds precision under an hour).
+// "1h 25m" / "5m 21s" / "12s" - Vitarum's _fmtSpan (seconds precision under an hour).
 function fmtSpan(secs) {
   secs = Math.max(0, Math.round(secs || 0));
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
@@ -42,7 +42,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const [addOpen, setAddOpen] = useState(false);   // manual Add Match form
   useEffect(() => {
     let alive = true;
-    // Single matches fetch — everything below is derived from it (was a second
+    // Single matches fetch - everything below is derived from it (was a second
     // full scan via historyStats plus JS re-aggregation of the same rows).
     Promise.all([listMatches(500), listAvatarCards()]).then(([m, avs]) => {
       if (!alive) return;
@@ -94,7 +94,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
 
   return (
     <div className="mh" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
-      {/* Start-a-match pills — where nav pills live (New = tracked full match with
+      {/* Start-a-match pills - where nav pills live (New = tracked full match with
           avatars & deck; Quick = counter only). */}
       <div className="play-start-row">
         <button className="play-start-pill primary" onClick={() => onStart('full')}>
@@ -124,7 +124,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
         </>
       ) : (
         <>
-          {/* hero — donut win-rate + record + streak */}
+          {/* hero - donut win-rate + record + streak */}
           <div className="rec-hero">
             {mostPlayed?.img && <img className="rec-hero-bg" src={`${BASE}cards/${mostPlayed.img}`} alt="" aria-hidden="true" />}
             <div className="rec-ring" style={{ background: ring }}>
@@ -195,9 +195,9 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   );
 }
 
-// One match card — Vitarum's _matchCardHTML, reordered: matchup line, then the
+// One match card - Vitarum's _matchCardHTML, reordered: matchup line, then the
 // opponent/deck pills on their own row, then the life/date meta. Actions are
-// compact icon buttons (details · delete — details opens the sheet where the
+// compact icon buttons (details · delete - details opens the sheet where the
 // result, note and edit live; sharing was pruned).
 function MatchCard({ m, onEdit, onDelete, onOpp, onDeck }) {
   const badgeCls = m.winner === 'player' ? 'win' : m.winner === 'opponent' ? 'loss' : 'draw';
@@ -369,7 +369,7 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
     </Sheet>
   );
 }
-// Manual Add Match — Vitarum's Add Match form ported to the Arcanum Sheet.
+// Manual Add Match - Vitarum's Add Match form ported to the Arcanum Sheet.
 function AddMatchSheet({ open, onClose, onSaved }) {
   const blank = () => { const now = new Date(); return { winner: 'player', pLife: 20, eLife: 0, opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '' }; };
   const [f, setF] = useState(blank);

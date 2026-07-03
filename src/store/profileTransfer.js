@@ -1,4 +1,4 @@
-// Profile export / import — a single self-describing JSON bundle (§4-E).
+// Profile export / import - a single self-describing JSON bundle (§4-E).
 // Export gathers every profile-scoped row; import re-keys all ids and writes the
 // bundle into a NEW profile in one transaction. Catalogue refs (card_id/rule_id)
 // are preserved as-is. Forward-only: an older schemaVersion still imports.
@@ -55,7 +55,7 @@ export async function exportProfile(profileId = activeProfileId()) {
   };
 }
 
-/** Duplicate a profile — the export/import round-trip re-keys every id, so the
+/** Duplicate a profile - the export/import round-trip re-keys every id, so the
  *  copy is fully independent of the original. Returns the new profileId. */
 export async function duplicateProfile(profileId) {
   const bundle = await exportProfile(profileId);

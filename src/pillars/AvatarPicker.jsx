@@ -1,7 +1,7 @@
-// Avatar picker — VERBATIM visual port of Vitarum's #picker-screen (see counter.css).
+// Avatar picker - VERBATIM visual port of Vitarum's #picker-screen (see counter.css).
 // Uses Compendium's catalogue avatar cards for the grid data, plus a Compendium
 // addition: pilot one of YOUR DECKS (sets your avatar and links the match to
-// the deck — its W–L ledger updates on record).
+// the deck - its W–L ledger updates on record).
 import React, { useEffect, useState } from 'react';
 import '../theme/counter.css';
 import { listAvatars } from '../store/playRepository.js';
@@ -42,7 +42,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         </button>
       </div>
 
-      {/* Match preview — tap a slot to clear that pick */}
+      {/* Match preview - tap a slot to clear that pick */}
       <div className="picker-matchup">
         <div className={`pm-slot${you ? ' filled' : ''}`} onClick={() => setYou(null)} role="button" aria-label="Your avatar">
           <div className="pm-thumb">{you ? <img src={`${BASE}cards/${you.image_slug}`} alt="" /> : '?'}</div>
@@ -56,7 +56,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
           <div className="pm-name">{opp ? opp.name : 'Tap an avatar'}</div>
         </div>
       </div>
-      {/* Pilot one of your decks — Compendium cross-pillar link */}
+      {/* Pilot one of your decks - Compendium cross-pillar link */}
       {decks.length > 0 && (
         <div className="picker-decks">
           <div className="picker-decks-label">PILOT A DECK</div>

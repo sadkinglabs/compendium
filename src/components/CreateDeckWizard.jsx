@@ -1,7 +1,7 @@
-// Create-deck wizard — VERBATIM port of Arcanum's #onboard flow (openOnboarding
+// Create-deck wizard - VERBATIM port of Arcanum's #onboard flow (openOnboarding
 // / obNext, templates/index.html L1984-2085). Two mandatory steps:
 //   1. Name the deck.
-//   2. Pick an avatar — you CANNOT create a deck without one (obNext refuses).
+//   2. Pick an avatar - you CANNOT create a deck without one (obNext refuses).
 // Visual shell is arcanum.css (.ob-* / .btn / .sheet-*). Avatar data comes from
 // the unified catalogue via listAvatarCards().
 import React, { useEffect, useRef, useState } from 'react';
@@ -34,7 +34,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
       setStep(2);
       return;
     }
-    // Step 2 — mandatory avatar.
+    // Step 2 - mandatory avatar.
     if (!sel || busy) return;                    // Create button is disabled without one / while creating
     setBusy(true);
     try {

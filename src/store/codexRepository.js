@@ -1,4 +1,4 @@
-// Codex data — catalog reads (shared) + the profile-scoped personal layer
+// Codex data - catalog reads (shared) + the profile-scoped personal layer
 // (saved, marginalia notes, highlights, collections). Every profile-scoped read
 // and write passes through activeProfileId(), so isolation is structural.
 import { query, run } from './db.js';
@@ -120,7 +120,7 @@ export async function relatedFor(kind, id, name) {
 
 /** Everything an article references, resolved for display below its body:
     cards (with art) it mentions, and other articles it links to. Fixes the old
-    breakage — article/sub-entry link targets are rule_ids (a sub-entry's id is
+    breakage - article/sub-entry link targets are rule_ids (a sub-entry's id is
     `parent__slug`), so they resolve by id, not by name; sub-entries fold up to
     their parent article. Garbage `unresolved_article` edges are dropped. */
 export async function mentions(ruleId) {
@@ -260,7 +260,7 @@ export async function searchPersonal(q) {
   return out;
 }
 
-/** Everything in the personal layer at once — the Codex Marginalia section.
+/** Everything in the personal layer at once - the Codex Marginalia section.
  *  Notes, highlights and links profile-wide, each resolved to the entry it
  *  annotates so rows can tap through. */
 export async function marginaliaAll() {
@@ -314,7 +314,7 @@ export async function renameCollection(id, name) {
 }
 
 export async function deleteCollection(id) {
-  await run('DELETE FROM collection_items WHERE collection_id=?;', [id]);   // explicit — don't rely on FK cascade
+  await run('DELETE FROM collection_items WHERE collection_id=?;', [id]);   // explicit - don't rely on FK cascade
   await run('DELETE FROM collections WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
 }
 

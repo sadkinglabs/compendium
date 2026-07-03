@@ -1,4 +1,4 @@
-// Decks pillar — Library / My Deck toggle in the app's own chip style (matching
+// Decks pillar - Library / My Deck toggle in the app's own chip style (matching
 // Home/Codex), NOT a bespoke pager. Search isn't a tab: adding cards is an
 // "Add cards to deck" action on My Deck that opens the existing add-cards flow.
 // `deckOpen` (the loaded deck) is lifted to App so it survives that flow.
@@ -39,7 +39,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
   // Opening/creating/importing a deck (deckOpen changes id) jumps to My Deck;
   // the user can still toggle back to Library freely afterward. editMode is only
-  // dropped on a genuine id change — NOT on the remount after the add-cards flow
+  // dropped on a genuine id change - NOT on the remount after the add-cards flow
   // (which is why editMode lives in App, not here).
   const prevIdRef = useRef(deckOpen?.id);
   useEffect(() => {
@@ -110,11 +110,11 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
 
   // Native feel: swipe across the Library ⇄ My Deck (List ⇄ Stats) chain.
   const swipe = useSwipe(
-    () => {   // swipe left — deeper into the deck
+    () => {   // swipe left - deeper into the deck
       if (view === 'library' && deckOpen) { setView('mydeck'); haptic('light'); }
       else if (view === 'mydeck' && deckOpen && statTab === 'list') { setStatTab('stats'); haptic('light'); }
     },
-    () => {   // swipe right — back out
+    () => {   // swipe right - back out
       if (view === 'mydeck' && statTab === 'stats') { setStatTab('list'); haptic('light'); }
       else if (view === 'mydeck') { setView('library'); haptic('light'); }
     }
@@ -163,7 +163,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
                   editMode={editMode} onToast={flash} onChanged={onChanged} onOpenCodex={onOpenCodex}
                   onMissing={() => { onOpenDeck(null); setView('library'); refresh(); }} />
               </div>
-              {/* List/Stats pip bar steps aside while editing — edit mode owns the floor. */}
+              {/* List/Stats pip bar steps aside while editing - edit mode owns the floor. */}
               <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
                 <div className="pip-seg" onClick={() => setStatTab('list')}>
                   <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
@@ -197,7 +197,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
       )}
       {view === 'mydeck' && deckOpen && (
         editMode ? (
-          // Edit mode: the FAB becomes a magnifying glass — the doorway to the
+          // Edit mode: the FAB becomes a magnifying glass - the doorway to the
           // full searchable card list. The key forces a remount so the spin-in
           // (now built into Fab) replays on the role change.
           <Fab key="search" variant="deck" icon={<FabGlyph kind="search" />}
@@ -216,7 +216,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   );
 }
 
-// Rename — small a-sheet with a single field (replaces the native prompt()).
+// Rename - small a-sheet with a single field (replaces the native prompt()).
 function RenameSheet({ open, initial, onClose, onSave }) {
   const [name, setName] = useState(initial);
   useEffect(() => { if (open) setName(initial); }, [open, initial]);
@@ -233,7 +233,7 @@ function RenameSheet({ open, initial, onClose, onSave }) {
   );
 }
 
-// Export — Arcanum's #export-sheet: Markdown (readable) / Curiosa (flat) toggle
+// Export - Arcanum's #export-sheet: Markdown (readable) / Curiosa (flat) toggle
 // with a copy-to-clipboard action.
 function ExportSheet({ open, deckId, onClose, flash }) {
   const [fmt, setFmt] = useState('markdown');
@@ -263,7 +263,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
   );
 }
 
-// Deck Spread — Arcanum's #deckcards-sheet: one tile per distinct card (×N badge
+// Deck Spread - Arcanum's #deckcards-sheet: one tile per distinct card (×N badge
 // for extra copies), grouped by zone. Deck = ordered; Shuffle = shuffled WITHIN
 // each zone (Spellbook & Atlas stay separate sections).
 function DeckSpreadSheet({ open, deckId, onClose }) {

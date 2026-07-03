@@ -1,16 +1,16 @@
-/* Compendium design tokens — the "grimoire" language, extracted from DESIGN_SYSTEM.md.
+/* Compendium design tokens - the "grimoire" language, extracted from DESIGN_SYSTEM.md.
    One palette for the whole app; per-pillar identity is a single accent dot only. */
 :root {
-  /* surfaces — pure black canvas; per-pillar identity is a top-down colour wash
+  /* surfaces - pure black canvas; per-pillar identity is a top-down colour wash
      (see .cx-app::before + --wash), transitioning Codex→Lexicum, Decks→Arcanum,
      Play→Vitarum. */
   --bg: #000;
   --bg-base: #000;
-  --wash: #000;   /* default (Home) — pure black, no wash */
+  --wash: #000;   /* default (Home) - pure black, no wash */
   --surface-card: rgba(34, 26, 20, .4);
   --surface-card-2: rgba(34, 26, 20, .55);
   --surface-well: rgba(18, 13, 9, .6);
-  --surface-sheet: linear-gradient(180deg, #151310, #0a0908); /* black — all sheets share the black+gold chassis */
+  --surface-sheet: linear-gradient(180deg, #151310, #0a0908); /* black - all sheets share the black+gold chassis */
   --surface-nav: rgba(14, 10, 7, .7);
   --scrim: rgba(8, 5, 3, .6);
 
@@ -112,10 +112,10 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   transition: color .55s ease;
 }
 
-/* Gold hairline under the top header — present on every screen. */
+/* Gold hairline under the top header - present on every screen. */
 .cx-header-rule { height: 1px; background: var(--hair-30); flex-shrink: 0; }
 
-/* ── Bottom nav — VERBATIM from Arcanum (#nav/.nav-btn), re-tinted black+gold,
+/* ── Bottom nav - VERBATIM from Arcanum (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
 .cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(201,163,90,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .cx-nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: 'Hanken Grotesk', sans-serif; border: none; background: none; cursor: pointer; transition: color .15s; padding: 0; position: relative; }
@@ -123,9 +123,9 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
 
-/* ── Bottom search — frosted see-through pill, in line with the FAB. ── */
+/* ── Bottom search - frosted see-through pill, in line with the FAB. ── */
 .cx-searchbar { position: fixed; left: 16px; right: 84px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px); z-index: 41; }
-/* Uniform black frosted glass — no per-pillar tint (keeps the palette subtle). */
+/* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
 .cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
@@ -134,9 +134,9 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 
 /* Codex sticky top bar (scope chips + List/Card toggle stay visible while scrolling). */
 /* Scope chips scroll with the page (transparent) so the header wash stays a full
-   smooth gradient — no sticky black band / hard edge. */
+   smooth gradient - no sticky black band / hard edge. */
 .cx-codex-topbar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 2px 0 4px; }
-/* Sub-entry disclosure — Material expand_more: a chevron in a circular icon
+/* Sub-entry disclosure - Material expand_more: a chevron in a circular icon
    button that rotates 180° (down → up) when the group is expanded. */
 .cx-sub-chevron { background: none; border: none; color: var(--ink-muted); cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; -webkit-tap-highlight-color: transparent; transition: transform .24s cubic-bezier(.4,0,.2,1), color .2s ease, background .2s ease; }
 .cx-sub-chevron:active { background: rgba(220,184,111,.14); }
@@ -145,19 +145,19 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .cx-marg-head { display: flex; align-items: center; gap: 8px; padding: 3px 0 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-marg-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); }
 
-/* Nested sub-entry rows — indented under a hairline rail, revealed with a soft slide. */
+/* Nested sub-entry rows - indented under a hairline rail, revealed with a soft slide. */
 .cx-subrow { position: relative; padding-left: 30px; animation: cx-subrow-in .2s ease both; }
 .cx-subrow::before { content: ''; position: absolute; left: 14px; top: 0; bottom: 0; width: 1px; background: var(--hair-16); }
 @keyframes cx-subrow-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
 body.reduce-motion .cx-subrow { animation: none; }
 
-/* ── Codex article — reflowed, semantically formatted reading ── */
+/* ── Codex article - reflowed, semantically formatted reading ── */
 .cx-article-p { margin: 0 0 14px; font: 400 16.5px/1.62 var(--f-read); color: var(--ink-body-2); }
 .cx-article-p.lead::first-letter { float: left; font: 600 47px/0.76 var(--f-display); color: var(--gold); margin: 5px 11px 0 0; text-shadow: 0 2px 14px rgba(207,154,74,.3); }
 .cx-article-list { margin: 2px 0 16px; padding-left: 22px; }
 .cx-article-list li { font: 400 16px/1.55 var(--f-read); color: var(--ink-body-2); margin: 0 0 8px; padding-left: 4px; }
 .cx-article-list li::marker { color: var(--gold-leaf); font-weight: 600; }
-/* in-text links — gold for rules, violet for cards; both dotted-underlined */
+/* in-text links - gold for rules, violet for cards; both dotted-underlined */
 .cx-inlink { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-inlink-gold { color: var(--gold-leaf); border-bottom: 1px dotted var(--gold-leaf); }
 .cx-inlink-violet { color: var(--link-violet); border-bottom: 1px dotted var(--link-violet); }
@@ -174,14 +174,14 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-relpill { display: inline-block; font: 500 12.5px/1 var(--f-read); color: var(--gold-head, #e9d49a); padding: 8px 13px; border: 1px solid rgba(220,184,111,.34); border-radius: 20px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-relpill:active { border-color: var(--gold-leaf); }
 
-/* Return to Match — resume the live tracker (shown in Play + Home while a match is ongoing). */
+/* Return to Match - resume the live tracker (shown in Play + Home while a match is ongoing). */
 .cx-return-btn { display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; padding: 11px 18px; border-radius: 22px; background: linear-gradient(180deg, rgba(220,184,111,.2), rgba(140,90,42,.08)); border: 1px solid rgba(220,184,111,.5); color: var(--gold-leaf); font: 700 13px/1 var(--f-ui); cursor: pointer; box-shadow: 0 8px 22px -10px rgba(0,0,0,.6); }
 .cx-return-btn:active { background: linear-gradient(180deg, rgba(220,184,111,.3), rgba(140,90,42,.14)); }
 .cx-return-btn svg { width: 18px; height: 18px; color: var(--gold); flex-shrink: 0; }
 .cx-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-jade, #4db38a); box-shadow: 0 0 8px var(--accent-jade, #4db38a); animation: cx-live-pulse 1.6s ease-in-out infinite; }
 @keyframes cx-live-pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.82); } }
 
-/* Home decks carousel — swipeable cards backed by the deck's avatar hero art. */
+/* Home decks carousel - swipeable cards backed by the deck's avatar hero art. */
 .cx-deck-carousel { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 20px; -webkit-overflow-scrolling: touch; margin: 0 -20px; padding: 2px 20px 6px; }
 .cx-deck-carousel::-webkit-scrollbar { display: none; }
 .cx-deck-card { position: relative; flex: 0 0 74%; max-width: 270px; aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden; scroll-snap-align: start; cursor: pointer; background: #0e0e11; border: 1px solid rgba(220,184,111,.14); }
@@ -193,11 +193,11 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-deck-card-sub img { width: 13px; height: 13px; flex: none; }
 .cx-deck-card-sub span { margin-left: 3px; letter-spacing: .04em; }
 .cx-deck-card-sub img + span { margin-left: 5px; }
-/* Terminal carousel card — the doorway to the full library when it overflows. */
+/* Terminal carousel card - the doorway to the full library when it overflows. */
 .cx-deck-card-all { display: flex; align-items: center; justify-content: center; background: rgba(12,12,15,.6); border: 1px dashed rgba(220,184,111,.3); }
 .cx-deck-card-all span { font: 600 14px/1.3 'Cinzel', Georgia, serif; letter-spacing: .06em; color: var(--gold-leaf); text-align: center; padding: 0 18px; }
 
-/* Tap-target floor — small icon buttons keep their visual size but gain a 44px
+/* Tap-target floor - small icon buttons keep their visual size but gain a 44px
    invisible hit area (WCAG 2.5.5 / Android 48dp), so dense controls stop being
    fat-finger traps. Applied to the sub-40px buttons across the app. */
 .mh .match-mini-btn, .arc .cc-step-mini, .arc .cr-step-btn, .arc .cc-step-btn,
@@ -208,18 +208,18 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
   min-width: 44px; min-height: 44px; width: 100%; height: 100%;
 }
 
-/* Paired-view slide — motion feedback that these views are swipeable siblings
+/* Paired-view slide - motion feedback that these views are swipeable siblings
    (Home Overview⇄Dashboard). Keyed remount replays it on tab/swipe change. */
 .cx-swipe-pane { animation: cxSlideIn .26s cubic-bezier(.2,.9,.3,1); }
 @keyframes cxSlideIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 
-/* ── Global toast stack — black+gold, app-wide feedback (feedback.js host). ── */
+/* ── Global toast stack - black+gold, app-wide feedback (feedback.js host). ── */
 .cx-toast-stack { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top,0px) + 14px); z-index: 700; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
 .cx-toast { max-width: min(88vw, 420px); padding: 11px 18px; border-radius: 14px; background: linear-gradient(180deg,#1a1712,#0e0c0a); border: 1px solid rgba(220,184,111,.28); color: var(--ink-body); font: 500 13px/1.4 var(--f-ui); text-align: center; box-shadow: 0 8px 26px rgba(0,0,0,.55); animation: cxToastIn .26s cubic-bezier(.2,.9,.3,1); }
 .cx-toast.danger { border-color: rgba(224,120,106,.5); color: #f0c9c2; }
 @keyframes cxToastIn { from { opacity: 0; transform: translateY(-10px) scale(.96); } to { opacity: 1; transform: none; } }
 
-/* ── Home Overview — welcome digest. Everything capped; sections collapse and
+/* ── Home Overview - welcome digest. Everything capped; sections collapse and
    redirect to the pillar where the items actually live. ── */
 .cx-ov-greet { margin: 2px 0 18px; }
 .cx-ov-greet-eyebrow { font: 600 10px/1 var(--f-ui); letter-spacing: .24em; color: var(--ink-muted); }
@@ -235,13 +235,13 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-ov-sec-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); }
 .cx-ov-sec-spring { flex: 1; }
 .cx-ov-sec-all { display: inline-flex; align-items: center; gap: 2px; font: 600 11px/1 var(--f-ui); color: var(--ink-status); white-space: nowrap; }
-/* Disclosure chevron — an SVG so it rotates cleanly about its own centre
+/* Disclosure chevron - an SVG so it rotates cleanly about its own centre
    (open = pointing down at the content; collapsed = rotated to point right). */
 .cx-ov-sec-chev { display: inline-flex; align-items: center; color: var(--ink-faint); transition: transform .2s ease; transform-origin: center; }
 .cx-ov-sec.closed .cx-ov-sec-chev { transform: rotate(-90deg); }
 .cx-ov-sec-body { overflow: hidden; }
 .cx-ov-sec.closed .cx-ov-sec-body { display: none; }
-/* Match record card — black, jade kept as accent only (palette rule). */
+/* Match record card - black, jade kept as accent only (palette rule). */
 .cx-ov-rec { display: flex; align-items: center; gap: 16px; border: 1px solid var(--hair-14); border-radius: 16px; background: rgba(15,15,18,.85); padding: 13px 15px; margin-bottom: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-ring { width: 56px; height: 56px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; }
 .cx-ov-ring-inner { width: 44px; height: 44px; border-radius: 50%; background: #0d0d10; display: flex; align-items: center; justify-content: center; font: 700 13px/1 var(--f-mono); color: #8fd3a8; }
@@ -260,7 +260,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-ov-duel-deck svg { flex: none; }
 .cx-ov-duel-score { font: 500 12px/1 var(--f-mono); color: var(--ink-muted); }
 
-/* ── Profile picker — monogram discs, per-profile digests, gold ring on the
+/* ── Profile picker - monogram discs, per-profile digests, gold ring on the
    active one. Classy over busy: black rows, gold only where it means something. ── */
 .pf-row { display: flex; align-items: center; gap: 13px; padding: 13px 2px; border-bottom: 1px solid var(--hair-12); }
 .pf-row:last-of-type { border-bottom: none; }
@@ -273,19 +273,19 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .pf-meta { font: 500 11px/1 var(--f-ui); color: var(--ink-muted); }
 .pf-actions { display: flex; gap: 5px; flex: none; }
 
-/* Avatar picker as a centered modal — the app (incl. header/nav) stays visible
+/* Avatar picker as a centered modal - the app (incl. header/nav) stays visible
    behind a dim scrim; the picker floats in a rounded card and no longer takes
    over the interface. */
 .cx-picker-modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(6, 4, 12, .66); animation: cxfade .2s ease; }
 .cx-picker-box { width: 100%; max-width: 440px; height: min(86vh, 720px); border-radius: 22px; overflow: hidden; display: flex; box-shadow: 0 26px 70px -14px rgba(0, 0, 0, .78); border: 1px solid rgba(120, 180, 140, .22); animation: cxsheet .28s cubic-bezier(.2, .9, .3, 1); }
 .cx-picker-box #picker-screen { position: relative; inset: auto; width: 100%; height: 100%; flex: 1; min-height: 0; z-index: 1; border-radius: 22px; }
-/* No visible scrollbars anywhere (mobile app) — scrolling still works. */
+/* No visible scrollbars anywhere (mobile app) - scrolling still works. */
 * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { width: 0; height: 0; display: none; }
 .cx-scroll { scrollbar-width: none; -ms-overflow-style: none; }
 .cx-scroll::-webkit-scrollbar { width: 0; display: none; }
 .cx-row:active { background: var(--hair-08) !important; }
-/* Codex A–Z list (~1379 rows) — skip render/layout of off-screen rows. The
+/* Codex A–Z list (~1379 rows) - skip render/layout of off-screen rows. The
    intrinsic size reserves scroll height so the bar stays accurate. */
 .cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 50px; }
 

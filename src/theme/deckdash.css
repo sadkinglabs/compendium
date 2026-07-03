@@ -1,4 +1,4 @@
-/* deckdash.css — Current Deck dashboard (My Deck panel). VERBATIM port of
+/* deckdash.css - Current Deck dashboard (My Deck panel). VERBATIM port of
    Arcanum's avatar hero + zone list cards (templates/index.html L137-148,
    258-347). Scoped `.arc`; carries Arcanum's amethyst tokens. */
 
@@ -15,7 +15,7 @@
 .arc .hero-avatar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; justify-content: center; }
 .arc .hero-avatar-name { font-size: 14px; font-weight: 600; color: var(--gold); font-family: 'Hanken Grotesk', sans-serif; cursor: pointer; }
 .arc .hero-avatar-sep { color: var(--faint); font-size: 16px; line-height: 1; }
-/* Surfaces lean BLACK (user rule: hues are only a detail) — violet survives in
+/* Surfaces lean BLACK (user rule: hues are only a detail) - violet survives in
    hairlines, labels and small accents, never as a surface fill. */
 .arc .hero-stat-bar { display: inline-flex; align-items: center; background: rgba(13,12,15,.72); border: 1px solid rgba(160,110,220,.18); border-radius: 999px; overflow: hidden; }
 .arc .hero-stat-item { font-size: 11px; font-weight: 600; font-family: 'Hanken Grotesk', sans-serif; padding: 6px 14px; white-space: nowrap; }
@@ -40,7 +40,7 @@
 .arc .cc-thresh img { width: 14px; height: 14px; flex-shrink: 0; }
 .arc .cc-sb-coin { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(160,110,220,.22); background: rgba(12,12,15,.7); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #c9bfdc; }
 .arc .cc-empty { font: italic 14px 'EB Garamond', serif; color: #6e6286; padding: 8px 0; }
-/* Edit-mode quick steppers — conjured onto each row with a soft cascade. */
+/* Edit-mode quick steppers - conjured onto each row with a soft cascade. */
 .arc .cc-sb-step { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; animation: ccStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
 @keyframes ccStepIn { from { opacity: 0; transform: translateX(-8px) scale(.75); } }
 .arc .cc-step-mini { width: 25px; height: 25px; border-radius: 50%; border: 1px solid rgba(160,110,220,.32); background: rgba(15,14,18,.75); color: #c9bfdc; font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
@@ -54,7 +54,7 @@
 .arc .cc-hand-tile { position: relative; border-radius: 8px; overflow: hidden; border: 1px solid rgba(160,110,220,.2); background: rgba(13,12,16,.8); }
 .arc .cc-hand-tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* Random Hand — draw-more row */
+/* Random Hand - draw-more row */
 .arc .cc-hand-draw-more { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 .arc .cc-hand-more-btn { padding: 6px 14px; border-radius: 10px; border: 1px solid rgba(157,106,214,.3); background: rgba(157,106,214,.1); color: #c9a9f0; font: 600 11px/1 'Hanken Grotesk', sans-serif; cursor: pointer; }
 .arc .cc-hand-more-btn:active { background: rgba(157,106,214,.22); }
@@ -81,7 +81,7 @@
 .arc .cc-log-ts { color: #6e6286; white-space: nowrap; flex-shrink: 0; }
 .arc .cc-log-empty { padding: 12px 14px; font: italic 400 12px/1.4 'EB Garamond', Georgia, serif; color: #6e6286; text-align: center; }
 
-/* ── Stats cards (Arcanum .cc-stat suite) — verbatim from templates/index.html
+/* ── Stats cards (Arcanum .cc-stat suite) - verbatim from templates/index.html
    L296-370. The Stats view uses Arcanum's design (grimoire stays elsewhere). ── */
 .arc .chart-card.cc-stat { background: radial-gradient(120% 82% at 50% 0%,rgba(34,27,46,.4),rgba(11,10,13,.6)); border-color: rgba(160,110,220,.16); padding: 17px 16px; }
 .arc .cc-toggle-pill { display: flex; background: rgba(12,12,15,.75); border: 1px solid rgba(160,110,220,.14); border-radius: 11px; padding: 3px; margin-left: auto; }

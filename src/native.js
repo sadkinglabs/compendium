@@ -20,7 +20,7 @@ export async function initNative() {
   } catch { /* status bar not available */ }
 }
 
-/** Haptic tap — native impact on device, navigator.vibrate on web. */
+/** Haptic tap - native impact on device, navigator.vibrate on web. */
 export function haptic(kind = 'light') {
   if (isNative()) {
     const style = kind === 'medium' ? ImpactStyle.Medium : kind === 'heavy' ? ImpactStyle.Heavy : ImpactStyle.Light;
@@ -38,7 +38,7 @@ export function onBackButton(handler) {
   return () => { try { sub?.remove?.(); } catch { /* noop */ } };
 }
 
-/** Exit the app (native only — used when back has nowhere left to go). */
+/** Exit the app (native only - used when back has nowhere left to go). */
 export function exitApp() { if (isNative()) App.exitApp(); }
 
 /** Save a text file. Native: Filesystem (cache) + Share sheet. Web: blob download. */
@@ -81,7 +81,7 @@ export async function setImmersive(on) {
   try { if (on) await StatusBar.hide(); else await StatusBar.show(); } catch { /* not available */ }
 }
 
-/** Keep the screen awake (Web Wake Lock API — works in the WebView too). */
+/** Keep the screen awake (Web Wake Lock API - works in the WebView too). */
 let wakeLock = null;
 export async function setKeepAwake(on) {
   try {

@@ -1,4 +1,4 @@
-// Arcanum bottom sheet — the standard sheet across the app (grimoire is kept
+// Arcanum bottom sheet - the standard sheet across the app (grimoire is kept
 // only for article pages). Scrim + amethyst panel + handle, optional Cinzel
 // title/close header and footer. CSS: arcanum.css (.a-sheet*). Pixel-ported
 // from Arcanum's #card-sheet / canonical .sheet.

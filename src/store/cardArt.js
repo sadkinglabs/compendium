@@ -39,7 +39,7 @@ export function elementIconUrl(el) {
   return ['air', 'earth', 'fire', 'water'].includes(e) ? `${BASE}icons/${e}.png` : null;
 }
 
-/** A stable CSS background derived from element + name — same card, same art. */
+/** A stable CSS background derived from element + name - same card, same art. */
 export function cardFallbackArt(card) {
   let elements = [];
   try { elements = JSON.parse(card?.elements || '[]'); } catch { /* noop */ }

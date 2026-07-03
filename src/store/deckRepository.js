@@ -1,4 +1,4 @@
-// Decks data — Arcanum's model rebuilt on the unified store: three zones
+// Decks data - Arcanum's model rebuilt on the unified store: three zones
 // (spellbook/atlas/collection), deck avatar, rarity copy-limits, stats, and the
 // Curiosa/Markdown import-export remapped. All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
@@ -31,7 +31,7 @@ export function elementPips(thresholdsJson) {
   return out;
 }
 
-/** Avatar catalogue for the create-deck wizard — full fields for the preview
+/** Avatar catalogue for the create-deck wizard - full fields for the preview
  *  panel (life/attack/type/rules). Optional name filter. Mirrors Arcanum's
  *  fetchAvatars(). */
 export async function listAvatarCards(q = '') {
@@ -150,7 +150,7 @@ async function touch(id, setExpr, params) {
   await run(`UPDATE decks SET ${setExpr}, updated_at=? WHERE id=? AND profile_id=?;`, [...params, nowIso(), id, activeProfileId()]);
 }
 // Deck log is capped per deck so it can't grow unbounded (every qty change logs
-// a row) — the newest HISTORY_CAP survive; older rows are trimmed on write.
+// a row) - the newest HISTORY_CAP survive; older rows are trimmed on write.
 export const HISTORY_CAP = 300;
 export const trimHistorySql = (deckId) => ['DELETE FROM deck_history WHERE deck_id=? AND id NOT IN (SELECT id FROM deck_history WHERE deck_id=? ORDER BY ts DESC, rowid DESC LIMIT ?);', [deckId, deckId, HISTORY_CAP]];
 
@@ -256,7 +256,7 @@ async function deckElementPips(deckId) {
   return Object.entries(need).filter(([, v]) => v > 0).map(([el]) => ({ el, c: EL_COLOR[el] }));
 }
 
-/** Full per-zone entries joined with catalog data — the shape Arcanum's stats
+/** Full per-zone entries joined with catalog data - the shape Arcanum's stats
  *  functions expect (cost, attack, type, rarity, elements[], thresholds{}). */
 export async function getDeckCards(deckId) {
   const rows = await query(
@@ -358,7 +358,7 @@ export async function exportMarkdown(deckId) {
   return lines.join('\n');
 }
 
-// Curiosa.io import format: no deck name, no headers, no avatar, no collection —
+// Curiosa.io import format: no deck name, no headers, no avatar, no collection -
 // just a flat "qty name" list of Spellbook + Atlas (any header breaks Curiosa's importer).
 export async function exportCuriosa(deckId) {
   const out = [];
