@@ -170,6 +170,8 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     el.classList.add(delta > 0 ? 'bump-up' : 'bump-down');
   }
   function change(who, delta) {
+    // A tap while a FAB menu is open just dismisses it — never a stray life edit.
+    if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
     const cur = who === 'player' ? pRef.current : eRef.current;
     if (cur.life <= 0 && delta < 0) { triggerEnd(who === 'player' ? 'opponent' : 'player'); return; }
     const next = Math.min(cur.max, cur.life + delta);
