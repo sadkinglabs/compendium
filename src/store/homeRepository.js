@@ -117,6 +117,12 @@ export async function loadLayout(id) {
 }
 export async function deleteLayout(id) { await run('DELETE FROM dashboard_layouts WHERE id=? AND profile_id=?;', [id, activeProfileId()]); }
 
+/** Persist a full drag-reordered sequence of block ids (sort_order = index). */
+export async function reorderBlocks(ids) {
+  const pid = activeProfileId();
+  await tx(ids.map((id, i) => ['UPDATE dashboard_blocks SET sort_order=? WHERE id=? AND profile_id=?;', [i, id, pid]]));
+}
+
 export async function moveBlock(id, dir) {
   const blocks = await listBlocks();
   const i = blocks.findIndex((b) => b.id === id);

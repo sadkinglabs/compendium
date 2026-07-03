@@ -97,11 +97,27 @@
 .dw-sep { display: flex; align-items: center; gap: 12px; padding: 14px 4px; }
 .dw-sep .ln { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--hair-30), transparent); }
 .dw-sep .dia { width: 6px; height: 6px; background: var(--gold-leaf); transform: rotate(45deg); flex: none; }
-/* edit-mode control strip for the (chrome-less) structural blocks */
-.dw-struct-edit { display: flex; gap: 4px; position: absolute; top: 6px; right: 6px; z-index: 2; }
+.dw-struct { position: relative; }
 
-/* ── Add tile + toolbar buttons ── */
-.dw-add { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 18px 0; border-radius: 16px; border: 1px dashed var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 13px/1 var(--f-ui); cursor: pointer; }
+/* ── Edit mode: drag-to-reorder, jiggle, bottom control bar ── */
+.dw-slot { position: relative; -webkit-tap-highlight-color: transparent; }
+.dw-slot.editing { touch-action: none; }
+.dw-slot.editing .dw-body { pointer-events: none; }         /* no stray taps while arranging */
+.dw-slot.editing .dw, .dw-slot.editing .dw-struct { will-change: transform; animation: dw-jiggle .3s ease-in-out infinite; }
+.dw-slot.editing:nth-child(2n) .dw, .dw-slot.editing:nth-child(2n) .dw-struct { animation-duration: .34s; animation-delay: -.16s; }
+.dw-slot.editing:nth-child(3n) .dw, .dw-slot.editing:nth-child(3n) .dw-struct { animation-duration: .32s; animation-delay: -.09s; }
+.dw-slot.dragging { z-index: 6; }
+.dw-slot.dragging .dw, .dw-slot.dragging .dw-struct { animation: none; transform: scale(1.04); box-shadow: 0 18px 44px rgba(0,0,0,.62); }
+@keyframes dw-jiggle { 0%, 100% { transform: rotate(-.55deg); } 50% { transform: rotate(.55deg); } }
+body.reduce-motion .dw-slot.editing .dw, body.reduce-motion .dw-slot.editing .dw-struct { animation: none; }
+
+.dw-edithint { font: 400 11.5px/1.4 var(--f-read); color: var(--ink-faint); font-style: italic; text-align: center; margin: -2px 0 12px; }
+
+/* Bottom-edge control bar — keeps the card title visible while editing. */
+.dw-editbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hair-14); background: rgba(0,0,0,.34); }
+.dw-struct .dw-editbar { border-top: none; padding-top: 0; }
+
+/* ── Toolbar button (Layouts) ── */
 .dw-toolbtn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 15px; border-radius: 18px; border: 1px solid var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 12px/1 var(--f-ui); cursor: pointer; }
 
 /* ── Picker with LIVE previews ── */

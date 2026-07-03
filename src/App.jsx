@@ -57,6 +57,7 @@ export default function App() {
   const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
   const counterApi = useRef(null);                   // {minimize} — set by the live counter
   const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
+  const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' — which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
@@ -182,6 +183,7 @@ export default function App() {
     [preMatch, () => setPreMatch(null)],
     [deckWizard, () => setDeckWizard(false)],
     [importMode, () => setImportMode(null)],
+    [creditsOpen, () => setCreditsOpen(false)],
     [settingsSheet, () => setSettingsSheet(false)],
     [profileSheet, () => setProfileSheet(false)],
     [addActive, exitAdd],
@@ -218,10 +220,10 @@ export default function App() {
     <div className="cx-app" style={{ ...S.app, '--wash': WASH[tab] || WASH.home, '--list-accent': list.a, '--list-glow': list.g }}>
       {/* BRAND BAR */}
       <div style={S.brandBar}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <button onClick={() => setSettingsSheet(true)} style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Settings">
           <span style={S.diamond} />
           <span style={S.wordmark}>Compendium</span>
-        </div>
+        </button>
         <button onClick={() => setProfileSheet(true)} style={S.profileChip} title={profile?.name}>{initial}</button>
       </div>
 
@@ -304,17 +306,12 @@ export default function App() {
           Decks menu + add-cards filters are TBD. Hidden on the avatar picker. */}
       {/* App-owned FAB contexts. Codex detail and the Decks pager render their
           OWN FAB since those actions live inside them. */}
-      {!preMatch && (addActive ? (
+      {!preMatch && addActive && (
         <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters & sort"
           onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
-      ) : tab === 'home' && !viewDetail && !hasQuery ? (
-        // Export/Import live on the Profiles sheet; the Home FAB is Settings
-        // (accessibility + preferences), extensible with more app-level actions.
-        <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="App options" items={[
-          { label: 'Settings', onClick: () => setSettingsSheet(true) },
-        ]} />
-      ) : null)}
-      {/* Play owns its FAB (Add Match) since New/Quick Match are now top pills. */}
+      )}
+      {/* Home owns no app-level FAB — the wordmark opens Settings, and the
+          Dashboard renders its own "+" FAB. Play owns its Add-Match FAB. */}
 
       {/* BOTTOM NAV — verbatim Arcanum shell, bigger icons: house / book /
           stacked squares / crossed swords. */}
@@ -371,7 +368,8 @@ export default function App() {
           deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
           onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
       )}
-      <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} />
+      <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} onCredits={() => setCreditsOpen(true)} />
+      <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
       <ToastHost />
       <ConfirmHost />
     </div>
@@ -543,7 +541,7 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
 // Match config (starting life, die) lives in the life tracker; rarity colours
 // is an add-cards filter; accent metal / counter comforts live in the tracker's
 // Tweaks. Settings stays a single, focused surface.
-function SettingsSheet({ open, onClose }) {
+function SettingsSheet({ open, onClose, onCredits }) {
   const [s, setS] = useState(null);
   useEffect(() => { if (open) getSettings().then(setS); }, [open]);
   async function put(key, value) {
@@ -587,9 +585,46 @@ function SettingsSheet({ open, onClose }) {
           <Toggle label="High contrast" k="high_contrast" hint="Brighter text and stronger outlines." />
           <Toggle label="Reduce motion" k="reduced_motion" hint="Minimise animations and transitions." />
           <Toggle label="Haptics" k="haptics" hint="Subtle vibration on key taps." />
+          {label('ABOUT')}
+          <button onClick={onCredits} style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '13px 2px', background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', textAlign: 'left' }}>
+            <span style={{ flex: 1, font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)' }}>Credits</span>
+            <span style={{ color: 'var(--ink-faint)', display: 'flex' }}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></span>
+          </button>
         </div>
       )}
     </Sheet>
+  );
+}
+
+// Credits / About — a centered modal (not a bottom sheet), ported from Arcanum
+// and tailored to Compendium. Black chassis, gold wordmark, IP disclaimer.
+function CreditsModal({ open, onClose }) {
+  if (!open) return null;
+  return (
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Credits"
+      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'relative', width: '100%', maxWidth: 350, borderRadius: 20, overflow: 'hidden', background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)' }}>
+        <button onClick={onClose} aria-label="Close"
+          style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+        <div style={{ position: 'relative', textAlign: 'center', padding: '34px 26px 26px', background: 'radial-gradient(ellipse at 50% 0%, rgba(220,184,111,.14) 0%, transparent 70%)' }}>
+          <span style={{ display: 'block', width: 54, height: 54, margin: '0 auto 14px', borderRadius: 14, background: 'linear-gradient(160deg,#2a2113,#12100a)', border: '1px solid rgba(220,184,111,.4)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.08)', position: 'relative' }}>
+            <span style={{ position: 'absolute', top: '50%', left: '50%', width: 18, height: 18, transform: 'translate(-50%,-50%) rotate(45deg)', border: '2px solid var(--gold-leaf)', borderRadius: 3 }} />
+          </span>
+          <div style={{ font: "600 27px/1.1 var(--f-display)", color: 'var(--gold-leaf)', letterSpacing: '.01em' }}>Compendium</div>
+          <div style={{ font: "500 11px/1 var(--f-mono)", letterSpacing: '.05em', color: '#b08d4e', margin: '8px 0 14px' }}>v1.0.0 beta</div>
+          <div style={{ font: "400 13.5px/1.6 var(--f-read)", color: 'var(--ink-muted)' }}>
+            Compendium is an unofficial, fan-made companion app for <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>Sorcery: Contested Realm</strong> — unifying your codex, decks and life tracker in one place.
+            <br /><br />
+            Sorcery: Contested Realm and all related trademarks, artwork, characters, and intellectual property are owned by Erik&rsquo;s Curiosa. This app is not affiliated with, endorsed, sponsored, or approved by Erik&rsquo;s Curiosa.
+            <br /><br />
+            <em style={{ color: 'var(--gold-leaf)', fontStyle: 'italic' }}>Created by fans, for the community.</em>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

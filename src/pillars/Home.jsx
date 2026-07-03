@@ -4,9 +4,9 @@
 // Overview is scale-safe by design: every section is hard-capped, collapsible,
 // and redirects to the pillar where the items actually live — the Dashboard
 // is where users compose their own deeper view.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
-  listBlocks, addBlock, removeBlock, resizeBlock, moveBlock, setConfig,
+  listBlocks, addBlock, removeBlock, resizeBlock, reorderBlocks, setConfig,
   widgetData, widgetMeta, isConfigurable, isStructural, isRollable, pillarOf,
   sampleData, overview, WIDGETS,
   saveLayout, listLayouts, loadLayout, deleteLayout,
@@ -14,6 +14,7 @@ import {
 import { safeHref } from '../util.js';
 import { Chip, ChipRow, IconButton, Loading, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { haptic } from '../native.js';
 import '../theme/dashboard.css';
 
@@ -204,6 +205,10 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   const [cfg, setCfg] = useState(null);
   const [layoutSheet, setLayoutSheet] = useState(false);
   const [layouts, setLayouts] = useState([]);
+  const [dragId, setDragId] = useState(null);
+
+  const blocksRef = useRef([]);
+  useEffect(() => { blocksRef.current = blocks || []; }, [blocks]);
 
   async function load() {
     const bs = await listBlocks();
@@ -216,6 +221,51 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   // Re-roll a single widget (Random Card / Random Article) without reloading all.
   const roll = async (b) => { const d = await widgetData(b); setData((prev) => ({ ...prev, [b.id]: d })); haptic('light'); };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
+
+  // ── Long-press drag-to-reorder (edit mode). Hold a card still for ~300ms to
+  // pick it up (haptic), then drag it over another card to swap positions; the
+  // grid reorders live and persists on drop. Moving before the hold fires just
+  // scrolls (the press is cancelled). ──
+  const pd = useRef({ id: null, active: false, sx: 0, sy: 0, el: null, pid: 0, timer: null });
+  function pdDown(e, id) {
+    if (!edit) return;
+    const d = pd.current;
+    d.id = id; d.active = false; d.sx = e.clientX; d.sy = e.clientY; d.el = e.currentTarget; d.pid = e.pointerId;
+    if (d.timer) clearTimeout(d.timer);
+    d.timer = setTimeout(() => { d.active = true; d.timer = null; try { d.el.setPointerCapture(d.pid); } catch { /* noop */ } setDragId(id); haptic('medium'); }, 300);
+  }
+  function pdMove(e) {
+    const d = pd.current;
+    if (!d.id) return;
+    if (!d.active) {
+      if (Math.abs(e.clientX - d.sx) > 12 || Math.abs(e.clientY - d.sy) > 12) { clearTimeout(d.timer); d.timer = null; d.id = null; }
+      return;
+    }
+    e.preventDefault();
+    const t = document.elementFromPoint(e.clientX, e.clientY);
+    const slot = t && t.closest('[data-block-id]');
+    const overId = slot && slot.getAttribute('data-block-id');
+    if (overId && overId !== d.id) {
+      setBlocks((prev) => {
+        const arr = [...prev];
+        const from = arr.findIndex((b) => b.id === d.id);
+        const to = arr.findIndex((b) => b.id === overId);
+        if (from < 0 || to < 0) return prev;
+        const [m] = arr.splice(from, 1); arr.splice(to, 0, m);
+        return arr;
+      });
+    }
+  }
+  function pdUp() {
+    const d = pd.current;
+    if (d.timer) { clearTimeout(d.timer); d.timer = null; }
+    const wasActive = d.active;
+    try { if (d.el && d.pid != null) d.el.releasePointerCapture(d.pid); } catch { /* noop */ }
+    d.id = null; d.active = false; d.el = null;
+    setDragId(null);
+    if (wasActive) { reorderBlocks(blocksRef.current.map((b) => b.id)); haptic('light'); }
+  }
+
   if (!blocks) return <Loading />;
 
   return (
@@ -225,30 +275,36 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
       </div>
       {blocks.length === 0 && (
         <div className="dw-empty" style={{ textAlign: 'center', padding: '34px 12px' }}>
-          A blank canvas. Tap <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>Edit</b>, then <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>Add a widget</b> to compose your dashboard.
+          A blank canvas. Tap the <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>+</b> to add your first widget.
         </div>
       )}
+      {edit && blocks.length > 1 && (
+        <div className="dw-edithint">Hold a card to pick it up, then drag to reorder.</div>
+      )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
-        {blocks.map((b, i) => {
+        {blocks.map((b) => {
           const full = b.width === 'full' || isStructural(b.type);
           const common = {
-            block: b, edit, first: i === 0, last: i === blocks.length - 1,
+            block: b, edit,
             onResize: async () => { await resizeBlock(b.id, b.width === 'full' ? 'half' : 'full'); load(); },
             onRemove: async () => { await removeBlock(b.id); haptic('light'); load(); },
-            onUp: async () => { await moveBlock(b.id, -1); load(); },
-            onDown: async () => { await moveBlock(b.id, 1); load(); },
             onConfig: () => setCfg(b),
           };
           return (
-            <div key={b.id} style={{ width: full ? '100%' : 'calc(50% - 6px)' }}>
+            <div key={b.id} data-block-id={b.id}
+              className={`dw-slot${edit ? ' editing' : ''}${dragId === b.id ? ' dragging' : ''}`}
+              onPointerDown={(e) => pdDown(e, b.id)} onPointerMove={pdMove} onPointerUp={pdUp} onPointerCancel={pdUp}
+              style={{ width: full ? '100%' : 'calc(50% - 6px)' }}>
               {isStructural(b.type)
                 ? <StructuralBlock {...common} />
                 : <WidgetFrame {...common} data={data[b.id]} onOpen={onOpen} onGoTab={onGoTab} onRoll={() => roll(b)} />}
             </div>
           );
         })}
-        {edit && <button onClick={() => setPicker(true)} className="dw-add"><IcoPlus size={14} />Add a widget</button>}
       </div>
+
+      {/* The Dashboard's own FAB — a plain "+" that adds a widget. */}
+      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add a widget" onClick={() => setPicker(true)} />
 
       <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); haptic('light'); load(); }} />
       <ConfigSheet block={cfg} onClose={() => setCfg(null)} onSaved={() => { setCfg(null); load(); }} />
@@ -284,7 +340,20 @@ function LayoutSheet({ open, layouts, onClose, onSave, onLoad, onDelete }) {
   );
 }
 
-function WidgetFrame({ block, data, edit, onOpen, onGoTab, onRoll, first, last, onResize, onRemove, onUp, onDown, onConfig, preview }) {
+// Edit controls live in a bar along the BOTTOM edge of the card, so picking a
+// card up never hides its title. stopPropagation on pointerdown so tapping a
+// control doesn't start a drag. Reordering is by long-press drag, not arrows.
+const EditBar = ({ block, onResize, onConfig, onRemove }) => (
+  <div className="dw-editbar" onPointerDown={(e) => e.stopPropagation()}>
+    {!isStructural(block.type) && (
+      <button className="dw-mini" onClick={onResize} aria-label={block.width === 'full' ? 'Make half width' : 'Make full width'}>{block.width === 'full' ? <IcoShrink size={13} /> : <IcoExpand size={13} />}</button>
+    )}
+    {(block.type !== 'separator') && <button className="dw-mini" onClick={onConfig} aria-label="Rename or configure"><IcoEdit size={13} /></button>}
+    <button className="dw-mini danger" onClick={onRemove} aria-label="Remove"><IcoClose size={13} /></button>
+  </div>
+);
+
+function WidgetFrame({ block, data, edit, onOpen, onGoTab, onRoll, onResize, onRemove, onConfig, preview }) {
   const meta = widgetMeta(block.type);
   const title = block.config?.name || meta.title;
   return (
@@ -295,37 +364,22 @@ function WidgetFrame({ block, data, edit, onOpen, onGoTab, onRoll, first, last, 
         {!edit && !preview && isRollable(block.type) && (
           <button className="dw-roll" onClick={onRoll} aria-label="Roll again"><IcoRoll size={12} />Roll</button>
         )}
-        {edit && (
-          <div className="dw-tools">
-            <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up"><IcoUp size={12} /></button>
-            <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down"><IcoDown size={12} /></button>
-            <button className="dw-mini" onClick={onResize} aria-label="Resize">{block.width === 'full' ? <IcoShrink size={12} /> : <IcoExpand size={12} />}</button>
-            <button className="dw-mini" onClick={onConfig} aria-label="Rename or configure"><IcoEdit size={12} /></button>
-            <button className="dw-mini danger" onClick={onRemove} aria-label="Remove"><IcoClose size={12} /></button>
-          </div>
-        )}
       </div>
       <div className="dw-body"><WidgetBody block={block} data={data} onOpen={onOpen} onGoTab={onGoTab} preview={preview} /></div>
+      {edit && <EditBar block={block} onResize={onResize} onConfig={onConfig} onRemove={onRemove} />}
     </div>
   );
 }
 
-// Chrome-less layout furniture (Title / Separator). In edit mode a small control
-// strip floats over it for reorder / rename / remove.
-function StructuralBlock({ block, edit, first, last, onUp, onDown, onRemove, onConfig }) {
+// Chrome-less layout furniture (Title / Separator). The edit controls sit in the
+// same bottom bar so the block stays readable while being arranged.
+function StructuralBlock({ block, edit, onResize, onRemove, onConfig }) {
   return (
-    <div style={{ position: 'relative' }}>
+    <div className={`dw-struct${edit ? ' editing' : ''}`}>
       {block.type === 'title'
         ? <div className="dw-titlecard"><span className="t">{block.config?.name || 'Title'}</span></div>
         : <div className="dw-sep"><span className="ln" /><span className="dia" /><span className="ln" /></div>}
-      {edit && (
-        <div className="dw-struct-edit">
-          <button className="dw-mini" disabled={first} onClick={onUp} aria-label="Move up"><IcoUp size={12} /></button>
-          <button className="dw-mini" disabled={last} onClick={onDown} aria-label="Move down"><IcoDown size={12} /></button>
-          {block.type === 'title' && <button className="dw-mini" onClick={onConfig} aria-label="Edit title"><IcoEdit size={12} /></button>}
-          <button className="dw-mini danger" onClick={onRemove} aria-label="Remove"><IcoClose size={12} /></button>
-        </div>
-      )}
+      {edit && <EditBar block={block} onResize={onResize} onConfig={onConfig} onRemove={onRemove} />}
     </div>
   );
 }
