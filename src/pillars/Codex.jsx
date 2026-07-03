@@ -12,12 +12,19 @@ import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { toast, confirmAction } from '../feedback.js';
 
 // Codex row glyphs - card = rectangle (a card), article = three lines of text.
-function CodexGlyph({ kind }) {
+// The one entity-icon set for the whole app: card = rounded rectangle,
+// rule/article = three lines, deck = stacked squares (matches the Decks nav).
+// Reused by the resume tile and dashboard rows so an entity always reads the same.
+export function CodexGlyph({ kind, size = 16 }) {
+  const s = { width: size, height: size };
   if (kind === 'card') return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ width: 16, height: 16 }}><rect x="5" y="3" width="14" height="18" rx="2" /></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={s}><rect x="5" y="3" width="14" height="18" rx="2" /></svg>
+  );
+  if (kind === 'deck') return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg>
   );
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ width: 16, height: 16 }}><line x1="5" y1="7" x2="19" y2="7" /><line x1="5" y1="12" x2="19" y2="12" /><line x1="5" y1="17" x2="14" y2="17" /></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={s}><line x1="5" y1="7" x2="19" y2="7" /><line x1="5" y1="12" x2="19" y2="12" /><line x1="5" y1="17" x2="14" y2="17" /></svg>
   );
 }
 

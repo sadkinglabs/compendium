@@ -15,6 +15,7 @@ import { safeHref } from '../util.js';
 import { Chip, ChipRow, IconButton, Loading, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import { CodexGlyph } from './Codex.jsx';
 import { haptic } from '../native.js';
 import '../theme/dashboard.css';
 
@@ -128,7 +129,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
           style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid var(--hair-20,rgba(201,163,90,.2))', borderRadius: 16, padding: 14, background: 'linear-gradient(180deg,rgba(42,31,19,.6),rgba(26,19,13,.3))', marginBottom: 24, cursor: 'pointer' }}>
           {/* icon reflects what you're jumping back into: card / article / deck */}
           <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold-leaf)' }}>
-            <ResumeIcon t={d.resume.target_type} />
+            <CodexGlyph kind={d.resume.target_type} size={21} />
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.16em', color: 'var(--ink-muted)' }}>JUMP BACK IN</div>
@@ -181,7 +182,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
               <div key={i} className="cx-ov-duel" onClick={() => onGoTab('play')} role="button">
                 <span className="cx-ov-duel-badge" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
                 <span className="cx-ov-duel-name">{m.name}</span>
-                {m.deck && <span className="cx-ov-duel-deck"><IcoDeck size={11} />{m.deck}</span>}
+                {m.deck && <span className="cx-ov-duel-deck"><CodexGlyph kind="deck" size={11} />{m.deck}</span>}
                 <span className="cx-ov-duel-score">{m.score}</span>
               </div>
             ))}
@@ -594,7 +595,6 @@ const Svg = ({ children, size = 13, fill = 'none', ...p }) => (
 const IcoUp = (p) => <Svg {...p}><polyline points="18 15 12 9 6 15" /></Svg>;
 const IcoDown = (p) => <Svg {...p}><polyline points="6 9 12 15 18 9" /></Svg>;
 const IcoChevR = (p) => <Svg {...p}><polyline points="9 18 15 12 9 6" /></Svg>;
-const IcoDeck = (p) => <Svg {...p}><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></Svg>;
 const IcoExpand = (p) => <Svg {...p}><polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" /><line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" /></Svg>;
 const IcoShrink = (p) => <Svg {...p}><polyline points="4 14 10 14 10 20" /><polyline points="20 10 14 10 14 4" /><line x1="14" y1="10" x2="21" y2="3" /><line x1="3" y1="21" x2="10" y2="14" /></Svg>;
 const IcoEdit = (p) => <Svg {...p}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></Svg>;
@@ -603,16 +603,8 @@ const IcoPlus = (p) => <Svg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line 
 const IcoLayers = (p) => <Svg {...p}><polygon points="12 2 2 7 12 12 22 7 12 2" /><polyline points="2 17 12 22 22 17" /><polyline points="2 12 12 17 22 12" /></Svg>;
 const IcoExternal = (p) => <Svg {...p}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></Svg>;
 const IcoRoll = (p) => <Svg {...p}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></Svg>;
-// Small type markers for list rows (card / rule / deck / collection).
-const RowIcon = ({ t }) => {
-  if (t === 'deck') return <Svg size={13}><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></Svg>;
-  if (t === 'rule') return <Svg size={13}><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></Svg>;
-  if (t === 'collection') return <Svg size={13}><path d="M4 4h16v14l-8-4-8 4Z" /></Svg>;
-  return <Svg size={13}><rect x="4" y="3" width="16" height="18" rx="2" /></Svg>; // card
-};
-// Larger type icon for the "Jump back in" resume tile — deck / article / card.
-const ResumeIcon = ({ t }) => {
-  if (t === 'deck') return <Svg size={21}><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></Svg>;
-  if (t === 'rule') return <Svg size={21}><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></Svg>;
-  return <Svg size={21}><rect x="4" y="3" width="16" height="18" rx="2" /></Svg>; // card
-};
+// List-row markers reuse the shared entity-icon set (CodexGlyph): card / rule /
+// deck read the same everywhere. Collections keep their bookmark shape.
+const RowIcon = ({ t }) => t === 'collection'
+  ? <Svg size={13}><path d="M4 4h16v14l-8-4-8 4Z" /></Svg>
+  : <CodexGlyph kind={t === 'deck' ? 'deck' : t === 'rule' ? 'rule' : 'card'} size={13} />;
