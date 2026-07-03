@@ -20,10 +20,12 @@ export function activeProfileId() {
 /** Resolve (or create) the active profile on boot. Guarantees >=1 profile and
  *  EXACTLY one default (the is_default flag is the deletion shield - asserted
  *  every boot so it can never be lost to migrations or imports). */
+const DEFAULT_NAME = 'Sorcerer';   // starter profile name - a little flavour out of the box
+
 export async function initProfiles() {
   let profiles = await listProfiles();
   if (profiles.length === 0) {
-    const p = await createProfile('Default', { isDefault: true });
+    const p = await createProfile(DEFAULT_NAME, { isDefault: true });
     activeId = p.id;
     profiles = await listProfiles();
   } else {
@@ -33,6 +35,9 @@ export async function initProfiles() {
   if (!profiles.some((p) => p.is_default)) {
     await run('UPDATE profiles SET is_default=1 WHERE id=?;', [profiles[0].id]);
   }
+  // One-time flavour migration: an existing default still on the old auto name
+  // "Default" (i.e. never renamed by the user) becomes "Sorcerer".
+  await run("UPDATE profiles SET name=? WHERE is_default=1 AND name='Default';", [DEFAULT_NAME]);
   await Preferences.set({ key: ACTIVE_KEY, value: activeId });
   return getActiveProfile();
 }
