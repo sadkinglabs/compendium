@@ -52,10 +52,14 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  // Rendered through a portal to document.body: the FAB is position:fixed, and a
-  // transformed ancestor (e.g. Home's sliding swipe-pane) would otherwise become
-  // its containing block and make it jump. On body it's always viewport-fixed.
-  const portal = (node) => (typeof document !== 'undefined' ? createPortal(node, document.body) : node);
+  // Rendered through a portal to the .cx-app root (NOT document.body): the FAB is
+  // position:fixed, and a transformed ancestor (Home's sliding swipe-pane) would
+  // otherwise become its containing block and make it jump. Portaling to .cx-app
+  // lifts it out of the pane while KEEPING it inside the app's stacking context,
+  // so full-screen overlays like the life counter (#counter-screen, z-index 100)
+  // still cover it - body would let a z-50 FAB paint over the whole app.
+  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
+  const portal = (node) => (root ? createPortal(node, root) : node);
 
   // Plain action FAB (no menu) - e.g. add-a-widget / a search trigger. Gets the
   // same shell + variant as the menu FABs: it spins in on mount (fab-enter) and,
