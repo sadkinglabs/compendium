@@ -20,6 +20,14 @@ function fmtDur(secs) {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
+// Digital clock face for the match strip — "12:05" / "1:23:45" (Vitarum _tickClock).
+function fmtClock(secs) {
+  secs = Math.max(0, Math.floor(secs || 0));
+  const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`;
+}
 
 export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onRecord, onExit, onNewMatch, registerApi }) {
   const start = Math.min(20, settings.default_max_life || 20); // Sorcery: life ≤ 20
@@ -45,6 +53,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [log, setLog] = useState(resume?.log || []);
   const [endInfo, setEndInfo] = useState(null);          // { winner, pLife, eLife, durationSec, recorded }
   const [confirm, setConfirm] = useState(null);          // { label, action } — in-world discard confirm
+  const [clockOn, setClockOn] = useState(false);         // Vitarum's match clock (left-edge strip)
 
   const pNumRef = useRef(null), eNumRef = useRef(null);
   const startedAt = useRef(Date.now());
@@ -128,6 +137,14 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
 
   // body.roll-active while the roll-off pill is up (hides FABs, locks tap zones)
   useEffect(() => { document.body.classList.toggle('roll-active', rollPhase != null); }, [rollPhase]);
+
+  // Match clock — re-render once a second while it's showing (elapsedSec() reads
+  // live). Stops once the match is decided; CSS hides it during the roll-off.
+  useEffect(() => {
+    if (!clockOn || endInfo) return;
+    const id = setInterval(() => force((n) => n + 1), 1000);
+    return () => clearInterval(id);
+  }, [clockOn, endInfo]);
 
   // ── life change (verbatim changeLife) ──
   function appendLog(who, delta, toLife) {
@@ -326,6 +343,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         <div className="fab-menu">
           <button onClick={() => { setFabP(false); setSheet('log'); }}>{LogSvg}Match Log</button>
           <button onClick={() => { setFabP(false); setSheet('dice'); }}>{DiceSvg}Roll a Die</button>
+          <button onClick={() => { setClockOn((v) => !v); haptic('light'); }}>{ClockSvg}Show Clock<span className="fab-state">{clockOn ? 'on' : 'off'}</span></button>
           <button onClick={() => { setFabP(false); setSheet('maxP'); }}>{HeartSvg}Change Max Life</button>
           <button onClick={() => { setFabP(false); if (log.length) setConfirm({ label: 'Reset the match? Life totals and log will be cleared.', action: reset }); else reset(); }}>{ResetSvg}Reset Match</button>
           <button onClick={() => { setFabP(false); triggerEnd(null); }}>{FlagSvg}End Match</button>
@@ -334,6 +352,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         </div>
         <button className="fab" onClick={(ev) => { ev.stopPropagation(); setFabP((v) => !v); }} aria-label="Options">{DotsSvg}</button>
       </div>
+
+      {/* Match clock — vertical strip on the left edge, readable by both players.
+          CSS hides it during the roll-off (body.roll-active). */}
+      {clockOn && <div id="match-clock">{fmtClock(elapsedSec())}</div>}
 
       {/* Morphing turn-order pill + tap catcher */}
       <div id="roll-pill" className={rollPhase === 'armed' ? 'show armed' : rollPhase === 'result' ? 'show result' : ''}
@@ -453,22 +475,53 @@ function MaxLifeModal({ open, who, value, onClose, onSet }) {
 
 function DiceModal({ open, dice, setDice, onClose }) {
   const [landed, setLanded] = useState(0);
+  const [rolling, setRolling] = useState(false);
+  const [display, setDisplay] = useState(null);   // the number tumbling mid-roll
+  const iv = useRef(null);
+  const stop = () => { if (iv.current) { clearInterval(iv.current); iv.current = null; } };
+  useEffect(() => stop, []);                        // clear on unmount
+  useEffect(() => { if (!open) { stop(); setRolling(false); } }, [open]);
   if (!open) return null;
+  // Vitarum's rollDie: ~18–25 ticks at 60ms, cycling faces, then land. Honour
+  // reduced motion by settling immediately.
   function roll() {
-    setDice((x) => ({ ...x, value: 1 + Math.floor(Math.random() * x.type) }));
-    setLanded((n) => n + 1); haptic('medium');
+    if (rolling) return;
+    stop();
+    if (document.body.classList.contains('reduce-motion')) {
+      const result = 1 + Math.floor(Math.random() * dice.type);
+      setDice((x) => ({ ...x, value: result })); setDisplay(result);
+      setLanded((n) => n + 1); haptic('heavy');
+      return;
+    }
+    setRolling(true); setDice((x) => ({ ...x, value: null }));
+    let ticks = 0;
+    const total = 18 + Math.floor(Math.random() * 8);
+    iv.current = setInterval(() => {
+      setDisplay(Math.ceil(Math.random() * dice.type));
+      if (++ticks >= total) {
+        stop();
+        const result = Math.ceil(Math.random() * dice.type);
+        setDisplay(result); setDice((x) => ({ ...x, value: result }));
+        setRolling(false); setLanded((n) => n + 1); haptic('heavy');
+      }
+    }, 60);
   }
+  const shown = rolling ? (display ?? '–') : (dice.value ?? '–');
+  const label = rolling ? `Rolling d${dice.type}…`
+    : dice.value != null
+      ? (dice.value === dice.type ? '⚡ Maximum roll!' : dice.value === 1 ? '💀 Critical fail' : `on a d${dice.type}`)
+      : 'Select a die and roll';
   return (
     <VModal title="Roll a Die" subtitle="Choose your die, then roll" onClose={onClose}
-      actions={<button className="modal-btn primary" onClick={roll}>Roll!</button>}>
+      actions={<button className="modal-btn primary" onClick={roll} disabled={rolling}>{rolling ? 'Rolling…' : 'Roll!'}</button>}>
       <div className="dice-type-row">
         {[4, 6, 8, 10, 12, 20].map((d) => (
-          <button key={d} className={`die-btn${dice.type === d ? ' active' : ''}`} onClick={() => setDice({ type: d, value: null })}>d{d}</button>
+          <button key={d} className={`die-btn${dice.type === d ? ' active' : ''}`} disabled={rolling} onClick={() => { setDice({ type: d, value: null }); setDisplay(null); }}>d{d}</button>
         ))}
       </div>
       <div className="dice-result-area">
-        <div className="dice-number landed" key={landed}>{dice.value ?? '–'}</div>
-        <div className="dice-label">{dice.value != null ? `d${dice.type}` : 'Select a die and roll'}</div>
+        <div className={`dice-number${rolling ? ' rolling' : dice.value != null ? ' landed' : ''}`} key={rolling ? 'roll' : landed}>{shown}</div>
+        <div className="dice-label">{label}</div>
       </div>
     </VModal>
   );

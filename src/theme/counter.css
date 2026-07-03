@@ -202,9 +202,37 @@ body.grain-off .half-grain { display: none; }
 }
 body.roll-active .tap-zone { pointer-events: none; }
 body.roll-active #counter-fab,
-body.roll-active .opponent-fab-wrap { display: none !important; }
+body.roll-active .opponent-fab-wrap,
+body.roll-active #match-clock { display: none !important; }
 #roll-tap-catcher { position: fixed; inset: 0; z-index: 58; display: none; }
 #roll-tap-catcher.show { display: block; }
+
+/* Match clock — vertical strip on the left edge, readable by both players.
+   Verbatim from Vitarum (www/index.html #match-clock). Mounted only when on. */
+#match-clock {
+  position: fixed;
+  left: calc(30px + var(--safe-left));
+  top: 50%;
+  z-index: 25;
+  pointer-events: none;
+  white-space: nowrap;
+  min-width: 140px;
+  text-align: center;
+  font-family: var(--f-display);
+  font-size: 28px;
+  font-weight: 800;
+  color: rgba(255,255,255,.92);
+  letter-spacing: 4px;
+  text-shadow: 0 2px 14px rgba(0,0,0,.98), 0 0 40px rgba(0,0,0,.7);
+  padding: 8px 16px;
+  background: rgba(255,255,255,.045);
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.12);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  transform: translateX(-50%) translateY(-50%) rotate(-90deg);
+}
+.vc-root .fab-menu .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
 
 #roll-pill { position: fixed; left: 50%; z-index: 60; display: none; pointer-events: none; }
 #roll-pill.show { display: block; }
@@ -490,6 +518,9 @@ body.roll-active .dd-pill { display: none !important; }
 .vc-root .dice-number { font-family: var(--f-display); font-size: 80px; font-weight: 800; color: var(--gold); line-height: 1; min-height: 90px; display: flex; align-items: center; justify-content: center; }
 .vc-root .dice-number.landed { animation: dice-land .35s cubic-bezier(.34,1.5,.64,1) forwards; }
 @keyframes dice-land { from { transform: scale(1.5); opacity: .5; } to { transform: scale(1); opacity: 1; } }
+.vc-root .dice-number.rolling { animation: dice-roll .08s infinite alternate; }
+@keyframes dice-roll { from { transform: rotate(-4deg) scale(1.03); } to { transform: rotate(4deg) scale(.97); } }
+body.reduce-motion .vc-root .dice-number.rolling { animation: none; }
 .vc-root .dice-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
 /* ── Max Life modal ── */
