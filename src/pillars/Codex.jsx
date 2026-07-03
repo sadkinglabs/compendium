@@ -121,6 +121,11 @@ function MarginaliaView({ onOpen, rev }) {
   const [openCols, setOpenCols] = useState(() => new Set());   // expanded collections
   const [items, setItems] = useState({});                      // collectionId → items
   const [editing, setEditing] = useState(null);                // {id, name} — inline rename
+  // Collapsible categories — with 100+ entries each, users need to fold sections
+  // away. Persisted (which sections are closed) so a curated view survives.
+  const MARG_KEY = 'cx-marg-collapse';
+  const [closed, setClosed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(MARG_KEY) || '[]')); } catch { return new Set(); } });
+  const toggleSection = (id) => setClosed((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); try { localStorage.setItem(MARG_KEY, JSON.stringify([...n])); } catch { /* private mode */ } return n; });
 
   const [newCol, setNewCol] = useState('');
   async function load() {
@@ -156,6 +161,19 @@ function MarginaliaView({ onOpen, rev }) {
   if (!d || !cols) return <Loading />;
   const empty = d.notes.length + d.highlights.length + d.links.length + cols.length === 0;
   const on = (t) => <span style={{ display: 'block', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {t}</span>;
+  const openS = (id) => !closed.has(id);
+  // A collapsible category header (label + count + Material chevron). Kept as a
+  // render function, not a component, so the collections input isn't remounted.
+  const secHead = (id, label) => (
+    <div className="cx-marg-head" onClick={() => toggleSection(id)} role="button" aria-expanded={openS(id)}>
+      <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>{label}</span>
+      <span className="cx-marg-count">{id === 'collections' ? cols.length : d[id].length}</span>
+      <span style={{ flex: 1 }} />
+      <span className="cx-sub-chevron" data-open={openS(id) ? 'true' : 'false'} style={{ flex: 'none' }}>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </span>
+    </div>
+  );
 
   return (
     <div style={{ paddingTop: 4 }}>
@@ -173,8 +191,8 @@ function MarginaliaView({ onOpen, rev }) {
 
       {d.notes.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel label="NOTES" count={d.notes.length} />
-          {d.notes.map((n) => (
+          {secHead('notes', 'NOTES')}
+          {openS('notes') && d.notes.map((n) => (
             <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
               <div onClick={() => onOpen(n.target_type, n.target_id, n.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
                 <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
@@ -188,8 +206,8 @@ function MarginaliaView({ onOpen, rev }) {
 
       {d.highlights.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel label="HIGHLIGHTS" count={d.highlights.length} />
-          {d.highlights.map((h) => {
+          {secHead('highlights', 'HIGHLIGHTS')}
+          {openS('highlights') && d.highlights.map((h) => {
             // Hue by source: card highlights are violet (deck-builder link), rule/
             // article highlights are gold — the whole point of a mixed list.
             const isCard = h.target_type === 'card';
@@ -215,8 +233,8 @@ function MarginaliaView({ onOpen, rev }) {
 
       {d.links.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel label="LINKS" count={d.links.length} />
-          {d.links.map((l) => (
+          {secHead('links', 'LINKS')}
+          {openS('links') && d.links.map((l) => (
             <div key={l.id} style={{ borderLeft: '2px solid var(--link-violet)', background: 'rgba(199,154,208,.08)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ font: "600 14px/1.35 var(--f-read)", color: 'var(--link-violet)' }}>
@@ -234,7 +252,8 @@ function MarginaliaView({ onOpen, rev }) {
 
       {(cols.length > 0 || edit) && (
         <div style={{ marginBottom: 10 }}>
-          <SectionLabel label="COLLECTIONS" count={cols.length} />
+          {secHead('collections', 'COLLECTIONS')}
+          {openS('collections') && (<>
           {edit && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
               <input value={newCol} onChange={(e) => setNewCol(e.target.value)} placeholder="New collection…"
@@ -283,6 +302,7 @@ function MarginaliaView({ onOpen, rev }) {
               )}
             </div>
           ))}
+          </>)}
         </div>
       )}
     </div>
