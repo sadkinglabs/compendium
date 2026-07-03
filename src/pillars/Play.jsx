@@ -86,7 +86,6 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
     onChanged={refresh} onH2H={(name) => { setMatchId(null); setOppFilter(name); }} onOpenDeck={onOpenDeck} />;
 
   const cardActions = {
-    onNote: (id) => setMatchId(id),
     onEdit: (id) => setMatchId(id),
     onDelete: async (id) => { if (await confirmAction({ title: 'Delete this match?', body: 'The match and its log are removed. This can’t be undone.', confirmLabel: 'Delete', danger: true })) { await deleteMatch(id); refresh(); toast('Match deleted'); } },
     onOpp: (name) => setOppFilter(name),
@@ -198,8 +197,9 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
 
 // One match card — Vitarum's _matchCardHTML, reordered: matchup line, then the
 // opponent/deck pills on their own row, then the life/date meta. Actions are
-// compact icon buttons (note · edit · delete — sharing was pruned).
-function MatchCard({ m, onNote, onEdit, onDelete, onOpp, onDeck }) {
+// compact icon buttons (details · delete — details opens the sheet where the
+// result, note and edit live; sharing was pruned).
+function MatchCard({ m, onEdit, onDelete, onOpp, onDeck }) {
   const badgeCls = m.winner === 'player' ? 'win' : m.winner === 'opponent' ? 'loss' : 'draw';
   const badgeTxt = m.winner === 'player' ? 'W' : m.winner === 'opponent' ? 'L' : 'D';
   const d = new Date(m.played_at);
@@ -243,11 +243,8 @@ function MatchCard({ m, onNote, onEdit, onDelete, onOpp, onDeck }) {
         {m.duration_sec ? <><span className="match-dot">·</span><span>{fmtSpan(m.duration_sec)}</span></> : null}
         <span className="match-meta-spring" />
         <span className="match-mini-group">
-          <button className="match-mini-btn" onClick={() => onNote(m.id)} title={m.notes ? 'Edit note' : 'Add note'} aria-label="Note">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>
-          </button>
-          <button className="match-mini-btn" onClick={() => onEdit(m.id)} title="Edit entry" aria-label="Edit entry">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></svg>
+          <button className="match-mini-btn" onClick={() => onEdit(m.id)} title="Match details" aria-label="Match details">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
           </button>
           <button className="match-mini-btn danger" onClick={() => onDelete(m.id)} title="Remove entry" aria-label="Remove entry">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>
@@ -284,7 +281,7 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
       {!m ? <Loading /> : (
         <div style={{ padding: '0 16px' }}>
           <div style={{ textAlign: 'center', marginBottom: 14 }}>
-            <div style={{ font: "700 28px/1 var(--f-display)", color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
+            <div style={{ font: "700 46px/1 var(--f-display)", letterSpacing: '.01em', color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
             {(m.player_avatar || m.opponent_avatar) && <div style={{ font: "500 12px/1.2 var(--f-read)", color: 'var(--ink-muted)', marginTop: 6 }}>{m.player_avatar || 'You'} vs {m.opponent_avatar || 'Opponent'}</div>}
             {m.deck_id && m.deck_name && (
               <div onClick={() => { onClose(); onOpenDeck?.(m.deck_id, m.deck_name); }}
@@ -317,8 +314,9 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
           ) : (
             <>
               <Lbl t="NOTE" />
-              <textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} onBlur={(e) => saveNote(e.target.value)} placeholder="Add a note about this match…"
-                style={{ width: '100%', height: 60, resize: 'none', background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: 10, color: 'var(--ink-body)', font: "400 14px/1.45 var(--f-read)", marginBottom: 14 }} />
+              <textarea value={f.notes} maxLength={200} onChange={(e) => setF({ ...f, notes: e.target.value.slice(0, 200) })} onBlur={(e) => saveNote(e.target.value)} placeholder="Add a note about this match…"
+                style={{ width: '100%', height: 132, resize: 'none', background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: 12, color: 'var(--ink-body)', font: "400 14px/1.5 var(--f-read)" }} />
+              <div style={{ textAlign: 'right', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-faint)', margin: '5px 2px 14px' }}>{(f.notes || '').length}/200</div>
 
               {log.length > 0 && (
                 <>
