@@ -311,7 +311,7 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
       </div>
 
       {/* The Dashboard's own FAB - a plain "+" that adds a widget. */}
-      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add a widget" onClick={() => setPicker(true)} />
+      <Fab variant="lib" active={picker} icon={<FabGlyph kind="add" />} label="Add a widget" onClick={() => setPicker((p) => !p)} />
 
       <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); haptic('light'); load(); }} />
       <ConfigSheet block={cfg} onClose={() => setCfg(null)} onSaved={() => { setCfg(null); load(); }} />

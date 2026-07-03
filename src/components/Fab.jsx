@@ -10,6 +10,7 @@
 //   items   : [{ label, onClick, danger?, state?, icon? }]  - menu entries
 //   onClick : if given (and no items), the FAB is a plain action button
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { haptic } from '../native.js';
 
 // FAB glyphs - three vertical dots (menus) · magnifying glass (search) ·
@@ -40,7 +41,7 @@ export function FabGlyph({ kind }) {
   );
 }
 
-export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', items = null, onClick = null, badge = 0, className = '' }) {
+export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', items = null, onClick = null, active = false, badge = 0, className = '' }) {
   const [open, setOpen] = useState(false);
 
   // Back/Escape closes an open menu first (matches Arcanum's closeFabs routing).
@@ -51,13 +52,18 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
 
-  // Plain action FAB (no menu) - e.g. a search/filter trigger.
-  // Every FAB spins in on mount (fab-enter) - the context-morph is the point:
-  // arriving on a page, or the FAB changing role, is felt as a small conjuring.
+  // Rendered through a portal to document.body: the FAB is position:fixed, and a
+  // transformed ancestor (e.g. Home's sliding swipe-pane) would otherwise become
+  // its containing block and make it jump. On body it's always viewport-fixed.
+  const portal = (node) => (typeof document !== 'undefined' ? createPortal(node, document.body) : node);
+
+  // Plain action FAB (no menu) - e.g. add-a-widget / a search trigger. Gets the
+  // same shell + variant as the menu FABs: it spins in on mount (fab-enter) and,
+  // when `active`, morphs via the variant open-rotation (+ ↦ ×) like the others.
   if (!items) {
-    return (
-      <div className={`arc fab-wrap fab-enter${className ? ' ' + className : ''}`}>
-        <button className="fab" onClick={onClick} aria-label={label}>{icon}</button>
+    return portal(
+      <div className={`arc fab-wrap fab-enter fab-${variant}${active ? ' open' : ''}${className ? ' ' + className : ''}`}>
+        <button className="fab" onClick={onClick} aria-label={label} aria-pressed={active}>{icon}</button>
         {badge > 0 && <span className="fab-badge">{badge}</span>}
       </div>
     );
@@ -67,7 +73,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   // live state (✓/✕, ★/☆) stays visible - matches Arcanum's rarity/star toggles.
   const run = (it) => { haptic('light'); if (!it.keepOpen) setOpen(false); it.onClick?.(); };
 
-  return (
+  return portal(
     <>
       <div className={`arc fab-scrim${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden="true" />
       <div className={`arc fab-wrap fab-enter fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
