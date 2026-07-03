@@ -41,13 +41,6 @@ export async function listProfiles() {
   return query('SELECT * FROM profiles ORDER BY created_at ASC;');
 }
 
-/** The DEFAULT profile (explicit is_default flag — set at boot creation and
- *  re-asserted by initProfiles). It is load-bearing — the app always has it to
- *  fall back to — so it can be renamed and duplicated but never deleted. */
-export async function defaultProfileId() {
-  return (await query('SELECT id FROM profiles WHERE is_default=1 LIMIT 1;'))[0]?.id || null;
-}
-
 /** Cross-profile digest for the profile picker (decks · matches per profile). */
 export async function profileStats(id) {
   const decks = (await query('SELECT COUNT(*) c FROM decks WHERE profile_id=?;', [id]))[0].c;

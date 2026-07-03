@@ -41,12 +41,6 @@ export function onBackButton(handler) {
 /** Exit the app (native only — used when back has nowhere left to go). */
 export function exitApp() { if (isNative()) App.exitApp(); }
 
-/** Share text via the native sheet; on web, copy to clipboard. Returns a status. */
-export async function shareText(title, text) {
-  if (isNative()) { try { await Share.share({ title, text }); return 'shared'; } catch { return 'cancelled'; } }
-  try { await navigator.clipboard.writeText(text); return 'copied'; } catch { return 'failed'; }
-}
-
 /** Save a text file. Native: Filesystem (cache) + Share sheet. Web: blob download. */
 export async function saveTextFile(filename, text, mime = 'application/json') {
   if (isNative()) {

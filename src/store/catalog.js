@@ -37,7 +37,7 @@ async function fetchJson(file) {
   return res.json();
 }
 
-export async function getCatalogCounts() {
+async function getCatalogCounts() {
   const one = async (t) => (await query(`SELECT COUNT(*) c FROM ${t};`))[0]?.c ?? 0;
   return {
     cards: await one('cards'),

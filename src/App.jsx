@@ -25,7 +25,7 @@ import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, exitApp, haptic } from './native.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
-import { ListRow, IconButton, Chip, ChipRow, Loading } from './components/ui.jsx';
+import { ListRow, IconButton, Loading } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
@@ -526,11 +526,11 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
   );
 }
 
-// App Settings — reached from the Home FAB. Accessibility (font scale, high
-// contrast, reduced motion) applied live via applyAppearance, plus the
-// per-profile preferences that lost their UI when the old sheet was removed.
-// (Counter comforts — keep-awake / immersive / grain — still live in the
-// tracker's Tweaks.)
+// App Settings — reached from the Home FAB. Accessibility only: font scale,
+// high contrast, reduced motion, haptics — all applied live via applyAppearance.
+// Match config (starting life, die) lives in the life tracker; rarity colours
+// is an add-cards filter; accent metal / counter comforts live in the tracker's
+// Tweaks. Settings stays a single, focused surface.
 function SettingsSheet({ open, onClose }) {
   const [s, setS] = useState(null);
   useEffect(() => { if (open) getSettings().then(setS); }, [open]);
@@ -574,28 +574,7 @@ function SettingsSheet({ open, onClose }) {
           </div>
           <Toggle label="High contrast" k="high_contrast" hint="Brighter text and stronger outlines." />
           <Toggle label="Reduce motion" k="reduced_motion" hint="Minimise animations and transitions." />
-
-          {label('MATCH DEFAULTS')}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 18, padding: '6px 0 4px' }}>
-            <span style={{ flex: 1, font: "500 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>Starting life</span>
-            <IconButton glyph="−" tone="muted" size={38} title="Less" onClick={() => put('default_max_life', Math.max(1, (s.default_max_life || 20) - 1))} />
-            <span style={{ font: "700 22px/1 var(--f-display)", color: 'var(--gold-leaf)', minWidth: 34, textAlign: 'center' }}>{Math.min(20, s.default_max_life)}</span>
-            <IconButton glyph="+" size={38} title="More" onClick={() => put('default_max_life', Math.min(20, (s.default_max_life || 20) + 1))} />
-          </div>
-          {label('DIE')}
-          <ChipRow>
-            {[4, 6, 8, 10, 12, 20].map((d) => <Chip key={d} label={'d' + d} active={s.die_type === d} onClick={() => put('die_type', d)} />)}
-          </ChipRow>
-
-          {label('PREFERENCES')}
-          <ChipRow>
-            {[['gilded', 'Gilded'], ['verdigris', 'Verdigris'], ['pewter', 'Pewter']].map(([k, l]) => (
-              <Chip key={k} label={l} active={s.accent_metal === k} onClick={() => put('accent_metal', k)} />
-            ))}
-          </ChipRow>
-          <div style={{ height: 12 }} />
           <Toggle label="Haptics" k="haptics" hint="Subtle vibration on key taps." />
-          <Toggle label="Rarity colours" k="rarity_colors" hint="Tint card names by rarity in decks." />
         </div>
       )}
     </Sheet>

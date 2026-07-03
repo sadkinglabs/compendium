@@ -175,16 +175,3 @@ export function spellbookOdds(spellbook) {
   for (const e of spellbook) { const t = TYPES.find(([k]) => typeIs(e, k)); if (t) counts[t[1]] = (counts[t[1]] || 0) + e.quantity; }
   return { total: S, rows: TYPES.filter(([, l]) => counts[l]).map(([, l]) => ({ label: l, count: counts[l], pct: S ? Math.round(counts[l] / S * 100) : 0 })) };
 }
-
-/* ---------------- random hand (avatar-aware) ---------------- */
-
-export function drawHand(zones, avatarSlug) {
-  const shuffle = (arr) => [...arr].sort(() => Math.random() - 0.5);
-  const cap = (q) => Math.max(0, Math.min(q | 0, 99));
-  const sbN = avatarSlug === 'spellslinger' ? 4 : 3;
-  const atN = avatarSlug === 'pathfinder' ? 0 : 3;
-  const sbPool = (zones.spellbook || []).flatMap((e) => Array(cap(e.quantity)).fill(e));
-  const atPool = (zones.atlas || []).flatMap((e) => Array(cap(e.quantity)).fill(e));
-  const spells = shuffle(sbPool).map((e) => ({ ...e })), sites = shuffle(atPool).map((e) => ({ ...e }));
-  return { sb: spells.slice(0, sbN), at: sites.slice(0, atN), rest: spells.slice(sbN), restAt: sites.slice(atN), drawn: [], drawnAt: [] };
-}

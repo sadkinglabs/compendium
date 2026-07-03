@@ -6,7 +6,6 @@ import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso, slugify } from './ids.js';
 
 export const ZONES = ['spellbook', 'atlas', 'collection'];
-export const ZONE_MIN = { spellbook: 60, atlas: 30 };
 export const RARITY_LIMITS = { Ordinary: 4, Exceptional: 3, Elite: 2, Unique: 1 };
 export const EL_COLOR = { air: '#67b6c4', earth: '#b6924a', fire: '#d2645a', water: '#5b87d6' };
 
@@ -104,14 +103,12 @@ export async function createDeck(name, { archetype = '', avatarCardId = null } =
 }
 export async function renameDeck(id, name) { await touch(id, 'name=?, slug=?', [name, slugify(name)]); await logHistory(id, `Renamed deck to ${name}`); }
 export async function setCuriosaUrl(id, url) { await touch(id, 'curiosa_url=?', [url]); }
-export async function setArchetype(id, a) { await touch(id, 'archetype=?', [a]); }
 export async function setDeckNotes(id, notes) { await touch(id, 'notes=?', [notes]); }
 export async function setAvatar(id, cardId) {
   await touch(id, 'avatar_card_id=?', [cardId]);
   const c = (await query('SELECT name FROM cards WHERE card_id=?;', [cardId]))[0];
   await logHistory(id, `Avatar changed to ${c?.name || cardId}`);
 }
-export async function setNotes(id, notes) { await touch(id, 'notes=?', [notes]); }
 export async function toggleStar(id) {
   const d = (await query('SELECT starred FROM decks WHERE id=? AND profile_id=?;', [id, activeProfileId()]))[0];
   await touch(id, 'starred=?', [d?.starred ? 0 : 1]);
@@ -279,24 +276,6 @@ export async function getDeckCards(deckId) {
 
 /* ---------------- stats ---------------- */
 
-export async function manaCurve(deckId) {
-  const rows = await query(
-    `SELECT c.cost, e.quantity FROM deck_entries e JOIN cards c ON c.card_id=e.card_id
-     WHERE e.deck_id=? AND e.zone='spellbook' AND c.is_site=0;`, [deckId]
-  );
-  const labels = ['0', '1', '2', '3', '4', '5', '6+'];
-  const buckets = [0, 0, 0, 0, 0, 0, 0];
-  let total = 0, count = 0;
-  for (const r of rows) {
-    const idx = Math.min(r.cost ?? 0, 6);
-    buckets[idx] += r.quantity; total += (r.cost ?? 0) * r.quantity; count += r.quantity;
-  }
-  const max = Math.max(1, ...buckets);
-  return {
-    bars: buckets.map((v, i) => ({ n: v || '', label: labels[i], h: Math.round((v / max) * 100) + '%' })),
-    avg: count ? (total / count).toFixed(1) : '0.0',
-  };
-}
 
 /* ---------------- add-flow pool ---------------- */
 
