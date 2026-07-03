@@ -272,7 +272,7 @@ export default function App() {
         ) : hasQuery ? (
           <SearchResults query={query} onOpen={open} onDuel={() => goTab('play')} />
         ) : viewDetail ? (
-          <CodexDetail kind={detail.kind} id={detail.id} onOpenName={openName}
+          <CodexDetail kind={detail.kind} id={detail.id} onOpen={(kk, iid, t) => open(kk, iid, t)} onOpenName={openName}
             onOpenDeck={(id, name) => open('deck', id, name)} onChanged={bump} />
         ) : tab === 'codex' ? (
           <Codex scope={scope} setScope={setScope}

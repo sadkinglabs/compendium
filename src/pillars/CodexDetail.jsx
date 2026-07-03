@@ -19,7 +19,7 @@ import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
-export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChanged }) {
+export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, onChanged }) {
   const [data, setData] = useState(null);
   const [composer, setComposer] = useState(false);
   const [noteText, setNoteText] = useState('');
@@ -51,23 +51,29 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
   if (!data) return <Loading />;
   if (data.missing) return <div style={{ padding: 24, color: 'var(--ink-faint)', fontStyle: 'italic' }}>This entry isn’t in the catalog.</div>;
 
-  const targetType = kind;
-  async function onStar() { await toggleSaved(targetType, id); await load(); onChanged?.(); }
+  // Render + all writes key off the LOADED entry (data), never the raw props —
+  // the props (kind/id) update a tick before the effect reloads data, so mixing
+  // them is what caused the stale-kind crash. data.kind + the entry's own id are
+  // always mutually consistent.
+  const k = data.kind;
+  const targetType = k;
+  const entryId = k === 'card' ? data.card.card_id : data.rule.rule_id;
+  async function onStar() { await toggleSaved(targetType, entryId); await load(); onChanged?.(); }
   async function saveNote() {
     if (!noteText.trim()) return;
-    await addNote(targetType, id, noteText.trim());
+    await addNote(targetType, entryId, noteText.trim());
     setNoteText(''); setComposer(false); await load(); onChanged?.();
   }
   async function delNote(nid) { await deleteNote(nid); await load(); onChanged?.(); }
   async function saveLink(target, desc) {
-    await addLink(targetType, id, target.kind, target.id, desc);
+    await addLink(targetType, entryId, target.kind, target.id, desc);
     setComposer(false); await load(); onChanged?.();
   }
   async function delLink(lid) { await deleteLink(lid); await load(); onChanged?.(); }
   async function captureHighlight() {
     const t = selection.trim();
     if (!t) return;
-    await addHighlight(targetType, id, t, '');
+    await addHighlight(targetType, entryId, t, '');
     setSelection(''); window.getSelection()?.removeAllRanges(); await load();
   }
   function onSelect() {
@@ -77,22 +83,32 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
     else setSelection('');
   }
   const marks = (data.highlights || []).map((h) => h.text).filter(Boolean);
-  const hue = kind === 'card' ? 'violet' : 'gold';           // card highlights purple, rule gold
-  const appearsIn = kind === 'card' ? (data.appearsIn || []).filter((r) => r.type !== 'unresolved_article') : [];
+  const hue = k === 'card' ? 'violet' : 'gold';           // card highlights purple, rule gold
+  const appearsIn = k === 'card' ? (data.appearsIn || []).filter((r) => r.type !== 'unresolved_article') : [];
   const ment = data.mentions || { cards: [], articles: [] };
+
+  // In-text [[links]] carry only a name. Resolve them against the entry's already-
+  // resolved mentions (exact ids) first, and only fall back to name lookup for
+  // anything not in the graph — so a card that shares a name with an article can't
+  // mis-route.
+  const linkMap = {};
+  for (const c of ment.cards) linkMap[c.name.toLowerCase()] = ['card', c.card_id, c.name];
+  for (const a of ment.articles) linkMap[a.title.toLowerCase()] = ['rule', a.id, a.title];
+  const openLink = (name) => { const t = linkMap[String(name).toLowerCase()]; if (t) onOpen(t[0], t[1], t[2]); else onOpenName(name); };
 
   return (
     <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
-      {kind === 'card' ? <CardBody card={data.card} faqs={data.faqs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />
-                       : <RuleBody rule={data.rule} subs={data.subs} onOpenName={onOpenName} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />}
+      {k === 'card' ? <CardBody card={data.card} faqs={data.faqs} onOpenName={openLink} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />
+                    : <RuleBody rule={data.rule} subs={data.subs} onOpenName={openLink} bodyRef={bodyRef} onSelect={onSelect} marks={marks} />}
 
-      {/* Cards Mentioned — carousel of card art referenced by this article. */}
-      {kind === 'rule' && ment.cards.length > 0 && (
+      {/* Cards Mentioned — carousel of card art referenced by this article. Opens
+          by (kind, id) directly — no fragile name resolution. */}
+      {k === 'rule' && ment.cards.length > 0 && (
         <div style={{ marginTop: 20 }}>
           <SectionLabel label="CARDS MENTIONED" count={ment.cards.length} />
           <div className="cx-mention-rail">
             {ment.cards.map((c) => (
-              <div key={c.card_id} className="cx-mention-card" onClick={() => onOpenName(c.name)}>
+              <div key={c.card_id} className="cx-mention-card" onClick={() => onOpen('card', c.card_id, c.name)}>
                 <CardArt card={c} radius={9} />
                 <div className="cx-mention-name">{c.name}</div>
               </div>
@@ -101,20 +117,20 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
         </div>
       )}
 
-      {/* Related articles — pills that link to other articles. */}
-      {kind === 'rule' && ment.articles.length > 0 && (
+      {/* Related articles — pills that link to other articles by id. */}
+      {k === 'rule' && ment.articles.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <SectionLabel label="RELATED ARTICLES" count={ment.articles.length} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {ment.articles.map((a) => (
-              <span key={a.id} onClick={() => onOpenName(a.title)} className="cx-relpill">{a.title}</span>
+              <span key={a.id} onClick={() => onOpen('rule', a.id, a.title)} className="cx-relpill">{a.title}</span>
             ))}
           </div>
         </div>
       )}
 
       {/* Card: the articles that cite it, as pills. */}
-      {kind === 'card' && appearsIn.length > 0 && (
+      {k === 'card' && appearsIn.length > 0 && (
         <div style={{ marginTop: 20 }}>
           <SectionLabel label="MENTIONED IN" count={appearsIn.length} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -124,7 +140,7 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
       )}
 
       {/* in your decks — the unification payoff: this card in the profile's decks */}
-      {kind === 'card' && data.inDecks.length > 0 && (
+      {k === 'card' && data.inDecks.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <SectionLabel glyph="◈" label="IN YOUR DECKS" count={data.inDecks.length} />
           {data.inDecks.map((d, i) => (
@@ -186,9 +202,9 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
       )}
 
       <MarginaliaComposer open={composer} onClose={() => setComposer(false)}
-        noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={id} />
-      <CollectionPicker open={picker} targetType={targetType} targetId={id} onClose={() => { setPicker(false); load(); }} />
-      {kind === 'card' && !data.card.is_avatar && (
+        noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={entryId} />
+      <CollectionPicker open={picker} targetType={targetType} targetId={entryId} onClose={() => { setPicker(false); load(); }} />
+      {k === 'card' && !data.card.is_avatar && (
         <AddToDeckSheet open={deckAdd} card={data.card} onClose={() => { setDeckAdd(false); load(); onChanged?.(); }} />
       )}
 
@@ -196,7 +212,7 @@ export default function CodexDetail({ kind, id, onOpenName, onOpenDeck, onChange
       <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Entry options" items={[
         { label: data.saved ? 'Saved' : 'Save', keepOpen: true, state: data.saved ? '★' : '☆', onClick: onStar },
         { label: 'Collect', onClick: () => setPicker(true) },
-        ...(kind === 'card' && !data.card.is_avatar ? [{ label: 'Add to a deck', onClick: () => setDeckAdd(true) }] : []),
+        ...(k === 'card' && !data.card.is_avatar ? [{ label: 'Add to a deck', onClick: () => setDeckAdd(true) }] : []),
       ]} />
     </div>
   );
