@@ -126,8 +126,14 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
       {d.resume && (
         <div onClick={() => onOpen(d.resume.target_type, d.resume.target_id, d.resume.title)} className="cx-row"
           style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid var(--hair-20,rgba(201,163,90,.2))', borderRadius: 16, padding: 14, background: 'linear-gradient(180deg,rgba(42,31,19,.6),rgba(26,19,13,.3))', marginBottom: 24, cursor: 'pointer' }}>
-          <div><div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.16em', color: 'var(--ink-muted)' }}>JUMP BACK IN</div>
-            <div style={{ font: "600 16px/1.1 var(--f-read)", color: 'var(--ink-body)', marginTop: 5 }}>{d.resume.title}</div></div>
+          {/* icon reflects what you're jumping back into: card / article / deck */}
+          <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold-leaf)' }}>
+            <ResumeIcon t={d.resume.target_type} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.16em', color: 'var(--ink-muted)' }}>JUMP BACK IN</div>
+            <div style={{ font: "600 16px/1.1 var(--f-read)", color: 'var(--ink-body)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.resume.title}</div>
+          </div>
         </div>
       )}
 
@@ -603,4 +609,10 @@ const RowIcon = ({ t }) => {
   if (t === 'rule') return <Svg size={13}><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></Svg>;
   if (t === 'collection') return <Svg size={13}><path d="M4 4h16v14l-8-4-8 4Z" /></Svg>;
   return <Svg size={13}><rect x="4" y="3" width="16" height="18" rx="2" /></Svg>; // card
+};
+// Larger type icon for the "Jump back in" resume tile — deck / article / card.
+const ResumeIcon = ({ t }) => {
+  if (t === 'deck') return <Svg size={21}><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></Svg>;
+  if (t === 'rule') return <Svg size={21}><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></Svg>;
+  return <Svg size={21}><rect x="4" y="3" width="16" height="18" rx="2" /></Svg>; // card
 };
