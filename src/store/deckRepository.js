@@ -52,15 +52,31 @@ export async function listAvatarCards(q = '') {
 export async function listDecks() {
   const pid = activeProfileId();
   const decks = await query('SELECT * FROM decks WHERE profile_id=? ORDER BY starred DESC, lib_order ASC, name ASC;', [pid]);
+  if (!decks.length) return decks;
+  // Set-based enrichment: 3 fixed queries instead of ~3 per deck (was an N+1
+  // fan-out on the search/Home/Decks hot paths). Zone counts + spellbook
+  // thresholds + avatars are fetched in bulk and stitched in JS.
+  const ids = decks.map((d) => d.id);
+  const inClause = `(${ids.map(() => '?').join(',')})`;
+  const [countRows, thRows, avatarRows] = await Promise.all([
+    query(`SELECT deck_id, zone, SUM(quantity) n FROM deck_entries WHERE deck_id IN ${inClause} GROUP BY deck_id, zone;`, ids),
+    query(`SELECT e.deck_id, c.thresholds FROM deck_entries e JOIN cards c ON c.card_id=e.card_id WHERE e.deck_id IN ${inClause} AND e.zone='spellbook';`, ids),
+    (() => { const avIds = [...new Set(decks.map((d) => d.avatar_card_id).filter(Boolean))];
+      return avIds.length ? query(`SELECT card_id, name, image_slug, elements, thresholds FROM cards WHERE card_id IN (${avIds.map(() => '?').join(',')});`, avIds) : Promise.resolve([]); })(),
+  ]);
+  const counts = {};                 // deckId → {spellbook,atlas,collection}
+  for (const r of countRows) { (counts[r.deck_id] ||= { spellbook: 0, atlas: 0, collection: 0 })[r.zone] = r.n || 0; }
+  const need = {};                   // deckId → {air,earth,fire,water} max threshold
+  for (const r of thRows) { const th = jp(r.thresholds, {}); const m = (need[r.deck_id] ||= { air: 0, earth: 0, fire: 0, water: 0 }); for (const el of Object.keys(m)) m[el] = Math.max(m[el], th[el] || 0); }
+  const avatars = {}; for (const a of avatarRows) avatars[a.card_id] = a;
   for (const d of decks) {
-    const counts = await zoneCounts(d.id);
-    d.spellbookCount = counts.spellbook;
-    d.atlasCount = counts.atlas;
-    d.collectionCount = counts.collection;
+    const c = counts[d.id] || { spellbook: 0, atlas: 0, collection: 0 };
+    d.spellbookCount = c.spellbook; d.atlasCount = c.atlas; d.collectionCount = c.collection;
     d.record = `${d.wins}–${d.losses}`;
     d.winPct = d.wins + d.losses > 0 ? Math.round((d.wins / (d.wins + d.losses)) * 100) : null;
-    d.elems = await deckElementPips(d.id);
-    d.avatar = d.avatar_card_id ? await query('SELECT card_id, name, image_slug, elements, thresholds FROM cards WHERE card_id=?;', [d.avatar_card_id]).then((r) => r[0]) : null;
+    const n = need[d.id] || {};
+    d.elems = Object.entries(n).filter(([, v]) => v > 0).map(([el]) => ({ el, c: EL_COLOR[el] }));
+    d.avatar = d.avatar_card_id ? (avatars[d.avatar_card_id] || null) : null;
   }
   return decks;
 }
