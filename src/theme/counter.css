@@ -388,13 +388,11 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-deck-chip.on { border-color: rgba(220,184,111,.75); color: var(--gold-head); box-shadow: 0 0 14px rgba(220,184,111,.22); }
 .picker-grid-wrap { position: relative; flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .picker-search {
-  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 10;
   display: flex; align-items: center; gap: 8px;
   height: 48px; box-sizing: border-box;
   padding: 6px 8px 6px 16px; border-radius: 999px;
   background: rgba(16,28,20,.82); border: 1px solid var(--gold-line);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 4px 20px rgba(0,0,0,.5);
 }
 .picker-search svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
 .picker-search input {
@@ -417,7 +415,7 @@ body.roll-active .dd-pill { display: none !important; }
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   grid-auto-rows: max-content;
-  gap: 10px; padding: 72px 12px 12px;
+  gap: 10px; padding: 12px;
   overflow-y: auto; flex: 1;
   -webkit-overflow-scrolling: touch;
   align-content: start;
@@ -448,16 +446,23 @@ body.roll-active .dd-pill { display: none !important; }
   color: rgba(255,255,255,.9); text-align: left; letter-spacing: .2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.picker-confirm { padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 18px); flex-shrink: 0; }
+/* Footer — search sits above Continue, both flush to the bottom edge. */
+.picker-footer {
+  flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
+}
+/* Continue — the app-wide sheet-primary: black glass, gold hairline + text
+   (gold is never a button fill). Dimmed until both avatars are chosen. */
 .picker-confirm-btn {
   width: 100%; padding: 15px;
-  border-radius: 14px; background: var(--gold-grad);
-  color: #1a1410; border: none;
-  font-size: 15px; font-weight: 800;
-  opacity: 0.35; transition: opacity 0.2s;
+  border-radius: 12px; background: rgba(18,16,13,.85);
+  color: var(--gold-head); border: 1px solid rgba(220,184,111,.45);
+  font-family: var(--f-ui); font-size: 15px; font-weight: 700;
+  opacity: 0.4; transition: opacity 0.2s, border-color 0.2s;
   pointer-events: none;
 }
 .picker-confirm-btn.ready { opacity: 1; pointer-events: auto; }
+.picker-confirm-btn.ready:active { border-color: rgba(220,184,111,.75); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    VITARUM MODALS — centered overlay + modal-box (NOT bottom sheets). Used for
