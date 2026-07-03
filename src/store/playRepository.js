@@ -134,13 +134,37 @@ export async function setMatchNote(matchId, notes) {
   await run('UPDATE matches SET notes=? WHERE id=? AND profile_id=?;', [notes, matchId, activeProfileId()]);
 }
 
-/** Edit a match's recordable fields (opponent, winner, final life, duration, notes). */
-export async function updateMatch(matchId, f) {
+/** Recompute a deck's W–L straight from the matches table — the source of
+    truth. Safe to call any time: the live-record increment keeps wins==COUNT,
+    so recompute just re-establishes that invariant after a post-hoc edit. */
+async function syncDeckRecord(deckId, pid) {
+  if (!deckId) return;
   await run(
-    `UPDATE matches SET opponent_name=?, winner=?, player_final_life=?, opponent_final_life=?, duration_sec=?, notes=?
+    `UPDATE decks SET
+       wins   = (SELECT COUNT(*) FROM matches WHERE deck_id=? AND profile_id=? AND winner='player'),
+       losses = (SELECT COUNT(*) FROM matches WHERE deck_id=? AND profile_id=? AND winner='opponent'),
+       updated_at=?
      WHERE id=? AND profile_id=?;`,
-    [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, f.duration_sec ?? 0, f.notes ?? '', matchId, activeProfileId()]
+    [deckId, pid, deckId, pid, nowIso(), deckId, pid]
   );
+}
+
+/** Edit a match's recordable fields (opponent, winner, final life, piloted deck,
+    notes). Changing the winner or the piloted deck re-syncs the affected decks'
+    W–L ledgers so the record on the deck stays honest. A deck that no longer
+    exists is dropped to null (matches outlive their decks). */
+export async function updateMatch(matchId, f) {
+  const pid = activeProfileId();
+  const oldDeck = (await query('SELECT deck_id FROM matches WHERE id=? AND profile_id=?;', [matchId, pid]))[0]?.deck_id || null;
+  let newDeck = f.deck_id || null;
+  if (newDeck && !(await query('SELECT 1 FROM decks WHERE id=? AND profile_id=?;', [newDeck, pid])).length) newDeck = null;
+  await run(
+    `UPDATE matches SET opponent_name=?, winner=?, player_final_life=?, opponent_final_life=?, duration_sec=?, notes=?, deck_id=?
+     WHERE id=? AND profile_id=?;`,
+    [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, f.duration_sec ?? 0, f.notes ?? '', newDeck, matchId, pid]
+  );
+  await syncDeckRecord(oldDeck, pid);
+  if (newDeck && newDeck !== oldDeck) await syncDeckRecord(newDeck, pid);
 }
 
 /** Aggregate history stats from the active profile's matches. */

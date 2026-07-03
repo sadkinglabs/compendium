@@ -3,7 +3,7 @@
 // the life counter and in-match log live inside an in-progress match, not here.
 import React, { useEffect, useState } from 'react';
 import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents, addManualMatch, listAvatars } from '../store/playRepository.js';
-import { listAvatarCards } from '../store/deckRepository.js';
+import { listAvatarCards, listDecks } from '../store/deckRepository.js';
 import { IconButton, Chip, ChipRow, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -262,12 +262,14 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
   const [edit, setEdit] = useState(false);
   const [f, setF] = useState(null);
   const [recent, setRecent] = useState([]);
+  const [decks, setDecks] = useState([]);
 
   useEffect(() => {
     if (!matchId) { setM(null); setEdit(false); return; }
-    getMatch(matchId).then((mm) => { setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '' } : null); });
+    getMatch(matchId).then((mm) => { setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '', deck_id: mm.deck_id || null } : null); });
     matchLog(matchId).then(setLog);
     recentOpponents().then(setRecent);
+    listDecks().then(setDecks);
   }, [matchId]);
 
   if (!matchId) return null;
@@ -311,11 +313,23 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
                   {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
                 </ChipRow>
               </div>
-              <div style={{ marginBottom: 8 }}>
+              <div style={{ marginBottom: decks.length ? 24 : 8 }}>
                 <Lbl t="OPPONENT" />
                 <input value={f.opponent_name} onChange={(e) => setF({ ...f, opponent_name: e.target.value })} placeholder="Their name…" style={inp} />
                 {recent.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>{recent.map((r) => <span key={r} onClick={() => setF({ ...f, opponent_name: r })} style={chip}>{r}</span>)}</div>}
               </div>
+              {decks.length > 0 && (
+                <div style={{ marginBottom: 8 }}>
+                  <Lbl t="PILOTED DECK" />
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    <span onClick={() => setF({ ...f, deck_id: null })} style={f.deck_id ? chip : { ...chip, borderColor: 'rgba(220,184,111,.6)', color: 'var(--gold-head)' }}>None</span>
+                    {decks.map((d) => {
+                      const on = f.deck_id === d.id;
+                      return <span key={d.id} onClick={() => setF({ ...f, deck_id: d.id })} style={on ? { ...chip, borderColor: 'rgba(220,184,111,.6)', color: 'var(--gold-head)' } : chip}>{d.name}</span>;
+                    })}
+                  </div>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 10, marginTop: 26 }}>
                 <button onClick={() => setEdit(false)} style={{ ...ghost, flex: 1 }}>Cancel</button>
                 <button onClick={save} style={{ ...gold, flex: 1 }}>Save changes</button>
