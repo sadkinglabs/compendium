@@ -174,20 +174,22 @@ export default function App() {
   const searchable = true;   // universal search on every pillar
   const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', decks: 'Search decks…', play: 'Search matches…' };
 
-  // Hardware back: close the topmost layer, else go home, else exit.
-  backRef.current = () => {
-    if (match) return counterApi.current?.closeTopmost?.();   // peel modals first, else minimize (preserves the match)
-    if (preMatch) return setPreMatch(null);
-    if (deckWizard) return setDeckWizard(false);
-    if (importMode) return setImportMode(null);
-    if (settingsSheet) return setSettingsSheet(false);
-    if (profileSheet) return setProfileSheet(false);
-    if (addActive) return exitAdd();
-    if (hasQuery) return setQuery('');
-    if (viewDetail) return back();
-    if (tab !== 'home') return goTab('home');
-    return exitApp();
-  };
+  // Hardware back peels one layer at a time — the precedence is declared ONCE
+  // here (top of stack first), instead of a hand-maintained if-ladder. Falls
+  // through to "go home", then exit.
+  const backStack = [
+    [match, () => counterApi.current?.closeTopmost?.()],   // peel counter modals, else minimize (preserves the match)
+    [preMatch, () => setPreMatch(null)],
+    [deckWizard, () => setDeckWizard(false)],
+    [importMode, () => setImportMode(null)],
+    [settingsSheet, () => setSettingsSheet(false)],
+    [profileSheet, () => setProfileSheet(false)],
+    [addActive, exitAdd],
+    [hasQuery, () => setQuery('')],
+    [viewDetail, back],
+    [tab !== 'home', () => goTab('home')],
+  ];
+  backRef.current = () => (backStack.find(([active]) => active)?.[1] || exitApp)();
 
   // Per-pillar top-down colour wash (over pure black). Home is pure black (no
   // wash) to signal active engagement; Codex=warm gold · Decks=Arcanum amethyst ·
