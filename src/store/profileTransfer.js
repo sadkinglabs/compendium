@@ -65,8 +65,17 @@ export async function duplicateProfile(profileId) {
 /** Import a bundle into a brand-new profile. Returns the new profileId. */
 export async function importProfile(bundle, { name } = {}) {
   if (!bundle || bundle.app !== 'compendium') throw new Error('Not a Compendium profile file.');
-  const pname = name || `${bundle.profile?.name || 'Imported'} (imported)`;
-  const { id: pid } = await createProfile(pname, { accent: bundle.profile?.accent || 'gold' });
+  // Restore under the original name; only add "(imported)" if that name is already
+  // taken (e.g. importing your "Sorcerer" next to the fresh-install "Sorcerer").
+  let pname = name || bundle.profile?.name || 'Imported';
+  if (!name) {
+    const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
+    if (taken.has(pname)) pname = `${pname} (imported)`;
+  }
+  // avatar is stored as a JSON string; createProfile re-stringifies, so parse it back.
+  let avatar = null;
+  try { avatar = bundle.profile?.avatar ? JSON.parse(bundle.profile.avatar) : null; } catch { avatar = null; }
+  const { id: pid } = await createProfile(pname, { accent: bundle.profile?.accent || 'gold', avatar });
 
   // id remaps (old -> new), so two imports never collide.
   const deckMap = new Map(), colMap = new Map(), matchMap = new Map();
@@ -110,9 +119,17 @@ export async function importProfile(bundle, { name } = {}) {
     stmts.push(['INSERT OR REPLACE INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);', [pid, bundle.resume.target_type, bundle.resume.target_id, bundle.resume.title, bundle.resume.at]]);
   if (bundle.settings) {
     const s = bundle.settings;
-    stmts.push(['UPDATE settings SET accent_metal=?,film_grain=?,keep_awake=?,immersive=?,default_max_life=?,die_type=?,haptics=?,rarity_colors=?,theme=?,persist_search=? WHERE profile_id=?;',
-      [s.accent_metal, s.film_grain, s.keep_awake, s.immersive, s.default_max_life, s.die_type, s.haptics, s.rarity_colors, s.theme, s.persist_search, pid]]);
+    // Restore EVERY setting, including the accessibility trio (font_scale /
+    // high_contrast / reduced_motion) - older bundles without them fall back to
+    // sensible defaults rather than null.
+    stmts.push(['UPDATE settings SET accent_metal=?,film_grain=?,keep_awake=?,immersive=?,default_max_life=?,die_type=?,haptics=?,rarity_colors=?,theme=?,persist_search=?,font_scale=?,high_contrast=?,reduced_motion=? WHERE profile_id=?;',
+      [s.accent_metal, s.film_grain, s.keep_awake, s.immersive, s.default_max_life, s.die_type, s.haptics, s.rarity_colors, s.theme, s.persist_search,
+        s.font_scale ?? 1, s.high_contrast ?? 0, s.reduced_motion ?? 0, pid]]);
   }
+  // Mark the imported profile's dashboard as already seeded (key convention from
+  // homeRepository) so its restored layout - even a deliberately empty one - is
+  // never repopulated with the starter widgets on first load.
+  stmts.push(["INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?, '1');", [`dash_seeded:${pid}`]]);
 
   if (stmts.length) await tx(stmts);
   return pid;
