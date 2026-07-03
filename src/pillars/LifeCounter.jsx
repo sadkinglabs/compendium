@@ -103,7 +103,16 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (!settings.film_grain) document.body.classList.add('grain-off');
     if (!resume) armRollOff();                 // resumed matches already rolled for turn order
     registerApi?.({ minimize: () => onMinimize?.(snapRef.current()), closeTopmost });
-    return () => { clearTimers(); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
+    // The Web Wake Lock auto-releases when the app is backgrounded and does NOT
+    // re-acquire on return — and the OS restores the status bar. Re-assert both
+    // when the match returns to the foreground (the resume flow makes this common).
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (settings.keep_awake) setKeepAwake(true);
+      if (settings.immersive) setImmersive(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearTimers(); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
 

@@ -16,6 +16,7 @@ export async function initNative() {
   try {
     await StatusBar.setStyle({ style: Style.Dark });
     await StatusBar.setBackgroundColor({ color: '#120d09' });
+    await StatusBar.show();   // recover if a crash left the bar hidden mid-immersive
   } catch { /* status bar not available */ }
 }
 

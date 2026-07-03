@@ -298,7 +298,7 @@ function AzList({ entries, onOpen }) {
       ));
     }
   });
-  return <div>{rows}</div>;
+  return <div className="cx-az-list">{rows}</div>;
 }
 
 function Skeleton() {

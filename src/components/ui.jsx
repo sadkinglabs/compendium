@@ -34,9 +34,9 @@ export function IconButton({ glyph, onClick, tone = 'gold', shape = 'circle', si
   const Icon = GLYPH_ICON[glyph];
   return (
     <button
-      onClick={onClick} title={title} aria-label={title}
+      onClick={onClick} title={title} aria-label={title} className="cx-iconbtn"
       style={{
-        width: size, height: size, flex: 'none',
+        width: size, height: size, flex: 'none', position: 'relative',
         borderRadius: shape === 'circle' ? '50%' : 8,
         border: '1px solid var(--hair-40)', background: 'transparent',
         color, font: '15px/1 var(--f-ui)', cursor: 'pointer',
@@ -137,18 +137,45 @@ function ElementPip({ el, color, size }) {
   return <span style={{ fontSize: size - 1, lineHeight: 1, color: color || '#9aa6b2' }}>▲</span>;
 }
 
+/* Focus trap for modal surfaces — moves focus into the panel on open, keeps Tab
+   cycling inside it, and restores focus to the opener on close. Accessibility
+   for keyboard / switch-access users; a no-op for touch. */
+export function useFocusTrap(active) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    if (!active || !ref.current) return;
+    const panel = ref.current;
+    const opener = document.activeElement;
+    const sel = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
+    const first = panel.querySelector(sel);
+    if (first) setTimeout(() => first.focus?.(), 0);
+    const onKey = (e) => {
+      if (e.key !== 'Tab') return;
+      const items = [...panel.querySelectorAll(sel)].filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const a = items[0], b = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
+      else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
+    };
+    panel.addEventListener('keydown', onKey);
+    return () => { panel.removeEventListener('keydown', onKey); try { opener?.focus?.(); } catch { /* gone */ } };
+  }, [active]);
+  return ref;
+}
+
 /* Bottom sheet — scrim + slide-up panel. */
 export function BottomSheet({ open, title, onClose, children }) {
+  const trapRef = useFocusTrap(open);
   if (!open) return null;
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
-      <div style={{
-        position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 201,
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={title || 'Dialog'} style={{
+        position: 'fixed', left: 0, right: 0, bottom: 'var(--kb,0px)', zIndex: 201,
         background: 'var(--surface-sheet)', borderTop: '1px solid var(--hair-30)',
         borderRadius: '26px 26px 0 0', padding: '14px 22px 26px',
         boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
-        maxHeight: '76%', overflowY: 'auto',
+        maxHeight: '76%', overflowY: 'auto', transition: 'bottom .2s ease',
       }} className="cx-scroll">
         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--hair-30)', margin: '0 auto 14px' }} />
         {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', marginBottom: 16 }}>{title}</div>}

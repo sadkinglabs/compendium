@@ -3,14 +3,16 @@
 // title/close header and footer. CSS: arcanum.css (.a-sheet*). Pixel-ported
 // from Arcanum's #card-sheet / canonical .sheet.
 import React from 'react';
+import { useFocusTrap } from './ui.jsx';
 import '../theme/arcanum.css';
 
 export default function Sheet({ open, title, onClose, footer, children }) {
+  const trapRef = useFocusTrap(open);
   if (!open) return null;
   return (
     <>
       <div className="arc a-sheet-scrim" onClick={onClose} />
-      <div className="arc a-sheet" onClick={(e) => e.stopPropagation()}>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={title || 'Sheet'} className="arc a-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="a-sheet-handle" />
         {title != null && (
           <div className="a-sheet-header">
