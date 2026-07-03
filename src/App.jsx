@@ -148,7 +148,11 @@ export default function App() {
     await switchProfile(id);
     await reloadProfile();
     setOngoing(loadOngoing());   // ongoing match is profile-scoped
-    setProfileSheet(false); setDetail(null); setHistory([]); setQuery(''); setTab('home'); bump();
+    // Clear ALL cross-profile UI state — a leaked deckOpen/addMode would edit
+    // the previous profile's data (or spin forever on a deck this profile can't see).
+    setProfileSheet(false); setDetail(null); setHistory([]); setQuery('');
+    setAddMode(null); setDeckOpen(null); setPreMatch(null); setCodexPreset(null); setScope('all');
+    setTab('home'); bump();
   }
 
   const initial = (profile?.name || '?').charAt(0).toUpperCase();
@@ -157,7 +161,7 @@ export default function App() {
 
   // Hardware back: close the topmost layer, else go home, else exit.
   backRef.current = () => {
-    if (match) return counterApi.current?.minimize?.();   // back preserves the match
+    if (match) return counterApi.current?.closeTopmost?.();   // peel modals first, else minimize (preserves the match)
     if (preMatch) return setPreMatch(null);
     if (deckWizard) return setDeckWizard(false);
     if (importMode) return setImportMode(null);
@@ -412,8 +416,10 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
   }
   useEffect(() => { refresh(); if (!open) { setEditing(null); setAdding(false); } /* eslint-disable-next-line */ }, [open]);
   async function add() {
-    if (!name.trim()) return;
-    await createProfile(name.trim()); setName(''); setAdding(false); refresh();
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try { await createProfile(name.trim()); setName(''); setAdding(false); refresh(); }
+    finally { setBusy(false); }
   }
   async function saveRename() {
     const nn = editing?.name.trim();
@@ -478,7 +484,7 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <input value={name} autoFocus onChange={(e) => setName(e.target.value)} placeholder="Profile name…"
             onKeyDown={(e) => { if (e.key === 'Enter') add(); }} style={S.input} />
-          <button onClick={add} style={S.btnGold}>Create</button>
+          <button onClick={add} disabled={busy} style={{ ...S.btnGold, opacity: busy ? 0.6 : 1 }}>Create</button>
         </div>
       ) : (
         <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 16, width: '100%' }}>＋ New profile</button>

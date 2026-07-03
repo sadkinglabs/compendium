@@ -81,7 +81,13 @@ export function ImportTextSheet({ open, onClose, onImport }) {
   const [name, setName] = useState('');
   const [text, setText] = useState('');
   const [showEg, setShowEg] = useState(false);
-  useEffect(() => { if (open) { setName(''); setText(''); setShowEg(false); } }, [open]);
+  const [busy, setBusy] = useState(false);   // in-flight guard — no double import
+  useEffect(() => { if (open) { setName(''); setText(''); setShowEg(false); setBusy(false); } }, [open]);
+  async function go() {
+    if (busy || !text.trim()) return;
+    setBusy(true);
+    try { await onImport(text, name.trim()); } catch { setBusy(false); }
+  }
   return (
     <Sheet open={open} title="Import from Text" onClose={onClose}>
       <div style={{ padding: '0 16px' }}>
@@ -97,7 +103,7 @@ export function ImportTextSheet({ open, onClose, onImport }) {
         placeholder="# My Deck&#10;## Avatar&#10;- Elementalist&#10;## Spellbook&#10;- 3× Headless Haunt&#10;## Atlas&#10;- 4× Pond" style={S.textarea} />
       <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
         <button onClick={onClose} style={{ ...S.ghost, flex: 1 }}>Cancel</button>
-        <button onClick={() => text.trim() && onImport(text, name.trim())} style={S.gold}>Import</button>
+        <button onClick={go} disabled={busy} style={{ ...S.gold, opacity: busy ? 0.6 : 1 }}>{busy ? 'Importing…' : 'Import'}</button>
       </div>
       </div>
     </Sheet>

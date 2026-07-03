@@ -55,9 +55,20 @@ async function webBackend() {
   sdb.run('PRAGMA foreign_keys = ON;');
 
   let saveTimer = null;
+  // One shared promise per debounce window: EVERY caller in a burst resolves (or
+  // rejects) together when the single coalesced save actually completes — so an
+  // awaited write is durable, and a QuotaExceededError surfaces instead of
+  // hanging or becoming an unhandled rejection.
+  let pending = null;         // { promise, resolve, reject }
   const doSave = () => idbSave(sdb.export());
+  function runSave() {
+    saveTimer = null;
+    const p = pending; pending = null;
+    if (!p) return;
+    doSave().then(p.resolve, p.reject);
+  }
   // Durability: flush any pending debounced save when the page is backgrounded/closed.
-  const flush = () => { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } doSave(); };
+  const flush = () => { if (saveTimer) { clearTimeout(saveTimer); runSave(); } };
   window.addEventListener('pagehide', flush);
   window.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); });
 
@@ -80,10 +91,18 @@ async function webBackend() {
       catch (e) { sdb.run('ROLLBACK;'); throw e; }
       return api.persist();
     },
-    // Debounced persist — coalesces bursts of writes into one IndexedDB save.
+    // Debounced persist — coalesces a burst of writes into one IndexedDB save,
+    // but keeps a SINGLE shared promise so every awaiting caller resolves when
+    // the write is durable (short 40ms window shrinks the OS-kill loss gap).
     persist() {
+      if (!pending) {
+        let resolve, reject;
+        const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+        pending = { promise, resolve, reject };
+      }
       if (saveTimer) clearTimeout(saveTimer);
-      return new Promise((resolve) => { saveTimer = setTimeout(() => { doSave().then(resolve); }, 180); });
+      saveTimer = setTimeout(runSave, 40);
+      return pending.promise;
     },
   };
   return api;

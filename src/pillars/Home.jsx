@@ -11,6 +11,7 @@ import {
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { listCollections } from '../store/codexRepository.js';
+import { safeHref } from '../util.js';
 import { Chip, ChipRow, IconButton, Loading, useSwipe } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import { haptic } from '../native.js';
@@ -299,7 +300,9 @@ function WidgetBody({ block, data, onOpen }) {
     : empty('—');
   if (k === 'text') return <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{data.text || 'Empty note — Edit ⚙ to write.'}</div>;
   if (k === 'urls') return (data.links || []).length
-    ? data.links.map((l, i) => <a key={i} href={l.url} target="_blank" rel="noreferrer" style={{ display: 'block', font: "500 13px/1.5 var(--f-ui)", color: 'var(--link-violet)' }}>↗ {l.label || l.url}</a>)
+    ? data.links.map((l, i) => { const href = safeHref(l.url); return href
+        ? <a key={i} href={href} target="_blank" rel="noreferrer" style={{ display: 'block', font: "500 13px/1.5 var(--f-ui)", color: 'var(--link-violet)' }}>↗ {l.label || l.url}</a>
+        : <div key={i} style={{ font: "500 13px/1.5 var(--f-ui)", color: 'var(--ink-faint)' }}>↗ {l.label || l.url} <span style={{ fontStyle: 'italic', fontSize: 11 }}>(blocked link)</span></div>; })
     : empty('No links — Edit ⚙ to add.');
   if (k === 'duels') return data.items?.length
     ? data.items.slice(0, 4).map((m, i) => <div key={i} style={{ display: 'flex', gap: 8, padding: '5px 0' }}><span style={{ width: 18, font: "700 11px/1 var(--f-display)", color: m.won ? 'var(--accent-jade)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span><span style={{ flex: 1, font: "500 13px/1.3 var(--f-read)", color: 'var(--ink-body)' }}>{m.name}</span><span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-muted)' }}>{m.score}</span></div>)
@@ -362,7 +365,7 @@ function ConfigSheet({ block, onClose, onSaved }) {
             </div>
           ))}
           <button onClick={() => setLinks([...links, { label: '', url: '' }])} style={{ ...ghostBtn, width: '100%', marginBottom: 10 }}>＋ Add link</button>
-          <button onClick={() => save({ links: links.filter((l) => l.url) })} style={goldBtn}>Save</button>
+          <button onClick={() => save({ links: links.filter((l) => safeHref(l.url)) })} style={goldBtn}>Save</button>
         </>
       )}
       </div>

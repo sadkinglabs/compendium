@@ -18,7 +18,12 @@ export async function getSettings() {
   return { ...DEFAULTS, ...row };
 }
 
+// SQLite can't bind an identifier, so the column name is interpolated — it MUST
+// be whitelisted against known settings columns (never trust a caller's key).
+const SETTING_COLS = new Set(Object.keys(DEFAULTS));
+
 export async function setSetting(key, value) {
+  if (!SETTING_COLS.has(key)) throw new Error(`Unknown setting: ${key}`);
   const pid = activeProfileId();
   await run('INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [pid]);
   await run(`UPDATE settings SET ${key}=? WHERE profile_id=?;`, [value, pid]);
@@ -33,12 +38,19 @@ export async function recordMatch(m) {
   const pid = activeProfileId();
   const id = uuid();
   const winner = m.winner || 'draw';
+  // The piloted deck may have been deleted mid-match. deck_history has an
+  // ON DELETE CASCADE FK, so writing a history row for a gone deck would throw
+  // and roll back the WHOLE match record. Resolve existence first: keep the
+  // deck_id link only if the deck still exists (LEFT JOIN yields NULL name
+  // otherwise), and skip the ledger/history writes.
+  const deckId = m.deckId || null;
+  const deckLives = deckId ? (await query('SELECT 1 FROM decks WHERE id=? AND profile_id=?;', [deckId, pid])).length > 0 : false;
   const stmts = [[
     `INSERT INTO matches(id,profile_id,played_at,mode,player_avatar,opponent_name,opponent_avatar,
        player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id)
      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`,
     [id, pid, nowIso(), m.mode || 'full', m.playerAvatar || null, m.opponentName || null, m.opponentAvatar || null,
-      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, winner, m.durationSec || 0, m.notes || '', m.deckId || null],
+      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, winner, m.durationSec || 0, m.notes || '', deckId],
   ]];
   for (const e of m.log || []) {
     stmts.push([
@@ -46,13 +58,13 @@ export async function recordMatch(m) {
       [uuid(), id, e.t, e.who, e.kind || 'life', e.delta ?? null, e.toLife ?? null, e.toMax ?? null],
     ]);
   }
-  if (m.deckId) {
-    if (winner === 'player') stmts.push(['UPDATE decks SET wins=wins+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), m.deckId, pid]]);
-    else if (winner === 'opponent') stmts.push(['UPDATE decks SET losses=losses+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), m.deckId, pid]]);
+  if (deckLives) {
+    if (winner === 'player') stmts.push(['UPDATE decks SET wins=wins+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), deckId, pid]]);
+    else if (winner === 'opponent') stmts.push(['UPDATE decks SET losses=losses+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), deckId, pid]]);
     const outcome = winner === 'player' ? 'a win' : winner === 'opponent' ? 'a loss' : 'a draw';
     const vs = m.opponentName ? ` vs ${m.opponentName}` : '';
     stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);',
-      [uuid(), m.deckId, nowIso(), `Recorded ${outcome}${vs} (${m.playerFinalLife ?? '–'}–${m.opponentFinalLife ?? '–'})`]]);
+      [uuid(), deckId, nowIso(), `Recorded ${outcome}${vs} (${m.playerFinalLife ?? '–'}–${m.opponentFinalLife ?? '–'})`]]);
   }
   await tx(stmts);
   return id;

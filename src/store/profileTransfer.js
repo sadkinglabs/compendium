@@ -7,8 +7,20 @@ import { activeProfileId, createProfile, switchProfile, renameProfile } from './
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { saveTextFile } from '../native.js';
+import { safeHref } from '../util.js';
 
 const inClause = (ids) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
+
+/** Strip unsafe URLs from an imported 'urls' widget's config JSON so a crafted
+ *  bundle can't smuggle a javascript: link past the render-time guard. */
+function sanitizeBlockConfig(type, configJson) {
+  if (type !== 'urls' || !configJson) return configJson;
+  try {
+    const cfg = JSON.parse(configJson);
+    if (Array.isArray(cfg.links)) cfg.links = cfg.links.filter((l) => safeHref(l?.url));
+    return JSON.stringify(cfg);
+  } catch { return '{}'; }
+}
 
 /** Build the portable bundle for a profile (defaults to the active one). */
 export async function exportProfile(profileId = activeProfileId()) {
@@ -67,7 +79,7 @@ export async function importProfile(bundle, { name } = {}) {
 
   for (const d of bundle.decks || [])
     ins('decks', ['id', 'profile_id', 'name', 'slug', 'archetype', 'avatar_card_id', 'avatar_slug', 'cover_slug', 'notes', 'curiosa_url', 'wins', 'losses', 'starred', 'lib_order', 'created_at', 'updated_at'],
-      [deckMap.get(d.id), pid, d.name, d.slug, d.archetype, d.avatar_card_id, d.avatar_slug, d.cover_slug, d.notes, d.curiosa_url, d.wins, d.losses, d.starred, d.lib_order, d.created_at, d.updated_at]);
+      [deckMap.get(d.id), pid, d.name, d.slug, d.archetype, d.avatar_card_id, d.avatar_slug, d.cover_slug, d.notes, safeHref(d.curiosa_url) || null, d.wins, d.losses, d.starred, d.lib_order, d.created_at, d.updated_at]);
   for (const e of bundle.deck_entries || [])
     ins('deck_entries', ['id', 'deck_id', 'zone', 'card_id', 'quantity', 'variant_slug'], [uuid(), deckMap.get(e.deck_id), e.zone, e.card_id, e.quantity, e.variant_slug]);
   for (const h of bundle.deck_history || [])
@@ -91,7 +103,7 @@ export async function importProfile(bundle, { name } = {}) {
   for (const e of bundle.match_log_entries || [])
     ins('match_log_entries', ['id', 'match_id', 't', 'who', 'kind', 'delta', 'to_life', 'to_max'], [uuid(), matchMap.get(e.match_id), e.t, e.who, e.kind, e.delta, e.to_life, e.to_max]);
   for (const b of bundle.dashboard_blocks || [])
-    ins('dashboard_blocks', ['id', 'profile_id', 'type', 'width', 'config', 'sort_order', 'created_at'], [uuid(), pid, b.type, b.width, b.config, b.sort_order, b.created_at]);
+    ins('dashboard_blocks', ['id', 'profile_id', 'type', 'width', 'config', 'sort_order', 'created_at'], [uuid(), pid, b.type, b.width, sanitizeBlockConfig(b.type, b.config), b.sort_order, b.created_at]);
   for (const l of bundle.dashboard_layouts || [])
     ins('dashboard_layouts', ['id', 'profile_id', 'name', 'blocks', 'saved_at'], [uuid(), pid, l.name, l.blocks, l.saved_at]);
   if (bundle.resume)

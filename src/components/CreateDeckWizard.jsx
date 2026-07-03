@@ -16,6 +16,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
   const [avatars, setAvatars] = useState([]);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);        // selected avatar card
+  const [busy, setBusy] = useState(false);     // in-flight create guard (no double deck)
   const nameRef = useRef(null);
 
   useEffect(() => { const t = setTimeout(() => nameRef.current?.focus(), 100); return () => clearTimeout(t); }, []);
@@ -33,10 +34,14 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
       return;
     }
     // Step 2 — mandatory avatar.
-    if (!sel) return;                            // Create button is disabled without one
-    const id = await createDeck(name.trim(), { avatarCardId: sel.card_id });
-    onCreated(id, name.trim());
+    if (!sel || busy) return;                    // Create button is disabled without one / while creating
+    setBusy(true);
+    try {
+      const id = await createDeck(name.trim(), { avatarCardId: sel.card_id });
+      onCreated(id, name.trim());
+    } catch (e) { setBusy(false); alert('Could not create deck: ' + e.message); }
   }
+  const nextDisabled = (step === 1 && !name.trim()) || (step === 2 && (!sel || busy));
 
   const meta = (c) => {
     const parts = [];
@@ -107,9 +112,9 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
 
         <div className="ob-footer">
           {step === 2 && <button className="btn" onClick={() => setStep(1)}>← Back</button>}
-          <button className={`btn primary${step === 2 && !sel ? ' disabled' : ''}`} disabled={step === 2 && !sel}
+          <button className={`btn primary${nextDisabled ? ' disabled' : ''}`} disabled={nextDisabled}
             onClick={next} style={{ flex: 1 }}>
-            {step === 1 ? 'Next →' : 'Create Deck ✓'}
+            {step === 1 ? 'Next →' : busy ? 'Creating…' : 'Create Deck ✓'}
           </button>
         </div>
       </div>

@@ -51,19 +51,36 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const lastLog = useRef(null);
   const deltaId = useRef(0);
   const timers = useRef([]);
+  const recordingRef = useRef(false);   // in-flight guard for Record (blocks double-tap)
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
 
+  // Once recorded, a match stays recorded across minimize/resume so it can't be
+  // saved twice (double W/L). Seeded from the resumed snapshot.
+  const recordedRef = useRef(!!resume?.recorded);
   const elapsedSec = () => Math.round(elapsedBase.current + (Date.now() - startedAt.current) / 1000);
   function buildSnapshot() {
     return {
-      mode, settings, you: players.you || null, opp: players.opp || null, deck,
+      v: 1, mode, settings, you: players.you || null, opp: players.opp || null, deck,
       pLife: pRef.current.life, pMax: pRef.current.max, eLife: eRef.current.life, eMax: eRef.current.max,
-      log, elapsedSec: elapsedSec(), oppName,
+      log, elapsedSec: elapsedSec(), oppName, recorded: recordedRef.current,
     };
   }
   const snapRef = useRef();
   snapRef.current = buildSnapshot;
   function minimize() { onMinimize?.(snapRef.current()); }
+  // Refs mirror the modal layers so the (mount-time) hardware-back handler can
+  // read current state. Hardware back must peel the topmost layer — NOT jump
+  // straight to minimize, which would hide an open (possibly already-recorded)
+  // end screen and let it be resumed + recorded a second time.
+  const endRef = useRef(null); endRef.current = endInfo;
+  const sheetRef = useRef(null); sheetRef.current = sheet;
+  const fabRef = useRef(false); fabRef.current = fabP || fabE;
+  function closeTopmost() {
+    if (endRef.current) { setEndInfo(null); return; }
+    if (sheetRef.current) { setSheet(null); return; }
+    if (fabRef.current) { setFabP(false); setFabE(false); return; }
+    minimize();
+  }
 
   // ── numeral rendering (imperative, mirrors renderLife) ──
   function setNum(el, life) {
@@ -82,7 +99,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (settings.immersive) setImmersive(true);
     if (!settings.film_grain) document.body.classList.add('grain-off');
     if (!resume) armRollOff();                 // resumed matches already rolled for turn order
-    registerApi?.({ minimize: () => onMinimize?.(snapRef.current()) });
+    registerApi?.({ minimize: () => onMinimize?.(snapRef.current()), closeTopmost });
     return () => { clearTimers(); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
@@ -148,6 +165,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     pRef.current = { life: start, max: start }; eRef.current = { life: start, max: start };
     setLog([]); lastLog.current = null; setEndInfo(null);
     elapsedBase.current = 0; startedAt.current = Date.now();
+    recordedRef.current = false;   // a fresh game (Go Again / Reset) can be recorded anew
     renderLife(); setSheet(null); setFabP(false); setFabE(false);
     armRollOff(); force((n) => n + 1);
   }
@@ -202,9 +220,11 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     const p = pRef.current, e = eRef.current;
     const w = winner || (p.life <= 0 ? 'opponent' : e.life <= 0 ? 'player' : p.life === e.life ? 'draw' : p.life > e.life ? 'player' : 'opponent');
     setFabP(false); setFabE(false); setSheet(null);
-    setEndInfo({ winner: w, pLife: p.life, eLife: e.life, durationSec: elapsedSec(), recorded: false });
+    setEndInfo({ winner: w, pLife: p.life, eLife: e.life, durationSec: elapsedSec(), recorded: recordedRef.current });
   }
   async function recordFromEnd() {
+    if (recordedRef.current || recordingRef.current) return;   // already saved / in-flight — no double record
+    recordingRef.current = true;
     const r = endInfo;
     const result = {
       mode, winner: r.winner, playerFinalLife: r.pLife, opponentFinalLife: r.eLife,
@@ -212,9 +232,8 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       playerAvatar: players.you?.name || null, opponentAvatar: players.opp?.name || null,
       opponentName: oppName.trim() || null, deckId: deck?.id || null,
     };
-    await onRecord?.(result);
-    setEndInfo((x) => ({ ...x, recorded: true }));
-    haptic('medium');
+    try { await onRecord?.(result); recordedRef.current = true; setEndInfo((x) => ({ ...x, recorded: true })); haptic('medium'); }
+    finally { recordingRef.current = false; }
   }
   const needConfirm = () => !quick && endInfo && !endInfo.recorded;
   function newFromEnd() {

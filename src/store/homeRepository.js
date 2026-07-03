@@ -195,7 +195,13 @@ const OV_DECKS = 8, OV_NOTES = 3, OV_DUELS = 3;
 
 export async function overview() {
   const pid = activeProfileId();
-  const resume = (await query('SELECT * FROM resume WHERE profile_id=?;', [pid]))[0] || null;
+  let resume = (await query('SELECT * FROM resume WHERE profile_id=?;', [pid]))[0] || null;
+  // Drop a resume target that no longer exists (e.g. deck was deleted) — a dead
+  // "Jump back in" tile would otherwise open a deck that can never load.
+  if (resume && !(await resolveTarget(resume.target_type, resume.target_id))) {
+    await run('DELETE FROM resume WHERE profile_id=?;', [pid]);
+    resume = null;
+  }
   const allDecks = await listDecks();
   const stats = await historyStats();
   const duelItems = (await listMatches(OV_DUELS)).map((m) => ({

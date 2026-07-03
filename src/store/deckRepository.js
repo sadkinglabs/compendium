@@ -101,7 +101,12 @@ export async function toggleStar(id) {
   await touch(id, 'starred=?', [d?.starred ? 0 : 1]);
 }
 export async function setRecord(id, wins, losses) { await touch(id, 'wins=?, losses=?', [Math.max(0, wins), Math.max(0, losses)]); }
-export async function deleteDeck(id) { await run('DELETE FROM decks WHERE id=? AND profile_id=?;', [id, activeProfileId()]); }
+export async function deleteDeck(id) {
+  const pid = activeProfileId();
+  await run('DELETE FROM decks WHERE id=? AND profile_id=?;', [id, pid]);
+  // Clear a resume tile pointing at this deck (would otherwise dead-end on load).
+  await run('DELETE FROM resume WHERE profile_id=? AND target_type=? AND target_id=?;', [pid, 'deck', id]);
+}
 
 export async function duplicateDeck(id) {
   const d = await getDeck(id);

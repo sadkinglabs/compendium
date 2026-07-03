@@ -7,6 +7,7 @@ import { getDeck, getDeckCards, collectionMax, setDeckNotes, setCuriosaUrl, getH
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
+import { safeHref } from '../util.js';
 import { haptic } from '../native.js';
 import '../theme/deckdash.css';
 
@@ -148,11 +149,13 @@ function CuriosaUrlCard({ deckId, initial }) {
               <button className="cc-url-btn primary" onClick={save}>Save</button>
             </div>
           </>
-        ) : hasUrl ? (
-          <a className="cc-url-link" href={url} target="_blank" rel="noreferrer">
+        ) : hasUrl && safeHref(url) ? (
+          <a className="cc-url-link" href={safeHref(url)} target="_blank" rel="noreferrer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
             <span>{url.replace(/^https?:\/\//, '')}</span>
           </a>
+        ) : hasUrl ? (
+          <div className="cc-url-empty">Saved link isn’t a valid web URL.</div>
         ) : (
           <div className="cc-url-empty">No URL saved — tap ＋ Add to link this deck on Curiosa.</div>
         )}
@@ -256,8 +259,9 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   );
 }
 
-export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn = false, editMode = false, onToast, onChanged, onOpenCodex }) {
+export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn = false, editMode = false, onToast, onChanged, onOpenCodex, onMissing }) {
   const [deck, setDeck] = useState(null);
+  const [loaded, setLoaded] = useState(false);   // distinguishes "loading" from "gone"
   const [zones, setZones] = useState({ spellbook: [], atlas: [], collection: [] });
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [sheetCardId, setSheetCardId] = useState(null);
@@ -265,12 +269,21 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   const [localRev, setLocalRev] = useState(0);   // quick-edit reloads without touching app rev
   useEffect(() => {
     let alive = true;
-    Promise.all([getDeck(deckId), getDeckCards(deckId)]).then(([d, z]) => { if (alive) { setDeck(d); setZones(z); } });
+    setLoaded(false);
+    Promise.all([getDeck(deckId), getDeckCards(deckId)]).then(([d, z]) => { if (alive) { setDeck(d); setZones(z); setLoaded(true); } });
     return () => { alive = false; };
   }, [deckId, rev, localRev]);
   const toggle = (z) => setCollapsed((s) => { const n = new Set(s); n.has(z) ? n.delete(z) : n.add(z); return n; });
 
-  if (!deck) return <Loading />;
+  if (!deck) return loaded ? (
+    // The deck resolved to nothing — deleted, or a stale resume/link target.
+    // Offer an escape instead of spinning forever.
+    <div style={{ minHeight: '48vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 16 }}>
+      <div style={{ font: "600 17px/1.3 'Cinzel',Georgia,serif", color: '#dcb86f' }}>This deck no longer exists</div>
+      <div style={{ font: "400 14px/1.5 'EB Garamond',Georgia,serif", color: '#9a8cae' }}>It may have been deleted or belongs to another profile.</div>
+      {onMissing && <button onClick={onMissing} style={{ padding: '11px 22px', borderRadius: 14, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: '#dcb86f', font: "600 13px/1 'Hanken Grotesk',sans-serif", cursor: 'pointer' }}>Open Library</button>}
+    </div>
+  ) : <Loading />;
 
   const sb = sum(zones.spellbook), at = sum(zones.atlas), co = sum(zones.collection);
   const coMax = collectionMax(deck);

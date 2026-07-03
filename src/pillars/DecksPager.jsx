@@ -152,7 +152,8 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
             <>
               <div className="dpage-scroll">
                 <DeckDashboard deckId={deckOpen.id} rev={rev} statTab={statTab} rarityOn={rarityOn}
-                  editMode={editMode} onToast={flash} onChanged={onChanged} onOpenCodex={onOpenCodex} />
+                  editMode={editMode} onToast={flash} onChanged={onChanged} onOpenCodex={onOpenCodex}
+                  onMissing={() => { onOpenDeck(null); setView('library'); refresh(); }} />
               </div>
               {/* List/Stats pip bar steps aside while editing — edit mode owns the floor. */}
               <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
