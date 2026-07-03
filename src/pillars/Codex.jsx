@@ -46,7 +46,9 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
 
   return (
     <div style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
-      {/* Scope (Rules/Cards/All · Marginalia) — sticky so it stays visible while scrolling. */}
+      {/* Scope (Rules/Cards/All) on the left; Marginalia is a different beast —
+          your personal layer, not a content scope — so it sits apart on the
+          right behind a divider, styled as a distinct bookmarked pill. */}
       <div className="cx-codex-topbar">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <ChipRow>
@@ -54,7 +56,21 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
               <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
             ))}
           </ChipRow>
-          <Chip label="Marginalia" active={marginalia} onClick={() => setScope('marginalia')} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
+            <span style={{ width: 1, height: 18, background: 'var(--hair-22)' }} />
+            <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
+                padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
+                font: "600 13px/1 var(--f-ui)",
+                background: marginalia ? 'var(--gold-leaf)' : 'transparent',
+                color: marginalia ? '#1a1410' : 'var(--gold-leaf)',
+                border: `1px solid ${marginalia ? 'var(--gold-leaf)' : 'rgba(201,163,90,.5)'}`,
+              }}>
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+              Marginalia
+            </button>
+          </div>
         </div>
       </div>
 
