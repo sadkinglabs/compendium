@@ -1,6 +1,7 @@
 // Shared UI vocabulary — one definition each, reused across pillars (handoff §3/§6).
 import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
+import { GLYPH_ICON } from './icons.jsx';
 
 /* One chip language everywhere: filled-gold active, ghost inactive. */
 export function Chip({ label, active, onClick, dot }) {
@@ -28,9 +29,12 @@ export function ChipRow({ children, style }) {
 
 export function IconButton({ glyph, onClick, tone = 'gold', shape = 'circle', size = 28, title }) {
   const color = tone === 'danger' ? 'var(--destructive)' : tone === 'muted' ? 'var(--ink-muted)' : 'var(--gold-leaf)';
+  // Known glyphs render as the house SVG icon; anything else falls back to the
+  // raw glyph (semantic bullets like §/◈ stay as-is).
+  const Icon = GLYPH_ICON[glyph];
   return (
     <button
-      onClick={onClick} title={title}
+      onClick={onClick} title={title} aria-label={title}
       style={{
         width: size, height: size, flex: 'none',
         borderRadius: shape === 'circle' ? '50%' : 8,
@@ -39,7 +43,7 @@ export function IconButton({ glyph, onClick, tone = 'gold', shape = 'circle', si
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}
     >
-      {glyph}
+      {Icon ? <Icon style={{ width: Math.round(size * 0.46), height: Math.round(size * 0.46) }} /> : glyph}
     </button>
   );
 }
