@@ -277,38 +277,48 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
   async function del() { if (await confirmAction({ title: 'Delete this match?', body: 'The match and its log are removed. This can’t be undone.', confirmLabel: 'Delete', danger: true })) { await deleteMatch(matchId); onChanged(); onClose(); toast('Match deleted'); } }
 
   return (
-    <Sheet open title={title} onClose={onClose}>
+    <Sheet open title={edit ? 'Edit match' : title} onClose={onClose}>
       {!m ? <Loading /> : (
-        <div style={{ padding: '0 16px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 14 }}>
-            <div style={{ font: "700 46px/1 var(--f-display)", letterSpacing: '.01em', color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
-            {(m.player_avatar || m.opponent_avatar) && <div style={{ font: "500 12px/1.2 var(--f-read)", color: 'var(--ink-muted)', marginTop: 6 }}>{m.player_avatar || 'You'} vs {m.opponent_avatar || 'Opponent'}</div>}
-            {m.deck_id && m.deck_name && (
-              <div onClick={() => { onClose(); onOpenDeck?.(m.deck_id, m.deck_name); }}
-                style={{ font: "600 12px/1.2 var(--f-read)", color: 'var(--accent-violet)', marginTop: 6, cursor: 'pointer' }}>
-                ◈ Piloting {m.deck_name} ›
-              </div>
-            )}
-            <div style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-faint)', marginTop: 5 }}>{new Date(m.played_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{m.duration_sec ? ` · ${Math.round(m.duration_sec / 60)}m` : ''}</div>
-          </div>
+        <div style={{ padding: '0 20px' }}>
+          {!edit && (
+            <div style={{ textAlign: 'center', marginBottom: 18 }}>
+              <div style={{ font: "700 46px/1 var(--f-display)", letterSpacing: '.01em', color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
+              {(m.player_avatar || m.opponent_avatar) && <div style={{ font: "500 12px/1.2 var(--f-read)", color: 'var(--ink-muted)', marginTop: 6 }}>{m.player_avatar || 'You'} vs {m.opponent_avatar || 'Opponent'}</div>}
+              {m.deck_id && m.deck_name && (
+                <div onClick={() => { onClose(); onOpenDeck?.(m.deck_id, m.deck_name); }}
+                  style={{ font: "600 12px/1.2 var(--f-read)", color: 'var(--accent-violet)', marginTop: 6, cursor: 'pointer' }}>
+                  ◈ Piloting {m.deck_name} ›
+                </div>
+              )}
+              <div style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-faint)', marginTop: 5 }}>{new Date(m.played_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{m.duration_sec ? ` · ${Math.round(m.duration_sec / 60)}m` : ''}</div>
+            </div>
+          )}
 
           {edit ? (
-            <div style={{ marginBottom: 12 }}>
-              <Lbl t="OPPONENT" />
-              <input value={f.opponent_name} onChange={(e) => setF({ ...f, opponent_name: e.target.value })} placeholder="Their name…" style={inp} />
-              {recent.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0' }}>{recent.map((r) => <span key={r} onClick={() => setF({ ...f, opponent_name: r })} style={chip}>{r}</span>)}</div>}
-              <Lbl t="RESULT" />
-              <ChipRow style={{ marginBottom: 12 }}>
-                {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
-              </ChipRow>
-              <Lbl t="FINAL LIFE" />
-              <div style={{ display: 'flex', gap: 12 }}>
-                <LifeStep label="You" v={f.player_final_life} set={(x) => setF({ ...f, player_final_life: x })} />
-                <LifeStep label="Opp" v={f.opponent_final_life} set={(x) => setF({ ...f, opponent_final_life: x })} />
+            // Edit fields ordered by what matters most to correct: life → result →
+            // opponent. Generous vertical rhythm keeps it from feeling packed.
+            <div>
+              <div style={{ marginBottom: 24 }}>
+                <Lbl t="FINAL LIFE" />
+                <div style={{ display: 'flex', gap: 14 }}>
+                  <LifeStep label="You" v={f.player_final_life} set={(x) => setF({ ...f, player_final_life: x })} />
+                  <LifeStep label="Opp" v={f.opponent_final_life} set={(x) => setF({ ...f, opponent_final_life: x })} />
+                </div>
               </div>
-              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <div style={{ marginBottom: 24 }}>
+                <Lbl t="RESULT" />
+                <ChipRow>
+                  {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
+                </ChipRow>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <Lbl t="OPPONENT" />
+                <input value={f.opponent_name} onChange={(e) => setF({ ...f, opponent_name: e.target.value })} placeholder="Their name…" style={inp} />
+                {recent.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>{recent.map((r) => <span key={r} onClick={() => setF({ ...f, opponent_name: r })} style={chip}>{r}</span>)}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginTop: 26 }}>
                 <button onClick={() => setEdit(false)} style={{ ...ghost, flex: 1 }}>Cancel</button>
-                <button onClick={save} style={gold}>Save</button>
+                <button onClick={save} style={{ ...gold, flex: 1 }}>Save changes</button>
               </div>
             </div>
           ) : (
