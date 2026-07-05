@@ -111,16 +111,6 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
         </button>
         <button className="play-start-pill" onClick={() => onStart('quick')}>Quick Match</button>
       </div>
-      {/* Import a result an opponent shared (scanned QR opens this via deep link;
-          this is the manual paste fallback). */}
-      {onImport && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: -4, marginBottom: 6 }}>
-          <button onClick={onImport} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer', padding: '6px 8px' }}>
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h.01M21 17v4" /></svg>
-            Import a shared result
-          </button>
-        </div>
-      )}
       {ongoing && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
           <button className="cx-return-btn" onClick={onResume}>
@@ -203,9 +193,12 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
         </>
       )}
 
-      {/* Add a match to history by hand (Vitarum's Add Match) - a direct "+"
-          action, not a one-item menu detour. */}
-      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add match" active={addOpen} onClick={() => setAddOpen(true)} />
+      {/* Two ways to add to history: record one by hand, or import one an
+          opponent shared. Iconography distinguishes them. */}
+      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add to history" items={[
+        { label: 'Add Match Record', icon: AddRecordSvg, onClick: () => setAddOpen(true) },
+        { label: 'Import Shared Result', icon: QrImportSvg, onClick: () => onImport?.() },
+      ]} />
       <AddMatchSheet open={addOpen}
         onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); refresh(); toast('Match added'); }} />
     </div>
@@ -585,3 +578,8 @@ const sel = {
 const chip = { padding: '5px 11px', borderRadius: 16, border: '1px solid var(--hair-22)', font: "500 12px/1 var(--f-read)", color: 'var(--ink-status)', cursor: 'pointer' };
 const ghost = { ...BTN_GHOST, padding: '11px 0', font: "600 12px/1 var(--f-ui)" };
 const gold = { ...BTN_GOLD, padding: '11px 18px' };
+
+// FAB menu iconography - a plus-in-square (record a match by hand) vs a QR
+// (import one an opponent shared).
+const AddRecordSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
+const QrImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h.01M21 17v4" /></svg>;
