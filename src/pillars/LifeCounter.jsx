@@ -464,7 +464,7 @@ function VModal({ id, title, subtitle, onClose, children, actions }) {
     <div className="vc-modal-overlay" id={id} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-top">
-          <button className="modal-close-btn" onClick={onClose} aria-label="Close">✕</button>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Close">{CloseSvg}</button>
           <div className="modal-title">{title}</div>
           {subtitle && <div className="modal-subtitle">{subtitle}</div>}
         </div>
@@ -622,7 +622,7 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
     <div className={`vc-modal-overlay${quick ? ' quick' : ''}`} id="end-overlay">
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-top">
-          <button className="modal-close-btn" onClick={onClose} aria-label="Close">✕</button>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Close">{CloseSvg}</button>
           <div className="modal-title">{title}</div>
           <div className="end-result-label">Winner</div>
           <div className="end-winner">{winnerName}</div>
@@ -686,7 +686,7 @@ function ShareQRModal({ link, onClose }) {
     <div className="vc-modal-overlay" id="share-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
         <div className="modal-top">
-          <button className="modal-close-btn" onClick={onClose} aria-label="Close">✕</button>
+          <button className="modal-close-btn" onClick={onClose} aria-label="Close">{CloseSvg}</button>
           <div className="modal-title">Share Result</div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 22px 18px', gap: 15 }}>
