@@ -10,7 +10,7 @@ import '../theme/counter.css';
 import { recentOpponents, setSetting } from '../store/playRepository.js';
 import { buildMatchShare } from '../store/matchShare.js';
 import QRCode from '../components/QRCode.jsx';
-import { haptic, setKeepAwake, setImmersive } from '../native.js';
+import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
 
 const BASE = import.meta.env.BASE_URL;
 const LOG_GAP_MS = 1200;
@@ -673,7 +673,15 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
 // the match mirrored to their side.
 function ShareQRModal({ link, onClose }) {
   const [copied, setCopied] = useState(false);
-  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); haptic('light'); setTimeout(() => setCopied(false), 1600); } catch { /* clipboard blocked */ } };
+  const flashCopied = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
+  const copy = async () => { try { await navigator.clipboard.writeText(link); flashCopied(); haptic('light'); } catch { /* clipboard blocked */ } };
+  // One-tap into WhatsApp/Messages/Discord via the OS share sheet; if the target
+  // has no share sheet (older desktop web) it falls back to a copy.
+  const share = async () => {
+    haptic('light');
+    const res = await shareLink({ title: 'Compendium match', text: `Save our match in Compendium:\n${link}`, dialogTitle: 'Share result' });
+    if (res === 'copied') flashCopied();
+  };
   return (
     <div className="vc-modal-overlay" id="share-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-box" onClick={(e) => e.stopPropagation()}>
@@ -684,9 +692,12 @@ function ShareQRModal({ link, onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 22px 18px', gap: 15 }}>
           <QRCode text={link} size={224} />
           <div style={{ font: "400 13px/1.55 'EB Garamond',Georgia,serif", color: 'var(--muted)', textAlign: 'center', maxWidth: 280 }}>
-            Have your opponent scan this with their camera to save the match on their own device. They attribute their own deck.
+            Have your opponent scan this with their camera, or send them the link. They attribute their own deck.
           </div>
-          <button className="modal-btn" onClick={copy} style={{ maxWidth: 220 }}>{copied ? 'Copied' : 'Copy link'}</button>
+          <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 280 }}>
+            <button className="modal-btn primary" onClick={share} style={{ flex: 2 }}>{ShareSvg}<span>Send link</span></button>
+            <button className="modal-btn" onClick={copy} style={{ flex: 1 }}>{copied ? 'Copied' : 'Copy'}</button>
+          </div>
         </div>
       </div>
     </div>

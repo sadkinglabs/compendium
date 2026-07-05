@@ -87,6 +87,25 @@ export async function shareImage(canvas, filename, title) {
   }, 'image/png'));
 }
 
+/** Share a short text/link via the OS share sheet (WhatsApp, Messages, etc.) -
+ *  one tap to send. The link is carried as TEXT (a custom-scheme link isn't a
+ *  valid share `url` and would be dropped by some targets). Web: the Web Share
+ *  API if present, else copy to clipboard. Returns 'shared' | 'copied' |
+ *  'cancelled' | 'unavailable'. */
+export async function shareLink({ title, text, dialogTitle } = {}) {
+  const body = text || '';
+  if (isNative()) {
+    try { await Share.share({ title, text: body, dialogTitle: dialogTitle || title }); return 'shared'; }
+    catch { return 'cancelled'; }
+  }
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try { await navigator.share({ title, text: body }); return 'shared'; }
+    catch { return 'cancelled'; }   // user dismissed, or blocked
+  }
+  try { await navigator.clipboard.writeText(body); return 'copied'; }
+  catch { return 'unavailable'; }
+}
+
 /** Hide/show the status bar (immersive match mode). Native only; web no-op. */
 export async function setImmersive(on) {
   if (!isNative()) return;
