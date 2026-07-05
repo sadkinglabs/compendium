@@ -188,7 +188,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
 
       {/* Per-view FAB */}
       {view === 'library' && (
-        <Fab variant="lib" icon="+" label="New deck options" items={[
+        <Fab variant="lib" icon={<FabGlyph kind="add" />} label="New deck options" items={[
           { label: 'New Deck', onClick: onNew },
           { label: 'Import from Curiosa', onClick: () => onImport('url') },
           { label: 'Import from text', onClick: () => onImport('text') },
