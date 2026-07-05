@@ -436,7 +436,7 @@ function AddMatchSheet({ open, onClose, onSaved }) {
   );
 
   return (
-    <Sheet open title="Add Match" onClose={onClose}>
+    <Sheet open title="Add Match Record" onClose={onClose}>
       <div style={{ padding: '0 16px' }}>
         <Lbl t="RESULT" />
         <ChipRow style={{ marginBottom: 14 }}>

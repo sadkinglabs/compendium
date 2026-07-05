@@ -200,12 +200,23 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
 
       <Sec id="notes" title="NOTES & RULINGS" count={d.notes.count} onAll={onAllNotes}>
         {d.notes.items.length === 0 ? <EmptyCta text="No marginalia yet." cta="Annotate anything in the Codex" onClick={() => onGoTab('codex')} /> : (
-          d.notes.items.map((n, i) => (
-            <div key={i} onClick={() => onOpen(n.type, n.id, n.on)} className="cx-row" style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, cursor: 'pointer' }}>
-              <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
-              {n.on && <div style={{ font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {n.on}</div>}
-            </div>
-          ))
+          // Same card as Codex > Marginalia: the PLACE leads (icon + name + type,
+          // hued card-violet / article-gold), then the note body upright beneath.
+          d.notes.items.map((n, i) => {
+            const isCard = n.type === 'card';
+            const hue = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
+            return (
+              <div key={i} onClick={() => onOpen(n.type, n.id, n.on)} className="cx-row"
+                style={{ background: 'rgba(18,16,13,.72)', border: '1px solid rgba(220,184,111,.2)', borderRadius: 12, boxShadow: 'inset 0 1px 0 rgba(255,255,255,.03)', padding: '11px 14px 12px', marginBottom: 10, cursor: 'pointer' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                  <span style={{ color: hue, flex: 'none', display: 'flex' }}><CodexGlyph kind={n.type} size={14} /></span>
+                  <span style={{ font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.on}</span>
+                  <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: hue, flex: 'none' }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
+                </div>
+                <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{n.body}</div>
+              </div>
+            );
+          })
         )}
       </Sec>
     </div>
