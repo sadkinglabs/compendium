@@ -31,7 +31,7 @@ function relTime(iso) {
   const mo = Math.floor(day / 30); return mo < 12 ? `${mo}mo ago` : `${Math.floor(mo / 12)}y ago`;
 }
 
-export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onChanged }) {
+export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onChanged, onImport }) {
   const [matches, setMatches] = useState([]);
   const [avImg, setAvImg] = useState({});           // avatar name → image_slug
   const [oppFilter, setOppFilter] = useState(null);  // drill-in on one opponent
@@ -111,6 +111,16 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
         </button>
         <button className="play-start-pill" onClick={() => onStart('quick')}>Quick Match</button>
       </div>
+      {/* Import a result an opponent shared (scanned QR opens this via deep link;
+          this is the manual paste fallback). */}
+      {onImport && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: -4, marginBottom: 6 }}>
+          <button onClick={onImport} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer', padding: '6px 8px' }}>
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h.01M21 17v4" /></svg>
+            Import a shared result
+          </button>
+        </div>
+      )}
       {ongoing && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
           <button className="cx-return-btn" onClick={onResume}>
@@ -469,6 +479,79 @@ function AddMatchSheet({ open, onClose, onSaved }) {
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} style={{ ...ghost, flex: 1 }}>Cancel</button>
           <button onClick={save} disabled={busy} style={{ ...gold, flex: 1, opacity: busy ? 0.6 : 1 }}>{busy ? 'Adding…' : 'Add Match'}</button>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+// Import a shared result (opponent's QR / deep link). The payload arrives ALREADY
+// mirrored to this player's side, so they just confirm and attribute their own
+// deck; it lands as a manual match. Rendered at App level so a deep link can open
+// it from any tab.
+export function ImportMatchSheet({ payload, onClose, onSaved }) {
+  const [f, setF] = useState(null);
+  const [decks, setDecks] = useState([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!payload) { setF(null); return; }
+    setF({
+      winner: payload.winner || 'draw',
+      player_final_life: payload.playerFinalLife ?? 20,
+      opponent_final_life: payload.opponentFinalLife ?? 0,
+      opponent_name: payload.opponentName || '',
+      player_avatar: payload.playerAvatar || null,
+      opponent_avatar: payload.opponentAvatar || null,
+      deck_id: null,
+      playedAt: payload.playedAt || null,
+      durationSec: payload.durationSec || 0,
+    });
+    setBusy(false);
+    listDecks().then(setDecks);
+  }, [payload]);
+  if (!payload || !f) return null;
+  async function save() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await addManualMatch({
+        winner: f.winner, playerFinalLife: f.player_final_life, opponentFinalLife: f.opponent_final_life,
+        opponentName: f.opponent_name.trim() || null, playedAt: f.playedAt || undefined,
+        playerAvatar: f.player_avatar || null, opponentAvatar: f.opponent_avatar || null,
+        durationSec: f.durationSec, deckId: f.deck_id || null,
+      });
+      haptic('medium'); onSaved();
+    } catch (e) { setBusy(false); toast('Could not import: ' + e.message, { tone: 'danger' }); }
+  }
+  return (
+    <Sheet open title="Import result" onClose={onClose}>
+      <div style={{ padding: '0 20px' }}>
+        <div style={{ font: "italic 400 13px/1.5 'EB Garamond',Georgia,serif", color: 'var(--ink-muted)', marginBottom: 16 }}>
+          Shared by <span style={{ fontStyle: 'normal', color: 'var(--gold-head)' }}>{payload.opponentName || 'your opponent'}</span>. Confirm the result and attribute your own deck.
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <Lbl t="RESULT" />
+          <ChipRow>{[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}</ChipRow>
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <Lbl t="FINAL LIFE" />
+          <div style={{ display: 'flex', gap: 14 }}>
+            <LifeStep label="You" v={f.player_final_life} set={(x) => setF({ ...f, player_final_life: x })} />
+            <LifeStep label="Opp" v={f.opponent_final_life} set={(x) => setF({ ...f, opponent_final_life: x })} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 22 }}>
+          <Lbl t="OPPONENT" />
+          <input value={f.opponent_name} onChange={(e) => setF({ ...f, opponent_name: e.target.value })} placeholder="Their name…" style={inp} />
+        </div>
+        {decks.length > 0 && (
+          <div style={{ marginBottom: 22 }}>
+            <DeckPicker decks={decks} value={f.deck_id} onChange={(id) => setF({ ...f, deck_id: id })} />
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+          <button onClick={onClose} style={{ ...ghost, flex: 1 }}>Cancel</button>
+          <button onClick={save} disabled={busy} style={{ ...gold, flex: 2, opacity: busy ? 0.6 : 1 }}>{busy ? 'Importing…' : 'Import match'}</button>
         </div>
       </div>
     </Sheet>

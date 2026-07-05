@@ -15,7 +15,7 @@ import Fab, { FabGlyph } from './components/Fab.jsx';
 import CreateDeckWizard from './components/CreateDeckWizard.jsx';
 import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
 import DeckAddCards from './pillars/DeckAddCards.jsx';
-import Play from './pillars/Play.jsx';
+import Play, { ImportMatchSheet } from './pillars/Play.jsx';
 import LifeCounter from './pillars/LifeCounter.jsx';
 import AvatarPicker from './pillars/AvatarPicker.jsx';
 import Home from './pillars/Home.jsx';
@@ -23,7 +23,8 @@ import { getSettings, setSetting, recordMatch } from './store/playRepository.js'
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
-import { onBackButton, exitApp, haptic } from './native.js';
+import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
+import { parseMatchShare } from './store/matchShare.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
 import { ListRow, IconButton, Loading, Chip, BTN_GOLD, BTN_GHOST } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
@@ -59,6 +60,8 @@ export default function App() {
   const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal
   const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
+  const [matchImport, setMatchImport] = useState(null);        // parsed mirrored-match payload (from a shared QR / deep link)
+  const [resultPaste, setResultPaste] = useState(false);       // manual "paste a result link" fallback
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' - which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
@@ -67,6 +70,9 @@ export default function App() {
   const backRef = useRef(null);   // latest hardware-back handler (set each render)
   const [storageFull, setStorageFull] = useState(false);
   useEffect(() => onBackButton(() => backRef.current?.()), []);
+  // A scanned shared-match QR opens compendium://match?d=... - land it on the
+  // import review sheet, whatever tab we're on.
+  useEffect(() => onAppUrlOpen((url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }), []);
   // Storage-full / persist failure - the DB layer broadcasts when a save is
   // rejected (quota, blocked). Warn once so the user knows changes aren't saving.
   useEffect(() => {
@@ -184,6 +190,8 @@ export default function App() {
     [preMatch, () => setPreMatch(null)],
     [deckWizard, () => setDeckWizard(false)],
     [importMode, () => setImportMode(null)],
+    [matchImport, () => setMatchImport(null)],
+    [resultPaste, () => setResultPaste(false)],
     [creditsOpen, () => setCreditsOpen(false)],
     [settingsSheet, () => setSettingsSheet(false)],
     [profileSheet, () => setProfileSheet(false)],
@@ -286,7 +294,7 @@ export default function App() {
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
         ) : tab === 'play' ? (
           <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch}
-            onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} onChanged={bump} />
+            onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} onChanged={bump} onImport={() => setResultPaste(true)} />
         ) : (
           <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch}
             onGoTab={goTab} onAllNotes={() => { setCodexPreset({ marg: true }); goTab('codex'); }}
@@ -382,6 +390,10 @@ export default function App() {
       <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} onCredits={() => setCreditsOpen(true)} />
       <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
       <SearchHelpModal open={searchHelpOpen} kind={addActive ? 'deck' : 'codex'} onClose={() => setSearchHelpOpen(false)} />
+      <ImportPasteModal open={resultPaste} onClose={() => setResultPaste(false)}
+        onParsed={(p) => { setResultPaste(false); setMatchImport(p); }} />
+      <ImportMatchSheet payload={matchImport} onClose={() => setMatchImport(null)}
+        onSaved={() => { setMatchImport(null); bump(); goTab('play'); toast('Match imported'); }} />
       <ToastHost />
       <ConfirmHost />
     </div>
@@ -696,6 +708,33 @@ const DECK_HELP = [
   ['s:art', 'Set code (set:) - alp, bet, art, got, dra, pro'],
   ['rarity:unique', 'Rarity - ordinary, exceptional, elite, unique'],
 ];
+// Manual fallback for importing a shared result when the camera deep link
+// doesn't auto-open (desktop, or a phone that didn't offer the link): paste it.
+function ImportPasteModal({ open, onClose, onParsed }) {
+  const [text, setText] = useState('');
+  const [err, setErr] = useState(false);
+  useEffect(() => { if (open) { setText(''); setErr(false); } }, [open]);
+  if (!open) return null;
+  const submit = () => { const p = parseMatchShare(text); if (p) onParsed(p); else setErr(true); };
+  return (
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Import a result"
+      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'relative', width: '100%', maxWidth: 380, borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', padding: '24px 22px 20px' }}>
+        <div style={{ font: "600 20px/1.15 var(--f-display)", color: 'var(--gold-leaf)', marginBottom: 6 }}>Import a result</div>
+        <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 14 }}>Scan your opponent's QR with your camera, or paste the link they share here.</div>
+        <textarea value={text} onChange={(e) => { setText(e.target.value); setErr(false); }} placeholder="compendium://match?d=…"
+          style={{ width: '100%', height: 88, resize: 'none', background: 'var(--surface-well)', border: `1px solid ${err ? 'var(--destructive)' : 'var(--hair-22)'}`, borderRadius: 12, padding: 12, color: 'var(--ink-body)', font: "400 12px/1.4 var(--f-mono)", boxSizing: 'border-box' }} />
+        {err && <div style={{ font: "400 12px/1.4 var(--f-read)", color: 'var(--destructive)', marginTop: 6 }}>That doesn't look like a shared-result link.</div>}
+        <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+          <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+          <button onClick={submit} style={{ ...BTN_GOLD, flex: 2, display: 'flex', justifyContent: 'center' }}>Review import</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SearchHelpModal({ open, kind = 'codex', onClose }) {
   if (!open) return null;
   const deck = kind === 'deck';

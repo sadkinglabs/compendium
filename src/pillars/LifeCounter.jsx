@@ -8,6 +8,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import '../theme/counter.css';
 import { recentOpponents, setSetting } from '../store/playRepository.js';
+import { buildMatchShare } from '../store/matchShare.js';
+import QRCode from '../components/QRCode.jsx';
 import { haptic, setKeepAwake, setImmersive } from '../native.js';
 
 const BASE = import.meta.env.BASE_URL;
@@ -593,6 +595,18 @@ function DiceModal({ open, dice, setDice, onClose }) {
 
 function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord, onNew, onReset, onExit, onClose }) {
   const { winner, pLife, eLife, durationSec, recorded } = info;
+  const [shareLink, setShareLink] = useState(null);
+  const [sharing, setSharing] = useState(false);
+  async function openShare() {
+    if (sharing) return; setSharing(true);
+    try {
+      const { link } = await buildMatchShare({
+        winner, pLife, eLife, durationSec, playedAt: new Date().toISOString(),
+        youAvatarName: players.you?.name || null, oppAvatarName: players.opp?.name || null,
+      });
+      setShareLink(link);
+    } finally { setSharing(false); }
+  }
   const pWin = winner === 'player', eWin = winner === 'opponent', draw = winner === 'draw';
   const title = quick
     ? (pWin ? 'You Win' : eWin ? 'Opponent Wins' : 'Draw')
@@ -626,6 +640,15 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
           </div>
           {dur && <div className="end-duration-row">{ClockSvg}<span>{dur}</span></div>}
         </div>
+        {/* Hand this match to the opponent's device - a QR that mirrors the
+            result to their side (no deck). Works fully offline. */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0 6px' }}>
+          <button onClick={openShare} disabled={sharing}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 999, background: 'rgba(255,255,255,.05)', border: '1px solid rgba(var(--sk),.4)', color: 'rgb(var(--sk))', font: "700 12px/1 var(--f-ui)", letterSpacing: '.04em', cursor: 'pointer' }}>
+            {ShareSvg}{sharing ? 'Preparing…' : 'Share to opponent'}
+          </button>
+        </div>
+        {shareLink && <ShareQRModal link={shareLink} onClose={() => setShareLink(null)} />}
         {!quick && (
           <div className="end-opp-field">
             <div className="end-opp-label">Opponent (optional)</div>
@@ -646,8 +669,33 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
   );
 }
 
+// Share-result QR (over the end screen, z140). The opponent scans it to import
+// the match mirrored to their side.
+function ShareQRModal({ link, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => { try { await navigator.clipboard.writeText(link); setCopied(true); haptic('light'); setTimeout(() => setCopied(false), 1600); } catch { /* clipboard blocked */ } };
+  return (
+    <div className="vc-modal-overlay" id="share-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-top">
+          <button className="modal-close-btn" onClick={onClose} aria-label="Close">✕</button>
+          <div className="modal-title">Share Result</div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 22px 18px', gap: 15 }}>
+          <QRCode text={link} size={224} />
+          <div style={{ font: "400 13px/1.55 'EB Garamond',Georgia,serif", color: 'var(--muted)', textAlign: 'center', maxWidth: 280 }}>
+            Have your opponent scan this with their camera to save the match on their own device. They attribute their own deck.
+          </div>
+          <button className="modal-btn" onClick={copy} style={{ maxWidth: 220 }}>{copied ? 'Copied' : 'Copy link'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── icons ── */
 const s = { width: 17, height: 17, opacity: .8 };
+const ShareSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 15, height: 15 }} aria-hidden="true"><circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" /><line x1="8.6" y1="10.7" x2="15.4" y2="6.3" /><line x1="8.6" y1="13.3" x2="15.4" y2="17.7" /></svg>;
 const DotsSvg = <svg viewBox="0 0 24 24" fill="currentColor" style={{ width: 16, height: 16 }} aria-hidden="true"><circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" /></svg>;
 const DiceSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><rect x="2" y="2" width="20" height="20" rx="4" /><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.2" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.2" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" /></svg>;
 const HeartSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" /></svg>;

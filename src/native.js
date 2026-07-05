@@ -39,6 +39,17 @@ export function onBackButton(handler) {
   return () => { try { sub?.remove?.(); } catch { /* noop */ } };
 }
 
+/** Register a deep-link handler (native only). Fires when the app is opened via
+ *  a compendium:// URL - e.g. an opponent scanning a shared-match QR. Returns an
+ *  unsubscribe. Also replays a cold-start launch URL if present. */
+export function onAppUrlOpen(handler) {
+  if (!isNative()) return () => {};
+  let sub;
+  App.addListener('appUrlOpen', (data) => { if (data?.url) handler(data.url); }).then((s) => { sub = s; });
+  App.getLaunchUrl?.().then((res) => { if (res?.url) handler(res.url); }).catch(() => {});
+  return () => { try { sub?.remove?.(); } catch { /* noop */ } };
+}
+
 /** Exit the app (native only - used when back has nowhere left to go). */
 export function exitApp() { if (isNative()) App.exitApp(); }
 

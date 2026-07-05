@@ -511,6 +511,8 @@ body.roll-active .dd-pill { display: none !important; }
 /* The Hold-on confirm is summoned FROM the end screen (also a z-120 overlay) -
    it must always paint above it, independent of DOM order. */
 #confirm-overlay { z-index: 130; }
+/* Share-result QR is summoned from the end screen too - above it. */
+#share-overlay { z-index: 140; }
 .vc-modal-overlay .modal-box { animation: vc-modal-in .28s cubic-bezier(.22,1,.36,1); }
 @keyframes vc-modal-in { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
 .vc-root .modal-box { background: var(--modal); border-radius: 22px; width: 100%; max-width: 360px; border: 1px solid var(--gold-line); overflow: hidden; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); max-height: 90vh; overflow-y: auto; }
