@@ -25,7 +25,7 @@ import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, exitApp, haptic } from './native.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
-import { ListRow, IconButton, Loading, BTN_GOLD, BTN_GHOST } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, Chip, BTN_GOLD, BTN_GHOST } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
@@ -43,7 +43,7 @@ export default function App() {
   const [detail, setDetail] = useState(null);     // {kind,id,title}
   const [history, setHistory] = useState([]);
   const [query, setQuery] = useState('');
-  const [scope, setScope] = useState('all');
+  const [scope, setScope] = useState('rules');   // 'all' retired - the search bar IS the everything view
   const [codexPreset, setCodexPreset] = useState(null);   // one-shot filter preset (e.g. Home "All notes ›")
   const [rev, setRev] = useState(0);
   const [profileSheet, setProfileSheet] = useState(false);
@@ -58,6 +58,7 @@ export default function App() {
   const counterApi = useRef(null);                   // {minimize} - set by the live counter
   const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal
+  const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
   const [deckWizard, setDeckWizard] = useState(false);   // create-deck 2-step wizard
   const [importMode, setImportMode] = useState(null);    // 'url' | 'text' - which import sheet
   const [deckOpen, setDeckOpen] = useState(null);        // {id,name} deck loaded in the Decks pillar
@@ -167,7 +168,7 @@ export default function App() {
     // Clear ALL cross-profile UI state - a leaked deckOpen/addMode would edit
     // the previous profile's data (or spin forever on a deck this profile can't see).
     setProfileSheet(false); setDetail(null); setHistory([]); setQuery('');
-    setAddMode(null); setDeckOpen(null); setDeckEditMode(false); setPreMatch(null); setCodexPreset(null); setScope('all');
+    setAddMode(null); setDeckOpen(null); setDeckEditMode(false); setPreMatch(null); setCodexPreset(null); setScope('rules');
     setTab('home'); bump();
   }
 
@@ -220,7 +221,12 @@ export default function App() {
     <div className="cx-app" style={{ ...S.app, '--wash': WASH[tab] || WASH.home, '--list-accent': list.a, '--list-glow': list.g }}>
       {/* BRAND BAR */}
       <div style={S.brandBar}>
-        <button onClick={() => setSettingsSheet(true)} style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Settings">
+        {/* Wordmark = the app's home button (platform convention). Only when
+            already sitting on Home does it open Settings. */}
+        <button onClick={() => {
+          const atHome = tab === 'home' && !viewDetail && !hasQuery && !addActive && !preMatch;
+          if (atHome) setSettingsSheet(true); else goTab('home');
+        }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Home / Settings">
           <span style={S.diamond} />
           <span style={S.wordmark}>Compendium</span>
         </button>
@@ -280,10 +286,11 @@ export default function App() {
                  onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
         ) : tab === 'play' ? (
           <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch}
-            onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} />
+            onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} onChanged={bump} />
         ) : (
           <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch}
-            onGoTab={goTab} onAllNotes={() => { setCodexPreset({ notes: true }); goTab('codex'); }}
+            onGoTab={goTab} onAllNotes={() => { setCodexPreset({ marg: true }); goTab('codex'); }}
+            onMarginalia={() => { setScope('marginalia'); goTab('codex'); }}
             profile={profile} rev={rev} />
         )}
       </div>
@@ -296,6 +303,10 @@ export default function App() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
             <input value={searchVal} onChange={(e) => setSearchVal(e.target.value)} placeholder={searchPlaceholder} autoComplete="off" />
             {searchVal && <button className="cx-search-clear" onClick={() => setSearchVal('')} aria-label="Clear"><IcX size={13} /></button>}
+            {/* Syntax cheatsheet - codex syntax everywhere, deckbuilder syntax
+                (its own token set, purple chassis) in the add-cards search. */}
+            <button onClick={() => setSearchHelpOpen(true)} aria-label="Search syntax help"
+              style={{ flex: 'none', width: 24, height: 24, borderRadius: '50%', border: '1px solid rgba(220,184,111,.3)', background: 'transparent', color: 'rgba(220,184,111,.55)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>?</button>
           </div>
         </div>
       )}
@@ -370,6 +381,7 @@ export default function App() {
       )}
       <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} onCredits={() => setCreditsOpen(true)} />
       <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
+      <SearchHelpModal open={searchHelpOpen} kind={addActive ? 'deck' : 'codex'} onClose={() => setSearchHelpOpen(false)} />
       <ToastHost />
       <ConfirmHost />
     </div>
@@ -403,14 +415,30 @@ function ResultIcon({ kind }) {
 
 function SearchResults({ query, onOpen, onDuel }) {
   const [res, setRes] = useState(null);
+  const [kind, setKind] = useState('all');   // 'all' | 'rule' | 'card' - post-filter on the result groups
   useEffect(() => {
     let alive = true;
     const t = setTimeout(() => searchAll(query.trim()).then((r) => alive && setRes(r)), 130);
     return () => { alive = false; clearTimeout(t); };
   }, [query]);
   if (!res) return <Loading />;
-  const total = res.codex.length + res.decks.length + res.duels.length + (res.marginalia?.length || 0);
-  if (total === 0) return <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>;
+  const showRules = kind !== 'card', showCards = kind !== 'rule';
+  const total = (showRules ? res.articles.length + res.articleText.length : 0)
+    + (showCards ? res.cards.length + res.cardText.length : 0)
+    + (kind === 'all' ? res.decks.length + res.duels.length + (res.marginalia?.length || 0) : 0);
+  const kindChips = (
+    <ChipRowInline>
+      {[['all', 'All'], ['rule', 'Articles only'], ['card', 'Cards only']].map(([k, label]) => (
+        <Chip key={k} label={label} active={kind === k} onClick={() => setKind(k)} />
+      ))}
+    </ChipRowInline>
+  );
+  if (total === 0) return (
+    <div style={{ padding: '6px 20px 26px' }}>
+      {kindChips}
+      <div style={{ padding: '44px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>
+    </div>
+  );
   const group = (label, dot, items, onItem, iconKind) => items.length > 0 && (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
@@ -422,14 +450,24 @@ function SearchResults({ query, onOpen, onDuel }) {
       {items.map((it) => <ListRow key={(it.kind || iconKind) + it.id} icon={<ResultIcon kind={it.kind || iconKind} />} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
     </div>
   );
+  const openCodex = (it) => onOpen(it.kind, it.id, it.name);
   return (
     <div style={{ padding: '6px 20px 26px' }}>
-      {group('CODEX', 'var(--accent-gold)', res.codex, (it) => onOpen(it.kind, it.id, it.name), 'card')}
-      {group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], (it) => onOpen(it.kind, it.id, it.name), 'card')}
-      {group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name), 'deck')}
-      {group('MATCHES', 'var(--accent-jade)', res.duels, () => onDuel(), 'match')}
+      {kindChips}
+      {showRules && group('ARTICLES', 'var(--accent-gold)', res.articles, openCodex, 'rule')}
+      {showCards && group('CARDS', 'var(--accent-gold)', res.cards, openCodex, 'card')}
+      {showCards && group('MENTIONED IN CARD TEXT', 'var(--accent-gold)', res.cardText, openCodex, 'card')}
+      {showRules && group('MENTIONED IN ARTICLES', 'var(--accent-gold)', res.articleText, openCodex, 'rule')}
+      {kind === 'all' && group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], openCodex, 'card')}
+      {kind === 'all' && group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name), 'deck')}
+      {kind === 'all' && group('MATCHES', 'var(--accent-jade)', res.duels, () => onDuel(), 'match')}
     </div>
   );
+}
+
+// Chip row for the search results header - tighter than the pillar ChipRow.
+function ChipRowInline({ children }) {
+  return <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>{children}</div>;
 }
 
 // Profiles - the spine of the app, so the picker earns some ceremony: monogram
@@ -539,8 +577,8 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
 // App Settings - reached from the Home FAB. Accessibility only: font scale,
 // high contrast, reduced motion, haptics - all applied live via applyAppearance.
 // Match config (starting life, die) lives in the life tracker; rarity colours
-// is an add-cards filter; accent metal / counter comforts live in the tracker's
-// Tweaks. Settings stays a single, focused surface.
+// is an add-cards filter; counter comforts live in the tracker's Tweaks.
+// Settings stays a single, focused surface.
 function SettingsSheet({ open, onClose, onCredits }) {
   const [s, setS] = useState(null);
   useEffect(() => { if (open) getSettings().then(setS); }, [open]);
@@ -621,6 +659,80 @@ function CreditsModal({ open, onClose }) {
             Sorcery: Contested Realm and all related trademarks, artwork, characters, and intellectual property are owned by Erik&rsquo;s Curiosa. This app is not affiliated with, endorsed, sponsored, or approved by Erik&rsquo;s Curiosa.
             <br /><br />
             <em style={{ color: 'var(--gold-leaf)', fontStyle: 'italic' }}>Created by fans, for the community.</em>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Search-syntax cheatsheet - the faint ? on the search pill opens this. Two
+// variants on the same centered chassis: 'codex' (black+gold, documents
+// codexRepository.parseCodexQuery) and 'deck' (the deckbuilder's amethyst,
+// documents deckRepository.parseCardQuery). Keep rows in step with the parsers.
+const CODEX_HELP = [
+  ['airborne', 'Words match names, card text and article bodies (several words search as one phrase)'],
+  ['t:minion', 'By card type - minion, aura, magic, artifact, site, avatar'],
+  ['e:fire', 'By element - air, earth, fire, water'],
+  ['set:gothic', 'By set - Alpha, Beta, Arthurian Legends, Gothic, Dragonlord, Promotional'],
+  ['has:faq', 'Cards with an official FAQ'],
+  ['has:marginalia', 'Entries carrying your notes, highlights or links'],
+  ['is:errata', 'Cards with updated rules text'],
+  ['is:saved', 'Your saved entries'],
+  ['is:article', 'Articles only'],
+  ['is:card', 'Cards only'],
+];
+const DECK_HELP = [
+  ['name:sir', 'Card name - bare words work too; "quotes" and /regex/ accepted'],
+  ['t:mortal', 'Type or subtype (type:) - minion, aura, magic, artifact, site, avatar, mortal…'],
+  ['r:draw', 'Rules text (rules:) - commas require every term: r:"airborne, genesis"'],
+  ['kw:charge', 'Keyword ability, whole word (keyword:) - kw:airborne,charge needs both'],
+  ['life:20', 'Life value'],
+  ['attack>2', 'Attack - also defense>2; use : = > < >= <='],
+  ['el:ae', 'Element letters, any of (a/e/f/w) - or element:fire'],
+  ['th:3', 'Any element threshold meets it (threshold:)'],
+  ['at>1', 'Per-element threshold - at: et: ft: wt:'],
+  ['c=2', 'Mana cost (cost:) - c:2, c>=4, c<3'],
+  ['s:art', 'Set code (set:) - alp, bet, art, got, dra, pro'],
+  ['rarity:unique', 'Rarity - ordinary, exceptional, elite, unique'],
+];
+function SearchHelpModal({ open, kind = 'codex', onClose }) {
+  if (!open) return null;
+  const deck = kind === 'deck';
+  const rows = deck ? DECK_HELP : CODEX_HELP;
+  // Chassis + chip palette: gold for the codex, the deck pillar's amethyst here.
+  const chassis = deck
+    ? { background: 'linear-gradient(180deg,#1c1330,#0e0a1a)', border: '1px solid rgba(160,110,220,.32)' }
+    : { background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)' };
+  const glow = deck ? 'rgba(157,106,214,.14)' : 'rgba(220,184,111,.12)';
+  const chip = deck
+    ? { color: '#c79af0', background: 'rgba(157,106,214,.12)', border: '1px solid rgba(160,110,220,.32)' }
+    : { color: 'var(--gold-leaf)', background: 'rgba(220,184,111,.1)', border: '1px solid rgba(220,184,111,.22)' };
+  const example = deck
+    ? ['t:minion el:f c<=3 kw:charge', 'every cheap Fire minion with Charge']
+    : ['t:minion e:air airborne', 'every Air minion whose text mentions airborne'];
+  return (
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Search syntax"
+      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'relative', width: '100%', maxWidth: 370, maxHeight: '82vh', overflowY: 'auto', borderRadius: 20, boxShadow: '0 24px 64px rgba(0,0,0,.7)', ...chassis }}>
+        <button onClick={onClose} aria-label="Close"
+          style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </button>
+        <div style={{ padding: '26px 22px 22px', background: `radial-gradient(ellipse at 50% 0%, ${glow} 0%, transparent 60%)` }}>
+          <div style={{ font: "600 21px/1.15 var(--f-display)", color: 'var(--gold-leaf)', marginBottom: 4 }}>Search Syntax</div>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 16 }}>
+            {deck ? 'Tokens narrow the card pool - they stack with the Refine sheet.' : 'Mix any of these in one search - tokens narrow, words match.'}
+          </div>
+          {rows.map(([tok, desc]) => (
+            <div key={tok} style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--hair-12)' }}>
+              <code style={{ flex: 'none', font: "600 12px/1 var(--f-mono)", borderRadius: 7, padding: '5px 8px', ...chip }}>{tok}</code>
+              <span style={{ font: "400 12.5px/1.45 var(--f-read)", color: 'var(--ink-body-2)' }}>{desc}</span>
+            </div>
+          ))}
+          <div style={{ marginTop: 14, font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)' }}>
+            Example: <code style={{ font: "600 12px/1 var(--f-mono)", color: chip.color }}>{example[0]}</code> - {example[1]}.
           </div>
         </div>
       </div>

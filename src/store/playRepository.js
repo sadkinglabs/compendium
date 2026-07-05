@@ -1,5 +1,5 @@
 // Play data - matches + persisted match log + history stats + per-profile
-// settings (life/die/accent metal). All profile-scoped via activeProfileId().
+// settings (life/die/comforts). All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { trimHistorySql } from './deckRepository.js';
@@ -8,7 +8,7 @@ import { uuid, nowIso } from './ids.js';
 /* ---------------- settings ---------------- */
 
 const DEFAULTS = {
-  accent_metal: 'gilded', film_grain: 1, keep_awake: 0, immersive: 1,
+  film_grain: 1, keep_awake: 1, immersive: 1,   // keep_awake mirrors the schema default (v5)
   default_max_life: 20, die_type: 6, haptics: 1, rarity_colors: 0, theme: 'grimoire', persist_search: 0,
   font_scale: 1, high_contrast: 0, reduced_motion: 0,
 };
@@ -61,30 +61,34 @@ export async function recordMatch(m) {
     ]);
   }
   if (deckLives) {
-    if (winner === 'player') stmts.push(['UPDATE decks SET wins=wins+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), deckId, pid]]);
-    else if (winner === 'opponent') stmts.push(['UPDATE decks SET losses=losses+1, updated_at=? WHERE id=? AND profile_id=?;', [nowIso(), deckId, pid]]);
+    // No increment - the record is recomputed from matches IN THIS SAME tx, so
+    // there is exactly one writer of wins/losses and the match + record commit
+    // atomically together (no crash window between them).
     const outcome = winner === 'player' ? 'a win' : winner === 'opponent' ? 'a loss' : 'a draw';
     const vs = m.opponentName ? ` vs ${m.opponentName}` : '';
     stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);',
       [uuid(), deckId, nowIso(), `Recorded ${outcome}${vs} (${m.playerFinalLife ?? '–'}–${m.opponentFinalLife ?? '–'})`]]);
     stmts.push(trimHistorySql(deckId));   // keep the deck log bounded
+    stmts.push(syncDeckRecordStmt(deckId, pid));   // record = COUNT(matches), atomic with the insert
   }
   await tx(stmts);
   return id;
 }
 
 /** Manual history entry (Vitarum's Add Match) - a match that wasn't tracked
-    live. No log; doesn't touch a deck's W–L ledger (it's backfill). */
+    live. No log; may optionally be pinned to a piloted deck, whose W–L ledger
+    then re-syncs (same rule as live-recorded and edited matches). */
 export async function addManualMatch(m) {
   const pid = activeProfileId();
   const id = uuid();
-  await run(
+  const stmts = [[
     `INSERT INTO matches(id,profile_id,played_at,mode,player_avatar,opponent_name,opponent_avatar,
        player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id)
      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`,
     [id, pid, m.playedAt || nowIso(), 'full', m.playerAvatar || null, m.opponentName || null, m.opponentAvatar || null,
-      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, m.winner || 'draw', m.durationSec || 0, m.notes || '', null]
-  );
+      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, m.winner || 'draw', m.durationSec || 0, m.notes || '', m.deckId || null],
+  ], syncDeckRecordStmt(m.deckId, pid)].filter(Boolean);   // insert + record recompute, atomic
+  await tx(stmts);
   return id;
 }
 
@@ -102,7 +106,11 @@ export async function matchLog(matchId) {
 }
 
 export async function deleteMatch(id) {
-  await run('DELETE FROM matches WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
+  const pid = activeProfileId();
+  // Delete the match AND recompute its deck's record in one atomic tx - the
+  // deleted win/loss comes off the ledger in the same commit.
+  const deckId = (await query('SELECT deck_id FROM matches WHERE id=? AND profile_id=?;', [id, pid]))[0]?.deck_id;
+  await tx([['DELETE FROM matches WHERE id=? AND profile_id=?;', [id, pid]], syncDeckRecordStmt(deckId, pid)].filter(Boolean));
 }
 
 /** Avatar cards from the shared catalog (for the You/Opponent picker). */
@@ -134,19 +142,28 @@ export async function setMatchNote(matchId, notes) {
   await run('UPDATE matches SET notes=? WHERE id=? AND profile_id=?;', [notes, matchId, activeProfileId()]);
 }
 
-/** Recompute a deck's W–L straight from the matches table - the source of
-    truth. Safe to call any time: the live-record increment keeps wins==COUNT,
-    so recompute just re-establishes that invariant after a post-hoc edit. */
-async function syncDeckRecord(deckId, pid) {
-  if (!deckId) return;
-  await run(
+/** The SINGLE writer of a deck's W–L: recompute it straight from the matches
+    table, the one source of truth. Returned as a [sql, params] STATEMENT (not
+    executed) so callers fold it into the SAME tx() as the match mutation - one
+    atomic commit covers both, so a crash/quota-error can never leave a match
+    written but the record un-recomputed. `null` deckId → null (filtered out). */
+function syncDeckRecordStmt(deckId, pid) {
+  if (!deckId) return null;
+  return [
     `UPDATE decks SET
        wins   = (SELECT COUNT(*) FROM matches WHERE deck_id=? AND profile_id=? AND winner='player'),
        losses = (SELECT COUNT(*) FROM matches WHERE deck_id=? AND profile_id=? AND winner='opponent'),
        updated_at=?
      WHERE id=? AND profile_id=?;`,
-    [deckId, pid, deckId, pid, nowIso(), deckId, pid]
-  );
+    [deckId, pid, deckId, pid, nowIso(), deckId, pid],
+  ];
+}
+
+/** Count of ALL matches piloted with a deck (wins + losses + draws) - the
+    "tracked from N matches" provenance line, and the ripple warning on delete. */
+export async function deckMatchCount(deckId) {
+  if (!deckId) return 0;
+  return (await query('SELECT COUNT(*) c FROM matches WHERE deck_id=? AND profile_id=?;', [deckId, activeProfileId()]))[0].c;
 }
 
 /** Edit a match's recordable fields (opponent, winner, final life, piloted deck,
@@ -158,13 +175,15 @@ export async function updateMatch(matchId, f) {
   const oldDeck = (await query('SELECT deck_id FROM matches WHERE id=? AND profile_id=?;', [matchId, pid]))[0]?.deck_id || null;
   let newDeck = f.deck_id || null;
   if (newDeck && !(await query('SELECT 1 FROM decks WHERE id=? AND profile_id=?;', [newDeck, pid])).length) newDeck = null;
-  await run(
+  // Update the match AND recompute both affected decks in one atomic tx.
+  const stmts = [[
     `UPDATE matches SET opponent_name=?, winner=?, player_final_life=?, opponent_final_life=?, duration_sec=?, notes=?, deck_id=?
      WHERE id=? AND profile_id=?;`,
-    [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, f.duration_sec ?? 0, f.notes ?? '', newDeck, matchId, pid]
-  );
-  await syncDeckRecord(oldDeck, pid);
-  if (newDeck && newDeck !== oldDeck) await syncDeckRecord(newDeck, pid);
+    [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, f.duration_sec ?? 0, f.notes ?? '', newDeck, matchId, pid],
+  ]];
+  stmts.push(syncDeckRecordStmt(oldDeck, pid));
+  if (newDeck && newDeck !== oldDeck) stmts.push(syncDeckRecordStmt(newDeck, pid));
+  await tx(stmts.filter(Boolean));
 }
 
 /** Aggregate history stats from the active profile's matches. */
@@ -182,6 +201,7 @@ export async function historyStats() {
     total, wins, losses,
     winPct: decided ? Math.round((wins / decided) * 100) : null,
     streak, last8,
+    totalSec,
     timePlayedMin: Math.round(totalSec / 60),
     avgMin: total ? Math.round(totalSec / total / 60) : 0,
   };

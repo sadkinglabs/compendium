@@ -46,7 +46,7 @@
 
   /* element pips (card data only) */
   --el-air: #67b6c4;
-  --el-earth: #b6924a;
+  --el-earth: #b35c33;   /* rust, not tan - too close to the gold/multi hue */
   --el-fire: #d2645a;
   --el-water: #5b87d6;
 
@@ -277,8 +277,12 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
    behind a dim scrim; the picker floats in a rounded card and no longer takes
    over the interface. */
 .cx-picker-modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(6, 4, 12, .66); animation: cxfade .2s ease; }
-.cx-picker-box { width: 100%; max-width: 440px; height: min(86vh, 720px); border-radius: 22px; overflow: hidden; display: flex; box-shadow: 0 26px 70px -14px rgba(0, 0, 0, .78); border: 1px solid rgba(120, 180, 140, .22); animation: cxsheet .28s cubic-bezier(.2, .9, .3, 1); }
-.cx-picker-box #picker-screen { position: relative; inset: auto; width: 100%; height: 100%; flex: 1; min-height: 0; z-index: 1; border-radius: 22px; }
+/* The box owns the shape: one radius, one border, and the SAME ground colour as
+   the picker content, so no scrim can ever peek between border and content at
+   the corners. The inner screen carries no radius of its own - the box's
+   overflow clip rounds it at exactly the border's inner curve. */
+.cx-picker-box { width: 100%; max-width: 440px; height: min(86vh, 720px); border-radius: 22px; overflow: hidden; display: flex; background: #0e1c14; box-shadow: 0 26px 70px -14px rgba(0, 0, 0, .78); border: 1px solid rgba(120, 180, 140, .22); animation: cxsheet .28s cubic-bezier(.2, .9, .3, 1); }
+.cx-picker-box #picker-screen { position: relative; inset: auto; width: 100%; height: 100%; flex: 1; min-height: 0; z-index: 1; border-radius: 0; }
 /* No visible scrollbars anywhere (mobile app) - scrolling still works. */
 * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { width: 0; height: 0; display: none; }

@@ -3,7 +3,7 @@
 // personal layer (notes, highlights, links, collections) in one editable place.
 import React, { useEffect, useState } from 'react';
 import {
-  getCodexEntries, marginaliaAll, deleteNote, deleteHighlight, deleteLink,
+  getCodexEntries, marginaliaAll, deleteNote, deleteHighlight, deleteLink, toggleSaved,
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
 import { Chip, ChipRow, ListRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
@@ -28,28 +28,46 @@ export function CodexGlyph({ kind, size = 16 }) {
   );
 }
 
-const SCOPES = [['rules', 'Rules'], ['cards', 'Cards'], ['all', 'All']];
-const FILTERS = [['fav', 'Saved only'], ['notes', 'Has notes'], ['faq', 'Has FAQ'], ['errata', 'Errata']];
+// "All" is gone as a browse scope - an interleaved dump of 1300+ rows served
+// nobody. The universal search bar (with its t:/e:/set:/has:/is: syntax and
+// categorised results) is the everything view now.
+const SCOPES = [['rules', 'Rules'], ['cards', 'Cards']];
+// Scope-specific filter sheets. Shared: saved / marginalia / linked. Rules add
+// structure filters (sub-articles, card examples); Cards add FAQ/errata/sets.
+const RULE_FILTERS = [
+  ['fav', 'Saved only'], ['marg', 'Has marginalia'], ['subs', 'Contains sub-articles'],
+  ['examples', 'Contains examples'], ['linked', 'Linked'],
+];
+const CARD_FILTERS = [
+  ['fav', 'Saved only'], ['marg', 'Has marginalia'], ['faq', 'Contains FAQ'],
+  ['errata', 'Errata cards'], ['linked', 'Linked'],
+];
+const SET_CHIPS = ['Alpha', 'Beta', 'Arthurian Legends', 'Gothic', 'Dragonlord', 'Promotional'];
 
 export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied, rev }) {
+  const sc = scope === 'all' ? 'rules' : scope;   // stale persisted scope → Rules
   const [entries, setEntries] = useState(null);
-  const [filters, setFilters] = useState({});
+  const [filters, setFilters] = useState({ rules: {}, cards: {} });   // per-scope, both survive switching
   const [filterSheet, setFilterSheet] = useState(false);
 
   // One-shot filter preset from elsewhere in the app (e.g. Home "All notes ›"
   // lands here pre-filtered to entries carrying your marginalia).
   useEffect(() => {
-    if (preset) { setFilters(preset); onPresetApplied?.(); }
+    if (preset) { setFilters((f) => ({ ...f, [sc === 'marginalia' ? 'rules' : sc]: preset })); onPresetApplied?.(); }
     // eslint-disable-next-line
   }, [preset]);
 
-  const marginalia = scope === 'marginalia';
+  const marginalia = sc === 'marginalia';
+  const cur = filters[sc] || {};
+  const setCur = (updater) => setFilters((f) => ({ ...f, [sc]: typeof updater === 'function' ? updater(f[sc] || {}) : updater }));
+  const activeCount = Object.entries(cur).reduce((n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0);
   useEffect(() => {
     if (marginalia) return;
     let alive = true;
-    getCodexEntries(scope, filters).then((e) => alive && setEntries(e));
+    getCodexEntries(sc, cur).then((e) => alive && setEntries(e));
     return () => { alive = false; };
-  }, [scope, rev, filters, marginalia]);
+    // eslint-disable-next-line
+  }, [sc, rev, filters, marginalia]);
 
   return (
     <div style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
@@ -60,7 +78,7 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <ChipRow>
             {SCOPES.map(([k, label]) => (
-              <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
+              <Chip key={k} label={label} active={sc === k} onClick={() => setScope(k)} />
             ))}
           </ChipRow>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
@@ -88,16 +106,33 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
       ) : (
       <>
 
-      <Sheet open={filterSheet} title="Filters" onClose={() => setFilterSheet(false)}>
+      <Sheet open={filterSheet} title={sc === 'cards' ? 'Card Filters' : 'Article Filters'} onClose={() => setFilterSheet(false)}>
         <div style={{ padding: '0 16px' }}>
-        {FILTERS.map(([k, label]) => (
-          <div key={k} onClick={() => setFilters((f) => ({ ...f, [k]: !f[k] }))} className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
+        {(sc === 'cards' ? CARD_FILTERS : RULE_FILTERS).map(([k, label]) => (
+          <div key={k} onClick={() => setCur((f) => ({ ...f, [k]: !f[k] }))} className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
             <span style={{ font: "600 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
-            <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: filters[k] ? 'var(--gold-leaf)' : 'transparent', fontSize: 13 }}>{filters[k] ? '✓' : ''}</span>
+            <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: cur[k] ? 'var(--gold-leaf)' : 'transparent' }}>
+              {cur[k] && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+            </span>
           </div>
         ))}
+        {sc === 'cards' && (
+          <div style={{ padding: '14px 0 4px' }}>
+            <div style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)', marginBottom: 10 }}>BY SET</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {SET_CHIPS.map((s) => (
+                <Chip key={s} label={s} active={(cur.sets || []).includes(s)}
+                  onClick={() => setCur((f) => {
+                    const has = (f.sets || []).includes(s);
+                    const sets = has ? (f.sets || []).filter((x) => x !== s) : [...(f.sets || []), s];
+                    return { ...f, sets };
+                  })} />
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={() => setFilters({})} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' }}>Clear</button>
+          <button onClick={() => setCur({})} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' }}>Clear</button>
           <button onClick={() => setFilterSheet(false)} style={{ flex: 2, padding: '12px 0', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 14px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Show results</button>
         </div>
         </div>
@@ -111,8 +146,8 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
         <AzList entries={entries} onOpen={onOpen} />
       )}
 
-      {/* Codex FAB - opens filters (browse scopes only) */}
-      <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters" onClick={() => setFilterSheet(true)} />
+      {/* Codex FAB - opens the scope's filter sheet; badge = active filter count */}
+      <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters" badge={activeCount} onClick={() => setFilterSheet(true)} />
       </>
       )}
     </div>
@@ -166,7 +201,7 @@ function MarginaliaView({ onOpen, rev }) {
   }
 
   if (!d || !cols) return <Loading />;
-  const empty = d.notes.length + d.highlights.length + d.links.length + cols.length === 0;
+  const empty = d.saved.length + d.notes.length + d.highlights.length + d.links.length + cols.length === 0;
   const on = (t) => <span style={{ display: 'block', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {t}</span>;
   const openS = (id) => !closed.has(id);
   // A collapsible category header (label + count + Material chevron). Kept as a
@@ -196,18 +231,53 @@ function MarginaliaView({ onOpen, rev }) {
         </div>
       )}
 
+      {/* SAVED leads - the entries you starred across the Codex, previously
+          invisible outside their own pages. Hued like everything else here:
+          card = violet, article = gold. Edit mode unsaves. */}
+      {d.saved.length > 0 && (
+        <div style={{ marginBottom: 22 }}>
+          {secHead('saved', 'SAVED')}
+          {openS('saved') && d.saved.map((s) => {
+            const isCard = s.target_type === 'card';
+            const hue = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
+            return (
+              <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 2px', borderBottom: '1px solid var(--hair-12)' }}>
+                <span onClick={() => onOpen(s.target_type, s.target_id, s.on)} className="cx-row" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+                  <span style={{ color: hue, flex: 'none', display: 'flex' }}><CodexGlyph kind={s.target_type} size={15} /></span>
+                  <span style={{ font: "600 14.5px/1.25 var(--f-read)", color: 'var(--ink-body)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.on}</span>
+                  <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: hue, flex: 'none' }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
+                </span>
+                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await toggleSaved(s.target_type, s.target_id); load(); }} title="Remove from saved" />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {d.notes.length > 0 && (
         <div style={{ marginBottom: 22 }}>
           {secHead('notes', 'NOTES')}
-          {openS('notes') && d.notes.map((n) => (
-            <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
-              <div onClick={() => onOpen(n.target_type, n.target_id, n.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-                <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
-                {on(n.on)}
+          {/* Notes read as CARDS - full frame, plain upright text - so they never
+              blur into the highlights (left-edge strips, italic quoted text).
+              The PLACE leads: which entry the note lives on (name + type, hued
+              card-violet / article-gold), then the note itself beneath. */}
+          {openS('notes') && d.notes.map((n) => {
+            const isCard = n.target_type === 'card';
+            const hue = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
+            return (
+              <div key={n.id} style={{ background: 'rgba(18,16,13,.72)', border: '1px solid rgba(220,184,111,.2)', borderRadius: 12, boxShadow: 'inset 0 1px 0 rgba(255,255,255,.03)', padding: '11px 14px 12px', marginBottom: 10, display: 'flex', gap: 8 }}>
+                <div onClick={() => onOpen(n.target_type, n.target_id, n.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                    <span style={{ color: hue, flex: 'none', display: 'flex' }}><CodexGlyph kind={n.target_type} size={14} /></span>
+                    <span style={{ font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.on}</span>
+                    <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: hue, flex: 'none' }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
+                  </div>
+                  <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{n.body}</div>
+                </div>
+                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteNote(n.id); load(); }} title="Delete note" />}
               </div>
-              {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteNote(n.id); load(); }} title="Delete note" />}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

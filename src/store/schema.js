@@ -178,9 +178,9 @@ export const MIGRATIONS = [
 
     CREATE TABLE IF NOT EXISTS settings (
       profile_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
-      accent_metal TEXT DEFAULT 'gilded',
+      accent_metal TEXT DEFAULT 'gilded',   -- retired (counter-skin picker removed); column kept for compatibility
       film_grain INTEGER DEFAULT 1,
-      keep_awake INTEGER DEFAULT 0,
+      keep_awake INTEGER DEFAULT 1,
       immersive INTEGER DEFAULT 1,
       default_max_life INTEGER DEFAULT 20,
       die_type INTEGER DEFAULT 6,
@@ -216,6 +216,27 @@ export const MIGRATIONS = [
     ALTER TABLE settings ADD COLUMN font_scale REAL DEFAULT 1;
     ALTER TABLE settings ADD COLUMN high_contrast INTEGER DEFAULT 0;
     ALTER TABLE settings ADD COLUMN reduced_motion INTEGER DEFAULT 0;
+    `,
+  },
+  {
+    // v5 - keep-screen-awake is now the default during a match (a life tracker
+    // you stare at should never let the screen sleep). The lock is engaged only
+    // while the counter is mounted, so "on by default" still means match-scoped.
+    // Buried + off-by-default until now, so flip every existing profile on too;
+    // anyone who prefers otherwise still has the Tweaks toggle.
+    version: 5,
+    sql: 'UPDATE settings SET keep_awake=1;',
+  },
+  {
+    // v6 - a deck's W-L is now DERIVED SOLELY from its matches (the manual
+    // Stats steppers are gone; matches are the single source of truth). Reconcile
+    // every existing deck once so any hand-entered or drifted record snaps to the
+    // true count of its linked matches. Decks with no linked matches become 0-0.
+    version: 6,
+    sql: `
+    UPDATE decks SET
+      wins   = (SELECT COUNT(*) FROM matches m WHERE m.deck_id=decks.id AND m.profile_id=decks.profile_id AND m.winner='player'),
+      losses = (SELECT COUNT(*) FROM matches m WHERE m.deck_id=decks.id AND m.profile_id=decks.profile_id AND m.winner='opponent');
     `,
   },
 ];

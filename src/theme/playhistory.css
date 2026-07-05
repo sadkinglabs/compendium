@@ -41,19 +41,18 @@
 .mh .match-entry { padding:11px 12px; border-radius:12px; background:rgba(16,16,19,.9); border:1px solid rgba(255,255,255,.07); margin-bottom:8px; }
 .mh .match-entry-top { display:flex; align-items:center; gap:11px; margin-bottom:8px; }
 .mh .match-matchup { flex:1; min-width:0; display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
-.mh .match-you { font-family:'EB Garamond',serif; font-size:14px; font-weight:600; color:#e9d49a; }
+.mh .match-you { display:inline-flex; align-items:baseline; gap:6px; font-family:'EB Garamond',serif; font-size:14px; font-weight:600; color:#e9d49a; }
 .mh .match-vs  { font-family:'EB Garamond',serif; font-size:11px; font-weight:400; color:#5a6b60; }
-.mh .match-opp { font-family:'EB Garamond',serif; font-size:14px; font-weight:500; color:#e3ddca; }
+.mh .match-opp { display:inline-flex; align-items:baseline; gap:6px; font-family:'EB Garamond',serif; font-size:14px; font-weight:500; color:#e3ddca; }
+/* final life inline with each combatant (moved up from the old meta row) */
+.mh .match-life { font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:600; color:#dcb86f; }
+.mh .match-life.dd { color:#e0786a; }
 .mh .match-when { font-size:10px; font-weight:500; color:#6a7a6f; flex:none; }
 .mh .match-badge { font-size:12px; font-weight:700; flex-shrink:0; width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; border:1px solid transparent; }
 .mh .match-badge.win  { background:rgba(77,179,138,.18); border-color:rgba(77,179,138,.4); color:#7fd3ad; }
 .mh .match-badge.loss { background:rgba(224,120,106,.16); border-color:rgba(224,120,106,.4); color:#e0786a; }
 .mh .match-badge.draw { background:rgba(154,167,156,.14); border-color:rgba(120,180,140,.16); color:#9aa79c; }
 .mh .match-meta { display:flex; align-items:center; gap:7px; font-size:11px; color:#7f8d81; flex-wrap:wrap; }
-.mh .match-meta .lbl { opacity:.7; }
-.mh .match-meta .you-life { font-family:'IBM Plex Mono',monospace; color:#dcb86f; font-weight:500; }
-.mh .match-meta .opp-life { font-family:'IBM Plex Mono',monospace; color:#e3ddca; font-weight:500; }
-.mh .match-meta .dd { color:#e0786a; }
 .mh .match-dot { opacity:.4; }
 .mh .match-notes-text { font-family:'EB Garamond',serif; font-size:13px; color:#9aa79c; font-style:italic; margin-top:8px; line-height:1.5; }
 .mh .match-opp-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:3px 9px 3px 7px; border-radius:11px; background:linear-gradient(180deg,rgba(207,154,74,.28),rgba(140,90,42,.14)); border:1px solid rgba(220,184,111,.25); font:600 11px/1 'Hanken Grotesk',sans-serif; color:#e9d49a; -webkit-tap-highlight-color:transparent; }
@@ -64,6 +63,10 @@
 .mh .match-deck-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
 .mh .match-deck-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mh .match-deck-tag:active { opacity:.75; }
+/* "Add deck" - the unattributed variant: quiet, dashed, no violet fill, so it
+   reads as an offer to attribute rather than a live deck link. */
+.mh .match-deck-tag.add { background:transparent; border:1px dashed rgba(233,220,192,.24); color:rgba(233,220,192,.5); }
+.mh .match-deck-tag.add svg { opacity:.6; }
 /* Pills row - opponent + piloted deck, straight under the matchup line. */
 .mh .match-pills { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
 /* Compact icon actions, tucked into the meta line (note · edit · delete). */

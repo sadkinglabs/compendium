@@ -119,13 +119,27 @@ export async function importProfile(bundle, { name } = {}) {
     stmts.push(['INSERT OR REPLACE INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);', [pid, bundle.resume.target_type, bundle.resume.target_id, bundle.resume.title, bundle.resume.at]]);
   if (bundle.settings) {
     const s = bundle.settings;
-    // Restore EVERY setting, including the accessibility trio (font_scale /
+    // Restore EVERY live setting, including the accessibility trio (font_scale /
     // high_contrast / reduced_motion) - older bundles without them fall back to
-    // sensible defaults rather than null.
-    stmts.push(['UPDATE settings SET accent_metal=?,film_grain=?,keep_awake=?,immersive=?,default_max_life=?,die_type=?,haptics=?,rarity_colors=?,theme=?,persist_search=?,font_scale=?,high_contrast=?,reduced_motion=? WHERE profile_id=?;',
-      [s.accent_metal, s.film_grain, s.keep_awake, s.immersive, s.default_max_life, s.die_type, s.haptics, s.rarity_colors, s.theme, s.persist_search,
+    // sensible defaults rather than null. accent_metal (the retired counter-skin
+    // picker) is deliberately NOT restored - the counter is gold, full stop.
+    stmts.push(['UPDATE settings SET film_grain=?,keep_awake=?,immersive=?,default_max_life=?,die_type=?,haptics=?,rarity_colors=?,theme=?,persist_search=?,font_scale=?,high_contrast=?,reduced_motion=? WHERE profile_id=?;',
+      [s.film_grain, s.keep_awake, s.immersive, s.default_max_life, s.die_type, s.haptics, s.rarity_colors, s.theme, s.persist_search,
         s.font_scale ?? 1, s.high_contrast ?? 0, s.reduced_motion ?? 0, pid]]);
   }
+  // A deck's W-L is DERIVED from its matches (the single source of truth), so
+  // recompute every imported deck from its imported matches rather than trusting
+  // the bundle's stored wins/losses - a bundle from an older, pre-derivation
+  // build could carry a drifted record. Runs last in the tx, after the matches
+  // above are inserted, so the counts see them.
+  for (const newDeckId of deckMap.values())
+    stmts.push([
+      `UPDATE decks SET
+         wins   = (SELECT COUNT(*) FROM matches WHERE deck_id=? AND profile_id=? AND winner='player'),
+         losses = (SELECT COUNT(*) FROM matches WHERE deck_id=? AND profile_id=? AND winner='opponent')
+       WHERE id=? AND profile_id=?;`,
+      [newDeckId, pid, newDeckId, pid, newDeckId, pid]]);
+
   // Mark the imported profile's dashboard as already seeded (key convention from
   // homeRepository) so its restored layout - even a deliberately empty one - is
   // never repopulated with the starter widgets on first load.

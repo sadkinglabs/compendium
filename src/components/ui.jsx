@@ -8,6 +8,20 @@ import { GLYPH_ICON } from './icons.jsx';
 export const BTN_GOLD = { padding: '12px 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer', flex: 'none' };
 export const BTN_GHOST = { padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' };
 
+/* The app's ONE blank-state block (the Decks-library look): a rotated diamond
+   in the pillar's hue, a Cinzel title, a Garamond line, optional action.
+   `hue` is "r,g,b" - decks violet "160,110,220", play jade "143,211,168". */
+export function BlankState({ hue = '220,184,111', title, body, action, minHeight = '52vh' }) {
+  return (
+    <div style={{ minHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32 }}>
+      <div style={{ width: 52, height: 52, border: `2px solid rgba(${hue},.28)`, transform: 'rotate(45deg)', marginBottom: 32, boxShadow: `0 0 28px rgba(${hue},.18)` }} />
+      <h2 style={{ font: "600 20px/1.2 'Cinzel',Georgia,serif", color: '#dcb86f', marginBottom: 10 }}>{title}</h2>
+      {body && <p style={{ font: "400 15px/1.6 'EB Garamond',Georgia,serif", color: 'var(--ink-muted)', marginBottom: action ? 24 : 0 }}>{body}</p>}
+      {action}
+    </div>
+  );
+}
+
 /* One chip language everywhere: filled-gold active, ghost inactive. */
 export function Chip({ label, active, onClick, dot }) {
   return (

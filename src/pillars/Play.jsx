@@ -2,9 +2,9 @@
 // (win-rate / W–L / streak / last-8 pips), and Recent Matches. Calm by design:
 // the life counter and in-match log live inside an in-progress match, not here.
 import React, { useEffect, useState } from 'react';
-import { listMatches, getMatch, matchLog, setMatchNote, updateMatch, deleteMatch, recentOpponents, addManualMatch, listAvatars } from '../store/playRepository.js';
+import { listMatches, getMatch, matchLog, updateMatch, deleteMatch, recentOpponents, addManualMatch, listAvatars } from '../store/playRepository.js';
 import { listAvatarCards, listDecks } from '../store/deckRepository.js';
-import { IconButton, Chip, ChipRow, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { IconButton, Chip, ChipRow, Loading, BlankState, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { toast, confirmAction } from '../feedback.js';
@@ -31,7 +31,7 @@ function relTime(iso) {
   const mo = Math.floor(day / 30); return mo < 12 ? `${mo}mo ago` : `${Math.floor(mo / 12)}y ago`;
 }
 
-export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
+export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onChanged }) {
   const [matches, setMatches] = useState([]);
   const [avImg, setAvImg] = useState({});           // avatar name → image_slug
   const [oppFilter, setOppFilter] = useState(null);  // drill-in on one opponent
@@ -51,7 +51,10 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
     });
     return () => { alive = false; };
   }, [rev, tick]);
-  const refresh = () => setTick((t) => t + 1);
+  // Refresh Play's own list AND bump the app-wide revision, so a match mutation
+  // that moves a deck's derived record (add / edit / delete) is reflected live in
+  // the Decks library and Home too - never a stale record across pillars.
+  const refresh = () => { setTick((t) => t + 1); onChanged?.(); };
   useEffect(() => { setPage(1); }, [oppFilter]);   // restart paging when drilling in/out
 
   // Derived stats (client-side, mirroring Vitarum's renderHistory()). matches is
@@ -82,12 +85,18 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
   const ring = `conic-gradient(#4db38a 0% ${pct}%, rgba(255,255,255,.07) ${pct}% 100%)`;
   const toggle = (k) => setCollapsed((c) => ({ ...c, [k]: !c[k] }));
 
-  const matchSheet = <MatchSheet matchId={matchId} onClose={() => setMatchId(null)}
-    onChanged={refresh} onH2H={(name) => { setMatchId(null); setOppFilter(name); }} onOpenDeck={onOpenDeck} />;
+  const matchSheet = <MatchSheet matchId={matchId} onClose={() => setMatchId(null)} onChanged={refresh} />;
 
   const cardActions = {
     onEdit: (id) => setMatchId(id),
-    onDelete: async (id) => { if (await confirmAction({ title: 'Delete this match?', body: 'The match and its log are removed. This can’t be undone.', confirmLabel: 'Delete', danger: true })) { await deleteMatch(id); refresh(); toast('Match deleted'); } },
+    // Ripple-aware: if the match is piloted with a deck, say the record will move.
+    onDelete: async (m) => {
+      const linked = m.deck_id && m.deck_name;
+      const body = linked
+        ? `The match and its log are removed, and ${m.deck_name}'s record updates to match. This can’t be undone.`
+        : 'The match and its log are removed. This can’t be undone.';
+      if (await confirmAction({ title: 'Delete this match?', body, confirmLabel: 'Delete', danger: true })) { await deleteMatch(m.id); refresh(); toast('Match deleted'); }
+    },
     onOpp: (name) => setOppFilter(name),
     onDeck: (id, name) => onOpenDeck?.(id, name),
   };
@@ -111,9 +120,8 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
         </div>
       )}
       {matches.length === 0 ? (
-        <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '14px 0' }}>
-          No matches yet. Start a match to track life and record the result.
-        </div>
+        <BlankState hue="143,211,168" minHeight="46vh" title="No Matches Yet"
+          body={<>Start a match to track life<br />and record the result.</>} />
       ) : oppFilter ? (
         <>
           <button onClick={() => setOppFilter(null)} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer', marginBottom: 14 }}>‹ All matches</button>
@@ -185,10 +193,9 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev }) {
         </>
       )}
 
-      {/* Add a match to history by hand (Vitarum's Add Match). */}
-      <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="History options" items={[
-        { label: 'Add Match', prominent: true, onClick: () => setAddOpen(true) },
-      ]} />
+      {/* Add a match to history by hand (Vitarum's Add Match) - a direct "+"
+          action, not a one-item menu detour. */}
+      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add match" active={addOpen} onClick={() => setAddOpen(true)} />
       <AddMatchSheet open={addOpen}
         onClose={() => setAddOpen(false)} onSaved={() => { setAddOpen(false); refresh(); toast('Match added'); }} />
     </div>
@@ -213,40 +220,43 @@ function MatchCard({ m, onEdit, onDelete, onOpp, onDeck }) {
     <div className="match-entry">
       <div className="match-entry-top">
         <span className={`match-badge ${badgeCls}`}>{badgeTxt}</span>
+        {/* Matchup + result in ONE line: name then final life per side. */}
         <div className="match-matchup">
-          <span className="match-you">{m.player_avatar || 'You'}</span>
+          <span className="match-you">{m.player_avatar || 'You'}{m.player_final_life != null && <span className={`match-life${pDD ? ' dd' : ''}`}>{m.player_final_life}</span>}</span>
           <span className="match-vs">vs</span>
-          <span className="match-opp">{m.opponent_avatar || 'Opponent'}</span>
+          <span className="match-opp">{m.opponent_final_life != null && <span className={`match-life${eDD ? ' dd' : ''}`}>{m.opponent_final_life}</span>}{m.opponent_avatar || 'Opponent'}</span>
         </div>
         {when && <span className="match-when">{when}</span>}
       </div>
-      {(opp || hasDeck) && (
-        <div className="match-pills">
-          {opp && (
-            <span className="match-opp-tag" onClick={() => onOpp(opp)} role="button" tabIndex={0}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>{opp}
-            </span>
-          )}
-          {hasDeck && (
-            <span className="match-deck-tag" onClick={() => onDeck(m.deck_id, m.deck_name)} role="button" tabIndex={0} title="Open deck">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg><span>{m.deck_name}</span>
-            </span>
-          )}
-        </div>
-      )}
+      <div className="match-pills">
+        {opp && (
+          <span className="match-opp-tag" onClick={() => onOpp(opp)} role="button" tabIndex={0}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>{opp}
+          </span>
+        )}
+        {hasDeck ? (
+          <span className="match-deck-tag" onClick={() => onDeck(m.deck_id, m.deck_name)} role="button" tabIndex={0} title="Open deck">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg><span>{m.deck_name}</span>
+          </span>
+        ) : (
+          // No deck attributed - offer to link one (opens the details sheet's deck
+          // picker). Makes the unattributed state legible and one tap to fix.
+          <span className="match-deck-tag add" onClick={() => onEdit(m.id)} role="button" tabIndex={0} title="Attribute to a deck">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /><line x1="14.5" y1="10.5" x2="14.5" y2="15.5" /><line x1="12" y1="13" x2="17" y2="13" /></svg><span>Add deck</span>
+          </span>
+        )}
+      </div>
+      {/* Meta row - just when + duration now (the result moved up into the
+          matchup line); no duplicated life totals. */}
       <div className="match-meta">
-        <span><span className="lbl">You</span> <span className={`you-life${pDD ? ' dd' : ''}`}>{m.player_final_life}</span></span>
-        <span className="match-dot">·</span>
-        <span><span className="lbl">Opp</span> <span className={`opp-life${eDD ? ' dd' : ''}`}>{m.opponent_final_life}</span></span>
-        <span className="match-dot">·</span>
         <span>{date}{time ? ', ' + time : ''}</span>
         {m.duration_sec ? <><span className="match-dot">·</span><span>{fmtSpan(m.duration_sec)}</span></> : null}
         <span className="match-meta-spring" />
         <span className="match-mini-group">
-          <button className="match-mini-btn" onClick={() => onEdit(m.id)} title="Match details" aria-label="Match details">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+          <button className="match-mini-btn" onClick={() => onEdit(m.id)} title="Edit match" aria-label="Edit match">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>
           </button>
-          <button className="match-mini-btn danger" onClick={() => onDelete(m.id)} title="Remove entry" aria-label="Remove entry">
+          <button className="match-mini-btn danger" onClick={() => onDelete(m)} title="Remove entry" aria-label="Remove entry">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" /><path d="M9 6V4h6v2" /></svg>
           </button>
         </span>
@@ -256,16 +266,19 @@ function MatchCard({ m, onEdit, onDelete, onOpp, onDeck }) {
   );
 }
 
-function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
+// Match sheet is EDIT-ONLY now (the old read-only "details" recap duplicated the
+// card, which already shows the result). Opens straight in edit; all fields incl.
+// notes live under this one window. Head-to-head nav lives on the card's
+// opponent pill, so it isn't repeated here.
+function MatchSheet({ matchId, onClose, onChanged }) {
   const [m, setM] = useState(null);
   const [log, setLog] = useState([]);
-  const [edit, setEdit] = useState(false);
   const [f, setF] = useState(null);
   const [recent, setRecent] = useState([]);
   const [decks, setDecks] = useState([]);
 
   useEffect(() => {
-    if (!matchId) { setM(null); setEdit(false); return; }
+    if (!matchId) { setM(null); setF(null); return; }
     getMatch(matchId).then((mm) => { setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '', deck_id: mm.deck_id || null } : null); });
     matchLog(matchId).then(setLog);
     recentOpponents().then(setRecent);
@@ -273,116 +286,128 @@ function MatchSheet({ matchId, onClose, onChanged, onH2H, onOpenDeck }) {
   }, [matchId]);
 
   if (!matchId) return null;
-  const title = m ? (m.winner === 'player' ? 'Victory' : m.winner === 'draw' ? 'Draw' : 'Defeat') : 'Match';
-  async function save() { await updateMatch(matchId, f); onChanged(); setM(await getMatch(matchId)); setEdit(false); }
-  async function saveNote(v) { setF((p) => ({ ...p, notes: v })); await setMatchNote(matchId, v); onChanged(); setM(await getMatch(matchId)); }
-  async function del() { if (await confirmAction({ title: 'Delete this match?', body: 'The match and its log are removed. This can’t be undone.', confirmLabel: 'Delete', danger: true })) { await deleteMatch(matchId); onChanged(); onClose(); toast('Match deleted'); } }
+  async function save() { await updateMatch(matchId, f); onChanged(); onClose(); toast('Match updated'); }
+  async function del() {
+    const linked = m?.deck_id && m?.deck_name;
+    const body = linked
+      ? `The match and its log are removed, and ${m.deck_name}'s record updates to match. This can’t be undone.`
+      : 'The match and its log are removed. This can’t be undone.';
+    if (await confirmAction({ title: 'Delete this match?', body, confirmLabel: 'Delete', danger: true })) { await deleteMatch(matchId); onChanged(); onClose(); toast('Match deleted'); }
+  }
 
   return (
-    <Sheet open title={edit ? 'Edit match' : title} onClose={onClose}>
-      {!m ? <Loading /> : (
+    <Sheet open title="Edit match" onClose={onClose}>
+      {!m || !f ? <Loading /> : (
         <div style={{ padding: '0 20px' }}>
-          {!edit && (
-            <div style={{ textAlign: 'center', marginBottom: 18 }}>
-              <div style={{ font: "700 46px/1 var(--f-display)", letterSpacing: '.01em', color: m.winner === 'player' ? 'var(--accent-jade)' : m.winner === 'draw' ? 'var(--ink-muted)' : '#c98f8f' }}>{m.player_final_life}–{m.opponent_final_life}</div>
-              {(m.player_avatar || m.opponent_avatar) && <div style={{ font: "500 12px/1.2 var(--f-read)", color: 'var(--ink-muted)', marginTop: 6 }}>{m.player_avatar || 'You'} vs {m.opponent_avatar || 'Opponent'}</div>}
-              {m.deck_id && m.deck_name && (
-                <div onClick={() => { onClose(); onOpenDeck?.(m.deck_id, m.deck_name); }}
-                  style={{ font: "600 12px/1.2 var(--f-read)", color: 'var(--accent-violet)', marginTop: 6, cursor: 'pointer' }}>
-                  ◈ Piloting {m.deck_name} ›
-                </div>
-              )}
-              <div style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-faint)', marginTop: 5 }}>{new Date(m.played_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}{m.duration_sec ? ` · ${Math.round(m.duration_sec / 60)}m` : ''}</div>
+          <div style={{ marginBottom: 22 }}>
+            <Lbl t="FINAL LIFE" />
+            <div style={{ display: 'flex', gap: 14 }}>
+              <LifeStep label="You" v={f.player_final_life} set={(x) => setF({ ...f, player_final_life: x })} />
+              <LifeStep label="Opp" v={f.opponent_final_life} set={(x) => setF({ ...f, opponent_final_life: x })} />
+            </div>
+          </div>
+          <div style={{ marginBottom: 22 }}>
+            <Lbl t="RESULT" />
+            <ChipRow>
+              {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
+            </ChipRow>
+          </div>
+          <div style={{ marginBottom: 22 }}>
+            <Lbl t="OPPONENT" />
+            <input value={f.opponent_name} onChange={(e) => setF({ ...f, opponent_name: e.target.value })} placeholder="Their name…" style={inp} />
+            {recent.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>{recent.map((r) => <span key={r} onClick={() => setF({ ...f, opponent_name: r })} style={chip}>{r}</span>)}</div>}
+          </div>
+          {decks.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <DeckPicker decks={decks} value={f.deck_id} onChange={(id) => setF({ ...f, deck_id: id })} />
             </div>
           )}
-
-          {edit ? (
-            // Edit fields ordered by what matters most to correct: life → result →
-            // opponent. Generous vertical rhythm keeps it from feeling packed.
-            <div>
-              <div style={{ marginBottom: 24 }}>
-                <Lbl t="FINAL LIFE" />
-                <div style={{ display: 'flex', gap: 14 }}>
-                  <LifeStep label="You" v={f.player_final_life} set={(x) => setF({ ...f, player_final_life: x })} />
-                  <LifeStep label="Opp" v={f.opponent_final_life} set={(x) => setF({ ...f, opponent_final_life: x })} />
-                </div>
-              </div>
-              <div style={{ marginBottom: 24 }}>
-                <Lbl t="RESULT" />
-                <ChipRow>
-                  {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
-                </ChipRow>
-              </div>
-              <div style={{ marginBottom: decks.length ? 24 : 8 }}>
-                <Lbl t="OPPONENT" />
-                <input value={f.opponent_name} onChange={(e) => setF({ ...f, opponent_name: e.target.value })} placeholder="Their name…" style={inp} />
-                {recent.length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>{recent.map((r) => <span key={r} onClick={() => setF({ ...f, opponent_name: r })} style={chip}>{r}</span>)}</div>}
-              </div>
-              {decks.length > 0 && (
-                <div style={{ marginBottom: 8 }}>
-                  <Lbl t="PILOTED DECK" />
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    <span onClick={() => setF({ ...f, deck_id: null })} style={f.deck_id ? chip : { ...chip, borderColor: 'rgba(220,184,111,.6)', color: 'var(--gold-head)' }}>None</span>
-                    {decks.map((d) => {
-                      const on = f.deck_id === d.id;
-                      return <span key={d.id} onClick={() => setF({ ...f, deck_id: d.id })} style={on ? { ...chip, borderColor: 'rgba(220,184,111,.6)', color: 'var(--gold-head)' } : chip}>{d.name}</span>;
-                    })}
+          <div style={{ marginBottom: 22 }}>
+            <Lbl t="NOTE" />
+            <textarea value={f.notes} maxLength={200} onChange={(e) => setF({ ...f, notes: e.target.value.slice(0, 200) })} placeholder="Add a note about this match…"
+              style={{ width: '100%', height: 100, resize: 'none', background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: 12, color: 'var(--ink-body)', font: "400 14px/1.5 var(--f-read)" }} />
+            <div style={{ textAlign: 'right', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-faint)', margin: '5px 2px 0' }}>{(f.notes || '').length}/200</div>
+          </div>
+          {log.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <Lbl t={`MATCH LOG · ${log.length}`} />
+              <div style={{ maxHeight: 150, overflowY: 'auto' }} className="cx-scroll">
+                {log.map((r) => (
+                  <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px', borderBottom: '1px solid var(--hair-12)' }}>
+                    <span style={{ width: 56, font: "500 10px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{new Date(r.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                    <span style={{ flex: 1, font: "500 12px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{r.who === 'player' ? 'You' : 'Opp'} {r.delta > 0 ? 'gained' : 'lost'} {Math.abs(r.delta)}</span>
+                    <span style={{ font: "600 12px/1 var(--f-mono)", color: 'var(--accent-jade)' }}>{r.to_life}</span>
                   </div>
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 10, marginTop: 26 }}>
-                <button onClick={() => setEdit(false)} style={{ ...ghost, flex: 1 }}>Cancel</button>
-                <button onClick={save} style={{ ...gold, flex: 1 }}>Save changes</button>
+                ))}
               </div>
             </div>
-          ) : (
-            <>
-              <Lbl t="NOTE" />
-              <textarea value={f.notes} maxLength={200} onChange={(e) => setF({ ...f, notes: e.target.value.slice(0, 200) })} onBlur={(e) => saveNote(e.target.value)} placeholder="Add a note about this match…"
-                style={{ width: '100%', height: 132, resize: 'none', background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: 12, color: 'var(--ink-body)', font: "400 14px/1.5 var(--f-read)" }} />
-              <div style={{ textAlign: 'right', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-faint)', margin: '5px 2px 14px' }}>{(f.notes || '').length}/200</div>
-
-              {log.length > 0 && (
-                <>
-                  <Lbl t={`MATCH LOG · ${log.length}`} />
-                  <div style={{ maxHeight: 150, overflowY: 'auto', marginBottom: 14 }} className="cx-scroll">
-                    {log.map((r) => (
-                      <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 2px', borderBottom: '1px solid var(--hair-12)' }}>
-                        <span style={{ width: 56, font: "500 10px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{new Date(r.t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
-                        <span style={{ flex: 1, font: "500 12px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{r.who === 'player' ? 'You' : 'Opp'} {r.delta > 0 ? 'gained' : 'lost'} {Math.abs(r.delta)}</span>
-                        <span style={{ font: "600 12px/1 var(--f-mono)", color: 'var(--accent-jade)' }}>♥ {r.to_life}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button onClick={() => setEdit(true)} style={{ ...ghost, flex: 1 }}>✎ Edit</button>
-                {m.opponent_name && <button onClick={() => onH2H(m.opponent_name)} style={{ ...ghost, flex: 1 }}>⚔ Record</button>}
-                <button onClick={del} style={{ ...ghost, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.4)' }}>✕ Delete</button>
-              </div>
-            </>
           )}
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button onClick={del} style={{ ...ghost, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.4)' }}>Delete</button>
+            <button onClick={save} style={{ ...gold, flex: 2 }}>Save changes</button>
+          </div>
         </div>
       )}
     </Sheet>
   );
 }
+
+// Deck picker built for scale (a user could have 50+ decks): the current pick +
+// Clear up top, a search that filters to matches, and RECENT deck pills by
+// default so the common case is one tap. Only shows search once the collection
+// outgrows the pill row.
+function DeckPicker({ decks, value, onChange }) {
+  const [q, setQ] = useState('');
+  const needle = q.trim().toLowerCase();
+  const selected = decks.find((d) => d.id === value) || null;
+  const recent = [...decks].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 6);
+  const results = needle ? decks.filter((d) => d.name.toLowerCase().includes(needle)).slice(0, 14) : recent;
+  const chipOn = { ...chip, borderColor: 'rgba(220,184,111,.6)', color: 'var(--gold-head)' };
+  const searchable = decks.length > 6;
+  return (
+    <div>
+      <Lbl t="PILOTED DECK" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: selected ? 'var(--gold-head)' : 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected ? selected.name : 'No deck attributed'}</span>
+        {selected && <button onClick={() => onChange(null)} style={{ ...ghost, flex: 'none', padding: '7px 13px', font: "600 11px/1 var(--f-ui)" }}>Clear</button>}
+      </div>
+      {searchable && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 12px', marginBottom: 10 }}>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /></svg>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your decks…" autoComplete="off"
+            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
+        </div>
+      )}
+      {searchable && !needle && <div style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-faint)', margin: '2px 0 8px' }}>RECENT</div>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {results.map((d) => <span key={d.id} onClick={() => onChange(d.id)} style={value === d.id ? chipOn : chip}>{d.name}</span>)}
+        {needle && !results.length && <span style={{ font: "italic 400 13px/1.4 var(--f-read)", color: 'var(--ink-faint)' }}>No decks match “{q}”.</span>}
+      </div>
+    </div>
+  );
+}
 // Manual Add Match - Vitarum's Add Match form ported to the Arcanum Sheet.
 function AddMatchSheet({ open, onClose, onSaved }) {
-  const blank = () => { const now = new Date(); return { winner: 'player', pLife: 20, eLife: 0, opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '' }; };
+  const blank = () => { const now = new Date(); return { winner: 'player', pLife: 20, eLife: 0, opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '', deckId: '' }; };
   const [f, setF] = useState(blank);
   const [recent, setRecent] = useState([]);
   const [avatars, setAvatars] = useState([]);
+  const [decks, setDecks] = useState([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!open) return;
     setF(blank()); setBusy(false);
     recentOpponents().then(setRecent);
     listAvatars().then((a) => setAvatars(a.map((x) => x.name)));
+    listDecks().then(setDecks);
   }, [open]);
   if (!open) return null;
+
+  // Picking a piloted deck fills your avatar from the deck's own (still editable).
+  function pickDeck(id) {
+    const d = decks.find((x) => x.id === id);
+    setF((prev) => ({ ...prev, deckId: id, pAvatar: id && d?.avatar?.name ? d.avatar.name : prev.pAvatar }));
+  }
 
   async function save() {
     if (busy) return;
@@ -393,6 +418,7 @@ function AddMatchSheet({ open, onClose, onSaved }) {
         winner: f.winner, playerFinalLife: f.pLife, opponentFinalLife: f.eLife,
         opponentName: f.opponent.trim() || null, playedAt,
         playerAvatar: f.pAvatar || null, opponentAvatar: f.eAvatar || null,
+        deckId: f.deckId || null,
       });
       haptic('medium');
       onSaved();
@@ -400,7 +426,7 @@ function AddMatchSheet({ open, onClose, onSaved }) {
   }
 
   const avSelect = (val, set, placeholder) => (
-    <select value={val} onChange={(e) => set(e.target.value)} style={{ ...inp, flex: 1, height: 40, appearance: 'none', WebkitAppearance: 'none' }}>
+    <select value={val} onChange={(e) => set(e.target.value)} style={{ ...sel, flex: 1 }}>
       <option value="">{placeholder}</option>
       {avatars.map((n) => <option key={n} value={n}>{n}</option>)}
     </select>
@@ -418,6 +444,15 @@ function AddMatchSheet({ open, onClose, onSaved }) {
           <LifeStep label="You" v={f.pLife} set={(x) => setF({ ...f, pLife: x })} />
           <LifeStep label="Opp" v={f.eLife} set={(x) => setF({ ...f, eLife: x })} />
         </div>
+        {decks.length > 0 && (
+          <>
+            <Lbl t="DECK PILOTED (optional)" />
+            <select value={f.deckId} onChange={(e) => pickDeck(e.target.value)} style={{ ...sel, marginBottom: 14 }}>
+              <option value="">No deck</option>
+              {decks.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </>
+        )}
         <Lbl t="AVATARS (optional)" />
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           {avSelect(f.pAvatar, (v) => setF({ ...f, pAvatar: v }), 'Your avatar')}
@@ -456,6 +491,14 @@ function LifeStep({ label, v, set }) {
   );
 }
 const inp = { width: '100%', height: 42, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" };
+// Styled <select> - the input chassis + our own gold chevron instead of the
+// native picker arrow; colorScheme keeps the dropdown list dark on device.
+const sel = {
+  ...inp, appearance: 'none', WebkitAppearance: 'none', cursor: 'pointer', colorScheme: 'dark',
+  padding: '0 34px 0 14px',
+  backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a99878' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>")`,
+  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 13px center',
+};
 const chip = { padding: '5px 11px', borderRadius: 16, border: '1px solid var(--hair-22)', font: "500 12px/1 var(--f-read)", color: 'var(--ink-status)', cursor: 'pointer' };
 const ghost = { ...BTN_GHOST, padding: '11px 0', font: "600 12px/1 var(--f-ui)" };
 const gold = { ...BTN_GOLD, padding: '11px 18px' };

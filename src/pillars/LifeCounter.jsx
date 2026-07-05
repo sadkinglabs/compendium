@@ -12,6 +12,7 @@ import { haptic, setKeepAwake, setImmersive } from '../native.js';
 
 const BASE = import.meta.env.BASE_URL;
 const LOG_GAP_MS = 1200;
+const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
 
 function fmtDur(secs) {
   secs = Math.max(0, Math.round(secs || 0));
@@ -32,15 +33,14 @@ function fmtClock(secs) {
 export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onRecord, onExit, onNewMatch, registerApi }) {
   const start = Math.min(20, settings.default_max_life || 20); // Sorcery: life ≤ 20
   const quick = mode === 'quick';
-  const skin = settings.accent_metal && settings.accent_metal !== 'gilded' ? settings.accent_metal : undefined;
 
   const pRef = useRef(resume ? { life: resume.pLife, max: resume.pMax } : { life: start, max: start });
   const eRef = useRef(resume ? { life: resume.eLife, max: resume.eMax } : { life: start, max: start });
   const [, force] = useState(0);            // re-render for dd-pill / status badge / max
   const [deltas, setDeltas] = useState([]);
   const [rollPhase, setRollPhase] = useState(resume ? null : 'armed');   // 'armed'|'rolling'|'result'|null
+  const [resultLeft, setResultLeft] = useState(4);   // seconds left on the "Your pick" pill
   const [flip, setFlip] = useState(0);
-  const [catcher, setCatcher] = useState(false);
   const [fabP, setFabP] = useState(false);
   const [fabE, setFabE] = useState(false);
   const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
@@ -60,6 +60,9 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const elapsedBase = useRef(resume?.elapsedSec || 0);   // banked elapsed from prior segments
   const lastLog = useRef(null);
   const deltaId = useRef(0);
+  const lifeTaps = useRef(0);   // successful life taps since the roll offer armed
+  const activeDelta = useRef({ player: null, enemy: null });   // {id,sign} of the live (still-counting) delta bubble per side
+  const deltaTimers = useRef({ player: null, enemy: null });   // per-side "you've stopped tapping" release timers
   const timers = useRef([]);
   const recordingRef = useRef(false);   // in-flight guard for Record (blocks double-tap)
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
@@ -121,7 +124,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       if (settings.immersive) setImmersive(true);
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { clearTimers(); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
+    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
 
@@ -135,8 +138,12 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     haptic('light');
   }
 
-  // body.roll-active while the roll-off pill is up (hides FABs, locks tap zones)
-  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase != null); }, [rollPhase]);
+  // The roll-off is OPTIONAL and never blocks the match. The counter is live
+  // from the first tap; the armed pill just floats as an offer. We only lock the
+  // tap-zones / FABs during the brief 'rolling' + 'result' window, because there
+  // the life numerals are borrowed to tumble the dice - a tap mid-spin would
+  // fight the animation. Armed = fully interactive (tap life, open menus, leave).
+  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase === 'rolling' || rollPhase === 'result'); }, [rollPhase]);
 
   // Match clock - re-render once a second while it's showing (elapsedSec() reads
   // live). Stops once the match is decided; CSS hides it during the roll-off.
@@ -157,10 +164,33 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       lastLog.current = now; return [...prev, { t: new Date().toISOString(), who, kind: 'life', delta, toLife }];
     });
   }
+  // Release the live bubble for a side: mark it floating (CSS .released) and bin
+  // it once the rise animation is done.
+  function releaseDelta(who) {
+    const active = activeDelta.current[who];
+    if (!active) return;
+    activeDelta.current[who] = null;
+    clearTimeout(deltaTimers.current[who]);
+    setDeltas((list) => list.map((x) => (x.id === active.id ? { ...x, released: true } : x)));
+    timers.current.push(setTimeout(() => setDeltas((list) => list.filter((x) => x.id !== active.id)), 850));
+  }
+  // The floating badge coalesces exactly like the match log: successive taps on
+  // the same side in the same direction fold into one bubble that counts up in
+  // place (+1, +2, +3...). When you stop tapping (LOG_GAP_MS of quiet) that
+  // running total floats away. A direction flip retires the old bubble first.
   function showDelta(who, delta) {
-    const id = ++deltaId.current;
-    setDeltas((d) => [...d, { id, who, delta }]);
-    setTimeout(() => setDeltas((d) => d.filter((x) => x.id !== id)), 1000);
+    const sign = Math.sign(delta);
+    const active = activeDelta.current[who];
+    if (active && active.sign === sign) {
+      setDeltas((list) => list.map((x) => (x.id === active.id ? { ...x, delta: x.delta + delta } : x)));
+    } else {
+      if (active) releaseDelta(who);
+      const id = ++deltaId.current;
+      activeDelta.current[who] = { id, sign };
+      setDeltas((list) => [...list, { id, who, delta, released: false }]);
+    }
+    clearTimeout(deltaTimers.current[who]);
+    deltaTimers.current[who] = setTimeout(() => releaseDelta(who), LOG_GAP_MS);
   }
   function bump(who, delta) {
     const el = who === 'player' ? pNumRef.current : eNumRef.current;
@@ -184,6 +214,9 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     bump(who, delta);
     haptic('light');
     force((n) => n + 1);
+    // Once the player has clearly settled into tracking life, retire the centre
+    // roll offer (with a fade) so it can never sit in the way of a fast tap.
+    if (rollPhase === 'armed' && ++lifeTaps.current >= ROLL_DISMISS_TAPS) fadeOutRoll();
   }
   function setMax(who, max) {
     const cur = who === 'player' ? pRef.current : eRef.current;
@@ -195,6 +228,8 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   function reset() {
     pRef.current = { life: start, max: start }; eRef.current = { life: start, max: start };
     setLog([]); lastLog.current = null; setEndInfo(null);
+    setDeltas([]); activeDelta.current = { player: null, enemy: null };
+    clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy);
     elapsedBase.current = 0; startedAt.current = Date.now();
     recordedRef.current = false;   // a fresh game (Go Again / Reset) can be recorded anew
     renderLife(); setSheet(null); setFabP(false); setFabE(false);
@@ -207,7 +242,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     pNumRef.current?.classList.remove('roll-win', 'roll-lose');
     eNumRef.current?.classList.remove('roll-win', 'roll-lose');
   }
-  function armRollOff() { _clearRoll(); setCatcher(false); setFlip(0); setRollPhase('armed'); }
+  function armRollOff() { _clearRoll(); setFlip(0); lifeTaps.current = 0; setRollPhase('armed'); }
   function startRollOff() {
     if (rollPhase !== 'armed') return;
     setRollPhase('rolling'); _clearRoll();
@@ -216,7 +251,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     let pVal = d20(), eVal = d20();
     while (eVal === pVal) eVal = d20();
     const winner = pVal > eVal ? 'player' : 'enemy';
-    const total = 16 + Math.floor(Math.random() * 8);
+    const total = 10 + Math.floor(Math.random() * 6);   // ~1s shorter tumble than Vitarum's 16-23 ticks
     let step = 0;
     const tick = () => {
       if (step >= total) {
@@ -237,14 +272,30 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     pNumRef.current?.classList.add(winner === 'player' ? 'roll-win' : 'roll-lose');
     eNumRef.current?.classList.add(winner === 'enemy' ? 'roll-win' : 'roll-lose');
     setFlip(winner === 'player' ? 0 : 180);
-    timers.current.push(setTimeout(() => { setRollPhase('result'); setCatcher(true); }, 650));
+    // Reveal the result, then let it settle on its own - no full-screen tap
+    // catcher gating the app. The pill lingers 4s with a visible countdown so
+    // nobody is caught by surprise when play begins.
+    timers.current.push(setTimeout(() => { setRollPhase('result'); setResultLeft(4); }, 650));
+    for (let i = 1; i <= 3; i++) timers.current.push(setTimeout(() => setResultLeft(4 - i), 650 + i * 1000));
+    timers.current.push(setTimeout(() => finishRollOff(), 650 + 4000));
   }
   function finishRollOff() {
-    setCatcher(false); setRollPhase(null); _clearRoll();
-    startedAt.current = Date.now();                 // roll-off doesn't count toward match length
-    elapsedBase.current = 0;
-    renderLife();
+    setRollPhase(null); _clearRoll();
+    renderLife();   // restore the real life totals over the tumbled dice faces
   }
+  // Retire the armed offer with a soft upward fade - whether waved off by the X
+  // or auto-retired once the player is clearly just tracking life. Falls back to
+  // an instant clear if the node has already gone.
+  function fadeOutRoll() {
+    const pill = typeof document !== 'undefined' && document.getElementById('roll-pill');
+    if (!pill) { _clearRoll(); setRollPhase(null); renderLife(); return; }
+    pill.classList.add('roll-exit');
+    timers.current.push(setTimeout(() => {
+      pill.classList.remove('roll-exit'); _clearRoll(); setRollPhase(null); renderLife();
+    }, 340));
+  }
+  // Waving the roll away without rolling - it's an offer, not a gate.
+  function dismissRollOff() { haptic('light'); fadeOutRoll(); }
 
   // ── end match → full-screen decision modal (Vitarum) ──
   function triggerEnd(winner) {
@@ -289,7 +340,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const p = pRef.current, e = eRef.current;
 
   return (
-    <div id="counter-screen" className={`vc-root${quick ? ' quick' : ''}`} data-skin={skin}>
+    <div id="counter-screen" className={`vc-root${quick ? ' quick' : ''}`}>
       {/* Enemy half (rotated 180° for across-table reading) */}
       <div className="counter-half enemy-half" id="enemy-half">
         <img className="half-bg" id="enemy-bg" src={eImg} alt="" />
@@ -334,23 +385,28 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       {/* floating deltas rendered INTO the correct half (so the enemy rotation applies) */}
       {deltas.map((d) => {
         const host = document.getElementById(d.who === 'player' ? 'player-half' : 'enemy-half');
+        // The badge swells as the streak grows - +8% per point over the first,
+        // capped at 1.6x so a huge swing stays readable, not screen-filling.
+        const mag = Math.min(1 + (Math.abs(d.delta) - 1) * 0.08, 1.6);
         return host ? createPortal(
-          <div key={d.id} className={`life-delta ${d.delta > 0 ? 'plus' : 'minus'}`}>{d.delta > 0 ? `+${d.delta}` : `${d.delta}`}</div>,
+          <div key={d.id} className={`life-delta ${d.delta > 0 ? 'plus' : 'minus'}${d.released ? ' released' : ''}`} style={{ '--dmag': mag }}>
+            <span key={d.delta} className="life-delta-num">{d.delta > 0 ? `+${d.delta}` : `${d.delta}`}</span>
+          </div>,
           host, String(d.id),
         ) : null;
       })}
 
       {/* Player FAB (fixed, bottom-right) */}
       <div className={`fab-wrap${fabP ? ' open' : ''}`} id="counter-fab">
+        {/* No Home entry - Android back (or a back swipe) minimises the match. */}
         <div className="fab-menu">
-          <button onClick={() => { setFabP(false); setSheet('log'); }}>{LogSvg}Match Log</button>
-          <button onClick={() => { setFabP(false); setSheet('dice'); }}>{DiceSvg}Roll a Die</button>
+          <button onClick={() => { setFabP(false); setSheet('tweaks'); }}>{TweaksSvg}Tweaks</button>
           <button onClick={() => { setClockOn((v) => !v); haptic('light'); }}>{ClockSvg}Show Clock<span className="fab-state">{clockOn ? 'on' : 'off'}</span></button>
           <button onClick={() => { setFabP(false); setSheet('maxP'); }}>{HeartSvg}Change Max Life</button>
+          <button onClick={() => { setFabP(false); setSheet('dice'); }}>{DiceSvg}Roll a Die</button>
+          <button onClick={() => { setFabP(false); setSheet('log'); }}>{LogSvg}Match Log</button>
           <button onClick={() => { setFabP(false); if (log.length) setConfirm({ label: 'Reset the match? Life totals and log will be cleared.', action: reset }); else reset(); }}>{ResetSvg}Reset Match</button>
-          <button onClick={() => { setFabP(false); triggerEnd(null); }}>{FlagSvg}End Match</button>
-          <button onClick={() => { setFabP(false); setSheet('tweaks'); }}>{TweaksSvg}Tweaks</button>
-          <button onClick={() => { setFabP(false); minimize(); }}>{HomeSvg}Home</button>
+          <button style={{ color: 'var(--crimson)' }} onClick={() => { setFabP(false); triggerEnd(null); }}>{FlagSvg}End Match</button>
         </div>
         <button className="fab" onClick={(ev) => { ev.stopPropagation(); setFabP((v) => !v); }} aria-label="Options">{DotsSvg}</button>
       </div>
@@ -359,15 +415,18 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
           CSS hides it during the roll-off (body.roll-active). */}
       {clockOn && <div id="match-clock">{fmtClock(elapsedSec())}</div>}
 
-      {/* Morphing turn-order pill + tap catcher */}
+      {/* Optional turn-order roll. Floats over the live counter as an offer:
+          tap it to roll, or dismiss it with the X - it never blocks the match. */}
       <div id="roll-pill" className={rollPhase === 'armed' ? 'show armed' : rollPhase === 'result' ? 'show result' : ''}
         onClick={rollPhase === 'armed' ? startRollOff : undefined} role="button" aria-label="Roll for turn order">
         <div id="roll-pill-body" style={{ '--flip': flip + 'deg' }}>
-          <span className="roll-pill-go"><span className="rp-glyph">⬡</span><span className="rp-label">Roll for Turn</span></span>
-          <span className="roll-pill-pick"><span className="rp-main">Your pick</span><span className="rp-hint">Tap to start</span></span>
+          <span className="roll-pill-go">{RollHexSvg}<span className="rp-label">Roll for Turn</span></span>
+          <span className="roll-pill-pick"><span className="rp-main">Your pick</span><span className="rp-hint">Play begins in {resultLeft}</span></span>
         </div>
+        {rollPhase === 'armed' && (
+          <button className="roll-pill-dismiss" onClick={(ev) => { ev.stopPropagation(); dismissRollOff(); }} aria-label="Dismiss the turn roll">{CloseSvg}</button>
+        )}
       </div>
-      <div id="roll-tap-catcher" className={catcher ? 'show' : ''} onClick={finishRollOff} role="button" aria-label="Start match" />
 
       {/* secondary modals (Vitarum centered .modal-box) */}
       <MatchLogModal open={sheet === 'log'} log={log} onClose={() => setSheet(null)} />
@@ -375,20 +434,23 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       <MaxLifeModal open={sheet === 'maxE'} who="opponent" value={e.max} onClose={() => setSheet(null)} onSet={(v) => setMax('opponent', v)} />
       <DiceModal open={sheet === 'dice'} dice={dice} setDice={setDice} onClose={() => setSheet(null)} />
       <TweaksModal open={sheet === 'tweaks'} tw={tw} onToggle={setTweak} onClose={() => setSheet(null)} />
+      {/* full-screen end-of-match decision modal */}
+      {endInfo && (
+        <EndModal info={endInfo} quick={quick} players={players} oppName={oppName} setOppName={setOppName} recent={recent}
+          onRecord={recordFromEnd} onNew={newFromEnd} onReset={resetFromEnd} onExit={exitFromEnd} onClose={() => setEndInfo(null)} />
+      )}
+
+      {/* "Hold on" confirm - rendered AFTER the end modal AND on a higher layer
+          (#confirm-overlay): it can be summoned FROM the end screen, so it must
+          always paint above it, whatever the DOM order becomes. */}
       {confirm && (
-        <VModal title="Hold on" onClose={() => setConfirm(null)}
+        <VModal id="confirm-overlay" title="Hold on" onClose={() => setConfirm(null)}
           actions={<>
             <button className="modal-btn" onClick={() => setConfirm(null)}>Cancel</button>
             <button className="modal-btn danger" onClick={() => { const a = confirm.action; setConfirm(null); a?.(); }}>Discard</button>
           </>}>
           <div style={{ padding: '18px 22px 4px', textAlign: 'center', font: "400 15px/1.5 'EB Garamond',Georgia,serif", color: 'var(--muted)' }}>{confirm.label}</div>
         </VModal>
-      )}
-
-      {/* full-screen end-of-match decision modal */}
-      {endInfo && (
-        <EndModal info={endInfo} quick={quick} players={players} oppName={oppName} setOppName={setOppName} recent={recent}
-          onRecord={recordFromEnd} onNew={newFromEnd} onReset={resetFromEnd} onExit={exitFromEnd} onClose={() => setEndInfo(null)} />
       )}
     </div>
   );
@@ -484,8 +546,8 @@ function DiceModal({ open, dice, setDice, onClose }) {
   useEffect(() => stop, []);                        // clear on unmount
   useEffect(() => { if (!open) { stop(); setRolling(false); } }, [open]);
   if (!open) return null;
-  // Vitarum's rollDie: ~18–25 ticks at 60ms, cycling faces, then land. Honour
-  // reduced motion by settling immediately.
+  // Vitarum's rollDie, tightened: ~7-11 ticks at 60ms, cycling faces, then land.
+  // Honour reduced motion by settling immediately.
   function roll() {
     if (rolling) return;
     stop();
@@ -497,7 +559,7 @@ function DiceModal({ open, dice, setDice, onClose }) {
     }
     setRolling(true); setDice((x) => ({ ...x, value: null }));
     let ticks = 0;
-    const total = 18 + Math.floor(Math.random() * 8);
+    const total = 7 + Math.floor(Math.random() * 5);   // ~1s shorter than Vitarum's 18-25 ticks
     iv.current = setInterval(() => {
       setDisplay(Math.ceil(Math.random() * dice.type));
       if (++ticks >= total) {
@@ -594,9 +656,11 @@ const DDSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeW
 const LogSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>;
 const ResetSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>;
 const FlagSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>;
-const HomeSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" /></svg>;
 const TweaksSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={s}><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="17" x2="20" y2="17" /><circle cx="9" cy="7" r="2.2" fill="currentColor" stroke="none" /><circle cx="15" cy="17" r="2.2" fill="currentColor" stroke="none" /></svg>;
 const ClockSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 15" /></svg>;
 const CheckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>;
 const PlusSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12l7-7 7 7" /></svg>;
 const ExitSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>;
+// Roll-pill glyphs: a hex die (turn roll) and a close X (dismiss the offer).
+const RollHexSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" style={{ width: 16, height: 16 }} aria-hidden="true"><path d="M12 2.6 20.5 7v10L12 21.4 3.5 17V7z" /><path d="M12 2.6V21.4M3.5 7l8.5 5 8.5-5" /></svg>;
+const CloseSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>;

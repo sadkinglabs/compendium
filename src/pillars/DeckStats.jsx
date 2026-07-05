@@ -2,7 +2,8 @@
 // atlas supply/odds with 10k Monte-Carlo + turn stepper, spellbook odds, random
 // hand), ported faithfully and skinned to the grimoire palette.
 import React, { useEffect, useMemo, useState } from 'react';
-import { getDeckCards, setRecord } from '../store/deckRepository.js';
+import { getDeckCards } from '../store/deckRepository.js';
+import { deckMatchCount } from '../store/playRepository.js';
 import * as St from '../store/deckStats.js';
 import { ThresholdPips, Loading } from '../components/ui.jsx';
 
@@ -11,11 +12,13 @@ export default function DeckStats({ deck, rev, onReload }) {
   const [compMode, setCompMode] = useState('element');
   const [atlasMode, setAtlasMode] = useState('supply');
   const [atlasTurn, setAtlasTurn] = useState(3);   // players draw 3 sites at the start of a match
-  const [wl, setWl] = useState({ w: deck.wins, l: deck.losses });
+  // Record is DERIVED from matches now (read-only). `tracked` = all linked
+  // matches incl. draws, for the "from N matches" provenance line.
+  const wl = { w: deck.wins, l: deck.losses };
+  const [tracked, setTracked] = useState(null);
 
   useEffect(() => { let a = true; getDeckCards(deck.id).then((z) => a && setZones(z)); return () => { a = false; }; }, [deck.id, rev]);
-  useEffect(() => { setWl({ w: deck.wins, l: deck.losses }); }, [deck.id, deck.wins, deck.losses]);
-  async function saveRecord(w, l) { setWl({ w, l }); await setRecord(deck.id, w, l); onReload?.(); }
+  useEffect(() => { let a = true; deckMatchCount(deck.id).then((n) => a && setTracked(n)); return () => { a = false; }; }, [deck.id, deck.wins, deck.losses, rev]);
 
   const sb = zones?.spellbook || [], at = zones?.atlas || [];
   const sbCount = sb.reduce((s, e) => s + e.quantity, 0), atCount = at.reduce((s, e) => s + e.quantity, 0);
@@ -58,17 +61,18 @@ export default function DeckStats({ deck, rev, onReload }) {
         <Atlas sb={sb} at={at} atCount={atCount} mode={atlasMode} odds={odds} turn={atlasTurn} setTurn={(d) => setAtlasTurn((t) => Math.max(1, Math.min(10, t + d)))} />
       </Card>
 
-      {/* balance ledger (record) */}
+      {/* Match record - DERIVED from matches (single source of truth). No manual
+          steppers: to change it, log / edit / delete matches in Play. */}
       <Card title="Match Record">
         <div className="cc-wl">
           <span className="cc-wl-w">{wl.w}</span><span className="cc-wl-sep">–</span><span className="cc-wl-l">{wl.l}</span>
         </div>
-        <div style={{ textAlign: 'center', font: "italic 400 13px/1 'EB Garamond',serif", color: '#8a7ba6', marginBottom: 14 }}>
-          {wl.w + wl.l ? `${Math.round(wl.w / (wl.w + wl.l) * 100)}% win rate over ${wl.w + wl.l} game${wl.w + wl.l === 1 ? '' : 's'}` : 'No games recorded yet'}
+        <div style={{ textAlign: 'center', font: "italic 400 13px/1 'EB Garamond',serif", color: '#8a7ba6', marginBottom: 8 }}>
+          {wl.w + wl.l ? `${Math.round(wl.w / (wl.w + wl.l) * 100)}% win rate over ${wl.w + wl.l} decided game${wl.w + wl.l === 1 ? '' : 's'}` : 'No games recorded yet'}
         </div>
-        <div className="cc-steppers">
-          <Stepper label="Victories" value={wl.w} kind="wins" onChange={(v) => saveRecord(v, wl.l)} />
-          <Stepper label="Defeats" value={wl.l} kind="losses" onChange={(v) => saveRecord(wl.w, v)} />
+        <div style={{ textAlign: 'center', font: "400 11px/1.4 var(--f-ui)", color: 'var(--faint)', padding: '0 20px 6px' }}>
+          {tracked ? `Tracked automatically from ${tracked} match${tracked === 1 ? '' : 'es'} piloted with this deck.`
+            : 'Pilot this deck in Play - New Match, Quick Match, or Add Match - and its record fills in here.'}
         </div>
       </Card>
     </div>
@@ -120,9 +124,9 @@ function Atlas({ sb, at, atCount, mode, odds, turn, setTurn }) {
             </div>
             {odds && odds.need.length ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: odds.need.length >= 2 ? 10 : 0 }}>
-                  <span style={{ font: "700 26px/1 var(--f-display)", color: statusCol(odds.joint) }}>{Math.round(odds.joint * 100)}%</span>
-                  <span style={{ font: "400 11px/1.3 var(--f-read)", color: 'var(--ink-muted)' }}>chance all your thresholds are met</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: odds.need.length >= 2 ? 10 : 0 }}>
+                  <span style={{ font: "700 26px/1 var(--f-display)", color: statusCol(odds.joint), flex: 'none' }}>{Math.round(odds.joint * 100)}%</span>
+                  <span style={{ font: "400 11px/1.35 var(--f-read)", color: 'var(--ink-muted)', minWidth: 0 }}>Chance threshold needs are met</span>
                 </div>
                 {odds.need.length >= 2 && odds.need.map((k) => (
                   <NeedRow key={k} el={k} text={`need ${odds.peak[k]}`} status={`${Math.round(odds.prob[k] * 100)}%`} color={statusCol(odds.prob[k])} />
@@ -189,16 +193,4 @@ const Toggle = ({ value, set, opts }) => (
     {opts.map(([k, l]) => <button key={k} className={`cc-toggle-seg${value === k ? ' on' : ''}`} onClick={() => set(k)}>{l}</button>)}
   </div>
 );
-function Stepper({ label, value, kind, onChange }) {
-  return (
-    <div className={`cc-stepper-card ${kind}`}>
-      <div className={`cc-stepper-cap ${kind}`}>{label}</div>
-      <div className="cc-stepper-btns">
-        <button className="cc-step-btn cc-step-minus" onClick={() => onChange(Math.max(0, value - 1))}>−</button>
-        <span className={`cc-step-num ${kind}`}>{value}</span>
-        <button className={`cc-step-btn cc-step-plus-${kind === 'wins' ? 'w' : 'l'}`} onClick={() => onChange(value + 1)}>+</button>
-      </div>
-    </div>
-  );
-}
 const Empty = ({ text }) => <div className="cc-stat-empty">{text}</div>;

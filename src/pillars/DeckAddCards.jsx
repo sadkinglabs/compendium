@@ -1,8 +1,8 @@
 // Scoped add-cards flow - pick a zone (Spellbook/Atlas/Collection), search,
 // List ⇄ Card view, per-card +/- steppers (List) or tap-to-add (Card), and a
 // Filters & Sort sheet built from catalogue values. Enforces rarity/zone limits.
-import React, { useEffect, useState } from 'react';
-import { getPool, getSets, getArtists, changeQty } from '../store/deckRepository.js';
+import React, { useEffect, useRef, useState } from 'react';
+import { getPool, getSets, getArtists, changeQty, parseCardQuery, cardMatchesQuery } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import { ThresholdPips } from '../components/ui.jsx';
 import { thresholdRuns } from '../store/cardArt.js';
@@ -10,6 +10,7 @@ import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
+import { XSvg } from '../components/CreateDeckWizard.jsx';
 
 const BASE = import.meta.env.BASE_URL;
 const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
@@ -20,6 +21,7 @@ const RARITY_COLOR = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptio
 export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpen, onChanged, registerCount }) {
   const [view, setView] = useState('list');
   const [rarityOn, setRarityOn] = useState(false);   // colour card names by rarity (Refine toggle)
+  const [quickAdd, setQuickAdd] = useState(false);   // inline +/- steppers on list rows (Refine toggle, off by default)
   const [sort, setSort] = useState([]);   // [{key,dir}] priority list (Arcanum multi-sort)
   const [els, setEls] = useState([]);
   const [types, setTypes] = useState([]);
@@ -34,17 +36,24 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const [artistOpts, setArtistOpts] = useState([]);
   const [pool, setPool] = useState([]);
   const [qtys, setQtys] = useState({});   // card_id -> total qty across all zones (in-deck badge)
+  const qtysRef = useRef({});             // live mirror - rapid taps read this, never a stale closure
+  const stepChains = useRef({});          // card_id -> promise chain serialising its DB writes
   const [sheetCardId, setSheetCardId] = useState(null);
 
   useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
 
   async function loadPool() {
-    const rows = await getPool({ q: q.trim(), els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
-    setPool(rows);
+    // Curiosa-style search syntax: bare words narrow by name in SQL; every
+    // field token (t:/r:/attack>2/el:ae/…) becomes a clause applied to the
+    // pool AFTER the Refine sheet's chips, so the two stack.
+    const parsed = parseCardQuery(q);
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
+    setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
   async function loadQtys() {
     const rows = await query('SELECT card_id, SUM(quantity) n FROM deck_entries WHERE deck_id=? GROUP BY card_id;', [deckId]);
-    const m = {}; for (const r of rows) m[r.card_id] = r.n; setQtys(m);
+    const m = {}; for (const r of rows) m[r.card_id] = r.n;
+    qtysRef.current = m; setQtys(m);
   }
   useEffect(() => { const t = setTimeout(loadPool, 120); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort]);
   useEffect(() => { loadQtys(); /* eslint-disable-next-line */ }, [deckId]);
@@ -59,18 +68,24 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
   const afterChange = () => { loadQtys(); onChanged?.(); };
 
-  // Inline quick-add on a list row - optimistic, routes to the card's home zone
-  // (Atlas for sites, else Spellbook), same limits/toasts as the CardSheet, so
-  // adding N copies of a known card no longer needs a sheet round-trip each.
-  async function step(c, delta) {
+  // Inline quick-add - optimistic, routes to the card's home zone (Atlas for
+  // sites, else Spellbook), same limits/toasts as the CardSheet. Rapid taps are
+  // safe: the count reads a live ref (not a render closure) and each card's DB
+  // writes run through a serialising promise chain - two concurrent changeQty
+  // calls once both saw "no entry" and each INSERTed a duplicate row.
+  function step(c, delta) {
+    const id = c.card_id;
     const zone = c.is_site ? 'atlas' : 'spellbook';
-    const prev = qtys[c.card_id] || 0;
-    if (prev + delta < 0) return;
+    const cur = qtysRef.current[id] || 0;
+    if (cur + delta < 0) return;
     haptic('light');
-    setQtys((m) => ({ ...m, [c.card_id]: prev + delta }));
-    const res = await changeQty(deckId, zone, c, delta);
-    if (!res.ok) { setQtys((m) => ({ ...m, [c.card_id]: prev })); toast(res.reason || 'Not allowed'); return; }
-    onChanged?.();
+    qtysRef.current = { ...qtysRef.current, [id]: cur + delta };
+    setQtys(qtysRef.current);
+    stepChains.current[id] = (stepChains.current[id] || Promise.resolve()).then(async () => {
+      const res = await changeQty(deckId, zone, c, delta);
+      if (!res.ok) { await loadQtys(); toast(res.reason || 'Not allowed'); return; }
+      onChanged?.();
+    }).catch(() => loadQtys());
   }
 
   return (
@@ -95,6 +110,15 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
               <div key={c.card_id} className="card-img-tile" onClick={() => setSheetCardId(c.card_id)}>
                 <CardArt card={c} radius={14} />
                 {qty > 0 && <span className="in-deck-badge tile">{qty}</span>}
+                {/* Quick Add steppers overlay the tile foot, centred - the
+                    in-deck badge keeps its bottom-right corner untouched. */}
+                {quickAdd && (
+                  <span className="tile-step" onClick={(e) => e.stopPropagation()}>
+                    <button className="tile-step-btn" onClick={() => step(c, -1)} aria-label="Remove one" disabled={qty === 0}>−</button>
+                    <span className="tile-step-qty">{qty}</span>
+                    <button className="tile-step-btn" onClick={() => step(c, 1)} aria-label="Add one">+</button>
+                  </span>
+                )}
               </div>
             );
           })}
@@ -109,10 +133,12 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
                 <span className="name" onClick={() => setSheetCardId(c.card_id)} style={rarityOn ? { color: RARITY_COLOR[c.rarity] || 'var(--text)' } : undefined}>{c.name}</span>
                 <ThresholdPips runs={thresholdRuns(c)} />
                 {c.cost != null && <div className="cost-badge">{c.cost}</div>}
-                <span className="cr-step" onClick={(e) => e.stopPropagation()}>
-                  <button className="cr-step-btn" onClick={() => step(c, -1)} aria-label="Remove one" disabled={qty === 0}>−</button>
-                  <button className="cr-step-btn" onClick={() => step(c, 1)} aria-label="Add one">+</button>
-                </span>
+                {quickAdd && (
+                  <span className="cr-step" onClick={(e) => e.stopPropagation()}>
+                    <button className="cr-step-btn" onClick={() => step(c, -1)} aria-label="Remove one" disabled={qty === 0}>−</button>
+                    <button className="cr-step-btn" onClick={() => step(c, 1)} aria-label="Add one">+</button>
+                  </span>
+                )}
               </div>
             );
           })}
@@ -122,6 +148,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange} />
 
       <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)}
+        quickAdd={quickAdd} setQuickAdd={setQuickAdd}
         rarityOn={rarityOn} setRarityOn={setRarityOn}
         sort={sort} setSort={setSort}
         els={els} setEls={setEls} types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
@@ -160,7 +187,7 @@ function CmpRow({ label, icon, state, set, max }) {
 // Refine sheet - Arcanum's 2-tab (Filters / Sort) amethyst design, full filter set.
 const SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
 
-function FilterSheet({ open, onClose, rarityOn, setRarityOn, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,
+function FilterSheet({ open, onClose, quickAdd, setQuickAdd, rarityOn, setRarityOn, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,
   sets, setSets, setOpts, multi, setMulti, thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, artist, setArtist, artistOpts, onClear }) {
   const [tab, setTab] = useState('filters');
   if (!open) return null;
@@ -190,7 +217,7 @@ function FilterSheet({ open, onClose, rarityOn, setRarityOn, sort, setSort, els,
             <div className="fsheet-title">Refine</div>
             <div className="fsheet-sub">{activeCount ? `${activeCount} active` : 'All cards'}</div>
           </div>
-          <button className="fsheet-close" onClick={onClose} aria-label="Close">✕</button>
+          <button className="fsheet-close" onClick={onClose} aria-label="Close">{XSvg}</button>
         </div>
         <div className="fsheet-tabs">
           <button className={`fsheet-tab${tab === 'filters' ? ' active' : ''}`} onClick={() => setTab('filters')}>Filters</button>
@@ -221,6 +248,12 @@ function FilterSheet({ open, onClose, rarityOn, setRarityOn, sort, setSort, els,
                 <div className="pill-group">
                   {RAR.map(([k, l]) => <button key={k} className={`pill${rarities.includes(k) ? ` on rarity-${k}` : ''}`} onClick={() => toggle(rarities, setRarities, k)}>{l}</button>)}
                 </div>
+              </div>
+              {/* Quick Add Mode - inline +/- steppers on list rows. Off by
+                  default: browsing stays clean, adding goes through the sheet. */}
+              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div className="filter-label" style={{ marginBottom: 0 }}>Quick Add Mode</div>
+                <button className={`rarity-switch${quickAdd ? ' on' : ''}`} onClick={() => setQuickAdd(!quickAdd)} aria-label="Toggle quick add steppers" />
               </div>
               <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div className="filter-label" style={{ marginBottom: 0 }}>Rarity Colours</div>

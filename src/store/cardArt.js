@@ -11,7 +11,7 @@ const EL_STOPS = {
 };
 const NEUTRAL = ['#3a2f1c', '#160f09'];
 
-export const elementColor = { air: '#67b6c4', earth: '#b6924a', fire: '#d2645a', water: '#5b87d6' };
+export const elementColor = { air: '#67b6c4', earth: '#b35c33', fire: '#d2645a', water: '#5b87d6' };   // earth = rust, not tan
 
 function hash(str) {
   let h = 0;

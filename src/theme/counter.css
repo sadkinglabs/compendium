@@ -1,9 +1,9 @@
 /* Vitarum life-counter + avatar-picker - VERBATIM VISUAL/MOTION PORT.
    CSS rule blocks, @keyframes, sizes, easings, opacities and transforms are copied
-   unchanged from Vitarum's index.html. The only adaptations: (a) the counter skin
+   unchanged from Vitarum's index.html. The only adaptations: (a) the counter
    tokens live on a scoped `.vc-root` wrapper (not global :root) so they don't collide
    with Compendium's palette; (b) `#counter-screen` gets a z-index so it overlays the app;
-   (c) body.roll-active / body.grain-off / .vc-root[data-skin] are toggled from React. */
+   (c) body.roll-active / body.grain-off are toggled from React. */
 
 /* ── scoped tokens (verbatim values) ── */
 .vc-root {
@@ -32,8 +32,7 @@
   --sk-num: #f1e8d0;
   --grain-url: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.vc-root[data-skin="verdigris"] { --sk: 155,191,134; --sk-num: #e6efdd; }
-.vc-root[data-skin="pewter"]    { --sk: 200,210,204; --sk-num: #eef2ef; }
+/* Skins retired: the counter wears the app's gold (--sk above), full stop. */
 
 /* ── COUNTER SCREEN ── */
 #counter-screen { background: #06100a; position: fixed; inset: 0; z-index: 100; }
@@ -136,20 +135,35 @@ body.grain-off .half-grain { display: none; }
 /* Delta flash - the floating +N / -N that pops up on each tap */
 .life-delta {
   position: absolute; left: 50%; top: 30%;
-  font-family: var(--f-display); font-size: 13vw; font-weight: 700;
+  font-family: var(--f-display); font-weight: 700;
+  /* --dmag (set from React) swells the badge as the streak's total grows;
+     the transition makes each increment a smooth puff rather than a size jump. */
+  font-size: calc(13vw * var(--dmag, 1));
+  transition: font-size .18s cubic-bezier(.34,1.4,.5,1);
   line-height: 1; pointer-events: none; z-index: 4;
   -webkit-text-stroke: .5px rgba(0,0,0,.3);
-  animation: delta-rise 1s cubic-bezier(.2,.7,.3,1) forwards;
+  /* While the side is still being tapped the badge holds here and counts up; the
+     entrance settles and stays (fill: both). On release it floats away. */
+  transform: translateX(-50%) translateY(-6px);
+  animation: delta-in .22s cubic-bezier(.2,.7,.3,1) both;
   will-change: transform, opacity;
 }
+.life-delta.released { animation: delta-out .8s cubic-bezier(.3,.55,.3,1) forwards; }
 .life-delta.plus  { color: #a8f5c8; text-shadow: 0 0 24px rgba(120,235,170,.75), 0 2px 14px rgba(0,0,0,.7); }
 .life-delta.minus { color: #ff9d8b; text-shadow: 0 0 24px rgba(224,120,106,.8), 0 2px 14px rgba(0,0,0,.7); }
-@keyframes delta-rise {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(10px) scale(.45); }
-  16%  { opacity: 1; transform: translateX(-50%) translateY(0)    scale(1.18); }
-  30%  { opacity: 1; transform: translateX(-50%) translateY(-6px) scale(1); }
+@keyframes delta-in {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(12px) scale(.45); }
+  60%  { opacity: 1; transform: translateX(-50%) translateY(-9px) scale(1.16); }
+  100% { opacity: 1; transform: translateX(-50%) translateY(-6px) scale(1); }
+}
+@keyframes delta-out {
+  0%   { opacity: 1; transform: translateX(-50%) translateY(-6px)  scale(1); }
   100% { opacity: 0; transform: translateX(-50%) translateY(-84px) scale(.82); }
 }
+/* Each increment while counting gives the numeral a quick tick (the span remounts
+   on every new total, replaying this). */
+.life-delta-num { display: inline-block; animation: delta-tick .16s ease-out; }
+@keyframes delta-tick { 0% { transform: scale(1.34); } 100% { transform: scale(1); } }
 /* The life numeral reacts: + bumps up and grows, - dips down and shrinks */
 .life-number.bump-up   { animation: life-bump-up   .42s cubic-bezier(.34,1.5,.5,1); }
 .life-number.bump-down { animation: life-bump-down .42s cubic-bezier(.34,1.5,.5,1); }
@@ -204,8 +218,6 @@ body.roll-active .tap-zone { pointer-events: none; }
 body.roll-active #counter-fab,
 body.roll-active .opponent-fab-wrap,
 body.roll-active #match-clock { display: none !important; }
-#roll-tap-catcher { position: fixed; inset: 0; z-index: 58; display: none; }
-#roll-tap-catcher.show { display: block; }
 
 /* Match clock - vertical strip on the left edge, readable by both players.
    Verbatim from Vitarum (www/index.html #match-clock). Mounted only when on. */
@@ -262,13 +274,30 @@ body.roll-active #match-clock { display: none !important; }
   from { opacity: 0; transform: rotate(var(--flip,0deg)) scale(.3); }
   to   { opacity: 1; transform: rotate(var(--flip,0deg)) scale(1); }
 }
+/* Retiring the offer: a soft upward fade (manual dismiss or auto after N taps).
+   The animated transform overrides .armed's centring for the exit tween. */
+#roll-pill.roll-exit { animation: roll-pill-out .34s cubic-bezier(.4,0,.2,1) forwards; pointer-events: none; }
+@keyframes roll-pill-out { to { opacity: 0; transform: translate(-50%, calc(-50% - 16px)); } }
 #roll-pill .roll-pill-go, #roll-pill .roll-pill-pick { display: none; }
-#roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 10px; }
-#roll-pill .rp-glyph { font: 600 16px/1 var(--f-display); color: rgb(var(--sk)); text-shadow: 0 0 10px rgba(var(--sk),.28); }
+#roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 10px; color: rgb(var(--sk)); }
+#roll-pill .rp-glyph, #roll-pill .roll-pill-go svg { color: rgb(var(--sk)); filter: drop-shadow(0 0 8px rgba(var(--sk),.28)); }
 #roll-pill .rp-label { font: 700 13px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
-#roll-pill.result .roll-pill-pick { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+/* Dismiss the offer without rolling - a small X clinging to the pill's corner. */
+.roll-pill-dismiss {
+  position: absolute; top: -9px; right: -9px;
+  width: 26px; height: 26px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; pointer-events: auto; cursor: pointer;
+  background: rgba(8,14,10,.94); border: 1px solid rgba(var(--sk),.5);
+  color: rgb(var(--sk));
+  box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 12px rgba(var(--sk),.2);
+}
+.roll-pill-dismiss svg { width: 13px; height: 13px; }
+.roll-pill-dismiss:active { transform: scale(.9); }
+#roll-pill.result #roll-pill-body { min-width: 172px; }
+#roll-pill.result .roll-pill-pick { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; text-align: center; }
 #roll-pill .rp-main { font-family: var(--f-display); font-size: 24px; font-weight: 800; color: rgb(var(--sk)); line-height: 1; }
-#roll-pill .rp-hint { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+/* tabular digits: the countdown ticks without the line wobbling */
+#roll-pill .rp-hint { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 
 /* Death's Door reminder */
 .dd-pill { position: relative; z-index: 2; margin-top: 32px; display: none; pointer-events: none; }
@@ -370,7 +399,12 @@ body.roll-active .dd-pill { display: none !important; }
 .pm-role { font: 600 9px/1 var(--f-ui); letter-spacing: .16em; color: var(--faint); }
 .pm-name { font: 600 12px/1.25 var(--f-read); color: var(--muted); text-align: center; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-slot.filled .pm-name { color: var(--gold-head); }
-.pm-vs { flex: none; font: 700 13px/1 var(--f-display); letter-spacing: .08em; color: rgba(220,184,111,.7); }
+.pm-vs {
+  flex: none; font: 700 34px/1 var(--f-display); letter-spacing: .06em;
+  color: rgba(220,184,111,.85); text-shadow: 0 0 18px rgba(220,184,111,.28);
+  /* sits level with the thumbs, not the caption rows beneath them */
+  align-self: flex-start; margin-top: 12px;
+}
 .picker-back {
   position: absolute; top: 12px; right: 12px;
   background: none; border: none; color: var(--muted);
@@ -474,6 +508,9 @@ body.roll-active .dd-pill { display: none !important; }
   --gold-dim: rgba(220,184,111,.16); --jade: #4db38a; --win: #4db38a; --win-2: #7fd3ad; }
 
 .vc-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px; }
+/* The Hold-on confirm is summoned FROM the end screen (also a z-120 overlay) -
+   it must always paint above it, independent of DOM order. */
+#confirm-overlay { z-index: 130; }
 .vc-modal-overlay .modal-box { animation: vc-modal-in .28s cubic-bezier(.22,1,.36,1); }
 @keyframes vc-modal-in { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
 .vc-root .modal-box { background: var(--modal); border-radius: 22px; width: 100%; max-width: 360px; border: 1px solid var(--gold-line); overflow: hidden; box-shadow: 0 30px 60px -20px rgba(0,0,0,.7); max-height: 90vh; overflow-y: auto; }

@@ -21,7 +21,15 @@ import '../theme/dashboard.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev }) {
+// Compact play-time for a glance tile: "45s" → "12m" → "3h" (details live in Play).
+function fmtSpanShort(secs) {
+  secs = Math.max(0, Math.round(secs || 0));
+  if (secs >= 3600) return `${Math.floor(secs / 3600)}h`;
+  if (secs >= 60) return `${Math.floor(secs / 60)}m`;
+  return `${secs}s`;
+}
+
+export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia, profile, rev }) {
   const [tab, setTab] = useState('overview');
   const [edit, setEdit] = useState(false);
   // Native feel: swipe horizontally between Overview ⇄ Dashboard.
@@ -42,7 +50,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, p
       </div>
       <div key={tab} className="cx-swipe-pane">
         {tab === 'overview'
-          ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} profile={profile} rev={rev} />
+          ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} onMarginalia={onMarginalia} profile={profile} rev={rev} />
           : <Dashboard onOpen={onOpen} onGoTab={onGoTab} edit={edit} rev={rev} />}
       </div>
     </div>
@@ -50,7 +58,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, p
 }
 
 /* ---------------- Overview - the welcome digest ---------------- */
-function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev }) {
+function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia, profile, rev }) {
   const [d, setD] = useState(null);
   // Collapse state persists per profile so a curated Home survives restarts.
   const colKey = `cx-home-collapse:${profile?.id || 'anon'}`;
@@ -118,10 +126,10 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, profile, rev
         )}
       </div>
       <div className="cx-ov-glance">
+        <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onMarginalia} />
         <Tile val={g.decks} lbl="DECKS" onClick={() => onGoTab('decks')} />
         <Tile val={g.duels} lbl="MATCHES" onClick={() => onGoTab('play')} />
-        <Tile val={pct != null ? pct + '%' : '-'} lbl="WIN RATE" onClick={() => onGoTab('play')} />
-        <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onAllNotes} />
+        <Tile val={fmtSpanShort(s.totalSec)} lbl="TIME PLAYED" onClick={() => onGoTab('play')} />
       </div>
 
       {d.resume && (

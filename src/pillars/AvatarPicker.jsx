@@ -30,7 +30,17 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
     if (d.avatar) setYou({ card_id: d.avatar.card_id, name: d.avatar.name, image_slug: d.avatar.image_slug });
   }
   const roleClass = (a) => you?.card_id === a.card_id ? ' is-you' : opp?.card_id === a.card_id ? ' is-opp' : '';
-  const list = avatars.filter((a) => !q || a.name.toLowerCase().includes(q.toLowerCase()));
+  // One search, both lists: the query narrows the avatar grid AND the deck rail
+  // (a 50-deck stable is unusable as a blind horizontal scroll). A deck matches
+  // on its own name OR its avatar's name, so typing "Battlemage" surfaces every
+  // deck piloted by one. The selected deck always stays visible so a search
+  // can't hide your own pick.
+  const needle = q.trim().toLowerCase();
+  const list = avatars.filter((a) => !needle || a.name.toLowerCase().includes(needle));
+  const deckList = decks.filter((d) => !needle
+    || d.name.toLowerCase().includes(needle)
+    || d.avatar?.name?.toLowerCase().includes(needle)
+    || d.id === deck?.id);
   const ready = you && opp;
 
   return (
@@ -57,11 +67,11 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         </div>
       </div>
       {/* Pilot one of your decks - Compendium cross-pillar link */}
-      {decks.length > 0 && (
+      {deckList.length > 0 && (
         <div className="picker-decks">
           <div className="picker-decks-label">PILOT A DECK</div>
           <div className="picker-decks-row">
-            {decks.map((d) => (
+            {deckList.map((d) => (
               <button key={d.id} className={`picker-deck-chip${deck?.id === d.id ? ' on' : ''}`} onClick={() => pickDeck(d)}>
                 {d.avatar?.image_slug && <img src={`${BASE}cards/${d.avatar.image_slug}`} alt="" />}
                 <span>{d.name}</span>
@@ -84,7 +94,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
       <div className="picker-footer">
         <div className={`picker-search${q ? ' has-text' : ''}`}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avatars…" autoComplete="off" autoCapitalize="off" spellCheck="false" />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={decks.length ? 'Search avatars or decks…' : 'Search avatars…'} autoComplete="off" autoCapitalize="off" spellCheck="false" />
           <button className="picker-search-clear" onClick={() => setQ('')} aria-label="Clear search">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ width: 12, height: 12 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>

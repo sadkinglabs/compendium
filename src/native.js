@@ -7,6 +7,7 @@ import { StatusBar, Style } from '@capacitor/status-bar';
 import { App } from '@capacitor/app';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { KeepAwake } from '@capacitor-community/keep-awake';
 
 export const isNative = () => Capacitor.isNativePlatform();
 
@@ -81,9 +82,19 @@ export async function setImmersive(on) {
   try { if (on) await StatusBar.hide(); else await StatusBar.show(); } catch { /* not available */ }
 }
 
-/** Keep the screen awake (Web Wake Lock API - works in the WebView too). */
+/** Keep the screen awake while a match is on screen.
+ *  Native: @capacitor-community/keep-awake, which sets Android's
+ *  FLAG_KEEP_SCREEN_ON window flag - the OS-blessed, battery-safe method (NOT a
+ *  video-decode / fake-media hack). Web: the standard Wake Lock API, which the
+ *  WebView also honours as a fallback in the dev preview. Always paired with a
+ *  setKeepAwake(false) on match exit so the lock is strictly match-scoped. */
 let wakeLock = null;
 export async function setKeepAwake(on) {
+  if (isNative()) {
+    try { if (on) await KeepAwake.keepAwake(); else await KeepAwake.allowSleep(); }
+    catch { /* plugin unavailable */ }
+    return;
+  }
   try {
     if (on && 'wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); }
     else if (!on && wakeLock) { await wakeLock.release(); wakeLock = null; }

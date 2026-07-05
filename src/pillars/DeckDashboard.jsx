@@ -7,6 +7,7 @@ import { getDeck, getDeckCards, collectionMax, setDeckNotes, setCuriosaUrl, getH
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
+import { XSvg } from '../components/CreateDeckWizard.jsx';
 import { safeHref } from '../util.js';
 import { haptic } from '../native.js';
 import '../theme/deckdash.css';
@@ -209,19 +210,19 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
   useEffect(() => { const t = setTimeout(() => listAvatarCards(q).then(setAvatars), q ? 250 : 0); return () => clearTimeout(t); }, [q]);
-  const meta = (c) => { const p = []; if (c.life != null) p.push(`♥${c.life}`); if (c.attack != null) p.push(`⚔${c.attack}`); const s = (c.subTypes || []).join(' · ') || c.rarity || ''; if (s) p.push(s); return p.join(' · '); };
+  const meta = (c) => { const p = []; if (c.life != null) p.push(`${c.life} HP`); if (c.attack != null) p.push(`${c.attack} ATK`); const s = (c.subTypes || []).join(' · ') || c.rarity || ''; if (s) p.push(s); return p.join(' · '); };
   async function save() { if (!sel) return; await setAvatar(deckId, sel.card_id); onSaved?.(); onClose(); }
   return (
     <div className="arc ob-overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="ob-inner" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
-        <div className="ob-header"><h2>Change Avatar</h2><button className="sheet-close" onClick={onClose} aria-label="Close">✕</button></div>
+        <div className="ob-header"><h2>Change Avatar</h2><button className="sheet-close" onClick={onClose} aria-label="Close">{XSvg}</button></div>
         <div className="ob-step2">
           <div className="ob-search-pill-wrap">
             <div className={`ob-search-pill${q ? ' has-text' : ''}`}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
               <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avatars…" autoComplete="off" />
-              {q && <button className="search-clear-btn" onClick={() => setQ('')} aria-label="Clear">✕</button>}
+              {q && <button className="search-clear-btn" onClick={() => setQ('')} aria-label="Clear">{XSvg}</button>}
             </div>
           </div>
           {sel && (
@@ -252,7 +253,7 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
         </div>
         <div className="ob-footer">
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button className={`btn primary${!sel ? ' disabled' : ''}`} disabled={!sel} onClick={save} style={{ flex: 1 }}>Save Avatar ✓</button>
+          <button className={`btn primary${!sel ? ' disabled' : ''}`} disabled={!sel} onClick={save} style={{ flex: 1 }}>Save Avatar</button>
         </div>
       </div>
     </div>

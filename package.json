@@ -13,6 +13,7 @@
     "cap:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor-community/keep-awake": "^5.0.1",
     "@capacitor-community/sqlite": "^6.0.2",
     "@capacitor/android": "^6.2.1",
     "@capacitor/app": "^6.0.3",

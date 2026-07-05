@@ -46,8 +46,8 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
 
   const meta = (c) => {
     const parts = [];
-    if (c.life != null) parts.push(`♥${c.life}`);
-    if (c.attack != null) parts.push(`⚔${c.attack}`);
+    if (c.life != null) parts.push(`${c.life} HP`);
+    if (c.attack != null) parts.push(`${c.attack} ATK`);
     const power = (c.subTypes || []).join(' · ') || c.rarity || '';
     if (power) parts.push(power);
     return parts.join(' · ');
@@ -59,7 +59,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
         <div className="sheet-handle" />
         <div className="ob-header">
           <h2>{step === 1 ? 'New Deck' : 'Choose Avatar'}</h2>
-          <button className="sheet-close" onClick={onClose} aria-label="Close">✕</button>
+          <button className="sheet-close" onClick={onClose} aria-label="Close">{XSvg}</button>
         </div>
         <div className="ob-steps">
           <div className={`ob-step done`}>1</div>
@@ -80,7 +80,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
               <div className={`ob-search-pill${q ? ' has-text' : ''}`}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avatars…" autoComplete="off" />
-                {q && <button className="search-clear-btn" onClick={() => setQ('')} aria-label="Clear">✕</button>}
+                {q && <button className="search-clear-btn" onClick={() => setQ('')} aria-label="Clear">{XSvg}</button>}
               </div>
             </div>
             {sel && (
@@ -112,13 +112,19 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
         )}
 
         <div className="ob-footer">
-          {step === 2 && <button className="btn" onClick={() => setStep(1)}>← Back</button>}
+          {step === 2 && <button className="btn" onClick={() => setStep(1)}>{BackSvg}Back</button>}
           <button className={`btn primary${nextDisabled ? ' disabled' : ''}`} disabled={nextDisabled}
             onClick={next} style={{ flex: 1 }}>
-            {step === 1 ? 'Next →' : busy ? 'Creating…' : 'Create Deck ✓'}
+            {step === 1 ? <>Next{NextSvg}</> : busy ? 'Creating…' : <>{CheckSvg}Create Deck</>}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+/* icons - the app speaks SVG, never glyph characters */
+export const XSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ width: 13, height: 13 }} aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>;
+const BackSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="14 6 8 12 14 18" /></svg>;
+const NextSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>;
+const CheckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>;

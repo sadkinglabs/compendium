@@ -7,9 +7,10 @@ import {
   listDecks, getDeck, toggleStar, renameDeck, duplicateDeck, deleteDeck,
   historyCount, clearHistory, exportMarkdown, exportCuriosa, getDeckCards,
 } from '../store/deckRepository.js';
+import { deckMatchCount } from '../store/playRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
-import { Chip, ChipRow, Loading, useSwipe } from '../components/ui.jsx';
+import { Chip, ChipRow, Loading, useSwipe, BlankState } from '../components/ui.jsx';
 import { haptic } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import Sheet from '../components/Sheet.jsx';
@@ -88,7 +89,13 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
     await clearHistory(deckOpen.id); flash('Deck log cleared');
   }
   async function actDelete() {
-    if (!(await confirmAction({ title: `Delete “${deckOpen.name}”?`, body: 'The deck and its log are removed for good. This can’t be undone.', confirmLabel: 'Delete deck', danger: true }))) return;
+    // Ripple-aware: matches outlive their deck (they keep their history, just
+    // lose the deck link), so say so up front.
+    const n = await deckMatchCount(deckOpen.id);
+    const body = n
+      ? `The deck and its log are removed for good. Its ${n} match${n === 1 ? '' : 'es'} stay in your history but lose the deck link. This can’t be undone.`
+      : 'The deck and its log are removed for good. This can’t be undone.';
+    if (!(await confirmAction({ title: `Delete “${deckOpen.name}”?`, body, confirmLabel: 'Delete deck', danger: true }))) return;
     await deleteDeck(deckOpen.id);
     onOpenDeck(null); setView('library'); refresh(); flash('Deck deleted');
   }
@@ -140,11 +147,8 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
           <div className="dpage-scroll">
             {decks == null ? <Loading />
               : libList.length === 0 ? (
-                <div style={{ minHeight: '52vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32 }}>
-                  <div style={{ width: 52, height: 52, border: '2px solid rgba(160,110,220,.28)', transform: 'rotate(45deg)', marginBottom: 32, boxShadow: '0 0 28px rgba(157,106,214,.18)' }} />
-                  <h2 style={{ font: "600 20px/1.2 'Cinzel',Georgia,serif", color: '#dcb86f', marginBottom: 10 }}>{decks.length === 0 ? 'No Decks Yet' : 'No matches'}</h2>
-                  {decks.length === 0 && <p style={{ font: "400 15px/1.6 'EB Garamond',Georgia,serif", color: '#9a8cae' }}>Build or import a deck<br />to start your collection.</p>}
-                </div>
+                <BlankState hue="160,110,220" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
+                  body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
               ) : libList.map((d) => <DeckCard key={d.id} deck={d} onClick={() => openDeck(d)} />)}
           </div>
           <div className="pill-bar-outer">
@@ -177,12 +181,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
               </div>
             </>
           ) : (
-            <div className="deck-blank">
-              <div style={{ width: 52, height: 52, border: '2px solid rgba(160,110,220,.28)', transform: 'rotate(45deg)', marginBottom: 32, boxShadow: '0 0 28px rgba(157,106,214,.18)' }} />
-              <h2 style={{ font: "600 20px/1.2 'Cinzel',Georgia,serif", color: '#dcb86f', marginBottom: 10 }}>No Deck Open</h2>
-              <p style={{ font: "400 15px/1.6 'EB Garamond',Georgia,serif", color: '#9a8cae', marginBottom: 24 }}>Choose a deck from your Library<br />to start building.</p>
-              <button onClick={() => setView('library')} style={{ padding: '12px 28px', borderRadius: 16, background: 'linear-gradient(180deg,rgba(157,106,214,.28),rgba(122,71,184,.18))', border: '1px solid rgba(160,110,220,.35)', color: '#c9a9f0', font: "600 13px/1 'Hanken Grotesk',sans-serif", cursor: 'pointer' }}>Open Library</button>
-            </div>
+            <BlankState hue="160,110,220" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
           )}
         </div>
       )}

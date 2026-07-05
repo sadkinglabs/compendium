@@ -7,11 +7,12 @@ import { listMatches } from './playRepository.js';
 
 export async function searchAll(q) {
   const query = q.trim();
-  if (!query) return { codex: [], decks: [], duels: [], marginalia: [] };
+  if (!query) return { articles: [], cards: [], cardText: [], articleText: [], decks: [], duels: [], marginalia: [] };
   const ql = query.toLowerCase();
 
-  const codexRes = await searchCodex(query);
-  const codex = [...codexRes.rules, ...codexRes.cards];
+  // Categorised codex hits: title/name matches first, then text mentions
+  // (searchCodex also understands the t:/e:/set:/has:/is: syntax).
+  const { articles, cards, cardText, articleText } = await searchCodex(query);
   const marginalia = await searchPersonal(query);
 
   const decks = (await listDecks())
@@ -25,5 +26,5 @@ export async function searchAll(q) {
       meta: `${m.player_final_life}–${m.opponent_final_life}`, glyph: '⚔',
     }));
 
-  return { codex, decks, duels, marginalia };
+  return { articles, cards, cardText, articleText, decks, duels, marginalia };
 }

@@ -7,7 +7,7 @@ import { uuid, nowIso, slugify } from './ids.js';
 
 export const ZONES = ['spellbook', 'atlas', 'collection'];
 export const RARITY_LIMITS = { Ordinary: 4, Exceptional: 3, Elite: 2, Unique: 1 };
-export const EL_COLOR = { air: '#67b6c4', earth: '#b6924a', fire: '#d2645a', water: '#5b87d6' };
+export const EL_COLOR = { air: '#67b6c4', earth: '#b35c33', fire: '#d2645a', water: '#5b87d6' };   // earth = rust, not tan (too close to gold)
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
@@ -113,12 +113,20 @@ export async function toggleStar(id) {
   const d = (await query('SELECT starred FROM decks WHERE id=? AND profile_id=?;', [id, activeProfileId()]))[0];
   await touch(id, 'starred=?', [d?.starred ? 0 : 1]);
 }
-export async function setRecord(id, wins, losses) { await touch(id, 'wins=?, losses=?', [Math.max(0, wins), Math.max(0, losses)]); }
+// setRecord removed: a deck's W-L is derived solely from its matches (see
+// playRepository.syncDeckRecord). There is no manual override any more.
 export async function deleteDeck(id) {
   const pid = activeProfileId();
-  await run('DELETE FROM decks WHERE id=? AND profile_id=?;', [id, pid]);
-  // Clear a resume tile pointing at this deck (would otherwise dead-end on load).
-  await run('DELETE FROM resume WHERE profile_id=? AND target_type=? AND target_id=?;', [pid, 'deck', id]);
+  // All three writes commit atomically: matches outlive their deck (keep their
+  // history) but genuinely lose the link - NULL the deck_id so no stale pointer
+  // to a gone deck lingers - the deck row goes, and any resume tile pointing at
+  // it is cleared. One tx so a crash can't strand a half-deleted deck with a
+  // stale record.
+  await tx([
+    ['UPDATE matches SET deck_id=NULL WHERE deck_id=? AND profile_id=?;', [id, pid]],
+    ['DELETE FROM decks WHERE id=? AND profile_id=?;', [id, pid]],
+    ['DELETE FROM resume WHERE profile_id=? AND target_type=? AND target_id=?;', [pid, 'deck', id]],
+  ]);
 }
 
 export async function duplicateDeck(id) {
@@ -297,6 +305,100 @@ export async function getArtists() {
   return [...s].sort();
 }
 
+/* ── Curiosa-style card search syntax ──
+   parseCardQuery(raw) → { name, clauses }; cardMatchesQuery(row, parsed) tests a
+   card row. Bare words match names. Tokens accept :, =, >, <, >=, <= where
+   numeric, and <text> values may be "quoted" or /regex/.
+     name:sir · type:mortal (t:) · rules:draw (r:) · life:20 · attack>2 ·
+     defense>2 · element:fire / el:ae (letters=OR) · threshold:3 (th:) ·
+     at>1 / et: / ft: / wt: · cost:2 (c:, c=2) · keyword:charge (kw:) ·
+     set:art (s:, set codes alp/bet/art/got/dra/pro, names work too) ·
+     artist:"Ed Beard" · rarity:unique
+   flavor:<text> is part of the reference syntax but the catalogue carries no
+   flavor text, so it is unsupported (and left off the cheatsheet). artist: is
+   wired but the catalogue currently ships no variant/artist data, so it too
+   stays off the cheatsheet until the data exists. */
+const CQ_EL_LETTER = { a: 'air', e: 'earth', f: 'fire', w: 'water' };
+const CQ_ELS = ['air', 'earth', 'fire', 'water'];
+
+// <text|regex> matcher: /.../ → RegExp (case-insensitive). Otherwise CI
+// substring, where commas separate REQUIRED terms (AND) - r:"airborne, genesis"
+// matches only cards whose rules carry both.
+const cqTerms = (val) => val.toLowerCase().split(',').map((t) => t.trim()).filter(Boolean);
+function cqText(val) {
+  const m = /^\/(.+)\/$/.exec(val);
+  if (m) { try { const re = new RegExp(m[1], 'i'); return (s) => re.test(s || ''); } catch { /* bad regex → substring */ } }
+  const needles = cqTerms(val);
+  return (s) => { const hay = (s || '').toLowerCase(); return needles.every((n) => hay.includes(n)); };
+}
+const cqCmp = (a, op, b) => op === '>' ? a > b : op === '<' ? a < b : op === '>=' ? a >= b : op === '<=' ? a <= b : a === b;
+
+function cqClause(key, op, val) {
+  const num = Number(val);
+  const nOp = (op === ':' || op === '=') ? '=' : op;
+  const numeric = (get) => Number.isFinite(num) ? ((c) => get(c) != null && cqCmp(get(c), nOp, num)) : null;
+  switch (key) {
+    case 'name': { const m = cqText(val); return (c) => m(c.name); }
+    // Collection fields flatten to one haystack so comma-AND spans the whole
+    // type line - t:mortal,knight needs both, wherever each lives.
+    case 'type': case 't': { const m = cqText(val); return (c) => m([c.type, ...jp(c.sub_types, [])].join(' ')); }
+    case 'rules': case 'r': { const m = cqText(val); return (c) => m(c.rules_text); }
+    case 'life': return numeric((c) => c.life);
+    case 'attack': return numeric((c) => c.attack);
+    case 'defense': case 'defence': return numeric((c) => c.defence);
+    case 'element': case 'el': {
+      // element:fire (full name) or el:ae (letters, OR across elements)
+      const els = CQ_ELS.includes(val.toLowerCase())
+        ? [val.toLowerCase()]
+        : [...val.toLowerCase()].map((ch) => CQ_EL_LETTER[ch]).filter(Boolean);
+      if (!els.length) return null;
+      return (c) => {
+        const have = jp(c.elements, []).map((e) => String(e).toLowerCase());
+        const th = jp(c.thresholds, {});
+        return els.some((el) => have.includes(el) || (th[el] || 0) > 0);
+      };
+    }
+    case 'threshold': case 'th':
+      return Number.isFinite(num) ? (c) => { const th = jp(c.thresholds, {}); return CQ_ELS.some((el) => cqCmp(th[el] || 0, nOp, num)); } : null;
+    case 'at': case 'et': case 'ft': case 'wt': {
+      const el = { at: 'air', et: 'earth', ft: 'fire', wt: 'water' }[key];
+      return Number.isFinite(num) ? (c) => cqCmp(jp(c.thresholds, {})[el] || 0, nOp, num) : null;
+    }
+    case 'cost': case 'c': return numeric((c) => c.cost);
+    case 'keyword': case 'kw': {
+      // keywords live in rules text - whole-word match so kw:charge doesn't hit
+      // "discharge"; comma-separated keywords are ALL required (AND)
+      try {
+        const res = cqTerms(val).map((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
+        return res.length ? (c) => res.every((re) => re.test(c.rules_text || '')) : null;
+      } catch { return null; }
+    }
+    case 'set': case 's': { const m = cqText(val); return (c) => m(jp(c.sets, []).map((s) => `${s.code} ${s.name}`).join(' ')); }
+    case 'artist': { const m = cqText(val); return (c) => m(jp(c.variants, []).map((v) => v?.artist || '').join(' ')); }
+    case 'rarity': { const m = cqText(val); return (c) => m(c.rarity); }
+    default: return null;
+  }
+}
+
+export function parseCardQuery(raw) {
+  const clauses = [];
+  const words = [];
+  const tokens = (raw || '').match(/[a-z]+(?:>=|<=|[:=><])"[^"]*"|[a-z]+(?:>=|<=|[:=><])\S+|"[^"]*"|\S+/gi) || [];
+  for (const t of tokens) {
+    const m = /^([a-z]+)(>=|<=|[:=><])(.+)$/i.exec(t);
+    if (m) {
+      const clause = cqClause(m[1].toLowerCase(), m[2], m[3].replace(/^"|"$/g, ''));
+      if (clause) { clauses.push(clause); continue; }
+    }
+    words.push(t.replace(/^"|"$/g, ''));
+  }
+  return { name: words.join(' ').trim(), clauses };
+}
+
+export function cardMatchesQuery(c, parsed) {
+  return parsed.clauses.every((test) => test(c));
+}
+
 // Full card-pool query mirroring Arcanum's Refine filters: element (+multi),
 // type, rarity, set, per-element & total threshold comparators, mana comparator,
 // artist, and name/mana/element sort.
@@ -304,7 +406,7 @@ export async function getPool({
   q = '', els = [], types = [], rarities = [], sets = [], multi = false,
   thByEl = {}, totalTh = null, costCmp = null, artist = '', sort = [],
 } = {}) {
-  let sql = 'SELECT card_id, name, type, cost, rarity, elements, thresholds, sets, variants, image_slug, is_site, rules_text FROM cards';
+  let sql = 'SELECT card_id, name, type, sub_types, cost, rarity, elements, thresholds, sets, variants, image_slug, is_site, rules_text, attack, defence, life FROM cards';
   const where = [], params = [];
   if (q) { where.push('lower(name) LIKE ?'); params.push(`%${q.toLowerCase()}%`); }
   if (types.length) { where.push(`type IN (${types.map(() => '?').join(',')})`); params.push(...types); }

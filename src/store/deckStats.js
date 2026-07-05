@@ -4,9 +4,10 @@
 // deckRepository.getDeckCards (entries carry cost/attack/type/rarity/elements/thresholds).
 
 // element-data colours (Compendium tokens) + Multi=gold, Neutral=link-violet
-export const EL_CHART = { Air: '#67b6c4', Earth: '#b6924a', Fire: '#d2645a', Water: '#5b87d6', Multi: '#dcb86f', Neutral: '#c79ad0' };
+// Earth is RUST (#b35c33), not tan - the old #b6924a sat too close to Multi's gold.
+export const EL_CHART = { Air: '#67b6c4', Earth: '#b35c33', Fire: '#d2645a', Water: '#5b87d6', Multi: '#dcb86f', Neutral: '#c79ad0' };
 export const EL_GRAD = {
-  Air: ['#67b6c4', '#2f6f7a'], Earth: ['#b6924a', '#6e5526'], Fire: ['#d2645a', '#7a2a22'],
+  Air: ['#67b6c4', '#2f6f7a'], Earth: ['#b35c33', '#5f2e1a'], Fire: ['#d2645a', '#7a2a22'],
   Water: ['#5b87d6', '#2f4f8a'], Multi: ['#dcb86f', '#8c6a2a'], Neutral: ['#c79ad0', '#6a4a78'],
 };
 export const RAR_CHART = { Ordinary: '#8a8298', Exceptional: '#5b87d6', Elite: '#dcb86f', Unique: '#c79ad0' };
@@ -84,7 +85,9 @@ export function curveSVG(costs, { num = 'rgba(220,184,111,.92)', border = 'rgba(
     bars.push(`<circle cx="${cx.toFixed(1)}" cy="${badgeCY.toFixed(1)}" r="${badgeR.toFixed(1)}" fill="rgba(14,8,26,.92)" stroke="${border}" stroke-width="1"/>`);
     bars.push(`<text x="${cx.toFixed(1)}" y="${(badgeCY + 3.5).toFixed(1)}" text-anchor="middle" fill="${num}" font-size="8.5" font-weight="700">${c === 10 ? '10+' : c}</text>`);
   }
-  bars.push(`<text x="1" y="${(H - PB / 2 + 3).toFixed(1)}" text-anchor="start" fill="${num}" fill-opacity="0.6" font-size="7.5" font-style="italic">${label}</text>`);
+  // Axis title centred BELOW the number badges - at the left edge it sat right
+  // on top of the first badge's value.
+  bars.push(`<text x="${(W / 2).toFixed(1)}" y="${(H - 2).toFixed(1)}" text-anchor="middle" fill="${num}" fill-opacity="0.55" font-size="7.5" font-style="italic" letter-spacing="1.5">${label}</text>`);
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="overflow:hidden;display:block"><defs>${gradDefs}<filter id="peak-glow" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="${peakGlow}" flood-opacity="1"/></filter></defs>${baseline}${bars.join('')}</svg>`;
 }
 
