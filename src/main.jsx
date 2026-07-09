@@ -1,5 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import './theme/fonts.css';   // self-hosted fonts - bundled for offline use (no CDN)
 import './theme/tokens.css';
 import App from './App.jsx';
 import { initNative } from './native.js';

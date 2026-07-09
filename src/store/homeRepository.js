@@ -36,8 +36,6 @@ export const WIDGETS = [
   { kind: 'separator', title: 'Separator', pillar: null, structural: true, blurb: 'A dividing line' },
 ];
 export const widgetMeta = (k) => WIDGETS.find((w) => w.kind === k) || { kind: k, title: k };
-export const widgetTitle = (k) => widgetMeta(k).title;
-export const isConfigurable = (k) => !!widgetMeta(k).configurable;
 export const isStructural = (k) => !!widgetMeta(k).structural;
 export const isRollable = (k) => !!widgetMeta(k).rollable;
 export const pillarOf = (k) => widgetMeta(k).pillar || null;
@@ -135,16 +133,6 @@ export async function reorderBlocks(ids) {
   await tx(ids.map((id, i) => ['UPDATE dashboard_blocks SET sort_order=? WHERE id=? AND profile_id=?;', [i, id, pid]]));
 }
 
-export async function moveBlock(id, dir) {
-  const blocks = await listBlocks();
-  const i = blocks.findIndex((b) => b.id === id);
-  const j = i + dir;
-  if (i < 0 || j < 0 || j >= blocks.length) return;
-  const a = blocks[i], b = blocks[j];
-  await run('UPDATE dashboard_blocks SET sort_order=? WHERE id=?;', [b.sort_order, a.id]);
-  await run('UPDATE dashboard_blocks SET sort_order=? WHERE id=?;', [a.sort_order, b.id]);
-}
-
 /* ---------------- target resolution ---------------- */
 
 async function resolveTarget(type, id) {
@@ -152,6 +140,29 @@ async function resolveTarget(type, id) {
   if (type === 'rule') { const r = (await query('SELECT title FROM rules WHERE rule_id=?;', [id]))[0]; return r && { name: r.title, meta: 'Keyword', glyph: '§' }; }
   if (type === 'deck') { const d = (await query('SELECT name,archetype FROM decks WHERE id=?;', [id]))[0]; return d && { name: d.name, meta: d.archetype || 'Deck', glyph: '◆' }; }
   return null;
+}
+
+/** Batch form of resolveTarget: one IN query per target type present instead of
+    one query per row. Returns a Map keyed `<type>:<id>`; missing/unknown targets
+    are simply absent (callers skip them, exactly as resolveTarget's null did). */
+async function resolveTargets(pairs) {
+  const ids = (type) => [...new Set(pairs.filter((p) => p.type === type).map((p) => p.id))];
+  const ph = (list) => list.map(() => '?').join(',');
+  const map = new Map();
+  const cardIds = ids('card'), ruleIds = ids('rule'), deckIds = ids('deck');
+  if (cardIds.length) {
+    for (const r of await query(`SELECT card_id,name,type,cost FROM cards WHERE card_id IN (${ph(cardIds)});`, cardIds))
+      map.set('card:' + r.card_id, { name: r.name, meta: `${r.type} · ${r.cost ?? 0}`, glyph: '◈' });
+  }
+  if (ruleIds.length) {
+    for (const r of await query(`SELECT rule_id,title FROM rules WHERE rule_id IN (${ph(ruleIds)});`, ruleIds))
+      map.set('rule:' + r.rule_id, { name: r.title, meta: 'Keyword', glyph: '§' });
+  }
+  if (deckIds.length) {
+    for (const d of await query(`SELECT id,name,archetype FROM decks WHERE id IN (${ph(deckIds)});`, deckIds))
+      map.set('deck:' + d.id, { name: d.name, meta: d.archetype || 'Deck', glyph: '◆' });
+  }
+  return map;
 }
 
 /* ---------------- per-widget data ---------------- */
@@ -201,8 +212,9 @@ export async function widgetData(block) {
   }
   if (k === 'pinned') {
     const rows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT 50;', [pid]);
+    const resolved = await resolveTargets(rows.map((r) => ({ type: r.target_type, id: r.target_id })));
     const items = [];
-    for (const r of rows) { const t = await resolveTarget(r.target_type, r.target_id); if (t) items.push({ ...t, type: r.target_type, id: r.target_id }); }
+    for (const r of rows) { const t = resolved.get(r.target_type + ':' + r.target_id); if (t) items.push({ ...t, type: r.target_type, id: r.target_id }); }
     return { count: items.length, items, empty: 'Star a rule, card, or deck to pin it here.' };
   }
   if (k === 'notes') {
@@ -219,7 +231,11 @@ export async function widgetData(block) {
   }
   if (k === 'collections') {
     const cols = await query('SELECT id,name FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
-    for (const c of cols) c.n = (await query('SELECT COUNT(*) n FROM collection_items WHERE collection_id=?;', [c.id]))[0].n;
+    if (cols.length) {
+      const counts = await query(`SELECT collection_id, COUNT(*) n FROM collection_items WHERE collection_id IN (${cols.map(() => '?').join(',')}) GROUP BY collection_id;`, cols.map((c) => c.id));
+      const byId = new Map(counts.map((r) => [r.collection_id, r.n]));
+      for (const c of cols) c.n = byId.get(c.id) || 0;
+    }
     return { count: cols.length, items: cols.map((c) => ({ name: c.name, meta: `${c.n} item${c.n === 1 ? '' : 's'}`, iconType: 'collection' })), empty: 'No collections yet.' };
   }
   if (k === 'note') return { text: block.config?.text || '' };

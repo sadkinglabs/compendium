@@ -12,6 +12,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { haptic } from '../native.js';
+import { registerBackConsumer } from '../back.js';
 
 // FAB glyphs - three vertical dots (menus) · magnifying glass (search) ·
 // filter sliders (filters/sort).
@@ -49,7 +50,9 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
     if (!open) return;
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Hardware BACK closes the open menu FIRST (it's the topmost layer).
+    const unreg = registerBackConsumer(() => { setOpen(false); return true; });
+    return () => { window.removeEventListener('keydown', onKey); unreg(); };
   }, [open]);
 
   // Rendered through a portal to the .cx-app root (NOT document.body): the FAB is

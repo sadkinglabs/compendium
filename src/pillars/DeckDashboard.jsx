@@ -3,7 +3,7 @@
 // L2164-2364). Avatar hero + stat bar, then three collapsible zone cards with
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
 import React, { useEffect, useState } from 'react';
-import { getDeck, getDeckCards, collectionMax, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
+import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
@@ -274,6 +274,10 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
     Promise.all([getDeck(deckId), getDeckCards(deckId)]).then(([d, z]) => { if (alive) { setDeck(d); setZones(z); setLoaded(true); } });
     return () => { alive = false; };
   }, [deckId, rev, localRev]);
+  // Leaving edit mode reloads from the store, which returns only qty>0 rows - this
+  // is what clears the 0-qty ghost cards kept visible during editing.
+  const wasEditing = React.useRef(editMode);
+  useEffect(() => { if (wasEditing.current && !editMode) setLocalRev((r) => r + 1); wasEditing.current = editMode; }, [editMode]);
   const toggle = (z) => setCollapsed((s) => { const n = new Set(s); n.has(z) ? n.delete(z) : n.add(z); return n; });
 
   if (!deck) return loaded ? (
@@ -315,16 +319,30 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   // enforces rarity copy-limits / collection cap in the background, and a
   // rejection toasts + resyncs from the store (authoritative revert).
   const stepRow = (zone) => async (e, delta) => {
-    if (e.quantity + delta < 0) return;
+    // Clamp an add to the legal room BEFORE the optimistic paint, so the count never
+    // overshoots the cap and snaps back (no flicker). copyLimit is a total across zones.
+    let d = delta;
+    if (delta > 0) {
+      const totalCopies = ['spellbook', 'atlas', 'collection'].reduce((n, z) => n + (zones[z].find((x) => x.card_id === e.card_id)?.quantity || 0), 0);
+      let room = copyLimit(e) - totalCopies;
+      if (zone === 'collection') room = Math.min(room, coMax - co);
+      d = Math.min(delta, Math.max(0, room));
+      if (d === 0) { haptic('light'); onToast?.(zone === 'collection' && co >= coMax ? `Collection limit ${coMax}` : `Max ${copyLimit(e)} copies`); return; }
+    }
+    if (e.quantity + d < 0) return;
     haptic('light');
     setZones((z) => ({
       ...z,
       [zone]: z[zone]
-        .map((x) => x.card_id === e.card_id ? { ...x, quantity: x.quantity + delta } : x)
-        .filter((x) => x.quantity > 0),
+        .map((x) => x.card_id === e.card_id ? { ...x, quantity: x.quantity + d } : x)
+        // Keep a card that hits 0 visible WHILE editing (easy misclick recovery); the
+        // reload on "Done" (editMode -> false effect) drops the 0-qty ghosts.
+        .filter((x) => editMode ? true : x.quantity > 0),
     }));
-    const res = await changeQty(deckId, zone, e, delta);
-    if (!res.ok) { onToast?.(res.reason || 'Not allowed'); setLocalRev((r) => r + 1); }
+    const res = await changeQty(deckId, zone, e, d);
+    if (!res.ok) { onToast?.(res.reason || 'Not allowed'); setLocalRev((r) => r + 1); return; }
+    const nq = e.quantity + d;
+    onToast?.(d > 0 ? `Added ${e.name}` : (nq <= 0 ? `Removed ${e.name}` : `${e.name} · ${nq} left`));
   };
 
   return (

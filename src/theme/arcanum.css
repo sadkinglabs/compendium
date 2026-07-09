@@ -15,8 +15,9 @@
 /* Arcanum :root palette - verbatim, re-homed onto the `.arc` scope so it
    overrides Compendium tokens only inside the Decks pillar. */
 .arc {
-  /* Brand metal */
-  --gold:#dcb86f; --gold-deep:#c9a35a;
+  /* Brand metal - now inherits :root (--gold-leaf var(--gold-leaf), --gold #cf9a4a, --gold-deep
+     #c9a35a). The old override made bare --gold a different metal in Decks than
+     elsewhere; Decks consumers now use var(--gold-leaf) directly. */
   /* World - Amethyst */
   --accent:#9d6ad6; --accent2:#c79af0; --accent-mid:#7a47b8; --accent-deep:#5e2f9a;
   /* Surfaces */
@@ -51,17 +52,17 @@
 .arc .dli-content { position:relative; z-index:1; }
 .arc .dli-name-row { display:flex; align-items:center; padding:14px 14px 10px; gap:8px; cursor:pointer; }
 .arc .dli-name { font-weight:600; font-size:16px; font-family:'Cinzel',Georgia,serif; letter-spacing:.08em; color:var(--text); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.arc .dli-fav { position:absolute; bottom:10px; right:12px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(11,7,20,.5); border:1px solid rgba(220,184,111,.32); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 8px rgba(0,0,0,.45); color:var(--gold); font-size:13px; line-height:1; pointer-events:none; }
+.arc .dli-fav { position:absolute; bottom:10px; right:12px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(11,7,20,.5); border:1px solid rgba(220,184,111,.32); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 8px rgba(0,0,0,.45); color:var(--gold-leaf); font-size:13px; line-height:1; pointer-events:none; }
 .arc .dli-actions { display:flex; border-top:1px solid rgba(160,110,220,.1); }
 .arc .dli-action { flex:1; padding:10px; font-size:12px; font-weight:600; text-align:center; cursor:pointer; color:var(--muted); border:none; background:none; border-right:1px solid rgba(160,110,220,.1); font-family:'Hanken Grotesk',sans-serif; }
 .arc .dli-action:last-child { border-right:none; }
 .arc .dli-action:hover { color:var(--text); background:rgba(157,106,214,.08); }
 .arc .dli-action.load  { color:var(--accent2); }
-.arc .dli-action.share { color:var(--gold); }
+.arc .dli-action.share { color:var(--gold-leaf); }
 .arc .dli-action.del   { color:var(--danger); }
 
 /* Avatar chip used inside the library card meta row - verbatim */
-.arc .dash-avatar-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(220,184,111,.1); border:1px solid rgba(220,184,111,.35); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; color:var(--gold); cursor:pointer; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); transition:background .15s,border-color .15s; box-shadow:0 0 10px rgba(220,184,111,.1); font-family:'Hanken Grotesk',sans-serif; }
+.arc .dash-avatar-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(220,184,111,.1); border:1px solid rgba(220,184,111,.35); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; color:var(--gold-leaf); cursor:pointer; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); transition:background .15s,border-color .15s; box-shadow:0 0 10px rgba(220,184,111,.1); font-family:'Hanken Grotesk',sans-serif; }
 .arc .dash-avatar-chip:active { background:rgba(220,184,111,.2); border-color:rgba(220,184,111,.6); }
 
 .arc .no-results { padding:24px; text-align:center; color:var(--muted); }
@@ -91,7 +92,7 @@
    the tile foot; the in-deck badge keeps the bottom-right corner (z2, same layer,
    no overlap: the pill is centred and narrow). */
 .arc .tile-step { position:absolute; left:50%; bottom:7px; transform:translateX(-50%); z-index:2; display:flex; align-items:center; gap:2px; background:rgba(8,7,10,.78); border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:2px; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 10px rgba(0,0,0,.6); }
-.arc .tile-step-btn { width:30px; height:26px; border:none; background:transparent; color:#dcb86f; font:600 17px/1 'Hanken Grotesk',sans-serif; border-radius:999px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
+.arc .tile-step-btn { width:30px; height:26px; border:none; background:transparent; color:var(--gold-leaf); font:600 17px/1 'Hanken Grotesk',sans-serif; border-radius:999px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
 .arc .tile-step-btn:disabled { color:rgba(233,220,192,.25); }
 .arc .tile-step-btn:active { background:rgba(220,184,111,.16); }
 .arc .tile-step-qty { min-width:16px; text-align:center; font:700 13px/1 'Hanken Grotesk',sans-serif; color:#f0e9d8; }
@@ -114,21 +115,22 @@
    and the bottom of every column is black/gold, so sheets rising from the
    bottom stay black everywhere. Per-pillar accents live in sheet CONTENT. */
 .arc.a-sheet-scrim { position:fixed; inset:0; background:rgba(5,4,3,.7); z-index:600; animation:cxfade .2s ease; }
-.arc.a-sheet { position:fixed; left:0; right:0; bottom:var(--kb,0px); z-index:601; max-height:94vh; display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); transition:bottom .2s ease; }
-.arc .a-sheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; margin:10px auto 14px; flex-shrink:0; }
+.arc.a-sheet { position:fixed; left:0; right:0; bottom:calc(var(--kb,0px) / var(--ui-scale,1)); z-index:601; max-height:88vh; max-height:min(calc(88dvh - env(safe-area-inset-top,0px)), calc(100dvh - env(safe-area-inset-top,0px) - 10px - var(--kb,0px) / var(--ui-scale,1))); display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); transition:bottom .2s ease; }
+.arc .a-sheet-grab { display:flex; justify-content:center; padding:10px 0 8px; flex-shrink:0; touch-action:none; -webkit-tap-highlight-color:transparent; cursor:grab; }
+.arc .a-sheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; flex-shrink:0; }
 .arc .a-sheet-header { display:flex; align-items:center; gap:10px; padding:0 16px 10px; flex-shrink:0; }
-.arc .a-sheet-title { flex:1; font:700 22px/1.12 'Cinzel',Georgia,serif; color:#dcb86f; }
-.arc .a-sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:#dcb86f; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+.arc .a-sheet-title { flex:1; font:700 22px/1.12 'Cinzel',Georgia,serif; color:var(--gold-leaf); }
+.arc .a-sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
 .arc .a-sheet-body { overflow-y:auto; flex:1; min-height:0; }
 
 /* Export sheet (#export-sheet) - Markdown/Curiosa toggle + copy */
 .arc .es-format-row { display:flex; justify-content:center; padding:4px 12px 6px; }
 .arc .es-format-wrap { display:inline-flex; background:rgba(11,7,20,.72); border:1px solid rgba(220,184,111,.22); border-radius:999px; padding:3px; gap:2px; box-shadow:0 2px 12px rgba(0,0,0,.4); }
 .arc .es-format-btn { background:transparent; border:1px solid transparent; color:#8a7ba6; border-radius:999px; padding:8px 28px; font:600 13px/1 'Hanken Grotesk',sans-serif; cursor:pointer; transition:color .18s; }
-.arc .es-format-btn.on { background:rgba(220,184,111,.14); color:#dcb86f; border:1px solid rgba(220,184,111,.5); box-shadow:0 0 12px rgba(220,184,111,.14); }
+.arc .es-format-btn.on { background:rgba(220,184,111,.14); color:var(--gold-leaf); border:1px solid rgba(220,184,111,.5); box-shadow:0 0 12px rgba(220,184,111,.14); }
 .arc .es-hint { text-align:center; font:italic 400 11px/1.4 'EB Garamond',Georgia,serif; color:#8a7ba6; padding:2px 16px 8px; }
 .arc .es-area { display:block; width:calc(100% - 24px); margin:0 12px 4px; min-height:60vh; background:rgba(24,16,40,.5); border:1px solid rgba(160,110,220,.16); border-radius:12px; color:#c9bfdc; font:400 13px/1.6 'IBM Plex Mono',monospace; padding:12px; resize:none; outline:none; box-sizing:border-box; }
-.arc .es-copy-btn { flex:1; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:#dcb86f; font:700 15px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
+.arc .es-copy-btn { flex:1; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:var(--gold-leaf); font:700 15px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
 .arc .es-copy-btn:active { background:rgba(220,184,111,.14); }
 
 /* Deck Spread sheet (#deckcards-sheet) - full-art grid, Deck/Shuffle toggle */
@@ -172,7 +174,7 @@
 .arc .zone-stepper-btn:active { background:var(--accent); border-color:var(--accent); color:#fff; }
 
 /* Cross-pillar jump: card sheet → its Codex article (rulings/FAQ/marginalia). */
-.arc .sheet-codex-link { display:block; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 0; border-radius:12px; border:1px solid rgba(220,184,111,.28); background:rgba(220,184,111,.06); color:#dcb86f; font:600 12.5px/1 'Hanken Grotesk',sans-serif; letter-spacing:.03em; cursor:pointer; text-align:center; }
+.arc .sheet-codex-link { display:block; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 0; border-radius:12px; border:1px solid rgba(220,184,111,.28); background:rgba(220,184,111,.06); color:var(--gold-leaf); font:600 12.5px/1 'Hanken Grotesk',sans-serif; letter-spacing:.03em; cursor:pointer; text-align:center; }
 .arc .sheet-codex-link:active { background:rgba(220,184,111,.14); }
 
 /* Toast (Arcanum #toast) */
@@ -183,12 +185,13 @@
 /* Refine sheet - re-homed onto the app-standard black sheet chassis; the deck
    world's amethyst survives as the ACCENT (active pills/tabs), never the ground. */
 .arc.fsheet-scrim { position:fixed; inset:0; z-index:200; background:rgba(5,4,3,.7); animation:cxfade .2s ease; }
-.arc.fsheet { position:fixed; left:0; right:0; bottom:0; z-index:201; max-height:88vh; display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-radius:26px 26px 0 0; border-top:1px solid rgba(220,184,111,.16); box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); animation:cxsheet .28s cubic-bezier(.2,.9,.3,1); }
-.arc .fsheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; margin:12px auto 2px; flex-shrink:0; }
+.arc.fsheet { position:fixed; left:0; right:0; bottom:0; z-index:201; max-height:82vh; max-height:min(calc(82dvh - env(safe-area-inset-top,0px)), calc(100dvh - env(safe-area-inset-top,0px) - 10px)); display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-radius:26px 26px 0 0; border-top:1px solid rgba(220,184,111,.16); box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(6px + env(safe-area-inset-bottom,0px)); animation:cxsheet .28s cubic-bezier(.2,.9,.3,1); }
+.arc .fsheet-grab { display:flex; justify-content:center; padding:12px 0 2px; flex-shrink:0; touch-action:none; -webkit-tap-highlight-color:transparent; cursor:grab; }
+.arc .fsheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; flex-shrink:0; }
 .arc .fsheet-header { display:flex; align-items:flex-start; gap:10px; padding:6px 22px 2px; flex-shrink:0; }
-.arc .fsheet-title { flex:1; font:700 24px/1.12 'Cinzel',Georgia,serif; color:#dcb86f; }
+.arc .fsheet-title { flex:1; font:700 24px/1.12 'Cinzel',Georgia,serif; color:var(--gold-leaf); }
 .arc .fsheet-sub { font:italic 400 13px/1 'EB Garamond',Georgia,serif; color:rgba(233,220,192,.5); margin-top:3px; }
-.arc .fsheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:#dcb86f; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.arc .fsheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; }
 .arc .fsheet-tabs { display:flex; margin:12px 22px; padding:3px; background:rgba(18,16,13,.7); border:1px solid rgba(255,255,255,.1); border-radius:11px; flex-shrink:0; }
 .arc .fsheet-tab { flex:1; padding:9px; font:600 13px/1 'Hanken Grotesk',sans-serif; text-align:center; background:transparent; border:none; border-radius:9px; color:rgba(233,220,192,.45); cursor:pointer; }
 .arc .fsheet-tab.active { background:linear-gradient(180deg,rgba(157,106,214,.4),rgba(122,71,184,.25)); color:#f0e9d8; }
@@ -206,7 +209,7 @@
 .arc .pill.on.rarity-Elite { border-color:var(--elite); color:var(--elite); }
 .arc .pill.on.rarity-Unique { border-color:var(--unique); color:var(--unique); }
 .arc .sort-panel-title { font:italic 400 13px/1.3 'EB Garamond',Georgia,serif; color:rgba(233,220,192,.5); padding:14px 22px 4px; }
-.arc .sort-priority { width:20px; height:20px; border-radius:50%; background:#dcb86f; color:#1a1206; font:800 10px/1 'Hanken Grotesk',sans-serif; display:none; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 0 10px rgba(220,184,111,.5); }
+.arc .sort-priority { width:20px; height:20px; border-radius:50%; background:var(--gold-leaf); color:#1a1206; font:800 10px/1 'Hanken Grotesk',sans-serif; display:none; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 0 10px rgba(220,184,111,.5); }
 .arc .sort-item.active .sort-priority { display:flex; }
 .arc .sort-items { display:flex; flex-direction:column; gap:8px; padding:8px 22px 4px; }
 .arc .sort-item { display:flex; align-items:center; padding:12px 16px; border-radius:13px; border:1px solid rgba(255,255,255,.12); background:rgba(18,16,13,.6); gap:10px; cursor:pointer; }
@@ -214,9 +217,11 @@
 .arc .sort-item-label { flex:1; font:600 14px/1 'Hanken Grotesk',sans-serif; color:rgba(233,220,192,.75); }
 .arc .sort-item.active .sort-item-label { color:#f0e9d8; }
 .arc .sort-dir-btn { width:46px; padding:7px 0; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(12,11,9,.7); color:#c9a9f0; font:700 14px/1 'IBM Plex Mono',monospace; cursor:pointer; }
-.arc .fsheet-footer { padding:14px 22px calc(16px + env(safe-area-inset-bottom,0px)); display:flex; gap:10px; flex-shrink:0; border-top:1px solid rgba(220,184,111,.12); }
+/* Footer sits inside the chassis, which already pads env(safe-area-inset-bottom);
+   pad only the visual gap here so the inset isn't counted twice (dead band). */
+.arc .fsheet-footer { padding:14px 22px 16px; display:flex; gap:10px; flex-shrink:0; border-top:1px solid rgba(220,184,111,.12); }
 .arc .filter-clear-btn { flex:1; padding:13px; border-radius:14px; border:1px solid rgba(255,255,255,.14); background:transparent; color:rgba(233,220,192,.75); font:600 14px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
-.arc .filter-apply-btn { flex:2; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:#dcb86f; font:700 15px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
+.arc .filter-apply-btn { flex:2; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:var(--gold-leaf); font:700 15px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
 .arc .filter-apply-btn:active { background:rgba(220,184,111,.14); }
 /* Comparator rows (threshold-by-element, totals, mana) */
 .arc .th-el-list { display:flex; flex-direction:column; gap:10px; }
@@ -252,10 +257,10 @@
 /* Entering the full card search - the page rises to meet you. */
 @keyframes arcRise { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
 .arc.fab-wrap.open { z-index:111; }
-.arc.fab-wrap .fab { position:static; width:52px; height:52px; border-radius:50%; background:rgba(12,12,15,.55); border:1px solid rgba(220,184,111,.5); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); color:#dcb86f; font-size:22px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(220,184,111,.1); transition:transform .25s cubic-bezier(.34,1.3,.64,1), background .2s ease, border-color .2s ease; padding:0; }
+.arc.fab-wrap .fab { position:static; width:52px; height:52px; border-radius:50%; background:rgba(12,12,15,.55); border:1px solid rgba(220,184,111,.5); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); color:var(--gold-leaf); font-size:22px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(220,184,111,.1); transition:transform .25s cubic-bezier(.34,1.3,.64,1), background .2s ease, border-color .2s ease; padding:0; }
 .arc.fab-wrap.open .fab { background:rgba(24,20,12,.7); border-color:rgba(220,184,111,.85); }
 /* Active-count badge (Arcanum #search-fab-badge) */
-.arc .fab-badge { position:absolute; top:-5px; right:-5px; background:linear-gradient(90deg,#dcb86f 0%,#f0d480 50%,#dcb86f 100%); background-size:200% 100%; animation:badgeShimmer 1.6s linear infinite; color:#1a0f30; border-radius:999px; font:800 10px/1.4 'Hanken Grotesk',sans-serif; padding:1px 6px; z-index:52; box-shadow:0 0 8px rgba(220,184,111,.55); pointer-events:none; }
+.arc .fab-badge { position:absolute; top:-5px; right:-5px; background:linear-gradient(90deg,var(--gold-leaf) 0%,#f0d480 50%,var(--gold-leaf) 100%); background-size:200% 100%; animation:badgeShimmer 1.6s linear infinite; color:#1a0f30; border-radius:999px; font:800 10px/1.4 'Hanken Grotesk',sans-serif; padding:1px 6px; z-index:52; box-shadow:0 0 8px rgba(220,184,111,.55); pointer-events:none; }
 @keyframes badgeShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
 .arc.fab-wrap.fab-lib.open .fab  { transform:rotate(135deg); }   /* + morphs into x */
 .arc.fab-wrap.fab-deck.open .fab { transform:rotate(90deg); }    /* the vertical dots tilt */
@@ -282,29 +287,30 @@
    black+gold sheet chassis (.a-sheet family): black grimoire ground, gold
    hairlines, no amethyst. */
 .arc.ob-overlay { position:fixed; inset:0; background:rgba(5,4,3,.7); z-index:400; display:flex; flex-direction:column; animation:cxfade .2s ease; }
-.arc .ob-inner { background:linear-gradient(180deg,#151310,#0a0908); margin-top:auto; border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); max-height:92vh; display:flex; flex-direction:column; position:relative; padding-top:10px; padding-bottom:env(safe-area-inset-bottom,0px); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); }
+.arc .ob-inner { background:linear-gradient(180deg,#151310,#0a0908); margin-top:auto; margin-bottom:calc(var(--kb,0px) / var(--ui-scale,1)); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); max-height:92vh; max-height:min(92dvh, calc(100dvh - env(safe-area-inset-top,0px) - 10px - var(--kb,0px) / var(--ui-scale,1))); display:flex; flex-direction:column; position:relative; padding-top:10px; padding-bottom:env(safe-area-inset-bottom,0px); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); }
 .arc .sheet-handle { width:36px; height:4px; border-radius:2px; background:rgba(220,184,111,.28); margin:2px auto 16px; flex-shrink:0; }
 .arc .ob-header { padding:0 22px; display:flex; align-items:center; gap:10px; }
-.arc .ob-header h2 { flex:1; font-size:24px; font-weight:700; font-family:'Cinzel',Georgia,serif; color:#dcb86f; margin:0; }
-.arc .sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:#dcb86f; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+.arc .ob-header h2 { flex:1; font-size:24px; font-weight:700; font-family:'Cinzel',Georgia,serif; color:var(--gold-leaf); margin:0; }
+.arc .sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
 .arc .ob-steps { display:flex; gap:0; padding:14px 16px 16px; align-items:center; justify-content:center; }
 .arc .ob-step { width:28px; height:28px; border-radius:50%; border:1px solid rgba(255,255,255,.14); background:rgba(18,16,13,.6); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:rgba(233,220,192,.4); transition:all .2s; flex-shrink:0; font-family:'Hanken Grotesk',sans-serif; }
-.arc .ob-step.done, .arc .ob-step.active { background:rgba(18,16,13,.85); border-color:rgba(220,184,111,.75); color:#dcb86f; box-shadow:0 0 14px rgba(220,184,111,.28); }
+.arc .ob-step.done, .arc .ob-step.active { background:rgba(18,16,13,.85); border-color:rgba(220,184,111,.75); color:var(--gold-leaf); box-shadow:0 0 14px rgba(220,184,111,.28); }
 .arc .ob-step-line { width:56px; height:1px; background:rgba(255,255,255,.1); transition:background .2s; flex-shrink:0; }
 .arc .ob-step-line.done { background:rgba(220,184,111,.5); }
 .arc .ob-step1, .arc .ob-step2 { flex:1; overflow-y:auto; padding:14px 16px; }
 .arc .ob-step2 { display:flex; flex-direction:column; overflow:hidden; }
 .arc .ob-step1 input { width:100%; background:rgba(10,9,8,.8); border:1px solid rgba(220,184,111,.22); border-radius:12px; padding:14px 16px; color:var(--text); font-size:17px; outline:none; box-shadow:inset 0 1px 6px rgba(0,0,0,.4); transition:border-color .18s, box-shadow .18s; }
 .arc .ob-step1 input:focus { border-color:rgba(220,184,111,.55); box-shadow:inset 0 1px 6px rgba(0,0,0,.4), 0 0 14px rgba(220,184,111,.14); }
-.arc .ob-footer { padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px)); border-top:1px solid rgba(220,184,111,.12); display:flex; gap:8px; }
+/* .ob-inner already pads env(safe-area-inset-bottom); footer pads only the gap. */
+.arc .ob-footer { padding:12px 16px; border-top:1px solid rgba(220,184,111,.12); display:flex; gap:8px; }
 /* Footer buttons inside the wizard: neutral black-glass ghost + gold-hairline
    primary (the app's sheet-button pair), never amethyst. */
 .arc .ob-footer .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:transparent; color:rgba(233,220,192,.75); }
-.arc .ob-footer .btn.primary { background:rgba(18,16,13,.85); border:1px solid rgba(220,184,111,.45); color:#dcb86f; }
+.arc .ob-footer .btn.primary { background:rgba(18,16,13,.85); border:1px solid rgba(220,184,111,.45); color:var(--gold-leaf); }
 .arc .ob-footer .btn.primary:disabled, .arc .ob-footer .btn.primary.disabled { background:rgba(255,255,255,.03); border-color:rgba(255,255,255,.1); color:rgba(233,220,192,.3); opacity:1; }
 .arc .ob-footer .btn svg { width:15px; height:15px; flex:none; }
 .arc .btn { padding:11px 18px; border-radius:14px; border:1px solid rgba(160,110,220,.28); background:rgba(24,16,40,.4); color:#c9bfdc; font-size:14px; font-weight:600; cursor:pointer; font-family:'Hanken Grotesk',sans-serif; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
-.arc .btn.primary { background:rgba(18,16,13,.85); border:1px solid rgba(220,184,111,.45); color:#dcb86f; font-weight:700; font-size:15px; }
+.arc .btn.primary { background:rgba(18,16,13,.85); border:1px solid rgba(220,184,111,.45); color:var(--gold-leaf); font-weight:700; font-size:15px; }
 .arc .btn.primary:disabled, .arc .btn.primary.disabled { background:rgba(160,110,220,.16); color:#6e6286; opacity:.7; cursor:default; }
 .arc .btn.danger { background:rgba(24,16,40,.4); border:1px solid rgba(224,144,124,.4); color:#e0907c; }
 .arc .ob-avatar-list { flex:1; overflow-y:auto; }
@@ -322,7 +328,7 @@
 .arc .ob-preview-stats { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
 .arc .ob-preview-stat { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.12); border-radius:6px; padding:3px 8px; color:var(--text); }
 .arc .ob-preview-stat .label { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:rgba(233,220,192,.5); }
-.arc .ob-preview-type { font-size:11px; color:var(--gold); font-weight:600; letter-spacing:.3px; }
+.arc .ob-preview-type { font-size:11px; color:var(--gold-leaf); font-weight:600; letter-spacing:.3px; }
 .arc .ob-preview-rules { font-size:12px; color:rgba(233,220,192,.62); line-height:1.6; }
 .arc .ob-search-pill-wrap { margin-bottom:10px; flex-shrink:0; }
 .arc .ob-search-pill { display:flex; align-items:center; gap:8px; background:rgba(10,9,8,.85); border:1px solid rgba(220,184,111,.22); border-radius:999px; padding:0 16px; height:50px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:0 2px 14px rgba(0,0,0,.4); }

@@ -4,6 +4,7 @@
 import { query, run } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
+import { parseCardQuery, cardMatchesQuery } from './deckRepository.js';   // rich card-search syntax (parity with the deckbuilder)
 
 /* ---------------- catalog (shared, read-only) ---------------- */
 
@@ -153,14 +154,15 @@ export function parseCodexQuery(q) {
  *  entries whose TEXT contains the words ("airborne" → the Airborne article,
  *  then every minion whose rules mention airborne, grouped by type). */
 export async function searchCodex(q) {
-  const f = parseCodexQuery(q);
-  const like = f.textStr ? `%${f.textStr}%` : null;
+  const f = parseCodexQuery(q);           // Codex-only personal-layer / scope tokens: has:/is:
+  const parsed = parseCardQuery(q);       // rich card-attribute syntax (r:, kw:, el:, t:, attack>, cost, rarity, th:, set:, ...)
+  const needle = parsed.name.trim().toLowerCase();
+  const like = needle ? `%${needle}%` : null;
 
-  // Card pool: SQL narrows by name/text where possible, tokens filter after.
-  let cardRows = await query('SELECT card_id id, name, type, cost, rarity, rules_text, thresholds, sets FROM cards;');
-  if (f.types.length) cardRows = cardRows.filter((c) => f.types.some((t) => (c.type || '').toLowerCase().startsWith(t)));
-  if (f.els.length) cardRows = cardRows.filter((c) => { try { const th = JSON.parse(c.thresholds || '{}'); return f.els.some((e) => (th[e] || 0) > 0); } catch { return false; } });
-  if (f.sets.length) cardRows = cardRows.filter((c) => { try { return JSON.parse(c.sets || '[]').some((s) => f.sets.includes(s.name)); } catch { return false; } });
+  // Card pool - WIDE select so every rich predicate (rules_text/attack/elements/etc.)
+  // can evaluate. Mirrors the deckbuilder's getPool columns.
+  let cardRows = await query('SELECT card_id id, name, type, sub_types, rarity, elements, cost, attack, defence, life, thresholds, rules_text, sets, variants, image_slug, is_site FROM cards;');
+  if (parsed.clauses.length) cardRows = cardRows.filter((c) => cardMatchesQuery(c, parsed));
   if (f.has.includes('faq')) { const fs = await faqCardSet(); cardRows = cardRows.filter((c) => fs.has(c.id)); }
   if (f.has.some((h) => h.startsWith('marg') || h === 'notes')) { const ms = await margSet(); cardRows = cardRows.filter((c) => ms.has(c.id)); }
   if (f.is.includes('errata')) { const er = await errataCardSet(); cardRows = cardRows.filter((c) => er.has(c.id)); }
@@ -169,7 +171,6 @@ export async function searchCodex(q) {
   const asCard = (c) => ({ id: c.id, name: c.name, kind: 'card', meta: cardMeta(c) });
   let cards = [], cardText = [];
   if (like) {
-    const needle = f.textStr;
     cards = cardRows.filter((c) => c.name.toLowerCase().includes(needle));
     const named = new Set(cards.map((c) => c.id));
     // text hits, grouped by type then name - "all minions with airborne" reads
@@ -178,8 +179,8 @@ export async function searchCodex(q) {
       .filter((c) => !named.has(c.id) && (c.rules_text || '').toLowerCase().includes(needle))
       .sort((a, b) => (a.type || '').localeCompare(b.type || '') || a.name.localeCompare(b.name));
     cards.sort((a, b) => a.name.localeCompare(b.name));
-  } else if (f.hasTokens) {
-    cards = [...cardRows].sort((a, b) => a.name.localeCompare(b.name));   // tokens only: the filtered pool IS the result
+  } else if (parsed.clauses.length || f.hasTokens) {
+    cards = [...cardRows].sort((a, b) => a.name.localeCompare(b.name));   // filters/clauses only: the narrowed pool IS the result
   }
 
   // Articles: title hits (sub-entries fold up to their parent), then body hits.
@@ -246,11 +247,12 @@ export async function relatedFor(kind, id, name) {
     "SELECT DISTINCT source_id FROM link_graph WHERE target_type='card' AND lower(target_id)=? LIMIT 12;",
     [String(name).toLowerCase()]
   );
+  if (!rows.length) return [];
+  const ids = rows.map((r) => r.source_id);
+  const found = await query(`SELECT rule_id, title FROM rules WHERE rule_id IN (${ids.map(() => '?').join(',')});`, ids);
+  const byId = new Map(found.map((x) => [x.rule_id, x.title]));
   const out = [];
-  for (const r of rows) {
-    const ru = (await query('SELECT title FROM rules WHERE rule_id=?;', [r.source_id]))[0];
-    if (ru) out.push({ name: ru.title, type: 'rule' });
-  }
+  for (const r of rows) { if (byId.has(r.source_id)) out.push({ name: byId.get(r.source_id), type: 'rule' }); }
   return out;
 }
 
@@ -261,29 +263,53 @@ export async function relatedFor(kind, id, name) {
     their parent article. Garbage `unresolved_article` edges are dropped. */
 export async function mentions(ruleId) {
   const rows = await query('SELECT DISTINCT target_id, target_type FROM link_graph WHERE source_id=?;', [ruleId]);
-  const cards = [], articles = [];
-  const seenCard = new Set(), seenArt = new Set();
+  // First pass: collect the card names (deduped, lowercased, first-seen order)
+  // and the article/subentry target ids (in order) so the lookups can be batched.
+  const cardKeys = [], seenCard = new Set(), artTargetIds = [];
   for (const r of rows) {
     if (r.target_type === 'card') {
       const key = r.target_id.toLowerCase();
-      if (seenCard.has(key)) continue; seenCard.add(key);
-      const c = (await query('SELECT card_id, name, image_slug, type, cost, is_site, elements, thresholds FROM cards WHERE lower(name)=? LIMIT 1;', [key]))[0];
-      if (c) cards.push(c);
+      if (!seenCard.has(key)) { seenCard.add(key); cardKeys.push(key); }
     } else if (r.target_type === 'article' || r.target_type === 'subentry') {
-      const ru = (await query('SELECT rule_id, parent_id, title FROM rules WHERE rule_id=? LIMIT 1;', [r.target_id]))[0];
-      if (!ru) continue;
-      const openId = ru.parent_id || ru.rule_id;               // sub-entry → its parent article
-      if (seenArt.has(openId)) continue; seenArt.add(openId);
-      const title = ru.parent_id ? ((await query('SELECT title FROM rules WHERE rule_id=?;', [ru.parent_id]))[0]?.title || ru.title) : ru.title;
-      articles.push({ id: openId, title });
+      artTargetIds.push(r.target_id);
     }
+  }
+  // One IN query for the cards (keyed by lower(name), first match wins == old LIMIT 1).
+  const cardByName = new Map();
+  if (cardKeys.length) {
+    const found = await query(`SELECT card_id, name, image_slug, type, cost, is_site, elements, thresholds FROM cards WHERE lower(name) IN (${cardKeys.map(() => '?').join(',')});`, cardKeys);
+    for (const c of found) { const k = String(c.name).toLowerCase(); if (!cardByName.has(k)) cardByName.set(k, c); }
+  }
+  const cards = [];
+  for (const key of cardKeys) { const c = cardByName.get(key); if (c) cards.push(c); }
+  // One IN query for the article rules, then one more for the parent titles they fold up to.
+  const ruleById = new Map();
+  if (artTargetIds.length) {
+    const uniq = [...new Set(artTargetIds)];
+    const found = await query(`SELECT rule_id, parent_id, title FROM rules WHERE rule_id IN (${uniq.map(() => '?').join(',')});`, uniq);
+    for (const ru of found) ruleById.set(ru.rule_id, ru);
+  }
+  const parentIds = [...new Set([...ruleById.values()].filter((ru) => ru.parent_id).map((ru) => ru.parent_id))];
+  const parentTitle = new Map();
+  if (parentIds.length) {
+    const found = await query(`SELECT rule_id, title FROM rules WHERE rule_id IN (${parentIds.map(() => '?').join(',')});`, parentIds);
+    for (const p of found) parentTitle.set(p.rule_id, p.title);
+  }
+  const articles = [], seenArt = new Set();
+  for (const tid of artTargetIds) {
+    const ru = ruleById.get(tid);
+    if (!ru) continue;
+    const openId = ru.parent_id || ru.rule_id;               // sub-entry → its parent article
+    if (seenArt.has(openId)) continue; seenArt.add(openId);
+    const title = ru.parent_id ? (parentTitle.get(ru.parent_id) || ru.title) : ru.title;
+    articles.push({ id: openId, title });
   }
   return { cards, articles };
 }
 
 export async function faqsForCard(cardId) {
   // card_ids stored as a JSON array of curiosa slugs (== card_id)
-  return query("SELECT question, answer FROM faqs WHERE card_ids LIKE ? ORDER BY rowid LIMIT 50;", [
+  return query("SELECT faq_id, question, answer FROM faqs WHERE card_ids LIKE ? ORDER BY rowid LIMIT 50;", [
     `%"${cardId}"%`,
   ]);
 }
@@ -353,21 +379,37 @@ export async function deleteHighlight(id) {
   await run('DELETE FROM highlights WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
 }
 
-/* user-authored cross-links (the "Link" half of marginalia) */
-async function nameOf(type, id) {
-  if (type === 'card') return (await query('SELECT name FROM cards WHERE card_id=?;', [id]))[0]?.name || id;
-  return (await query('SELECT title FROM rules WHERE rule_id=?;', [id]))[0]?.title || id;
+/* user-authored cross-links (the "Link" half of marginalia).
+   Batch name resolver: instead of one query per row (the old per-row nameOf),
+   resolve many {type,id} targets in a single IN query per table, chunked for
+   SQLite's ~999-variable cap. Returns a Map keyed `card:<id>` / `rule:<id>`;
+   nameFrom applies the same `|| id` fallback the per-row nameOf had. */
+async function namesFor(pairs) {
+  const cardIds = [...new Set(pairs.filter((p) => p.type === 'card').map((p) => p.id))];
+  const ruleIds = [...new Set(pairs.filter((p) => p.type !== 'card').map((p) => p.id))];
+  const map = new Map();
+  const load = async (ids, table, idCol, nameCol, prefix) => {
+    for (let i = 0; i < ids.length; i += 900) {
+      const chunk = ids.slice(i, i + 900);
+      const rows = await query(`SELECT ${idCol} id, ${nameCol} nm FROM ${table} WHERE ${idCol} IN (${chunk.map(() => '?').join(',')});`, chunk);
+      for (const r of rows) map.set(prefix + r.id, r.nm);
+    }
+  };
+  await load(cardIds, 'cards', 'card_id', 'name', 'card:');
+  await load(ruleIds, 'rules', 'rule_id', 'title', 'rule:');
+  return map;
 }
+const nameFrom = (names, type, id) => names.get((type === 'card' ? 'card:' : 'rule:') + id) || id;
 
 export async function linksFor(targetId) {
   const pid = activeProfileId();
   const rows = await query('SELECT * FROM links WHERE profile_id=? AND (a_id=? OR b_id=?) ORDER BY created_at DESC;', [pid, targetId, targetId]);
-  const out = [];
-  for (const l of rows) {
-    const other = l.a_id === targetId ? { type: l.b_type, id: l.b_id } : { type: l.a_type, id: l.a_id };
-    out.push({ id: l.id, description: l.description, otherType: other.type, otherId: other.id, otherName: await nameOf(other.type, other.id) });
-  }
-  return out;
+  const others = rows.map((l) => (l.a_id === targetId ? { type: l.b_type, id: l.b_id } : { type: l.a_type, id: l.a_id }));
+  const names = await namesFor(others);
+  return rows.map((l, i) => ({
+    id: l.id, description: l.description,
+    otherType: others[i].type, otherId: others[i].id, otherName: nameFrom(names, others[i].type, others[i].id),
+  }));
 }
 
 export async function addLink(aType, aId, bType, bId, description) {
@@ -390,9 +432,10 @@ export async function searchPersonal(q) {
   const like = `%${q.toLowerCase()}%`;
   const notes = await query('SELECT target_type, target_id, body FROM notes WHERE profile_id=? AND lower(body) LIKE ? ORDER BY updated_at DESC LIMIT 20;', [pid, like]);
   const hls = await query('SELECT target_type, target_id, text, comment FROM highlights WHERE profile_id=? AND (lower(text) LIKE ? OR lower(comment) LIKE ?) ORDER BY created_at DESC LIMIT 20;', [pid, like, like]);
+  const names = await namesFor([...notes, ...hls].map((r) => ({ type: r.target_type, id: r.target_id })));
   const out = [];
-  for (const n of notes) out.push({ kind: n.target_type, id: n.target_id, name: await nameOf(n.target_type, n.target_id), meta: 'Note', glyph: '⚜' });
-  for (const h of hls) out.push({ kind: h.target_type, id: h.target_id, name: await nameOf(h.target_type, h.target_id), meta: 'Highlight', glyph: '✦' });
+  for (const n of notes) out.push({ kind: n.target_type, id: n.target_id, name: nameFrom(names, n.target_type, n.target_id), meta: 'Note', glyph: '⚜' });
+  for (const h of hls) out.push({ kind: h.target_type, id: h.target_id, name: nameFrom(names, h.target_type, h.target_id), meta: 'Highlight', glyph: '✦' });
   return out;
 }
 
@@ -402,20 +445,23 @@ export async function searchPersonal(q) {
 export async function marginaliaAll() {
   const pid = activeProfileId();
   const saved = await query('SELECT id, target_type, target_id, created_at FROM saved WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
-  for (const s of saved) s.on = await nameOf(s.target_type, s.target_id);
   const notes = await query('SELECT id, target_type, target_id, body, updated_at FROM notes WHERE profile_id=? ORDER BY updated_at DESC;', [pid]);
   const highlights = await query('SELECT id, target_type, target_id, text, comment, created_at FROM highlights WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
   const links = await query('SELECT * FROM links WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
-  for (const n of notes) n.on = await nameOf(n.target_type, n.target_id);
-  for (const h of highlights) h.on = await nameOf(h.target_type, h.target_id);
-  const linkRows = [];
-  for (const l of links) {
-    linkRows.push({
-      id: l.id, description: l.description,
-      aType: l.a_type, aId: l.a_id, aName: await nameOf(l.a_type, l.a_id),
-      bType: l.b_type, bId: l.b_id, bName: await nameOf(l.b_type, l.b_id),
-    });
-  }
+  const names = await namesFor([
+    ...saved.map((r) => ({ type: r.target_type, id: r.target_id })),
+    ...notes.map((r) => ({ type: r.target_type, id: r.target_id })),
+    ...highlights.map((r) => ({ type: r.target_type, id: r.target_id })),
+    ...links.flatMap((l) => [{ type: l.a_type, id: l.a_id }, { type: l.b_type, id: l.b_id }]),
+  ]);
+  for (const s of saved) s.on = nameFrom(names, s.target_type, s.target_id);
+  for (const n of notes) n.on = nameFrom(names, n.target_type, n.target_id);
+  for (const h of highlights) h.on = nameFrom(names, h.target_type, h.target_id);
+  const linkRows = links.map((l) => ({
+    id: l.id, description: l.description,
+    aType: l.a_type, aId: l.a_id, aName: nameFrom(names, l.a_type, l.a_id),
+    bType: l.b_type, bId: l.b_id, bName: nameFrom(names, l.b_type, l.b_id),
+  }));
   return { saved, notes, highlights, links: linkRows };
 }
 
@@ -423,8 +469,10 @@ export async function marginaliaAll() {
 export async function listCollections() {
   const pid = activeProfileId();
   const cols = await query('SELECT * FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
-  for (const c of cols) {
-    c.count = (await query('SELECT COUNT(*) n FROM collection_items WHERE collection_id=?;', [c.id]))[0].n;
+  if (cols.length) {
+    const counts = await query(`SELECT collection_id, COUNT(*) n FROM collection_items WHERE collection_id IN (${cols.map(() => '?').join(',')}) GROUP BY collection_id;`, cols.map((c) => c.id));
+    const byId = new Map(counts.map((r) => [r.collection_id, r.n]));
+    for (const c of cols) c.count = byId.get(c.id) || 0;
   }
   return cols;
 }
@@ -459,7 +507,8 @@ export async function deleteCollection(id) {
 /** A collection's items, resolved to names for display. */
 export async function collectionItems(collectionId) {
   const rows = await query('SELECT id, target_type, target_id FROM collection_items WHERE collection_id=? ORDER BY added_at DESC;', [collectionId]);
-  for (const r of rows) r.name = await nameOf(r.target_type, r.target_id);
+  const names = await namesFor(rows.map((r) => ({ type: r.target_type, id: r.target_id })));
+  for (const r of rows) r.name = nameFrom(names, r.target_type, r.target_id);
   return rows;
 }
 

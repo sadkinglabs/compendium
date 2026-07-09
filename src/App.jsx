@@ -24,9 +24,10 @@ import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js'
 import { setResume } from './store/homeRepository.js';
 import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
+import { runBackConsumers } from './back.js';
 import { parseMatchShare } from './store/matchShare.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
-import { ListRow, IconButton, Loading, Chip, BTN_GOLD, BTN_GHOST } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, Chip, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
@@ -37,6 +38,7 @@ const PILLARS = [
   { key: 'decks', glyph: '◈', label: 'Decks', eyebrow: 'YOUR DECKS',        accent: 'var(--accent-violet)' },
   { key: 'play',  glyph: '♥', label: 'Play',  eyebrow: 'DUEL & TRACK LIFE', accent: 'var(--accent-jade)' },
 ];
+const SWIPE_TABS = PILLARS.map((p) => p.key);   // cross-pillar swipe order
 
 export default function App() {
   const [boot, setBoot] = useState({ status: 'loading' });
@@ -57,6 +59,8 @@ export default function App() {
   const [preMatch, setPreMatch] = useState(null);    // {mode, settings} - avatar picker step
   const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
   const counterApi = useRef(null);                   // {minimize} - set by the live counter
+  const homeApi = useRef(null);                       // {back} - Home edit mode / Overview<->Dashboard subtab
+  const lastBackAt = useRef(0);                       // double-back-to-exit timestamp (Home root)
   const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal
   const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
@@ -70,6 +74,8 @@ export default function App() {
   const backRef = useRef(null);   // latest hardware-back handler (set each render)
   const [storageFull, setStorageFull] = useState(false);
   useEffect(() => onBackButton(() => backRef.current?.()), []);
+  // Dev aid: exercise the hardware-back chain from a desktop browser (no Capacitor).
+  useEffect(() => { if (import.meta.env.DEV) window.__back = () => backRef.current?.(); }, []);
   // A scanned shared-match QR opens compendium://match?d=... - land it on the
   // import review sheet, whatever tab we're on.
   useEffect(() => onAppUrlOpen((url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }), []);
@@ -106,15 +112,22 @@ export default function App() {
     })();
   }, []);
 
-  if (boot.status === 'loading') return <Splash text="Opening the grimoire…" />;
-  if (boot.status === 'error') return <Splash text={'Store error: ' + boot.error} error />;
-
+  // Derived view flags + navigation.
   const addActive = !!addMode;
   const hasQuery = query.trim().length > 0 && !addActive;
   const viewDetail = detail && !hasQuery && !addActive;
-  const pillar = PILLARS.find((p) => p.key === tab);
+  const slideDirRef = useRef('right');   // direction the incoming pillar slides from (on tab tap)
+  const goTab = (t) => {
+    if (t !== tab) { haptic('light'); slideDirRef.current = SWIPE_TABS.indexOf(t) < SWIPE_TABS.indexOf(tab) ? 'left' : 'right'; }
+    setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); setDeckEditMode(false);
+  };
+  // "Browse all decks" always lands on the Library, not whatever deck was last open.
+  const goLibrary = () => { setDeckOpen(null); goTab('decks'); };
 
-  const goTab = (t) => { if (t !== tab) haptic('light'); setTab(t); setDetail(null); setHistory([]); setQuery(''); setAddMode(null); setDeckEditMode(false); };
+  if (boot.status === 'loading') return <Splash text="Opening the grimoire…" />;
+  if (boot.status === 'error') return <Splash text={'Store error: ' + boot.error} error />;
+
+  const pillar = PILLARS.find((p) => p.key === tab);
   const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
   const exitAdd = () => { setAddMode(null); bump(); };
   const openNewMatch = async (mode) => {
@@ -148,7 +161,9 @@ export default function App() {
       setQuery(''); goTab('decks'); setDeckOpen({ id, name: title });
       return;
     }
-    setHistory((h) => [...h, { detail, query }]);
+    // Remember where we were in the list so Back returns to that scroll position.
+    const scrollTop = document.querySelector('.cx-scroll')?.scrollTop || 0;
+    setHistory((h) => [...h, { detail, query, scrollTop }]);
     setDetail({ kind, id, title }); setQuery('');
     if (['card', 'rule'].includes(kind) && title) setResume(kind, id, title).catch(() => {});
   };
@@ -156,6 +171,15 @@ export default function App() {
     setHistory((h) => {
       const n = [...h]; const prev = n.pop();
       setDetail(prev ? prev.detail : null);
+      setQuery(prev?.query || '');   // restore the search term so we land back IN the search, not the browse list
+      // Restore the list scroll position once the list (search results or browse) re-renders.
+      const y = prev?.scrollTop || 0;
+      const restore = (tries) => requestAnimationFrame(() => {
+        const el = document.querySelector('.cx-scroll');
+        if (el && (el.scrollHeight > y + el.clientHeight || tries <= 0)) el.scrollTop = y;
+        else if (tries > 0) restore(tries - 1);   // wait for async search results to fill height
+      });
+      restore(20);
       return n;
     });
   };
@@ -192,15 +216,26 @@ export default function App() {
     [importMode, () => setImportMode(null)],
     [matchImport, () => setMatchImport(null)],
     [resultPaste, () => setResultPaste(false)],
+    [searchHelpOpen, () => setSearchHelpOpen(false)],
     [creditsOpen, () => setCreditsOpen(false)],
     [settingsSheet, () => setSettingsSheet(false)],
     [profileSheet, () => setProfileSheet(false)],
     [addActive, exitAdd],
     [hasQuery, () => setQuery('')],
     [viewDetail, back],
+    [tab === 'decks' && deckOpen && deckEditMode, () => setDeckEditMode(false)],
+    [tab === 'decks' && deckOpen, () => setDeckOpen(null)],   // back to Library, not straight Home
     [tab !== 'home', () => goTab('home')],
   ];
-  backRef.current = () => (backStack.find(([active]) => active)?.[1] || exitApp)();
+  backRef.current = () => {
+    if (runBackConsumers()) return;                            // an open FAB menu or sheet - close it first
+    const entry = backStack.find(([active]) => active);
+    if (entry) { entry[1](); return; }
+    if (tab === 'home' && homeApi.current?.back?.()) return;   // Home edit mode / Overview<->Dashboard subtab
+    if (Date.now() - lastBackAt.current < 2000) { exitApp(); return; }   // double-back to exit
+    lastBackAt.current = Date.now();
+    toast('Press back again to exit');
+  };
 
   // Per-pillar top-down colour wash (over pure black). Home is pure black (no
   // wash) to signal active engagement; Codex=warm gold · Decks=Arcanum amethyst ·
@@ -269,8 +304,10 @@ export default function App() {
         </div>
       )}
 
-      {/* BODY - Decks pillar is the full-height single-page pager; everything
-          else scrolls in the standard body. */}
+      {/* BODY - a keyed slide container animates each pillar change (swipe or nav)
+          in the swipe direction. Decks is the full-height pager; the rest scroll in
+          the standard body. */}
+      <div key={tab} className={`cx-pillar-slide from-${slideDirRef.current}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
           deckOpen={deckOpen} onOpenDeck={setDeckOpen} onChanged={bump}
@@ -297,19 +334,22 @@ export default function App() {
             onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} onChanged={bump} onImport={() => setResultPaste(true)} />
         ) : (
           <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch}
-            onGoTab={goTab} onAllNotes={() => { setCodexPreset({ marg: true }); goTab('codex'); }}
+            onGoTab={goTab} onGoLibrary={goLibrary} onAllNotes={() => { setCodexPreset({ marg: true }); goTab('codex'); }}
             onMarginalia={() => { setScope('marginalia'); goTab('codex'); }}
+            onStartMatch={startMatch} registerApi={(api) => { homeApi.current = api; }}
             profile={profile} rev={rev} />
         )}
       </div>
       )}
+      </div>
 
       {/* BOTTOM SEARCH - frosted pill in line with the FAB; tint morphs per page. */}
       {showSearch && (
         <div className="cx-searchbar">
           <div className="cx-search-pill">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input value={searchVal} onChange={(e) => setSearchVal(e.target.value)} placeholder={searchPlaceholder} autoComplete="off" />
+            <input value={searchVal} onChange={(e) => setSearchVal(e.target.value)} placeholder={searchPlaceholder} autoComplete="off"
+              enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
             {searchVal && <button className="cx-search-clear" onClick={() => setSearchVal('')} aria-label="Clear"><IcX size={13} /></button>}
             {/* Syntax cheatsheet - codex syntax everywhere, deckbuilder syntax
                 (its own token set, purple chassis) in the add-cards search. */}
@@ -649,16 +689,8 @@ function SettingsSheet({ open, onClose, onCredits }) {
 // Credits / About - a centered modal (not a bottom sheet), ported from Arcanum
 // and tailored to Compendium. Black chassis, gold wordmark, IP disclaimer.
 function CreditsModal({ open, onClose }) {
-  if (!open) return null;
   return (
-    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Credits"
-      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ position: 'relative', width: '100%', maxWidth: 350, borderRadius: 20, overflow: 'hidden', background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)' }}>
-        <button onClick={onClose} aria-label="Close"
-          style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
+    <CenteredModal open={open} label="Credits" maxWidth={350} onClose={onClose} boxStyle={{ overflow: 'hidden' }}>
         <div style={{ position: 'relative', textAlign: 'center', padding: '34px 26px 26px', background: 'radial-gradient(ellipse at 50% 0%, rgba(220,184,111,.14) 0%, transparent 70%)' }}>
           <span style={{ display: 'block', width: 54, height: 54, margin: '0 auto 14px', borderRadius: 14, background: 'linear-gradient(160deg,#2a2113,#12100a)', border: '1px solid rgba(220,184,111,.4)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.08)', position: 'relative' }}>
             <span style={{ position: 'absolute', top: '50%', left: '50%', width: 18, height: 18, transform: 'translate(-50%,-50%) rotate(45deg)', border: '2px solid var(--gold-leaf)', borderRadius: 3 }} />
@@ -673,8 +705,7 @@ function CreditsModal({ open, onClose }) {
             <em style={{ color: 'var(--gold-leaf)', fontStyle: 'italic' }}>Created by fans, for the community.</em>
           </div>
         </div>
-      </div>
-    </div>
+    </CenteredModal>
   );
 }
 
@@ -717,10 +748,7 @@ function ImportPasteModal({ open, onClose, onParsed }) {
   if (!open) return null;
   const submit = () => { const p = parseMatchShare(text); if (p) onParsed(p); else setErr(true); };
   return (
-    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Import a result"
-      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ position: 'relative', width: '100%', maxWidth: 380, borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', padding: '24px 22px 20px' }}>
+    <CenteredModal open={open} label="Import a result" maxWidth={380} onClose={onClose} closeButton={false} boxStyle={{ padding: '24px 22px 20px' }}>
         <div style={{ font: "600 20px/1.15 var(--f-display)", color: 'var(--gold-leaf)', marginBottom: 6 }}>Import a result</div>
         <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 14 }}>Scan your opponent's QR with your camera, or paste the link they share here.</div>
         <textarea value={text} onChange={(e) => { setText(e.target.value); setErr(false); }} placeholder="compendium://match?d=…"
@@ -730,8 +758,7 @@ function ImportPasteModal({ open, onClose, onParsed }) {
           <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
           <button onClick={submit} style={{ ...BTN_GOLD, flex: 2, display: 'flex', justifyContent: 'center' }}>Review import</button>
         </div>
-      </div>
-    </div>
+    </CenteredModal>
   );
 }
 
@@ -751,14 +778,7 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
     ? ['t:minion el:f c<=3 kw:charge', 'every cheap Fire minion with Charge']
     : ['t:minion e:air airborne', 'every Air minion whose text mentions airborne'];
   return (
-    <div onClick={onClose} role="dialog" aria-modal="true" aria-label="Search syntax"
-      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
-      <div onClick={(e) => e.stopPropagation()}
-        style={{ position: 'relative', width: '100%', maxWidth: 370, maxHeight: '82vh', overflowY: 'auto', borderRadius: 20, boxShadow: '0 24px 64px rgba(0,0,0,.7)', ...chassis }}>
-        <button onClick={onClose} aria-label="Close"
-          style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-        </button>
+    <CenteredModal open={open} label="Search syntax" maxWidth={370} onClose={onClose} boxStyle={{ maxHeight: '82vh', overflowY: 'auto', ...chassis }}>
         <div style={{ padding: '26px 22px 22px', background: `radial-gradient(ellipse at 50% 0%, ${glow} 0%, transparent 60%)` }}>
           <div style={{ font: "600 21px/1.15 var(--f-display)", color: 'var(--gold-leaf)', marginBottom: 4 }}>Search Syntax</div>
           <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 16 }}>
@@ -774,8 +794,7 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
             Example: <code style={{ font: "600 12px/1 var(--f-mono)", color: chip.color }}>{example[0]}</code> - {example[1]}.
           </div>
         </div>
-      </div>
-    </div>
+    </CenteredModal>
   );
 }
 
@@ -794,12 +813,15 @@ const S = {
   wordmark: { font: "600 20px/1 var(--f-display)", color: 'var(--ink-head)', letterSpacing: '.01em' },
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },
-  detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px' },
+  detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
   back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, padding: 0 },
   detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
-  body: { flex: 1, overflowY: 'auto', paddingBottom: 'calc(62px + env(safe-area-inset-bottom) + 92px)' },
+  // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
+  // lives inside that box, so it only needs nav overlap (62px) + search/FAB clearance
+  // (92px) - adding env() again just wastes a strip at the end of every list.
+  body: { flex: 1, overflowY: 'auto', overscrollBehaviorY: 'contain', paddingBottom: 'calc(154px + var(--kb,0px) / var(--ui-scale,1))' },
   input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
   // Sheet primary - black glass, gold only in text/border (app rule: sheets stay black).
   btnGold: BTN_GOLD,

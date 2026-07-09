@@ -7,12 +7,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   listBlocks, addBlock, removeBlock, resizeBlock, reorderBlocks, setConfig,
-  widgetData, widgetMeta, isConfigurable, isStructural, isRollable, pillarOf,
+  widgetData, widgetMeta, isStructural, isRollable, pillarOf,
   sampleData, overview, WIDGETS,
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { safeHref } from '../util.js';
-import { Chip, ChipRow, IconButton, Loading, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { Chip, ChipRow, IconButton, Loading, BlankState, EmptyCta, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { CodexGlyph } from './Codex.jsx';
@@ -29,13 +29,27 @@ function fmtSpanShort(secs) {
   return `${secs}s`;
 }
 
-export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia, profile, rev }) {
+export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, registerApi, profile, rev }) {
   const [tab, setTab] = useState('overview');
   const [edit, setEdit] = useState(false);
+  // Hardware BACK peels edit mode, then the Overview<->Dashboard subtab, before App
+  // falls through to exit. (Dashboard sheets self-register via the Sheet primitive.)
+  const editRef = useRef(edit); editRef.current = edit;
+  const homeTabRef = useRef(tab); homeTabRef.current = tab;
+  useEffect(() => {
+    registerApi?.({ back: () => {
+      if (editRef.current) { setEdit(false); return true; }
+      if (homeTabRef.current === 'dashboard') { setTab('overview'); return true; }
+      return false;
+    } });
+    return () => registerApi?.(null);
+  }, []);   // eslint-disable-line react-hooks/exhaustive-deps
   // Native feel: swipe horizontally between Overview ⇄ Dashboard.
+  // Return true when a pane switch is consumed so the app-level pillar swipe doesn't
+  // also fire; at an edge return falsy and let the gesture bubble to the next pillar.
   const swipe = useSwipe(
-    () => { if (tab === 'overview') { setTab('dashboard'); haptic('light'); } },
-    () => { if (tab === 'dashboard') { setTab('overview'); setEdit(false); haptic('light'); } }
+    () => { if (tab === 'overview') { setTab('dashboard'); haptic('light'); return true; } return false; },
+    () => { if (tab === 'dashboard') { setTab('overview'); setEdit(false); haptic('light'); return true; } return false; }
   );
   return (
     <div {...swipe} style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
@@ -50,7 +64,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, o
       </div>
       <div key={tab} className="cx-swipe-pane">
         {tab === 'overview'
-          ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onAllNotes={onAllNotes} onMarginalia={onMarginalia} profile={profile} rev={rev} />
+          ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onGoLibrary={onGoLibrary} onAllNotes={onAllNotes} onMarginalia={onMarginalia} onStartMatch={onStartMatch} profile={profile} rev={rev} />
           : <Dashboard onOpen={onOpen} onGoTab={onGoTab} edit={edit} rev={rev} />}
       </div>
     </div>
@@ -58,7 +72,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onAllNotes, o
 }
 
 /* ---------------- Overview - the welcome digest ---------------- */
-function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia, profile, rev }) {
+function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, profile, rev }) {
   const [d, setD] = useState(null);
   // Collapse state persists per profile so a curated Home survives restarts.
   const colKey = `cx-home-collapse:${profile?.id || 'anon'}`;
@@ -69,8 +83,9 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
     try { localStorage.setItem(colKey, JSON.stringify(n)); } catch { /* private mode */ }
     return n;
   });
-  useEffect(() => { let a = true; overview().then((x) => a && setD(x)); return () => { a = false; }; }, [rev]);
+  useEffect(() => { let a = true; overview().then((x) => a && setD(x)).catch(() => a && setD({ error: true })); return () => { a = false; }; }, [rev]);
   if (!d) return <Loading />;
+  if (d.error) return <BlankState hue="201,163,90" title="Couldn't load" body={<>Something went wrong loading your overview.<br />Pull down or reopen to retry.</>} />;
 
   const g = d.glance, s = d.duels.stats;
   const pct = s.winPct;
@@ -97,12 +112,6 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
       <div className="cx-ov-tile-lbl">{lbl}</div>
     </div>
   );
-  const EmptyCta = ({ text, cta, onClick }) => (
-    <div style={{ font: "400 13px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '4px 0' }}>
-      {text}{' '}
-      <span onClick={onClick} style={{ color: 'var(--gold-leaf)', fontStyle: 'normal', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>{cta} ›</span>
-    </div>
-  );
 
   return (
     <div>
@@ -125,9 +134,15 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
           </div>
         )}
       </div>
+      {onStartMatch && (
+        <div style={{ display: 'flex', gap: 10, margin: '16px 0 20px' }}>
+          <button onClick={() => onStartMatch('full')} style={{ ...BTN_GOLD, flex: 1, padding: '13px 0' }}>Start Match</button>
+          <button onClick={() => onStartMatch('quick')} style={{ ...BTN_GHOST, flex: 1, padding: '13px 0' }}>Quick Match</button>
+        </div>
+      )}
       <div className="cx-ov-glance">
         <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onMarginalia} />
-        <Tile val={g.decks} lbl="DECKS" onClick={() => onGoTab('decks')} />
+        <Tile val={g.decks} lbl="DECKS" onClick={onGoLibrary} />
         <Tile val={g.duels} lbl="MATCHES" onClick={() => onGoTab('play')} />
         <Tile val={fmtSpanShort(s.totalSec)} lbl="TIME PLAYED" onClick={() => onGoTab('play')} />
       </div>
@@ -146,8 +161,8 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
         </div>
       )}
 
-      <Sec id="decks" title="YOUR DECKS" count={d.decks.total} onAll={() => onGoTab('decks')}>
-        {d.decks.items.length === 0 ? <EmptyCta text="No decks yet." cta="Build your first deck" onClick={() => onGoTab('decks')} /> : (
+      <Sec id="decks" title="YOUR DECKS" count={d.decks.total} onAll={onGoLibrary}>
+        {d.decks.items.length === 0 ? <EmptyCta text="No decks yet." cta="Build your first deck" onClick={onGoLibrary} /> : (
           <div className="cx-deck-carousel">
             {d.decks.items.map((dk) => (
               <div key={dk.id} className="cx-deck-card" onClick={() => onOpen('deck', dk.id, dk.name)}>
@@ -163,7 +178,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
               </div>
             ))}
             {d.decks.total > d.decks.items.length && (
-              <div className="cx-deck-card cx-deck-card-all" onClick={() => onGoTab('decks')}>
+              <div className="cx-deck-card cx-deck-card-all" onClick={onGoLibrary}>
                 <span>All {d.decks.total} decks ›</span>
               </div>
             )}
@@ -190,7 +205,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onAllNotes, onMarginalia
               <div key={i} className="cx-ov-duel" onClick={() => onGoTab('play')} role="button">
                 <span className="cx-ov-duel-badge" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
                 <span className="cx-ov-duel-name">{m.name}</span>
-                {m.deck && <span className="cx-ov-duel-deck"><CodexGlyph kind="deck" size={11} />{m.deck}</span>}
+                {m.deck && <span className="cx-ov-duel-deck"><CodexGlyph kind="deck" size={11} /><span>{m.deck}</span></span>}
                 <span className="cx-ov-duel-score">{m.score}</span>
               </div>
             ))}
@@ -247,6 +262,8 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   // Re-roll a single widget (Random Card / Random Article) without reloading all.
   const roll = async (b) => { const d = await widgetData(b); setData((prev) => ({ ...prev, [b.id]: d })); haptic('light'); };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
+  // The add-widget FAB is an edit-mode tool; leaving edit closes the picker too.
+  useEffect(() => { if (!edit) setPicker(false); }, [edit]);
 
   // ── Long-press drag-to-reorder (edit mode). Hold a card still for ~300ms to
   // pick it up (haptic), then drag it over another card to swap positions; the
@@ -301,7 +318,7 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
       </div>
       {blocks.length === 0 && (
         <div className="dw-empty" style={{ textAlign: 'center', padding: '34px 12px' }}>
-          A blank canvas. Tap the <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>+</b> to add your first widget.
+          A blank canvas. Tap <b style={{ color: 'var(--gold-leaf)', fontStyle: 'normal' }}>{edit ? '+' : 'Edit'}</b>{edit ? '' : ', then +,'} to add your first widget.
         </div>
       )}
       {edit && blocks.length > 1 && (
@@ -329,8 +346,8 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
         })}
       </div>
 
-      {/* The Dashboard's own FAB - a plain "+" that adds a widget. */}
-      <Fab variant="lib" active={picker} icon={<FabGlyph kind="add" />} label="Add a widget" onClick={() => setPicker((p) => !p)} />
+      {/* The Dashboard's own FAB - a plain "+" that adds a widget. Edit-mode only. */}
+      {edit && <Fab variant="lib" active={picker} icon={<FabGlyph kind="add" />} label="Add a widget" onClick={() => setPicker((p) => !p)} />}
 
       <Picker open={picker} onClose={() => setPicker(false)} onPick={async (k) => { await addBlock(k); setPicker(false); haptic('light'); load(); }} />
       <ConfigSheet block={cfg} onClose={() => setCfg(null)} onSaved={() => { setCfg(null); load(); }} />

@@ -11,6 +11,7 @@ import { recentOpponents, setSetting } from '../store/playRepository.js';
 import { buildMatchShare } from '../store/matchShare.js';
 import QRCode from '../components/QRCode.jsx';
 import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
+import { registerBackConsumer } from '../back.js';
 
 const BASE = import.meta.env.BASE_URL;
 const LOG_GAP_MS = 1200;
@@ -55,7 +56,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [log, setLog] = useState(resume?.log || []);
   const [endInfo, setEndInfo] = useState(null);          // { winner, pLife, eLife, durationSec, recorded }
   const [confirm, setConfirm] = useState(null);          // { label, action } - in-world discard confirm
-  const [clockOn, setClockOn] = useState(false);         // Vitarum's match clock (left-edge strip)
+  const [clockOn, setClockOn] = useState(resume?.clockOn ?? false);   // match clock; persists across minimize/resume
 
   const pNumRef = useRef(null), eNumRef = useRef(null);
   const startedAt = useRef(Date.now());
@@ -77,7 +78,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     return {
       v: 1, mode, settings, you: players.you || null, opp: players.opp || null, deck,
       pLife: pRef.current.life, pMax: pRef.current.max, eLife: eRef.current.life, eMax: eRef.current.max,
-      log, elapsedSec: elapsedSec(), oppName, recorded: recordedRef.current,
+      log, elapsedSec: elapsedSec(), oppName, recorded: recordedRef.current, clockOn,
     };
   }
   const snapRef = useRef();
@@ -145,7 +146,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // tap-zones / FABs during the brief 'rolling' + 'result' window, because there
   // the life numerals are borrowed to tumble the dice - a tap mid-spin would
   // fight the animation. Armed = fully interactive (tap life, open menus, leave).
-  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase === 'rolling' || rollPhase === 'result'); }, [rollPhase]);
+  // Lock only during the brief 'rolling' spin (the life numerals tumble the dice
+  // then). During 'result' the counter is fully live - the pill just floats its
+  // countdown as an offer and never blocks starting the match.
+  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase === 'rolling'); }, [rollPhase]);
 
   // Match clock - re-render once a second while it's showing (elapsedSec() reads
   // live). Stops once the match is decided; CSS hides it during the roll-off.
@@ -277,7 +281,9 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // Reveal the result, then let it settle on its own - no full-screen tap
     // catcher gating the app. The pill lingers 4s with a visible countdown so
     // nobody is caught by surprise when play begins.
-    timers.current.push(setTimeout(() => { setRollPhase('result'); setResultLeft(4); }, 650));
+    // Entering 'result' the counter goes live again, so put the REAL life totals
+    // back over the tumbled dice faces first - the winner pill conveys who goes first.
+    timers.current.push(setTimeout(() => { renderLife(); setRollPhase('result'); setResultLeft(4); }, 650));
     for (let i = 1; i <= 3; i++) timers.current.push(setTimeout(() => setResultLeft(4 - i), 650 + i * 1000));
     timers.current.push(setTimeout(() => finishRollOff(), 650 + 4000));
   }
@@ -359,7 +365,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         <div className="tap-zone tap-minus" onClick={() => change('opponent', -1)} role="button" aria-label="Decrease opponent's life" />
         <div className={`opponent-fab-wrap${fabE ? ' open' : ''}`} id="opponent-fab">
           <div className="fab-menu">
-            <button onClick={() => { setFabE(false); setSheet('dice'); }}>{DiceSvg}Roll a Die</button>
+            <button onClick={() => { setFabE(false); setSheet('diceE'); }}>{DiceSvg}Roll a Die</button>
             <button onClick={() => { setFabE(false); setSheet('maxE'); }}>{HeartSvg}Change Max Life</button>
           </div>
           <button className="fab" onClick={(ev) => { ev.stopPropagation(); setFabE((v) => !v); }} aria-label="Opponent options">{DotsSvg}</button>
@@ -400,8 +406,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
 
       {/* Player FAB (fixed, bottom-right) */}
       <div className={`fab-wrap${fabP ? ' open' : ''}`} id="counter-fab">
-        {/* No Home entry - Android back (or a back swipe) minimises the match. */}
         <div className="fab-menu">
+          {/* Go Home = minimise (match stays resumable) - the only exit for users
+              without Android gesture/back navigation. */}
+          <button onClick={() => { setFabP(false); minimize(); }}>{ExitSvg}Go Home</button>
           <button onClick={() => { setFabP(false); setSheet('tweaks'); }}>{TweaksSvg}Tweaks</button>
           <button onClick={() => { setClockOn((v) => !v); haptic('light'); }}>{ClockSvg}Show Clock<span className="fab-state">{clockOn ? 'on' : 'off'}</span></button>
           <button onClick={() => { setFabP(false); setSheet('maxP'); }}>{HeartSvg}Change Max Life</button>
@@ -433,8 +441,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       {/* secondary modals (Vitarum centered .modal-box) */}
       <MatchLogModal open={sheet === 'log'} log={log} onClose={() => setSheet(null)} />
       <MaxLifeModal open={sheet === 'maxP'} who="player" value={p.max} onClose={() => setSheet(null)} onSet={(v) => setMax('player', v)} />
-      <MaxLifeModal open={sheet === 'maxE'} who="opponent" value={e.max} onClose={() => setSheet(null)} onSet={(v) => setMax('opponent', v)} />
+      <MaxLifeModal open={sheet === 'maxE'} who="opponent" rotated value={e.max} onClose={() => setSheet(null)} onSet={(v) => setMax('opponent', v)} />
       <DiceModal open={sheet === 'dice'} dice={dice} setDice={setDice} onClose={() => setSheet(null)} />
+      {/* opponent-launched dice: rotated 180deg to face the opponent's half */}
+      <DiceModal open={sheet === 'diceE'} rotated dice={dice} setDice={setDice} onClose={() => setSheet(null)} />
       <TweaksModal open={sheet === 'tweaks'} tw={tw} onToggle={setTweak} onClose={() => setSheet(null)} />
       {/* full-screen end-of-match decision modal */}
       {endInfo && (
@@ -459,10 +469,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
 }
 
 /* ── Vitarum centered modal shell ── */
-function VModal({ id, title, subtitle, onClose, children, actions }) {
+function VModal({ id, title, subtitle, onClose, children, actions, rotated }) {
   return (
     <div className="vc-modal-overlay" id={id} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+      <div className={`modal-box${rotated ? ' rotated' : ''}`} onClick={(e) => e.stopPropagation()}>
         <div className="modal-top">
           <button className="modal-close-btn" onClick={onClose} aria-label="Close">{CloseSvg}</button>
           <div className="modal-title">{title}</div>
@@ -522,12 +532,12 @@ function MatchLogModal({ open, log, onClose }) {
   );
 }
 
-function MaxLifeModal({ open, who, value, onClose, onSet }) {
+function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
   const [v, setV] = useState(value);
   useEffect(() => { if (open) setV(value); }, [open, value]);
   if (!open) return null;
   return (
-    <VModal title="Max Life" subtitle={who === 'player' ? 'Your life cap' : "Opponent's life cap"} onClose={onClose}
+    <VModal title="Max Life" rotated={rotated} subtitle={who === 'player' ? 'Your life cap' : "Opponent's life cap"} onClose={onClose}
       actions={<button className="modal-btn primary" onClick={() => onSet(v)}>Set Max Life</button>}>
       <div className="maxlife-stepper">
         <button className="maxlife-btn" onClick={() => setV((x) => Math.max(1, x - 1))} aria-label="Decrease">−</button>
@@ -539,7 +549,7 @@ function MaxLifeModal({ open, who, value, onClose, onSet }) {
   );
 }
 
-function DiceModal({ open, dice, setDice, onClose }) {
+function DiceModal({ open, dice, setDice, onClose, rotated }) {
   const [landed, setLanded] = useState(0);
   const [rolling, setRolling] = useState(false);
   const [display, setDisplay] = useState(null);   // the number tumbling mid-roll
@@ -578,7 +588,7 @@ function DiceModal({ open, dice, setDice, onClose }) {
       ? (dice.value === dice.type ? '⚡ Maximum roll!' : dice.value === 1 ? '💀 Critical fail' : `on a d${dice.type}`)
       : 'Select a die and roll';
   return (
-    <VModal title="Roll a Die" subtitle="Choose your die, then roll" onClose={onClose}
+    <VModal title="Roll a Die" rotated={rotated} subtitle="Choose your die, then roll" onClose={onClose}
       actions={<button className="modal-btn primary" onClick={roll} disabled={rolling}>{rolling ? 'Rolling…' : 'Roll!'}</button>}>
       <div className="dice-type-row">
         {[4, 6, 8, 10, 12, 20].map((d) => (
@@ -673,6 +683,8 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
 // the match mirrored to their side.
 function ShareQRModal({ link, onClose }) {
   const [copied, setCopied] = useState(false);
+  // Hardware BACK closes just the QR modal, not the whole end screen behind it.
+  useEffect(() => registerBackConsumer(() => { onClose(); return true; }), [onClose]);
   const flashCopied = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
   const copy = async () => { try { await navigator.clipboard.writeText(link); flashCopied(); haptic('light'); } catch { /* clipboard blocked */ } };
   // One-tap into WhatsApp/Messages/Discord via the OS share sheet; if the target

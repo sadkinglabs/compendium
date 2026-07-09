@@ -8,6 +8,7 @@ import { App } from '@capacitor/app';
 import { Share } from '@capacitor/share';
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { KeepAwake } from '@capacitor-community/keep-awake';
+import { Keyboard, KeyboardResize } from '@capacitor/keyboard';
 
 export const isNative = () => Capacitor.isNativePlatform();
 
@@ -19,6 +20,13 @@ export async function initNative() {
     await StatusBar.setBackgroundColor({ color: '#120d09' });
     await StatusBar.show();   // recover if a crash left the bar hidden mid-immersive
   } catch { /* status bar not available */ }
+  try {
+    // Keyboard must NOT resize/pan the WebView (that shoved the header up and the
+    // nav into view). Keep the app edge-to-edge and let CSS (--kb) lift only the
+    // focused search bar / bottom sheet above the keyboard.
+    await Keyboard.setResizeMode({ mode: KeyboardResize.None });
+    await Keyboard.setScroll({ isDisabled: true });
+  } catch { /* keyboard plugin not available */ }
 }
 
 /** Haptic tap - native impact on device, navigator.vibrate on web. */

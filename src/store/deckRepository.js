@@ -21,9 +21,6 @@ export function copyLimit(card) {
   if (isUnlimited(card)) return 99;
   return RARITY_LIMITS[card?.rarity] ?? 4;
 }
-export function defaultZone(card) {
-  return card?.is_site ? 'atlas' : 'spellbook';
-}
 export function elementPips(thresholdsJson) {
   const th = jp(thresholdsJson, {});
   const out = [];

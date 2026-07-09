@@ -22,10 +22,15 @@ export default function DeckStats({ deck, rev, onReload }) {
 
   const sb = zones?.spellbook || [], at = zones?.atlas || [];
   const sbCount = sb.reduce((s, e) => s + e.quantity, 0), atCount = at.reduce((s, e) => s + e.quantity, 0);
+  // Elementalist provides 1 of EVERY element from game start (rules_text: an
+  // additional (E)(F)(W)(A)); other avatars start at 0. Derived from the deck's
+  // current avatar, so it resets automatically when the avatar is changed.
+  const elementalist = deck.avatar_card_id === 'elementalist' || deck.avatar?.name === 'Elementalist';
+  const base = elementalist ? 1 : 0;
   const manaCosts = useMemo(() => St.manaCurveData(sb), [zones]);
   const powerCosts = useMemo(() => St.powerCurveData(sb), [zones]);
-  const odds = useMemo(() => atlasMode === 'odds' ? St.atlasOdds(sb, at, atlasTurn, 10000) : null,
-    [zones, atlasMode, atlasTurn]); // 10k sims only when on the Odds tab / turn changes
+  const odds = useMemo(() => atlasMode === 'odds' ? St.atlasOdds(sb, at, atlasTurn, 10000, base) : null,
+    [zones, atlasMode, atlasTurn, base]); // 10k sims only when on the Odds tab / turn changes
 
   if (!zones) return <Loading />;
 
@@ -58,7 +63,7 @@ export default function DeckStats({ deck, rev, onReload }) {
 
       {/* atlas */}
       <Card title="Atlas" right={<><span style={{ font: "500 11px/1 'IBM Plex Mono',monospace", color: '#6e6286', marginRight: 8 }}>{atCount}/30+</span><Toggle value={atlasMode} set={setAtlasMode} opts={[['supply', 'Supply'], ['odds', 'Odds']]} /></>}>
-        <Atlas sb={sb} at={at} atCount={atCount} mode={atlasMode} odds={odds} turn={atlasTurn} setTurn={(d) => setAtlasTurn((t) => Math.max(1, Math.min(10, t + d)))} />
+        <Atlas sb={sb} at={at} atCount={atCount} mode={atlasMode} odds={odds} turn={atlasTurn} base={base} elementalist={elementalist} setTurn={(d) => setAtlasTurn((t) => Math.max(1, Math.min(10, t + d)))} />
       </Card>
 
       {/* Match record - DERIVED from matches (single source of truth). No manual
@@ -102,10 +107,10 @@ function Composition({ sb, mode, total }) {
   );
 }
 
-function Atlas({ sb, at, atCount, mode, odds, turn, setTurn }) {
+function Atlas({ sb, at, atCount, mode, odds, turn, base = 0, elementalist = false, setTurn }) {
   const { slices } = St.compositionData(at, 'element');
   const statusCol = (p) => p >= 0.8 ? 'var(--accent-jade)' : p >= 0.5 ? 'var(--gold-leaf)' : 'var(--el-fire)';
-  const supply = St.supplyData(sb, at);
+  const supply = St.supplyData(sb, at, base);
   return (
     <div className="cc-body-row">
       <div className="cc-donut-wrap" style={{ background: St.conicGradient(slices) }}>
@@ -139,6 +144,11 @@ function Atlas({ sb, at, atCount, mode, odds, turn, setTurn }) {
             <NeedRow key={s.el} el={s.el} text={`need ${s.peak} · ${s.supply} sites`} status={s.status}
               color={s.status === 'ok' ? 'var(--accent-jade)' : s.status === 'tight' ? 'var(--gold-leaf)' : 'var(--el-fire)'} />
           )) : <Empty text="No thresholds required" />
+        )}
+        {elementalist && (
+          <div style={{ font: "italic 400 10px/1.35 'EB Garamond',serif", color: '#8a7ba6', marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(160,110,220,.14)' }}>
+            Elementalist: +1 of each element from game start is counted.
+          </div>
         )}
       </div>
     </div>

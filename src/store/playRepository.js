@@ -138,10 +138,6 @@ export async function getMatch(matchId) {
   ))[0] || null;
 }
 
-export async function setMatchNote(matchId, notes) {
-  await run('UPDATE matches SET notes=? WHERE id=? AND profile_id=?;', [notes, matchId, activeProfileId()]);
-}
-
 /** The SINGLE writer of a deck's W–L: recompute it straight from the matches
     table, the one source of truth. Returned as a [sql, params] STATEMENT (not
     executed) so callers fold it into the SAME tx() as the match mutation - one

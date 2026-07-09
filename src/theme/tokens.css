@@ -14,19 +14,29 @@
   --surface-nav: rgba(14, 10, 7, .7);
   --scrim: rgba(8, 5, 3, .6);
 
-  /* gold family (brand + chrome) */
+  /* gold family (brand + chrome). ONE rgb base for every gold tint/hairline so the
+     whole scale tunes from one place and matches the shipped hairlines (was split
+     across 201,163,90 tokens and 220,184,111 raw literals - now unified on the latter). */
+  --gold-rgb: 220, 184, 111;      /* = --gold-leaf #dcb86f */
   --gold-leaf: #dcb86f;
   --gold: #cf9a4a;
   --gold-deep: #c9a35a;
+  --gold-head: #e9d49a;           /* bright gold - links / active text (was counter-only) */
   --gold-antique: #b08d4e;
-  --hair-08: rgba(201, 163, 90, .08);
-  --hair-12: rgba(201, 163, 90, .12);
-  --hair-14: rgba(201, 163, 90, .14);
-  --hair-16: rgba(201, 163, 90, .16);
-  --hair-22: rgba(201, 163, 90, .22);
-  --hair-30: rgba(201, 163, 90, .30);
-  --hair-40: rgba(201, 163, 90, .40);
-  --tint-07: rgba(201, 163, 90, .07);
+  --hair-06: rgba(var(--gold-rgb), .06);
+  --hair-08: rgba(var(--gold-rgb), .08);
+  --hair-12: rgba(var(--gold-rgb), .12);
+  --hair-14: rgba(var(--gold-rgb), .14);
+  --hair-16: rgba(var(--gold-rgb), .16);
+  --hair-22: rgba(var(--gold-rgb), .22);
+  --hair-24: rgba(var(--gold-rgb), .24);
+  --hair-28: rgba(var(--gold-rgb), .28);
+  --hair-30: rgba(var(--gold-rgb), .30);
+  --hair-40: rgba(var(--gold-rgb), .40);
+  --edge-gold: rgba(var(--gold-rgb), .45);        /* gold-hairline button/active border */
+  --edge-gold-strong: rgba(var(--gold-rgb), .5);
+  --hair-glass: rgba(255, 255, 255, .09);         /* neutral frosted-pill hairline */
+  --tint-07: rgba(var(--gold-rgb), .07);
 
   /* ink */
   --ink-head: #efe6d2;
@@ -35,11 +45,15 @@
   --ink-muted: #9a8b6a;
   --ink-faint: #8f8168;   /* lifted to clear ~4.5:1 on the black canvas */
   --ink-status: #cbbfa8;
+  --ink-body-rgb: 233, 220, 192;   /* = --ink-body #e9dcc0, for the .arc muted-body tints */
 
-  /* reserved semantic accents (functional only) */
+  /* reserved semantic accents (functional only). Each pillar accent carries one rgb
+     base for its border/glow/wash alphas (collapses the near-duplicate hue sprawl). */
   --accent-gold: #dcb86f;   /* Home + Codex wayfinding */
   --accent-violet: #c79ad0; /* Decks */
+  --violet-rgb: 160, 110, 220;
   --accent-jade: #8fd3a8;   /* Play */
+  --jade-rgb: 143, 211, 168;
   --hl-blue: #5b87d6;
   --link-violet: #c79ad0;
   --destructive: #a8584a;
@@ -50,21 +64,59 @@
   --el-fire: #d2645a;
   --el-water: #5b87d6;
 
-  /* type */
-  --f-display: 'Cinzel', serif;
-  --f-read: 'EB Garamond', serif;
+  /* type families (Georgia baked into the serif fallback so consumers can drop the
+     hand-written 'Cinzel', Georgia, serif spelling for var(--f-display)). */
+  --f-display: 'Cinzel', Georgia, serif;
+  --f-read: 'EB Garamond', Georgia, serif;
   --f-ui: 'Hanken Grotesk', sans-serif;
   --f-mono: 'IBM Plex Mono', monospace;
 
-  /* radius */
-  --r-card: 16px;
+  /* type SIZE scale (collapses ~30 hand-typed px sizes + the .5px near-duplicates).
+     The oversized counter/hero numerals (34/44/47/64/80) stay bespoke one-offs. */
+  --t-micro: 9px; --t-eyebrow: 10px; --t-label: 11px; --t-meta: 12px; --t-ui: 13px;
+  --t-body-s: 14px; --t-body: 15px; --t-lead: 16px; --t-read: 16.5px;
+  --t-title-s: 20px; --t-title: 22px; --t-display: 27px;
+  /* letter-spacing for tracked/uppercase labels */
+  --ls-tight: .04em; --ls-label: .10em; --ls-eyebrow: .16em; --ls-wide: .24em;
+
+  /* spacing step (4-based) - snap arbitrary paddings/gaps onto these */
+  --s-1: 4px; --s-1h: 6px; --s-2: 8px; --s-2h: 10px; --s-3: 12px; --s-3h: 14px;
+  --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-7: 32px; --s-8: 40px;
+
+  /* radius tiers */
+  --r-pill: 999px;   /* fully-round: search/toggle/qty pills */
+  --r-tag: 11px;     /* small inline tags + segmented segments */
+  --r-btn: 12px;     /* sheet primary/ghost buttons (= ui.jsx primitives) */
   --r-input: 12px;
   --r-tab: 9px;
-  --r-chip: 18px;
+  --r-thumb: 8px;    /* small art/thumbnail tiles */
+  --r-chip: 18px;    /* soft chips/tiles */
+  --r-card: 16px;    /* content cards */
+  --r-modal: 20px;   /* centered modals/pickers */
+  --r-sheet: 26px;   /* bottom sheets */
+
+  /* elevation tiers */
+  --shadow-chip: 0 2px 10px rgba(0,0,0,.5);
+  --shadow-card: 0 12px 30px -16px rgba(0,0,0,.7);
+  --shadow-pop: 0 24px 50px -16px rgba(0,0,0,.7);
+  --shadow-sheet: 0 -20px 50px -10px rgba(0,0,0,.5);
+  --shadow-modal: 0 24px 64px -14px rgba(0,0,0,.72);
+
+  /* icon size tiers + role blur (SVGs only, strokeWidth 2) */
+  --i-xs: 12px; --i-sm: 14px; --i-md: 16px; --i-lg: 20px; --i-xl: 26px;
+  --blur-scrim: 6px; --blur-chip: 8px; --blur-pill: 14px;
+
+  /* warm-black surface scale (the shipped sheet/well/tile/glass blacks) */
+  --sheet-grad: linear-gradient(180deg, #151109, #0b0806);
+  --surface-well-warm: rgba(18, 16, 13, .85);
+  --surface-tile: rgba(15, 15, 18, .85);
+  --surface-glass: rgba(12, 12, 15, .7);
 }
 
-* { box-sizing: border-box; }
-html, body, #root { height: 100%; margin: 0; }
+/* Kill the Android WebView default blue tap-flash app-wide; every interactive
+   element supplies its own :active/transition press feedback. */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body, #root { height: 100%; margin: 0; overscroll-behavior: none; }
 body {
   background: #000;
   color: var(--ink-body);
@@ -124,13 +176,15 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
 
 /* ── Bottom search - frosted see-through pill, in line with the FAB. ── */
-.cx-searchbar { position: fixed; left: 16px; right: 84px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px); z-index: 41; }
+/* --kb is measured in real viewport px (appearance.js) but consumed inside the
+   zoomed .cx-app subtree, so divide by --ui-scale to cancel the zoom (no-op at 1). */
+.cx-searchbar { position: fixed; left: 16px; right: 84px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 41; transition: bottom .2s ease; }
 /* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
 .cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }
-.cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 0; }
+.cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 0; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; }
 
 /* Codex sticky top bar (scope chips + List/Card toggle stay visible while scrolling). */
 /* Scope chips scroll with the page (transparent) so the header wash stays a full
@@ -157,6 +211,14 @@ body.reduce-motion .cx-subrow { animation: none; }
 .cx-article-list { margin: 2px 0 16px; padding-left: 22px; }
 .cx-article-list li { font: 400 16px/1.55 var(--f-read); color: var(--ink-body-2); margin: 0 0 8px; padding-left: 4px; }
 .cx-article-list li::marker { color: var(--gold-leaf); font-weight: 600; }
+/* Callout blocks from the compiled document (note / example / warning) - black
+   chassis, gold hairline, per-type accent on the left edge (black+gold law). */
+.cx-callout { margin: 4px 0 16px; padding: 12px 14px 12px 16px; border-radius: 12px; background: rgba(255,255,255,.03); border: 1px solid var(--hair-12); border-left: 3px solid var(--gold-leaf); font: 400 15.5px/1.55 var(--f-read); color: var(--ink-body-2); }
+.cx-callout-example { border-left-color: rgba(220,184,111,.5); }
+.cx-callout-warning { border-left-color: #d98b5f; background: rgba(217,139,95,.06); }
+/* In-article heading (reserved: the deterministic pass emits none yet; enrichment
+   will). Scroll target for deep links. */
+.cx-article-h { margin: 20px 0 10px; font: 600 17px/1.3 var(--f-display); letter-spacing: .01em; color: var(--gold-head); scroll-margin-top: 64px; }
 /* in-text links - gold for rules, violet for cards; both dotted-underlined */
 .cx-inlink { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-inlink-gold { color: var(--gold-leaf); border-bottom: 1px dotted var(--gold-leaf); }
@@ -213,6 +275,30 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-swipe-pane { animation: cxSlideIn .26s cubic-bezier(.2,.9,.3,1); }
 @keyframes cxSlideIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
 
+/* Cross-pillar slide: the incoming pillar enters from the swipe direction. Keyed on
+   `tab` so it replays on every pillar change (swipe or nav tap). Kept to a modest
+   travel so any position:fixed children (Decks search/pip bars) don't visibly shift
+   while the wrapper briefly holds a transform. Neutralised under reduced-motion. */
+.cx-pillar-slide.from-right { animation: cxPillarR .3s cubic-bezier(.22,.9,.32,1); }
+.cx-pillar-slide.from-left  { animation: cxPillarL .3s cubic-bezier(.22,.9,.32,1); }
+@keyframes cxPillarR { from { opacity: 0; transform: translateX(34px); } to { opacity: 1; transform: none; } }
+@keyframes cxPillarL { from { opacity: 0; transform: translateX(-34px); } to { opacity: 1; transform: none; } }
+
+/* Highlight mode: an invisible full-screen tap-catcher with the pill at the bottom.
+   Tap the pill = save; tap anywhere else = dismiss (handled in CodexDetail). */
+.cx-hl-layer { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; padding-bottom: calc(62px + env(safe-area-inset-bottom) + 16px); -webkit-tap-highlight-color: transparent; }
+.cx-hl-pill { display: inline-flex; align-items: center; gap: 7px; padding: 10px 18px; border-radius: 22px; background: linear-gradient(180deg,#dcb86f,#c9a35a); color: #1a1410; font: 700 13px/1 var(--f-ui); border: none; cursor: pointer; box-shadow: 0 10px 26px -8px rgba(0,0,0,.62); -webkit-tap-highlight-color: transparent; animation: cxHlIn .2s cubic-bezier(.2,1.35,.5,1); }
+@keyframes cxHlIn { from { opacity: 0; transform: translateY(12px) scale(.92); } to { opacity: 1; transform: none; } }
+
+/* Codex Cards: List / Card (art grid) toggle - parity with the deckbuilder. */
+.cx-view-toggle-row { display: flex; justify-content: center; padding: 2px 0 14px; }
+.cx-view-toggle { display: inline-flex; background: rgba(12,12,15,.72); border: 1px solid var(--hair-22); border-radius: 999px; padding: 3px; gap: 2px; backdrop-filter: blur(8px); }
+.cx-view-btn { background: transparent; border: 1px solid transparent; color: var(--ink-muted); border-radius: 999px; padding: 7px 22px; font: 600 13px/1 var(--f-ui); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-view-btn.on { background: rgba(220,184,111,.14); color: var(--gold-leaf); border-color: rgba(220,184,111,.5); }
+.cx-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cx-card-tile { display: block; width: 100%; padding: 0; border: none; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-card-tile:active { transform: scale(.985); }
+
 /* ── Global toast stack - black+gold, app-wide feedback (feedback.js host). ── */
 .cx-toast-stack { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top,0px) + 14px); z-index: 700; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
 .cx-toast { max-width: min(88vw, 420px); padding: 11px 18px; border-radius: 14px; background: linear-gradient(180deg,#1a1712,#0e0c0a); border: 1px solid rgba(220,184,111,.28); color: var(--ink-body); font: 500 13px/1.4 var(--f-ui); text-align: center; box-shadow: 0 8px 26px rgba(0,0,0,.55); animation: cxToastIn .26s cubic-bezier(.2,.9,.3,1); }
@@ -258,6 +344,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-ov-duel-name { flex: 1; min-width: 0; font: 600 13.5px/1.2 var(--f-read); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-ov-duel-deck { display: inline-flex; align-items: center; gap: 4px; font: 500 10px/1 var(--f-ui); color: var(--accent-violet); max-width: 34%; overflow: hidden; white-space: nowrap; flex: none; }
 .cx-ov-duel-deck svg { flex: none; }
+.cx-ov-duel-deck span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-ov-duel-score { font: 500 12px/1 var(--f-mono); color: var(--ink-muted); }
 
 /* ── Profile picker - monogram discs, per-profile digests, gold ring on the
@@ -276,17 +363,24 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Avatar picker as a centered modal - the app (incl. header/nav) stays visible
    behind a dim scrim; the picker floats in a rounded card and no longer takes
    over the interface. */
-.cx-picker-modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(6, 4, 12, .66); animation: cxfade .2s ease; }
+/* padding-bottom includes --kb so the centered box (whose search field sits at its
+   bottom edge) rides up above the soft keyboard instead of being covered. */
+.cx-picker-modal { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); background: rgba(6, 4, 12, .66); animation: cxfade .2s ease; }
 /* The box owns the shape: one radius, one border, and the SAME ground colour as
    the picker content, so no scrim can ever peek between border and content at
    the corners. The inner screen carries no radius of its own - the box's
    overflow clip rounds it at exactly the border's inner curve. */
-.cx-picker-box { width: 100%; max-width: 440px; height: min(86vh, 720px); border-radius: 22px; overflow: hidden; display: flex; background: #0e1c14; box-shadow: 0 26px 70px -14px rgba(0, 0, 0, .78); border: 1px solid rgba(120, 180, 140, .22); animation: cxsheet .28s cubic-bezier(.2, .9, .3, 1); }
+.cx-picker-box { width: 100%; max-width: 440px; height: 100%; max-height: min(88vh, 760px); max-height: min(88dvh, 760px); border-radius: 22px; overflow: hidden; display: flex; background: #0e1c14; box-shadow: 0 26px 70px -14px rgba(0, 0, 0, .78); border: 1px solid rgba(120, 180, 140, .22); animation: cxsheet .28s cubic-bezier(.2, .9, .3, 1); }
 .cx-picker-box #picker-screen { position: relative; inset: auto; width: 100%; height: 100%; flex: 1; min-height: 0; z-index: 1; border-radius: 0; }
+/* Inside the centered box the safe-area insets (meant for the full-screen counter
+   use of #picker-screen) become dead space above the header / below the footer -
+   the box floats mid-screen, nowhere near the status or gesture bars. Drop them. */
+.cx-picker-box .picker-header { padding-top: 16px; }
+.cx-picker-box .picker-footer { padding-bottom: 16px; }
 /* No visible scrollbars anywhere (mobile app) - scrolling still works. */
 * { scrollbar-width: none; -ms-overflow-style: none; }
 *::-webkit-scrollbar { width: 0; height: 0; display: none; }
-.cx-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+.cx-scroll { scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-y: contain; }
 .cx-scroll::-webkit-scrollbar { width: 0; display: none; }
 .cx-row:active { background: var(--hair-08) !important; }
 /* Codex A–Z list (~1379 rows) - skip render/layout of off-screen rows. The

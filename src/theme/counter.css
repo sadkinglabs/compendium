@@ -13,9 +13,9 @@
   --border: rgba(220,184,111,.16);
   --text: #dfe6e1;
   --muted: #9aa79c;
-  --gold: #dcb86f;
+  --gold: var(--gold-leaf);
   --gold-line: rgba(220,184,111,.25);
-  --gold-grad: linear-gradient(180deg,#dcb86f,#c9a35a);
+  --gold-grad: linear-gradient(180deg,var(--gold-leaf),#c9a35a);
   --gold-head: #e9d49a;
   --crimson: #e0786a;
   --faint: #7f8d81;
@@ -35,7 +35,7 @@
 /* Skins retired: the counter wears the app's gold (--sk above), full stop. */
 
 /* ── COUNTER SCREEN ── */
-#counter-screen { background: #06100a; position: fixed; inset: 0; z-index: 100; }
+#counter-screen { background: #06100a; position: fixed; inset: 0; z-index: 100; animation: cxfade .2s ease; }
 
 .counter-half { position: absolute; left: 0; right: 0; overflow: hidden; }
 .counter-half.enemy-half {
@@ -291,6 +291,8 @@ body.roll-active #match-clock { display: none !important; }
   color: rgb(var(--sk));
   box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 12px rgba(var(--sk),.2);
 }
+/* Keep the 26px badge but extend the tap target to ~46px (easy to dismiss). */
+.roll-pill-dismiss::before { content: ''; position: absolute; inset: -10px; }
 .roll-pill-dismiss svg { width: 13px; height: 13px; }
 .roll-pill-dismiss:active { transform: scale(.9); }
 #roll-pill.result #roll-pill-body { min-width: 172px; }
@@ -406,9 +408,10 @@ body.roll-active .dd-pill { display: none !important; }
   align-self: flex-start; margin-top: 12px;
 }
 .picker-back {
-  position: absolute; top: 12px; right: 12px;
+  position: absolute; top: 6px; right: 6px;
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
   background: none; border: none; color: var(--muted);
-  font-size: 13px; font-weight: 600; padding: 6px 10px;
+  font-size: 13px; font-weight: 600; padding: 0;
 }
 /* Pilot-a-deck rail (Compendium addition) - deck chips above the avatar grid;
    selecting one links the match to the deck and fills the YOU slot. */
@@ -437,11 +440,13 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-search input:focus, .picker-search input:focus-visible { outline: none; }
 .picker-search input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
 .picker-search-clear {
-  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%; position: relative;
   border: 1px solid rgba(220,184,111,.3); background: rgba(220,184,111,.1);
   color: var(--gold); font-size: 14px; font-weight: 700; cursor: pointer;
   display: none; align-items: center; justify-content: center;
 }
+/* Keep the 26px circle but extend the tap target to ~44px. */
+.picker-search-clear::before { content: ''; position: absolute; inset: -9px; }
 .picker-search.has-text .picker-search-clear { display: flex; }
 .picker-search-empty { padding: 50px 24px; text-align: center; color: var(--muted); font-size: 14px; }
 
@@ -511,7 +516,9 @@ body.roll-active .dd-pill { display: none !important; }
    (Credits/SearchHelp), dropping the Vitarum green plate - one modal language
    across the app. Scrim/card tokens match the app; the z-ladder (120/130/140)
    and every bespoke body stay put. */
-.vc-modal-overlay { position: fixed; inset: 0; background: rgba(4,3,2,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px; }
+/* padding-bottom carries --kb so a modal with a bottom input (end-screen opponent
+   name) rides above the soft keyboard instead of being covered. */
+.vc-modal-overlay { position: fixed; inset: 0; background: rgba(4,3,2,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px 24px calc(24px + var(--kb, 0px) / var(--ui-scale, 1)); animation: cxfade .18s ease; }
 /* The Hold-on confirm is summoned FROM the end screen (also a z-120 overlay) -
    it must always paint above it, independent of DOM order. */
 #confirm-overlay { z-index: 130; }
@@ -519,6 +526,10 @@ body.roll-active .dd-pill { display: none !important; }
 #share-overlay { z-index: 140; }
 .vc-modal-overlay .modal-box { animation: vc-modal-in .28s cubic-bezier(.22,1,.36,1); }
 @keyframes vc-modal-in { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
+/* Opponent-launched modals (dice roll / change max life) face the opponent's
+   180deg-rotated half. Rotation holds after its own entry animation. */
+.vc-root .modal-box.rotated { transform: rotate(180deg); animation: vc-modal-in-rot .28s cubic-bezier(.22,1,.36,1); }
+@keyframes vc-modal-in-rot { from { opacity: 0; transform: rotate(180deg) scale(.96); } to { opacity: 1; transform: rotate(180deg) scale(1); } }
 .vc-root .modal-box { background: linear-gradient(180deg,#151109,#0b0806); border-radius: 20px; width: 100%; max-width: 360px; border: 1px solid rgba(220,184,111,.24); overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,.7); max-height: 90vh; overflow-y: auto; }
 .vc-root .modal-top { background: none; padding: 28px 24px 20px; text-align: center; position: relative; }
 .vc-root .modal-top::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%,var(--gold-dim) 0%,transparent 70%); pointer-events: none; }

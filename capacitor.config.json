@@ -3,6 +3,10 @@
   "appName": "Compendium",
   "webDir": "dist",
   "plugins": {
+    "Keyboard": {
+      "resize": "none",
+      "resizeOnFullScreen": true
+    },
     "CapacitorSQLite": {
       "iosDatabaseLocation": "Library/CapacitorDatabase",
       "androidIsEncryption": false

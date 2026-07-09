@@ -3,6 +3,7 @@
 // "Add cards to deck" action on My Deck that opens the existing add-cards flow.
 // `deckOpen` (the loaded deck) is lifted to App so it survives that flow.
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   listDecks, getDeck, toggleStar, renameDeck, duplicateDeck, deleteDeck,
   historyCount, clearHistory, exportMarkdown, exportCuriosa, getDeckCards,
@@ -42,6 +43,12 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   const toastT = useRef();
   function flash(msg, ms = 1900) { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), ms); }
 
+  // The fixed search/pip bars must escape the .cx-pillar-slide wrapper: its transform
+  // animation would otherwise become their containing block (they'd ride the slide and
+  // double-count the safe-area inset, then snap). Portal to .cx-app like the FAB does.
+  const appRoot = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
+  const portal = (node) => (appRoot ? createPortal(node, appRoot) : node);
+
   async function refresh() { setDecks(await listDecks()); }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
   // Opening/creating/importing a deck (deckOpen changes id) jumps to My Deck;
@@ -51,6 +58,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   const prevIdRef = useRef(deckOpen?.id);
   useEffect(() => {
     if (deckOpen) { setView('mydeck'); setStatTab('list'); }
+    else setView('library');   // closing the deck (incl. hardware back) returns to the Library list
     if (prevIdRef.current !== deckOpen?.id) { setEditMode(false); prevIdRef.current = deckOpen?.id; }
     // eslint-disable-next-line
   }, [deckOpen?.id]);
@@ -122,14 +130,18 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
     || (d.avatar?.name || '').toLowerCase().includes(libQ.toLowerCase()));
 
   // Native feel: swipe across the Library ⇄ My Deck (List ⇄ Stats) chain.
+  // Return true when the pager consumes the swipe (paged an inner view); at an edge
+  // return falsy so the gesture bubbles up to the app-level cross-pillar swipe.
   const swipe = useSwipe(
     () => {   // swipe left - deeper into the deck
-      if (view === 'library' && deckOpen) { setView('mydeck'); haptic('light'); }
-      else if (view === 'mydeck' && deckOpen && statTab === 'list') { setStatTab('stats'); haptic('light'); }
+      if (view === 'library' && deckOpen) { setView('mydeck'); haptic('light'); return true; }
+      if (view === 'mydeck' && deckOpen && statTab === 'list') { setStatTab('stats'); haptic('light'); return true; }
+      return false;
     },
     () => {   // swipe right - back out
-      if (view === 'mydeck' && statTab === 'stats') { setStatTab('list'); haptic('light'); }
-      else if (view === 'mydeck') { setView('library'); haptic('light'); }
+      if (view === 'mydeck' && statTab === 'stats') { setStatTab('list'); haptic('light'); return true; }
+      if (view === 'mydeck') { setView('library'); haptic('light'); return true; }
+      return false;
     }
   );
 
@@ -141,8 +153,8 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
           <Chip label="My Deck" active={view === 'mydeck'} onClick={() => setView('mydeck')} />
         </ChipRow>
         <div className="dp-topbar-spacer" />
-        {view === 'mydeck' && deckOpen && statTab === 'list' && (
-          <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => setEditMode((v) => !v)}>
+        {view === 'mydeck' && deckOpen && (
+          <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }}>
             {editMode ? '✓ Done' : '✎ Edit Deck'}
           </button>
         )}
@@ -157,12 +169,14 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
               ) : libList.map((d) => <DeckCard key={d.id} deck={d} onClick={() => openDeck(d)} />)}
           </div>
-          <div className="pill-bar-outer">
-            <div className={`bottom-pill-bar${libQ ? ' has-text' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input type="search" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Search decks…" autoComplete="off" />
+          {portal(
+            <div className="arc pill-bar-outer">
+              <div className={`bottom-pill-bar${libQ ? ' has-text' : ''}`}>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input type="search" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Search decks…" autoComplete="off" enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       ) : (
         <div className="dp-view">
@@ -174,17 +188,19 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
                   onMissing={() => { onOpenDeck(null); setView('library'); refresh(); }} />
               </div>
               {/* List/Stats pip bar steps aside while editing - edit mode owns the floor. */}
-              <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
-                <div className="pip-seg" onClick={() => setStatTab('list')}>
-                  <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
-                  <span className={`pip-seg-label${statTab === 'list' ? ' active' : ''}`}>List</span>
+              {portal(
+                <div className={`arc deck-pip-bar${editMode ? ' hidden' : ''}`}>
+                  <div className="pip-seg" onClick={() => setStatTab('list')}>
+                    <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
+                    <span className={`pip-seg-label${statTab === 'list' ? ' active' : ''}`}>List</span>
+                  </div>
+                  <span className="pip-divider" />
+                  <div className="pip-seg" onClick={() => setStatTab('stats')}>
+                    <span className={`pip-seg-label${statTab === 'stats' ? ' active' : ''}`}>Stats</span>
+                    <span className={`pip-dot${statTab === 'stats' ? ' active' : ''}`} />
+                  </div>
                 </div>
-                <span className="pip-divider" />
-                <div className="pip-seg" onClick={() => setStatTab('stats')}>
-                  <span className={`pip-seg-label${statTab === 'stats' ? ' active' : ''}`}>Stats</span>
-                  <span className={`pip-dot${statTab === 'stats' ? ' active' : ''}`} />
-                </div>
-              </div>
+              )}
             </>
           ) : (
             <BlankState hue="160,110,220" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
@@ -283,7 +299,14 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
 
   const sortEntries = (l, byCost) => [...(l || [])].sort((a, b) =>
     byCost ? (a.cost ?? 999) - (b.cost ?? 999) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name));
-  const shuffleArr = (l) => { const a = [...(l || [])]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const shuffleArr = (l) => {
+    // Expand each entry into `quantity` independent single copies FIRST, so 3-of a
+    // card shuffles as three separate cards that can land anywhere - not one bundle.
+    const a = [];
+    for (const e of (l || [])) { const n = Math.max(1, e.quantity || 1); for (let k = 0; k < n; k++) a.push({ ...e, quantity: 1 }); }
+    for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  };
   function doShuffle() {
     setShuf({ spellbook: shuffleArr(zones.spellbook), atlas: shuffleArr(zones.atlas), collection: shuffleArr(zones.collection) });
   }

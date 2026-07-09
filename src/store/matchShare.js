@@ -7,6 +7,7 @@
 // their opponent (name + avatar), and NO deck is carried (they attribute their
 // own). So the import side is dumb - it just lands the payload in a review form.
 import { getActiveProfile } from './profileRepository.js';
+import { nowIso } from './ids.js';
 
 const VERSION = 1;
 
@@ -55,5 +56,3 @@ export function parseMatchShare(input) {
     return obj;
   } catch { return null; }
 }
-
-function nowIso() { try { return new Date().toISOString(); } catch { return null; } }

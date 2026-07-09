@@ -1,7 +1,7 @@
 // Database layer with two backends behind one API:
 //   - web  : sql.js (wasm) + IndexedDB persistence  (dev preview, browser)
 //   - native: @capacitor-community/sqlite            (device builds)
-// Public API: openDatabase, query, run, exec, tx, execMany, persist.
+// Public API: openDatabase, query, run, exec, tx, persist.
 import { Capacitor } from '@capacitor/core';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 
@@ -49,7 +49,6 @@ export const query = (sql, params = []) => backend.query(sql, params);
 export const run = (sql, params = []) => backend.run(sql, params);
 export const exec = (sql) => backend.exec(sql);
 export const tx = (statements) => backend.tx(statements);
-export const execMany = (statements) => backend.execMany(statements);
 export const persist = () => backend.persist();
 
 /* ------------------------------------------------------------------ */
@@ -97,7 +96,6 @@ async function webBackend() {
     },
     run(sql, params) { sdb.run(sql, params || []); return api.persist(); },
     exec(sql) { sdb.run(sql); return Promise.resolve(); },           // multi-statement, no persist
-    execMany(statements) { for (const [s, p = []] of statements) sdb.run(s, p); return Promise.resolve(); },
     tx(statements) {
       sdb.run('BEGIN;');
       try { for (const [s, p = []] of statements) sdb.run(s, p); sdb.run('COMMIT;'); }
@@ -150,6 +148,39 @@ async function idbSave(bytes) {
 /* ------------------------------------------------------------------ */
 /* native backend: @capacitor-community/sqlite                         */
 /* ------------------------------------------------------------------ */
+
+// The native plugin's execute() splits a multi-statement string on ';' with a
+// splitter that mangles SQL comments (sql.js tolerates them; native does not -
+// a leading block comment arrives at sqlite as a dangling '/*'). Strip both
+// comment styles here, respecting single-quoted string literals so we never
+// touch data. Applied only at the native exec boundary; source keeps its docs.
+function stripSqlComments(sql) {
+  let out = '';
+  let inStr = false;
+  for (let i = 0, n = sql.length; i < n; ) {
+    const c = sql[i], c2 = sql[i + 1];
+    if (inStr) {
+      out += c;
+      if (c === "'") {
+        if (c2 === "'") { out += c2; i += 2; continue; } // escaped ''
+        inStr = false;
+      }
+      i++;
+    } else if (c === "'") {
+      inStr = true; out += c; i++;
+    } else if (c === '-' && c2 === '-') {
+      while (i < n && sql[i] !== '\n') i++;               // line comment -> EOL
+    } else if (c === '/' && c2 === '*') {
+      i += 2;
+      while (i < n && !(sql[i] === '*' && sql[i + 1] === '/')) i++;
+      i += 2;                                              // skip closing */
+    } else {
+      out += c; i++;
+    }
+  }
+  return out;
+}
+
 async function nativeBackend() {
   const { CapacitorSQLite, SQLiteConnection } = await import('@capacitor-community/sqlite');
   const sqlite = new SQLiteConnection(CapacitorSQLite);
@@ -161,8 +192,7 @@ async function nativeBackend() {
   return {
     async query(sql, params) { return (await db.query(sql, params)).values || []; },
     async run(sql, params) { return db.run(sql, params, false); },
-    async exec(sql) { return db.execute(sql, false); },
-    async execMany(statements) { return db.executeSet(statements.map(([statement, values = []]) => ({ statement, values })), false); },
+    async exec(sql) { return db.execute(stripSqlComments(sql), false); },
     async tx(statements) { return db.executeSet(statements.map(([statement, values = []]) => ({ statement, values })), true); },
     async persist() { /* native autosaves */ },
   };

@@ -11,15 +11,20 @@ export async function searchAll(q) {
   const ql = query.toLowerCase();
 
   // Categorised codex hits: title/name matches first, then text mentions
-  // (searchCodex also understands the t:/e:/set:/has:/is: syntax).
-  const { articles, cards, cardText, articleText } = await searchCodex(query);
-  const marginalia = await searchPersonal(query);
+  // (searchCodex also understands the t:/e:/set:/has:/is: syntax). The four
+  // sources are independent, so fetch them concurrently.
+  const [{ articles, cards, cardText, articleText }, marginalia, allDecks, allMatches] = await Promise.all([
+    searchCodex(query),
+    searchPersonal(query),
+    listDecks(),
+    listMatches(50),
+  ]);
 
-  const decks = (await listDecks())
+  const decks = allDecks
     .filter((d) => d.name.toLowerCase().includes(ql) || (d.archetype || '').toLowerCase().includes(ql))
     .map((d) => ({ id: d.id, name: d.name, meta: `${d.archetype || 'Deck'} · ${d.record}`, glyph: '◆' }));
 
-  const duels = (await listMatches(50))
+  const duels = allMatches
     .filter((m) => (m.opponent_name || '').toLowerCase().includes(ql) || (m.mode || '').toLowerCase().includes(ql))
     .map((m) => ({
       id: m.id, name: m.opponent_name ? `vs. ${m.opponent_name}` : (m.mode === 'quick' ? 'Quick match' : 'Match'),

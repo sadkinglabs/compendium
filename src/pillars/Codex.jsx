@@ -6,9 +6,10 @@ import {
   getCodexEntries, marginaliaAll, deleteNote, deleteHighlight, deleteLink, toggleSaved,
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
-import { Chip, ChipRow, ListRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
+import { Chip, ChipRow, ListRow, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import CardArt from '../components/CardArt.jsx';
 import { toast, confirmAction } from '../feedback.js';
 
 // Codex row glyphs - card = rectangle (a card), article = three lines of text.
@@ -49,6 +50,7 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
   const [entries, setEntries] = useState(null);
   const [filters, setFilters] = useState({ rules: {}, cards: {} });   // per-scope, both survive switching
   const [filterSheet, setFilterSheet] = useState(false);
+  const [cardView, setCardView] = useState('list');   // Cards scope: list rows vs art grid (parity with the deckbuilder)
 
   // One-shot filter preset from elsewhere in the app (e.g. Home "All notes ›"
   // lands here pre-filtered to entries carrying your marginalia).
@@ -138,10 +140,28 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
         </div>
       </Sheet>
 
+      {/* Cards get a List / Card (art grid) toggle - parity with the deckbuilder. */}
+      {sc === 'cards' && (
+        <div className="cx-view-toggle-row">
+          <div className="cx-view-toggle">
+            <button className={`cx-view-btn${cardView === 'list' ? ' on' : ''}`} onClick={() => setCardView('list')}>List</button>
+            <button className={`cx-view-btn${cardView === 'grid' ? ' on' : ''}`} onClick={() => setCardView('grid')}>Card</button>
+          </div>
+        </div>
+      )}
+
       {entries == null ? (
         <Skeleton />
       ) : entries.length === 0 ? (
         <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>Nothing matches these filters.</div>
+      ) : (sc === 'cards' && cardView === 'grid') ? (
+        <div className="cx-card-grid">
+          {entries.map((it) => (
+            <button key={it.id} className="cx-card-tile" onClick={() => onOpen('card', it.id, it.name)} aria-label={it.name}>
+              <CardArt card={{ ...it, card_id: it.id }} radius={12} />
+            </button>
+          ))}
+        </div>
       ) : (
         <AzList entries={entries} onOpen={onOpen} />
       )}

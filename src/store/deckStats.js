@@ -133,8 +133,9 @@ export function peakThresholds(spellbook) {
   for (const e of spellbook) { const t = e.thresholds || {}; for (const k of ELS) peak[k] = Math.max(peak[k], t[k] || 0); }
   return peak;
 }
-export function supplyData(spellbook, atlas) {
-  const peak = peakThresholds(spellbook), sup = { air: 0, earth: 0, fire: 0, water: 0 };
+export function supplyData(spellbook, atlas, base = 0) {
+  // `base` = element control present from turn 0 regardless of atlas (Elementalist = 1 of each).
+  const peak = peakThresholds(spellbook), sup = { air: base, earth: base, fire: base, water: base };
   for (const e of atlas) { const t = e.thresholds || {}; for (const k of ELS) if ((t[k] || 0) > 0) sup[k] += e.quantity; }
   return ELS.filter((k) => peak[k] > 0).map((k) => {
     const ok = sup[k] >= peak[k] * 2, tight = sup[k] > 0 && !ok;
@@ -149,18 +150,23 @@ export function avgCost(spellbook) {
 
 // Verbatim Monte-Carlo: P(control ≥ peak threshold of each element after drawing
 // the first `byTurn` sites). Partial Fisher-Yates over quantity-expanded atlas.
-export function atlasOdds(spellbook, atlas, byTurn, sims = 10000) {
+export function atlasOdds(spellbook, atlas, byTurn, sims = 10000, base = 0) {
   const peak = peakThresholds(spellbook);
   const sites = [];
   for (const e of atlas) { const t = e.thresholds || {}; const th = [t.air || 0, t.earth || 0, t.fire || 0, t.water || 0]; const q = Math.max(0, Math.min(e.quantity | 0, 99)); for (let i = 0; i < q; i++) sites.push(th); }
   const N = sites.length;
   const need = ELS.filter((k) => peak[k] > 0);
   const prob = { air: 0, earth: 0, fire: 0, water: 0 };
-  if (!N || !need.length) return { peak, prob, joint: need.length ? 0 : 1, need, N, draw: 0 };
+  if (!N || !need.length) {
+    // No atlas draws to simulate: only the starting `base` control can satisfy a peak.
+    for (const k of ELS) prob[k] = peak[k] > 0 && base >= peak[k] ? 1 : 0;
+    const joint = need.length ? (need.every((k) => base >= peak[k]) ? 1 : 0) : 1;
+    return { peak, prob, joint, need, N, draw: 0 };
+  }
   const draw = Math.min(byTurn, N), order = sites.map((_, i) => i);
   let hitA = 0, hitE = 0, hitF = 0, hitW = 0, hitAll = 0;
   for (let s = 0; s < sims; s++) {
-    let a = 0, e = 0, f = 0, w = 0;
+    let a = base, e = base, f = base, w = base;   // Elementalist etc. start with +base of each
     for (let i = 0; i < draw; i++) { const j = i + Math.floor(Math.random() * (N - i)); const tmp = order[i]; order[i] = order[j]; order[j] = tmp; const th = sites[order[i]]; a += th[0]; e += th[1]; f += th[2]; w += th[3]; }
     const okA = peak.air === 0 || a >= peak.air, okE = peak.earth === 0 || e >= peak.earth, okF = peak.fire === 0 || f >= peak.fire, okW = peak.water === 0 || w >= peak.water;
     if (peak.air > 0 && okA) hitA++; if (peak.earth > 0 && okE) hitE++; if (peak.fire > 0 && okF) hitF++; if (peak.water > 0 && okW) hitW++;

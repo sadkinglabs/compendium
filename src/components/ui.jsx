@@ -2,6 +2,7 @@
 import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
 import { GLYPH_ICON } from './icons.jsx';
+import { registerBackConsumer } from '../back.js';
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -115,7 +116,7 @@ export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
 export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   const start = React.useRef(null);
   const onTouchStart = (e) => {
-    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .a-sheet, .a-sheet-scrim, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
+    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .a-sheet, .a-sheet-scrim, .fsheet, .fsheet-scrim, .cx-picker-modal, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
     const t = e.touches[0];
     start.current = { x: t.clientX, y: t.clientY };
   };
@@ -125,7 +126,12 @@ export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
     const dx = t.clientX - start.current.x, dy = t.clientY - start.current.y;
     start.current = null;
     if (Math.abs(dx) < threshold || Math.abs(dx) < Math.abs(dy) * 1.6) return;
-    if (dx < 0) onLeft?.(); else onRight?.();
+    // A callback returns true when it CONSUMES the swipe (paged an inner view). When
+    // it does, stop the touchend bubbling so an ancestor swipe (e.g. cross-pillar)
+    // doesn't ALSO fire. At an inner boundary the callback returns falsy and the
+    // gesture bubbles up - that's what lets a swipe chain from a pane out to a pillar.
+    const consumed = dx < 0 ? onLeft?.() : onRight?.();
+    if (consumed) e.stopPropagation();
   };
   return { onTouchStart, onTouchEnd };
 }
@@ -185,16 +191,20 @@ export function useFocusTrap(active) {
 /* Bottom sheet - scrim + slide-up panel. */
 export function BottomSheet({ open, title, onClose, children }) {
   const trapRef = useFocusTrap(open);
+  // Hardware BACK closes the sheet; register once per open (ref keeps onClose fresh).
+  const closeRef = React.useRef(onClose); closeRef.current = onClose;
+  React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
   if (!open) return null;
   return (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
       <div ref={trapRef} role="dialog" aria-modal="true" aria-label={title || 'Dialog'} style={{
-        position: 'fixed', left: 0, right: 0, bottom: 'var(--kb,0px)', zIndex: 201,
+        position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--kb,0px) / var(--ui-scale,1))', zIndex: 201,
         background: 'var(--surface-sheet)', borderTop: '1px solid var(--hair-30)',
-        borderRadius: '26px 26px 0 0', padding: '14px 22px 26px',
+        borderRadius: '26px 26px 0 0', padding: '14px 22px calc(26px + env(safe-area-inset-bottom,0px))',
         boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
-        maxHeight: '76%', overflowY: 'auto', transition: 'bottom .2s ease',
+        maxHeight: 'min(76dvh, calc(100dvh - env(safe-area-inset-top,0px) - 12px - var(--kb,0px) / var(--ui-scale,1)))',
+        overflowY: 'auto', transition: 'bottom .2s ease',
       }} className="cx-scroll">
         <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--hair-30)', margin: '0 auto 14px' }} />
         {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', marginBottom: 16 }}>{title}</div>}
@@ -204,95 +214,128 @@ export function BottomSheet({ open, title, onClose, children }) {
   );
 }
 
-/* Rich text: [[Name]] -> tappable link; first letter -> drop-cap. */
-// Wrap any saved-highlight substrings inside a plain text run with a tinted
-// <mark>. `hue` = 'gold' (rules) | 'violet' (cards). Longest marks first so a
-// mark that contains another wins.
-function markRuns(text, marks, hue, kctr) {
-  if (!marks || !marks.length) return [text];
-  const esc = [...marks].sort((a, b) => b.length - a.length).map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const re = new RegExp('(' + esc.join('|') + ')', 'g');
-  const cls = hue === 'violet' ? 'cx-hl-violet' : 'cx-hl-gold';
-  return text.split(re).filter((p) => p !== '').map((p) => (
-    marks.includes(p) ? <mark key={kctr.k++} className={cls}>{p}</mark> : <React.Fragment key={kctr.k++}>{p}</React.Fragment>
-  ));
-}
-
-// Inline renderer: [[Name]] → tappable link (gold for rules, violet for cards),
-// with optional highlight marks on the plain runs between links.
-export function inlineNodes(text, onOpenName, hue = 'gold', marks) {
-  // Normalise any em dashes in reference text (card rules / articles) to spaced
-  // hyphens - we never render an em dash, even from source data.
-  const clean = String(text || '').replace(/\s*—\s*/g, ' - ');
-  const linkClass = hue === 'violet' ? 'cx-inlink cx-inlink-violet' : 'cx-inlink cx-inlink-gold';
-  const nodes = [];
-  const kctr = { k: 0 };
-  const re = /\[\[([^\]]+)\]\]/g;
-  let last = 0, m;
-  while ((m = re.exec(clean))) {
-    if (m.index > last) nodes.push(...markRuns(clean.slice(last, m.index), marks, hue, kctr));
-    const name = m[1];
-    nodes.push(<span key={kctr.k++} className={linkClass} onClick={() => onOpenName?.(name)}>{name}</span>);
-    last = m.index + m[0].length;
-  }
-  if (last < clean.length) nodes.push(...markRuns(clean.slice(last), marks, hue, kctr));
-  return nodes;
-}
-
-// A formatted article: renders formatArticle() blocks (paragraphs + lists) with
-// inline links + highlight marks. `lead` drop-caps the first paragraph.
-export function Article({ blocks, onOpenName, lead, hue = 'gold', marks }) {
+// Centered modal chassis (scrim + black-gold box + optional close X). Was inlined
+// byte-for-byte in 4 places; this is the single source. `boxStyle` overrides the
+// box for per-modal needs (maxWidth, padding, overflow, a violet chassis). Adds a
+// focus trap + hardware-back close for free.
+export function CenteredModal({ open, label, maxWidth = 360, onClose, closeButton = true, boxStyle, children }) {
+  const trapRef = useFocusTrap(open);
+  const closeRef = React.useRef(onClose); closeRef.current = onClose;
+  React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
+  if (!open) return null;
   return (
-    <div className="cx-article">
-      {(blocks || []).map((b, i) => {
-        if (b.type === 'ul' || b.type === 'ol') {
-          const List = b.type === 'ol' ? 'ol' : 'ul';
-          return <List key={i} className="cx-article-list">{b.items.map((it, j) => <li key={j}>{inlineNodes(it, onOpenName, hue, marks)}</li>)}</List>;
-        }
-        const dc = lead && i === 0;
-        return <p key={i} className={`cx-article-p${dc ? ' lead' : ''}`}>{inlineNodes(b.text, onOpenName, hue, marks)}</p>;
-      })}
+    <div onClick={onClose} role="dialog" aria-modal="true" aria-label={label}
+      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 24px calc(24px + var(--kb,0px) / var(--ui-scale,1))', background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
+      <div ref={trapRef} onClick={(e) => e.stopPropagation()}
+        style={{ position: 'relative', width: '100%', maxWidth, borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid var(--hair-24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', ...boxStyle }}>
+        {closeButton && (
+          <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        )}
+        {children}
+      </div>
     </div>
   );
 }
 
-export function RichText({ text, onOpenName, lead }) {
-  const clean = String(text || '').replace(/\r/g, '').replace(/\n+/g, ' ').trim();
-  const parts = [];
-  const re = /\[\[([^\]]+)\]\]/g;
-  let last = 0, m, key = 0;
-  while ((m = re.exec(clean))) {
-    if (m.index > last) parts.push({ t: clean.slice(last, m.index), k: key++ });
-    parts.push({ link: m[1], k: key++ });
-    last = m.index + m[0].length;
-  }
-  if (last < clean.length) parts.push({ t: clean.slice(last), k: key++ });
-
-  let dropped = false;
+// One-line empty state (the "No X yet" italic recipe, ~15 inlined copies). For a
+// full-pane empty use BlankState; this is the inline/section variant, with an
+// optional gold "cta ›" action. `size` preserves each call site's exact size.
+export function EmptyCta({ text, cta, onClick, size = 13, pad = '4px 0' }) {
   return (
-    <p style={{ margin: '0 0 15px', font: "400 16.5px/1.62 var(--f-read)", color: 'var(--ink-body-2)' }}>
-      {parts.map((p) => {
-        if (p.link) {
-          return (
-            <span key={p.k} onClick={() => onOpenName?.(p.link)}
-              style={{ color: 'var(--link-violet)', borderBottom: '1px solid rgba(199,154,208,.4)', cursor: 'pointer' }}>
-              {p.link}
-            </span>
-          );
-        }
-        if (lead && !dropped && p.t.trim()) {
-          dropped = true;
-          const ch = p.t.trimStart()[0];
-          const rest = p.t.trimStart().slice(1);
-          return (
-            <React.Fragment key={p.k}>
-              <span style={{ float: 'left', font: "600 47px/0.76 var(--f-display)", color: 'var(--gold)', margin: '5px 11px 0 0', textShadow: '0 2px 14px rgba(207,154,74,.3)' }}>{ch}</span>
-              <span>{rest}</span>
-            </React.Fragment>
-          );
-        }
-        return <span key={p.k}>{p.t}</span>;
-      })}
-    </p>
+    <div style={{ font: `400 ${size}px/1.6 var(--f-read)`, color: 'var(--ink-faint)', fontStyle: 'italic', padding: pad, textAlign: cta ? 'left' : 'center' }}>
+      {text}{cta && <> <span onClick={onClick} style={{ color: 'var(--gold-leaf)', fontStyle: 'normal', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>{cta} ›</span></>}
+    </div>
+  );
+}
+
+/* RuleArticle - renders a compiled Codex Document (canon + typed link spans +
+   blocks) produced by the build-time compiler. The renderer is a PURE projection:
+   it holds no source of truth, invents no structure, and works entirely in canon
+   character offsets. Inline content is decomposed into flat runs at link and
+   highlight boundaries (an interval sweep, never nested <mark>s), so overlapping
+   decorations are a set on a run. Stage 1 sources highlight ranges from the legacy
+   saved-text (`marks`) via a whitespace-flexible match; Stage 2 swaps that SOURCE
+   for stored (offset) anchors without touching this renderer. */
+
+// Legacy highlight ranges: locate each saved highlight text inside canon[s,e]
+// with a whitespace-flexible match; returns canon-offset ranges.
+function markRanges(text, base, marks) {
+  if (!marks || !marks.length) return [];
+  const pats = [...marks].map((m) => String(m).trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'));
+  if (!pats.length) return [];
+  const re = new RegExp('(' + pats.join('|') + ')', 'g');
+  const out = [];
+  let m;
+  while ((m = re.exec(text))) if (m[0]) out.push({ start: base + m.index, end: base + m.index + m[0].length });
+  return out;
+}
+
+// canon[s,e] -> flat runs at link + highlight boundaries; each run carries its
+// covering link (or null) and whether it is under a highlight.
+function runsFor(canon, s, e, links, hlRanges) {
+  const clip = (x) => Math.max(s, Math.min(e, x));
+  const L = links.filter((l) => l.end > s && l.start < e).map((l) => ({ ...l, start: clip(l.start), end: clip(l.end) }));
+  const H = hlRanges.filter((r) => r.end > s && r.start < e).map((r) => ({ start: clip(r.start), end: clip(r.end) }));
+  const bounds = new Set([s, e]);
+  for (const x of [...L, ...H]) { bounds.add(x.start); bounds.add(x.end); }
+  const pts = [...bounds].sort((a, b) => a - b);
+  const runs = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    if (b <= a) continue;
+    runs.push({ start: a, end: b, link: L.find((l) => l.start <= a && l.end >= b) || null, mark: H.some((r) => r.start <= a && r.end >= b) });
+  }
+  return runs;
+}
+
+// Render canon[span] (default: the whole string) as flat runs, with in-text links
+// and highlight marks overlaid. Exported so FAQ text - which shares the
+// [[card]]/((rule)) link convention - renders links exactly like document blocks.
+// All links are GOLD: the link's `target` drives navigation, never its colour
+// (violet reads as a "visited" link and clashed with the app's accent language).
+export function InlineText({ canon, links = [], span, marks, markHue = 'gold', onOpenLink }) {
+  const [s, e] = span || [0, canon.length];
+  const runs = runsFor(canon, s, e, links, markRanges(canon.slice(s, e), s, marks));
+  const markCls = markHue === 'violet' ? 'cx-hl-violet' : 'cx-hl-gold';
+  return runs.map((r) => {
+    const text = canon.slice(r.start, r.end);
+    if (r.link) return <span key={r.start} className="cx-inlink cx-inlink-gold" data-off={r.start} onClick={() => onOpenLink?.(r.link.name, r.link.target)}>{r.mark ? <mark className={markCls}>{text}</mark> : text}</span>;
+    if (r.mark) return <mark key={r.start} className={markCls} data-off={r.start}>{text}</mark>;
+    return <React.Fragment key={r.start}>{text}</React.Fragment>;   // bare text keeps ::first-letter drop-cap intact
+  });
+}
+
+function DocBlock({ canon, block, links, marks, markHue, onOpenLink }) {
+  const inline = (span) => <InlineText canon={canon} links={links} span={span} marks={marks} markHue={markHue} onOpenLink={onOpenLink} />;
+  switch (block.type) {
+    case 'ol':
+    case 'ul': {
+      const List = block.type === 'ol' ? 'ol' : 'ul';
+      return <List className="cx-article-list" data-block-id={block.id}>{block.items.map((it) => <li key={it.id} data-block-id={it.id}>{inline(it.span)}</li>)}</List>;
+    }
+    case 'note':
+    case 'example':
+    case 'warning':
+      return <aside className={`cx-callout cx-callout-${block.type}`} data-block-id={block.id}>{inline(block.span)}</aside>;
+    case 'heading':
+      return <h3 className="cx-article-h" id={block.slug || undefined} data-block-id={block.id}>{inline(block.span)}</h3>;
+    default:
+      return <p className={`cx-article-p${block.lead ? ' lead' : ''}`} data-block-id={block.id}>{inline(block.span)}</p>;
+  }
+}
+
+export function RuleArticle({ doc, marks, markHue = 'gold', onOpenLink }) {
+  if (!doc) return null;
+  return (
+    <div className="cx-article">
+      {doc.blocks.map((b) => (
+        <DocBlock key={b.id} canon={doc.canon} block={b} links={doc.links} marks={marks} markHue={markHue} onOpenLink={onOpenLink} />
+      ))}
+    </div>
   );
 }

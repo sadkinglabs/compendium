@@ -8,6 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "compile:codex": "node scripts/compile-codex.mjs",
+    "test:codex": "node --test \"scripts/codex/**/*.test.mjs\"",
     "cap:sync": "cap sync",
     "android": "vite build && cap sync android",
     "cap:open": "cap open android"
@@ -20,6 +22,7 @@
     "@capacitor/core": "^6.2.0",
     "@capacitor/filesystem": "^6.0.4",
     "@capacitor/haptics": "^6.0.3",
+    "@capacitor/keyboard": "^6.0.4",
     "@capacitor/preferences": "^6.0.3",
     "@capacitor/share": "^6.0.4",
     "@capacitor/status-bar": "^6.0.3",

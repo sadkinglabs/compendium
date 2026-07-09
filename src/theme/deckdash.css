@@ -13,7 +13,7 @@
 .arc .avatar-hero-content { position: relative; z-index: 1; padding: 24px 16px 16px; text-align: center; }
 .arc .hero-deck-name { font-size: 28px; font-weight: 700; font-family: 'Cinzel', Georgia, serif; letter-spacing: .08em; color: var(--text); margin-bottom: 12px; overflow-wrap: anywhere; line-height: 1.18; }
 .arc .hero-avatar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; justify-content: center; }
-.arc .hero-avatar-name { font-size: 14px; font-weight: 600; color: var(--gold); font-family: 'Hanken Grotesk', sans-serif; cursor: pointer; }
+.arc .hero-avatar-name { font-size: 14px; font-weight: 600; color: var(--gold-leaf); font-family: 'Hanken Grotesk', sans-serif; cursor: pointer; }
 .arc .hero-avatar-sep { color: var(--faint); font-size: 16px; line-height: 1; }
 /* Surfaces lean BLACK (user rule: hues are only a detail) - violet survives in
    hairlines, labels and small accents, never as a surface fill. */
@@ -26,7 +26,7 @@
 .arc .chart-card.cc-list { background: linear-gradient(180deg,rgba(19,17,23,.78),rgba(10,10,12,.62)); border-color: rgba(160,110,220,.14); padding: 17px 16px; }
 .arc .cc-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
 .arc .cc-hdr.collapsible { cursor: pointer; }
-.arc .cc-title { font: 600 11px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; color: #dcb86f; text-transform: uppercase; }
+.arc .cc-title { font: 600 11px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; color: var(--gold-leaf); text-transform: uppercase; }
 .arc .cc-count { font: 500 11px/1 'IBM Plex Mono', monospace; color: #6e6286; }
 .arc .cc-count.warn { color: #e07c5e; }
 .arc .cc-count.ok { color: #8fd3a8; }
@@ -62,14 +62,14 @@
 
 /* Notes */
 .arc .chart-card-header { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid rgba(160,110,220,.1); }
-.arc .chart-card-header h3 { flex: 1; margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: #dcb86f; font-family: 'Cinzel', Georgia, serif; }
+.arc .chart-card-header h3 { flex: 1; margin: 0; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--gold-leaf); font-family: 'Cinzel', Georgia, serif; }
 .arc .cc-notes-area { width: 100%; min-height: 90px; background: var(--bg); border: 1px solid rgba(201,168,76,.3); border-radius: 8px; padding: 10px; color: var(--text); font: 400 13px/1.5 'EB Garamond', Georgia, serif; resize: vertical; outline: none; box-sizing: border-box; }
 
 /* Curiosa URL card */
 .arc .cc-card-edit-btn { background: none; border: none; color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; padding: 2px 6px; }
 .arc .cc-url-input { width: 100%; background: var(--bg); border: 1px solid rgba(201,168,76,.3); border-radius: 8px; padding: 10px; color: var(--text); font: 400 13px/1.4 'IBM Plex Mono', monospace; outline: none; box-sizing: border-box; }
 .arc .cc-url-btn { padding: 7px 14px; border-radius: 9px; border: 1px solid rgba(160,110,220,.3); background: rgba(157,106,214,.1); color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; }
-.arc .cc-url-btn.primary { border: 1px solid rgba(220,184,111,.45); background: rgba(18,16,13,.85); color: #dcb86f; }
+.arc .cc-url-btn.primary { border: 1px solid rgba(220,184,111,.45); background: rgba(18,16,13,.85); color: var(--gold-leaf); }
 .arc .cc-url-link { display: flex; align-items: center; gap: 8px; color: #c9a9f0; text-decoration: none; font: 500 13px/1.3 'Hanken Grotesk', sans-serif; word-break: break-all; }
 .arc .cc-url-link svg { width: 14px; height: 14px; flex-shrink: 0; }
 .arc .cc-url-empty { font: italic 400 13px/1.4 'EB Garamond', Georgia, serif; color: #6e6286; }
@@ -120,7 +120,7 @@
 .arc .cc-step-minus { background: rgba(14,13,17,.6); border: 1px solid rgba(160,110,220,.2); color: #9a8cae; }
 .arc .cc-step-plus-w { background: rgba(63,154,106,.18); border: 1px solid rgba(143,211,168,.5); color: #8fd3a8; }
 .arc .cc-step-plus-l { background: rgba(194,96,79,.16); border: 1px solid rgba(224,144,124,.5); color: #e0907c; }
-.arc .cc-avg-cost-num { font: 700 34px/1 'Cinzel', Georgia, serif; color: #dcb86f; text-shadow: 0 2px 14px rgba(220,184,111,.35); }
+.arc .cc-avg-cost-num { font: 700 34px/1 'Cinzel', Georgia, serif; color: var(--gold-leaf); text-shadow: 0 2px 14px rgba(220,184,111,.35); }
 .arc .cc-avg-cost-lbl { font: italic 400 12px/1 'EB Garamond', Georgia, serif; color: #9a8cae; }
 .arc .cc-odds-head { text-align: center; margin-bottom: 10px; }
 .arc .cc-turn-line { display: flex; align-items: center; justify-content: center; gap: 10px; }
@@ -129,6 +129,6 @@
 .arc .cc-turn-btn:disabled { opacity: .4; cursor: default; }
 .arc .cc-turn-pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 18px; border-radius: 13px; background: rgba(18,16,13,.85); border: 1px solid rgba(220,184,111,.45); box-shadow: 0 0 14px rgba(220,184,111,.12); }
 .arc .cc-turn-cap { font: 700 8px/1 'Hanken Grotesk', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #b99b5e; }
-.arc .cc-turn-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: #dcb86f; }
+.arc .cc-turn-num { font: 700 24px/1 'Cinzel', Georgia, serif; color: var(--gold-leaf); }
 .arc .cc-need-row { display: flex; align-items: center; gap: 9px; padding: 5px 0; }
 .arc .cc-stat-empty { font: italic 400 13px/1.5 'EB Garamond', Georgia, serif; color: #6e6286; text-align: center; padding: 10px 0; }

@@ -103,14 +103,6 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
 
   return (
     <div className="mh" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
-      {/* Start-a-match pills - where nav pills live (New = tracked full match with
-          avatars & deck; Quick = counter only). */}
-      <div className="play-start-row">
-        <button className="play-start-pill primary" onClick={() => onStart('full')}>
-          <span className="play-diamond" />New Match
-        </button>
-        <button className="play-start-pill" onClick={() => onStart('quick')}>Quick Match</button>
-      </div>
       {ongoing && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
           <button className="cx-return-btn" onClick={onResume}>
@@ -193,9 +185,12 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
         </>
       )}
 
-      {/* Two ways to add to history: record one by hand, or import one an
-          opponent shared. Iconography distinguishes them. */}
-      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Add to history" items={[
+      {/* The + is the single entry point: start a live match (New = tracked, with
+          avatars & deck; Quick = counter only), or add to history (record by hand
+          / import a shared result). Iconography distinguishes each. */}
+      <Fab variant="lib" icon={<FabGlyph kind="add" />} label="Match menu" items={[
+        { label: 'New Match', icon: NewMatchSvg, onClick: () => onStart('full') },
+        { label: 'Quick Match', icon: QuickMatchSvg, onClick: () => onStart('quick') },
         { label: 'Add Match Record', icon: AddRecordSvg, onClick: () => setAddOpen(true) },
         { label: 'Import Shared Result', icon: QrImportSvg, onClick: () => onImport?.() },
       ]} />
@@ -234,7 +229,7 @@ function MatchCard({ m, onEdit, onDelete, onOpp, onDeck }) {
       <div className="match-pills">
         {opp && (
           <span className="match-opp-tag" onClick={() => onOpp(opp)} role="button" tabIndex={0}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg>{opp}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="8" r="4" /><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" /></svg><span>{opp}</span>
           </span>
         )}
         {hasDeck ? (
@@ -279,10 +274,11 @@ function MatchSheet({ matchId, onClose, onChanged }) {
   const [f, setF] = useState(null);
   const [recent, setRecent] = useState([]);
   const [decks, setDecks] = useState([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!matchId) { setM(null); setF(null); return; }
-    getMatch(matchId).then((mm) => { setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '', deck_id: mm.deck_id || null } : null); });
+    getMatch(matchId).then((mm) => { setLoaded(true); setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '', deck_id: mm.deck_id || null } : null); }).catch(() => { setLoaded(true); setM(null); });
     matchLog(matchId).then(setLog);
     recentOpponents().then(setRecent);
     listDecks().then(setDecks);
@@ -300,7 +296,8 @@ function MatchSheet({ matchId, onClose, onChanged }) {
 
   return (
     <Sheet open title="Edit match" onClose={onClose}>
-      {!m || !f ? <Loading /> : (
+      {!loaded ? <Loading />
+        : !m || !f ? <div style={{ padding: '26px 20px', textAlign: 'center', color: 'var(--ink-muted)', fontStyle: 'italic' }}>This match is no longer available.</div> : (
         <div style={{ padding: '0 20px' }}>
           <div style={{ marginBottom: 22 }}>
             <Lbl t="FINAL LIFE" />
@@ -581,5 +578,8 @@ const gold = { ...BTN_GOLD, padding: '11px 18px' };
 
 // FAB menu iconography - a plus-in-square (record a match by hand) vs a QR
 // (import one an opponent shared).
+// New Match = full tracked duel (brand diamond). Quick Match = counter only, fast (bolt).
+const NewMatchSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="12 2 22 12 12 22 2 12" /></svg>;
+const QuickMatchSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>;
 const AddRecordSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
 const QrImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h.01M21 17v4" /></svg>;

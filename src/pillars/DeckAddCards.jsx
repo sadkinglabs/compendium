@@ -8,6 +8,8 @@ import { ThresholdPips } from '../components/ui.jsx';
 import { thresholdRuns } from '../store/cardArt.js';
 import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
+import { useSheetDrag } from '../components/useSheetDrag.js';
+import { registerBackConsumer } from '../back.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
@@ -190,6 +192,10 @@ const SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element
 function FilterSheet({ open, onClose, quickAdd, setQuickAdd, rarityOn, setRarityOn, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,
   sets, setSets, setOpts, multi, setMulti, thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, artist, setArtist, artistOpts, onClear }) {
   const [tab, setTab] = useState('filters');
+  const { handleProps, style: dragStyle } = useSheetDrag(onClose);
+  // Hardware BACK closes the Refine sheet instead of exiting the whole add-cards flow.
+  const closeRef = useRef(onClose); closeRef.current = onClose;
+  useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
   if (!open) return null;
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const nComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
@@ -210,14 +216,14 @@ function FilterSheet({ open, onClose, quickAdd, setQuickAdd, rarityOn, setRarity
   return (
     <>
       <div className="arc fsheet-scrim" onClick={onClose} />
-      <div className="arc fsheet" onClick={(e) => e.stopPropagation()}>
-        <div className="fsheet-handle" />
-        <div className="fsheet-header">
+      <div className="arc fsheet" style={dragStyle} onClick={(e) => e.stopPropagation()}>
+        <div className="fsheet-grab" {...handleProps}><div className="fsheet-handle" /></div>
+        <div className="fsheet-header" {...handleProps}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div className="fsheet-title">Refine</div>
             <div className="fsheet-sub">{activeCount ? `${activeCount} active` : 'All cards'}</div>
           </div>
-          <button className="fsheet-close" onClick={onClose} aria-label="Close">{XSvg}</button>
+          <button className="fsheet-close" onClick={onClose} onPointerDown={(e) => e.stopPropagation()} aria-label="Close">{XSvg}</button>
         </div>
         <div className="fsheet-tabs">
           <button className={`fsheet-tab${tab === 'filters' ? ' active' : ''}`} onClick={() => setTab('filters')}>Filters</button>
@@ -226,6 +232,16 @@ function FilterSheet({ open, onClose, quickAdd, setQuickAdd, rarityOn, setRarity
         <div className="fsheet-body">
           {tab === 'filters' ? (
             <>
+              {/* View toggles first - they change how the list behaves, so they
+                  sit above the content filters. Both off by default. */}
+              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div className="filter-label" style={{ marginBottom: 0 }}>Quick Add Mode</div>
+                <button className={`rarity-switch${quickAdd ? ' on' : ''}`} onClick={() => setQuickAdd(!quickAdd)} aria-label="Toggle quick add steppers" />
+              </div>
+              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div className="filter-label" style={{ marginBottom: 0 }}>Rarity Colours</div>
+                <button className={`rarity-switch${rarityOn ? ' on' : ''}`} onClick={() => setRarityOn(!rarityOn)} aria-label="Toggle rarity colours" />
+              </div>
               <div className="filter-section">
                 <div className="filter-label">Element</div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -248,16 +264,6 @@ function FilterSheet({ open, onClose, quickAdd, setQuickAdd, rarityOn, setRarity
                 <div className="pill-group">
                   {RAR.map(([k, l]) => <button key={k} className={`pill${rarities.includes(k) ? ` on rarity-${k}` : ''}`} onClick={() => toggle(rarities, setRarities, k)}>{l}</button>)}
                 </div>
-              </div>
-              {/* Quick Add Mode - inline +/- steppers on list rows. Off by
-                  default: browsing stays clean, adding goes through the sheet. */}
-              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="filter-label" style={{ marginBottom: 0 }}>Quick Add Mode</div>
-                <button className={`rarity-switch${quickAdd ? ' on' : ''}`} onClick={() => setQuickAdd(!quickAdd)} aria-label="Toggle quick add steppers" />
-              </div>
-              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="filter-label" style={{ marginBottom: 0 }}>Rarity Colours</div>
-                <button className={`rarity-switch${rarityOn ? ' on' : ''}`} onClick={() => setRarityOn(!rarityOn)} aria-label="Toggle rarity colours" />
               </div>
               {setOpts.length > 0 && (
                 <div className="filter-section">
