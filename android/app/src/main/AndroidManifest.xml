@@ -36,9 +36,22 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Offline card scanner (native Compose + CameraX + BUNDLED ML Kit). No
+             com.google.mlkit.vision.DEPENDENCIES meta-data - that would trigger the
+             unbundled runtime model download and break offline. -->
+        <activity
+            android:name=".scanner.ScannerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode"
+            android:theme="@style/Theme.Compendium.Scanner" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
 </manifest>

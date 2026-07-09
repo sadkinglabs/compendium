@@ -19,4 +19,14 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
     </style>
+
+    <!-- Full-screen card scanner window. AppCompat parent (some OEMs crash a
+         ComponentActivity under a non-AppCompat window theme); black background
+         kills the white pre-preview flash; transparent bars for edge-to-edge. -->
+    <style name="Theme.Compendium.Scanner" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
 </resources>

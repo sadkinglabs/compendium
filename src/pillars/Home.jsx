@@ -18,6 +18,7 @@ import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { CodexGlyph } from './Codex.jsx';
 import { haptic } from '../native.js';
+import { launchScanner } from '../cardScanner.js';
 import '../theme/dashboard.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -73,6 +74,12 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, 
           ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onGoLibrary={onGoLibrary} onAllNotes={onAllNotes} onMarginalia={onMarginalia} onStartMatch={onStartMatch} profile={profile} rev={rev} />
           : <Dashboard onOpen={onOpen} onGoTab={onGoTab} edit={edit} rev={rev} />}
       </div>
+      {/* Offline card scanner - hidden in Dashboard edit mode (where the add-widget
+          FAB takes the slot). Native only; on web it shows an "installed app" hint. */}
+      {!edit && (
+        <Fab variant="lib" label="Scan a card" icon={<FabGlyph kind="camera" />}
+          onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name) })} />
+      )}
     </div>
   );
 }

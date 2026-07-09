@@ -13,4 +13,14 @@ ext {
     androidxJunitVersion = '1.1.5'
     androidxEspressoCoreVersion = '3.5.1'
     cordovaAndroidVersion = '10.1.1'
+
+    // --- Native card scanner: Kotlin + Compose + CameraX + ML Kit (bundled, offline) ---
+    kotlinVersion = '1.9.24'
+    composeCompilerVersion = '1.5.14'          // hard-locked to Kotlin 1.9.24
+    composeBomVersion = '2024.06.00'           // ui 1.6.8 / material3 1.2.1 / foundation 1.6.8
+    activityComposeVersion = '1.9.0'
+    lifecycleComposeVersion = '2.8.3'
+    cameraxVersion = '1.3.4'                    // ImageProxy.toBitmap() (1.3.0+) + ResolutionSelector
+    mlkitTextVersion = '16.0.1'                 // BUNDLED Latin model - NOT play-services-mlkit-*
+    coroutinesVersion = '1.8.1'
 }
