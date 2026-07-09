@@ -6,6 +6,7 @@ import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { listDecks } from './deckRepository.js';
 import { listMatches, historyStats } from './playRepository.js';
+import { collectionStats, deckBuildabilityBulk } from './ownedRepository.js';
 
 // The widget catalogue - 16 data-rich cards + two structural blocks (Title,
 // Separator). `pillar` earns a faint hue on Home (codex gold · decks violet ·
@@ -27,6 +28,8 @@ export const WIDGETS = [
   { kind: 'highlights', title: 'Highlights', pillar: 'codex', blurb: 'Passages you flagged' },
   { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
   { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit - roll for more' },
+  // Collection
+  { kind: 'collectionStats', title: 'Card Collection', pillar: 'collect', blurb: 'Owned, unique, wishlist & buildable decks' },
   // Neutral
   { kind: 'pinned', title: 'Bookmarks', pillar: null, blurb: 'Everything you bookmarked' },
   { kind: 'note', title: 'Note', pillar: null, configurable: true, blurb: 'A free-text note' },
@@ -198,6 +201,13 @@ export async function widgetData(block) {
     const decks = await listDecks();
     return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet - build one in Decks.' };
   }
+  if (k === 'collectionStats') {
+    const s = await collectionStats();
+    const decks = await listDecks();
+    const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
+    let buildable = 0; for (const rep of reports.values()) if (rep.complete) buildable++;
+    return { owned: s.owned, unique: s.unique, wishlist: s.wishlist, buildable, decks: decks.length, empty: 'No cards owned yet.' };
+  }
   if (k === 'featuredCard' || k === 'cardOfDay') {
     const n = (await query('SELECT COUNT(*) c FROM cards;'))[0].c;
     const off = k === 'cardOfDay' ? (Math.floor(Date.now() / 86400000) % Math.max(1, n)) : Math.floor(Math.random() * Math.max(1, n));
@@ -261,6 +271,7 @@ export function sampleData(kind) {
     case 'notes': return { quotes: true, items: [{ body: 'Rush lets a minion attack the turn it enters play.', on: 'Rush' }, { body: 'Genesis triggers when the card enters.', on: 'Genesis' }] };
     case 'highlights': return { quotes: true, items: [{ body: '“…may bear any number of items.”', on: 'ruling' }, { body: '“Tap to resolve before combat.”', on: 'timing' }] };
     case 'collections': return { items: [{ name: 'Fire staples', meta: '12 items', iconType: 'collection' }, { name: 'Want list', meta: '5 items', iconType: 'collection' }] };
+    case 'collectionStats': return { owned: 342, unique: 168, wishlist: 12, buildable: 3, decks: 5 };
     case 'randomRule': return { rule: { name: 'Deathrite' } };
     case 'pinned': return { items: [{ name: 'Sparkmage', meta: 'Card', type: 'card' }, { name: 'Charge', meta: 'Keyword', type: 'rule' }, { name: 'Aggro Flare', meta: 'Deck', type: 'deck' }] };
     case 'note': return { text: 'Playtest: side in extra removal vs aggro. Watch the water matchup.' };

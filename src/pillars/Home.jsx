@@ -544,6 +544,16 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
     ? data.items.slice(0, 3).map((n, i) => <div key={i} className="dw-quote" onClick={() => open(n.type, n.id, n.on)}>“{n.body}”{n.on && <span className="on">{k === 'highlights' ? n.on : `on ${n.on}`}</span>}</div>)
     : empty(data.empty);
 
+  if (k === 'collectionStats') {
+    if (!data.owned && !data.unique && !data.wishlist) return empty(data.empty);
+    const cell = (v, l) => <div className="dw-cstat"><div className="v">{v}</div><div className="l">{l}</div></div>;
+    return (
+      <div className="dw-cstats" onClick={() => go('collect')} style={{ cursor: 'pointer' }}>
+        {cell(data.owned, 'OWNED')}{cell(data.unique, 'UNIQUE')}{cell(data.wishlist, 'WISHLIST')}{cell(`${data.buildable}/${data.decks}`, 'BUILDABLE')}
+      </div>
+    );
+  }
+
   // list widgets - pinned, collections
   return data.items?.length
     ? data.items.slice(0, 5).map((it, i) => (

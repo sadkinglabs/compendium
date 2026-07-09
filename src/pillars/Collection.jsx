@@ -16,6 +16,7 @@ import {
 import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardRow from '../components/CardRow.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
+import { stepBtn } from '../components/ownedUi.js';
 import { CodexGlyph } from './Codex.jsx';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
@@ -122,13 +123,6 @@ function Overview({ onGoCards, onGoDecks, onOpen, rev }) {
 }
 
 /* ---------------- Cards (record owned / wanted) ---------------- */
-
-const stepBtn = {
-  width: 30, height: 30, flex: 'none', borderRadius: 8, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  font: "600 17px/1 var(--f-ui)", color: 'var(--accent-ruby)',
-  background: 'rgba(210,88,115,.08)', border: '1px solid rgba(210,88,115,.32)',
-};
 
 function Cards({ onOpen }) {
   const [q, setQ] = useState('');

@@ -10,11 +10,13 @@ import {
 } from '../store/codexRepository.js';
 import { annotationsForDoc, addAnnotation, deleteAnnotation, anchorFromSelection, resolveAnnotation } from '../store/annotations.js';
 import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
+import { listsWithCard } from '../store/ownedRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { getDoc, getDocs, getFaqs } from '../store/codexDoc.js';
 import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RuleArticle, InlineText, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
+import OwnedControl from '../components/OwnedControl.jsx';
 import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
@@ -52,11 +54,11 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [doc, appearsIn, faqs, notes, ann, links, inDecks] = await Promise.all([
-        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), annotationsForDoc('card', id), linksFor(id), decksWithCard(id),
+      const [doc, appearsIn, faqs, notes, ann, links, inDecks, inLists] = await Promise.all([
+        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), annotationsForDoc('card', id), linksFor(id), decksWithCard(id), listsWithCard(id),
       ]);
       const faqDocs = await getFaqs(faqs.map((f) => f.faq_id));
-      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, ann, links, inDecks });
+      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, ann, links, inDecks, inLists });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
@@ -215,6 +217,10 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
       {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} bodyRef={bodyRef} annotations={mainRes.inline} />
                     : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} mainAnn={mainRes.inline} subAnns={subRes.map((r) => r.inline)} onOpenLink={openLink} bodyRef={bodyRef} />}
 
+      {/* ownership - record what you own / want right from the card. Self-contained
+          (keyed to remount on card->card nav so optimistic counts never bleed). */}
+      {k === 'card' && <OwnedControl key={data.card.card_id} cardId={data.card.card_id} />}
+
       {/* Cards Mentioned - carousel of card art referenced by this article. Opens
           by (kind, id) directly - no fragile name resolution. */}
       {k === 'rule' && ment.cards.length > 0 && (
@@ -264,6 +270,22 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
               <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
               <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{d.zone === 'avatar' ? 'Avatar' : `${d.zone.charAt(0).toUpperCase() + d.zone.slice(1)} · ${d.quantity}×`}</span>
               <span style={{ color: 'var(--ink-faint)', display: 'flex' }}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* in your lists - the Collection payoff: which of your lists hold this card.
+          Display-only for now (no Codex->list route exists yet), so no chevron. */}
+      {k === 'card' && data.inLists?.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <SectionLabel label="IN YOUR LISTS" count={data.inLists.length} />
+          {data.inLists.map((l, i) => (
+            <div key={l.id}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', borderBottom: i < data.inLists.length - 1 ? '1px solid var(--hair-12)' : 'none' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-ruby)', flex: 'none' }} />
+              <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+              <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{l.kind === 'wanted' ? 'Wanted list' : 'Card list'} · {l.quantity}×</span>
             </div>
           ))}
         </div>

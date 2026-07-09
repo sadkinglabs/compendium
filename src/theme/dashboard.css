@@ -8,11 +8,13 @@
 .dw[data-pillar="codex"] { border-color: rgba(220,184,111,.22); background: radial-gradient(130% 90% at 50% 0, rgba(220,184,111,.08), #0b0907 62%); }
 .dw[data-pillar="decks"] { border-color: rgba(199,154,208,.22); background: radial-gradient(130% 90% at 50% 0, rgba(199,154,208,.10), #0b0907 62%); }
 .dw[data-pillar="play"]  { border-color: rgba(143,211,168,.22); background: radial-gradient(130% 90% at 50% 0, rgba(143,211,168,.10), #0b0907 62%); }
+.dw[data-pillar="collect"] { border-color: rgba(210,88,115,.22); background: radial-gradient(130% 90% at 50% 0, rgba(210,88,115,.10), #0b0907 62%); }
 
 .dw-head { display: flex; align-items: center; gap: 8px; padding: 11px 13px 8px; }
 .dw-title { flex: 1; min-width: 0; font: 600 11px/1.2 var(--f-display); letter-spacing: .11em; color: var(--gold-leaf); text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw[data-pillar="decks"] .dw-title { color: var(--accent-violet); }
 .dw[data-pillar="play"]  .dw-title { color: var(--accent-jade); }
+.dw[data-pillar="collect"] .dw-title { color: var(--accent-ruby); }
 .dw-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); flex: none; }
 .dw-body { padding: 0 13px 13px; }
 .dw-tools { display: flex; gap: 4px; flex: none; }
@@ -140,5 +142,13 @@ body.reduce-motion .dw-slot.editing .dw, body.reduce-motion .dw-slot.editing .dw
 .dw-pick-foot .pl.codex { background: var(--accent-gold); }
 .dw-pick-foot .pl.decks { background: var(--accent-violet); }
 .dw-pick-foot .pl.play  { background: var(--accent-jade); }
+.dw-pick-foot .pl.collect { background: var(--accent-ruby); }
+
+/* collectionStats - compact "label -> value" stat rows that flow to one column on
+   a narrow (half-width) widget and two columns when the widget is widened. */
+.dw-cstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.dw-cstat { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 8px 10px; background: rgba(255,255,255,.02); border: 1px solid var(--hair-12); border-radius: 10px; }
+.dw-cstat .l { order: -1; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 9px/1.2 var(--f-ui); letter-spacing: .05em; text-transform: uppercase; color: var(--ink-muted); }
+.dw-cstat .v { flex: none; font: 700 18px/1 var(--f-mono); color: var(--gold-leaf); }
 .dw-pick-foot .nm { flex: 1; min-width: 0; font: 600 12px/1.1 var(--f-ui); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw-pick-foot svg { color: var(--gold-leaf); flex: none; }
