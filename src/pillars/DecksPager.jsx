@@ -8,6 +8,7 @@ import {
   listDecks, getDeck, toggleStar, renameDeck, duplicateDeck, deleteDeck,
   historyCount, clearHistory, exportMarkdown, exportCuriosa, getDeckCards,
 } from '../store/deckRepository.js';
+import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
@@ -32,6 +33,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
   const setEditMode = onEditMode;   // lifted to App so it survives the add-cards flow
   const [decks, setDecks] = useState(null);
+  const [buildMap, setBuildMap] = useState(new Map());   // deck_id -> buildability report (library badges)
   const [libQ, setLibQ] = useState('');
   // Deck-actions FAB state (Arcanum's #deck-fab menu).
   const [meta, setMeta] = useState(null);            // loaded deck (for star state)
@@ -51,6 +53,16 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
 
   async function refresh() { setDecks(await listDecks()); }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
+  // Library buildability badges: all decks vs the collection in ONE batched pass
+  // (no N+1), refreshed on the deck list AND when ownership changes.
+  useEffect(() => {
+    if (!decks || !decks.length) { setBuildMap(new Map()); return; }
+    let alive = true;
+    const load = () => deckBuildabilityBulk(decks.map((d) => d.id)).then((m) => alive && setBuildMap(m));
+    load();
+    const off = subscribeCollection(load);
+    return () => { alive = false; off(); };
+  }, [decks]);
   // Opening/creating/importing a deck (deckOpen changes id) jumps to My Deck;
   // the user can still toggle back to Library freely afterward. editMode is only
   // dropped on a genuine id change - NOT on the remount after the add-cards flow
@@ -173,7 +185,7 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
               : libList.length === 0 ? (
                 <BlankState hue="160,110,220" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
-              ) : libList.map((d) => <DeckCard key={d.id} deck={d} onClick={() => openDeck(d)} />)}
+              ) : libList.map((d) => <DeckCard key={d.id} deck={d} build={buildMap.get(d.id)} onClick={() => openDeck(d)} />)}
           </div>
           {portal(
             <div className="arc pill-bar-outer">

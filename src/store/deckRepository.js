@@ -140,6 +140,51 @@ export async function duplicateDeck(id) {
   return nid;
 }
 
+// Card-level requirement of a deck, for Collection buildability. The maindeck
+// (spellbook + atlas) PLUS the avatar (which lives on the deck row, not in
+// deck_entries). The deck's own 'collection' zone is a maybeboard/sideboard and is
+// deliberately EXCLUDED - counting it can demand more copies than any zone plays
+// (and more than the rarity cap). Unresolved placeholder entries (card_id null) are
+// reported, not silently dropped, so a deck with unknown cards is never falsely
+// reported buildable. Returns { required: [{card_id, qty}], unresolved }.
+export async function deckRequirements(deckId) {
+  const pid = activeProfileId();
+  const d = (await query('SELECT avatar_card_id FROM decks WHERE id=? AND profile_id=?;', [deckId, pid]))[0];
+  const rows = await query(
+    "SELECT card_id, SUM(quantity) q FROM deck_entries WHERE deck_id=? AND zone IN ('spellbook','atlas') GROUP BY card_id;",
+    [deckId]
+  );
+  const required = [];
+  let unresolved = 0;
+  for (const r of rows) {
+    if (r.card_id == null) unresolved += (r.q || 0);
+    else required.push({ card_id: r.card_id, qty: r.q });
+  }
+  if (d?.avatar_card_id) required.push({ card_id: d.avatar_card_id, qty: 1 });
+  return { required, unresolved };
+}
+
+// Batch form for the deck library: many decks in 2 queries (no N+1, per the
+// listDecks lesson). Returns Map<deck_id, {required, unresolved}>.
+export async function deckRequirementsBulk(deckIds) {
+  const out = new Map();
+  if (!deckIds.length) return out;
+  for (const id of deckIds) out.set(id, { required: [], unresolved: 0 });
+  const inC = `(${deckIds.map(() => '?').join(',')})`;
+  const avatars = await query(`SELECT id, avatar_card_id FROM decks WHERE id IN ${inC};`, deckIds);
+  const rows = await query(
+    `SELECT deck_id, card_id, SUM(quantity) q FROM deck_entries WHERE deck_id IN ${inC} AND zone IN ('spellbook','atlas') GROUP BY deck_id, card_id;`,
+    deckIds
+  );
+  for (const r of rows) {
+    const e = out.get(r.deck_id); if (!e) continue;
+    if (r.card_id == null) e.unresolved += (r.q || 0);
+    else e.required.push({ card_id: r.card_id, qty: r.q });
+  }
+  for (const a of avatars) { if (a.avatar_card_id) out.get(a.id)?.required.push({ card_id: a.avatar_card_id, qty: 1 }); }
+  return out;
+}
+
 export async function historyCount(deckId) {
   const r = await query('SELECT COUNT(*) n FROM deck_history WHERE deck_id=?;', [deckId]);
   return r[0]?.n || 0;

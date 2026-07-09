@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;
 
 export const MIGRATIONS = [
   {
@@ -276,6 +276,56 @@ export const MIGRATIONS = [
       quote_suffix TEXT NOT NULL DEFAULT '',
       block_hint TEXT
     );
+    `,
+  },
+  {
+    // v8 - the Collection pillar (card ownership + wants + lists). A LEDGER, not an
+    // allocator: decks never reserve cards, so buildability/progress are pure reads
+    // over this ledger (see ownedRepository + compareEngine). Table names are
+    // collision-free with the DECK ZONE string 'collection' and the Codex Marginalia
+    // 'collections'/'collection_items' tables. variant_slug mirrors deck_entries
+    // (printing; '' = unspecified) and is forward-ready - v1 only ever writes ''.
+    version: 8,
+    sql: `
+    -- Ownership ledger: one row per profile+card+printing. qty_wanted IS the general
+    -- Wishlist (no separate table). A 0/0 row is deleted by the repository on write.
+    CREATE TABLE IF NOT EXISTS owned_cards (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      card_id TEXT NOT NULL,            -- catalog cards.card_id; soft ref (like matches.deck_id)
+      variant_slug TEXT NOT NULL DEFAULT '',
+      qty_owned INTEGER NOT NULL DEFAULT 0,
+      qty_wanted INTEGER NOT NULL DEFAULT 0,
+      notes TEXT DEFAULT '',
+      created_at TEXT, updated_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_owned_key ON owned_cards(profile_id, card_id, variant_slug);
+    CREATE INDEX IF NOT EXISTS idx_owned_profile_card ON owned_cards(profile_id, card_id);
+
+    -- One list model for both Wanted Lists (kind='wanted', goal + progress) and
+    -- Card Lists (kind='custom', plain grouping). Progress is COMPUTED, never stored.
+    CREATE TABLE IF NOT EXISTS card_lists (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'custom',
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT, updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_card_lists_profile ON card_lists(profile_id, kind);
+
+    -- List membership, mirroring deck_entries. quantity = target (wanted) or copies (custom).
+    CREATE TABLE IF NOT EXISTS card_list_entries (
+      id TEXT PRIMARY KEY,
+      list_id TEXT NOT NULL REFERENCES card_lists(id) ON DELETE CASCADE,
+      card_id TEXT NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1,
+      variant_slug TEXT NOT NULL DEFAULT '',
+      added_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_list_entries_key ON card_list_entries(list_id, card_id, variant_slug);
+    CREATE INDEX IF NOT EXISTS idx_list_entries_card ON card_list_entries(card_id);
     `,
   },
 ];

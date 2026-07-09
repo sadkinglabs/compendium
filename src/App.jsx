@@ -14,6 +14,7 @@ import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
 import DecksPager from './pillars/DecksPager.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
 import CardRow from './components/CardRow.jsx';
+import Collection from './pillars/Collection.jsx';
 import CreateDeckWizard from './components/CreateDeckWizard.jsx';
 import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
 import DeckAddCards from './pillars/DeckAddCards.jsx';
@@ -38,6 +39,7 @@ import { toast, confirmAction } from './feedback.js';
 const PILLARS = [
   { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
   { key: 'codex', glyph: '▤', label: 'Codex', eyebrow: 'RULES & CARDS',     accent: 'var(--accent-gold)' },
+  { key: 'collect', glyph: '◆', label: 'Collection', eyebrow: 'CARDS YOU OWN', accent: 'var(--accent-ruby)' },
   { key: 'decks', glyph: '◈', label: 'Decks', eyebrow: 'YOUR DECKS',        accent: 'var(--accent-violet)' },
   { key: 'play',  glyph: '♥', label: 'Play',  eyebrow: 'DUEL & TRACK LIFE', accent: 'var(--accent-jade)' },
 ];
@@ -229,7 +231,7 @@ export default function App() {
 
   const initial = (profile?.name || '?').charAt(0).toUpperCase();
   const searchable = true;   // universal search on every pillar
-  const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', decks: 'Search decks…', play: 'Search matches…' };
+  const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', collect: 'Search your collection…', decks: 'Search decks…', play: 'Search matches…' };
 
   // Hardware back peels one layer at a time - the precedence is declared ONCE
   // here (top of stack first), instead of a hand-maintained if-ladder. Falls
@@ -265,14 +267,15 @@ export default function App() {
   // Per-pillar top-down colour wash (over pure black). Home is pure black (no
   // wash) to signal active engagement; Codex=warm gold · Decks=Arcanum amethyst ·
   // Play=Vitarum green.
-  const WASH = { home: '#000', codex: '#33260e', decks: '#2a1c44', play: '#18301f' };
+  const WASH = { home: '#000', codex: '#33260e', collect: '#2a1220', decks: '#2a1c44', play: '#18301f' };
   // Canonical list-row accent, morphing per pillar (grimoire gold default;
   // amethyst in Decks, jade in Play) - consumed by ListRow via --list-accent.
   const LIST = {
-    home:  { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
-    codex: { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
-    decks: { a: 'var(--accent-violet)', g: 'rgba(199,154,208,.5)' },
-    play:  { a: 'var(--accent-jade)',   g: 'rgba(143,211,168,.5)' },
+    home:    { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
+    codex:   { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
+    collect: { a: 'var(--accent-ruby)',   g: 'rgba(210,88,115,.5)' },
+    decks:   { a: 'var(--accent-violet)', g: 'rgba(199,154,208,.5)' },
+    play:    { a: 'var(--accent-jade)',   g: 'rgba(143,211,168,.5)' },
   };
   const list = LIST[tab] || LIST.home;
   // The Decks pillar is now Arcanum's single-page pager, which owns its own
@@ -373,6 +376,9 @@ export default function App() {
           <Codex scope={scope}
                  preset={codexPreset} onPresetApplied={() => setCodexPreset(null)}
                  onOpen={(k, id, t, tgt) => open(k, id, t, tgt)} rev={rev} />
+        ) : tab === 'collect' ? (
+          <Collection pillSlot={pillSlot} onOpen={(k, id, t) => open(k, id, t)}
+            onGoDecks={() => goLibrary()} rev={rev} onChanged={bump} />
         ) : tab === 'play' ? (
           <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch}
             onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} onChanged={bump} onImport={() => setResultPaste(true)} />
@@ -490,6 +496,7 @@ function NavIcon({ icon }) {
   const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
   if (icon === 'home') return <svg viewBox="0 0 24 24" {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
   if (icon === 'codex') return <svg viewBox="0 0 24 24" {...p}><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>;
+  if (icon === 'collect') return <svg viewBox="0 0 24 24" {...p}><rect x="3" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5" /></svg>;
   if (icon === 'decks') return <svg viewBox="0 0 24 24" {...p}><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg>;
   // play - crossed swords
   return <svg viewBox="0 0 24 24" {...p}><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" /><line x1="5" y1="14" x2="9" y2="18" /><line x1="7" y1="17" x2="4" y2="20" /><line x1="3" y1="19" x2="5" y2="21" /></svg>;

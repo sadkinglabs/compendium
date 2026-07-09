@@ -38,7 +38,7 @@ function Sword({ size = 11 }) {
   );
 }
 
-export default function CardRow({ card, icon, thumb = false, rarityTint = false, count = 0, trailing, onClick }) {
+export default function CardRow({ card, icon, thumb = false, rarityTint = false, count = 0, countTint = '#4d2e8c', countTitle = 'Copies in this deck', trailing, onClick }) {
   const runs = thresholdRuns(card);
   const power = powerOf(card);
   return (
@@ -57,11 +57,11 @@ export default function CardRow({ card, icon, thumb = false, rarityTint = false,
             }}>{icon}</span>
           )}
         {count > 0 && (
-          <span title="Copies in this deck" style={{
+          <span title={countTitle} style={{
             position: 'absolute', top: -5, left: -5, minWidth: 18, height: 18, padding: '0 5px',
             borderRadius: 9, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             font: "700 11px/1 var(--f-mono)", color: '#efe8ff',
-            background: '#4d2e8c', border: '1px solid rgba(8,5,16,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)',
+            background: countTint, border: '1px solid rgba(8,5,16,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)',
           }}>{count}</span>
         )}
       </span>

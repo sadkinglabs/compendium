@@ -9,7 +9,7 @@ const BASE = import.meta.env.BASE_URL;
 
 // VERBATIM port of renderLibrary()'s .dli card (Arcanum templates/index.html
 // ~L1540). Same DOM nesting, same classes, same inline styles.
-export function DeckCard({ deck, onClick }) {
+export function DeckCard({ deck, build, onClick }) {
   const hero = deck.avatar?.image_slug;                       // avatar card art
   const matches = (deck.wins || 0) + (deck.losses || 0);
   const record = matches ? `${deck.wins}W – ${deck.losses}L · ${matches} played` : 'No games recorded';
@@ -29,7 +29,17 @@ export function DeckCard({ deck, onClick }) {
             {deck.avatar?.name && <span className="dash-avatar-chip">{deck.avatar.name}</span>}
             {elPips.map((el) => <img key={el} src={`${BASE}icons/${el}.png`} style={{ width: 13, height: 13, flexShrink: 0 }} alt={el} />)}
           </div>
-          <span style={{ fontSize: 12, color: 'var(--muted)' }}>{record}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{record}</span>
+            {build && build.totalRequired > 0 && (
+              <span title="Buildability from your collection" style={{
+                display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 10, font: "600 10.5px/1 'Hanken Grotesk',sans-serif",
+                color: build.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)',
+                background: build.complete ? 'rgba(143,211,168,.12)' : 'rgba(210,88,115,.12)',
+                border: `1px solid ${build.complete ? 'rgba(143,211,168,.35)' : 'rgba(210,88,115,.35)'}`,
+              }}>{build.complete ? '✓ Buildable' : `${build.totalMissing} missing`}</span>
+            )}
+          </div>
         </div>
       </div>
       {deck.starred ? <span className="dli-fav">★</span> : null}

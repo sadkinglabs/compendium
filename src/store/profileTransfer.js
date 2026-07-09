@@ -30,9 +30,11 @@ export async function exportProfile(profileId = activeProfileId()) {
   const decks = await query('SELECT * FROM decks WHERE profile_id=?;', [profileId]);
   const collections = await query('SELECT * FROM collections WHERE profile_id=?;', [profileId]);
   const matches = await query('SELECT * FROM matches WHERE profile_id=?;', [profileId]);
+  const cardLists = await query('SELECT * FROM card_lists WHERE profile_id=?;', [profileId]);
   const deckIds = decks.map((d) => d.id);
   const colIds = collections.map((c) => c.id);
   const matchIds = matches.map((m) => m.id);
+  const listIds = cardLists.map((l) => l.id);
 
   return {
     app: 'compendium', schemaVersion: SCHEMA_VERSION, exportedAt: nowIso(),
@@ -45,6 +47,10 @@ export async function exportProfile(profileId = activeProfileId()) {
     highlights: await query('SELECT * FROM highlights WHERE profile_id=?;', [profileId]),
     collections,
     collection_items: await query(`SELECT * FROM collection_items WHERE collection_id IN ${inClause(colIds)};`, colIds),
+    // Collection pillar (v8): the ownership ledger + card/wanted lists.
+    owned_cards: await query('SELECT * FROM owned_cards WHERE profile_id=?;', [profileId]),
+    card_lists: cardLists,
+    card_list_entries: await query(`SELECT * FROM card_list_entries WHERE list_id IN ${inClause(listIds)};`, listIds),
     links: await query('SELECT * FROM links WHERE profile_id=?;', [profileId]),
     matches,
     match_log_entries: await query(`SELECT * FROM match_log_entries WHERE match_id IN ${inClause(matchIds)};`, matchIds),
@@ -78,10 +84,11 @@ export async function importProfile(bundle, { name } = {}) {
   const { id: pid } = await createProfile(pname, { accent: bundle.profile?.accent || 'gold', avatar });
 
   // id remaps (old -> new), so two imports never collide.
-  const deckMap = new Map(), colMap = new Map(), matchMap = new Map();
+  const deckMap = new Map(), colMap = new Map(), matchMap = new Map(), listMap = new Map();
   for (const d of bundle.decks || []) deckMap.set(d.id, uuid());
   for (const c of bundle.collections || []) colMap.set(c.id, uuid());
   for (const m of bundle.matches || []) matchMap.set(m.id, uuid());
+  for (const l of bundle.card_lists || []) listMap.set(l.id, uuid());
 
   const stmts = [];
   const ins = (table, cols, vals) => stmts.push([`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')});`, vals]);
@@ -103,6 +110,15 @@ export async function importProfile(bundle, { name } = {}) {
     ins('collections', ['id', 'profile_id', 'name', 'created_at'], [colMap.get(c.id), pid, c.name, c.created_at]);
   for (const ci of bundle.collection_items || [])
     ins('collection_items', ['id', 'collection_id', 'target_type', 'target_id', 'added_at'], [uuid(), colMap.get(ci.collection_id), ci.target_type, ci.target_id, ci.added_at]);
+  for (const o of bundle.owned_cards || [])
+    ins('owned_cards', ['id', 'profile_id', 'card_id', 'variant_slug', 'qty_owned', 'qty_wanted', 'notes', 'created_at', 'updated_at'],
+      [uuid(), pid, o.card_id, o.variant_slug || '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
+  for (const l of bundle.card_lists || [])
+    ins('card_lists', ['id', 'profile_id', 'kind', 'name', 'description', 'sort_order', 'created_at', 'updated_at'],
+      [listMap.get(l.id), pid, l.kind, l.name, l.description, l.sort_order, l.created_at, l.updated_at]);
+  for (const e of bundle.card_list_entries || [])
+    ins('card_list_entries', ['id', 'list_id', 'card_id', 'quantity', 'variant_slug', 'added_at'],
+      [uuid(), listMap.get(e.list_id), e.card_id, e.quantity, e.variant_slug || '', e.added_at]);
   for (const l of bundle.links || [])
     ins('links', ['id', 'profile_id', 'kind', 'a_type', 'a_id', 'b_type', 'b_id', 'description', 'created_at', 'updated_at'], [uuid(), pid, l.kind, l.a_type, l.a_id, l.b_type, l.b_id, l.description, l.created_at, l.updated_at]);
   for (const m of bundle.matches || [])
