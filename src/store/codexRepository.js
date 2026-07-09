@@ -4,7 +4,7 @@
 import { query, run } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
-import { parseCardQuery, cardMatchesQuery } from './deckRepository.js';   // rich card-search syntax (parity with the deckbuilder)
+import { parseQuery, cardMatchesQuery } from './cardQuery.js';   // the one shared card-search grammar
 
 /* ---------------- catalog (shared, read-only) ---------------- */
 
@@ -29,7 +29,7 @@ async function margSet() {
   const pid = activeProfileId();
   const ids = new Set();
   for (const r of await query('SELECT DISTINCT target_id FROM notes WHERE profile_id=?;', [pid])) ids.add(r.target_id);
-  for (const r of await query('SELECT DISTINCT target_id FROM highlights WHERE profile_id=?;', [pid])) ids.add(r.target_id);
+  for (const r of await query('SELECT DISTINCT doc_id FROM annotations WHERE profile_id=?;', [pid])) ids.add(r.doc_id);
   for (const r of await query('SELECT a_id, b_id FROM links WHERE profile_id=?;', [pid])) { ids.add(r.a_id); ids.add(r.b_id); }
   return ids;
 }
@@ -115,60 +115,43 @@ export async function getCodexEntries(scope, filters = {}) {
   return out;
 }
 
-/* ── Codex search with deckbuilder-style syntax ──
-   Plain words match names/titles AND full text (card rules, article bodies).
-   Tokens narrow the card results the way the deckbuilder's filters do:
-     t:minion (type) · e:fire (element threshold) · set:gothic (set name)
-     has:faq · has:marginalia · is:errata · is:saved
+/* ── Codex search (one grammar, shared with the deckbuilder) ──
+   parseQuery (cardQuery.js) does all tokenising: plain words match names/titles
+   AND full text (card rules, article bodies); rich clauses (t:/r:/kw:/el:/e:/
+   attack>/cost/th:/set:/rarity) narrow the card pool exactly as the deckbuilder's
+   filters do; and the Codex-only scope channel rides the same parse:
+     has:faq · has:marginalia · is:errata · is:saved (is:bookmarked)
      is:article / is:card - restrict results to one side of the Codex
    "quoted phrases" match as one string. */
-const SET_NAMES = ['Alpha', 'Beta', 'Arthurian Legends', 'Gothic', 'Dragonlord', 'Promotional'];
-const ELEMENTS = ['air', 'earth', 'fire', 'water'];
-
-export function parseCodexQuery(q) {
-  const tokens = q.match(/[a-z]+:"[^"]*"|[a-z]+:\S+|"[^"]*"|\S+/gi) || [];
-  const f = { text: [], types: [], els: [], sets: [], has: [], is: [] };
-  for (const t of tokens) {
-    const m = /^([a-z]+):(.+)$/i.exec(t);
-    if (m) {
-      const key = m[1].toLowerCase();
-      const val = m[2].replace(/^"|"$/g, '').toLowerCase();
-      if (key === 't' || key === 'type') { f.types.push(val); continue; }
-      if (key === 'e' || key === 'el' || key === 'element') { if (ELEMENTS.includes(val)) { f.els.push(val); continue; } }
-      if (key === 's' || key === 'set') {
-        const hit = SET_NAMES.find((n) => n.toLowerCase().startsWith(val));
-        if (hit) { f.sets.push(hit); continue; }
-      }
-      if (key === 'has') { f.has.push(val); continue; }
-      if (key === 'is') { f.is.push(val); continue; }
-    }
-    f.text.push(t.replace(/^"|"$/g, '').toLowerCase());
-  }
-  f.textStr = f.text.join(' ').trim();
-  f.hasTokens = f.types.length + f.els.length + f.sets.length + f.has.length + f.is.length > 0;
-  return f;
-}
 
 /** Categorised Codex search. Returns
  *  { articles, cards, cardText, articleText } - name/title hits first, then
  *  entries whose TEXT contains the words ("airborne" → the Airborne article,
  *  then every minion whose rules mention airborne, grouped by type). */
 export async function searchCodex(q) {
-  const f = parseCodexQuery(q);           // Codex-only personal-layer / scope tokens: has:/is:
-  const parsed = parseCardQuery(q);       // rich card-attribute syntax (r:, kw:, el:, t:, attack>, cost, rarity, th:, set:, ...)
+  const parsed = parseQuery(q);           // ONE grammar: needle + rich clauses + has:/is: scopes
+  const { scopes } = parsed;
   const needle = parsed.name.trim().toLowerCase();
   const like = needle ? `%${needle}%` : null;
+  const hasScope = scopes.has.length + scopes.is.length > 0;
 
   // Card pool - WIDE select so every rich predicate (rules_text/attack/elements/etc.)
   // can evaluate. Mirrors the deckbuilder's getPool columns.
   let cardRows = await query('SELECT card_id id, name, type, sub_types, rarity, elements, cost, attack, defence, life, thresholds, rules_text, sets, variants, image_slug, is_site FROM cards;');
   if (parsed.clauses.length) cardRows = cardRows.filter((c) => cardMatchesQuery(c, parsed));
-  if (f.has.includes('faq')) { const fs = await faqCardSet(); cardRows = cardRows.filter((c) => fs.has(c.id)); }
-  if (f.has.some((h) => h.startsWith('marg') || h === 'notes')) { const ms = await margSet(); cardRows = cardRows.filter((c) => ms.has(c.id)); }
-  if (f.is.includes('errata')) { const er = await errataCardSet(); cardRows = cardRows.filter((c) => er.has(c.id)); }
-  if (f.is.includes('saved')) { const { saved } = await indicatorSets(); cardRows = cardRows.filter((c) => saved.has(c.id)); }
+  if (scopes.has.includes('faq')) { const fs = await faqCardSet(); cardRows = cardRows.filter((c) => fs.has(c.id)); }
+  if (scopes.has.some((h) => h.startsWith('marg') || h === 'notes')) { const ms = await margSet(); cardRows = cardRows.filter((c) => ms.has(c.id)); }
+  if (scopes.is.includes('errata')) { const er = await errataCardSet(); cardRows = cardRows.filter((c) => er.has(c.id)); }
+  if (scopes.is.includes('saved') || scopes.is.includes('bookmarked')) { const { saved } = await indicatorSets(); cardRows = cardRows.filter((c) => saved.has(c.id)); }
 
-  const asCard = (c) => ({ id: c.id, name: c.name, kind: 'card', meta: cardMeta(c) });
+  // Rich projection: the wide SELECT already fetched these, so the search result
+  // carries enough for CardRow (art/pips/cost/rarity) - no second query, no
+  // second shape. meta stays for any legacy ListRow consumer.
+  const asCard = (c) => ({
+    id: c.id, name: c.name, kind: 'card', meta: cardMeta(c),
+    type: c.type, cost: c.cost, rarity: c.rarity, attack: c.attack, defence: c.defence,
+    elements: c.elements, thresholds: c.thresholds, image_slug: c.image_slug, is_site: c.is_site,
+  });
   let cards = [], cardText = [];
   if (like) {
     cards = cardRows.filter((c) => c.name.toLowerCase().includes(needle));
@@ -179,7 +162,7 @@ export async function searchCodex(q) {
       .filter((c) => !named.has(c.id) && (c.rules_text || '').toLowerCase().includes(needle))
       .sort((a, b) => (a.type || '').localeCompare(b.type || '') || a.name.localeCompare(b.name));
     cards.sort((a, b) => a.name.localeCompare(b.name));
-  } else if (parsed.clauses.length || f.hasTokens) {
+  } else if (parsed.clauses.length || hasScope) {
     cards = [...cardRows].sort((a, b) => a.name.localeCompare(b.name));   // filters/clauses only: the narrowed pool IS the result
   }
 
@@ -204,8 +187,8 @@ export async function searchCodex(q) {
   }
 
   // is:article / is:card - collapse the other side entirely.
-  const onlyArticles = f.is.some((v) => v.startsWith('article') || v === 'rule' || v === 'rules');
-  const onlyCards = f.is.some((v) => v === 'card' || v === 'cards');
+  const onlyArticles = scopes.is.some((v) => v.startsWith('article') || v === 'rule' || v === 'rules');
+  const onlyCards = scopes.is.some((v) => v === 'card' || v === 'cards');
   if (onlyArticles) { cards = []; cardText = []; }
   if (onlyCards) { articles = []; articleText = []; }
 
@@ -326,6 +309,8 @@ async function indicatorSets() {
   };
 }
 
+// isSaved / toggleSaved back the doc-level BOOKMARK ribbon (the `saved` table is
+// named for history; see its schema note). A plain pin - not an anchored annotation.
 export async function isSaved(targetId) {
   const pid = activeProfileId();
   const r = await query('SELECT 1 FROM saved WHERE profile_id=? AND target_id=? LIMIT 1;', [pid, targetId]);
@@ -431,7 +416,7 @@ export async function searchPersonal(q) {
   const pid = activeProfileId();
   const like = `%${q.toLowerCase()}%`;
   const notes = await query('SELECT target_type, target_id, body FROM notes WHERE profile_id=? AND lower(body) LIKE ? ORDER BY updated_at DESC LIMIT 20;', [pid, like]);
-  const hls = await query('SELECT target_type, target_id, text, comment FROM highlights WHERE profile_id=? AND (lower(text) LIKE ? OR lower(comment) LIKE ?) ORDER BY created_at DESC LIMIT 20;', [pid, like, like]);
+  const hls = await query("SELECT a.doc_type target_type, a.doc_id target_id, n.quote_exact text, a.comment FROM annotations a JOIN anchors n ON n.annotation_id=a.id WHERE a.profile_id=? AND a.kind='highlight' AND (lower(n.quote_exact) LIKE ? OR lower(a.comment) LIKE ?) ORDER BY a.created_at DESC LIMIT 20;", [pid, like, like]);
   const names = await namesFor([...notes, ...hls].map((r) => ({ type: r.target_type, id: r.target_id })));
   const out = [];
   for (const n of notes) out.push({ kind: n.target_type, id: n.target_id, name: nameFrom(names, n.target_type, n.target_id), meta: 'Note', glyph: '⚜' });
@@ -446,7 +431,7 @@ export async function marginaliaAll() {
   const pid = activeProfileId();
   const saved = await query('SELECT id, target_type, target_id, created_at FROM saved WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
   const notes = await query('SELECT id, target_type, target_id, body, updated_at FROM notes WHERE profile_id=? ORDER BY updated_at DESC;', [pid]);
-  const highlights = await query('SELECT id, target_type, target_id, text, comment, created_at FROM highlights WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
+  const highlights = await query("SELECT a.id, a.doc_type target_type, a.doc_id target_id, n.quote_exact text, a.comment, a.created_at FROM annotations a JOIN anchors n ON n.annotation_id=a.id WHERE a.profile_id=? AND a.kind='highlight' ORDER BY a.created_at DESC;", [pid]);
   const links = await query('SELECT * FROM links WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
   const names = await namesFor([
     ...saved.map((r) => ({ type: r.target_type, id: r.target_id })),

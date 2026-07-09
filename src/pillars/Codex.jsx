@@ -1,12 +1,14 @@
-// Codex browse - scope chips (Rules · Cards · All · Marginalia) and an A–Z
-// divided list with note-indicator dots. The Marginalia scope gathers the whole
-// personal layer (notes, highlights, links, collections) in one editable place.
+// Codex browse - an A–Z divided list with note-indicator dots. The scope
+// (Rules / Cards / Marginalia) is chosen by the shared control in the app
+// contextHeader (App.CodexScopeBar) and passed in as `scope`; the Marginalia
+// scope gathers the whole personal layer (notes, highlights, links, collections).
 import React, { useEffect, useState } from 'react';
 import {
-  getCodexEntries, marginaliaAll, deleteNote, deleteHighlight, deleteLink, toggleSaved,
+  getCodexEntries, marginaliaAll, deleteNote, deleteLink, toggleSaved,
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
-import { Chip, ChipRow, ListRow, IconButton, Loading } from '../components/ui.jsx';
+import { deleteAnnotation } from '../store/annotations.js';
+import { Chip, ListRow, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -29,23 +31,19 @@ export function CodexGlyph({ kind, size = 16 }) {
   );
 }
 
-// "All" is gone as a browse scope - an interleaved dump of 1300+ rows served
-// nobody. The universal search bar (with its t:/e:/set:/has:/is: syntax and
-// categorised results) is the everything view now.
-const SCOPES = [['rules', 'Rules'], ['cards', 'Cards']];
 // Scope-specific filter sheets. Shared: saved / marginalia / linked. Rules add
 // structure filters (sub-articles, card examples); Cards add FAQ/errata/sets.
 const RULE_FILTERS = [
-  ['fav', 'Saved only'], ['marg', 'Has marginalia'], ['subs', 'Contains sub-articles'],
+  ['fav', 'Bookmarked'], ['marg', 'Has marginalia'], ['subs', 'Contains sub-articles'],
   ['examples', 'Contains examples'], ['linked', 'Linked'],
 ];
 const CARD_FILTERS = [
-  ['fav', 'Saved only'], ['marg', 'Has marginalia'], ['faq', 'Contains FAQ'],
+  ['fav', 'Bookmarked'], ['marg', 'Has marginalia'], ['faq', 'Contains FAQ'],
   ['errata', 'Errata cards'], ['linked', 'Linked'],
 ];
 const SET_CHIPS = ['Alpha', 'Beta', 'Arthurian Legends', 'Gothic', 'Dragonlord', 'Promotional'];
 
-export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied, rev }) {
+export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
   const sc = scope === 'all' ? 'rules' : scope;   // stale persisted scope → Rules
   const [entries, setEntries] = useState(null);
   const [filters, setFilters] = useState({ rules: {}, cards: {} });   // per-scope, both survive switching
@@ -73,34 +71,6 @@ export default function Codex({ scope, setScope, onOpen, preset, onPresetApplied
 
   return (
     <div style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
-      {/* Scope (Rules/Cards/All) on the left; Marginalia is a different beast -
-          your personal layer, not a content scope - so it sits apart on the
-          right behind a divider, styled as a distinct bookmarked pill. */}
-      <div className="cx-codex-topbar">
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-          <ChipRow>
-            {SCOPES.map(([k, label]) => (
-              <Chip key={k} label={label} active={sc === k} onClick={() => setScope(k)} />
-            ))}
-          </ChipRow>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
-            <span style={{ width: 1, height: 18, background: 'var(--hair-22)' }} />
-            <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
-                padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
-                font: "600 13px/1 var(--f-ui)",
-                background: marginalia ? 'var(--gold-leaf)' : 'transparent',
-                color: marginalia ? '#1a1410' : 'var(--gold-leaf)',
-                border: `1px solid ${marginalia ? 'var(--gold-leaf)' : 'rgba(201,163,90,.5)'}`,
-              }}>
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-              Marginalia
-            </button>
-          </div>
-        </div>
-      </div>
-
       {marginalia ? (
         <>
           <MarginaliaView onOpen={onOpen} rev={rev} />
@@ -256,7 +226,7 @@ function MarginaliaView({ onOpen, rev }) {
           card = violet, article = gold. Edit mode unsaves. */}
       {d.saved.length > 0 && (
         <div style={{ marginBottom: 22 }}>
-          {secHead('saved', 'SAVED')}
+          {secHead('saved', 'BOOKMARKS')}
           {openS('saved') && d.saved.map((s) => {
             const isCard = s.target_type === 'card';
             const hue = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
@@ -267,7 +237,7 @@ function MarginaliaView({ onOpen, rev }) {
                   <span style={{ font: "600 14.5px/1.25 var(--f-read)", color: 'var(--ink-body)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.on}</span>
                   <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: hue, flex: 'none' }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
                 </span>
-                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await toggleSaved(s.target_type, s.target_id); load(); }} title="Remove from saved" />}
+                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await toggleSaved(s.target_type, s.target_id); load(); }} title="Remove bookmark" />}
               </div>
             );
           })}
@@ -321,7 +291,7 @@ function MarginaliaView({ onOpen, rev }) {
                     {h.on && <span style={{ font: "500 10px/1.2 var(--f-ui)", color: 'var(--ink-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· on {h.on}</span>}
                   </div>
                 </div>
-                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); load(); }} title="Delete highlight" />}
+                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteAnnotation(h.id); load(); }} title="Delete highlight" />}
               </div>
             );
           })}
@@ -435,7 +405,7 @@ function AzList({ entries, onOpen }) {
           ? <button className="cx-sub-chevron" data-open={isOpen ? 'true' : 'false'} onClick={(e) => { e.stopPropagation(); toggle(it.id); }} aria-label={isOpen ? 'Collapse sub-entries' : `Expand ${it.subs.length} sub-entries`} aria-expanded={isOpen}>
               <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
             </button>
-          : (it.saved ? <span style={{ color: 'var(--gold-leaf)' }}>★</span> : undefined)}
+          : (it.saved ? <span style={{ color: 'var(--gold-leaf)', display: 'flex' }} aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span> : undefined)}
         onClick={() => onOpen(it.kind, it.id, it.name)}
       />
     );

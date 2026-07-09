@@ -255,32 +255,17 @@ export function EmptyCta({ text, cta, onClick, size = 13, pad = '4px 0' }) {
    it holds no source of truth, invents no structure, and works entirely in canon
    character offsets. Inline content is decomposed into flat runs at link and
    highlight boundaries (an interval sweep, never nested <mark>s), so overlapping
-   decorations are a set on a run. Stage 1 sources highlight ranges from the legacy
-   saved-text (`marks`) via a whitespace-flexible match; Stage 2 swaps that SOURCE
-   for stored (offset) anchors without touching this renderer. */
+   decorations are a set on a run. Highlight ranges come from RESOLVED annotation
+   canon offsets (annotations.js), never from matching text - so duplicate words
+   can't cross-mark and overlaps are exact. */
 
-// Legacy highlight ranges: locate each saved highlight text inside canon[s,e]
-// with a whitespace-flexible match; returns canon-offset ranges.
-function markRanges(text, base, marks) {
-  if (!marks || !marks.length) return [];
-  const pats = [...marks].map((m) => String(m).trim())
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length)
-    .map((m) => m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'));
-  if (!pats.length) return [];
-  const re = new RegExp('(' + pats.join('|') + ')', 'g');
-  const out = [];
-  let m;
-  while ((m = re.exec(text))) if (m[0]) out.push({ start: base + m.index, end: base + m.index + m[0].length });
-  return out;
-}
-
-// canon[s,e] -> flat runs at link + highlight boundaries; each run carries its
-// covering link (or null) and whether it is under a highlight.
-function runsFor(canon, s, e, links, hlRanges) {
+// canon[s,e] -> flat runs at link + annotation boundaries; each run carries its
+// covering link (or null) and the SET of annotations covering it (interval sweep;
+// arbitrary overlap is a set on a run, never nested <mark>s).
+function runsFor(canon, s, e, links, annRanges) {
   const clip = (x) => Math.max(s, Math.min(e, x));
   const L = links.filter((l) => l.end > s && l.start < e).map((l) => ({ ...l, start: clip(l.start), end: clip(l.end) }));
-  const H = hlRanges.filter((r) => r.end > s && r.start < e).map((r) => ({ start: clip(r.start), end: clip(r.end) }));
+  const H = annRanges.filter((r) => r.end > s && r.start < e).map((r) => ({ ...r, start: clip(r.start), end: clip(r.end) }));
   const bounds = new Set([s, e]);
   for (const x of [...L, ...H]) { bounds.add(x.start); bounds.add(x.end); }
   const pts = [...bounds].sort((a, b) => a - b);
@@ -288,30 +273,32 @@ function runsFor(canon, s, e, links, hlRanges) {
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
     if (b <= a) continue;
-    runs.push({ start: a, end: b, link: L.find((l) => l.start <= a && l.end >= b) || null, mark: H.some((r) => r.start <= a && r.end >= b) });
+    runs.push({ start: a, end: b, link: L.find((l) => l.start <= a && l.end >= b) || null, anns: H.filter((r) => r.start <= a && r.end >= b) });
   }
   return runs;
 }
 
-// Render canon[span] (default: the whole string) as flat runs, with in-text links
-// and highlight marks overlaid. Exported so FAQ text - which shares the
-// [[card]]/((rule)) link convention - renders links exactly like document blocks.
-// All links are GOLD: the link's `target` drives navigation, never its colour
-// (violet reads as a "visited" link and clashed with the app's accent language).
-export function InlineText({ canon, links = [], span, marks, markHue = 'gold', onOpenLink }) {
+const markClass = (ann) => (ann && ann.color === 'violet' ? 'cx-hl-violet' : 'cx-hl-gold');
+
+// Render canon[span] (default: whole string) as flat runs: in-text links (all gold;
+// the link's target drives navigation, not colour) plus highlight marks from
+// resolved annotation canon RANGES. A run under both a link and an annotation nests
+// the <mark> inside the link span. Exported so FAQ text renders links the same way.
+export function InlineText({ canon, links = [], span, annRanges = [], onOpenLink }) {
   const [s, e] = span || [0, canon.length];
-  const runs = runsFor(canon, s, e, links, markRanges(canon.slice(s, e), s, marks));
-  const markCls = markHue === 'violet' ? 'cx-hl-violet' : 'cx-hl-gold';
+  const runs = runsFor(canon, s, e, links, annRanges);
   return runs.map((r) => {
     const text = canon.slice(r.start, r.end);
-    if (r.link) return <span key={r.start} className="cx-inlink cx-inlink-gold" data-off={r.start} onClick={() => onOpenLink?.(r.link.name, r.link.target)}>{r.mark ? <mark className={markCls}>{text}</mark> : text}</span>;
-    if (r.mark) return <mark key={r.start} className={markCls} data-off={r.start}>{text}</mark>;
+    const ann = r.anns[0];
+    const ids = r.anns.length ? r.anns.map((x) => x.id).join(' ') : undefined;
+    if (r.link) return <span key={r.start} className="cx-inlink cx-inlink-gold" data-off={r.start} onClick={() => onOpenLink?.(r.link.name, r.link.target)}>{ann ? <mark className={markClass(ann)} data-ann={ids}>{text}</mark> : text}</span>;
+    if (ann) return <mark key={r.start} className={markClass(ann)} data-off={r.start} data-ann={ids}>{text}</mark>;
     return <React.Fragment key={r.start}>{text}</React.Fragment>;   // bare text keeps ::first-letter drop-cap intact
   });
 }
 
-function DocBlock({ canon, block, links, marks, markHue, onOpenLink }) {
-  const inline = (span) => <InlineText canon={canon} links={links} span={span} marks={marks} markHue={markHue} onOpenLink={onOpenLink} />;
+function DocBlock({ canon, block, links, annRanges, onOpenLink }) {
+  const inline = (span) => <InlineText canon={canon} links={links} span={span} annRanges={annRanges} onOpenLink={onOpenLink} />;
   switch (block.type) {
     case 'ol':
     case 'ul': {
@@ -329,12 +316,14 @@ function DocBlock({ canon, block, links, marks, markHue, onOpenLink }) {
   }
 }
 
-export function RuleArticle({ doc, marks, markHue = 'gold', onOpenLink }) {
+// `annotations` = RESOLVED ranges for THIS doc: [{ id, color, start, end }] (canon
+// offsets). data-doc-* lets selection capture map a DOM point back to this doc.
+export function RuleArticle({ doc, annotations = [], onOpenLink }) {
   if (!doc) return null;
   return (
-    <div className="cx-article">
+    <div className="cx-article" data-doc-type={doc.docType} data-doc-id={doc.docId}>
       {doc.blocks.map((b) => (
-        <DocBlock key={b.id} canon={doc.canon} block={b} links={doc.links} marks={marks} markHue={markHue} onOpenLink={onOpenLink} />
+        <DocBlock key={b.id} canon={doc.canon} block={b} links={doc.links} annRanges={annotations} onOpenLink={onOpenLink} />
       ))}
     </div>
   );

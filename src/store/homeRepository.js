@@ -28,7 +28,7 @@ export const WIDGETS = [
   { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
   { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit - roll for more' },
   // Neutral
-  { kind: 'pinned', title: 'Pinned', pillar: null, blurb: 'Everything you starred' },
+  { kind: 'pinned', title: 'Bookmarks', pillar: null, blurb: 'Everything you bookmarked' },
   { kind: 'note', title: 'Note', pillar: null, configurable: true, blurb: 'A free-text note' },
   { kind: 'links', title: 'Links', pillar: null, configurable: true, blurb: 'External bookmarks' },
   // Structural
@@ -215,7 +215,7 @@ export async function widgetData(block) {
     const resolved = await resolveTargets(rows.map((r) => ({ type: r.target_type, id: r.target_id })));
     const items = [];
     for (const r of rows) { const t = resolved.get(r.target_type + ':' + r.target_id); if (t) items.push({ ...t, type: r.target_type, id: r.target_id }); }
-    return { count: items.length, items, empty: 'Star a rule, card, or deck to pin it here.' };
+    return { count: items.length, items, empty: 'Bookmark a rule, card, or deck to keep it here.' };
   }
   if (k === 'notes') {
     const rows = await query('SELECT body, target_type, target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT 6;', [pid]);
@@ -282,7 +282,7 @@ export async function setResume(type, id, title) {
 // tightly CAPPED sections. Caps are hard - libraries, marginalia and match
 // history can grow huge; Overview always shows a digest and redirects to the
 // pillar where the items actually live.
-const OV_DECKS = 8, OV_NOTES = 3, OV_DUELS = 3;
+const OV_DECKS = 8, OV_NOTES = 3, OV_DUELS = 3, OV_BOOKMARKS = 4;
 
 export async function overview() {
   const pid = activeProfileId();
@@ -302,10 +302,14 @@ export async function overview() {
     score: `${m.player_final_life}–${m.opponent_final_life}`,
   }));
   const cnt = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
-  const [savedN, notesN, hlN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('highlights'), cnt('links')]);
+  const [savedN, notesN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('links')]);
+  const hlN = (await query("SELECT COUNT(*) c FROM annotations WHERE profile_id=? AND kind='highlight';", [pid]))[0].c;
   const noteRows = await query('SELECT body,target_type,target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT ?;', [pid, OV_NOTES]);
   const notes = [];
   for (const r of noteRows) { const t = await resolveTarget(r.target_type, r.target_id); notes.push({ body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }); }
+  const bmRows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT ?;', [pid, OV_BOOKMARKS]);
+  const bookmarks = [];
+  for (const r of bmRows) { const t = await resolveTarget(r.target_type, r.target_id); if (t) bookmarks.push({ name: t.name, meta: t.meta, type: r.target_type, id: r.target_id }); }
   return {
     resume,
     glance: {
@@ -317,6 +321,7 @@ export async function overview() {
     },
     decks: { total: allDecks.length, items: allDecks.slice(0, OV_DECKS) },
     duels: { stats, items: duelItems },
+    bookmarks: { count: savedN, items: bookmarks },
     notes: { count: notesN, items: notes },
   };
 }

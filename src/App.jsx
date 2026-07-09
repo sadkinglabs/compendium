@@ -5,13 +5,15 @@ import {
   createProfile, switchProfile, renameProfile, deleteProfile,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
-import { resolveByName } from './store/codexRepository.js';
+import { migrateAnnotationsIfNeeded } from './store/annotations.js';
+import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
 import Codex from './pillars/Codex.jsx';
 import CodexDetail from './pillars/CodexDetail.jsx';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
 import DecksPager from './pillars/DecksPager.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
+import CardRow from './components/CardRow.jsx';
 import CreateDeckWizard from './components/CreateDeckWizard.jsx';
 import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
 import DeckAddCards from './pillars/DeckAddCards.jsx';
@@ -27,7 +29,8 @@ import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
 import { runBackConsumers } from './back.js';
 import { parseMatchShare } from './store/matchShare.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
-import { ListRow, IconButton, Loading, Chip, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, Chip, ChipRow, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
+import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
@@ -43,10 +46,13 @@ const SWIPE_TABS = PILLARS.map((p) => p.key);   // cross-pillar swipe order
 export default function App() {
   const [boot, setBoot] = useState({ status: 'loading' });
   const [tab, setTab] = useState('home');
-  const [detail, setDetail] = useState(null);     // {kind,id,title}
+  const [detail, setDetail] = useState(null);     // {kind,id,title,target}
+  const [detailSaved, setDetailSaved] = useState(false);   // doc-level BOOKMARK state of the open entry
   const [history, setHistory] = useState([]);
   const [query, setQuery] = useState('');
-  const [scope, setScope] = useState('rules');   // 'all' retired - the search bar IS the everything view
+  const [scope, setScope] = useState('rules');   // browse side: 'rules' | 'cards' | 'marginalia'
+  const [searchKind, setSearchKind] = useState('all');   // search post-filter: 'all' | 'rule' | 'card'
+  const [pillSlot, setPillSlot] = useState(null);   // shared header slot; Home/Decks portal their top pills here
   const [codexPreset, setCodexPreset] = useState(null);   // one-shot filter preset (e.g. Home "All notes ›")
   const [rev, setRev] = useState(0);
   const [profileSheet, setProfileSheet] = useState(false);
@@ -94,6 +100,10 @@ export default function App() {
       try {
         await openDatabase();
         const { counts } = await seedCatalogIfNeeded();
+        // One-time backfill of legacy highlights into the annotation model (runs
+        // after migrations create the tables + the catalog is seeded; gated so it's
+        // idempotent). Never blocks boot - a failure just retries next launch.
+        try { await migrateAnnotationsIfNeeded(); } catch (e) { console.error('annotation migration failed', e); }
         const p = await initProfiles();
         setProfile(p);
         try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
@@ -112,10 +122,25 @@ export default function App() {
     })();
   }, []);
 
+  // Doc-level BOOKMARK state of the open entry, for the header ribbon toggle.
+  useEffect(() => {
+    if (detail && (detail.kind === 'card' || detail.kind === 'rule')) {
+      isSaved(detail.id).then(setDetailSaved).catch(() => setDetailSaved(false));
+    }
+  }, [detail]);
+
   // Derived view flags + navigation.
   const addActive = !!addMode;
   const hasQuery = query.trim().length > 0 && !addActive;
   const viewDetail = detail && !hasQuery && !addActive;
+  // One scope control (contextHeader): browse Rules/Cards ⇄ search All/Rules/Cards.
+  // is:card / is:article tokens DERIVE (lock) the search chip so it can never
+  // disagree with what searchCodex returns; otherwise the manual searchKind wins.
+  const searchIs = hasQuery ? parseQuery(query).scopes.is : [];
+  const tokenKind = searchIs.some((v) => v === 'card' || v === 'cards') ? 'card'
+    : searchIs.some((v) => v.startsWith('article') || v === 'rule' || v === 'rules') ? 'rule' : null;
+  const effectiveKind = tokenKind || searchKind;
+  useEffect(() => { if (!query.trim()) setSearchKind('all'); }, [query]);   // each new search starts at All
   const slideDirRef = useRef('right');   // direction the incoming pillar slides from (on tab tap)
   const goTab = (t) => {
     if (t !== tab) { haptic('light'); slideDirRef.current = SWIPE_TABS.indexOf(t) < SWIPE_TABS.indexOf(tab) ? 'left' : 'right'; }
@@ -153,7 +178,7 @@ export default function App() {
   const recordMatchResult = async (result) => { await recordMatch(result); bump(); };
   const exitMatch = () => { setMatch(null); setOngoing(null); clearOngoing(); bump(); };
   const newMatchFromEnd = (mode) => { setMatch(null); setOngoing(null); clearOngoing(); openNewMatch(mode); };
-  const open = (kind, id, title) => {
+  const open = (kind, id, title, target) => {
     // Decks always open in the Decks pager (My Deck), NOT the legacy DeckDetail
     // route. Every deck link (Home carousel, search, resume, marginalia) lands here.
     if (kind === 'deck') {
@@ -164,7 +189,7 @@ export default function App() {
     // Remember where we were in the list so Back returns to that scroll position.
     const scrollTop = document.querySelector('.cx-scroll')?.scrollTop || 0;
     setHistory((h) => [...h, { detail, query, scrollTop }]);
-    setDetail({ kind, id, title }); setQuery('');
+    setDetail({ kind, id, title, target }); setQuery('');   // target = optional block id to scroll to
     if (['card', 'rule'].includes(kind) && title) setResume(kind, id, title).catch(() => {});
   };
   const back = () => {
@@ -296,11 +321,29 @@ export default function App() {
         <div style={S.detailHeader}>
           <button onClick={back} style={S.back}><IcBack size={15} />Back</button>
           <div style={S.detailTitle}>{detail.title || ''}</div>
-          <span style={{ width: 44 }} />
+          <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); bump(); }}
+            style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
+            aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
+            <IcBookmark filled={detailSaved} />
+          </button>
         </div>
       ) : (
         <div style={S.contextHeader}>
           <div style={S.title}>{pillar.label}</div>
+        </div>
+      )}
+
+      {/* Shared pill slot, directly under the title on every pillar so the top
+          segmented controls sit at one consistent height. Codex renders its scope
+          bar here directly; Home and Decks portal their pill rows into this node. */}
+      {!addActive && !viewDetail && (
+        <div ref={setPillSlot} className="cx-header-pills">
+          {tab === 'codex' && (
+            <div style={{ padding: '0 20px 10px' }}>
+              <CodexScopeBar hasQuery={hasQuery} scope={scope} setScope={setScope}
+                searchKind={effectiveKind} setSearchKind={setSearchKind} locked={!!tokenKind} />
+            </div>
+          )}
         </div>
       )}
 
@@ -310,6 +353,7 @@ export default function App() {
       <div key={tab} className={`cx-pillar-slide from-${slideDirRef.current}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
+          pillSlot={pillSlot}
           deckOpen={deckOpen} onOpenDeck={setDeckOpen} onChanged={bump}
           onOpenCodex={(id, name) => open('card', id, name)}
           editMode={deckEditMode} onEditMode={setDeckEditMode}
@@ -321,19 +365,19 @@ export default function App() {
             filterOpen={addFilterOpen} setFilterOpen={setAddFilterOpen}
             onChanged={bump} registerCount={setAddFilterCount} />
         ) : hasQuery ? (
-          <SearchResults query={query} onOpen={open} onDuel={() => goTab('play')} />
+          <SearchResults query={query} kind={effectiveKind} onOpen={open} onDuel={() => goTab('play')} />
         ) : viewDetail ? (
-          <CodexDetail kind={detail.kind} id={detail.id} onOpen={(kk, iid, t) => open(kk, iid, t)} onOpenName={openName}
+          <CodexDetail kind={detail.kind} id={detail.id} target={detail.target} onOpen={(kk, iid, t, tgt) => open(kk, iid, t, tgt)} onOpenName={openName}
             onOpenDeck={(id, name) => open('deck', id, name)} onChanged={bump} />
         ) : tab === 'codex' ? (
-          <Codex scope={scope} setScope={setScope}
+          <Codex scope={scope}
                  preset={codexPreset} onPresetApplied={() => setCodexPreset(null)}
-                 onOpen={(k, id, t) => open(k, id, t)} rev={rev} />
+                 onOpen={(k, id, t, tgt) => open(k, id, t, tgt)} rev={rev} />
         ) : tab === 'play' ? (
           <Play onStart={startMatch} ongoing={ongoing} onResume={resumeMatch}
             onOpenDeck={(id, name) => open('deck', id, name)} rev={rev} onChanged={bump} onImport={() => setResultPaste(true)} />
         ) : (
-          <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch}
+          <Home onOpen={(t, id, title) => open(t, id, title)} ongoing={ongoing} onResume={resumeMatch} pillSlot={pillSlot}
             onGoTab={goTab} onGoLibrary={goLibrary} onAllNotes={() => { setCodexPreset({ marg: true }); goTab('codex'); }}
             onMarginalia={() => { setScope('marginalia'); goTab('codex'); }}
             onStartMatch={startMatch} registerApi={(api) => { homeApi.current = api; }}
@@ -454,6 +498,11 @@ function NavIcon({ icon }) {
 // House SVG icons for App chrome - no Unicode glyphs.
 const ASvg = ({ children, size = 16 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{children}</svg>;
 const IcBack = (p) => <ASvg {...p}><polyline points="15 18 9 12 15 6" /></ASvg>;
+const IcBookmark = ({ filled, size = 19 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill={filled ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round">
+    <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" />
+  </svg>
+);
 const IcX = (p) => <ASvg {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></ASvg>;
 const IcPlus = (p) => <ASvg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></ASvg>;
 const IcDownload = (p) => <ASvg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></ASvg>;
@@ -465,9 +514,8 @@ function ResultIcon({ kind }) {
   return <ASvg><rect x="4" y="3" width="16" height="18" rx="2" /></ASvg>; // card
 }
 
-function SearchResults({ query, onOpen, onDuel }) {
+function SearchResults({ query, kind = 'all', onOpen, onDuel }) {
   const [res, setRes] = useState(null);
-  const [kind, setKind] = useState('all');   // 'all' | 'rule' | 'card' - post-filter on the result groups
   useEffect(() => {
     let alive = true;
     const t = setTimeout(() => searchAll(query.trim()).then((r) => alive && setRes(r)), 130);
@@ -478,20 +526,15 @@ function SearchResults({ query, onOpen, onDuel }) {
   const total = (showRules ? res.articles.length + res.articleText.length : 0)
     + (showCards ? res.cards.length + res.cardText.length : 0)
     + (kind === 'all' ? res.decks.length + res.duels.length + (res.marginalia?.length || 0) : 0);
-  const kindChips = (
-    <ChipRowInline>
-      {[['all', 'All'], ['rule', 'Articles only'], ['card', 'Cards only']].map(([k, label]) => (
-        <Chip key={k} label={label} active={kind === k} onClick={() => setKind(k)} />
-      ))}
-    </ChipRowInline>
-  );
   if (total === 0) return (
     <div style={{ padding: '6px 20px 26px' }}>
-      {kindChips}
       <div style={{ padding: '44px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>
     </div>
   );
-  const group = (label, dot, items, onItem, iconKind) => items.length > 0 && (
+  // rich=true renders the shared CardRow (art/pips/cost) for real card rows;
+  // thumb adds the art thumbnail (CARDS only - the text-match group stays glyph-
+  // light per the perf budget). Everything else keeps the one-line ListRow.
+  const group = (label, dot, items, onItem, iconKind, rich = false, thumb = false) => items.length > 0 && (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 7, font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>
@@ -499,16 +542,17 @@ function SearchResults({ query, onOpen, onDuel }) {
         </span>
         <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{items.length}</span>
       </div>
-      {items.map((it) => <ListRow key={(it.kind || iconKind) + it.id} icon={<ResultIcon kind={it.kind || iconKind} />} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
+      {items.map((it) => rich
+        ? <CardRow key={'card' + it.id} card={it} thumb={thumb} icon={<ResultIcon kind="card" />} onClick={() => onItem(it)} />
+        : <ListRow key={(it.kind || iconKind) + it.id} icon={<ResultIcon kind={it.kind || iconKind} />} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
     </div>
   );
   const openCodex = (it) => onOpen(it.kind, it.id, it.name);
   return (
     <div style={{ padding: '6px 20px 26px' }}>
-      {kindChips}
       {showRules && group('ARTICLES', 'var(--accent-gold)', res.articles, openCodex, 'rule')}
-      {showCards && group('CARDS', 'var(--accent-gold)', res.cards, openCodex, 'card')}
-      {showCards && group('MENTIONED IN CARD TEXT', 'var(--accent-gold)', res.cardText, openCodex, 'card')}
+      {showCards && group('CARDS', 'var(--accent-gold)', res.cards, openCodex, 'card', true, true)}
+      {showCards && group('MENTIONED IN CARD TEXT', 'var(--accent-gold)', res.cardText, openCodex, 'card', true, false)}
       {showRules && group('MENTIONED IN ARTICLES', 'var(--accent-gold)', res.articleText, openCodex, 'rule')}
       {kind === 'all' && group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], openCodex, 'card')}
       {kind === 'all' && group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name), 'deck')}
@@ -517,9 +561,46 @@ function SearchResults({ query, onOpen, onDuel }) {
   );
 }
 
-// Chip row for the search results header - tighter than the pillar ChipRow.
-function ChipRowInline({ children }) {
-  return <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>{children}</div>;
+// The ONE Codex scope control, hoisted into the app contextHeader so it persists
+// across the browse↔search boundary (typing no longer swaps out a second control).
+// Browse: Rules / Cards (+ Marginalia, the personal layer, apart). Search: All /
+// Rules / Cards post-filter over the mixed results. `locked` = an is:card/is:article
+// token is driving the kind, so the chips only reflect it.
+function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, locked }) {
+  if (hasQuery) {
+    return (
+      <ChipRow>
+        {[['all', 'All'], ['rule', 'Rules'], ['card', 'Cards']].map(([k, label]) => (
+          <Chip key={k} label={label} active={searchKind === k} onClick={() => { if (!locked) setSearchKind(k); }} />
+        ))}
+      </ChipRow>
+    );
+  }
+  const marginalia = scope === 'marginalia';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <ChipRow>
+        {[['rules', 'Rules'], ['cards', 'Cards']].map(([k, label]) => (
+          <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
+        ))}
+      </ChipRow>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
+        <span style={{ width: 1, height: 18, background: 'var(--hair-22)' }} />
+        <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
+            padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
+            font: "600 13px/1 var(--f-ui)",
+            background: marginalia ? 'var(--gold-leaf)' : 'transparent',
+            color: marginalia ? '#1a1410' : 'var(--gold-leaf)',
+            border: `1px solid ${marginalia ? 'var(--gold-leaf)' : 'rgba(201,163,90,.5)'}`,
+          }}>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+          Marginalia
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // Profiles - the spine of the app, so the picker earns some ceremony: monogram
@@ -709,35 +790,30 @@ function CreditsModal({ open, onClose }) {
   );
 }
 
-// Search-syntax cheatsheet - the faint ? on the search pill opens this. Two
-// variants on the same centered chassis: 'codex' (black+gold, documents
-// codexRepository.parseCodexQuery) and 'deck' (the deckbuilder's amethyst,
-// documents deckRepository.parseCardQuery). Keep rows in step with the parsers.
-const CODEX_HELP = [
+// Search-syntax cheatsheet - the faint ? on the search pill opens this. One
+// grammar, one cheatsheet (src/store/cardQuery.js). QUERY_HELP = card-attribute
+// tokens that work identically in both search bars; SCOPE_HELP = the Codex-only
+// personal-layer tokens (inert in the deckbuilder). The 'codex'/'deck' variants
+// differ only in chassis tint, not in grammar. Keep rows in step with the parser.
+const QUERY_HELP = [
   ['airborne', 'Words match names, card text and article bodies (several words search as one phrase)'],
-  ['t:minion', 'By card type - minion, aura, magic, artifact, site, avatar'],
-  ['e:fire', 'By element - air, earth, fire, water'],
-  ['set:gothic', 'By set - Alpha, Beta, Arthurian Legends, Gothic, Dragonlord, Promotional'],
+  ['t:minion', 'Card type or subtype - minion, aura, magic, artifact, site, avatar, mortal… (type:)'],
+  ['r:draw', 'Rules text - commas require every term: r:"airborne, genesis" (rules:)'],
+  ['kw:charge', 'Keyword ability, whole word - kw:airborne,charge needs both (keyword:)'],
+  ['e:fire', 'Element - air, earth, fire, water; letters OR any of a/e/f/w: e:ae (el:/element:)'],
+  ['attack>2', 'Attack - also defense>2 and life:20; use : = > < >= <='],
+  ['th:3', 'Any element threshold meets it; per-element at: et: ft: wt: (threshold:)'],
+  ['c<=3', 'Mana cost - c:2, c>=4, c<3 (cost:)'],
+  ['s:got', 'Set - alp, bet, art, got, dra, pro, or a name (set:)'],
+  ['rarity:unique', 'Rarity - ordinary, exceptional, elite, unique'],
+];
+const SCOPE_HELP = [
   ['has:faq', 'Cards with an official FAQ'],
   ['has:marginalia', 'Entries carrying your notes, highlights or links'],
   ['is:errata', 'Cards with updated rules text'],
-  ['is:saved', 'Your saved entries'],
+  ['is:saved', 'Your bookmarked entries'],
   ['is:article', 'Articles only'],
   ['is:card', 'Cards only'],
-];
-const DECK_HELP = [
-  ['name:sir', 'Card name - bare words work too; "quotes" and /regex/ accepted'],
-  ['t:mortal', 'Type or subtype (type:) - minion, aura, magic, artifact, site, avatar, mortal…'],
-  ['r:draw', 'Rules text (rules:) - commas require every term: r:"airborne, genesis"'],
-  ['kw:charge', 'Keyword ability, whole word (keyword:) - kw:airborne,charge needs both'],
-  ['life:20', 'Life value'],
-  ['attack>2', 'Attack - also defense>2; use : = > < >= <='],
-  ['el:ae', 'Element letters, any of (a/e/f/w) - or element:fire'],
-  ['th:3', 'Any element threshold meets it (threshold:)'],
-  ['at>1', 'Per-element threshold - at: et: ft: wt:'],
-  ['c=2', 'Mana cost (cost:) - c:2, c>=4, c<3'],
-  ['s:art', 'Set code (set:) - alp, bet, art, got, dra, pro'],
-  ['rarity:unique', 'Rarity - ordinary, exceptional, elite, unique'],
 ];
 // Manual fallback for importing a shared result when the camera deep link
 // doesn't auto-open (desktop, or a phone that didn't offer the link): paste it.
@@ -765,7 +841,6 @@ function ImportPasteModal({ open, onClose, onParsed }) {
 function SearchHelpModal({ open, kind = 'codex', onClose }) {
   if (!open) return null;
   const deck = kind === 'deck';
-  const rows = deck ? DECK_HELP : CODEX_HELP;
   // Chassis + chip palette: gold for the codex, the deck pillar's amethyst here.
   const chassis = deck
     ? { background: 'linear-gradient(180deg,#1c1330,#0e0a1a)', border: '1px solid rgba(160,110,220,.32)' }
@@ -777,6 +852,12 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
   const example = deck
     ? ['t:minion el:f c<=3 kw:charge', 'every cheap Fire minion with Charge']
     : ['t:minion e:air airborne', 'every Air minion whose text mentions airborne'];
+  const Row = ([tok, desc]) => (
+    <div key={tok} style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--hair-12)' }}>
+      <code style={{ flex: 'none', font: "600 12px/1 var(--f-mono)", borderRadius: 7, padding: '5px 8px', ...chip }}>{tok}</code>
+      <span style={{ font: "400 12.5px/1.45 var(--f-read)", color: 'var(--ink-body-2)' }}>{desc}</span>
+    </div>
+  );
   return (
     <CenteredModal open={open} label="Search syntax" maxWidth={370} onClose={onClose} boxStyle={{ maxHeight: '82vh', overflowY: 'auto', ...chassis }}>
         <div style={{ padding: '26px 22px 22px', background: `radial-gradient(ellipse at 50% 0%, ${glow} 0%, transparent 60%)` }}>
@@ -784,12 +865,11 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
           <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 16 }}>
             {deck ? 'Tokens narrow the card pool - they stack with the Refine sheet.' : 'Mix any of these in one search - tokens narrow, words match.'}
           </div>
-          {rows.map(([tok, desc]) => (
-            <div key={tok} style={{ display: 'flex', alignItems: 'baseline', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--hair-12)' }}>
-              <code style={{ flex: 'none', font: "600 12px/1 var(--f-mono)", borderRadius: 7, padding: '5px 8px', ...chip }}>{tok}</code>
-              <span style={{ font: "400 12.5px/1.45 var(--f-read)", color: 'var(--ink-body-2)' }}>{desc}</span>
-            </div>
-          ))}
+          {QUERY_HELP.map(Row)}
+          <div style={{ marginTop: 16, marginBottom: 2, font: "600 10.5px/1 var(--f-mono)", letterSpacing: '.14em', color: 'var(--ink-muted)' }}>
+            {deck ? 'CODEX SCOPE — IGNORED HERE' : 'CODEX SCOPE'}
+          </div>
+          <div style={{ opacity: deck ? 0.5 : 1 }}>{SCOPE_HELP.map(Row)}</div>
           <div style={{ marginTop: 14, font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)' }}>
             Example: <code style={{ font: "600 12px/1 var(--f-mono)", color: chip.color }}>{example[0]}</code> - {example[1]}.
           </div>
@@ -816,6 +896,7 @@ const S = {
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
   back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, padding: 0 },
   detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
   addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller

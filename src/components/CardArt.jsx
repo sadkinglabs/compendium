@@ -4,7 +4,10 @@
 import React, { useState } from 'react';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 
-export default function CardArt({ card, radius = 8, aspect = '5/7', children }) {
+// imgStyle overrides the image transform/position - used by CardRow thumbnails
+// to zoom into the illustration (crop the text box out) and to rotate Site art
+// 90° (stored portrait, displayed landscape). Default (undefined) = plain cover.
+export default function CardArt({ card, radius = 8, aspect = '5/7', children, imgStyle }) {
   const [broken, setBroken] = useState(false);
   const url = cardImageUrl(card);
   return (
@@ -12,7 +15,7 @@ export default function CardArt({ card, radius = 8, aspect = '5/7', children }) 
       {url && !broken && (
         <img
           src={url} alt={card?.name || ''} loading="lazy" onError={() => setBroken(true)}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', ...imgStyle }}
         />
       )}
       {children}

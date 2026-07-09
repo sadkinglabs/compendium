@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const MIGRATIONS = [
   {
@@ -94,6 +94,10 @@ export const MIGRATIONS = [
       ts TEXT, text TEXT
     );
 
+    -- The saved table = doc-level BOOKMARKS (the corner ribbon toggle). Named
+    -- "saved" for history; it is a plain PIN on any entry (rule/card/deck), no
+    -- anchor. Kept separate from annotations (offset-anchored highlights/notes) on
+    -- purpose: decks have no document to anchor into, and bookmarks never re-anchor.
     CREATE TABLE IF NOT EXISTS saved (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -237,6 +241,41 @@ export const MIGRATIONS = [
     UPDATE decks SET
       wins   = (SELECT COUNT(*) FROM matches m WHERE m.deck_id=decks.id AND m.profile_id=decks.profile_id AND m.winner='player'),
       losses = (SELECT COUNT(*) FROM matches m WHERE m.deck_id=decks.id AND m.profile_id=decks.profile_id AND m.winner='opponent');
+    `,
+  },
+  {
+    // v7 - annotation model (highlights/notes/bookmarks). An annotation anchors to
+    // CANONICAL character offsets in its compiled document (canon_start/end), plus a
+    // W3C-style TextQuoteSelector fallback (prefix/exact/suffix over canon) so it can
+    // be re-anchored or honestly orphaned when the catalog updates. block_hint is a
+    // non-durable render/scroll handle. The legacy `highlights` table is backfilled
+    // into this by a one-time JS pass (see migrateAnnotationsIfNeeded), not here -
+    // the doc canon it needs isn't available to a static SQL migration.
+    version: 7,
+    sql: `
+    CREATE TABLE IF NOT EXISTS annotations (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      group_id TEXT,
+      doc_type TEXT NOT NULL,
+      doc_id TEXT NOT NULL,
+      build_hash TEXT,
+      color TEXT,
+      comment TEXT,
+      state TEXT NOT NULL DEFAULT 'anchored',
+      created_at TEXT, updated_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_annotations_doc ON annotations(profile_id, doc_type, doc_id);
+    CREATE INDEX IF NOT EXISTS idx_annotations_state ON annotations(profile_id, state);
+    CREATE TABLE IF NOT EXISTS anchors (
+      annotation_id TEXT PRIMARY KEY REFERENCES annotations(id) ON DELETE CASCADE,
+      canon_start INTEGER, canon_end INTEGER,
+      quote_exact TEXT NOT NULL DEFAULT '',
+      quote_prefix TEXT NOT NULL DEFAULT '',
+      quote_suffix TEXT NOT NULL DEFAULT '',
+      block_hint TEXT
+    );
     `,
   },
 ];

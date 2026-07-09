@@ -302,99 +302,12 @@ export async function getArtists() {
   return [...s].sort();
 }
 
-/* ── Curiosa-style card search syntax ──
-   parseCardQuery(raw) → { name, clauses }; cardMatchesQuery(row, parsed) tests a
-   card row. Bare words match names. Tokens accept :, =, >, <, >=, <= where
-   numeric, and <text> values may be "quoted" or /regex/.
-     name:sir · type:mortal (t:) · rules:draw (r:) · life:20 · attack>2 ·
-     defense>2 · element:fire / el:ae (letters=OR) · threshold:3 (th:) ·
-     at>1 / et: / ft: / wt: · cost:2 (c:, c=2) · keyword:charge (kw:) ·
-     set:art (s:, set codes alp/bet/art/got/dra/pro, names work too) ·
-     artist:"Ed Beard" · rarity:unique
-   flavor:<text> is part of the reference syntax but the catalogue carries no
-   flavor text, so it is unsupported (and left off the cheatsheet). artist: is
-   wired but the catalogue currently ships no variant/artist data, so it too
-   stays off the cheatsheet until the data exists. */
-const CQ_EL_LETTER = { a: 'air', e: 'earth', f: 'fire', w: 'water' };
-const CQ_ELS = ['air', 'earth', 'fire', 'water'];
-
-// <text|regex> matcher: /.../ → RegExp (case-insensitive). Otherwise CI
-// substring, where commas separate REQUIRED terms (AND) - r:"airborne, genesis"
-// matches only cards whose rules carry both.
-const cqTerms = (val) => val.toLowerCase().split(',').map((t) => t.trim()).filter(Boolean);
-function cqText(val) {
-  const m = /^\/(.+)\/$/.exec(val);
-  if (m) { try { const re = new RegExp(m[1], 'i'); return (s) => re.test(s || ''); } catch { /* bad regex → substring */ } }
-  const needles = cqTerms(val);
-  return (s) => { const hay = (s || '').toLowerCase(); return needles.every((n) => hay.includes(n)); };
-}
-const cqCmp = (a, op, b) => op === '>' ? a > b : op === '<' ? a < b : op === '>=' ? a >= b : op === '<=' ? a <= b : a === b;
-
-function cqClause(key, op, val) {
-  const num = Number(val);
-  const nOp = (op === ':' || op === '=') ? '=' : op;
-  const numeric = (get) => Number.isFinite(num) ? ((c) => get(c) != null && cqCmp(get(c), nOp, num)) : null;
-  switch (key) {
-    case 'name': { const m = cqText(val); return (c) => m(c.name); }
-    // Collection fields flatten to one haystack so comma-AND spans the whole
-    // type line - t:mortal,knight needs both, wherever each lives.
-    case 'type': case 't': { const m = cqText(val); return (c) => m([c.type, ...jp(c.sub_types, [])].join(' ')); }
-    case 'rules': case 'r': { const m = cqText(val); return (c) => m(c.rules_text); }
-    case 'life': return numeric((c) => c.life);
-    case 'attack': return numeric((c) => c.attack);
-    case 'defense': case 'defence': return numeric((c) => c.defence);
-    case 'element': case 'el': {
-      // element:fire (full name) or el:ae (letters, OR across elements)
-      const els = CQ_ELS.includes(val.toLowerCase())
-        ? [val.toLowerCase()]
-        : [...val.toLowerCase()].map((ch) => CQ_EL_LETTER[ch]).filter(Boolean);
-      if (!els.length) return null;
-      return (c) => {
-        const have = jp(c.elements, []).map((e) => String(e).toLowerCase());
-        const th = jp(c.thresholds, {});
-        return els.some((el) => have.includes(el) || (th[el] || 0) > 0);
-      };
-    }
-    case 'threshold': case 'th':
-      return Number.isFinite(num) ? (c) => { const th = jp(c.thresholds, {}); return CQ_ELS.some((el) => cqCmp(th[el] || 0, nOp, num)); } : null;
-    case 'at': case 'et': case 'ft': case 'wt': {
-      const el = { at: 'air', et: 'earth', ft: 'fire', wt: 'water' }[key];
-      return Number.isFinite(num) ? (c) => cqCmp(jp(c.thresholds, {})[el] || 0, nOp, num) : null;
-    }
-    case 'cost': case 'c': return numeric((c) => c.cost);
-    case 'keyword': case 'kw': {
-      // keywords live in rules text - whole-word match so kw:charge doesn't hit
-      // "discharge"; comma-separated keywords are ALL required (AND)
-      try {
-        const res = cqTerms(val).map((t) => new RegExp(`\\b${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
-        return res.length ? (c) => res.every((re) => re.test(c.rules_text || '')) : null;
-      } catch { return null; }
-    }
-    case 'set': case 's': { const m = cqText(val); return (c) => m(jp(c.sets, []).map((s) => `${s.code} ${s.name}`).join(' ')); }
-    case 'artist': { const m = cqText(val); return (c) => m(jp(c.variants, []).map((v) => v?.artist || '').join(' ')); }
-    case 'rarity': { const m = cqText(val); return (c) => m(c.rarity); }
-    default: return null;
-  }
-}
-
-export function parseCardQuery(raw) {
-  const clauses = [];
-  const words = [];
-  const tokens = (raw || '').match(/[a-z]+(?:>=|<=|[:=><])"[^"]*"|[a-z]+(?:>=|<=|[:=><])\S+|"[^"]*"|\S+/gi) || [];
-  for (const t of tokens) {
-    const m = /^([a-z]+)(>=|<=|[:=><])(.+)$/i.exec(t);
-    if (m) {
-      const clause = cqClause(m[1].toLowerCase(), m[2], m[3].replace(/^"|"$/g, ''));
-      if (clause) { clauses.push(clause); continue; }
-    }
-    words.push(t.replace(/^"|"$/g, ''));
-  }
-  return { name: words.join(' ').trim(), clauses };
-}
-
-export function cardMatchesQuery(c, parsed) {
-  return parsed.clauses.every((test) => test(c));
-}
+/* ── Card query grammar ──
+   Moved to ./cardQuery.js (pure, DB-free, unit-tested under `node --test`) and
+   re-exported here so existing deckRepository importers keep working. See
+   cardQuery.js for the full token grammar (name:/t:/r:/kw:/el:/e:/attack>/cost/
+   th:/set:/rarity + the Codex-only has:/is: scope channel). */
+export { parseQuery, parseCardQuery, cardMatchesQuery } from './cardQuery.js';
 
 // Full card-pool query mirroring Arcanum's Refine filters: element (+multi),
 // type, rarity, set, per-element & total threshold comparators, mana comparator,

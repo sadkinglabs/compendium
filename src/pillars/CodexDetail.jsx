@@ -5,17 +5,17 @@ import React, { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
   getCard, getRule, relatedFor, mentions, faqsForCard,
-  isSaved, toggleSaved, notesFor, addNote, deleteNote,
-  highlightsFor, addHighlight, deleteHighlight,
-  createCollection, collectionsForTarget, toggleCollectionItem,
+  notesFor, addNote, deleteNote,
   linksFor, addLink, deleteLink, searchCodex,
 } from '../store/codexRepository.js';
+import { annotationsForDoc, addAnnotation, deleteAnnotation, anchorFromSelection, resolveAnnotation } from '../store/annotations.js';
 import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { getDoc, getDocs, getFaqs } from '../store/codexDoc.js';
 import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RuleArticle, InlineText, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
+import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
@@ -34,41 +34,58 @@ const noEm = (s) => String(s || '').replace(/\s*—\s*/g, ' - ');
 // Small inline SVG icons - no Unicode glyphs anywhere in the Codex detail.
 const IcoLink = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', verticalAlign: '-1px' }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>;
 const IcoPlus = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ flex: 'none', verticalAlign: '-2px' }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
-const IcoStar = ({ size = 13, fill }) => <svg viewBox="0 0 24 24" width={size} height={size} fill={fill ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>;
 const CodexTypeIcon = ({ kind, size = 14 }) => kind === 'card'
   ? <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
   : <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></svg>;
 
-export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, onChanged }) {
+export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOpenDeck, onChanged }) {
   const [data, setData] = useState(null);
   const [composer, setComposer] = useState(false);
   const [noteText, setNoteText] = useState('');
   const [picker, setPicker] = useState(false);
   const [deckAdd, setDeckAdd] = useState(false);
   const bodyRef = useRef(null);
+  const scrolledRef = useRef(null);                    // deep-link: scroll to a target block once per navigation
   const [selection, setSelection] = useState('');
 
   async function load() {
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [doc, appearsIn, faqs, notes, highlights, saved, links, inDecks] = await Promise.all([
-        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), highlightsFor(id), isSaved(id), linksFor(id), decksWithCard(id),
+      const [doc, appearsIn, faqs, notes, ann, links, inDecks] = await Promise.all([
+        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), annotationsForDoc('card', id), linksFor(id), decksWithCard(id),
       ]);
       const faqDocs = await getFaqs(faqs.map((f) => f.faq_id));
-      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, highlights, saved, links, inDecks });
+      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, ann, links, inDecks });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
-      const [doc, ment, subs, notes, highlights, saved, links] = await Promise.all([
+      const [doc, ment, subs, notes, ann, links] = await Promise.all([
         getDoc('rule', id), mentions(id), query('SELECT rule_id id, title FROM rules WHERE parent_id=?;', [id]),
-        notesFor(id), highlightsFor(id), isSaved(id), linksFor(id),
+        notesFor(id), annotationsForDoc('rule', id), linksFor(id),
       ]);
       const subDocs = await getDocs(subs.map((s) => ['rule', s.id]));
-      setData({ kind, rule: r, doc, mentions: ment, subs, subDocs, notes, highlights, saved, links });
+      const subAnns = await Promise.all(subs.map((s) => annotationsForDoc('rule', s.id)));
+      setData({ kind, rule: r, doc, mentions: ment, subs, subDocs, notes, ann, subAnns, links });
     }
   }
   useEffect(() => { setData(null); load(); /* eslint-disable-next-line */ }, [kind, id]);
+
+  // Deep link: scroll to a target block (bookmark jump / cross-ref to a section)
+  // with a brief flash. Gated on `data` so it fires only once the blocks have
+  // rendered AND the render is stable (an earlier imperative flash got wiped by the
+  // async load's re-render). Guarded to run once per (kind,id,target) navigation.
+  useEffect(() => {
+    const key = `${kind}:${id}:${target || ''}`;
+    if (!target || !data || data.missing || scrolledRef.current === key) return;
+    const el = document.querySelector(`[data-block-id="${CSS.escape(target)}"]`);
+    if (!el) return;
+    scrolledRef.current = key;
+    el.scrollIntoView({ block: 'center' });
+    el.classList.add('cx-block-flash');
+    const t = setTimeout(() => el.classList.remove('cx-block-flash'), 1700);
+    return () => clearTimeout(t);
+  }, [kind, id, target, data]);
 
   // Text-selection -> "Highlight" affordance. Driven by the global selectionchange
   // event so the button appears the instant a selection commits (mobile long-press
@@ -77,10 +94,17 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
   // listener, the React state, AND the browser's own selection, so nothing lingers
   // over the next screen. Empty deps: it must persist across [kind,id] data reloads.
   useEffect(() => {
-    let raf = 0;
-    const read = () => {
+    let raf = 0, down = false;
+    // Only surface the pill once a selection is SETTLED. The pill lives in a
+    // full-screen fixed layer; if it mounts mid-drag it covers the text, the
+    // browser's selection hit-test then lands on the layer instead of a caret, and
+    // the selection balloons to the whole body. So while a pointer is down we keep
+    // it hidden and re-evaluate on release. A selection must sit WHOLLY inside the
+    // rule/card body (both ends) - we never highlight anything else on the page.
+    const currentSelection = () => {
       const s = window.getSelection?.();
-      if (!s || s.isCollapsed || !bodyRef.current || !s.anchorNode || !bodyRef.current.contains(s.anchorNode)) { setSelection(''); return; }
+      if (!s || s.isCollapsed || !bodyRef.current) return '';
+      if (!s.anchorNode || !s.focusNode || !bodyRef.current.contains(s.anchorNode) || !bodyRef.current.contains(s.focusNode)) return '';
       let t = s.toString();
       // Re-attach the lead paragraph's floated drop-cap, routinely dropped when the
       // drag starts at the very top, so a saved quote keeps its first letter.
@@ -93,12 +117,24 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
           if (first && t && t[0] !== first) t = first + t;
         }
       } catch { /* noop */ }
-      setSelection(t);
+      return t;
     };
-    const onChange = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(read); };
-    document.addEventListener('selectionchange', onChange);
+    const settle = () => setSelection(currentSelection());
+    const onSelectionChange = () => {
+      if (down) { setSelection(''); return; }               // mid-drag: never show the pill
+      cancelAnimationFrame(raf); raf = requestAnimationFrame(settle);
+    };
+    const onDown = () => { down = true; setSelection(''); };  // hide while selecting
+    const onUp = () => { down = false; cancelAnimationFrame(raf); raf = requestAnimationFrame(settle); };
+    document.addEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('pointerdown', onDown);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('pointercancel', onUp);
     return () => {
-      document.removeEventListener('selectionchange', onChange);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('pointerdown', onDown);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onUp);
       cancelAnimationFrame(raf);
       setSelection('');
       window.getSelection?.()?.removeAllRanges();
@@ -115,7 +151,6 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
   const k = data.kind;
   const targetType = k;
   const entryId = k === 'card' ? data.card.card_id : data.rule.rule_id;
-  async function onStar() { await toggleSaved(targetType, entryId); await load(); onChanged?.(); }
   async function saveNote() {
     if (!noteText.trim()) return;
     await addNote(targetType, entryId, noteText.trim());
@@ -127,14 +162,36 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
     setComposer(false); await load(); onChanged?.();
   }
   async function delLink(lid) { await deleteLink(lid); await load(); onChanged?.(); }
+
+  // The rendered docs, keyed docType:docId, so selection capture can map a DOM
+  // point in any of them (article body + its subentries) back to a document.
+  const docMap = {};
+  if (data.doc) docMap[`${data.doc.docType}:${data.doc.docId}`] = data.doc;
+  for (const sd of data.subDocs || []) if (sd) docMap[`${sd.docType}:${sd.docId}`] = sd;
+  const docFor = (t, i) => docMap[`${t}:${i}`] || null;
+
   async function captureHighlight() {
-    const t = selection.trim();
-    if (!t) return;
-    await addHighlight(targetType, entryId, t, '');
-    setSelection(''); window.getSelection()?.removeAllRanges(); await load();
+    const anchor = anchorFromSelection(window.getSelection?.(), docFor);
+    setSelection(''); window.getSelection?.()?.removeAllRanges();
+    if (!anchor) return;
+    await addAnnotation({ kind: 'highlight', color: k === 'card' ? 'violet' : 'gold', anchor });
+    await load();
   }
-  const marks = (data.highlights || []).map((h) => h.text).filter(Boolean);
-  const hue = k === 'card' ? 'violet' : 'gold';           // card highlights purple, rule gold
+  async function delAnn(aid) { await deleteAnnotation(aid); await load(); onChanged?.(); }
+
+  // Resolve each annotation against its doc's current canon: anchored/reanchored
+  // render inline; orphaned (text gone after a catalog update) drop to a recovery
+  // tray so user data is never silently lost.
+  const resolveDoc = (anns, doc) => {
+    const inline = [], orphans = [];
+    for (const a of anns || []) { const r = doc ? resolveAnnotation(a, doc) : { start: null }; r.start != null ? inline.push({ id: a.id, color: a.color, start: r.start, end: r.end }) : orphans.push(a); }
+    return { inline, orphans };
+  };
+  const mainRes = resolveDoc(data.ann, data.doc);
+  const subRes = (data.subDocs || []).map((sd, i) => resolveDoc(data.subAnns?.[i], sd));
+  const allAnn = [...(data.ann || []), ...((data.subAnns || []).flat())];
+  const orphans = [mainRes, ...subRes].flatMap((r) => r.orphans);
+
   const appearsIn = k === 'card' ? (data.appearsIn || []).filter((r) => r.type !== 'unresolved_article') : [];
   const ment = data.mentions || { cards: [], articles: [] };
 
@@ -155,8 +212,8 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
 
   return (
     <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
-      {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} bodyRef={bodyRef} marks={marks} />
-                    : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} onOpenLink={openLink} bodyRef={bodyRef} marks={marks} />}
+      {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} bodyRef={bodyRef} annotations={mainRes.inline} />
+                    : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} mainAnn={mainRes.inline} subAnns={subRes.map((r) => r.inline)} onOpenLink={openLink} bodyRef={bodyRef} />}
 
       {/* Cards Mentioned - carousel of card art referenced by this article. Opens
           by (kind, id) directly - no fragile name resolution. */}
@@ -212,16 +269,22 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
         </div>
       )}
 
-      {/* highlights - hued by target: card = violet (deck-builder link), rule = gold */}
-      {data.highlights.length > 0 && (
+      {/* highlights - hued per annotation (card = violet, rule = gold). Orphaned
+          ones (text gone after a catalog update) stay here, dimmed + labelled, so
+          user data is never silently lost - a recovery affordance lives here. */}
+      {allAnn.length > 0 && (
         <div style={{ marginTop: 18 }}>
-          <SectionLabel label="HIGHLIGHTS" count={data.highlights.length} />
-          {data.highlights.map((h) => (
-            <div key={h.id} style={{ borderLeft: `3px solid ${hue === 'violet' ? 'var(--link-violet)' : 'var(--gold-leaf)'}`, background: hue === 'violet' ? 'rgba(199,154,208,.08)' : 'rgba(220,184,111,.08)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
-              <div style={{ flex: 1, font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>“{h.text}”{h.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{h.comment}</span> : null}</div>
-              <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteHighlight(h.id); await load(); }} />
-            </div>
-          ))}
+          <SectionLabel label="HIGHLIGHTS" count={allAnn.length} />
+          {allAnn.map((a) => {
+            const violet = a.color === 'violet';
+            const detached = orphans.some((o) => o.id === a.id);
+            return (
+              <div key={a.id} style={{ borderLeft: `3px solid ${violet ? 'var(--link-violet)' : 'var(--gold-leaf)'}`, background: violet ? 'rgba(199,154,208,.08)' : 'rgba(220,184,111,.08)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8, opacity: detached ? 0.6 : 1 }}>
+                <div style={{ flex: 1, minWidth: 0, font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>“{a.quote.exact}”{detached && <span style={{ fontStyle: 'normal', color: 'var(--ink-faint)', font: "500 11px/1 var(--f-ui)", marginLeft: 8 }}>· detached</span>}{a.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{a.comment}</span> : null}</div>
+                <IconButton glyph="✕" tone="danger" size={22} onClick={() => delAnn(a.id)} />
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -275,9 +338,9 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
         <AddToDeckSheet open={deckAdd} card={data.card} onClose={() => { setDeckAdd(false); load(); onChanged?.(); }} />
       )}
 
-      {/* Save / Collect / Add-to-deck live in a FAB (consistent app-wide), not inline buttons. */}
+      {/* Bookmarking lives in the header ribbon toggle. Collect / Add-to-deck live
+          in a FAB (consistent app-wide), not inline buttons. */}
       <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Entry options" items={[
-        { label: data.saved ? 'Saved' : 'Save', keepOpen: true, state: <IcoStar fill={data.saved} />, onClick: onStar },
         { label: 'Collect', onClick: () => setPicker(true) },
         ...(k === 'card' && !data.card.is_avatar ? [{ label: 'Add to a deck', onClick: () => setDeckAdd(true) }] : []),
       ]} />
@@ -285,21 +348,21 @@ export default function CodexDetail({ kind, id, onOpen, onOpenName, onOpenDeck, 
   );
 }
 
-function RuleBody({ doc, subs, subDocs, onOpenLink, bodyRef, marks }) {
+function RuleBody({ doc, subs, subDocs, mainAnn, subAnns, onOpenLink, bodyRef }) {
   return (
     <div ref={bodyRef}>
-      <RuleArticle doc={doc} onOpenLink={onOpenLink} markHue="gold" marks={marks} />
+      <RuleArticle doc={doc} annotations={mainAnn} onOpenLink={onOpenLink} />
       {subs.map((s, i) => (
         <div key={s.id} style={{ marginTop: 16 }}>
           <SectionLabel label={s.title.toUpperCase()} />
-          <RuleArticle doc={subDocs[i]} onOpenLink={onOpenLink} markHue="gold" marks={marks} />
+          <RuleArticle doc={subDocs[i]} annotations={subAnns[i] || []} onOpenLink={onOpenLink} />
         </div>
       ))}
     </div>
   );
 }
 
-function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, marks }) {
+function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, annotations }) {
   const subTypes = jp(card.sub_types, []);
   const sets = jp(card.sets, []);
   const pips = thresholdRuns(card);
@@ -351,7 +414,7 @@ function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, marks }) {
       {card.rules_text && (
         <div ref={bodyRef}
           style={{ border: '1px solid var(--hair-16)', borderRadius: 12, background: 'var(--surface-card)', padding: '4px 14px 14px', marginBottom: 14 }}>
-          <RuleArticle doc={doc} onOpenLink={onOpenLink} markHue="violet" marks={marks} />
+          <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
         </div>
       )}
 
@@ -500,36 +563,6 @@ function AddToDeckSheet({ open, card, onClose }) {
             ))}
           </>
         )}
-    </BottomSheet>
-  );
-}
-
-function CollectionPicker({ open, targetType, targetId, onClose }) {
-  const [cols, setCols] = useState([]);
-  const [name, setName] = useState('');
-  async function refresh() { if (open) setCols(await collectionsForTarget(targetId)); }
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [open]);
-  async function create() {
-    if (!name.trim()) return;
-    const cid = await createCollection(name.trim());
-    await toggleCollectionItem(cid, targetType, targetId);
-    setName(''); refresh();
-  }
-  return (
-    <BottomSheet open={open} title="ADD TO COLLECTION" onClose={onClose}>
-      {cols.length === 0 && <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', marginBottom: 12 }}>No collections yet - name one below.</div>}
-      {cols.map((c) => (
-        <div key={c.id} onClick={async () => { await toggleCollectionItem(c.id, targetType, targetId); refresh(); }}
-          className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
-          <span style={{ font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)' }}>{c.name}</span>
-          <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: c.inIt ? 'var(--gold-leaf)' : 'transparent', fontSize: 13 }}>{c.inIt ? '✓' : ''}</span>
-        </div>
-      ))}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New collection…"
-          style={{ flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" }} />
-        <button onClick={create} style={btnGold}>Add</button>
-      </div>
     </BottomSheet>
   );
 }

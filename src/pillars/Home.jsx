@@ -12,6 +12,7 @@ import {
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
 import { safeHref } from '../util.js';
+import { createPortal } from 'react-dom';
 import { Chip, ChipRow, IconButton, Loading, BlankState, EmptyCta, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -29,7 +30,7 @@ function fmtSpanShort(secs) {
   return `${secs}s`;
 }
 
-export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, registerApi, profile, rev }) {
+export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, registerApi, profile, rev, pillSlot }) {
   const [tab, setTab] = useState('overview');
   const [edit, setEdit] = useState(false);
   // Hardware BACK peels edit mode, then the Overview<->Dashboard subtab, before App
@@ -51,17 +52,22 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, 
     () => { if (tab === 'overview') { setTab('dashboard'); haptic('light'); return true; } return false; },
     () => { if (tab === 'dashboard') { setTab('overview'); setEdit(false); haptic('light'); return true; } return false; }
   );
+  // The top segmented control lives in the shared header slot (App.pillSlot) so it
+  // lines up with every other pillar's pills; falls back inline if the slot is absent.
+  const pillRow = (
+    <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <ChipRow>
+        <Chip label="Overview" active={tab === 'overview'} onClick={() => { setTab('overview'); setEdit(false); }} />
+        <Chip label="Dashboard" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
+      </ChipRow>
+      {tab === 'dashboard' && (
+        <button onClick={() => setEdit((e) => !e)} style={editBtn}>{edit ? 'Done' : 'Edit'}</button>
+      )}
+    </div>
+  );
   return (
     <div {...swipe} style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <ChipRow>
-          <Chip label="Overview" active={tab === 'overview'} onClick={() => { setTab('overview'); setEdit(false); }} />
-          <Chip label="Dashboard" active={tab === 'dashboard'} onClick={() => setTab('dashboard')} />
-        </ChipRow>
-        {tab === 'dashboard' && (
-          <button onClick={() => setEdit((e) => !e)} style={editBtn}>{edit ? 'Done' : 'Edit'}</button>
-        )}
-      </div>
+      {pillSlot ? createPortal(pillRow, pillSlot) : pillRow}
       <div key={tab} className="cx-swipe-pane">
         {tab === 'overview'
           ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onGoLibrary={onGoLibrary} onAllNotes={onAllNotes} onMarginalia={onMarginalia} onStartMatch={onStartMatch} profile={profile} rev={rev} />
@@ -210,6 +216,22 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
               </div>
             ))}
           </>
+        )}
+      </Sec>
+
+      <Sec id="bookmarks" title="BOOKMARKS" count={d.bookmarks?.count || 0} onAll={onMarginalia}>
+        {(!d.bookmarks || d.bookmarks.items.length === 0) ? <EmptyCta text="No bookmarks yet." cta="Bookmark a rule or card" onClick={() => onGoTab('codex')} /> : (
+          d.bookmarks.items.map((b, i) => {
+            const hue = b.type === 'card' ? 'var(--link-violet)' : b.type === 'deck' ? 'var(--accent-violet)' : 'var(--gold-leaf)';
+            return (
+              <div key={i} onClick={() => onOpen(b.type, b.id, b.name)} className="cx-row"
+                style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'rgba(18,16,13,.72)', border: '1px solid rgba(220,184,111,.2)', borderRadius: 12, padding: '11px 14px', marginBottom: 10, cursor: 'pointer' }}>
+                <span style={{ color: hue, flex: 'none', display: 'flex' }}><CodexGlyph kind={b.type} size={15} /></span>
+                <span style={{ flex: 1, minWidth: 0, font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+                {b.meta && <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)', flex: 'none' }}>{b.meta}</span>}
+              </div>
+            );
+          })
         )}
       </Sec>
 

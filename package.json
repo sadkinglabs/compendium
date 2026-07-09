@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "compile:codex": "node scripts/compile-codex.mjs",
     "test:codex": "node --test \"scripts/codex/**/*.test.mjs\"",
+    "test:query": "node --test \"src/store/**/*.test.mjs\"",
     "cap:sync": "cap sync",
     "android": "vite build && cap sync android",
     "cap:open": "cap open android"

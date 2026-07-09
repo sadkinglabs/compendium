@@ -4,9 +4,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getPool, getSets, getArtists, changeQty, parseCardQuery, cardMatchesQuery } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
-import { ThresholdPips } from '../components/ui.jsx';
-import { thresholdRuns } from '../store/cardArt.js';
 import CardArt from '../components/CardArt.jsx';
+import CardRow from '../components/CardRow.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { useSheetDrag } from '../components/useSheetDrag.js';
 import { registerBackConsumer } from '../back.js';
@@ -18,7 +17,6 @@ const BASE = import.meta.env.BASE_URL;
 const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
 const TYPES = [['Minion', 'Minions'], ['Aura', 'Auras'], ['Magic', 'Magic'], ['Artifact', 'Artifacts'], ['Site', 'Sites']];
 const RAR = [['Ordinary', 'Ordinary'], ['Exceptional', 'Exceptional'], ['Elite', 'Elite'], ['Unique', 'Unique']];
-const RARITY_COLOR = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 
 export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpen, onChanged, registerCount }) {
   const [view, setView] = useState('list');
@@ -41,14 +39,18 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const qtysRef = useRef({});             // live mirror - rapid taps read this, never a stale closure
   const stepChains = useRef({});          // card_id -> promise chain serialising its DB writes
   const [sheetCardId, setSheetCardId] = useState(null);
+  const [ignoredScopes, setIgnoredScopes] = useState([]);   // has:/is: are Codex-only - swallowed here, surfaced as a note
 
   useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
 
   async function loadPool() {
     // Curiosa-style search syntax: bare words narrow by name in SQL; every
     // field token (t:/r:/attack>2/el:ae/…) becomes a clause applied to the
-    // pool AFTER the Refine sheet's chips, so the two stack.
+    // pool AFTER the Refine sheet's chips, so the two stack. has:/is: scope
+    // tokens are Codex-only; here they're swallowed (never poison the needle)
+    // and reported so the user knows they had no effect.
     const parsed = parseCardQuery(q);
+    setIgnoredScopes([...parsed.scopes.has.map((v) => `has:${v}`), ...parsed.scopes.is.map((v) => `is:${v}`)]);
     const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
     setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
@@ -102,6 +104,9 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
       <div style={{ font: "italic 400 12px/1.4 'EB Garamond',serif", color: 'var(--muted)', marginBottom: 12 }}>
         {pool.length} cards{pool.length > 250 ? ' (showing 250 - refine)' : ''}
+        {ignoredScopes.length > 0 && (
+          <span style={{ opacity: .82 }}> · {ignoredScopes.join(' ')} {ignoredScopes.length > 1 ? 'are Codex filters' : 'is a Codex filter'} — ignored here</span>
+        )}
       </div>
 
       {view === 'grid' ? (
@@ -130,18 +135,22 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
           {pool.slice(0, 250).map((c) => {
             const qty = qtys[c.card_id] || 0;
             return (
-              <div key={c.card_id} className="card-row">
-                {qty > 0 && <span className="in-deck-badge">{qty}</span>}
-                <span className="name" onClick={() => setSheetCardId(c.card_id)} style={rarityOn ? { color: RARITY_COLOR[c.rarity] || 'var(--text)' } : undefined}>{c.name}</span>
-                <ThresholdPips runs={thresholdRuns(c)} />
-                {c.cost != null && <div className="cost-badge">{c.cost}</div>}
-                {quickAdd && (
-                  <span className="cr-step" onClick={(e) => e.stopPropagation()}>
-                    <button className="cr-step-btn" onClick={() => step(c, -1)} aria-label="Remove one" disabled={qty === 0}>−</button>
-                    <button className="cr-step-btn" onClick={() => step(c, 1)} aria-label="Add one">+</button>
-                  </span>
-                )}
-              </div>
+              <CardRow
+                key={c.card_id}
+                card={c}
+                thumb
+                rarityTint={rarityOn}
+                onClick={() => setSheetCardId(c.card_id)}
+                count={qty}
+                trailing={quickAdd
+                  ? (
+                    <span className="cr-step" onClick={(e) => e.stopPropagation()}>
+                      <button className="cr-step-btn" onClick={() => step(c, -1)} aria-label="Remove one" disabled={qty === 0}>−</button>
+                      <button className="cr-step-btn" onClick={() => step(c, 1)} aria-label="Add one">+</button>
+                    </span>
+                  )
+                  : false}
+              />
             );
           })}
         </div>

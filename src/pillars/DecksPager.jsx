@@ -27,7 +27,7 @@ const NewDeckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const CuriosaSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2.5-2.5a5 5 0 0 0-7.07-7.07l-1.4 1.4" /><path d="M14 11a5 5 0 0 0-7.07 0L4.43 13.5a5 5 0 0 0 7.07 7.07l1.4-1.4" /></svg>;
 const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
 
-export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev }) {
+export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
   const setEditMode = onEditMode;   // lifted to App so it survives the add-cards flow
@@ -145,20 +145,26 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
     }
   );
 
+  // Top segmented control -> shared header slot (App.pillSlot), wrapped in .arc so
+  // its scoped styles (dp-topbar/dp-add-pill) still apply outside the pager. Padding
+  // is overridden to match the other pillars' hoisted pill rows.
+  const topbar = (
+    <div className="dp-topbar" style={{ padding: '0 20px 10px' }}>
+      <ChipRow>
+        <Chip label="Library" active={view === 'library'} onClick={() => setView('library')} />
+        <Chip label="My Deck" active={view === 'mydeck'} onClick={() => setView('mydeck')} />
+      </ChipRow>
+      <div className="dp-topbar-spacer" />
+      {view === 'mydeck' && deckOpen && (
+        <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }}>
+          {editMode ? '✓ Done' : '✎ Edit Deck'}
+        </button>
+      )}
+    </div>
+  );
   return (
     <div className="arc dpager" {...swipe}>
-      <div className="dp-topbar">
-        <ChipRow>
-          <Chip label="Library" active={view === 'library'} onClick={() => setView('library')} />
-          <Chip label="My Deck" active={view === 'mydeck'} onClick={() => setView('mydeck')} />
-        </ChipRow>
-        <div className="dp-topbar-spacer" />
-        {view === 'mydeck' && deckOpen && (
-          <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }}>
-            {editMode ? '✓ Done' : '✎ Edit Deck'}
-          </button>
-        )}
-      </div>
+      {pillSlot ? createPortal(<div className="arc">{topbar}</div>, pillSlot) : topbar}
 
       {view === 'library' ? (
         <div className="dp-view">
