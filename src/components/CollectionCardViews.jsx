@@ -118,19 +118,22 @@ export function LedgerRow({ card, owned = 0, foil = 0, wanted = 0, value = 0, on
         </span>
       </div>
 
-      {/* Right: steppers when you have some, else a single Add pill. */}
-      <span onClick={stop} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
-        {value > 0 ? (
-          <>
-            <Frost label="Decrease" onClick={() => onStep(-1)}>−</Frost>
-            <span style={{ minWidth: 20, textAlign: 'center', font: "500 16px/1 var(--f-display)", color: '#efe7d8' }}>{value}</span>
-            <Frost label="Increase" onClick={() => onStep(1)}>+</Frost>
-          </>
-        ) : (
-          <button onClick={() => onStep(1)} aria-label="Add one"
-            style={{ minHeight: 44, padding: '0 16px', borderRadius: 999, cursor: 'pointer', font: "600 12.5px/1 var(--f-display)", letterSpacing: '.04em', color: '#f0c8ce', background: 'rgba(224,169,177,.09)', border: '1px solid rgba(224,169,177,.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>+ Add</button>
-        )}
-      </span>
+      {/* Right: steppers when you have some, else a single Add pill. Omitted
+          entirely when the caller passes no onStep (read-only, e.g. Overview). */}
+      {onStep && (
+        <span onClick={stop} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
+          {value > 0 ? (
+            <>
+              <Frost label="Decrease" onClick={() => onStep(-1)}>−</Frost>
+              <span style={{ minWidth: 20, textAlign: 'center', font: "500 16px/1 var(--f-display)", color: '#efe7d8' }}>{value}</span>
+              <Frost label="Increase" onClick={() => onStep(1)}>+</Frost>
+            </>
+          ) : (
+            <button onClick={() => onStep(1)} aria-label="Add one"
+              style={{ minHeight: 44, padding: '0 16px', borderRadius: 999, cursor: 'pointer', font: "600 12.5px/1 var(--f-display)", letterSpacing: '.04em', color: '#f0c8ce', background: 'rgba(224,169,177,.09)', border: '1px solid rgba(224,169,177,.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>+ Add</button>
+          )}
+        </span>
+      )}
     </div>
   );
 }

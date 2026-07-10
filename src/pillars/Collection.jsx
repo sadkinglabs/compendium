@@ -146,7 +146,6 @@ function ImportTextSheet({ open, onClose }) {
 function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
-  const [ow, setOw] = useState(new Map());   // optimistic owned/foil/wanted for the recent rows
   const [deckStat, setDeckStat] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
   useEffect(() => {
@@ -155,7 +154,6 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
       const [s, r, decks] = await Promise.all([collectionStats(), recentlyAdded(10), listDecks()]);
       if (!alive) return;
       setStats(s); setRecent(r);
-      setOw(new Map(r.map((c) => [c.card_id, { owned: c.qty_owned, foil: c.qty_foil || 0, wanted: c.qty_wanted }])));
       const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
       let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
       if (alive) setDeckStat({ buildable, total: decks.length });
@@ -164,20 +162,6 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
     const off = subscribeCollection(load);
     return () => { alive = false; off(); };
   }, [rev]);
-
-  // Same write path as the Cards list: optimistic paint off the cached map, the
-  // write re-reads qtyFor inside the app-wide per-card chain so it can't clobber.
-  function step(cardId, delta) {
-    setOw((prev) => {
-      const cur = prev.get(cardId) || { owned: 0, foil: 0, wanted: 0 };
-      const m = new Map(prev); m.set(cardId, { ...cur, owned: Math.max(0, cur.owned + delta) });
-      return m;
-    });
-    serialChain(ownedChains, cardId, async () => {
-      const cur = await qtyFor(cardId);
-      return setOwned(cardId, Math.max(0, cur.owned + delta));
-    });
-  }
   if (!stats) return <Loading />;
   return (
     <div style={{ padding: '2px 20px' }}>
@@ -194,13 +178,10 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
             <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)' }}>RECENTLY ADDED</span>
             <button onClick={onGoCards} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>All cards ›</button>
           </div>
-          {recent.map((c) => {
-            const o = ow.get(c.card_id) || { owned: c.qty_owned, foil: c.qty_foil || 0, wanted: c.qty_wanted };
-            return (
-              <LedgerRow key={c.card_id} card={c} owned={o.owned} foil={o.foil} wanted={o.wanted} value={o.owned}
-                onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
-            );
-          })}
+          {recent.map((c) => (
+            <LedgerRow key={c.card_id} card={c} owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted}
+              onPeek={() => onPeek(c.card_id)} />
+          ))}
         </>
       ) : (
         <div style={{ padding: '40px 12px', textAlign: 'center' }}>
