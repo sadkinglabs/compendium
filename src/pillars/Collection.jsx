@@ -12,12 +12,13 @@ import {
   ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
   deckBuildabilityBulk, subscribeCollection, importCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
-  setListEntry, listProgress, listProgressBulk, listCards,
+  setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardRow from '../components/CollectionCardRow.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import { LedgerRow, BinderTile } from '../components/CollectionCardViews.jsx';
+import CardArt from '../components/CardArt.jsx';
 import GothicSheet from '../components/GothicSheet.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
@@ -387,19 +388,19 @@ const SHEET_INPUT = {
 
 function Section({ title, hint, onAdd, children }) {
   return (
-    <div style={{ marginBottom: 22 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 4px' }}>
-        <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)' }}>{title}</span>
-        <button onClick={onAdd} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "700 12px/1 var(--f-ui)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
+    <div style={{ marginBottom: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 5px' }}>
+        <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: '#c76d85', textTransform: 'uppercase' }}>{title}</span>
+        <button onClick={onAdd} style={{ background: 'none', border: 'none', color: '#e3c589', font: "600 16px/1 var(--f-display)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
       </div>
-      {hint && <div style={{ font: "italic 400 12px/1.4 'EB Garamond',serif", color: 'var(--ink-faint)', marginBottom: 10 }}>{hint}</div>}
+      {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: '#8a8175', marginBottom: 14 }}>{hint}</div>}
       {children}
     </div>
   );
 }
 
 function Empty({ text }) {
-  return <div style={{ padding: '14px 0 6px', font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>{text}</div>;
+  return <div style={{ padding: '6px 0 4px', font: "italic 400 15px/1.5 var(--f-read)", color: '#8a8175' }}>{text}</div>;
 }
 
 // Export a list as flat "qty name" text - the Curiosa deck-export format, so it
@@ -436,30 +437,96 @@ function ExportListSheet({ open, listId, listName, onClose }) {
   );
 }
 
-function ListRowCard({ list, progress, onClick }) {
-  const p = list.kind === 'wanted' ? progress : null;
-  const hasBar = p && p.totalRequired > 0;
+// A held-hand fan of the list's first 3 cards (50px 5:7, rotated, overlapping);
+// the top card gets a gold edge. Empty list -> a single dashed empty sleeve.
+function ListFan({ cards = [] }) {
+  const ROT = [-8, 2, 10];
+  const LEFT = [0, 17, 34];
+  const shown = cards.slice(0, 3);
   return (
-    <button onClick={onClick} style={{
-      display: 'block', width: '100%', textAlign: 'left', marginBottom: 10, cursor: 'pointer',
-      background: 'rgba(255,255,255,.02)', border: '1px solid var(--hair-12)', borderRadius: 12, padding: '12px 14px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-        <span style={{ minWidth: 0, font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
-        {hasBar
-          ? <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: p.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)' }}>{p.complete ? '✓' : `${p.percent}%`}</span>
-          : <span style={{ flex: 'none', font: "600 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{list.entryCount} card{list.entryCount === 1 ? '' : 's'}</span>}
-      </div>
-      {hasBar && (
-        <>
-          <div style={{ height: 5, borderRadius: 3, background: 'var(--hair-12)', overflow: 'hidden', margin: '9px 0 6px' }}>
-            <div style={{ height: '100%', width: `${p.percent}%`, background: p.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)', borderRadius: 3, transition: 'width .3s ease' }} />
+    <div style={{ position: 'relative', width: 88, height: 84, flex: 'none' }} aria-hidden="true">
+      {shown.length === 0 ? (
+        <div style={{ position: 'absolute', left: 19, bottom: 7, width: 50, aspectRatio: '5 / 7', borderRadius: 6, border: '1px dashed rgba(203,167,95,.22)' }} />
+      ) : shown.map((c, i) => {
+        const isTop = i === shown.length - 1;
+        return (
+          <div key={c.card_id + i} style={{
+            position: 'absolute', left: LEFT[i], bottom: 7, width: 50, zIndex: i,
+            transformOrigin: '50% 100%', transform: `rotate(${ROT[i]}deg)`,
+            borderRadius: 6, overflow: 'hidden', boxShadow: '0 4px 10px rgba(0,0,0,.5)',
+            border: `1px solid ${isTop ? 'rgba(227,197,137,.6)' : 'rgba(255,255,255,.1)'}`,
+          }}>
+            <CardArt card={c} radius={5} aspect="5/7" />
           </div>
-          <span style={{ font: "400 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>own {p.totalHave} of {p.totalRequired}{p.totalMissing > 0 ? ` · missing ${p.totalMissing}` : ''}</span>
-        </>
-      )}
-      {list.description ? <div style={{ marginTop: hasBar ? 6 : 4, font: "400 12px/1.4 var(--f-read)", color: 'var(--ink-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.description}</div> : null}
-    </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// A list card: a fan of its cards on the left, name + tally on the right, and -
+// for wanted lists - a progress bar with a "N missing / View missing" footer or a
+// COMPLETE chip. Flat (no gradients); the tally + bar carry the old percentage.
+function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
+  const wanted = list.kind === 'wanted';
+  const p = wanted ? progress : null;
+  const hasBar = !!p && p.totalRequired > 0;
+  const complete = hasBar && p.complete;
+  const border = complete ? 'rgba(227,197,137,.45)' : wanted ? 'rgba(199,109,133,.32)' : 'rgba(203,167,95,.2)';
+  const bg = complete ? 'rgba(203,167,95,.05)' : wanted ? 'rgba(199,109,133,.04)' : 'rgba(203,167,95,.03)';
+  const barFill = complete ? '#e3c589' : '#e0899e';
+
+  return (
+    <div onClick={onClick} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 12, padding: '16px 20px', borderRadius: 19, border: `1px solid ${border}`, background: bg }}>
+      <ListFan cards={thumbs} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Title + tally. */}
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: complete ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
+          {wanted ? (
+            <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <span style={{ font: "600 24px/1 var(--f-display)", color: complete ? '#e3c589' : '#e0899e' }}>{p ? p.totalHave : 0}</span>
+              <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{p ? p.totalRequired : 0}</span>
+            </span>
+          ) : (
+            <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+              <span style={{ font: "600 22px/1 var(--f-display)", color: '#efe7d8' }}>{list.entryCount}</span>
+              <span style={{ font: "400 14px/1 var(--f-read)", color: '#8a8175' }}> card{list.entryCount === 1 ? '' : 's'}</span>
+            </span>
+          )}
+        </div>
+
+        {/* Card list: description. */}
+        {!wanted && list.description ? (
+          <div style={{ font: "400 15px/1.4 var(--f-read)", color: '#8a8175', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.description}</div>
+        ) : null}
+
+        {/* Wanted: progress bar + footer. */}
+        {wanted && hasBar && (
+          <>
+            <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden', marginTop: 12 }}>
+              <div style={{ height: '100%', width: `${p.percent}%`, background: barFill, borderRadius: 3, transition: 'width .3s ease' }} />
+            </div>
+            {complete ? (
+              <div style={{ marginTop: 11 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 11, background: 'rgba(99,201,163,.1)', border: '1px solid rgba(99,201,163,.35)' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#63c9a3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.14em', color: '#63c9a3' }}>COMPLETE</span>
+                </span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
+                <span style={{ font: "400 13px/1 var(--f-read)", color: '#8a8175' }}>{p.totalMissing} missing</span>
+                <button onClick={(e) => { e.stopPropagation(); onViewMissing?.(); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 13px/1 var(--f-ui)", color: '#c76d85', padding: 0 }}>View missing ›</button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -489,6 +556,7 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
 function ListsIndex({ onOpenList, rev }) {
   const [lists, setLists] = useState(null);
   const [progress, setProgress] = useState(new Map());
+  const [thumbs, setThumbs] = useState(new Map());
   const [create, setCreate] = useState(null);   // 'wanted' | 'custom' | null
   useEffect(() => {
     let alive = true;
@@ -497,8 +565,11 @@ function ListsIndex({ onOpenList, rev }) {
       if (!alive) return;
       setLists(all);
       const wantedIds = all.filter((l) => l.kind === 'wanted').map((l) => l.id);
-      const pr = wantedIds.length ? await listProgressBulk(wantedIds) : new Map();
-      if (alive) setProgress(pr);
+      const [pr, th] = await Promise.all([
+        wantedIds.length ? listProgressBulk(wantedIds) : new Map(),
+        all.length ? listThumbsBulk(all.map((l) => l.id)) : new Map(),
+      ]);
+      if (alive) { setProgress(pr); setThumbs(th); }
     };
     load();
     const off = subscribeCollection(load);
@@ -508,17 +579,17 @@ function ListsIndex({ onOpenList, rev }) {
   if (lists == null) return <Loading />;
   const wanted = lists.filter((l) => l.kind === 'wanted');
   const custom = lists.filter((l) => l.kind === 'custom');
+  const card = (l) => (
+    <ListRowCard key={l.id} list={l} progress={progress.get(l.id)} thumbs={thumbs.get(l.id)}
+      onClick={() => onOpenList(l)} onViewMissing={() => onOpenList({ ...l, openMissing: true })} />
+  );
   return (
     <div style={{ padding: '2px 20px' }}>
-      <Section title="WANTED LISTS" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
-        {wanted.length
-          ? wanted.map((l) => <ListRowCard key={l.id} list={l} progress={progress.get(l.id)} onClick={() => onOpenList(l)} />)
-          : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
+      <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
+        {wanted.length ? wanted.map(card) : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
-      <Section title="CARD LISTS" hint="Custom groupings - a trade binder, a cube, cards to sell." onAdd={() => setCreate('custom')}>
-        {custom.length
-          ? custom.map((l) => <ListRowCard key={l.id} list={l} onClick={() => onOpenList(l)} />)
-          : <Empty text="No card lists yet." />}
+      <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell." onAdd={() => setCreate('custom')}>
+        {custom.length ? custom.map(card) : <Empty text="No card lists yet." />}
       </Section>
       <ListNameSheet open={!!create} kind={create}
         title={create === 'wanted' ? 'NEW WANTED LIST' : 'NEW CARD LIST'} submitLabel="Create list"
@@ -561,6 +632,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   useEffect(() => {
     setQ(''); setResults(null);
     load();
+    // Arriving via a "View missing ›" tap on the index opens straight to the list.
+    if (list.openMissing) listProgress(list.id).then(setMissing);
     const off = subscribeCollection(() => ownedMap().then(setOwnQty));
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps

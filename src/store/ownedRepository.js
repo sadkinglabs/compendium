@@ -231,6 +231,24 @@ export async function duplicateList(listId) {
 export async function listEntries(listId) {
   return query('SELECT card_id, quantity FROM card_list_entries WHERE list_id=? ORDER BY added_at ASC;', [listId]);
 }
+
+// The first few cards' art per list, for the index's card-art "fan" (Map<listId,
+// [{card_id, image_slug, is_site}]>, up to `perList`). One query for all lists,
+// sliced in JS (the lists page has only a handful of lists).
+export async function listThumbsBulk(listIds, perList = 3) {
+  if (!listIds || !listIds.length) return new Map();
+  const rows = await query(
+    `SELECT e.list_id, c.card_id, c.image_slug, c.is_site
+     FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id
+     WHERE e.list_id IN (${listIds.map(() => '?').join(',')})
+     ORDER BY e.list_id, e.added_at ASC;`, listIds);
+  const m = new Map();
+  for (const r of rows) {
+    const arr = m.get(r.list_id) || [];
+    if (arr.length < perList) { arr.push(r); m.set(r.list_id, arr); }
+  }
+  return m;
+}
 // Set a card's quantity in a list (0 deletes). variant_slug='' in v1.
 export async function setListEntry(listId, cardId, qty) {
   const q = Math.max(0, qty | 0);
