@@ -544,12 +544,28 @@ export async function importFromText(text, deckName) {
   return { id, unresolved };
 }
 
+/** A deck name unique within the active profile. If `base` already exists (case-
+ *  insensitively), appends " (1)", " (2)", … - so importing a deck whose name you already
+ *  have never silently creates two identically-named decks. */
+async function uniqueDeckName(base) {
+  const name = (base || 'Shared deck').trim() || 'Shared deck';
+  const rows = await query('SELECT name FROM decks WHERE profile_id=?;', [activeProfileId()]);
+  const taken = new Set(rows.map((r) => (r.name || '').trim().toLowerCase()));
+  if (!taken.has(name.toLowerCase())) return name;
+  for (let i = 1; ; i += 1) {
+    const candidate = `${name} (${i})`;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+}
+
 /** Import a shared-deck payload (from a QR / compendium://deck link) into a NEW deck.
  *  Card ids are used directly; any this catalog doesn't know are dropped (a version
- *  mismatch degrades gracefully). Returns { id, name, missing }. */
+ *  mismatch degrades gracefully). The name is de-duplicated ([uniqueDeckName]) so
+ *  re-importing a deck you already have becomes "Name (1)" rather than a silent twin.
+ *  Returns { id, name, missing }. */
 export async function importDeckShare(payload) {
   if (!payload || !Array.isArray(payload.s)) throw new Error('That isn\'t a valid shared deck.');
-  const name = (payload.n || 'Shared deck').trim() || 'Shared deck';
+  const name = await uniqueDeckName(payload.n || 'Shared deck');
   const spell = payload.s || [];
   const atlas = payload.t || [];
   const ids = [...new Set([payload.a, ...spell.map(([c]) => c), ...atlas.map(([c]) => c)].filter(Boolean))];
