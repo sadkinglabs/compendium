@@ -37,12 +37,15 @@
 .arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
 .arc .deck-inner-pager::-webkit-scrollbar { display: none; }
 .arc .deck-panel { flex: 0 0 100%; width: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; padding-bottom: calc(var(--nav-h) + 90px); }
-.arc .deck-pip-bar { position: fixed; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px); left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
+/* The List/Stats toggle now lives in the shared .cx-dock left slot (beside the
+   FAB), so it is a static, content-width pill centred in that slot - no fixed
+   positioning of its own, and no `.arc` ancestor needed (it's portaled out). */
+.deck-pip-bar { position: relative; z-index: 50; width: fit-content; margin: 0 auto; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
 /* Edit mode owns the floor - the pip bar bows out downward. */
-.arc .deck-pip-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(22px); pointer-events: none; }
-.arc .pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }
-.arc .pip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(160,110,220,.3); transition: background .2s, box-shadow .2s; }
-.arc .pip-dot.active { background: var(--gold-leaf); box-shadow: 0 0 10px rgba(220,184,111,.75); }
-.arc .pip-seg-label { font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; font-weight: 600; color: #7a6e96; transition: color .15s; }
-.arc .pip-seg-label.active { color: #f0e9d8; }
-.arc .pip-divider { width: 1px; height: 14px; background: rgba(160,110,220,.2); flex-shrink: 0; }
+.deck-pip-bar.hidden { opacity: 0; transform: translateY(18px); pointer-events: none; }
+.pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }
+.pip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(160,110,220,.3); transition: background .2s, box-shadow .2s; }
+.pip-dot.active { background: var(--gold-leaf); box-shadow: 0 0 10px rgba(220,184,111,.75); }
+.pip-seg-label { font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; font-weight: 600; color: #7a6e96; transition: color .15s; }
+.pip-seg-label.active { color: #f0e9d8; }
+.pip-divider { width: 1px; height: 14px; background: rgba(160,110,220,.2); flex-shrink: 0; }

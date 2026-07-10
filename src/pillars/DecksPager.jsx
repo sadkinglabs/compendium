@@ -16,6 +16,7 @@ import { Chip, ChipRow, Loading, useSwipe, BlankState } from '../components/ui.j
 import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
+import DockLeft from '../components/DockLeft.jsx';
 import Sheet from '../components/Sheet.jsx';
 import QRCode from '../components/QRCode.jsx';
 import { buildDeckShare } from '../store/deckShare.js';
@@ -50,11 +51,6 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   const toastT = useRef();
   function flash(msg, ms = 1900) { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), ms); }
 
-  // The fixed search/pip bars must escape the .cx-pillar-slide wrapper: its transform
-  // animation would otherwise become their containing block (they'd ride the slide and
-  // double-count the safe-area inset, then snap). Portal to .cx-app like the FAB does.
-  const appRoot = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
-  const portal = (node) => (appRoot ? createPortal(node, appRoot) : node);
 
   async function refresh() { setDecks(await listDecks()); }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
@@ -203,9 +199,10 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
                   editMode={editMode} onToast={flash} onChanged={onChanged} onOpenCodex={onOpenCodex}
                   onMissing={() => { onOpenDeck(null); setView('library'); refresh(); }} />
               </div>
-              {/* List/Stats pip bar steps aside while editing - edit mode owns the floor. */}
-              {portal(
-                <div className={`arc deck-pip-bar${editMode ? ' hidden' : ''}`}>
+              {/* List/Stats toggle - docked in the shared bottom dock beside the
+                  My Deck FAB (steps aside while editing). */}
+              <DockLeft>
+                <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
                   <div className="pip-seg" onClick={() => setStatTab('list')}>
                     <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
                     <span className={`pip-seg-label${statTab === 'list' ? ' active' : ''}`}>List</span>
@@ -216,7 +213,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
                     <span className={`pip-dot${statTab === 'stats' ? ' active' : ''}`} />
                   </div>
                 </div>
-              )}
+              </DockLeft>
             </>
           ) : (
             <BlankState hue="160,110,220" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
