@@ -415,11 +415,13 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         </div>
       </div>
 
-      <BuildabilityStrip deckId={deckId} deckName={deck.name} rev={rev + localRev} onOpenCodex={onOpenCodex} onChanged={onChanged} />
-
-      {/* List zones / hand / notes, or the Stats analysis suite */}
+      {/* List zones / hand / notes, or the Stats analysis suite. Buildability is a
+          stat, so it lives at the top of the Stats page (not on the List page). */}
       {statTab === 'stats' ? (
-        <DeckStats deck={deck} rev={rev} onReload={() => { setLocalRev((r) => r + 1); onChanged?.(); }} />
+        <>
+          <BuildabilityStrip deckId={deckId} deckName={deck.name} rev={rev + localRev} onOpenCodex={onOpenCodex} onChanged={onChanged} />
+          <DeckStats deck={deck} rev={rev} onReload={() => { setLocalRev((r) => r + 1); onChanged?.(); }} />
+        </>
       ) : (
         <div style={{ paddingTop: 12 }}>
           <Zone title="Spellbook" count={sb} need={60} groups={sbGroups} collapsed={collapsed.has('spellbook')} onToggle={() => toggle('spellbook')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('spellbook')} />
