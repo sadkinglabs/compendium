@@ -50,8 +50,8 @@
 .arc .mf-row-name { font: 600 17px/1.25 'EB Garamond', Georgia, serif; color: #efe7d8; flex: 1; min-width: 0; }
 .arc .mf-thresh { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 .arc .mf-thresh img { width: 13px; height: 13px; flex-shrink: 0; }
-.arc .mf-own-dot { width: 8px; height: 8px; border-radius: 50%; background: #63c9a3; flex-shrink: 0; }
-.arc .mf-own-chip { font: 600 12px/1 'IBM Plex Mono', monospace; color: #e0899e; background: rgba(199,109,133,.1); border: 1px solid rgba(199,109,133,.35); border-radius: 10px; padding: 3px 7px; flex-shrink: 0; }
+/* Mana cost coin, sat right beside the threshold pips. */
+.arc .mf-cost { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #cbb890; border: 1px solid rgba(203,167,95,.3); background: rgba(20,16,10,.55); }
 .arc .mf-empty { font: italic 14px 'EB Garamond', serif; color: #6b6254; padding: 8px 0 12px; }
 /* Edit-mode quick steppers (edit the deck quantity), cascaded onto each row. */
 .arc .mf-step { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; animation: mfStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
