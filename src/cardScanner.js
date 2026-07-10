@@ -5,7 +5,7 @@
 // drives Codex navigation. On web / in the preview it degrades to a graceful stub.
 import { registerPlugin } from '@capacitor/core';
 import { query } from './store/db.js';
-import { stepOwned, stepWanted } from './store/ownedRepository.js';
+import { addOwnedCopies, addWantedCopies } from './store/ownedRepository.js';
 import { toast } from './feedback.js';
 import { isNative } from './native.js';
 
@@ -44,14 +44,16 @@ export async function launchScanner({ onOpenCard } = {}) {
     return;
   }
 
-  // Add-actions stream in while the scanner stays open. Write SILENTLY - the WebView
-  // sits behind the native Activity, so a JS toast wouldn't be seen; the scanner
-  // shows its own Snackbar confirmation.
+  // Add-actions stream in while the scanner stays open. Writes are ATOMIC (+N upsert)
+  // so overlapping same-card taps can't lose an increment; failures are counted and
+  // surfaced once the scanner closes (the WebView is behind the Activity, so a toast
+  // mid-scan wouldn't be seen).
+  let failed = 0;
   const sub = await CardScanner.addListener('scanAction', async (ev) => {
     try {
-      if (ev.action === 'collection') await stepOwned(ev.cardId, 1);
-      else if (ev.action === 'wishlist') await stepWanted(ev.cardId, 1);
-    } catch { /* best-effort; the scanner already confirmed via Snackbar */ }
+      if (ev.action === 'collection') await addOwnedCopies(ev.cardId, 1);
+      else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, 1);
+    } catch { failed += 1; }
   });
 
   try {
@@ -64,5 +66,6 @@ export async function launchScanner({ onOpenCard } = {}) {
     else if (!/cancel/i.test(code)) toast('Scanner error.', { tone: 'danger' });
   } finally {
     try { await sub.remove(); } catch { /* noop */ }
+    if (failed > 0) toast(`${failed} scanned add${failed === 1 ? '' : 's'} didn't save`, { tone: 'danger' });
   }
 }

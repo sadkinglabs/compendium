@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TitleStripAnalyzer(
     private val scope: CoroutineScope,
     private val extractor: StripExtractor,
-    private val intervalMs: () -> Long,           // 350 scanning / 800 locked
+    private val intervalMs: Long,                 // min gap between admitted frames
     private val onResult: (Extraction) -> Unit,
 ) : ImageAnalysis.Analyzer {
 
@@ -28,7 +28,7 @@ class TitleStripAnalyzer(
 
     override fun analyze(image: ImageProxy) {
         val now = System.currentTimeMillis()
-        if (now - lastTs < intervalMs() || !busy.compareAndSet(false, true)) {
+        if (now - lastTs < intervalMs || !busy.compareAndSet(false, true)) {
             image.close()
             return
         }

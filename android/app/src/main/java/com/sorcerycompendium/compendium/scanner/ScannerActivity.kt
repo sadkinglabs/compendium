@@ -53,26 +53,27 @@ class ScannerActivity : ComponentActivity() {
                             PackageManager.PERMISSION_GRANTED,
                     )
                 }
+                // On deny (incl. permanent), leave granted=false so PermissionPrompt shows
+                // its rationale + Close, rather than dead-ending on a black screen; the
+                // Activity reports 'cancelled' when the user closes it (onDestroy).
                 val launcher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission(),
-                ) { ok ->
-                    granted = ok
-                    if (!ok) {
-                        sendTerminal(JSObject().put("action", "permission_denied").put("message", "Camera permission denied"))
-                        finish()
-                    }
-                }
+                ) { ok -> granted = ok }
                 LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
 
                 val phase by vm.phase.collectAsStateWithLifecycle()
                 val lockEvent by vm.lockEvent.collectAsStateWithLifecycle()
-                // Haptics: a light tick while a new card is being confirmed, a growing
-                // pulse on each lock (lockEvent bumps per recognition).
+                val lastTick = remember { longArrayOf(0L) }
+                // Haptics: a light tick while a new card is being confirmed (debounced so
+                // detection-threshold flicker doesn't buzz repeatedly), a growing pulse on lock.
                 LaunchedEffect(lockEvent) {
                     if (lockEvent > 0) ScannerHaptics.lockPulse(this@ScannerActivity)
                 }
                 LaunchedEffect(phase) {
-                    if (phase == Phase.DETECTING) ScannerHaptics.tick(this@ScannerActivity)
+                    if (phase == Phase.DETECTING) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastTick[0] > 1200L) { lastTick[0] = now; ScannerHaptics.tick(this@ScannerActivity) }
+                    }
                 }
                 ScannerScreen(
                     granted = granted,

@@ -22,8 +22,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 @CapacitorPlugin(name = "CardScanner")
 class CardScannerPlugin : Plugin() {
 
-    private var pendingCall: PluginCall? = null
+    @Volatile private var pendingCall: PluginCall? = null   // set on a worker thread, read on terminal
     private val terminated = AtomicBoolean(false)
+    private val active = AtomicBoolean(false)               // one scan at a time - guards the retained call
 
     @PluginMethod
     fun isAvailable(call: PluginCall) {
@@ -33,12 +34,18 @@ class CardScannerPlugin : Plugin() {
 
     @PluginMethod
     fun scan(call: PluginCall) {
+        if (!active.compareAndSet(false, true)) {
+            call.reject("A scan is already in progress", "busy")
+            return
+        }
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
+            active.set(false)
             call.reject("No camera available", "no_camera")
             return
         }
         val cards = Catalog.parse(call.getArray("cards"))
         if (cards.isEmpty()) {
+            active.set(false)
             call.reject("Empty catalog", "empty_catalog")
             return
         }
@@ -74,5 +81,6 @@ class CardScannerPlugin : Plugin() {
             }
         }
         ScannerChannel.clear()
+        active.set(false)
     }
 }

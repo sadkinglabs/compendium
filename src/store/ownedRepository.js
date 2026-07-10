@@ -72,6 +72,26 @@ export async function setWanted(cardId, qty) { return writeQty(cardId, { wanted:
 export async function stepOwned(cardId, delta) { const { owned } = await qtyFor(cardId); return setOwned(cardId, owned + delta); }
 export async function stepWanted(cardId, delta) { const { wanted } = await qtyFor(cardId); return setWanted(cardId, wanted + delta); }
 
+// Atomic +N to owned/wanted via a single upsert (no read-modify-write). For callers
+// that can't serialize their writes - notably the scanner's rapid, independent
+// scanAction events, where step*'s read-then-write would lose overlapping increments.
+export async function addOwnedCopies(cardId, n = 1) { return addCopies(cardId, 'qty_owned', n); }
+export async function addWantedCopies(cardId, n = 1) { return addCopies(cardId, 'qty_wanted', n); }
+async function addCopies(cardId, col, n) {
+  if (!cardId || !(n > 0)) return;
+  const pid = activeProfileId();
+  const now = nowIso();
+  // col is an internal constant ('qty_owned' | 'qty_wanted'), never user input.
+  await run(
+    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+     VALUES(?,?,?,?,?,?,'',?,?)
+     ON CONFLICT(profile_id,card_id,variant_slug)
+     DO UPDATE SET ${col}=${col}+excluded.${col}, updated_at=excluded.updated_at;`,
+    [uuid(), pid, cardId, '', col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]
+  );
+  bump();
+}
+
 // Add a shortfall to the general Wishlist. MAX (not +=) so re-running a deck's
 // "add missing to wishlist" never inflates the want beyond the largest shortfall.
 export async function addMissingToWishlist(lines) {
@@ -121,11 +141,6 @@ export async function renameList(listId, name, description) {
   const pid = activeProfileId();
   await run('UPDATE card_lists SET name=?, description=?, updated_at=? WHERE id=? AND profile_id=?;',
     [name.trim() || 'Untitled', description || '', nowIso(), listId, pid]);
-  bump();
-}
-export async function setListKind(listId, kind) {
-  const pid = activeProfileId();
-  await run('UPDATE card_lists SET kind=?, updated_at=? WHERE id=? AND profile_id=?;', [kind === 'wanted' ? 'wanted' : 'custom', nowIso(), listId, pid]);
   bump();
 }
 export async function deleteList(listId) {
@@ -214,12 +229,18 @@ export async function listProgress(listId) {
   return compareRequirements(required, owned, 0);
 }
 export async function listProgressBulk(listIds) {
-  const owned = await ownedMap();
   const out = new Map();
-  for (const id of listIds) {
-    const required = await listRequirements(id);
-    out.set(id, compareRequirements(required, owned, 0));
-  }
+  if (!listIds.length) return out;
+  const owned = await ownedMap();   // full map once
+  // One grouped query for all lists' requirements (no N+1, mirrors deckRequirementsBulk).
+  const rows = await query(
+    `SELECT list_id, card_id, SUM(quantity) q FROM card_list_entries
+     WHERE list_id IN (${listIds.map(() => '?').join(',')}) GROUP BY list_id, card_id;`,
+    listIds
+  );
+  const byList = new Map(listIds.map((id) => [id, []]));
+  for (const r of rows) byList.get(r.list_id)?.push({ card_id: r.card_id, qty: r.q });
+  for (const id of listIds) out.set(id, compareRequirements(byList.get(id), owned, 0));
   return out;
 }
 
@@ -228,14 +249,10 @@ export async function listProgressBulk(listIds) {
 export async function collectionStats() {
   const pid = activeProfileId();
   const own = (await query('SELECT COALESCE(SUM(qty_owned),0) total, COUNT(DISTINCT CASE WHEN qty_owned>0 THEN card_id END) unique_cards, COALESCE(SUM(qty_wanted),0) wishlist FROM owned_cards WHERE profile_id=?;', [pid]))[0];
-  const lists = await query('SELECT kind, COUNT(*) n FROM card_lists WHERE profile_id=? GROUP BY kind;', [pid]);
-  const byKind = new Map(lists.map((l) => [l.kind, l.n]));
   return {
     owned: own?.total || 0,
     unique: own?.unique_cards || 0,
     wishlist: own?.wishlist || 0,
-    wantedLists: byKind.get('wanted') || 0,
-    customLists: byKind.get('custom') || 0,
   };
 }
 

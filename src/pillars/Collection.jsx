@@ -16,7 +16,7 @@ import {
 import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardRow from '../components/CardRow.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
-import { stepBtn } from '../components/ownedUi.js';
+import { stepBtn, serialChain } from '../components/ownedUi.js';
 import { CodexGlyph } from './Codex.jsx';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
@@ -79,7 +79,7 @@ function Overview({ onGoCards, onGoDecks, onOpen, rev }) {
       if (!alive) return;
       setStats(s); setRecent(r);
       const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
-      let buildable = 0; for (const rep of reports.values()) if (rep.complete) buildable++;
+      let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
       if (alive) setDeckStat({ buildable, total: decks.length });
     };
     load();
@@ -149,9 +149,7 @@ function Cards({ onOpen }) {
       const next = { ...cur, [field]: Math.max(0, (cur[field] || 0) + delta) };
       const m = new Map(prev); m.set(cardId, next);
       const write = next[field];
-      chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
-        .then(() => (field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write)))
-        .catch(() => {});
+      serialChain(chains, cardId, () => (field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write)));
       return m;
     });
   }
@@ -177,11 +175,12 @@ function Cards({ onOpen }) {
         </ChipRow>
         <div style={{ display: 'inline-flex', flex: 'none', borderRadius: 18, overflow: 'hidden', border: '1px solid rgba(210,88,115,.32)' }}>
           {[['owned', 'Own'], ['wanted', 'Want']].map(([k, label]) => (
-            <button key={k} onClick={() => setField(k)} style={{
-              padding: '6px 12px', cursor: 'pointer', font: "700 11.5px/1 var(--f-ui)", border: 'none',
-              background: field === k ? 'var(--accent-ruby)' : 'transparent',
-              color: field === k ? '#2a0e16' : 'var(--accent-ruby)',
-            }}>{label}</button>
+            <button key={k} onClick={() => setField(k)} aria-pressed={field === k}
+              aria-label={k === 'owned' ? 'Edit owned count' : 'Edit wishlist count'} style={{
+                padding: '6px 12px', cursor: 'pointer', font: "700 11.5px/1 var(--f-ui)", border: 'none',
+                background: field === k ? 'var(--accent-ruby)' : 'transparent',
+                color: field === k ? '#2a0e16' : 'var(--accent-ruby)',
+              }}>{label}</button>
           ))}
         </div>
       </div>

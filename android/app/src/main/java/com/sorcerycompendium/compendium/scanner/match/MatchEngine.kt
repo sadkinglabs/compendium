@@ -114,15 +114,17 @@ class Matcher(
      */
     fun match(ocrNorm: String, siteDetected: Boolean): MatchResult? {
         if (ocrNorm.length < 3) return null
-        val tokens = ocrNorm.split(' ').filter { it.isNotBlank() }.take(16)
         val queries = LinkedHashSet<String>()
-        queries.add(ocrNorm)   // whole first: a standard card prefers its full name
-        // Sliding windows (length 4..1) find the name ANYWHERE in the string - a site's
-        // name is embedded mid-string, between the artist credit and the rules text on
-        // the same strip (e.g. "Art Drew Tucker Haystack Good luck finding...").
-        for (len in minOf(4, tokens.size) downTo 1) {
-            for (start in 0..(tokens.size - len)) {
-                queries.add(tokens.subList(start, start + len).joinToString(" "))
+        queries.add(ocrNorm)   // a standard card's top-banner OCR IS the name - match whole
+        if (siteDetected) {
+            // Sites ONLY: the name is embedded mid-strip between the artist credit and the
+            // rules text, so slide 1..4-token windows to find it anywhere. Restricting this
+            // to sites keeps a standard card's OCR noise from letting a shorter card name win.
+            val tokens = ocrNorm.split(' ').filter { it.isNotBlank() }.take(16)
+            for (len in minOf(4, tokens.size) downTo 1) {
+                for (start in 0..(tokens.size - len)) {
+                    queries.add(tokens.subList(start, start + len).joinToString(" "))
+                }
             }
         }
         var best: MatchResult? = null

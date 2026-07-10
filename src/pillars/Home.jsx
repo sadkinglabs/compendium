@@ -19,6 +19,7 @@ import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { CodexGlyph } from './Codex.jsx';
 import { haptic } from '../native.js';
 import { launchScanner } from '../cardScanner.js';
+import { subscribeCollection } from '../store/ownedRepository.js';
 import '../theme/dashboard.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -291,6 +292,9 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   // Re-roll a single widget (Random Card / Random Article) without reloading all.
   const roll = async (b) => { const d = await widgetData(b); setData((prev) => ({ ...prev, [b.id]: d })); haptic('light'); };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
+  // Refresh on the ownership bus so the Card Collection widget reflects a scan/edit
+  // (adds route through ownedRepository, which bumps collectionRev, not app rev).
+  useEffect(() => subscribeCollection(load), []); // eslint-disable-line react-hooks/exhaustive-deps
   // The add-widget FAB is an edit-mode tool; leaving edit closes the picker too.
   useEffect(() => { if (!edit) setPicker(false); }, [edit]);
 

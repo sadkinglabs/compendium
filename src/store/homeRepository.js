@@ -205,7 +205,7 @@ export async function widgetData(block) {
     const s = await collectionStats();
     const decks = await listDecks();
     const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
-    let buildable = 0; for (const rep of reports.values()) if (rep.complete) buildable++;
+    let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
     return { owned: s.owned, unique: s.unique, wishlist: s.wishlist, buildable, decks: decks.length, empty: 'No cards owned yet.' };
   }
   if (k === 'featuredCard' || k === 'cardOfDay') {

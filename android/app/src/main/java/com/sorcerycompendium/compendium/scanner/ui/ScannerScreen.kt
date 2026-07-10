@@ -65,7 +65,7 @@ fun ScannerScreen(
                     CameraController.bind(
                         ctx, lifecycleOwner, pv,
                         viewModel.analysisExecutor, viewModel.analyzer,
-                    ) { /* bind error - preview stays black; broad-strokes */ }
+                    ) { scope.launch { snackbarHost.showSnackbar("Couldn't start the camera - close and try again.") } }
                     pv
                 },
             )

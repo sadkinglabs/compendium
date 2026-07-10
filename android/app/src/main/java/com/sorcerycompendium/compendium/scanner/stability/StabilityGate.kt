@@ -9,7 +9,8 @@ import com.sorcerycompendium.compendium.scanner.match.CardRef
  * re-fire), and only a DIFFERENT card reaching the streak replaces it. The caller
  * keeps the sheet up until the user taps "Scan another" ([reset]) or a new card locks.
  *
- * Not internally synchronized; the analyzer calls it from one analysis thread.
+ * [onMatch] runs on the analysis dispatcher and [reset] on the main thread, so both
+ * mutators are @Synchronized to keep the state machine consistent across threads.
  */
 class StabilityGate(private val minStreak: Int = 2) {
     private var candidateId: String? = null
@@ -18,6 +19,7 @@ class StabilityGate(private val minStreak: Int = 2) {
 
     /** Feed the best match of a frame (or null). Returns the card iff a NEW card just
      *  crossed the lock threshold (first lock or a replacement); null otherwise. */
+    @Synchronized
     fun onMatch(match: CardRef?): CardRef? {
         if (match == null) {
             if (streak > 0) streak--
@@ -44,6 +46,7 @@ class StabilityGate(private val minStreak: Int = 2) {
     }
 
     /** "Scan another": forget the locked card so scanning starts fresh. */
+    @Synchronized
     fun reset() {
         lockedId = null
         candidateId = null

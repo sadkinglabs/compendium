@@ -50,7 +50,7 @@ class ScannerViewModel : ViewModel() {
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
         extractor = extractor,
-        intervalMs = { SCAN_MS },   // keep scanning even while a card is shown (to replace it)
+        intervalMs = SCAN_MS,       // keep scanning even while a card is shown (to replace it)
         onResult = ::onResult,
     )
 
