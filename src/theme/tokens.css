@@ -7,6 +7,13 @@
   --bg: #000;
   --bg-base: #000;
   --wash: #000;   /* default (Home) - pure black, no wash */
+
+  /* ONE app-wide colour language for card data (was only defined under .arc, so
+     Collection/Codex couldn't resolve it). Elements: Air grey, Earth brown, Fire
+     red, Water blue, Multi gold. Rarity: Ordinary silver, Exceptional blue, Elite
+     purple, Unique gold - the same hues the "Show Rarity Colours" toggle uses. */
+  --air: #c4cdd6; --earth: #b35c33; --fire: #e0623f; --water: #4aa3d4; --multi: #d4a83a;
+  --ordinary: #c8c8c8; --exceptional: #4fc3f7; --elite: #ab47bc; --unique: #ffd54f;
   --surface-card: rgba(34, 26, 20, .4);
   --surface-card-2: rgba(34, 26, 20, .55);
   --surface-well: rgba(18, 13, 9, .6);

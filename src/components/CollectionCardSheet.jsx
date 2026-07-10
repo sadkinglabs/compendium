@@ -18,9 +18,11 @@ import { haptic } from '../native.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
 
-// The card-face glow, tinted by the card's dominant affinity (falls back to the
-// spec's blue for colourless cards). rgba of store/cardArt.js's elementColor.
-const GLOW = { air: 'rgba(103,182,196,.5)', earth: 'rgba(179,92,51,.5)', fire: 'rgba(210,100,90,.5)', water: 'rgba(91,135,214,.5)' };
+// The card-face glow, tinted by the card's dominant affinity (falls back to a
+// neutral for colourless cards). rgba of the app-wide element colours.
+const GLOW = { air: 'rgba(196,205,214,.5)', earth: 'rgba(179,92,51,.5)', fire: 'rgba(224,98,63,.5)', water: 'rgba(74,163,212,.5)' };
+// Rarity tag hue - the ONE app-wide rarity language (tokens.css).
+const RARITY_HUE = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 function glowColor(c) {
   const th = jp(c?.thresholds, {}) || {};
   let best = null, n = 0;
@@ -188,7 +190,7 @@ function CardBody({ c, onOpenCodex, onPick }) {
   // Meta row: rarity + type sit together (the type moved down off the header),
   // then subtype(s), then threshold icons. Hairline-separated, wraps if tight.
   const meta = [];
-  if (c.rarity) meta.push(<span key="r" style={smallCaps('#c48b6a')}>{c.rarity}</span>);
+  if (c.rarity) meta.push(<span key="r" style={smallCaps(RARITY_HUE[c.rarity] || 'var(--ink-muted)')}>{c.rarity}</span>);
   meta.push(<span key="ty" style={smallCaps('#cba75f')}>{typeLabel(c)}</span>);
   if (subs.length) meta.push(<span key="s" style={{ font: "italic 500 17.5px/1 var(--f-read)", color: '#a99a80' }}>{subs.join(', ')}</span>);
   if (runs.length) meta.push(<ThresholdPips key="t" runs={runs} size={20} />);
