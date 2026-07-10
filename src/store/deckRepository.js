@@ -543,3 +543,33 @@ export async function importFromText(text, deckName) {
   await logHistory(id, `Imported (${unresolved} unresolved)`);
   return { id, unresolved };
 }
+
+/** Import a shared-deck payload (from a QR / compendium://deck link) into a NEW deck.
+ *  Card ids are used directly; any this catalog doesn't know are dropped (a version
+ *  mismatch degrades gracefully). Returns { id, name, missing }. */
+export async function importDeckShare(payload) {
+  if (!payload || !Array.isArray(payload.s)) throw new Error('That isn\'t a valid shared deck.');
+  const name = (payload.n || 'Shared deck').trim() || 'Shared deck';
+  const spell = payload.s || [];
+  const atlas = payload.t || [];
+  const ids = [...new Set([payload.a, ...spell.map(([c]) => c), ...atlas.map(([c]) => c)].filter(Boolean))];
+  const known = new Set(ids.length
+    ? (await query(`SELECT card_id FROM cards WHERE card_id IN (${ids.map(() => '?').join(',')});`, ids)).map((r) => r.card_id)
+    : []);
+  const avatarId = payload.a && known.has(payload.a) ? payload.a : null;
+  const id = await createDeck(name, { avatarCardId: avatarId });
+  const stmts = [];
+  let missing = 0;
+  const add = (arr, zone) => {
+    for (const [cid, qty] of arr) {
+      if (!cid || !known.has(cid)) { missing++; continue; }
+      stmts.push(['INSERT INTO deck_entries(id,deck_id,zone,card_id,quantity,variant_slug) VALUES(?,?,?,?,?,?);',
+        [uuid(), id, zone, cid, Math.max(1, qty | 0), '']]);
+    }
+  };
+  add(spell, 'spellbook');
+  add(atlas, 'atlas');
+  if (stmts.length) await tx(stmts);
+  await logHistory(id, missing ? `Imported from QR (${missing} unknown card${missing === 1 ? '' : 's'})` : 'Imported from a shared deck');
+  return { id, name, missing };
+}

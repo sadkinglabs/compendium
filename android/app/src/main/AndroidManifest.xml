@@ -26,6 +26,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="compendium" android:host="match" />
+                <data android:scheme="compendium" android:host="deck" />
             </intent-filter>
         </activity>
 

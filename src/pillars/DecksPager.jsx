@@ -13,9 +13,12 @@ import { deckMatchCount } from '../store/playRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
 import { Chip, ChipRow, Loading, useSwipe, BlankState } from '../components/ui.jsx';
-import { haptic } from '../native.js';
+import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import Sheet from '../components/Sheet.jsx';
+import QRCode from '../components/QRCode.jsx';
+import { buildDeckShare } from '../store/deckShare.js';
+import { launchScanner } from '../cardScanner.js';
 import { confirmAction } from '../feedback.js';
 import DeckDashboard from './DeckDashboard.jsx';
 import '../theme/deckpager.css';
@@ -27,8 +30,9 @@ const BASE = import.meta.env.BASE_URL;
 const NewDeckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="13" height="17" rx="2" /><rect x="8" y="2" width="13" height="17" rx="2" /></svg>;
 const CuriosaSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2.5-2.5a5 5 0 0 0-7.07-7.07l-1.4 1.4" /><path d="M14 11a5 5 0 0 0-7.07 0L4.43 13.5a5 5 0 0 0 7.07 7.07l1.4-1.4" /></svg>;
 const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
+const QrSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><line x1="14" y1="14" x2="14" y2="17" /><line x1="17" y1="14" x2="21" y2="14" /><line x1="21" y1="17" x2="21" y2="21" /><line x1="14" y1="21" x2="17" y2="21" /></svg>;
 
-export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
+export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
   const setEditMode = onEditMode;   // lifted to App so it survives the add-cards flow
@@ -230,6 +234,10 @@ export default function DecksPager({ onNew, onImport, onAddCards, deckOpen, onOp
       {view === 'library' && (
         <Fab variant="lib" icon={<FabGlyph kind="add" />} label="New deck options" items={[
           { label: 'New Deck', icon: NewDeckSvg, onClick: onNew },
+          { label: 'Import from QR', icon: QrSvg, onClick: () => launchScanner({
+            onOpenDeck: (id, name) => { onChanged?.(); onOpenDeck({ id, name }); },
+            onOpenCard: onOpenCodex, onImportMatch,
+          }) },
           { label: 'Import from Curiosa', icon: CuriosaSvg, onClick: () => onImport('url') },
           { label: 'Import from text', icon: TextImportSvg, onClick: () => onImport('text') },
         ]} />
@@ -275,29 +283,61 @@ function RenameSheet({ open, initial, onClose, onSave }) {
 // Export - Arcanum's #export-sheet: Markdown (readable) / Curiosa (flat) toggle
 // with a copy-to-clipboard action.
 function ExportSheet({ open, deckId, onClose, flash }) {
-  const [fmt, setFmt] = useState('markdown');
+  const [fmt, setFmt] = useState('markdown');   // markdown | curiosa | compendium
   const [text, setText] = useState('');
+  const [share, setShare] = useState(null);     // { link, cards } for the Compendium QR
   useEffect(() => {
     if (!open || !deckId) return;
     let a = true;
-    (fmt === 'curiosa' ? exportCuriosa(deckId) : exportMarkdown(deckId)).then((t) => a && setText(t));
+    if (fmt === 'compendium') {
+      setShare(null);
+      buildDeckShare(deckId).then((s) => a && setShare(s)).catch(() => a && setShare({ link: '', cards: 0 }));
+    } else {
+      (fmt === 'curiosa' ? exportCuriosa(deckId) : exportMarkdown(deckId)).then((t) => a && setText(t));
+    }
     return () => { a = false; };
   }, [open, deckId, fmt]);
+  const copyable = fmt === 'compendium' ? share?.link : text;
   async function copy() {
-    try { await navigator.clipboard.writeText(text); flash?.('Copied to clipboard'); }
+    if (!copyable) return;
+    try { await navigator.clipboard.writeText(copyable); flash?.('Copied to clipboard'); }
     catch { flash?.('Copy failed'); }
   }
+  async function doShare() {
+    if (!share?.link) return;
+    const r = await shareLink({ title: 'Sorcery deck', text: share.link, dialogTitle: 'Share deck' });
+    if (r === 'copied') flash?.('Link copied');
+  }
+  const footer = fmt === 'compendium'
+    ? <button className="es-copy-btn" onClick={doShare} disabled={!share?.link}>Share link</button>
+    : <button className="es-copy-btn" onClick={copy}>Copy to clipboard</button>;
   return (
-    <Sheet open={open} title="Export Deck" onClose={onClose}
-      footer={<button className="es-copy-btn" onClick={copy}>Copy to clipboard</button>}>
+    <Sheet open={open} title="Export Deck" onClose={onClose} footer={footer}>
       <div className="es-format-row">
         <div className="es-format-wrap">
           <button className={`es-format-btn${fmt === 'markdown' ? ' on' : ''}`} onClick={() => setFmt('markdown')}>Markdown</button>
           <button className={`es-format-btn${fmt === 'curiosa' ? ' on' : ''}`} onClick={() => setFmt('curiosa')}>Curiosa</button>
+          <button className={`es-format-btn${fmt === 'compendium' ? ' on' : ''}`} onClick={() => setFmt('compendium')}>Compendium</button>
         </div>
       </div>
-      <div className="es-hint">{fmt === 'curiosa' ? 'Flat “qty name” list for curiosa.io import.' : 'Readable list grouped by zone and type.'}</div>
-      <textarea className="es-area" readOnly value={text} onFocus={(e) => e.target.select()} />
+      {fmt === 'compendium' ? (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '10px 0 6px' }}>
+          {share?.link
+            ? <>
+                <QRCode text={share.link} size={224} />
+                <div style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', maxWidth: 300 }}>
+                  Have a friend scan this in Compendium — <b style={{ color: 'var(--ink-body)' }}>Decks › + › Import from QR</b> — or send them the link. {share.cards} card{share.cards === 1 ? '' : 's'}.
+                </div>
+                <button onClick={copy} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer', padding: 4 }}>Copy link</button>
+              </>
+            : <div className="es-hint" style={{ padding: '30px 0' }}>{share ? 'This deck has no cards to share yet.' : 'Building share code…'}</div>}
+        </div>
+      ) : (
+        <>
+          <div className="es-hint">{fmt === 'curiosa' ? 'Flat “qty name” list for curiosa.io import.' : 'Readable list grouped by zone and type.'}</div>
+          <textarea className="es-area" readOnly value={text} onFocus={(e) => e.target.select()} />
+        </>
+      )}
     </Sheet>
   );
 }

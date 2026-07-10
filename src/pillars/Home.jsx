@@ -32,7 +32,7 @@ function fmtSpanShort(secs) {
   return `${secs}s`;
 }
 
-export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, registerApi, profile, rev, pillSlot }) {
+export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, onImportMatch, registerApi, profile, rev, pillSlot }) {
   const [tab, setTab] = useState('overview');
   const [edit, setEdit] = useState(false);
   // Hardware BACK peels edit mode, then the Overview<->Dashboard subtab, before App
@@ -78,8 +78,12 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, 
       {/* Offline card scanner - hidden in Dashboard edit mode (where the add-widget
           FAB takes the slot). Native only; on web it shows an "installed app" hint. */}
       {!edit && (
-        <Fab variant="lib" label="Scan a card" icon={<FabGlyph kind="camera" />}
-          onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name) })} />
+        <Fab variant="lib" label="Scan a card or code" icon={<FabGlyph kind="camera" />}
+          onClick={() => launchScanner({
+            onOpenCard: (id, name) => onOpen('card', id, name),
+            onOpenDeck: (id, name) => onOpen('deck', id, name),
+            onImportMatch,
+          })} />
       )}
     </div>
   );

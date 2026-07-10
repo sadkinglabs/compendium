@@ -6,6 +6,8 @@
 import { registerPlugin } from '@capacitor/core';
 import { query } from './store/db.js';
 import { addOwnedCopies, addWantedCopies } from './store/ownedRepository.js';
+import { parseDeckShare } from './store/deckShare.js';
+import { importDeckShare } from './store/deckRepository.js';
 import { toast } from './feedback.js';
 import { isNative } from './native.js';
 
@@ -29,11 +31,13 @@ async function catalogForScan() {
 }
 
 /**
- * Launch the full-screen scanner. `onOpenCard(cardId, name)` navigates to the card's
- * Codex page (App.open('card', ...)); Collection/Wishlist adds write via ownedRepository.
- * Resolves when the scanner closes; safe to call on web (shows a hint and returns).
+ * Launch the universal scanner. It auto-detects the target and, on close, reports one
+ * terminal outcome: a card (Codex), a shared deck (compendium://deck), or a shared
+ * match (compendium://match). JS owns all writes/nav - the deck is imported here (never
+ * on the native side). Callbacks: `onOpenCard(id,name)`, `onOpenDeck(id,name)`,
+ * `onImportMatch(url)`. Safe on web (shows a hint and returns).
  */
-export async function launchScanner({ onOpenCard } = {}) {
+export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch } = {}) {
   if (!isNative()) {
     toast('Card scanning is available in the installed app.');
     return;
@@ -59,7 +63,21 @@ export async function launchScanner({ onOpenCard } = {}) {
   try {
     const cards = await catalogForScan();
     const res = await CardScanner.scan({ cards });
-    if (res?.action === 'codex' && res.cardId) onOpenCard?.(res.cardId, res.name);
+    if (res?.action === 'codex' && res.cardId) {
+      onOpenCard?.(res.cardId, res.name);
+    } else if (res?.action === 'deckUrl' && res.url) {
+      const payload = parseDeckShare(res.url);
+      if (!payload) { toast("That QR isn't a Compendium deck.", { tone: 'danger' }); }
+      else {
+        try {
+          const d = await importDeckShare(payload);
+          toast(`Imported "${d.name}"${d.missing ? ` · ${d.missing} unknown` : ''}`);
+          onOpenDeck?.(d.id, d.name);
+        } catch { toast("Couldn't import that deck.", { tone: 'danger' }); }
+      }
+    } else if (res?.action === 'matchUrl' && res.url) {
+      onImportMatch?.(res.url);
+    }
   } catch (e) {
     const code = String(e?.code || e?.message || '');
     if (/permission/i.test(code)) toast('Camera permission is needed to scan cards.', { tone: 'danger' });

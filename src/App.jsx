@@ -29,6 +29,8 @@ import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTr
 import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
 import { runBackConsumers } from './back.js';
 import { parseMatchShare } from './store/matchShare.js';
+import { parseDeckShare } from './store/deckShare.js';
+import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
 import { ListRow, IconButton, Loading, Chip, ChipRow, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
@@ -84,9 +86,15 @@ export default function App() {
   useEffect(() => onBackButton(() => backRef.current?.()), []);
   // Dev aid: exercise the hardware-back chain from a desktop browser (no Capacitor).
   useEffect(() => { if (import.meta.env.DEV) window.__back = () => backRef.current?.(); }, []);
-  // A scanned shared-match QR opens compendium://match?d=... - land it on the
-  // import review sheet, whatever tab we're on.
-  useEffect(() => onAppUrlOpen((url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }), []);
+  // A shared QR / link opens compendium://match?d=... (review sheet) or
+  // compendium://deck?d=... (import + open), whatever tab we're on.
+  useEffect(() => onAppUrlOpen((url) => {
+    const m = parseMatchShare(url); if (m) { setMatchImport(m); return; }
+    const d = parseDeckShare(url);
+    if (d) importDeckShare(d)
+      .then((r) => { open('deck', r.id, r.name); toast(`Imported “${r.name}”${r.missing ? ` · ${r.missing} unknown` : ''}`); })
+      .catch(() => toast('Couldn’t import that deck.', { tone: 'danger' }));
+  }), []);   // eslint-disable-line react-hooks/exhaustive-deps
   // Storage-full / persist failure - the DB layer broadcasts when a save is
   // rejected (quota, blocked). Warn once so the user knows changes aren't saving.
   useEffect(() => {
@@ -356,6 +364,7 @@ export default function App() {
       <div key={tab} className={`cx-pillar-slide from-${slideDirRef.current}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
+          onImportMatch={(url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }}
           pillSlot={pillSlot}
           deckOpen={deckOpen} onOpenDeck={setDeckOpen} onChanged={bump}
           onOpenCodex={(id, name) => open('card', id, name)}
@@ -387,6 +396,7 @@ export default function App() {
             onGoTab={goTab} onGoLibrary={goLibrary} onAllNotes={() => { setCodexPreset({ marg: true }); goTab('codex'); }}
             onMarginalia={() => { setScope('marginalia'); goTab('codex'); }}
             onStartMatch={startMatch} registerApi={(api) => { homeApi.current = api; }}
+            onImportMatch={(url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }}
             profile={profile} rev={rev} />
         )}
       </div>
