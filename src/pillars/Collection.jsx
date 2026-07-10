@@ -1,31 +1,42 @@
 // Collection pillar - the card OWNERSHIP ledger. Overview (glance stats + how many
 // decks are buildable + recently added) and Cards (search the catalog, one-tap +/-
-// to record what you Own or Want). Buildability/lists live in later stages. Reuses
-// the app's card surfaces (getPool + cardQuery search, CardRow) and the ownership
-// data layer (ownedRepository + compareEngine). Accent is ruby, chrome-only.
+// to record what you Own or Want). Rows are the binder-style CollectionCardRow;
+// tapping a card opens the shared CollectionCardSheet (ownership steppers +
+// Codex hand-off) lifted to the pillar root. Data layer is ownedRepository +
+// compareEngine. Accent is ruby, chrome-only.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getPool, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import {
-  ownWantMap, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
+  ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
   deckBuildabilityBulk, subscribeCollection,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards,
 } from '../store/ownedRepository.js';
 import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
-import CardRow from '../components/CardRow.jsx';
+import CollectionCardRow from '../components/CollectionCardRow.jsx';
+import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
-import { stepBtn, serialChain } from '../components/ownedUi.js';
-import { CodexGlyph } from './Codex.jsx';
-import { haptic } from '../native.js';
+import { serialChain, ownedChains } from '../components/ownedUi.js';
+import Fab, { FabGlyph } from '../components/Fab.jsx';
+import { launchScanner } from '../cardScanner.js';
 import { toast } from '../feedback.js';
 
-const RUBY_BADGE = '#8f2038';   // deep ruby fill for the owned-count badge (light ruby is chrome)
+// Chip recipe shared by the row's right-edge indicators (wishlist count,
+// owned-of-target) - quiet mono capsule, content stays ink not ruby.
+const chipStyle = (color = 'var(--ink-faint)') => ({
+  font: "600 11px/1 var(--f-mono)", color, padding: '4px 7px',
+  border: '1px solid var(--hair-12)', borderRadius: 999,
+});
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   const [view, setView] = useState('overview');   // overview | cards | lists
   const [listOpen, setListOpen] = useState(null);  // a list row when its detail is open
+  // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
+  // ListDetail all share one instance (its ledger writes broadcast via
+  // subscribeCollection, so each view refreshes itself).
+  const [sheetCard, setSheetCard] = useState(null);
   const go = (v) => { setListOpen(null); setView(v); };
   const pills = (
     <div style={{ padding: '0 20px 10px' }}>
@@ -40,14 +51,16 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
       {view === 'overview' ? (
-        <Overview onGoCards={() => go('cards')} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onOpen={onOpen} rev={rev} />
+        <Overview onGoCards={() => go('cards')} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard} rev={rev} />
       ) : view === 'cards' ? (
-        <Cards onOpen={onOpen} />
+        <Cards onOpen={onOpen} onPeek={setSheetCard} />
       ) : listOpen ? (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onChanged={onChanged} />
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onChanged={onChanged} />
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
+      <CollectionCardSheet cardId={sheetCard} onClose={() => setSheetCard(null)}
+        onOpenCodex={(id, name) => { setSheetCard(null); onOpen('card', id, name); }} />
     </div>
   );
 }
@@ -68,7 +81,7 @@ function Tile({ label, value, sub, onClick }) {
   );
 }
 
-function Overview({ onGoCards, onGoDecks, onOpen, rev }) {
+function Overview({ onGoCards, onGoDecks, onPeek, rev }) {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [deckStat, setDeckStat] = useState(null);
@@ -103,8 +116,7 @@ function Overview({ onGoCards, onGoDecks, onOpen, rev }) {
             <button onClick={onGoCards} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>All cards ›</button>
           </div>
           {recent.map((c) => (
-            <CardRow key={c.card_id} card={c} thumb count={c.qty_owned} countTint={RUBY_BADGE} countTitle="Copies owned"
-              icon={<CodexGlyph kind="card" />} onClick={() => onOpen('card', c.card_id, c.name)} />
+            <CollectionCardRow key={c.card_id} card={c} badge={c.qty_owned} onClick={() => onPeek(c.card_id)} />
           ))}
         </>
       ) : (
@@ -124,13 +136,14 @@ function Overview({ onGoCards, onGoDecks, onOpen, rev }) {
 
 /* ---------------- Cards (record owned / wanted) ---------------- */
 
-function Cards({ onOpen }) {
+function Cards({ onOpen, onPeek }) {
   const [q, setQ] = useState('');
-  const [field, setField] = useState('owned');    // owned | wanted (which qty +/- edits)
-  const [filter, setFilter] = useState('all');     // all | owned | wishlist | notowned
+  const [filter, setFilter] = useState('all');     // all | owned | wishlist | missing
   const [pool, setPool] = useState(null);
   const [ow, setOw] = useState(new Map());         // card_id -> {owned, wanted} (optimistic)
-  const chains = useRef({});
+  // No mode toggle: steppers always edit Owned - except in the Wishlist filter,
+  // where the visible filter IS the mode and they edit Wanted.
+  const field = filter === 'wishlist' ? 'wanted' : 'owned';
 
   async function loadPool() {
     const parsed = parseQuery(q);
@@ -140,78 +153,87 @@ function Cards({ onOpen }) {
   }
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
   useEffect(() => { ownWantMap().then(setOw); }, []);
+  // Keep the list live with edits made elsewhere (the shared card sheet writes
+  // via its own ledger hook). Debounced 250ms so our own optimistic steps get
+  // their serialChain writes committed before the re-read; simple, and worst
+  // case the refresh lands on the same values we already show.
+  useEffect(() => {
+    let t = null;
+    const off = subscribeCollection(() => {
+      clearTimeout(t);
+      t = setTimeout(() => ownWantMap().then(setOw), 250);
+    });
+    return () => { clearTimeout(t); off(); };
+  }, []);
 
   const val = (id, key) => (ow.get(id)?.[key] || 0);
   function step(cardId, delta) {
-    haptic('light');
+    // Optimistic UI off the cached ow map; the WRITE never trusts that map. It
+    // queues on the app-wide per-card ownedChains and re-reads qtyFor inside its
+    // turn, so an edit made in the shared card sheet (its own optimistic ledger)
+    // can't be reverted by an absolute write off our debounced/stale cache.
     setOw((prev) => {
       const cur = prev.get(cardId) || { owned: 0, wanted: 0 };
       const next = { ...cur, [field]: Math.max(0, (cur[field] || 0) + delta) };
       const m = new Map(prev); m.set(cardId, next);
-      const write = next[field];
-      serialChain(chains, cardId, () => (field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write)));
       return m;
+    });
+    serialChain(ownedChains, cardId, async () => {
+      const cur = await qtyFor(cardId);
+      const write = Math.max(0, (cur[field] || 0) + delta);
+      return field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write);
     });
   }
 
-  const FILTERS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['notowned', 'Not owned']];
+  const FILTERS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
   const shown = (pool || []).filter((c) => {
     const o = val(c.card_id, 'owned'), w = val(c.card_id, 'wanted');
     if (filter === 'owned') return o > 0;
     if (filter === 'wishlist') return w > 0;
-    if (filter === 'notowned') return o === 0;
+    if (filter === 'missing') return o === 0;
     return true;
   });
 
   return (
     <div style={{ padding: '0 20px' }}>
-      {/* search + edit-target toggle */}
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cards…" aria-label="Search your collection"
-        style={{ width: '100%', height: 42, boxSizing: 'border-box', marginBottom: 10, padding: '0 14px', borderRadius: 12,
-          background: 'rgba(10,10,12,.58)', border: '1px solid rgba(255,255,255,.09)', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+      <div className="cx-search-pill" style={{ marginBottom: 10 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cards…" aria-label="Search your collection"
+          style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", flex: 1 }} />
+      </div>
+      <div style={{ marginBottom: 12 }}>
         <ChipRow>
           {FILTERS.map(([k, label]) => <Chip key={k} label={label} active={filter === k} onClick={() => setFilter(k)} />)}
         </ChipRow>
-        <div style={{ display: 'inline-flex', flex: 'none', borderRadius: 18, overflow: 'hidden', border: '1px solid rgba(210,88,115,.32)' }}>
-          {[['owned', 'Own'], ['wanted', 'Want']].map(([k, label]) => (
-            <button key={k} onClick={() => setField(k)} aria-pressed={field === k}
-              aria-label={k === 'owned' ? 'Edit owned count' : 'Edit wishlist count'} style={{
-                padding: '6px 12px', cursor: 'pointer', font: "700 11.5px/1 var(--f-ui)", border: 'none',
-                background: field === k ? 'var(--accent-ruby)' : 'transparent',
-                color: field === k ? '#2a0e16' : 'var(--accent-ruby)',
-              }}>{label}</button>
-          ))}
-        </div>
       </div>
 
       {pool == null ? <Loading /> : shown.length === 0 ? (
         <div style={{ padding: '40px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          {filter === 'all' ? 'No cards match.' : `No ${filter === 'notowned' ? 'un-owned' : filter} cards${q ? ' match' : ' yet'}.`}
+          {filter === 'all' ? 'No cards match.' : `No ${filter} cards${q ? ' match' : ' yet'}.`}
         </div>
       ) : (
         <>
-          <div style={{ font: "italic 400 12px/1.4 'EB Garamond',serif", color: 'var(--ink-muted)', marginBottom: 8 }}>
-            {shown.length} cards{shown.length > 250 ? ' (showing 250 - refine)' : ''} · editing {field === 'owned' ? 'Owned' : 'Wishlist'}
+          <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '2px 2px 6px' }}>
+            {shown.length} cards{shown.length > 250 ? ' · showing 250 — refine' : ''}
           </div>
           {shown.slice(0, 250).map((c) => {
             const o = val(c.card_id, 'owned'), w = val(c.card_id, 'wanted');
-            const active = field === 'owned' ? o : w;
+            const wishlist = filter === 'wishlist';
+            const chip = !wishlist && w > 0
+              ? <span title="On your wishlist" style={chipStyle()}>♡ {w}</span>
+              : wishlist && o > 0
+                ? <span title="Copies owned" style={chipStyle()}>own {o}</span>
+                : null;
             return (
-              <CardRow key={c.card_id} card={c} thumb count={o} countTint={RUBY_BADGE} countTitle="Copies owned"
-                onClick={() => onOpen('card', c.card_id, c.name)}
-                trailing={(
-                  <span onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
-                    {field === 'owned' && w > 0 && <span title="On your wishlist" style={{ font: "600 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>♡{w}</span>}
-                    <button onClick={() => step(c.card_id, -1)} style={stepBtn} disabled={active === 0} aria-label="Decrease">−</button>
-                    <span style={{ minWidth: 14, textAlign: 'center', font: "700 14px/1 var(--f-mono)", color: active > 0 ? 'var(--ink-body)' : 'var(--ink-faint)' }}>{active}</span>
-                    <button onClick={() => step(c.card_id, 1)} style={stepBtn} aria-label="Increase">+</button>
-                  </span>
-                )} />
+              <CollectionCardRow key={c.card_id} card={c} dim={o === 0 && !wishlist} chip={chip}
+                stepper={{ value: wishlist ? w : o, onStep: (d) => step(c.card_id, d) }}
+                onClick={() => onPeek(c.card_id)} />
             );
           })}
         </>
       )}
+
+      <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
+        onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name) })} />
     </div>
   );
 }
@@ -354,7 +376,7 @@ function ListsIndex({ onOpenList, rev }) {
   );
 }
 
-function ListDetail({ list, onBack, onOpen, onChanged }) {
+function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const isWanted = list.kind === 'wanted';
   const [meta, setMeta] = useState(list);
   const [loaded, setLoaded] = useState(false);     // initial listCards fetch done
@@ -413,7 +435,7 @@ function ListDetail({ list, onBack, onOpen, onChanged }) {
 
   const targetOf = (id) => qty.get(id) || 0;
   function step(cardId, delta) {
-    haptic('light');
+    // haptic lives in CollectionCardRow's stepper - don't double-buzz here.
     setQty((prev) => {
       const next = Math.max(0, (prev.get(cardId) || 0) + delta);
       const m = new Map(prev);
@@ -444,17 +466,13 @@ function ListDetail({ list, onBack, onOpen, onChanged }) {
     const t = targetOf(c.card_id);
     const own = ownQty.get(c.card_id) || 0;
     const enough = isWanted && t > 0 && own >= t;
+    const chip = isWanted && t > 0
+      ? <span title="Owned / target" style={chipStyle(enough ? 'var(--accent-jade)' : 'var(--ink-faint)')}>{enough ? '✓' : `${Math.min(own, t)}/${t}`}</span>
+      : null;
     return (
-      <CardRow key={c.card_id} card={c} thumb count={own} countTint={RUBY_BADGE} countTitle="Copies owned"
-        onClick={() => onOpen('card', c.card_id, c.name)}
-        trailing={(
-          <span onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
-            {isWanted && t > 0 && <span title="Owned / target" style={{ font: "600 11px/1 var(--f-mono)", color: enough ? 'var(--accent-jade)' : 'var(--ink-faint)' }}>{enough ? '✓' : `${Math.min(own, t)}/${t}`}</span>}
-            <button onClick={() => step(c.card_id, -1)} style={stepBtn} disabled={t === 0} aria-label="Decrease">−</button>
-            <span style={{ minWidth: 14, textAlign: 'center', font: "700 14px/1 var(--f-mono)", color: t > 0 ? 'var(--ink-body)' : 'var(--ink-faint)' }}>{t}</span>
-            <button onClick={() => step(c.card_id, 1)} style={stepBtn} aria-label="Increase">+</button>
-          </span>
-        )} />
+      <CollectionCardRow key={c.card_id} card={c} dim={own === 0} chip={chip}
+        stepper={{ value: t, onStep: (d) => step(c.card_id, d) }}
+        onClick={() => onPeek(c.card_id)} />
     );
   };
 
@@ -489,9 +507,10 @@ function ListDetail({ list, onBack, onOpen, onChanged }) {
         </div>
       )}
 
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add cards — search the catalog…" aria-label="Add cards to this list"
-        style={{ width: '100%', height: 42, boxSizing: 'border-box', marginBottom: 12, padding: '0 14px', borderRadius: 12,
-          background: 'rgba(10,10,12,.58)', border: '1px solid rgba(255,255,255,.09)', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" }} />
+      <div className="cx-search-pill" style={{ marginBottom: 12 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add cards — search the catalog…" aria-label="Add cards to this list"
+          style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", flex: 1 }} />
+      </div>
 
       {loading ? <Loading /> : (rows || []).length === 0 ? (
         <div style={{ padding: '34px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 14.5px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>

@@ -20,3 +20,12 @@ export function serialChain(ref, key, fn) {
   ref.current[key] = next;
   return next;
 }
+
+// THE app-wide write chain for the owned_cards ledger, keyed by card_id. Every
+// surface that mutates owned/wanted (the Cards tab's row steppers, the shared
+// CollectionCardSheet / OwnedControl ledger hook) MUST queue through this one
+// chain - two surfaces can show the same card at once, and each keeps its own
+// optimistic mirror; serializing on one module-level chain (with each write
+// re-reading qtyFor inside its turn) is what makes a sheet edit and a list-row
+// edit for the same card unable to race an absolute write against each other.
+export const ownedChains = { current: {} };

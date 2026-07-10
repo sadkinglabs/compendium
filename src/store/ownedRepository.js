@@ -268,7 +268,7 @@ export async function cardNames(ids) {
 export async function recentlyAdded(limit = 8) {
   const pid = activeProfileId();
   return query(
-    `SELECT o.card_id, o.qty_owned, o.qty_wanted, c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity
+    `SELECT o.card_id, o.qty_owned, o.qty_wanted, c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=? AND o.qty_owned>0 ORDER BY o.updated_at DESC LIMIT ?;`,
     [pid, limit]
