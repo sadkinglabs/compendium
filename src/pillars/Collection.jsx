@@ -329,11 +329,9 @@ function Cards({ onOpen, onPeek }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. The band fades from the
-          pillar's own ruby wash (var(--wash)) at the top to transparent below, so
-          cards dissolve into the ruby header rather than a dead grey strip, and the
-          frosted-glass toggle floats on it. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '8px 0 20px', margin: '0 -20px', background: 'linear-gradient(180deg, var(--wash) 0%, color-mix(in srgb, var(--wash) 55%, transparent) 46%, transparent 100%)' }}>
+      {/* Sticky centered view toggle - never scrolls away. Transparent band: cards
+          just scroll up past the frosted-glass toggle and clip under the header. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
         <ViewToggle view={view} setView={setView} />
       </div>
 
