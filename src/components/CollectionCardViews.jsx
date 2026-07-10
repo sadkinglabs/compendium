@@ -114,9 +114,8 @@ export function LedgerRow({ card, owned = 0, foil = 0, wanted = 0, value = 0, on
         ) : (
           <span style={{ display: 'block', position: 'relative', padding: 1, borderRadius: 9, background: complete ? GILT_BRIGHT : GILT, boxShadow: complete ? GLOW_BRIGHT : GLOW }}>
             <CardArt card={card} radius={8} aspect="5/7" />
-            {complete && (
-              <span style={{ position: 'absolute', bottom: -5, right: -5, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: "700 11px/1 var(--f-mono)", color: '#1a1206', background: '#e3c589', border: '1px solid rgba(16,5,8,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)' }}>×{total}</span>
-            )}
+            {/* Always show the copies-owned count (not just at playset). */}
+            <span title={`${total} cop${total === 1 ? 'y' : 'ies'} owned${foil > 0 ? ` (${foil} foil)` : ''}`} style={{ position: 'absolute', bottom: -5, right: -5, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: "700 11px/1 var(--f-mono)", color: '#1a1206', background: '#e3c589', border: '1px solid rgba(16,5,8,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)' }}>×{total}</span>
           </span>
         )}
       </span>
