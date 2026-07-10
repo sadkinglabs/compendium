@@ -4,8 +4,6 @@
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
 import React, { useEffect, useState } from 'react';
 import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
-import { deckBuildability, subscribeCollection } from '../store/ownedRepository.js';
-import MissingSheet from '../components/MissingSheet.jsx';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
@@ -262,48 +260,6 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   );
 }
 
-// "Buildability" - can this deck be built from the Collection? A read-only compare
-// via the shared engine (independent per deck, no reservation). Header shows N/M
-// owned or a jade Buildable; tap to expand the missing cards. Recomputes on the
-// collection revision, so recording owned cards flips it live. Copy avoids the word
-// "collection" (the deck already has a Collection zone right below).
-function BuildabilityStrip({ deckId, deckName, rev, onOpenCodex, onChanged }) {
-  const [rep, setRep] = useState(null);
-  const [sheet, setSheet] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const load = () => deckBuildability(deckId).then((r) => alive && setRep(r));
-    load();
-    const off = subscribeCollection(load);   // recording owned cards flips this live
-    return () => { alive = false; off(); };
-  }, [deckId, rev]);
-  if (!rep || rep.totalRequired === 0) return null;
-  const canView = rep.totalMissing > 0;
-  return (
-    <>
-      <div className="chart-card" style={{ margin: '0 12px 12px', cursor: canView ? 'pointer' : 'default' }} onClick={() => canView && setSheet(true)}>
-        <div className="chart-card-header">
-          <h3>Buildability</h3>
-          <span style={{ font: "700 13px/1 var(--f-mono)", color: rep.complete ? 'var(--accent-jade)' : 'var(--ink-body)' }}>
-            {rep.complete ? '✓ Buildable' : `${rep.totalHave}/${rep.totalRequired}`}
-          </span>
-        </div>
-        <div style={{ padding: '2px 14px 14px' }}>
-          <div style={{ height: 6, borderRadius: 3, background: 'var(--hair-12)', overflow: 'hidden', marginBottom: 8 }}>
-            <div style={{ height: '100%', width: `${rep.percent}%`, background: rep.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)', borderRadius: 3, transition: 'width .3s ease' }} />
-          </div>
-          <div style={{ font: "400 12.5px/1.45 var(--f-ui)", color: 'var(--ink-muted)' }}>
-            {rep.complete
-              ? 'You own every card in this deck.'
-              : <>You own {rep.totalHave} of {rep.totalRequired} · <span style={{ color: 'var(--accent-ruby)' }}>missing {rep.totalMissing}</span>{rep.unresolved > 0 ? ` · ${rep.unresolved} unrecognised` : ''}{canView ? ' — tap for list' : ''}</>}
-          </div>
-        </div>
-      </div>
-      <MissingSheet open={sheet} report={rep} title={deckName ? `Missing for ${deckName}` : 'Missing cards'}
-        onOpenCard={onOpenCodex} onClose={() => setSheet(false)} onChanged={onChanged} />
-    </>
-  );
-}
 
 export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn = false, editMode = false, onToast, onChanged, onOpenCodex, onMissing }) {
   const [deck, setDeck] = useState(null);
@@ -415,13 +371,11 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         </div>
       </div>
 
-      {/* List zones / hand / notes, or the Stats analysis suite. Buildability is a
-          stat, so it lives at the top of the Stats page (not on the List page). */}
+      {/* List zones / hand / notes, or the Stats analysis suite (Buildability leads
+          the Stats suite - it's a stat, not on the List page). */}
       {statTab === 'stats' ? (
-        <>
-          <BuildabilityStrip deckId={deckId} deckName={deck.name} rev={rev + localRev} onOpenCodex={onOpenCodex} onChanged={onChanged} />
-          <DeckStats deck={deck} rev={rev} onReload={() => { setLocalRev((r) => r + 1); onChanged?.(); }} />
-        </>
+        <DeckStats deck={deck} rev={rev} onReload={() => { setLocalRev((r) => r + 1); onChanged?.(); }}
+          onOpenCodex={onOpenCodex} onChanged={onChanged} />
       ) : (
         <div style={{ paddingTop: 12 }}>
           <Zone title="Spellbook" count={sb} need={60} groups={sbGroups} collapsed={collapsed.has('spellbook')} onToggle={() => toggle('spellbook')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('spellbook')} />

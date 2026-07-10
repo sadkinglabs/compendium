@@ -4,10 +4,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { getDeckCards } from '../store/deckRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
+import { deckBuildability, subscribeCollection } from '../store/ownedRepository.js';
 import * as St from '../store/deckStats.js';
 import { ThresholdPips, Loading } from '../components/ui.jsx';
+import MissingSheet from '../components/MissingSheet.jsx';
 
-export default function DeckStats({ deck, rev, onReload }) {
+export default function DeckStats({ deck, rev, onReload, onOpenCodex, onChanged }) {
   const [zones, setZones] = useState(null);
   const [compMode, setCompMode] = useState('element');
   const [atlasMode, setAtlasMode] = useState('supply');
@@ -39,6 +41,9 @@ export default function DeckStats({ deck, rev, onReload }) {
 
   return (
     <div style={{ padding: '12px 0 4px' }}>
+      {/* buildability - a stat, so it leads the Stats suite in a matching card */}
+      <Buildability deckId={deck.id} deckName={deck.name} rev={rev} onOpenCodex={onOpenCodex} onChanged={onChanged} />
+
       {/* mana curve */}
       <Card title="Mana Curve" right={<Avg spellbook={sb} />}>
         {Object.keys(manaCosts).length ? <><Svg html={St.curveSVG(manaCosts, { label: 'mana' })} /><Legend costs={manaCosts} /></>
@@ -179,6 +184,44 @@ const Card = ({ title, right, children }) => (
     {children}
   </div>
 );
+
+// Buildability - can this deck be built from the Collection? A read-only compare
+// via the shared engine; recomputes on the collection revision so recording owned
+// cards flips it live. Rendered in the standard stats Card so it reads identically
+// to the mana/composition cards; tap to see the missing list.
+function Buildability({ deckId, deckName, rev, onOpenCodex, onChanged }) {
+  const [rep, setRep] = useState(null);
+  const [sheet, setSheet] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => deckBuildability(deckId).then((r) => alive && setRep(r));
+    load();
+    const off = subscribeCollection(load);
+    return () => { alive = false; off(); };
+  }, [deckId, rev]);
+  if (!rep || rep.totalRequired === 0) return null;
+  const canView = rep.totalMissing > 0;
+  return (
+    <Card title="Buildability" right={
+      <span style={{ marginLeft: 'auto', font: "700 13px/1 var(--f-mono)", color: rep.complete ? 'var(--accent-jade)' : 'var(--ink-body)' }}>
+        {rep.complete ? '✓ Buildable' : `${rep.totalHave}/${rep.totalRequired}`}
+      </span>
+    }>
+      <div onClick={() => canView && setSheet(true)} style={{ cursor: canView ? 'pointer' : 'default' }}>
+        <div style={{ height: 6, borderRadius: 3, background: 'var(--hair-12)', overflow: 'hidden', marginBottom: 8 }}>
+          <div style={{ height: '100%', width: `${rep.percent}%`, background: rep.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)', borderRadius: 3, transition: 'width .3s ease' }} />
+        </div>
+        <div style={{ font: "400 12.5px/1.45 var(--f-ui)", color: 'var(--ink-muted)' }}>
+          {rep.complete
+            ? 'You own every card in this deck.'
+            : <>You own {rep.totalHave} of {rep.totalRequired} · <span style={{ color: 'var(--accent-ruby)' }}>missing {rep.totalMissing}</span>{rep.unresolved > 0 ? ` · ${rep.unresolved} unrecognised` : ''}{canView ? ' - tap for list' : ''}</>}
+        </div>
+      </div>
+      <MissingSheet open={sheet} report={rep} title={deckName ? `Missing for ${deckName}` : 'Missing cards'}
+        onOpenCard={onOpenCodex} onClose={() => setSheet(false)} onChanged={onChanged} />
+    </Card>
+  );
+}
 const Svg = ({ html }) => <div dangerouslySetInnerHTML={{ __html: html }} />;
 const Legend = ({ costs }) => (
   <div className="cc-key">
