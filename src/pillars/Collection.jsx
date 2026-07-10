@@ -304,10 +304,12 @@ function Cards({ onOpen, onPeek }) {
       )}
 
       {/* Filter FAB - adding lives on Overview (+ / camera); here you refine what
-          you're LOOKING at. The sheet is the home for the deeper filters to come
-          (sets, rarity, elements…); ownership lives here too, synced with the chips. */}
-      <Fab variant="lib" label="Filter cards" icon={<FabGlyph kind="filter" />}
-        active={filterOpen || filter !== 'all'} onClick={() => setFilterOpen(true)} />
+          you're LOOKING at. Matches the Codex filter FAB exactly: deck variant +
+          a count badge for "a filter is applied" (NEVER `active` - that class is
+          the open-morph rotation and leaves the glyph tilted 45°). The sheet is
+          the home for the deeper filters to come (sets, rarity, elements…). */}
+      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />}
+        badge={filter !== 'all' ? 1 : 0} onClick={() => setFilterOpen(true)} />
       <BottomSheet open={filterOpen} title="FILTERS" onClose={() => setFilterOpen(false)}>
         <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 8px' }}>OWNERSHIP</div>
         <ChipRow>
