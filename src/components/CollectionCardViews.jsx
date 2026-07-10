@@ -18,11 +18,8 @@ const GLOW = '0 0 12px rgba(203,167,95,.14)';
 const GLOW_BRIGHT = '0 0 12px rgba(203,167,95,.28)';
 const TEAL = '#63c9a3';
 
-// Same illustration crop as the app's other list thumbs: Sites are stored
-// portrait (a landscape card rotated), so rotate back before zooming.
-const artFit = (card) => card?.is_site
-  ? { transform: 'rotate(90deg) scale(1.5)' }
-  : { transformOrigin: '50% 30%', transform: 'scale(1.6)' };
+// The thumb shows the WHOLE card (5:7), no magnification. Sites (stored portrait)
+// are left unrotated - the portrait shape matches the frame, so no crop/rotate.
 
 function firstSetName(card) {
   try { const s = JSON.parse(card?.sets || '[]'); return (Array.isArray(s) && s[0]?.name) || null; } catch { return null; }
@@ -65,10 +62,24 @@ function Frost({ label, onClick, disabled, size = 31, children }) {
   );
 }
 
-// Playset progress for the rail: pips (one per legal copy) while collecting, a
-// gold-teal "PLAYSET" wordmark once complete. Nothing for a card you don't own.
-function PlaysetProgress({ limit, total, complete }) {
-  if (complete) return <span style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.16em', color: TEAL }}>PLAYSET</span>;
+// A small jade jewel (faceted diamond + tick) - the playset-collected mark, shown
+// in place of the old "PLAYSET" wordmark to keep the rail calm. Shared shape with
+// CollectionCardRow so a completed playset always reads the same.
+export function PlaysetSeal({ size = 16 }) {
+  return (
+    <span title="Playset collected" aria-label="Playset collected" style={{ display: 'inline-flex', flex: 'none' }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 2 L22 12 L12 22 L2 12 Z" fill="rgba(143,211,168,.16)" stroke="#63c9a3" strokeWidth="1.6" strokeLinejoin="round" />
+        <path d="M8 12.2 L11 15 L16.2 9.4" fill="none" stroke="#63c9a3" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
+// Playset tracking for the rail: pips (one per legal copy) while collecting, the
+// jade seal once complete. Nothing for a card you don't own / with no limit.
+export function PlaysetProgress({ limit, total, complete }) {
+  if (complete) return <PlaysetSeal />;
   if (!limit || total <= 0) return null;
   const filled = Math.min(total, limit);
   return (
@@ -92,16 +103,17 @@ export function LedgerRow({ card, owned = 0, foil = 0, wanted = 0, value = 0, on
   return (
     <div className="cx-row" onClick={onPeek}
       style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 90 }}>
-      {/* Thumb: gilt frame when owned (brighter at playset), dark overlay when missing. */}
+      {/* Thumb: the whole card (no zoom, sites unrotated), gilt frame when owned
+          (brighter at playset), dark overlay when missing. */}
       <span style={{ width: 64, flex: 'none', position: 'relative' }}>
         {missing ? (
           <span style={{ display: 'block', position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
-            <CardArt card={card} radius={8} aspect="5/7" imgStyle={artFit(card)} />
+            <CardArt card={card} radius={8} aspect="5/7" />
             <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.62)' }} />
           </span>
         ) : (
           <span style={{ display: 'block', position: 'relative', padding: 1, borderRadius: 9, background: complete ? GILT_BRIGHT : GILT, boxShadow: complete ? GLOW_BRIGHT : GLOW }}>
-            <CardArt card={card} radius={8} aspect="5/7" imgStyle={artFit(card)} />
+            <CardArt card={card} radius={8} aspect="5/7" />
             {complete && (
               <span style={{ position: 'absolute', bottom: -5, right: -5, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: "700 11px/1 var(--f-mono)", color: '#1a1206', background: '#e3c589', border: '1px solid rgba(16,5,8,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)' }}>×{total}</span>
             )}
@@ -109,13 +121,20 @@ export function LedgerRow({ card, owned = 0, foil = 0, wanted = 0, value = 0, on
         )}
       </span>
 
+      {/* Middle: Name / Set · Foils / Playset tracking (stacked lines). */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', font: "600 16.5px/1.25 var(--f-read)", color: nameColor, overflow: 'hidden' }}>{card.name}</span>
-        <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 }}>
-          {setName && <span style={setPillStyle}>{setName}</span>}
-          <PlaysetProgress limit={limit} total={total} complete={complete} />
-          {foil > 0 && <span title="Foil copies" style={{ font: "600 10.5px/1 var(--f-mono)", color: '#e3c589' }}>✦ {foil}</span>}
-        </span>
+        {(setName || foil > 0) && (
+          <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 6 }}>
+            {setName && <span style={setPillStyle}>{setName}</span>}
+            {foil > 0 && <span title="Foil copies" style={{ font: "600 10.5px/1 var(--f-mono)", color: '#e3c589' }}>✦ {foil}</span>}
+          </span>
+        )}
+        {(complete || (limit && total > 0)) && (
+          <span style={{ display: 'flex', alignItems: 'center', marginTop: 6 }}>
+            <PlaysetProgress limit={limit} total={total} complete={complete} />
+          </span>
+        )}
       </div>
 
       {/* Right: steppers when you have some, else a single Add pill. Omitted
