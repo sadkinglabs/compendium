@@ -6,17 +6,14 @@
 // pair of actions (add-to-list · open in Codex). No rule text; no decorative
 // glyphs but the Foil ✦. Behaviour (open/close, hardware-back, drag-to-dismiss,
 // the ledger writes) is unchanged - this is a presentational restructure.
-import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Loading, useFocusTrap } from './ui.jsx';
-import { ThresholdPips } from './ui.jsx';
+import React, { useEffect, useState } from 'react';
+import GothicSheet from './GothicSheet.jsx';
+import { Loading, ThresholdPips } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
 import { listCardLists, listsWithCard, stepListEntry } from '../store/ownedRepository.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
-import { useSheetDrag } from './useSheetDrag.js';
-import { registerBackConsumer } from '../back.js';
 import { haptic } from '../native.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
@@ -231,43 +228,12 @@ function CardBody({ c, onOpenCodex, onPick }) {
 export default function CollectionCardSheet({ cardId, onClose, onOpenCodex }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
-  const trapRef = useFocusTrap(!!cardId);
-  const { handleProps, style: dragStyle } = useSheetDrag(onClose);
-  const closeRef = useRef(onClose); closeRef.current = onClose;
-  useEffect(() => { if (cardId) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [cardId]);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
-  if (!cardId) return null;
-
-  // Portal to the app root: rendered inline, the sheet's position:fixed is trapped
-  // by the pillar's transformed slide-pane and paints UNDER the bottom nav. The app
-  // root is the same escape hatch the FAB uses.
-  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
-  const tree = (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
-      <div
-        ref={trapRef} role="dialog" aria-modal="true" aria-label="Card"
-        onClick={(e) => e.stopPropagation()}
-        className="cx-scroll"
-        style={{
-          position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--kb,0px) / var(--ui-scale,1))', zIndex: 201,
-          borderRadius: '30px 30px 0 0', borderTop: '1px solid rgba(203,167,95,.35)',
-          background: 'linear-gradient(180deg, #181209 0%, #100c08 42%, #0b0806 100%)',
-          padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))',
-          boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
-          maxHeight: 'min(88dvh, calc(100dvh - env(safe-area-inset-top,0px) - 12px - var(--kb,0px) / var(--ui-scale,1)))',
-          overflowY: 'auto', ...dragStyle,
-        }}
-      >
-        {/* Drag the top chrome (handle) to dismiss; the body still scrolls. */}
-        <div {...handleProps} style={{ ...handleProps.style, padding: '4px 0 10px', margin: '0 -26px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
-        </div>
-        {!c ? <Loading /> : picking
-          ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-          : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} />}
-      </div>
-    </>
+  return (
+    <GothicSheet open={!!cardId} onClose={onClose} label="Card">
+      {!c ? <Loading /> : picking
+        ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
+        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} />}
+    </GothicSheet>
   );
-  return root ? createPortal(tree, root) : tree;
 }

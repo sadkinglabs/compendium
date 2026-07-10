@@ -6,7 +6,7 @@
 // compareEngine. Accent is ruby, chrome-only.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getPool, listDecks } from '../store/deckRepository.js';
+import { getPool, getSets, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import {
   ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
@@ -17,6 +17,8 @@ import {
 import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardRow from '../components/CollectionCardRow.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
+import { LedgerRow, BinderTile } from '../components/CollectionCardViews.jsx';
+import GothicSheet from '../components/GothicSheet.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 import { serialChain, ownedChains } from '../components/ownedUi.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -44,7 +46,7 @@ const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, q: '', filter: 'all' };
+const session = { view: 'overview', listOpen: null, sheetCard: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   const [view, setView] = useState(session.view);       // overview | cards | lists
@@ -202,46 +204,101 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
   );
 }
 
-/* ---------------- Cards (record owned / wanted) ---------------- */
+/* ---------------- Cards (dual-view collection browser) ---------------- */
+
+// The sticky, centered List / Binder segmented control.
+function ViewToggle({ view, setView }) {
+  const seg = (v, label, icon) => (
+    <button onClick={() => setView(v)} aria-pressed={view === v} aria-label={label}
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 62, height: 34, borderRadius: 16, border: 'none', cursor: 'pointer', background: view === v ? '#2a2114' : 'transparent', color: view === v ? '#d8c9a4' : '#8a8175', transition: 'background .16s, color .16s' }}>
+      {icon}
+    </button>
+  );
+  return (
+    <div role="group" aria-label="Card view" style={{ display: 'inline-flex', padding: 3, gap: 2, borderRadius: 20, background: 'rgba(42,33,20,.5)', border: '1px solid #4a3c22' }}>
+      {seg('list', 'List view', <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>)}
+      {seg('binder', 'Binder view', <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>)}
+    </div>
+  );
+}
+
+const TYPE_OPTS = ['Minion', 'Aura', 'Magic', 'Artifact', 'Site'];
+const RARITY_OPTS = ['Ordinary', 'Exceptional', 'Elite', 'Unique'];
+const EL_OPTS = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
+const OWN_OPTS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
+
+// All filters in one gothic sheet (same chrome as the card detail sheet). A
+// compact summary + clear-all sit under the header.
+function FiltersSheet({ open, onClose, own, setOwn, sets, setSets, types, setTypes, rarities, setRarities, els, setEls, setOpts, activeCount, summary, onClear }) {
+  const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const Group = ({ title, children }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: '#cba75f', marginBottom: 9 }}>{title}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{children}</div>
+    </div>
+  );
+  return (
+    <GothicSheet open={open} onClose={onClose} label="Filters">
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.24em', color: '#cba75f' }}>FILTERS</span>
+        {activeCount > 0 && <button onClick={onClear} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>Clear all</button>}
+      </div>
+      <div style={{ font: "400 12.5px/1.4 var(--f-read)", color: activeCount > 0 ? 'var(--ink-status)' : 'var(--ink-faint)', minHeight: 16, marginBottom: 16 }}>{activeCount > 0 ? summary : 'All cards'}</div>
+      <Group title="OWNERSHIP">{OWN_OPTS.map(([k, l]) => <Chip key={k} label={l} active={own === k} onClick={() => setOwn(k)} />)}</Group>
+      <Group title="TYPE">{TYPE_OPTS.map((t) => <Chip key={t} label={t} active={types.includes(t)} onClick={() => toggle(types, setTypes, t)} />)}</Group>
+      <Group title="RARITY">{RARITY_OPTS.map((r) => <Chip key={r} label={r} active={rarities.includes(r)} onClick={() => toggle(rarities, setRarities, r)} />)}</Group>
+      <Group title="ELEMENT">{EL_OPTS.map(([k, l]) => <Chip key={k} label={l} active={els.includes(k)} onClick={() => toggle(els, setEls, k)} />)}</Group>
+      {setOpts.length > 0 && <Group title="SET">{setOpts.map((s) => <Chip key={s} label={s} active={sets.includes(s)} onClick={() => toggle(sets, setSets, s)} />)}</Group>}
+      <button onClick={onClose} style={{ width: '100%', marginTop: 8, padding: '14px 0', borderRadius: 16, cursor: 'pointer', font: "600 14px/1 var(--f-display)", color: '#1a1206', background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid #e3c589', boxShadow: '0 6px 20px rgba(203,167,95,.22)' }}>Show results</button>
+    </GothicSheet>
+  );
+}
+
+const VIEW_KEY = 'cx-collection-view';
+const EL_LABEL = { air: 'Air', earth: 'Earth', fire: 'Fire', water: 'Water' };
+const OWN_LABEL = { owned: 'Owned', wishlist: 'Wishlist', missing: 'Missing' };
 
 function Cards({ onOpen, onPeek }) {
+  const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
+  useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
+
   const [q, setQ] = useState(session.q);
-  const [filter, setFilter] = useState(session.filter);   // all | owned | wishlist | missing
-  useEffect(() => { session.q = q; session.filter = filter; }, [q, filter]);
-  const [filterOpen, setFilterOpen] = useState(false);    // the filter FAB's sheet
+  const [own, setOwn] = useState(session.filter);           // all | owned | wishlist | missing
+  const [sets, setSets] = useState(session.sets);
+  const [types, setTypes] = useState(session.types);
+  const [rarities, setRarities] = useState(session.rarities);
+  const [els, setEls] = useState(session.els);
+  useEffect(() => { session.q = q; session.filter = own; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, own, sets, types, rarities, els]);
+
+  const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
-  const [ow, setOw] = useState(new Map());         // card_id -> {owned(reg), foil, wanted} (optimistic)
-  // No mode toggle: steppers always edit Owned - except in the Wishlist filter,
-  // where the visible filter IS the mode and they edit Wanted.
-  const field = filter === 'wishlist' ? 'wanted' : 'owned';
+  const [ow, setOw] = useState(new Map());        // card_id -> {owned(reg), foil, wanted}
+  const [setOpts, setSetOpts] = useState([]);
+  useEffect(() => { getSets().then(setSetOpts); }, []);
+
+  // Steppers edit Owned - except under the Wishlist filter, where the visible
+  // filter IS the mode and they edit Wanted.
+  const field = own === 'wishlist' ? 'wanted' : 'owned';
 
   async function loadPool() {
     const parsed = parseQuery(q);
-    const rows = await getPool({ q: parsed.name });
-    const list = parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows;
-    setPool(list);
+    const rows = await getPool({ q: parsed.name, sets, types, rarities, els });
+    setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q]);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els]);
   useEffect(() => { ownWantMap().then(setOw); }, []);
-  // Keep the list live with edits made elsewhere (the shared card sheet writes
-  // via its own ledger hook). Debounced 250ms so our own optimistic steps get
-  // their serialChain writes committed before the re-read; simple, and worst
-  // case the refresh lands on the same values we already show.
+  // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
+  // so our optimistic steps commit first (see the write path below).
   useEffect(() => {
     let t = null;
-    const off = subscribeCollection(() => {
-      clearTimeout(t);
-      t = setTimeout(() => ownWantMap().then(setOw), 250);
-    });
+    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(() => ownWantMap().then(setOw), 250); });
     return () => { clearTimeout(t); off(); };
   }, []);
 
   const val = (id, key) => (ow.get(id)?.[key] || 0);
   function step(cardId, delta) {
-    // Optimistic UI off the cached ow map; the WRITE never trusts that map. It
-    // queues on the app-wide per-card ownedChains and re-reads qtyFor inside its
-    // turn, so an edit made in the shared card sheet (its own optimistic ledger)
-    // can't be reverted by an absolute write off our debounced/stale cache.
+    // Optimistic off the cached map; the WRITE re-reads qtyFor inside the app-wide
+    // per-card chain, so a sheet edit can't be clobbered by a stale absolute write.
     setOw((prev) => {
       const cur = prev.get(cardId) || { owned: 0, foil: 0, wanted: 0 };
       const next = { ...cur, [field]: Math.max(0, (cur[field] || 0) + delta) };
@@ -255,70 +312,73 @@ function Cards({ onOpen, onPeek }) {
     });
   }
 
-  const FILTERS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
-  // Owned/Missing judge by TOTAL copies (regular + foil): a foil-only card is
-  // still a card you own.
+  // Ownership post-filter (total = regular + foil: a foil-only card is owned).
   const shown = (pool || []).filter((c) => {
     const t = val(c.card_id, 'owned') + val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
-    if (filter === 'owned') return t > 0;
-    if (filter === 'wishlist') return w > 0;
-    if (filter === 'missing') return t === 0;
+    if (own === 'owned') return t > 0;
+    if (own === 'wishlist') return w > 0;
+    if (own === 'missing') return t === 0;
     return true;
   });
 
+  const activeCount = (own !== 'all' ? 1 : 0) + sets.length + types.length + rarities.length + els.length;
+  const summary = [OWN_LABEL[own], ...sets, ...rarities, ...types, ...els.map((e) => EL_LABEL[e])].filter(Boolean).join(' · ');
+  const clearAll = () => { setOwn('all'); setSets([]); setTypes([]); setRarities([]); setEls([]); };
+  const cardProps = (c) => ({ owned: val(c.card_id, 'owned'), foil: val(c.card_id, 'foil'), wanted: val(c.card_id, 'wanted') });
+
+  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
+
   return (
-    <div style={{ padding: '0 20px' }}>
-      <div className="cx-search-pill" style={{ marginBottom: 10 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cards…" aria-label="Search your collection"
-          style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", flex: 1 }} />
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <ChipRow>
-          {FILTERS.map(([k, label]) => <Chip key={k} label={label} active={filter === k} onClick={() => setFilter(k)} />)}
-        </ChipRow>
+    <div style={{ padding: '0 20px 150px' }}>
+      {/* Sticky centered view toggle - never scrolls away. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', margin: '0 -20px', background: 'rgba(11,8,6,.85)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+        <ViewToggle view={view} setView={setView} />
       </div>
 
-      {pool == null ? <Loading /> : shown.length === 0 ? (
-        <div style={{ padding: '40px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          {filter === 'all' ? 'No cards match.' : `No ${filter} cards${q ? ' match' : ' yet'}.`}
-        </div>
-      ) : (
+      {pool == null ? <Loading /> : (
         <>
-          <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '2px 2px 6px' }}>
-            {shown.length} cards{shown.length > 250 ? ' · showing 250 - refine' : ''}
+          <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
+            {shown.length} cards{shown.length > 250 ? ' · showing 250' : ''}
           </div>
-          {shown.slice(0, 250).map((c) => {
-            const o = val(c.card_id, 'owned'), f = val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
-            const wishlist = filter === 'wishlist';
-            // The row renders the whole pill rail (set · playset · ♡ · ✦) and the
-            // total-owned art badge from these counts; the stepper edits REGULAR
-            // copies (or the wishlist target when that filter is the mode).
-            return (
-              <CollectionCardRow key={c.card_id} card={c} owned={o} foil={f} wanted={w}
-                dim={o + f === 0 && !wishlist}
-                stepper={{ value: wishlist ? w : o, onStep: (d) => step(c.card_id, d) }}
-                onClick={() => onPeek(c.card_id)} />
-            );
-          })}
+          {shown.length === 0 ? (
+            <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+              No cards match{activeCount || q ? ' those filters' : ''}.
+            </div>
+          ) : view === 'binder' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              {shown.slice(0, 250).map((c) => (
+                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+              ))}
+            </div>
+          ) : (
+            shown.slice(0, 250).map((c) => (
+              <LedgerRow key={c.card_id} card={c} {...cardProps(c)} value={own === 'wishlist' ? val(c.card_id, 'wanted') : val(c.card_id, 'owned')}
+                onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+            ))
+          )}
         </>
       )}
 
-      {/* Filter FAB - adding lives on Overview (+ / camera); here you refine what
-          you're LOOKING at. Matches the Codex filter FAB exactly: deck variant +
-          a count badge for "a filter is applied" (NEVER `active` - that class is
-          the open-morph rotation and leaves the glyph tilted 45°). The sheet is
-          the home for the deeper filters to come (sets, rarity, elements…). */}
-      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />}
-        badge={filter !== 'all' ? 1 : 0} onClick={() => setFilterOpen(true)} />
-      <BottomSheet open={filterOpen} title="FILTERS" onClose={() => setFilterOpen(false)}>
-        <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 8px' }}>OWNERSHIP</div>
-        <ChipRow>
-          {FILTERS.map(([k, label]) => <Chip key={k} label={label} active={filter === k} onClick={() => setFilter(k)} />)}
-        </ChipRow>
-        <div style={{ font: "italic 400 12px/1.5 var(--f-read)", color: 'var(--ink-faint)', margin: '14px 0 4px', textAlign: 'center' }}>
-          More filters coming - sets, rarity, elements.
-        </div>
-      </BottomSheet>
+      {/* Bottom search bar - the app's docked search pattern (fixed above the nav,
+          in line with the FAB, keyboard-aware). Portaled to the app root so its
+          position:fixed escapes the pillar's transformed slide-pane. */}
+      {root && createPortal(
+        <div className="cx-searchbar">
+          <div className="cx-search-pill">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ width: 18, height: 18, flex: 'none', color: 'var(--ink-faint)' }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cards…" aria-label="Search your collection"
+              autoComplete="off" enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+            {q && <button className="cx-search-clear" onClick={() => setQ('')} aria-label="Clear search">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>}
+          </div>
+        </div>, root)}
+
+      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
+      <FiltersSheet open={filterOpen} onClose={() => setFilterOpen(false)}
+        own={own} setOwn={setOwn} sets={sets} setSets={setSets} types={types} setTypes={setTypes}
+        rarities={rarities} setRarities={setRarities} els={els} setEls={setEls} setOpts={setOpts}
+        activeCount={activeCount} summary={summary} onClear={clearAll} />
     </div>
   );
 }
