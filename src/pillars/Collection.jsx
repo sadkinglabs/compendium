@@ -1,6 +1,6 @@
 // Collection pillar - the card OWNERSHIP ledger. Overview (glance stats + how many
 // decks are buildable + recently added) and Cards (search the catalog, one-tap +/-
-// to record what you Own or Want). Rows are the binder-style CollectionCardRow;
+// to record what you Own or Want). Rows are the binder-style LedgerRow/BinderTile;
 // tapping a card opens the shared CollectionCardSheet (ownership steppers +
 // Codex hand-off) lifted to the pillar root. Data layer is ownedRepository +
 // compareEngine. Accent is ruby, chrome-only.
