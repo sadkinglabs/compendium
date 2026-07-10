@@ -6,15 +6,20 @@
 // chrome-only - it rides the stepper buttons; the count stays gold/ink.
 import React, { useEffect, useRef, useState } from 'react';
 import { SectionLabel } from './ui.jsx';
-import { qtyFor, setOwned, setWanted, subscribeCollection } from '../store/ownedRepository.js';
-import { stepBtn, serialChain } from './ownedUi.js';
+import { qtyFor, setOwned, setWanted, setFoil, subscribeCollection } from '../store/ownedRepository.js';
+import { stepBtn, serialChain, ownedChains } from './ownedUi.js';
 import { haptic } from '../native.js';
 
-export default function OwnedControl({ cardId }) {
-  const [qty, setQty] = useState(null);            // {owned, wanted} - null until first read
-  const qtyRef = useRef({ owned: 0, wanted: 0 });  // synchronous optimistic mirror
+// The optimistic ledger for one card's owned/foil/wanted counts: reads qtyFor,
+// writes setOwned/setFoil/setWanted (absolute + serialized), live-refreshes via
+// subscribeCollection. Owns ALL writes and the haptic on tap - consumers only
+// render. Returns { qty, step }: qty is {owned, foil, wanted} (null until first
+// read; steppers should stay inert until then), step(field, delta) mutates -
+// field is 'owned' (regular copies), 'foil', or 'wanted'.
+export function useOwnedLedger(cardId) {
+  const [qty, setQty] = useState(null);            // {owned, foil, wanted} - null until first read
+  const qtyRef = useRef({ owned: 0, foil: 0, wanted: 0 });  // synchronous optimistic mirror
   const pending = useRef(0);                        // in-flight writes
-  const chain = useRef({});                         // serialized write chain
 
   // Apply a DB read only if no write is in flight. A read dispatched while the
   // ledger was settled can still resolve AFTER a later optimistic tap; applying it
@@ -45,12 +50,27 @@ export default function OwnedControl({ cardId }) {
     qtyRef.current = next;
     setQty(next);                                   // optimistic, synchronous (pre-await)
     pending.current++;
-    serialChain(chain, cardId, () => (field === 'owned' ? setOwned(cardId, next.owned) : setWanted(cardId, next.wanted)))
+    // Queue on the APP-WIDE per-card chain (not a hook-local one) and re-read the
+    // committed count inside our turn: another surface (e.g. the Cards tab's row
+    // stepper) may have written since our mirror last synced, and an absolute
+    // write off a stale mirror would silently revert it. Delta-on-fresh-read
+    // under the shared chain makes concurrent edits commute.
+    serialChain(ownedChains, cardId, async () => {
+      const cur = await qtyFor(cardId);
+      const val = Math.max(0, (cur[field] || 0) + delta);
+      return field === 'owned' ? setOwned(cardId, val) : field === 'foil' ? setFoil(cardId, val) : setWanted(cardId, val);
+    })
       .finally(() => {
         pending.current--;
         if (pending.current === 0) qtyFor(cardId).then(applyIfCurrent);
       });
   }
+
+  return { qty, step };
+}
+
+export default function OwnedControl({ cardId }) {
+  const { qty, step } = useOwnedLedger(cardId);
 
   const row = (label, field) => {
     const v = qty?.[field] || 0;
@@ -70,6 +90,8 @@ export default function OwnedControl({ cardId }) {
       <SectionLabel label="CARDS YOU OWN" />
       <div style={{ borderRadius: 14, background: 'rgba(255,255,255,.02)', border: '1px solid var(--hair-12)', padding: '4px 14px' }}>
         {row('Owned', 'owned')}
+        <div style={{ height: 1, background: 'var(--hair-12)' }} />
+        {row('Foil ✦', 'foil')}
         <div style={{ height: 1, background: 'var(--hair-12)' }} />
         {row('Wishlist', 'wanted')}
       </div>

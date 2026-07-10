@@ -7,7 +7,7 @@ import { uuid, nowIso, slugify } from './ids.js';
 
 export const ZONES = ['spellbook', 'atlas', 'collection'];
 export const RARITY_LIMITS = { Ordinary: 4, Exceptional: 3, Elite: 2, Unique: 1 };
-export const EL_COLOR = { air: '#67b6c4', earth: '#b35c33', fire: '#d2645a', water: '#5b87d6' };   // earth = rust, not tan (too close to gold)
+export const EL_COLOR = { air: '#c4cdd6', earth: '#b35c33', fire: '#e0623f', water: '#4aa3d4' };   // app-wide: air grey, earth brown, fire red, water blue (mirrors tokens.css)
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 

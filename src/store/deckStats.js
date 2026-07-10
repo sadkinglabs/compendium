@@ -3,14 +3,16 @@
 // tokens. Pure functions over the {spellbook, atlas, collection} shape from
 // deckRepository.getDeckCards (entries carry cost/attack/type/rarity/elements/thresholds).
 
-// element-data colours (Compendium tokens) + Multi=gold, Neutral=link-violet
-// Earth is RUST (#b35c33), not tan - the old #b6924a sat too close to Multi's gold.
-export const EL_CHART = { Air: '#67b6c4', Earth: '#b35c33', Fire: '#d2645a', Water: '#5b87d6', Multi: '#dcb86f', Neutral: '#c79ad0' };
+// Element + rarity chart colours - the app-wide language (mirror the tokens in
+// tokens.css): Air grey, Earth brown, Fire red, Water blue, Multi gold; rarity
+// = Ordinary silver, Exceptional blue, Elite purple, Unique gold (the same hues
+// the "Show Rarity Colours" toggle paints card names with).
+export const EL_CHART = { Air: '#c4cdd6', Earth: '#b35c33', Fire: '#e0623f', Water: '#4aa3d4', Multi: '#d4a83a', Neutral: '#c79ad0' };
 export const EL_GRAD = {
-  Air: ['#67b6c4', '#2f6f7a'], Earth: ['#b35c33', '#5f2e1a'], Fire: ['#d2645a', '#7a2a22'],
-  Water: ['#5b87d6', '#2f4f8a'], Multi: ['#dcb86f', '#8c6a2a'], Neutral: ['#c79ad0', '#6a4a78'],
+  Air: ['#c4cdd6', '#5f6b76'], Earth: ['#b35c33', '#5f2e1a'], Fire: ['#e0623f', '#7a2a1c'],
+  Water: ['#4aa3d4', '#255777'], Multi: ['#d4a83a', '#7a5e1e'], Neutral: ['#c79ad0', '#6a4a78'],
 };
-export const RAR_CHART = { Ordinary: '#8a8298', Exceptional: '#5b87d6', Elite: '#dcb86f', Unique: '#c79ad0' };
+export const RAR_CHART = { Ordinary: '#c8c8c8', Exceptional: '#4fc3f7', Elite: '#ab47bc', Unique: '#ffd54f' };
 const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
 const RAR_ORDER = ['Ordinary', 'Exceptional', 'Elite', 'Unique'];
 

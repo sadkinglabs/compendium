@@ -24,15 +24,8 @@
 /* Blank current-deck state (Arcanum #deck-blank). */
 .arc .deck-blank { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; }
 
-/* Bottom search pill (Arcanum .pill-bar-outer / .bottom-pill-bar) - left of the
-   FAB. Mirrors the universal .cx-search-pill exactly (same glass, same warm
-   neutrals) - no amethyst tint; ALL search bars read identically. */
-.arc .pill-bar-outer { position: fixed; left: 16px; right: 80px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 50; pointer-events: none; transition: bottom .2s ease; }
-.arc .bottom-pill-bar { display: flex; align-items: center; gap: 10px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); border-radius: 999px; padding: 0 16px; height: 52px; box-sizing: border-box; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); pointer-events: auto; width: 100%; overflow: hidden; }
-.arc .bottom-pill-bar svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
-.arc .bottom-pill-bar input { flex: 1; min-width: 0; background: transparent; border: none; color: var(--ink-body); outline: none; padding: 7px 4px; font: 400 15px/1 var(--f-read); }
-.arc .bottom-pill-bar input::placeholder { color: var(--ink-faint); }
-.arc .bottom-pill-bar input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+/* (Retired: the Decks library search is now the shared <SearchPill> in the unified
+   .cx-dock - the old .pill-bar-outer / .bottom-pill-bar clone is gone.) */
 
 /* Search panel view toggle (List / Card). */
 .arc .view-toggle-row { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px 6px; }
@@ -44,12 +37,17 @@
 .arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
 .arc .deck-inner-pager::-webkit-scrollbar { display: none; }
 .arc .deck-panel { flex: 0 0 100%; width: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; padding-bottom: calc(var(--nav-h) + 90px); }
-.arc .deck-pip-bar { position: fixed; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px); left: 50%; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
-/* Edit mode owns the floor - the pip bar bows out downward. */
-.arc .deck-pip-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(22px); pointer-events: none; }
-.arc .pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }
-.arc .pip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(160,110,220,.3); transition: background .2s, box-shadow .2s; }
-.arc .pip-dot.active { background: var(--gold-leaf); box-shadow: 0 0 10px rgba(220,184,111,.75); }
-.arc .pip-seg-label { font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; font-weight: 600; color: #7a6e96; transition: color .15s; }
-.arc .pip-seg-label.active { color: #f0e9d8; }
-.arc .pip-divider { width: 1px; height: 14px; background: rgba(160,110,220,.2); flex-shrink: 0; }
+/* The List/Stats toggle lives in the shared .cx-dock (beside the FAB), but is
+   SCREEN-centred: absolutely centred on the dock (which spans left:16/right:16,
+   so its 50% is the viewport centre) rather than centred in the left slot, which
+   the FAB would push off-centre. Out of flow, so the FAB still sits flush right.
+   No `.arc` ancestor needed - it's portaled into the dock. */
+.deck-pip-bar { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50; width: fit-content; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
+/* Edit mode owns the floor - the pip bar bows out downward (keep the centring). */
+.deck-pip-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(18px); pointer-events: none; }
+.pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }
+.pip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(160,110,220,.3); transition: background .2s, box-shadow .2s; }
+.pip-dot.active { background: var(--gold-leaf); box-shadow: 0 0 10px rgba(220,184,111,.75); }
+.pip-seg-label { font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; font-weight: 600; color: #7a6e96; transition: color .15s; }
+.pip-seg-label.active { color: #f0e9d8; }
+.pip-divider { width: 1px; height: 14px; background: rgba(160,110,220,.2); flex-shrink: 0; }

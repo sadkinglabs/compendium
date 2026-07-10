@@ -11,7 +11,7 @@ const EL_STOPS = {
 };
 const NEUTRAL = ['#3a2f1c', '#160f09'];
 
-export const elementColor = { air: '#67b6c4', earth: '#b35c33', fire: '#d2645a', water: '#5b87d6' };   // earth = rust, not tan
+export const elementColor = { air: '#c4cdd6', earth: '#b35c33', fire: '#e0623f', water: '#4aa3d4' };   // app-wide: air grey, earth brown, fire red, water blue (mirrors tokens.css)
 
 function hash(str) {
   let h = 0;

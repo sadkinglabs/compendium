@@ -248,7 +248,11 @@
    `.arc.fab-wrap .fab` (0,3,0) on purpose - counter.css leaks a global
    `.fab-wrap .fab` (0,2,0, dark green) that loads later and would otherwise win
    at equal specificity. This bump guarantees the gold FAB always applies. */
-.arc.fab-wrap { position:fixed; bottom:calc(var(--nav-h, 62px) + env(safe-area-inset-bottom,0px) + 16px); right:16px; z-index:50; }
+/* The shared FAB now lives INSIDE the unified .cx-dock (tokens.css) - the dock
+   positions it (keyboard-aware, bottom-right), so the wrapper is just a relative
+   anchor for its badge + upward menu. (The life-counter's own FABs are separate
+   markup under .vc-root and keep their own fixed positioning.) */
+.arc.fab-wrap { position:relative; z-index:50; }
 /* Context morph - applied by Fab on EVERY mount (all pages): arriving
    somewhere new, or the FAB changing role (deck menu ⇄ card search), the
    incarnation spins in, so the change of power is felt, not just seen. */
