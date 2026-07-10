@@ -15,6 +15,7 @@ import { DeckCard } from './Decks.jsx';
 import { Chip, ChipRow, Loading, useSwipe, BlankState } from '../components/ui.jsx';
 import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import SearchPill from '../components/SearchPill.jsx';
 import Sheet from '../components/Sheet.jsx';
 import QRCode from '../components/QRCode.jsx';
 import { buildDeckShare } from '../store/deckShare.js';
@@ -191,14 +192,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
               ) : libList.map((d) => <DeckCard key={d.id} deck={d} build={buildMap.get(d.id)} onClick={() => openDeck(d)} />)}
           </div>
-          {portal(
-            <div className="arc pill-bar-outer">
-              <div className={`bottom-pill-bar${libQ ? ' has-text' : ''}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                <input type="search" value={libQ} onChange={(e) => setLibQ(e.target.value)} placeholder="Search decks…" autoComplete="off" enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-              </div>
-            </div>
-          )}
+          <SearchPill value={libQ} onChange={setLibQ} onClear={() => setLibQ('')} placeholder="Search decks…" />
         </div>
       ) : (
         <div className="dp-view">

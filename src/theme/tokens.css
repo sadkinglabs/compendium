@@ -180,7 +180,20 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 /* ── Bottom search - frosted see-through pill, in line with the FAB. ── */
 /* --kb is measured in real viewport px (appearance.js) but consumed inside the
    zoomed .cx-app subtree, so divide by --ui-scale to cancel the zoom (no-op at 1). */
-.cx-searchbar { position: fixed; left: 16px; right: 84px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 41; transition: bottom .2s ease; }
+/* (Retired: .cx-searchbar - every bottom search now portals into the .cx-dock
+   below via <SearchPill>, so there is one bottom offset, not three.) */
+
+/* THE unified bottom dock: search pill (left) + context FAB (right) as ONE
+   keyboard-aware unit. This single bottom calc replaces every hand-rolled bottom
+   offset (old .cx-searchbar / .pill-bar-outer / .fab-wrap), so the pill and the
+   FAB can never diverge when the keyboard opens. Transparent + pass-through; only
+   the pill and the FAB (the grandchildren) take pointer events. The empty search
+   slot (flex:1) simply pushes a lone FAB to the right. */
+.cx-dock { position: fixed; left: 16px; right: 16px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
+.cx-dock-search { flex: 1; min-width: 0; }
+.cx-dock-fab { flex: none; }
+.cx-dock > * > * { pointer-events: auto; }
+
 /* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
 .cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }

@@ -13,6 +13,8 @@ import CodexDetail from './pillars/CodexDetail.jsx';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
 import DecksPager from './pillars/DecksPager.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
+import BottomDock from './components/BottomDock.jsx';
+import SearchPill from './components/SearchPill.jsx';
 import CardRow from './components/CardRow.jsx';
 import Collection from './pillars/Collection.jsx';
 import CreateDeckWizard from './components/CreateDeckWizard.jsx';
@@ -403,20 +405,14 @@ export default function App() {
       )}
       </div>
 
-      {/* BOTTOM SEARCH - frosted pill in line with the FAB; tint morphs per page. */}
+      {/* THE bottom dock - one keyboard-aware container the search pill + FAB both
+          portal into, so they move as one unit. Mounted once, present on every page. */}
+      <BottomDock />
+
+      {/* Global bottom search (Codex + add-cards) - portals into the dock beside the FAB. */}
       {showSearch && (
-        <div className="cx-searchbar">
-          <div className="cx-search-pill">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input value={searchVal} onChange={(e) => setSearchVal(e.target.value)} placeholder={searchPlaceholder} autoComplete="off"
-              enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-            {searchVal && <button className="cx-search-clear" onClick={() => setSearchVal('')} aria-label="Clear"><IcX size={13} /></button>}
-            {/* Syntax cheatsheet - codex syntax everywhere, deckbuilder syntax
-                (its own token set, purple chassis) in the add-cards search. */}
-            <button onClick={() => setSearchHelpOpen(true)} aria-label="Search syntax help"
-              style={{ flex: 'none', width: 24, height: 24, borderRadius: '50%', border: '1px solid rgba(220,184,111,.3)', background: 'transparent', color: 'rgba(220,184,111,.55)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>?</button>
-          </div>
-        </div>
+        <SearchPill value={searchVal} onChange={setSearchVal} onClear={() => setSearchVal('')}
+          placeholder={searchPlaceholder} ariaLabel={searchPlaceholder} onHelp={() => setSearchHelpOpen(true)} />
       )}
 
       {/* GLOBAL CONTEXT FAB - the gold interaction spine, on every page. Its icon

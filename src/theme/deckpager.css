@@ -24,15 +24,8 @@
 /* Blank current-deck state (Arcanum #deck-blank). */
 .arc .deck-blank { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; }
 
-/* Bottom search pill (Arcanum .pill-bar-outer / .bottom-pill-bar) - left of the
-   FAB. Mirrors the universal .cx-search-pill exactly (same glass, same warm
-   neutrals) - no amethyst tint; ALL search bars read identically. */
-.arc .pill-bar-outer { position: fixed; left: 16px; right: 80px; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 50; pointer-events: none; transition: bottom .2s ease; }
-.arc .bottom-pill-bar { display: flex; align-items: center; gap: 10px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); border-radius: 999px; padding: 0 16px; height: 52px; box-sizing: border-box; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); pointer-events: auto; width: 100%; overflow: hidden; }
-.arc .bottom-pill-bar svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
-.arc .bottom-pill-bar input { flex: 1; min-width: 0; background: transparent; border: none; color: var(--ink-body); outline: none; padding: 7px 4px; font: 400 15px/1 var(--f-read); }
-.arc .bottom-pill-bar input::placeholder { color: var(--ink-faint); }
-.arc .bottom-pill-bar input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+/* (Retired: the Decks library search is now the shared <SearchPill> in the unified
+   .cx-dock - the old .pill-bar-outer / .bottom-pill-bar clone is gone.) */
 
 /* Search panel view toggle (List / Card). */
 .arc .view-toggle-row { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px 6px; }

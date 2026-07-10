@@ -61,14 +61,15 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
     return () => { window.removeEventListener('keydown', onKey); unreg(); };
   }, [open]);
 
-  // Rendered through a portal to the .cx-app root (NOT document.body): the FAB is
-  // position:fixed, and a transformed ancestor (Home's sliding swipe-pane) would
-  // otherwise become its containing block and make it jump. Portaling to .cx-app
-  // lifts it out of the pane while KEEPING it inside the app's stacking context,
-  // so full-screen overlays like the life counter (#counter-screen, z-index 100)
-  // still cover it - body would let a z-50 FAB paint over the whole app.
-  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
-  const portal = (node) => (root ? createPortal(node, root) : node);
+  // Rendered through a portal into the unified BottomDock's FAB slot (#cx-dock-fab),
+  // so the FAB shares ONE keyboard-aware container with the search pill and the two
+  // never diverge. The wrapper is position:relative inside that slot (see
+  // arcanum.css). Retry after mount if the dock committed after us; render nothing
+  // until the slot exists (the dock is always mounted by the app shell). NOT
+  // .cx-app - a relative wrapper there would land at the top of the page.
+  const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-fab') : null));
+  useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-fab')); });
+  const portal = (node) => (slot ? createPortal(node, slot) : null);
 
   // Plain action FAB (no menu) - e.g. add-a-widget / a search trigger. Gets the
   // same shell + variant as the menu FABs: it spins in on mount (fab-enter) and,

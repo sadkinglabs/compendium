@@ -19,6 +19,7 @@ import CollectionCardRow from '../components/CollectionCardRow.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import { LedgerRow, BinderTile } from '../components/CollectionCardViews.jsx';
 import GothicSheet from '../components/GothicSheet.jsx';
+import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 import { serialChain, ownedChains } from '../components/ownedUi.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -326,8 +327,6 @@ function Cards({ onOpen, onPeek }) {
   const clearAll = () => { setOwn('all'); setSets([]); setTypes([]); setRarities([]); setEls([]); };
   const cardProps = (c) => ({ owned: val(c.card_id, 'owned'), foil: val(c.card_id, 'foil'), wanted: val(c.card_id, 'wanted') });
 
-  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
-
   return (
     <div style={{ padding: '0 20px 150px' }}>
       {/* Sticky centered view toggle - never scrolls away. */}
@@ -359,20 +358,8 @@ function Cards({ onOpen, onPeek }) {
         </>
       )}
 
-      {/* Bottom search bar - the app's docked search pattern (fixed above the nav,
-          in line with the FAB, keyboard-aware). Portaled to the app root so its
-          position:fixed escapes the pillar's transformed slide-pane. */}
-      {root && createPortal(
-        <div className="cx-searchbar">
-          <div className="cx-search-pill">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ width: 18, height: 18, flex: 'none', color: 'var(--ink-faint)' }}><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search cards…" aria-label="Search your collection"
-              autoComplete="off" enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-            {q && <button className="cx-search-clear" onClick={() => setQ('')} aria-label="Clear search">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>}
-          </div>
-        </div>, root)}
+      {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search cards…" ariaLabel="Search your collection" />
 
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
       <FiltersSheet open={filterOpen} onClose={() => setFilterOpen(false)}
