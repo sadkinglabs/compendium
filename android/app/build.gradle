@@ -96,8 +96,9 @@ dependencies {
     implementation "androidx.camera:camera-camera2:$cameraxVersion"
     implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
     implementation "androidx.camera:camera-view:$cameraxVersion"
-    // ML Kit text recognition - BUNDLED model, fully offline (no Play Services download)
+    // ML Kit text recognition + barcode/QR - BUNDLED models, fully offline
     implementation "com.google.mlkit:text-recognition:$mlkitTextVersion"
+    implementation "com.google.mlkit:barcode-scanning:$mlkitBarcodeVersion"
     // Coroutines
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion"
 }

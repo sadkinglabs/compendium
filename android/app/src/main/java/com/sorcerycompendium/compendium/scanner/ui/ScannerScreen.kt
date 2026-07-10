@@ -18,7 +18,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -27,20 +26,24 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sorcerycompendium.compendium.scanner.ScannerViewModel
 import com.sorcerycompendium.compendium.scanner.camera.CameraController
-import com.sorcerycompendium.compendium.scanner.model.RecognisedCard
+import com.sorcerycompendium.compendium.scanner.model.Recognition
 import kotlinx.coroutines.launch
 
 /**
  * The full-screen scanner UI: live CameraX preview, the alignment overlay (colour driven
- * by phase + lockEvent), and the sticky recognition card ([ScannerViewModel.sheet]) with
- * a sparkle flourish + Snackbar. Tapping anywhere outside the sheet dismisses it.
+ * by phase + lockEvent, flashing the type accent on lock), and the sticky recognition
+ * sheet ([ScannerViewModel.sheet]) - a card, a shared deck, or a shared match - with a
+ * type-coloured sparkle flourish + Snackbar. Tapping anywhere outside the sheet dismisses
+ * it.
  */
 @Composable
 fun ScannerScreen(
     granted: Boolean,
     viewModel: ScannerViewModel,
-    onSearchCodex: (RecognisedCard) -> Unit,
-    onAdd: (RecognisedCard, String) -> Unit,
+    onSearchCodex: (Recognition) -> Unit,
+    onAdd: (Recognition, String) -> Unit,
+    onSaveDeck: (Recognition) -> Unit,
+    onImportMatch: (Recognition) -> Unit,
     onDismissSheet: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -53,7 +56,6 @@ fun ScannerScreen(
 
     Box(Modifier.fillMaxSize()) {
         if (granted) {
-            val context = LocalContext.current
             val lifecycleOwner = LocalLifecycleOwner.current
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -69,27 +71,30 @@ fun ScannerScreen(
                     pv
                 },
             )
-            CameraOverlay(phase, lockEvent)
+            CameraOverlay(phase, lockEvent, sheet?.let { accentFor(it.kind) } ?: PillarGold)
         } else {
             PermissionPrompt(onClose)
         }
 
-        val card = sheet
-        if (card != null) {
+        val rec = sheet
+        if (rec != null) {
+            val key = rec.cardId ?: rec.url ?: rec.title
             // Tap anywhere outside the sheet to dismiss (the sheet swallows its own taps).
-            Box(Modifier.fillMaxSize().pointerInput(card.id) { detectTapGestures { onDismissSheet() } })
-            SparkleBurst(card.id, Modifier.fillMaxSize())
+            Box(Modifier.fillMaxSize().pointerInput(key) { detectTapGestures { onDismissSheet() } })
+            SparkleBurst(key, accentFor(rec.kind), Modifier.fillMaxSize())
             RecognitionCard(
-                card = card,
-                onSearchCodex = { onSearchCodex(card) },
+                rec = rec,
+                onSearchCodex = { onSearchCodex(rec) },
                 onAddCollection = {
-                    onAdd(card, "collection")
-                    scope.launch { snackbarHost.showSnackbar("Added ${card.name} to your collection") }
+                    onAdd(rec, "collection")
+                    scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
                 },
                 onAddWishlist = {
-                    onAdd(card, "wishlist")
-                    scope.launch { snackbarHost.showSnackbar("Added ${card.name} to your wishlist") }
+                    onAdd(rec, "wishlist")
+                    scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
                 },
+                onSaveDeck = { onSaveDeck(rec) },
+                onImportMatch = { onImportMatch(rec) },
                 onDismiss = onDismissSheet,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )

@@ -2,13 +2,18 @@ package com.sorcerycompendium.compendium.scanner
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.mlkit.vision.barcode.BarcodeScannerOptions
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.sorcerycompendium.compendium.scanner.camera.TitleStripAnalyzer
 import com.sorcerycompendium.compendium.scanner.match.MatchResult
 import com.sorcerycompendium.compendium.scanner.match.Norm
 import com.sorcerycompendium.compendium.scanner.model.Phase
-import com.sorcerycompendium.compendium.scanner.model.RecognisedCard
+import com.sorcerycompendium.compendium.scanner.model.Recognition
+import com.sorcerycompendium.compendium.scanner.model.ScanKind
+import com.sorcerycompendium.compendium.scanner.ocr.BarcodeReader
 import com.sorcerycompendium.compendium.scanner.ocr.Extraction
 import com.sorcerycompendium.compendium.scanner.ocr.StripExtractor
 import com.sorcerycompendium.compendium.scanner.stability.StabilityGate
@@ -18,26 +23,34 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.Executors
 
 /**
- * Owns the recognition pipeline. Exposes THREE things, deliberately decoupled:
- *  - [sheet]     : the sticky recognised card (null = no sheet). Stays until "Scan
- *                  another" ([onDismiss]) or a DIFFERENT card locks.
+ * Owns the universal recognition pipeline (a card, OR a shared deck / match QR). Exposes
+ * THREE things, deliberately decoupled:
+ *  - [sheet]     : the sticky [Recognition] (null = no sheet). Stays until "Scan another"
+ *                  ([onDismiss]) or a DIFFERENT thing locks.
  *  - [phase]     : the live frame-colour driver - purple SEARCHING / gold DETECTING -
- *                  which keeps updating even while a sheet is shown, so the frame can
- *                  go back to purple to signal "scanning is allowed again".
- *  - [lockEvent] : a counter bumped on each new lock, for the green flash + haptic +
- *                  sheet reveal.
+ *                  which keeps updating even while a sheet is shown, so the frame can go
+ *                  back to purple to signal "scanning is allowed again".
+ *  - [lockEvent] : a counter bumped on each new lock, for the (type-coloured) flash +
+ *                  haptic + sheet reveal.
+ *
+ * Each admitted frame is checked for a `compendium://` QR FIRST ([onLink]) - unambiguous,
+ * so it wins - and only falls through to card OCR ([onResult]) when no QR is present.
  */
 class ScannerViewModel : ViewModel() {
 
     private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val barcodeClient = BarcodeScanning.getClient(
+        BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_QR_CODE).build(),
+    )
     val analysisExecutor = Executors.newSingleThreadExecutor()
 
     private val matcher = ScannerChannel.matcher
     private val gate = StabilityGate(ScannerChannel.minStreak)
     private val extractor = StripExtractor(recognizer)
+    private val barcodeReader = BarcodeReader(barcodeClient)
 
-    private val _sheet = MutableStateFlow<RecognisedCard?>(null)
-    val sheet: StateFlow<RecognisedCard?> = _sheet.asStateFlow()
+    private val _sheet = MutableStateFlow<Recognition?>(null)
+    val sheet: StateFlow<Recognition?> = _sheet.asStateFlow()
     private val _phase = MutableStateFlow(Phase.SEARCHING)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
     private val _lockEvent = MutableStateFlow(0)
@@ -45,12 +58,14 @@ class ScannerViewModel : ViewModel() {
     private val _debug = MutableStateFlow("")
     val debug: StateFlow<String> = _debug.asStateFlow()
 
-    @Volatile private var locked: RecognisedCard? = null
+    @Volatile private var locked: Recognition? = null
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
         extractor = extractor,
-        intervalMs = SCAN_MS,       // keep scanning even while a card is shown (to replace it)
+        barcodeReader = barcodeReader,
+        intervalMs = SCAN_MS,       // keep scanning even while a sheet is shown (to replace it)
+        onLink = ::onLink,
         onResult = ::onResult,
     )
 
@@ -66,18 +81,35 @@ class ScannerViewModel : ViewModel() {
         }
         val crossed = gate.onMatch(best?.card)
         if (crossed != null) {
-            val card = RecognisedCard(crossed.id, crossed.name, crossed.isSite)
-            locked = card
-            _sheet.value = card                       // sticky sheet
-            _lockEvent.value = _lockEvent.value + 1   // green flash + haptic + reveal
+            val rec = Recognition(ScanKind.CARD, crossed.name, cardId = crossed.id)
+            locked = rec
+            _sheet.value = rec                        // sticky sheet
+            _lockEvent.value = _lockEvent.value + 1   // gold flash + haptic + reveal
         }
-        // Gold only for a DIFFERENT card being confirmed; the already-shown card (or an
+        // Gold only for a DIFFERENT card being confirmed; the already-shown thing (or an
         // empty frame) reads purple, so the flash fades back to purple = "scan again OK".
-        val newCandidate = best != null && best.card.id != locked?.id
+        val newCandidate = best != null && best.card.id != locked?.cardId
         _phase.value = if (newCandidate) Phase.DETECTING else Phase.SEARCHING
     }
 
-    /** "Scan another": drop the shown card and resume fresh scanning. */
+    /** A `compendium://` QR was read - an instant, unambiguous lock (deck or match). */
+    private fun onLink(url: String) {
+        val u = url.trim()
+        if (u.equals(locked?.url, ignoreCase = true)) return   // already showing this QR
+        val kind = when {
+            u.startsWith("compendium://deck", ignoreCase = true) -> ScanKind.DECK
+            u.startsWith("compendium://match", ignoreCase = true) -> ScanKind.MATCH
+            else -> return                                     // a compendium:// url we don't route here
+        }
+        val rec = Recognition(kind, if (kind == ScanKind.DECK) "Shared deck" else "Shared match", url = u)
+        gate.reset()                     // drop any half-built card streak
+        locked = rec
+        _sheet.value = rec
+        _phase.value = Phase.SEARCHING   // QR is instant; skip the gold "detecting" ramp
+        _lockEvent.value = _lockEvent.value + 1
+    }
+
+    /** "Scan another": drop the shown result and resume fresh scanning. */
     fun onDismiss() {
         gate.reset()
         locked = null
@@ -87,6 +119,7 @@ class ScannerViewModel : ViewModel() {
 
     override fun onCleared() {
         recognizer.close()
+        barcodeClient.close()
         analysisExecutor.shutdown()
     }
 

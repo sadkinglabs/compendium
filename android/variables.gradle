@@ -22,5 +22,6 @@ ext {
     lifecycleComposeVersion = '2.8.3'
     cameraxVersion = '1.3.4'                    // ImageProxy.toBitmap() (1.3.0+) + ResolutionSelector
     mlkitTextVersion = '16.0.1'                 // BUNDLED Latin model - NOT play-services-mlkit-*
+    mlkitBarcodeVersion = '17.3.0'              // BUNDLED barcode/QR model - offline (Share & Scan)
     coroutinesVersion = '1.8.1'
 }

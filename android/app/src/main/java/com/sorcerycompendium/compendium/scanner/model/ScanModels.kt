@@ -2,8 +2,17 @@ package com.sorcerycompendium.compendium.scanner.model
 
 import android.graphics.Rect
 
-/** A card the matcher resolved to. `id`/`name` are echoed to JS verbatim. */
-data class RecognisedCard(val id: String, val name: String, val isSite: Boolean)
+/** The kind of thing the scanner locked onto - drives the sheet colour + actions. */
+enum class ScanKind { CARD, DECK, MATCH }
+
+/** A locked scan result: a catalog card (cardId), or a shared deck / match QR (url).
+ *  For a QR the native side does NOT decode the payload - it hands the url to JS. */
+data class Recognition(
+    val kind: ScanKind,
+    val title: String,
+    val cardId: String? = null,
+    val url: String? = null,
+)
 
 /** A rectangle in fractional (0..1) coordinates of the upright analysis frame. */
 data class RectFraction(val left: Float, val top: Float, val right: Float, val bottom: Float) {

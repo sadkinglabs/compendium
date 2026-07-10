@@ -19,7 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.getcapacitor.JSObject
 import com.sorcerycompendium.compendium.scanner.model.Phase
-import com.sorcerycompendium.compendium.scanner.model.RecognisedCard
+import com.sorcerycompendium.compendium.scanner.model.Recognition
 import com.sorcerycompendium.compendium.scanner.ui.CompendiumScannerTheme
 import com.sorcerycompendium.compendium.scanner.ui.ScannerScreen
 
@@ -78,8 +78,10 @@ class ScannerActivity : ComponentActivity() {
                 ScannerScreen(
                     granted = granted,
                     viewModel = vm,
-                    onSearchCodex = { card -> onSearchCodex(card) },
-                    onAdd = { card, action -> onAdd(card, action) },
+                    onSearchCodex = { rec -> onSearchCodex(rec) },
+                    onAdd = { rec, action -> onAdd(rec, action) },
+                    onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
+                    onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
                     onDismissSheet = { vm.onDismiss() },
                     onClose = { finish() },
                 )
@@ -87,18 +89,24 @@ class ScannerActivity : ComponentActivity() {
         }
     }
 
-    private fun onSearchCodex(card: RecognisedCard) {
+    private fun onSearchCodex(rec: Recognition) {
         sendTerminal(
-            JSObject().put("action", "codex").put("cardId", card.id).put("name", card.name),
+            JSObject().put("action", "codex").put("cardId", rec.cardId).put("name", rec.title),
         )
         finish()
     }
 
-    private fun onAdd(card: RecognisedCard, action: String) {
+    private fun onAdd(rec: Recognition, action: String) {
         // Emit the add to JS; the sheet stays up (sticky) so both actions can be used.
         ScannerChannel.onEvent?.invoke(
-            JSObject().put("action", action).put("cardId", card.id).put("name", card.name),
+            JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title),
         )
+    }
+
+    /** A shared deck / match QR: hand the url to JS (which decodes + imports) and exit. */
+    private fun onShareLink(rec: Recognition, action: String) {
+        sendTerminal(JSObject().put("action", action).put("url", rec.url))
+        finish()
     }
 
     private fun sendTerminal(js: JSObject) {

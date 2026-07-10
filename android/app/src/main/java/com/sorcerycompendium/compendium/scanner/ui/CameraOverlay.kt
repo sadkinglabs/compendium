@@ -42,26 +42,26 @@ import com.sorcerycompendium.compendium.scanner.model.RectFraction
 
 private val Purple = Color(0xFF9C6BE0)   // searching
 private val Gold = Color(0xFFE8B84B)     // a card being confirmed - "getting there"
-private val Green = Color(0xFF56D08A)    // lock flash - success
 
 /**
  * Card-shaped alignment guide (rounded corners) drawn in the SAME letterboxed frame
  * space the OCR crops use, so a filled card lands in a read-zone. The thick border is
  * PURPLE while searching and GOLD while confirming a card; a lock ([lockEvent]) flashes
- * GREEN then fades back to purple - signalling scanning is allowed again while the sheet
- * stays up. DEBUG: the three OCR read-zones are drawn as coloured rectangles so you can
- * see whether a card's name text falls inside them.
+ * the TYPE accent ([lockColor] - Codex gold for a card, Decks violet for a shared deck,
+ * Play jade for a shared match) then fades back to purple, signalling scanning is allowed
+ * again while the sheet stays up. DEBUG: the three OCR read-zones are drawn as coloured
+ * rectangles so you can see whether a card's name text falls inside them.
  */
 @Composable
-fun CameraOverlay(phase: Phase, lockEvent: Int, modifier: Modifier = Modifier) {
+fun CameraOverlay(phase: Phase, lockEvent: Int, lockColor: Color, modifier: Modifier = Modifier) {
     val base by animateColorAsState(if (phase == Phase.DETECTING) Gold else Purple, tween(300), label = "base")
 
-    // Green success flash on each lock, decaying back to the base colour.
+    // Type-coloured success flash on each lock, decaying back to the base colour.
     val flash = remember { Animatable(0f) }
     LaunchedEffect(lockEvent) {
         if (lockEvent > 0) { flash.snapTo(1f); flash.animateTo(0f, tween(950)) }
     }
-    val frameColor = lerp(base, Green, flash.value)
+    val frameColor = lerp(base, lockColor, flash.value)
 
     val transition = rememberInfiniteTransition(label = "scan")
     val pulse by transition.animateFloat(
@@ -71,7 +71,7 @@ fun CameraOverlay(phase: Phase, lockEvent: Int, modifier: Modifier = Modifier) {
         0f, 1f, infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "sweep",
     )
 
-    val label = if (phase == Phase.DETECTING) "Hold steady…" else "Fill the frame with a card"
+    val label = if (phase == Phase.DETECTING) "Hold steady…" else "Point at a card or a shared code"
 
     Box(modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {

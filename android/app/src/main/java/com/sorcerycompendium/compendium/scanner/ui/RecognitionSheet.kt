@@ -20,8 +20,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,38 +39,50 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sorcerycompendium.compendium.scanner.model.RecognisedCard
+import com.sorcerycompendium.compendium.scanner.model.Recognition
+import com.sorcerycompendium.compendium.scanner.model.ScanKind
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
 
 /**
- * The recognition surface: a Material 3 card that springs up on lock (re-springs when
- * the card changes) with the name + three large-touch-target (>=52dp) actions. Sticky -
- * the caller keeps it up until "Scan another", a tap outside, or a new card - so
- * add-actions don't dismiss it. Swallows its own taps so a tap ON the sheet never falls
- * through to the dismiss scrim behind it. The sparkle flourish is drawn separately (over
- * the whole screen) by [SparkleBurst] so it isn't hidden behind this opaque card.
+ * The recognition surface: a Material 3 card that springs up on lock (re-springs when the
+ * result changes) and colour-codes itself + its actions to WHAT was scanned - a Codex-gold
+ * card, a Decks-violet shared deck, or a Play-jade shared match (see [accentFor]). Sticky:
+ * the caller keeps it up until "Scan another", a tap outside, or a new result. Swallows its
+ * own taps so a tap ON the sheet never falls through to the dismiss scrim. The sparkle
+ * flourish is drawn separately (over the whole screen) by [SparkleBurst].
  */
 @Composable
 fun RecognitionCard(
-    card: RecognisedCard,
+    rec: Recognition,
     onSearchCodex: () -> Unit,
     onAddCollection: () -> Unit,
     onAddWishlist: () -> Unit,
+    onSaveDeck: () -> Unit,
+    onImportMatch: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val reveal = remember(card.id) { Animatable(0f) }
-    LaunchedEffect(card.id) {
+    val accent = accentFor(rec.kind)
+    val key = rec.cardId ?: rec.url ?: rec.title
+    val reveal = remember(key) { Animatable(0f) }
+    LaunchedEffect(key) {
         reveal.snapTo(0f)
         reveal.animateTo(1f, spring(dampingRatio = 0.52f, stiffness = Spring.StiffnessMediumLow))
+    }
+    val eyebrow: String; val title: String; val subtitle: String?
+    when (rec.kind) {
+        ScanKind.CARD -> { eyebrow = "RECOGNISED CARD"; title = rec.title; subtitle = null }
+        ScanKind.DECK -> { eyebrow = "SHARED DECK"; title = "Sorcery deck"; subtitle = "Save it to your library to see every card." }
+        ScanKind.MATCH -> { eyebrow = "SHARED MATCH"; title = "Match result"; subtitle = "Import it to review the game." }
     }
     Surface(
         modifier = modifier
@@ -82,45 +96,40 @@ fun RecognitionCard(
                 translationY = (1f - v) * 48f
             }
             .pointerInput(Unit) { detectTapGestures { } }  // swallow taps (don't dismiss on sheet tap)
-            .semantics { contentDescription = "Recognised card ${card.name}" },
+            .semantics { contentDescription = "$eyebrow: $title" },
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surface,
         tonalElevation = 6.dp,
         shadowElevation = 16.dp,
     ) {
         Column(Modifier.fillMaxWidth().padding(20.dp)) {
-            Text(
-                "RECOGNISED CARD",
-                color = MaterialTheme.colorScheme.primary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 2.sp,
-            )
+            Text(eyebrow, color = accent, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
             Spacer(Modifier.height(4.dp))
-            Text(
-                card.name,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.height(18.dp))
-            Button(onClick = onSearchCodex, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                Icon(Icons.Filled.Search, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Search Codex")
+            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            if (subtitle != null) {
+                Spacer(Modifier.height(6.dp))
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f), fontSize = 14.sp)
             }
-            Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = onAddCollection, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Collection")
+            Spacer(Modifier.height(18.dp))
+            when (rec.kind) {
+                ScanKind.CARD -> {
+                    PrimaryAction("Search Codex", Icons.Filled.Search, accent, onSearchCodex)
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedButton(onClick = onAddCollection, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                            Icon(Icons.Filled.Add, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Collection")
+                        }
+                        OutlinedButton(onClick = onAddWishlist, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                            Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Wishlist")
+                        }
+                    }
                 }
-                OutlinedButton(onClick = onAddWishlist, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                    Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Wishlist")
-                }
+                ScanKind.DECK -> PrimaryAction("Save to My Decks", Icons.Filled.Add, accent, onSaveDeck)
+                ScanKind.MATCH -> PrimaryAction("Review & import", Icons.Filled.PlayArrow, accent, onImportMatch)
             }
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -130,17 +139,29 @@ fun RecognitionCard(
     }
 }
 
+/** The full-width primary action, filled in the result's type accent. */
+@Composable
+private fun PrimaryAction(label: String, icon: ImageVector, accent: Color, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnPillar),
+    ) {
+        Icon(icon, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(label)
+    }
+}
+
 private data class Spark(val angle: Float, val dist: Float, val scale: Float, val delay: Float)
 
-private val SparkGold = Color(0xFFF6DE92)
-
 /**
- * A one-shot gold sparkle burst, drawn full-screen and radiating from just above the
- * sheet so it's visible over the camera (not hidden behind the opaque card). Re-plays
- * whenever [key] (the recognised card id) changes.
+ * A one-shot sparkle burst in the result's type [color], drawn full-screen and radiating
+ * from just above the sheet so it's visible over the camera (not hidden behind the opaque
+ * card). Re-plays whenever [key] (the recognised card id / deck url) changes.
  */
 @Composable
-fun SparkleBurst(key: Any, modifier: Modifier = Modifier) {
+fun SparkleBurst(key: Any, color: Color, modifier: Modifier = Modifier) {
     val progress = remember(key) { Animatable(0f) }
     LaunchedEffect(key) {
         progress.snapTo(0f)
@@ -171,7 +192,7 @@ fun SparkleBurst(key: Any, modifier: Modifier = Modifier) {
             val y = cy + (sin(rad) * d).toFloat()
             val fade = 1f - local
             val sz = sin(local * Math.PI).toFloat() * 16f * s.scale
-            if (sz > 0.5f) sparkle(x, y, sz, SparkGold.copy(alpha = fade))
+            if (sz > 0.5f) sparkle(x, y, sz, color.copy(alpha = fade))
         }
     }
 }
@@ -209,7 +230,7 @@ fun PermissionPrompt(onClose: () -> Unit, modifier: Modifier = Modifier) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Allow camera access to scan cards. Everything stays on your device - nothing is uploaded.",
+            "Allow camera access to scan cards and codes. Everything stays on your device - nothing is uploaded.",
             color = MaterialTheme.colorScheme.onBackground,
             fontSize = 14.sp,
         )

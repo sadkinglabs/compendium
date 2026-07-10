@@ -2,6 +2,7 @@ package com.sorcerycompendium.compendium.scanner.camera
 
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
+import com.sorcerycompendium.compendium.scanner.ocr.BarcodeReader
 import com.sorcerycompendium.compendium.scanner.ocr.Extraction
 import com.sorcerycompendium.compendium.scanner.ocr.FrameConverter
 import com.sorcerycompendium.compendium.scanner.ocr.StripExtractor
@@ -19,8 +20,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TitleStripAnalyzer(
     private val scope: CoroutineScope,
     private val extractor: StripExtractor,
+    private val barcodeReader: BarcodeReader,
     private val intervalMs: Long,                 // min gap between admitted frames
-    private val onResult: (Extraction) -> Unit,
+    private val onLink: (String) -> Unit,         // a compendium:// QR was read
+    private val onResult: (Extraction) -> Unit,   // card OCR result
 ) : ImageAnalysis.Analyzer {
 
     private val busy = AtomicBoolean(false)
@@ -39,10 +42,13 @@ class TitleStripAnalyzer(
             image.close(); busy.set(false); return
         }
         image.close()                              // pixels copied - free the camera buffer now
-        // OCR + fuzzy match off the main thread (crops, Levenshtein over ~1104 names).
+        // Off the main thread: read a QR first (unambiguous - wins if present), else fall
+        // through to strip OCR + fuzzy match (crops, Levenshtein over ~1104 names).
         scope.launch(Dispatchers.Default) {
             try {
-                onResult(extractor.extract(upright))
+                val link = barcodeReader.scan(upright)
+                if (link != null) onLink(link)
+                else onResult(extractor.extract(upright))
             } catch (_: Throwable) {
                 onResult(Extraction(emptyList(), ""))
             } finally {
