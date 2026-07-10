@@ -2,49 +2,72 @@
    Arcanum's avatar hero + zone list cards (templates/index.html L137-148,
    258-347). Scoped `.arc`; carries Arcanum's amethyst tokens. */
 
-/* Avatar hero */
-.arc .avatar-hero { position: relative; overflow: hidden; min-height: 140px; }
-/* Fade the art in from the top so the hero blends into the header wash above it
-   (no hard seam) and out to black at the bottom. */
-.arc .avatar-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 33%; opacity: .28;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 44%, #000 88%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 44%, #000 88%, transparent 100%); }
-.arc .avatar-hero-gradient { position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(11,7,20,0) 0%, rgba(11,7,20,.4) 62%, var(--bg) 100%); }
-.arc .avatar-hero-content { position: relative; z-index: 1; padding: 24px 16px 16px; text-align: center; }
-.arc .hero-deck-name { font-size: 28px; font-weight: 700; font-family: 'Cinzel', Georgia, serif; letter-spacing: .08em; color: var(--text); margin-bottom: 12px; overflow-wrap: anywhere; line-height: 1.18; }
-.arc .hero-avatar-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; justify-content: center; }
-.arc .hero-avatar-name { font-size: 14px; font-weight: 600; color: var(--gold-leaf); font-family: 'Hanken Grotesk', sans-serif; cursor: pointer; }
-.arc .hero-avatar-sep { color: var(--faint); font-size: 16px; line-height: 1; }
-/* Surfaces lean BLACK (user rule: hues are only a detail) - violet survives in
-   hairlines, labels and small accents, never as a surface fill. */
-.arc .hero-stat-bar { display: inline-flex; align-items: center; background: rgba(13,12,15,.72); border: 1px solid rgba(160,110,220,.18); border-radius: 999px; overflow: hidden; }
-.arc .hero-stat-item { font-size: 11px; font-weight: 600; font-family: 'Hanken Grotesk', sans-serif; padding: 6px 14px; white-space: nowrap; }
-.arc .hero-stat-divider { width: 1px; height: 16px; background: rgba(160,110,220,.2); flex-shrink: 0; }
+/* ─── Manuscript reskin (My Deck view) ───────────────────────────────────────
+   A framed hero plate, gold section heads, purple type sub-heads, and a dense
+   text ledger with an ownership mark. Flat surfaces throughout - the only
+   gradients are the gilt hero frame, the art scrim, and the hairline fades.
+   Threshold pips reuse the bundled PNG element icons (never redrawn). Colours
+   are deliberate literals from the deck-polish spec (no token equivalents). */
 
-/* Zone list cards (Spellbook / Atlas / Collection) */
+/* Hero plate */
+.arc .mf-hero { padding: 4px 20px 14px; }
+.arc .mf-hero-inner { border-radius: 19px; padding: 1px; background: linear-gradient(160deg, rgba(203,167,95,.5), rgba(203,167,95,.1) 45%, rgba(203,167,95,.35)); }
+.arc .mf-hero-card { border-radius: 18px; background: #0e0b08; overflow: hidden; }
+.arc .mf-hero-art { position: relative; height: 150px; }
+.arc .mf-hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 26%; display: block; }
+.arc .mf-hero-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, rgba(14,11,8,.95) 92%); }
+/* overflow-wrap:normal (not anywhere) so long deck names wrap at spaces, never
+   mid-word (fixes the "TheDoorInTheBulo/keTree" break). */
+.arc .mf-hero-name { position: absolute; left: 16px; right: 16px; bottom: 12px; font: 700 23px/1.15 'Cinzel', Georgia, serif; color: #f4ecdc; overflow-wrap: normal; word-break: normal; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+.arc .mf-hero-body { padding: 13px 16px 15px; }
+.arc .mf-hero-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.arc .mf-hero-arch { font: 600 11.5px/1 'Cinzel', Georgia, serif; letter-spacing: .2em; color: #c76d85; text-transform: uppercase; cursor: pointer; background: none; border: none; padding: 0; }
+.arc .mf-hero-sep { width: 1px; height: 13px; background: rgba(107,90,46,.6); flex-shrink: 0; }
+.arc .mf-hero-el { width: 14px; height: 14px; flex-shrink: 0; }
+.arc .mf-hero-tally { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; }
+.arc .mf-tally-item { font: 400 14px/1 'EB Garamond', Georgia, serif; color: #8a8175; }
+.arc .mf-tally-val { font-weight: 600; }
+.arc .mf-tally-val.ok { color: #63c9a3; }
+.arc .mf-tally-val.short { color: #e0899e; }
+
+/* Section header (Spellbook / Atlas / Collection) + type sub-header */
+.arc .mf-sec { padding: 0 20px; }
+.arc .mf-sec-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.arc .mf-sec-name { font: 600 13px/1 'Cinzel', Georgia, serif; letter-spacing: .22em; color: #cba75f; text-transform: uppercase; flex-shrink: 0; }
+.arc .mf-sec-tally { font: 600 12px/1 'IBM Plex Mono', monospace; flex-shrink: 0; }
+.arc .mf-sec-tally.ok { color: #63c9a3; }
+.arc .mf-sec-tally.short { color: #e0899e; }
+.arc .mf-sec-rule { flex: 1; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
+.arc .mf-sec-chev { color: #8a7a55; font-size: 11px; flex-shrink: 0; font-family: 'Hanken Grotesk', sans-serif; }
+.arc .mf-grp { display: flex; align-items: center; gap: 8px; padding: 12px 0 4px; }
+.arc .mf-grp-name { font: 500 11px/1 'Cinzel', Georgia, serif; letter-spacing: .18em; color: #a08cc0; text-transform: uppercase; flex-shrink: 0; }
+.arc .mf-grp-count { font: 400 12px/1 'IBM Plex Mono', monospace; color: #6b6254; flex-shrink: 0; }
+.arc .mf-grp-rule { flex: 1; height: 1px; background: rgba(160,140,192,.15); }
+
+/* Card rows - dense text ledger, no thumbs, no row borders */
+.arc .mf-row { display: flex; align-items: center; gap: 11px; padding: 11px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.arc .mf-row-qty { font: 600 16px/1 'Cinzel', Georgia, serif; color: #cba75f; min-width: 30px; flex-shrink: 0; }
+.arc .mf-row-name { font: 600 17px/1.25 'EB Garamond', Georgia, serif; color: #efe7d8; flex: 1; min-width: 0; }
+.arc .mf-thresh { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
+.arc .mf-thresh img { width: 13px; height: 13px; flex-shrink: 0; }
+.arc .mf-own-dot { width: 8px; height: 8px; border-radius: 50%; background: #63c9a3; flex-shrink: 0; }
+.arc .mf-own-chip { font: 600 12px/1 'IBM Plex Mono', monospace; color: #e0899e; background: rgba(199,109,133,.1); border: 1px solid rgba(199,109,133,.35); border-radius: 10px; padding: 3px 7px; flex-shrink: 0; }
+.arc .mf-empty { font: italic 14px 'EB Garamond', serif; color: #6b6254; padding: 8px 0 12px; }
+/* Edit-mode quick steppers (edit the deck quantity), cascaded onto each row. */
+.arc .mf-step { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; animation: mfStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
+@keyframes mfStepIn { from { opacity: 0; transform: translateX(-8px) scale(.75); } }
+/* Never let the entrance animation be what makes a stepper visible. */
+@media (prefers-reduced-motion: reduce) { .arc .mf-step { animation: none; } }
+.arc .mf-step-qty { font: 600 16px/1 'Cinzel', Georgia, serif; color: #cba75f; min-width: 20px; text-align: center; }
+.arc .mf-step-btn { width: 27px; height: 27px; border-radius: 50%; border: 1px solid rgba(203,167,95,.32); background: rgba(20,16,10,.75); color: #cba75f; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
+.arc .mf-step-btn:active { background: rgba(203,167,95,.28); border-color: #cba75f; }
+
+/* Auxiliary cards below the ledger (Random Hand / Notes / Curiosa / Log) keep
+   their existing chassis. */
 .arc .chart-card { background: rgba(15,14,17,.82); border: 1px solid rgba(160,110,220,.14); border-radius: 18px; margin: 0 12px 12px; overflow: hidden; }
 .arc .chart-card.cc-list { background: linear-gradient(180deg,rgba(19,17,23,.78),rgba(10,10,12,.62)); border-color: rgba(160,110,220,.14); padding: 17px 16px; }
 .arc .cc-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
-.arc .cc-hdr.collapsible { cursor: pointer; }
 .arc .cc-title { font: 600 11px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; color: var(--gold-leaf); text-transform: uppercase; }
-.arc .cc-count { font: 500 11px/1 'IBM Plex Mono', monospace; color: #6e6286; }
-.arc .cc-count.warn { color: #e07c5e; }
-.arc .cc-count.ok { color: #8fd3a8; }
-.arc .cc-chevron { margin-left: auto; color: #7a6e96; font-size: 11px; font-family: 'Hanken Grotesk', sans-serif; }
-.arc .cc-sb-group-label { font: 600 10px/1 'Hanken Grotesk', sans-serif; letter-spacing: .1em; color: #a87fd6; text-transform: uppercase; padding: 10px 0 5px; }
-.arc .cc-sb-row { display: flex; align-items: center; gap: 12px; padding: 11px 2px; border-bottom: 1px solid rgba(160,110,220,.08); cursor: pointer; }
-.arc .cc-sb-row:last-child { border-bottom: none; }
-.arc .cc-sb-qty { font: 700 14px/1 'Hanken Grotesk', sans-serif; color: #a87fd6; width: 22px; flex-shrink: 0; }
-.arc .cc-sb-name { font: 500 15px/1.2 'EB Garamond', Georgia, serif; color: #ece4f5; flex: 1; min-width: 0; }
-.arc .cc-thresh { display: flex; gap: 2px; align-items: center; padding: 0 4px; }
-.arc .cc-thresh img { width: 14px; height: 14px; flex-shrink: 0; }
-.arc .cc-sb-coin { width: 26px; height: 26px; border-radius: 50%; border: 1px solid rgba(160,110,220,.22); background: rgba(12,12,15,.7); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 'IBM Plex Mono', monospace; color: #c9bfdc; }
-.arc .cc-empty { font: italic 14px 'EB Garamond', serif; color: #6e6286; padding: 8px 0; }
-/* Edit-mode quick steppers - conjured onto each row with a soft cascade. */
-.arc .cc-sb-step { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; animation: ccStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
-@keyframes ccStepIn { from { opacity: 0; transform: translateX(-8px) scale(.75); } }
-.arc .cc-step-mini { width: 25px; height: 25px; border-radius: 50%; border: 1px solid rgba(160,110,220,.32); background: rgba(15,14,18,.75); color: #c9bfdc; font-size: 15px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
-.arc .cc-step-mini:active { background: var(--accent, #9d6ad6); border-color: var(--accent, #9d6ad6); color: #fff; }
 
 /* Random Hand */
 .arc .cc-hand-draw-btn { padding: 7px 15px; border-radius: 13px; border: 1px solid rgba(157,106,214,.4); background: rgba(157,106,214,.14); color: #c9a9f0; font: 600 12px/1 'Hanken Grotesk', sans-serif; cursor: pointer; margin-left: auto; }

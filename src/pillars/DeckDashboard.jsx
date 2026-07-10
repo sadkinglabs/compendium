@@ -4,6 +4,7 @@
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
 import React, { useEffect, useState } from 'react';
 import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
+import { ownedMap } from '../store/ownedRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
@@ -24,47 +25,65 @@ function ThreshDots({ th }) {
   const dots = [];
   ['air', 'earth', 'fire', 'water'].forEach((k) => { for (let i = 0; i < (th[k] || 0); i++) dots.push(`${k}-${i}`); });
   if (!dots.length) return null;
-  return <div className="cc-thresh">{dots.map((d) => <img key={d} src={`${BASE}icons/${d.split('-')[0]}.png`} alt="" />)}</div>;
+  return <div className="mf-thresh">{dots.map((d) => <img key={d} src={`${BASE}icons/${d.split('-')[0]}.png`} alt="" />)}</div>;
 }
 
-function Row({ e, rarityOn, onCardTap, editMode, onStep, stepDelay = 0 }) {
-  const color = rarityOn ? (RARITY_COLOR[e.rarity] || 'var(--text)') : 'var(--text)';
+// Ownership mark - a teal dot when the collection can cover the deck's copies,
+// else a rose deficit chip. `own` is the total owned (regular + foil) from the
+// collection ledger; `need` is how many the deck runs. Long-press/hover the mark
+// to read the exact "own X of Y".
+function OwnMark({ owned, need }) {
+  const title = `Own ${owned} of ${need}`;
+  return owned >= need
+    ? <span className="mf-own-dot" title={title} aria-label={title} />
+    : <span className="mf-own-chip" title={title} aria-label={title}>−{need - owned}</span>;
+}
+
+function Row({ e, owned, rarityOn, onCardTap, editMode, onStep, stepDelay = 0 }) {
+  const color = rarityOn ? (RARITY_COLOR[e.rarity] || undefined) : undefined;
   return (
-    <div className="cc-sb-row" onClick={() => e.card_id && onCardTap?.(e.card_id)}>
+    <div className="mf-row" onClick={() => e.card_id && onCardTap?.(e.card_id)}>
       {editMode ? (
-        <span className="cc-sb-step" style={{ animationDelay: stepDelay + 'ms' }} onClick={(ev) => ev.stopPropagation()}>
-          <button className="cc-step-mini" onClick={() => onStep(e, -1)} aria-label="Remove one">−</button>
-          <span className="cc-sb-qty" style={{ minWidth: 22, textAlign: 'center' }}>{e.quantity}</span>
-          <button className="cc-step-mini" onClick={() => onStep(e, 1)} aria-label="Add one">+</button>
+        <span className="mf-step" style={{ animationDelay: stepDelay + 'ms' }} onClick={(ev) => ev.stopPropagation()}>
+          <button className="mf-step-btn" onClick={() => onStep(e, -1)} aria-label="Remove one">−</button>
+          <span className="mf-step-qty">{e.quantity}</span>
+          <button className="mf-step-btn" onClick={() => onStep(e, 1)} aria-label="Add one">+</button>
         </span>
       ) : (
-        <span className="cc-sb-qty">{e.quantity}×</span>
+        <span className="mf-row-qty">{e.quantity}×</span>
       )}
-      <span className="cc-sb-name" style={{ color }}>{e.name}</span>
+      <span className="mf-row-name" style={color ? { color } : undefined}>{e.name}</span>
       <ThreshDots th={e.thresholds} />
-      {e.cost != null && <div className="cc-sb-coin">{e.cost}</div>}
+      <OwnMark owned={owned} need={e.quantity} />
     </div>
   );
 }
 
-function Zone({ title, count, need, groups, collapsed, onToggle, rarityOn, onCardTap, editMode, onStep }) {
-  const cls = count >= need ? 'ok' : 'warn';
+function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rarityOn, onCardTap, editMode, onStep, owned }) {
+  const cls = count >= need ? 'ok' : 'short';
   let rowIx = 0;   // running index - steppers cascade in top to bottom
   return (
-    <div className="chart-card cc-list">
-      <div className="cc-hdr collapsible" onClick={onToggle}>
-        <span className="cc-title">{title}</span>
-        <span className={`cc-count ${cls}`}>{count}/{need === 10 || need === 11 ? need : `${need}+`}</span>
-        <span className="cc-chevron">{collapsed ? '▶' : '▼'}</span>
+    <div className="mf-sec">
+      <div className="mf-sec-hdr" onClick={onToggle}>
+        <span className="mf-sec-name">{title}</span>
+        <span className={`mf-sec-tally ${cls}`}>{count}/{needLabel}</span>
+        <span className="mf-sec-rule" />
+        <span className="mf-sec-chev">{collapsed ? '▸' : '▾'}</span>
       </div>
       {!collapsed && (
         groups.some((g) => g.entries.length) ? groups.filter((g) => g.entries.length).map((g) => (
           <div key={g.label}>
-            {g.label && <div className="cc-sb-group-label">{g.label} ({sum(g.entries)})</div>}
-            {g.entries.map((e, i) => <Row key={e.name + i} e={e} rarityOn={rarityOn} onCardTap={onCardTap}
+            {g.label && (
+              <div className="mf-grp">
+                <span className="mf-grp-name">{g.label}</span>
+                <span className="mf-grp-count">{sum(g.entries)}</span>
+                <span className="mf-grp-rule" />
+              </div>
+            )}
+            {g.entries.map((e, i) => <Row key={e.name + i} e={e} owned={owned.get(e.card_id) || 0} rarityOn={rarityOn} onCardTap={onCardTap}
               editMode={editMode} onStep={onStep} stepDelay={Math.min(rowIx++ * 22, 260)} />)}
           </div>
-        )) : <div className="cc-empty">No cards - tap ✎ Edit Deck, then the magnifier to search.</div>
+        )) : <div className="mf-empty">No cards - tap ✎ Edit Deck, then the magnifier to search.</div>
       )}
     </div>
   );
@@ -265,6 +284,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   const [deck, setDeck] = useState(null);
   const [loaded, setLoaded] = useState(false);   // distinguishes "loading" from "gone"
   const [zones, setZones] = useState({ spellbook: [], atlas: [], collection: [] });
+  const [owned, setOwned] = useState(new Map());   // card_id -> total owned (collection ledger)
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [sheetCardId, setSheetCardId] = useState(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
@@ -272,7 +292,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   useEffect(() => {
     let alive = true;
     setLoaded(false);
-    Promise.all([getDeck(deckId), getDeckCards(deckId)]).then(([d, z]) => { if (alive) { setDeck(d); setZones(z); setLoaded(true); } });
+    Promise.all([getDeck(deckId), getDeckCards(deckId), ownedMap()]).then(([d, z, om]) => { if (alive) { setDeck(d); setZones(z); setOwned(om); setLoaded(true); } });
     return () => { alive = false; };
   }, [deckId, rev, localRev]);
   // Leaving edit mode reloads from the store, which returns only qty>0 rows - this
@@ -313,8 +333,6 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   }));
   const coGroups = [{ label: '', entries: zones.collection.slice().sort((a, b) => a.name.localeCompare(b.name)) }];
 
-  const statColor = (ok) => ok ? 'var(--success)' : 'var(--warn)';
-
   // Quick-edit stepper (edit mode) - OPTIMISTIC, like the CardSheet: the row
   // (and the hero counts derived from zones) update instantly; changeQty then
   // enforces rarity copy-limits / collection cap in the background, and a
@@ -348,25 +366,31 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
 
   return (
     <div>
-      {/* Hero */}
-      <div className="avatar-hero">
-        {deck.avatar?.image_slug && <img className="avatar-hero-img" src={`${BASE}cards/${deck.avatar.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
-        <div className="avatar-hero-gradient" />
-        <div className="avatar-hero-content">
-          <div className="hero-deck-name">{deck.name}</div>
-          <div className="hero-avatar-row">
-            {deck.avatar?.name
-              ? <span className="hero-avatar-name" onClick={() => setAvatarOpen(true)} title="Change avatar">{deck.avatar.name}</span>
-              : <span className="hero-avatar-name" onClick={() => setAvatarOpen(true)} title="Choose avatar">＋ Set avatar</span>}
-            {deck.avatar?.name && els.length > 0 && <span className="hero-avatar-sep">·</span>}
-            {els.map((el) => <img key={el} src={`${BASE}icons/${el}.png`} style={{ width: 16, height: 16, flexShrink: 0 }} alt={el} />)}
-          </div>
-          <div className="hero-stat-bar">
-            <span className="hero-stat-item" style={{ color: statColor(sb >= 60) }}>Spellbook {sb}/60+</span>
-            <span className="hero-stat-divider" />
-            <span className="hero-stat-item" style={{ color: statColor(at >= 30) }}>Atlas {at}/30+</span>
-            <span className="hero-stat-divider" />
-            <span className="hero-stat-item" style={{ color: statColor(co === coMax) }}>Coll {co}/{coMax}</span>
+      {/* Hero plate - framed card: gilt-edged art with a bottom scrim under the
+          deck name, then the archetype eyebrow + threshold icons + per-section
+          tally (teal when a requirement is met, rose when short). */}
+      <div className="mf-hero">
+        <div className="mf-hero-inner">
+          <div className="mf-hero-card">
+            <div className="mf-hero-art">
+              {deck.avatar?.image_slug && <img src={`${BASE}cards/${deck.avatar.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
+              <div className="mf-hero-scrim" />
+              <div className="mf-hero-name">{deck.name}</div>
+            </div>
+            <div className="mf-hero-body">
+              <div className="mf-hero-meta">
+                <button className="mf-hero-arch" onClick={() => setAvatarOpen(true)} title={deck.avatar?.name ? 'Change avatar' : 'Choose avatar'}>
+                  {deck.avatar?.name || '＋ Set avatar'}
+                </button>
+                {els.length > 0 && <span className="mf-hero-sep" />}
+                {els.map((el) => <img key={el} className="mf-hero-el" src={`${BASE}icons/${el}.png`} alt={el} />)}
+              </div>
+              <div className="mf-hero-tally">
+                <span className="mf-tally-item">Spellbook <span className={`mf-tally-val ${sb >= 60 ? 'ok' : 'short'}`}>{sb}/60+</span></span>
+                <span className="mf-tally-item">Atlas <span className={`mf-tally-val ${at >= 30 ? 'ok' : 'short'}`}>{at}/30+</span></span>
+                <span className="mf-tally-item">Coll <span className={`mf-tally-val ${co === coMax ? 'ok' : 'short'}`}>{co}/{coMax}</span></span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -377,10 +401,10 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         <DeckStats deck={deck} rev={rev} onReload={() => { setLocalRev((r) => r + 1); onChanged?.(); }}
           onOpenCodex={onOpenCodex} onChanged={onChanged} />
       ) : (
-        <div style={{ paddingTop: 12 }}>
-          <Zone title="Spellbook" count={sb} need={60} groups={sbGroups} collapsed={collapsed.has('spellbook')} onToggle={() => toggle('spellbook')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('spellbook')} />
-          <Zone title="Atlas" count={at} need={30} groups={atGroups} collapsed={collapsed.has('atlas')} onToggle={() => toggle('atlas')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('atlas')} />
-          <Zone title="Collection" count={co} need={coMax} groups={coGroups} collapsed={collapsed.has('collection')} onToggle={() => toggle('collection')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('collection')} />
+        <div style={{ paddingTop: 4 }}>
+          <Zone title="Spellbook" count={sb} need={60} needLabel="60+" groups={sbGroups} collapsed={collapsed.has('spellbook')} onToggle={() => toggle('spellbook')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('spellbook')} owned={owned} />
+          <Zone title="Atlas" count={at} need={30} needLabel="30+" groups={atGroups} collapsed={collapsed.has('atlas')} onToggle={() => toggle('atlas')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('atlas')} owned={owned} />
+          <Zone title="Collection" count={co} need={coMax} needLabel={String(coMax)} groups={coGroups} collapsed={collapsed.has('collection')} onToggle={() => toggle('collection')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('collection')} owned={owned} />
           <HandCard zones={zones} avatar={deck.avatar} onCardTap={setSheetCardId} />
           <NotesCard deckId={deckId} initial={deck.notes} />
           <CuriosaUrlCard deckId={deckId} initial={deck.curiosa_url} />
