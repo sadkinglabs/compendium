@@ -498,7 +498,7 @@ export async function importCuriosaUrl(rawUrl) {
   const avatarId = avName ? await resolveCardId(avName) : null;
   if (avName && !avatarId) warnings.push(avName);
 
-  const name = (meta?.name || 'Imported Deck').trim();
+  const name = await uniqueDeckName(meta?.name || 'Imported Deck');
   const deckId = await createDeck(name, { avatarCardId: avatarId });
 
   const stmts = [];
@@ -528,7 +528,7 @@ export async function importFromText(text, deckName) {
   const { avatar, zones } = parseDeckText(text);
   let avatarId = null;
   if (avatar) avatarId = (await query('SELECT card_id FROM cards WHERE lower(name)=? LIMIT 1;', [avatar.toLowerCase()]))[0]?.card_id || null;
-  const id = await createDeck(deckName || 'Imported deck', { avatarCardId: avatarId });
+  const id = await createDeck(await uniqueDeckName(deckName || 'Imported deck'), { avatarCardId: avatarId });
   const stmts = [];
   let unresolved = 0;
   for (const zone of ZONES) {
