@@ -124,7 +124,7 @@ function ImportTextSheet({ open, onClose }) {
   return (
     <BottomSheet open={open} title="IMPORT TO COLLECTION" onClose={onClose}>
       <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
-        Paste a list of cards — one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>.
+        Paste a list of cards - one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>.
         Deck exports work too. Copies are ADDED to what you already own.
       </div>
       <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
@@ -166,7 +166,7 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
         <Tile label="WISHLIST" value={stats.wishlist} sub="cards you want" onClick={onGoCards} />
-        <Tile label="DECKS BUILDABLE" value={deckStat ? `${deckStat.buildable}/${deckStat.total}` : '—'} sub="from your collection" onClick={onGoDecks} />
+        <Tile label="DECKS BUILDABLE" value={deckStat ? `${deckStat.buildable}/${deckStat.total}` : '-'} sub="from your collection" onClick={onGoDecks} />
       </div>
 
       {recent.length > 0 ? (
@@ -285,7 +285,7 @@ function Cards({ onOpen, onPeek }) {
       ) : (
         <>
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '2px 2px 6px' }}>
-            {shown.length} cards{shown.length > 250 ? ' · showing 250 — refine' : ''}
+            {shown.length} cards{shown.length > 250 ? ' · showing 250 - refine' : ''}
           </div>
           {shown.slice(0, 250).map((c) => {
             const o = val(c.card_id, 'owned'), f = val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
@@ -316,7 +316,7 @@ function Cards({ onOpen, onPeek }) {
           {FILTERS.map(([k, label]) => <Chip key={k} label={label} active={filter === k} onClick={() => setFilter(k)} />)}
         </ChipRow>
         <div style={{ font: "italic 400 12px/1.5 var(--f-read)", color: 'var(--ink-faint)', margin: '14px 0 4px', textAlign: 'center' }}>
-          More filters coming — sets, rarity, elements.
+          More filters coming - sets, rarity, elements.
         </div>
       </BottomSheet>
     </div>
@@ -374,7 +374,7 @@ function ExportListSheet({ open, listId, listName, onClose }) {
   return (
     <BottomSheet open={open} title="EXPORT LIST" onClose={onClose}>
       <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
-        “{listName}” as plain text — pastes into Curiosa, a deck’s Import from text, or another Collection.
+        “{listName}” as plain text - pastes into Curiosa, a deck’s Import from text, or another Collection.
       </div>
       {text == null ? <Loading /> : (
         <textarea readOnly value={text || 'This list is empty.'} rows={8} onFocus={(e) => e.target.select()}
@@ -421,8 +421,8 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
   useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); } /* eslint-disable-next-line */ }, [open]);
   const go = () => { const nm = name.trim(); if (!nm) return; onSubmit(nm, desc.trim()); };
   const hint = kind === 'wanted'
-    ? 'A named goal — Collection tracks how close you are as you record the cards you own.'
-    : kind === 'custom' ? 'A custom grouping — a trade binder, a cube, cards to sell.' : '';
+    ? 'A named goal - Collection tracks how close you are as you record the cards you own.'
+    : kind === 'custom' ? 'A custom grouping - a trade binder, a cube, cards to sell.' : '';
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
       {hint && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>{hint}</div>}
@@ -462,12 +462,12 @@ function ListsIndex({ onOpenList, rev }) {
   const custom = lists.filter((l) => l.kind === 'custom');
   return (
     <div style={{ padding: '2px 20px' }}>
-      <Section title="WANTED LISTS" hint="Named goals — Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
+      <Section title="WANTED LISTS" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
         {wanted.length
           ? wanted.map((l) => <ListRowCard key={l.id} list={l} progress={progress.get(l.id)} onClick={() => onOpenList(l)} />)
-          : <Empty text="No wanted lists yet — set a goal and watch it fill in." />}
+          : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
-      <Section title="CARD LISTS" hint="Custom groupings — a trade binder, a cube, cards to sell." onAdd={() => setCreate('custom')}>
+      <Section title="CARD LISTS" hint="Custom groupings - a trade binder, a cube, cards to sell." onAdd={() => setCreate('custom')}>
         {custom.length
           ? custom.map((l) => <ListRowCard key={l.id} list={l} onClick={() => onOpenList(l)} />)
           : <Empty text="No card lists yet." />}
@@ -611,14 +611,14 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             <div style={{ font: "400 12.5px/1.45 var(--f-ui)", color: 'var(--ink-muted)' }}>
               {totals.complete
                 ? 'You own every card on this list.'
-                : <>You own {totals.have} of {totals.req} · <span style={{ color: 'var(--accent-ruby)' }}>missing {totals.missing}</span> — tap for list</>}
+                : <>You own {totals.have} of {totals.req} · <span style={{ color: 'var(--accent-ruby)' }}>missing {totals.missing}</span> - tap for list</>}
             </div>
           </div>
         </div>
       )}
 
       <div className="cx-search-pill" style={{ marginBottom: 12 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add cards — search the catalog…" aria-label="Add cards to this list"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add cards - search the catalog…" aria-label="Add cards to this list"
           style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", flex: 1 }} />
       </div>
 

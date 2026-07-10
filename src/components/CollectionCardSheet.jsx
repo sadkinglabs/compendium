@@ -32,14 +32,13 @@ function glowColor(c) {
   return GLOW[best] || 'rgba(74,146,196,.5)';
 }
 
-// The sheet eyebrow reads WHAT the card is, Sorcery-style: minions, magics,
-// auras and artifacts are all spells ("SPELL — MINION"); Sites and Avatars stand
-// alone. Falls back to the raw type for anything unexpected.
+// The card's type in small caps for the meta row: the base type (MINION, MAGIC,
+// AURA, ARTIFACT) for spells, or SITE / AVATAR. No "spell" prefix; the subtype
+// beside it already reads it as a spell.
 function typeLabel(c) {
   if (c.is_site) return 'SITE';
   if (c.is_avatar) return 'AVATAR';
-  const t = (c.type || '').trim();
-  return /^(minion|magic|aura|artifact)$/i.test(t) ? `SPELL — ${t.toUpperCase()}` : (t.toUpperCase() || 'CARD');
+  return (c.type || '').trim().toUpperCase() || 'CARD';
 }
 
 /* ---- shared bits ---- */
@@ -134,8 +133,8 @@ function ListPicker({ cardId, onBack }) {
       <div style={{ ...EYEBROW, marginBottom: 16 }}>ADD TO LIST</div>
       {lists == null ? <Loading /> : (
         <>
-          {section('WANTED LISTS', lists.filter((l) => l.kind === 'wanted'), 'No wanted lists yet — create goals in Collection › Lists.')}
-          {section('CARD LISTS', lists.filter((l) => l.kind === 'custom'), 'No card lists yet — create them in Collection › Lists.')}
+          {section('WANTED LISTS', lists.filter((l) => l.kind === 'wanted'), 'No wanted lists yet - create goals in Collection › Lists.')}
+          {section('CARD LISTS', lists.filter((l) => l.kind === 'custom'), 'No card lists yet - create them in Collection › Lists.')}
         </>
       )}
       <button onClick={onBack} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 13px/1 var(--f-ui)", padding: '12px 0 2px', width: '100%', textAlign: 'center', cursor: 'pointer' }}>‹ Back to card</button>

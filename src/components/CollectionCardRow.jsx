@@ -46,7 +46,7 @@ const pillBase = {
 // you own the card's full legal limit - "collected".
 function PlaysetJewel({ limit }) {
   return (
-    <span title={`Playset collected — ${limit} of ${limit}`} style={{ display: 'inline-flex', flex: 'none' }} aria-label="Playset collected">
+    <span title={`Playset collected - ${limit} of ${limit}`} style={{ display: 'inline-flex', flex: 'none' }} aria-label="Playset collected">
       <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 2 L22 12 L12 22 L2 12 Z" fill="rgba(143,211,168,.14)" stroke="var(--accent-jade)" strokeWidth="1.6" strokeLinejoin="round" />
         <path d="M12 2 L12 6 M2 12 L6 12 M22 12 L18 12 M12 22 L12 18" stroke="rgba(143,211,168,.45)" strokeWidth="1" />
