@@ -15,9 +15,8 @@ import {
   setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
-import CollectionCardRow from '../components/CollectionCardRow.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
-import { LedgerRow, BinderTile } from '../components/CollectionCardViews.jsx';
+import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
 import GothicSheet from '../components/GothicSheet.jsx';
 import SearchPill from '../components/SearchPill.jsx';
@@ -25,14 +24,8 @@ import MissingSheet from '../components/MissingSheet.jsx';
 import { serialChain, ownedChains } from '../components/ownedUi.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { launchScanner } from '../cardScanner.js';
+import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
-
-// Chip recipe shared by the row's right-edge indicators (wishlist count, foil
-// count, owned-of-target) - quiet mono capsule, content stays ink not ruby.
-const chipStyle = (color = 'var(--ink-faint)') => ({
-  font: "600 11px/1 var(--f-mono)", color, padding: '4px 7px',
-  border: '1px solid var(--hair-12)', borderRadius: 999,
-});
 
 // FAB menu-item glyphs (unsized - the fab-menu CSS sizes them), matching the
 // Decks library FAB's icon language.
@@ -77,7 +70,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       ) : view === 'cards' ? (
         <Cards onOpen={onOpen} onPeek={setSheetCard} />
       ) : listOpen ? (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onChanged={onChanged} />
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onGoCards={() => go('cards')} onChanged={onChanged} />
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
@@ -374,12 +367,6 @@ function Cards({ onOpen, onPeek }) {
 
 /* ---------------- Lists (Wanted goals + custom Card Lists) ---------------- */
 
-const iconBtn = {
-  width: 34, height: 34, flex: 'none', borderRadius: 10, cursor: 'pointer',
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  font: "600 21px/1 var(--f-ui)", color: 'var(--ink-status)',
-  background: 'rgba(255,255,255,.03)', border: '1px solid var(--hair-22)',
-};
 const SHEET_INPUT = {
   width: '100%', height: 44, boxSizing: 'border-box', background: 'var(--surface-well)',
   border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px',
@@ -604,57 +591,132 @@ function ListsIndex({ onOpenList, rev }) {
   );
 }
 
-function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
+// The list-detail set pill (quiet gold capsule, matches the binder rail).
+const listSetPill = {
+  display: 'inline-block', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.1em',
+  textTransform: 'uppercase', color: 'var(--gold-leaf)', padding: '4px 9px',
+  borderRadius: 999, border: '1px solid var(--hair-16)', background: 'rgba(10,9,7,.5)',
+};
+function listSetName(card) {
+  try { const s = JSON.parse(card?.sets || '[]'); return (Array.isArray(s) && s[0]?.name) || null; }
+  catch { return null; }
+}
+
+// One card on a list detail. A full-width hairline row (never a rounded card): a
+// gilt-framed 5:7 thumb that lights up as you own copies toward the goal, the
+// name + set, ONE status line ("X of Y wanted", or a teal COMPLETE once met), and
+// frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
+// is read-only, derived live from the collection, so the row fills in on its own
+// as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
+function ListCardRow({ card, owned, target, isWanted, onStep, onPeek }) {
+  const goalMet = isWanted && target > 0 && owned >= target;
+  const ownedAny = owned >= 1;
+  const setName = listSetName(card);
+  return (
+    <div
+      onClick={onPeek} className="cx-row"
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14, padding: '14px 20px', margin: '0 -20px',
+        borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer',
+        background: goalMet ? 'linear-gradient(90deg, rgba(203,167,95,.05), transparent 70%)' : 'none',
+      }}
+    >
+      {/* 5:7 thumb: gilt frame brightens as owned reaches the goal; dark + dimmed
+          when you own none, so the list visibly fills in as the collection grows. */}
+      <span style={{
+        width: 64, flex: 'none', position: 'relative', borderRadius: 9,
+        padding: ownedAny ? 1 : 0,
+        background: ownedAny ? (goalMet ? GILT_BRIGHT : GILT) : 'none',
+        boxShadow: ownedAny ? (goalMet ? GLOW_BRIGHT : GLOW) : 'none',
+      }}>
+        <span style={{ display: 'block', position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
+          <CardArt card={card} radius={8} aspect="5/7" />
+          {!ownedAny && <span style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.62)' }} />}
+        </span>
+        {goalMet && (
+          <span title={`${owned} owned`} style={{
+            position: 'absolute', bottom: -6, right: -6, minWidth: 21, height: 21, padding: '0 6px',
+            borderRadius: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            font: "700 12px/1 var(--f-display)", color: '#1a1206',
+            background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid rgba(16,10,3,.4)',
+            boxShadow: '0 1px 4px rgba(0,0,0,.5)',
+          }}>×{owned}</span>
+        )}
+      </span>
+
+      {/* Name / set + ONE status line. */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          font: "600 18px/1.2 var(--f-read)", color: goalMet ? '#f4ecdc' : '#efe7d8',
+        }}>{card.name}</span>
+        <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 }}>
+          {setName && <span style={listSetPill}>{setName}</span>}
+          {goalMet ? (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#63c9a3', flex: 'none' }} />
+              <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', color: '#63c9a3' }}>COMPLETE</span>
+            </span>
+          ) : isWanted ? (
+            <span>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: '#e0899e' }}>{owned}</span>
+              <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}> of {target} wanted</span>
+            </span>
+          ) : (
+            <span>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: ownedAny ? '#e3c589' : '#8a8175' }}>{owned}</span>
+              <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}> owned</span>
+            </span>
+          )}
+        </span>
+      </div>
+
+      {/* Frosted -/+ editing the GOAL (wanted qty). The WANT label marks this as
+          goal-editing, distinct from the unlabeled owned-editing on the Cards tab. */}
+      <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+        <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
+          <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+          <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+        </span>
+        <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
+      </span>
+    </div>
+  );
+}
+
+function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
   const isWanted = list.kind === 'wanted';
   const [meta, setMeta] = useState(list);
   const [loaded, setLoaded] = useState(false);     // initial listCards fetch done
-  const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty
-  const [qty, setQty] = useState(new Map());       // card_id -> target qty (optimistic)
-  const [q, setQ] = useState('');
-  const [results, setResults] = useState(null);
+  const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty (live)
+  const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [rename, setRename] = useState(false);
   const [missing, setMissing] = useState(null);    // report for MissingSheet
+  const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
   const chains = useRef({});
-  const cardIndex = useRef(new Map());             // card_id -> full card row (seen via list or search)
+  const cardIndex = useRef(new Map());             // card_id -> full card row
 
-  const indexCards = (rows) => { for (const c of rows) cardIndex.current.set(c.card_id, c); };
-  const mergeOwned = (m) => setOwnQty((prev) => { const n = new Map(prev); for (const [k, v] of m) n.set(k, v); return n; });
   const load = async () => {
     setLoaded(false);
     const rows = await listCards(list.id);
-    indexCards(rows);
+    for (const c of rows) cardIndex.current.set(c.card_id, c);
     setQty(new Map(rows.map((r) => [r.card_id, r.quantity])));
-    mergeOwned(await ownedMap(rows.map((r) => r.card_id)));
+    setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
     setLoaded(true);
   };
   useEffect(() => {
-    setQ(''); setResults(null);
     load();
     // Arriving via a "View missing ›" tap on the index opens straight to the list.
     if (list.openMissing) listProgress(list.id).then(setMissing);
+    // Owned counts are read-only here: they redraw live as the collection grows.
     const off = subscribeCollection(() => ownedMap().then(setOwnQty));
     return off;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.id]);
 
-  useEffect(() => {
-    if (!q.trim()) { setResults(null); return; }
-    const t = setTimeout(async () => {
-      const parsed = parseQuery(q);
-      const rows = await getPool({ q: parsed.name });
-      const filtered = (parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows).slice(0, 60);
-      indexCards(filtered);
-      setResults(filtered);
-      mergeOwned(await ownedMap(filtered.map((c) => c.card_id)));
-    }, 130);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q]);
-
-  // the list's current cards, derived from the live target map + the card index
-  // (so cards added via search appear immediately, without a re-fetch race).
   const listRows = useMemo(() => {
     const out = [];
     for (const [id, t] of qty) { if (t > 0) { const c = cardIndex.current.get(id); if (c) out.push(c); } }
@@ -664,16 +726,29 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
+  const write = (cardId, next) => {
+    chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
+      .then(() => setListEntry(list.id, cardId, next)).catch(() => {});
+  };
+  // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
+  // 1; a step past it removes the card from the list, and that always confirms.
   function step(cardId, delta) {
-    // haptic lives in CollectionCardRow's stepper - don't double-buzz here.
-    setQty((prev) => {
-      const next = Math.max(0, (prev.get(cardId) || 0) + delta);
-      const m = new Map(prev);
-      if (next === 0) m.delete(cardId); else m.set(cardId, next);
-      chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
-        .then(() => setListEntry(list.id, cardId, next)).catch(() => {});
-      return m;
-    });
+    const cur = qty.get(cardId) || 0;
+    if (delta < 0 && cur <= 1) {
+      const c = cardIndex.current.get(cardId);
+      setRemoveCard({ card_id: cardId, name: c?.name || 'this card' });
+      return;
+    }
+    haptic('light');
+    const next = Math.max(1, cur + delta);
+    setQty((prev) => { const m = new Map(prev); m.set(cardId, next); return m; });
+    write(cardId, next);
+  }
+  function removeEntry(cardId) {
+    setRemoveCard(null);
+    haptic('light');
+    setQty((prev) => { const m = new Map(prev); m.delete(cardId); return m; });
+    write(cardId, 0);
   }
 
   const totals = useMemo(() => {
@@ -689,68 +764,64 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
   const openMissing = async () => setMissing(await listProgress(list.id));
 
-  const rows = q.trim() ? results : listRows;
-  const loading = q.trim() ? results == null : !loaded;
-
-  const renderRow = (c) => {
-    const t = targetOf(c.card_id);
-    const own = ownQty.get(c.card_id) || 0;
-    const enough = isWanted && t > 0 && own >= t;
-    const chip = isWanted && t > 0
-      ? <span title="Owned / target" style={chipStyle(enough ? 'var(--accent-jade)' : 'var(--ink-faint)')}>{enough ? '✓' : `${Math.min(own, t)}/${t}`}</span>
-      : null;
-    // `own` is the TOTAL from ownedMap (regular + foil) - it feeds the badge and
-    // the playset jewel; the ♡/✦ split isn't loaded here (the sheet has it).
-    return (
-      <CollectionCardRow key={c.card_id} card={c} owned={own} dim={own === 0} chip={chip}
-        stepper={{ value: t, onStep: (d) => step(c.card_id, d) }}
-        onClick={() => onPeek(c.card_id)} />
-    );
-  };
-
   return (
     <div style={{ padding: '0 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-        <button onClick={onBack} aria-label="Back to lists" style={iconBtn}>‹</button>
+      {/* Header: frosted back + name/eyebrow + a live owned/goal tally. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4, marginBottom: 14 }}>
+        <button onClick={onBack} aria-label="Back to lists" style={{
+          width: 38, height: 38, flex: 'none', borderRadius: '50%', cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          font: "400 22px/1 var(--f-ui)", color: '#d3a8af',
+          background: 'rgba(224,169,177,.07)', border: '1px solid rgba(224,169,177,.22)',
+        }}>‹</button>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ font: "700 18px/1.15 var(--f-display)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          <div style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', marginTop: 4 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
+          <div style={{ font: "700 22px/1.1 var(--f-display)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
-      </div>
-      {meta.description ? <div style={{ font: "400 12.5px/1.45 var(--f-read)", color: 'var(--ink-faint)', margin: '0 2px 12px' }}>{meta.description}</div> : <div style={{ height: 6 }} />}
-
-      {isWanted && totals.req > 0 && (
-        <div className="chart-card" style={{ marginBottom: 14, cursor: totals.missing > 0 ? 'pointer' : 'default' }} onClick={() => totals.missing > 0 && openMissing()}>
-          <div className="chart-card-header">
-            <h3>Progress</h3>
-            <span style={{ font: "700 13px/1 var(--f-mono)", color: totals.complete ? 'var(--accent-jade)' : 'var(--ink-body)' }}>{totals.complete ? '✓ Complete' : `${totals.have}/${totals.req}`}</span>
+        {isWanted && totals.req > 0 && (
+          <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
+            <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? '#e3c589' : '#e0899e' }}>{totals.have}</span>
+            <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{totals.req}</span>
           </div>
-          <div style={{ padding: '2px 14px 14px' }}>
-            <div style={{ height: 6, borderRadius: 3, background: 'var(--hair-12)', overflow: 'hidden', marginBottom: 8 }}>
-              <div style={{ height: '100%', width: `${totals.percent}%`, background: totals.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)', borderRadius: 3, transition: 'width .3s ease' }} />
-            </div>
-            <div style={{ font: "400 12.5px/1.45 var(--f-ui)", color: 'var(--ink-muted)' }}>
-              {totals.complete
-                ? 'You own every card on this list.'
-                : <>You own {totals.have} of {totals.req} · <span style={{ color: 'var(--accent-ruby)' }}>missing {totals.missing}</span> - tap for list</>}
-            </div>
+        )}
+      </div>
+
+      {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: '#8a8175', margin: '0 2px 14px' }}>{meta.description}</div>}
+
+      {/* Progress bar (wanted only): fills rose as the collection acquires copies,
+          turning gold at 100%. "View missing ›" filters to what is still short. */}
+      {isWanted && totals.req > 0 && (
+        <div style={{ marginBottom: 18 }}>
+          <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${totals.percent}%`, background: totals.complete ? '#e3c589' : '#e0899e', borderRadius: 3, transition: 'width .3s ease' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+            <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}>
+              {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
+            </span>
+            {totals.missing > 0 && (
+              <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: '#c76d85' }}>View missing ›</button>
+            )}
           </div>
         </div>
       )}
 
-      <div className="cx-search-pill" style={{ marginBottom: 12 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add cards - search the catalog…" aria-label="Add cards to this list"
-          style={{ background: 'none', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", flex: 1 }} />
-      </div>
-
-      {loading ? <Loading /> : (rows || []).length === 0 ? (
-        <div style={{ padding: '34px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 14.5px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          {q.trim() ? 'No cards match.' : 'This list is empty.\nSearch above to add cards.'}
+      {/* Summary + hairline rows, or the empty state. Cards join a list from the
+          card sheet's "Add to a list" - there is no inline search here anymore. */}
+      {!loaded ? <Loading /> : listRows.length === 0 ? (
+        <div style={{ padding: '40px 0', textAlign: 'center' }}>
+          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>No cards yet.</div>
+          <button onClick={onGoCards} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Browse the catalog ›</button>
         </div>
       ) : (
         <>
-          {!q.trim() && <div style={{ font: "italic 400 12px/1.4 'EB Garamond',serif", color: 'var(--ink-muted)', marginBottom: 8 }}>{totals.names} card{totals.names === 1 ? '' : 's'}{isWanted ? ` · ${totals.done} complete` : ''}</div>}
-          {rows.map((c) => renderRow(c))}
+          <div style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55', marginBottom: 6 }}>
+            {totals.names} card{totals.names === 1 ? '' : 's'}{isWanted && totals.done > 0 ? ` · ${totals.done} complete` : ''}
+          </div>
+          {listRows.map((c) => (
+            <ListCardRow key={c.card_id} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(c.card_id)}
+              isWanted={isWanted} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+          ))}
         </>
       )}
 
@@ -758,12 +829,23 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           routes through its OWN confirm sheet - destructive and undoable-never,
           so it is never one tap. */}
       <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
+        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: onGoCards },
         { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
         { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
         { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
         ...(isWanted ? [{ label: 'Get missing cards', icon: SeekSvg, onClick: openMissing }] : []),
         { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
       ]} />
+
+      <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
+        <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>
+          Remove “{removeCard?.name}” from {meta.name}?
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => setRemoveCard(null)} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+          <button onClick={() => removeEntry(removeCard.card_id)} style={{ ...BTN_GHOST, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.5)' }}>Remove</button>
+        </div>
+      </BottomSheet>
 
       <BottomSheet open={confirmDel} title="DELETE LIST" onClose={() => setConfirmDel(false)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>

@@ -12,10 +12,11 @@ import { RARITY_LIMITS, isUnlimited } from '../store/deckRepository.js';
 import { haptic } from '../native.js';
 
 // Reference palette (from the design spec; kept literal - these are deliberate).
-const GILT = 'linear-gradient(160deg, rgba(227,197,137,.85), rgba(203,167,95,.2) 45%, rgba(184,149,79,.7))';
-const GILT_BRIGHT = 'linear-gradient(160deg, #e8cd92, #c2a05a)';
-const GLOW = '0 0 12px rgba(203,167,95,.14)';
-const GLOW_BRIGHT = '0 0 12px rgba(203,167,95,.28)';
+// Exported so the wanted-list detail reuses the exact same gilt frame + glow.
+export const GILT = 'linear-gradient(160deg, rgba(227,197,137,.85), rgba(203,167,95,.2) 45%, rgba(184,149,79,.7))';
+export const GILT_BRIGHT = 'linear-gradient(160deg, #e8cd92, #c2a05a)';
+export const GLOW = '0 0 12px rgba(203,167,95,.14)';
+export const GLOW_BRIGHT = '0 0 12px rgba(203,167,95,.28)';
 const TEAL = '#63c9a3';
 
 // The thumb shows the WHOLE card (5:7), no magnification. Sites (stored portrait)
@@ -40,7 +41,7 @@ const setPillStyle = {
 
 // A flat frosted-glass round button (steppers + the missing-card quick add): a
 // 31px rose-glass circle inside a >=44px hit area, with a pressed/hover lift.
-function Frost({ label, onClick, disabled, size = 31, children }) {
+export function Frost({ label, onClick, disabled, size = 31, children }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
   const hit = Math.max(44, size);
