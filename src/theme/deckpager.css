@@ -37,12 +37,14 @@
 .arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
 .arc .deck-inner-pager::-webkit-scrollbar { display: none; }
 .arc .deck-panel { flex: 0 0 100%; width: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; padding-bottom: calc(var(--nav-h) + 90px); }
-/* The List/Stats toggle now lives in the shared .cx-dock left slot (beside the
-   FAB), so it is a static, content-width pill centred in that slot - no fixed
-   positioning of its own, and no `.arc` ancestor needed (it's portaled out). */
-.deck-pip-bar { position: relative; z-index: 50; width: fit-content; margin: 0 auto; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
-/* Edit mode owns the floor - the pip bar bows out downward. */
-.deck-pip-bar.hidden { opacity: 0; transform: translateY(18px); pointer-events: none; }
+/* The List/Stats toggle lives in the shared .cx-dock (beside the FAB), but is
+   SCREEN-centred: absolutely centred on the dock (which spans left:16/right:16,
+   so its 50% is the viewport centre) rather than centred in the left slot, which
+   the FAB would push off-centre. Out of flow, so the FAB still sits flush right.
+   No `.arc` ancestor needed - it's portaled into the dock. */
+.deck-pip-bar { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50; width: fit-content; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
+/* Edit mode owns the floor - the pip bar bows out downward (keep the centring). */
+.deck-pip-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(18px); pointer-events: none; }
 .pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }
 .pip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(160,110,220,.3); transition: background .2s, box-shadow .2s; }
 .pip-dot.active { background: var(--gold-leaf); box-shadow: 0 0 10px rgba(220,184,111,.75); }
