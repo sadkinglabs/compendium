@@ -127,7 +127,8 @@ function Overview({ onGoCards, onGoDecks, onPeek, rev }) {
             <button onClick={onGoCards} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>All cards ›</button>
           </div>
           {recent.map((c) => (
-            <CollectionCardRow key={c.card_id} card={c} badge={c.qty_owned} onClick={() => onPeek(c.card_id)} />
+            <CollectionCardRow key={c.card_id} card={c} owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted}
+              onClick={() => onPeek(c.card_id)} />
           ))}
         </>
       ) : (
@@ -232,14 +233,12 @@ function Cards({ onOpen, onPeek }) {
           {shown.slice(0, 250).map((c) => {
             const o = val(c.card_id, 'owned'), f = val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
             const wishlist = filter === 'wishlist';
-            // Steppers edit REGULAR copies; foils are edited in the card sheet
-            // (their own row) and read here as a quiet ✦ chip.
-            const chips = [];
-            if (f > 0) chips.push(<span key="f" title="Foil copies" style={chipStyle('var(--gold-head)')}>✦ {f}</span>);
-            if (!wishlist && w > 0) chips.push(<span key="w" title="On your wishlist" style={chipStyle()}>♡ {w}</span>);
-            if (wishlist && o + f > 0) chips.push(<span key="o" title="Copies owned" style={chipStyle()}>own {o + f}</span>);
+            // The row renders the whole pill rail (set · playset · ♡ · ✦) and the
+            // total-owned art badge from these counts; the stepper edits REGULAR
+            // copies (or the wishlist target when that filter is the mode).
             return (
-              <CollectionCardRow key={c.card_id} card={c} dim={o + f === 0 && !wishlist} chip={chips.length ? chips : null}
+              <CollectionCardRow key={c.card_id} card={c} owned={o} foil={f} wanted={w}
+                dim={o + f === 0 && !wishlist}
                 stepper={{ value: wishlist ? w : o, onStep: (d) => step(c.card_id, d) }}
                 onClick={() => onPeek(c.card_id)} />
             );
@@ -484,8 +483,10 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     const chip = isWanted && t > 0
       ? <span title="Owned / target" style={chipStyle(enough ? 'var(--accent-jade)' : 'var(--ink-faint)')}>{enough ? '✓' : `${Math.min(own, t)}/${t}`}</span>
       : null;
+    // `own` is the TOTAL from ownedMap (regular + foil) - it feeds the badge and
+    // the playset jewel; the ♡/✦ split isn't loaded here (the sheet has it).
     return (
-      <CollectionCardRow key={c.card_id} card={c} dim={own === 0} chip={chip}
+      <CollectionCardRow key={c.card_id} card={c} owned={own} dim={own === 0} chip={chip}
         stepper={{ value: t, onStep: (d) => step(c.card_id, d) }}
         onClick={() => onPeek(c.card_id)} />
     );

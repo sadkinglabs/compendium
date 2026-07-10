@@ -297,12 +297,17 @@ export async function cardNames(ids) {
 }
 
 // Recently touched owned cards (for the Overview strip), joined to the catalog.
-// Grouped by card so a card's regular + foil rows read as ONE entry (total copies).
+// Grouped by card so a card's regular + foil rows read as ONE entry, with the
+// regular/foil split the binder row's pill rail renders (rules_text rides along
+// for the playset check's any-number-of exemption).
 export async function recentlyAdded(limit = 8) {
   const pid = activeProfileId();
   return query(
-    `SELECT o.card_id, SUM(o.qty_owned) qty_owned, SUM(o.qty_wanted) qty_wanted,
-            c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets
+    `SELECT o.card_id,
+            SUM(CASE WHEN o.variant_slug='foil' THEN 0 ELSE o.qty_owned END) qty_owned,
+            SUM(CASE WHEN o.variant_slug='foil' THEN o.qty_owned ELSE 0 END) qty_foil,
+            SUM(o.qty_wanted) qty_wanted,
+            c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets, c.rules_text
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=?
      GROUP BY o.card_id HAVING SUM(o.qty_owned)>0
