@@ -329,8 +329,9 @@ function Cards({ onOpen, onPeek }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', margin: '0 -20px', background: 'rgba(11,8,6,.85)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}>
+      {/* Sticky centered view toggle - never scrolls away. Transparent band; the
+          toggle's own outline floats over the cards scrolling beneath. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', margin: '0 -20px', background: 'transparent' }}>
         <ViewToggle view={view} setView={setView} />
       </div>
 
