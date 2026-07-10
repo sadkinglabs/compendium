@@ -6,18 +6,19 @@
 // chrome-only - it rides the stepper buttons; the count stays gold/ink.
 import React, { useEffect, useRef, useState } from 'react';
 import { SectionLabel } from './ui.jsx';
-import { qtyFor, setOwned, setWanted, subscribeCollection } from '../store/ownedRepository.js';
+import { qtyFor, setOwned, setWanted, setFoil, subscribeCollection } from '../store/ownedRepository.js';
 import { stepBtn, serialChain, ownedChains } from './ownedUi.js';
 import { haptic } from '../native.js';
 
-// The optimistic ledger for one card's owned/wanted counts: reads qtyFor, writes
-// setOwned/setWanted (absolute + serialized), live-refreshes via
+// The optimistic ledger for one card's owned/foil/wanted counts: reads qtyFor,
+// writes setOwned/setFoil/setWanted (absolute + serialized), live-refreshes via
 // subscribeCollection. Owns ALL writes and the haptic on tap - consumers only
-// render. Returns { qty, step }: qty is {owned, wanted} (null until first read;
-// steppers should stay inert until then), step(field, delta) mutates.
+// render. Returns { qty, step }: qty is {owned, foil, wanted} (null until first
+// read; steppers should stay inert until then), step(field, delta) mutates -
+// field is 'owned' (regular copies), 'foil', or 'wanted'.
 export function useOwnedLedger(cardId) {
-  const [qty, setQty] = useState(null);            // {owned, wanted} - null until first read
-  const qtyRef = useRef({ owned: 0, wanted: 0 });  // synchronous optimistic mirror
+  const [qty, setQty] = useState(null);            // {owned, foil, wanted} - null until first read
+  const qtyRef = useRef({ owned: 0, foil: 0, wanted: 0 });  // synchronous optimistic mirror
   const pending = useRef(0);                        // in-flight writes
 
   // Apply a DB read only if no write is in flight. A read dispatched while the
@@ -57,7 +58,7 @@ export function useOwnedLedger(cardId) {
     serialChain(ownedChains, cardId, async () => {
       const cur = await qtyFor(cardId);
       const val = Math.max(0, (cur[field] || 0) + delta);
-      return field === 'owned' ? setOwned(cardId, val) : setWanted(cardId, val);
+      return field === 'owned' ? setOwned(cardId, val) : field === 'foil' ? setFoil(cardId, val) : setWanted(cardId, val);
     })
       .finally(() => {
         pending.current--;
@@ -89,6 +90,8 @@ export default function OwnedControl({ cardId }) {
       <SectionLabel label="CARDS YOU OWN" />
       <div style={{ borderRadius: 14, background: 'rgba(255,255,255,.02)', border: '1px solid var(--hair-12)', padding: '4px 14px' }}>
         {row('Owned', 'owned')}
+        <div style={{ height: 1, background: 'var(--hair-12)' }} />
+        {row('Foil ✦', 'foil')}
         <div style={{ height: 1, background: 'var(--hair-12)' }} />
         {row('Wishlist', 'wanted')}
       </div>

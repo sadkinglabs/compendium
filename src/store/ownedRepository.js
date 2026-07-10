@@ -5,9 +5,11 @@
 // Codex Marginalia tables. All writes are profile-scoped and route through a small
 // revision counter so derived views (deck strips, list bars) refresh live.
 //
-// v1 scope note: printings/foil have NO catalog data (cards.variants ships []), so
-// every write uses variant_slug=''. The column stays for forward-readiness; there
-// is intentionally no printing UI. Buildability aggregates by card_id regardless.
+// Variants: regular copies live on the variant_slug='' row, FOIL copies on the
+// variant_slug='foil' row of the same card (foils are tracked as different copies,
+// but a foil is still the card - every aggregate SUMs across variant rows, so
+// stats/buildability/owned-filters count them together). The wishlist is
+// variant-agnostic and lives on the '' row only.
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
@@ -36,17 +38,29 @@ export async function ownedMap(cardIds = null) {
   return new Map(rows.map((r) => [r.card_id, r.t]));
 }
 
-// Map<card_id, {owned, wanted}> for decorating a search pool in one query.
+// Map<card_id, {owned, foil, wanted}> for decorating a search pool in one query.
+// `owned` = REGULAR copies (the '' row); `foil` = the 'foil' row; total = owned+foil.
 export async function ownWantMap() {
   const pid = activeProfileId();
-  const rows = await query('SELECT card_id, SUM(qty_owned) o, SUM(qty_wanted) w FROM owned_cards WHERE profile_id=? GROUP BY card_id;', [pid]);
-  return new Map(rows.map((r) => [r.card_id, { owned: r.o || 0, wanted: r.w || 0 }]));
+  const rows = await query(
+    `SELECT card_id,
+            SUM(CASE WHEN variant_slug='foil' THEN 0 ELSE qty_owned END) o,
+            SUM(CASE WHEN variant_slug='foil' THEN qty_owned ELSE 0 END) f,
+            SUM(qty_wanted) w
+     FROM owned_cards WHERE profile_id=? GROUP BY card_id;`, [pid]);
+  return new Map(rows.map((r) => [r.card_id, { owned: r.o || 0, foil: r.f || 0, wanted: r.w || 0 }]));
 }
 
+// One card's ledger breakdown. `owned` = regular copies, `foil` = foil copies,
+// `wanted` = wishlist (variant-agnostic). Same field names the write path takes.
 export async function qtyFor(cardId) {
   const pid = activeProfileId();
-  const r = (await query('SELECT SUM(qty_owned) o, SUM(qty_wanted) w FROM owned_cards WHERE profile_id=? AND card_id=?;', [pid, cardId]))[0];
-  return { owned: r?.o || 0, wanted: r?.w || 0 };
+  const r = (await query(
+    `SELECT SUM(CASE WHEN variant_slug='foil' THEN 0 ELSE qty_owned END) o,
+            SUM(CASE WHEN variant_slug='foil' THEN qty_owned ELSE 0 END) f,
+            SUM(qty_wanted) w
+     FROM owned_cards WHERE profile_id=? AND card_id=?;`, [pid, cardId]))[0];
+  return { owned: r?.o || 0, foil: r?.f || 0, wanted: r?.w || 0 };
 }
 
 /* ---------------- ownership writes (upsert the '' row, delete at 0/0) ---------------- */
@@ -71,6 +85,24 @@ export async function setOwned(cardId, qty) { return writeQty(cardId, { owned: q
 export async function setWanted(cardId, qty) { return writeQty(cardId, { wanted: qty }); }
 export async function stepOwned(cardId, delta) { const { owned } = await qtyFor(cardId); return setOwned(cardId, owned + delta); }
 export async function stepWanted(cardId, delta) { const { wanted } = await qtyFor(cardId); return setWanted(cardId, wanted + delta); }
+
+// Foil copies: the variant_slug='foil' row's qty_owned (wishlist never lives here).
+// Same upsert/delete-at-0 shape as writeQty, on its own row.
+export async function setFoil(cardId, qty) {
+  const pid = activeProfileId();
+  const now = nowIso();
+  const q = Math.max(0, qty | 0);
+  const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, 'foil']))[0];
+  if (q === 0) {
+    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+  } else if (cur) {
+    await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
+  } else {
+    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
+      [uuid(), pid, cardId, 'foil', q, '', now, now]);
+  }
+  bump();
+}
 
 // Atomic +N to owned/wanted via a single upsert (no read-modify-write). For callers
 // that can't serialize their writes - notably the scanner's rapid, independent
@@ -192,7 +224,7 @@ async function listRequirements(listId) {
 // target (wanted) or copies (custom).
 export async function listCards(listId) {
   return query(
-    `SELECT e.card_id, e.quantity, c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text
+    `SELECT e.card_id, e.quantity, c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
      FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id WHERE e.list_id=? ORDER BY c.name;`,
     [listId]
   );
@@ -265,12 +297,16 @@ export async function cardNames(ids) {
 }
 
 // Recently touched owned cards (for the Overview strip), joined to the catalog.
+// Grouped by card so a card's regular + foil rows read as ONE entry (total copies).
 export async function recentlyAdded(limit = 8) {
   const pid = activeProfileId();
   return query(
-    `SELECT o.card_id, o.qty_owned, o.qty_wanted, c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets
+    `SELECT o.card_id, SUM(o.qty_owned) qty_owned, SUM(o.qty_wanted) qty_wanted,
+            c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
-     WHERE o.profile_id=? AND o.qty_owned>0 ORDER BY o.updated_at DESC LIMIT ?;`,
+     WHERE o.profile_id=?
+     GROUP BY o.card_id HAVING SUM(o.qty_owned)>0
+     ORDER BY MAX(o.updated_at) DESC LIMIT ?;`,
     [pid, limit]
   );
 }

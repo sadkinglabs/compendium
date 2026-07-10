@@ -23,20 +23,28 @@ import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { launchScanner } from '../cardScanner.js';
 import { toast } from '../feedback.js';
 
-// Chip recipe shared by the row's right-edge indicators (wishlist count,
-// owned-of-target) - quiet mono capsule, content stays ink not ruby.
+// Chip recipe shared by the row's right-edge indicators (wishlist count, foil
+// count, owned-of-target) - quiet mono capsule, content stays ink not ruby.
 const chipStyle = (color = 'var(--ink-faint)') => ({
   font: "600 11px/1 var(--f-mono)", color, padding: '4px 7px',
   border: '1px solid var(--hair-12)', borderRadius: 999,
 });
 
+// Where-you-left-off cache. App unmounts the whole pillar when a Codex detail
+// opens ("Open in Codex" included), so this survives the round-trip: coming Back
+// re-mounts Collection exactly as it was - same view, search, filter, open list,
+// even the open card sheet. Module-level = session-scoped, deliberately not
+// persisted (a fresh launch starts at Overview).
+const session = { view: 'overview', listOpen: null, sheetCard: null, q: '', filter: 'all' };
+
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
-  const [view, setView] = useState('overview');   // overview | cards | lists
-  const [listOpen, setListOpen] = useState(null);  // a list row when its detail is open
+  const [view, setView] = useState(session.view);       // overview | cards | lists
+  const [listOpen, setListOpen] = useState(session.listOpen);  // a list row when its detail is open
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
-  const [sheetCard, setSheetCard] = useState(null);
+  const [sheetCard, setSheetCard] = useState(session.sheetCard);
+  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; }, [view, listOpen, sheetCard]);
   const go = (v) => { setListOpen(null); setView(v); };
   const pills = (
     <div style={{ padding: '0 20px 10px' }}>
@@ -59,8 +67,11 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
+      {/* "Open in Codex" deliberately KEEPS the sheet open in state: the pillar
+          unmounts for the Codex page, and Back should land right back on this
+          sheet - that's where the user left. */}
       <CollectionCardSheet cardId={sheetCard} onClose={() => setSheetCard(null)}
-        onOpenCodex={(id, name) => { setSheetCard(null); onOpen('card', id, name); }} />
+        onOpenCodex={(id, name) => onOpen('card', id, name)} />
     </div>
   );
 }
@@ -137,10 +148,11 @@ function Overview({ onGoCards, onGoDecks, onPeek, rev }) {
 /* ---------------- Cards (record owned / wanted) ---------------- */
 
 function Cards({ onOpen, onPeek }) {
-  const [q, setQ] = useState('');
-  const [filter, setFilter] = useState('all');     // all | owned | wishlist | missing
+  const [q, setQ] = useState(session.q);
+  const [filter, setFilter] = useState(session.filter);   // all | owned | wishlist | missing
+  useEffect(() => { session.q = q; session.filter = filter; }, [q, filter]);
   const [pool, setPool] = useState(null);
-  const [ow, setOw] = useState(new Map());         // card_id -> {owned, wanted} (optimistic)
+  const [ow, setOw] = useState(new Map());         // card_id -> {owned(reg), foil, wanted} (optimistic)
   // No mode toggle: steppers always edit Owned - except in the Wishlist filter,
   // where the visible filter IS the mode and they edit Wanted.
   const field = filter === 'wishlist' ? 'wanted' : 'owned';
@@ -173,7 +185,7 @@ function Cards({ onOpen, onPeek }) {
     // turn, so an edit made in the shared card sheet (its own optimistic ledger)
     // can't be reverted by an absolute write off our debounced/stale cache.
     setOw((prev) => {
-      const cur = prev.get(cardId) || { owned: 0, wanted: 0 };
+      const cur = prev.get(cardId) || { owned: 0, foil: 0, wanted: 0 };
       const next = { ...cur, [field]: Math.max(0, (cur[field] || 0) + delta) };
       const m = new Map(prev); m.set(cardId, next);
       return m;
@@ -186,11 +198,13 @@ function Cards({ onOpen, onPeek }) {
   }
 
   const FILTERS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
+  // Owned/Missing judge by TOTAL copies (regular + foil): a foil-only card is
+  // still a card you own.
   const shown = (pool || []).filter((c) => {
-    const o = val(c.card_id, 'owned'), w = val(c.card_id, 'wanted');
-    if (filter === 'owned') return o > 0;
+    const t = val(c.card_id, 'owned') + val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
+    if (filter === 'owned') return t > 0;
     if (filter === 'wishlist') return w > 0;
-    if (filter === 'missing') return o === 0;
+    if (filter === 'missing') return t === 0;
     return true;
   });
 
@@ -216,15 +230,16 @@ function Cards({ onOpen, onPeek }) {
             {shown.length} cards{shown.length > 250 ? ' · showing 250 — refine' : ''}
           </div>
           {shown.slice(0, 250).map((c) => {
-            const o = val(c.card_id, 'owned'), w = val(c.card_id, 'wanted');
+            const o = val(c.card_id, 'owned'), f = val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
             const wishlist = filter === 'wishlist';
-            const chip = !wishlist && w > 0
-              ? <span title="On your wishlist" style={chipStyle()}>♡ {w}</span>
-              : wishlist && o > 0
-                ? <span title="Copies owned" style={chipStyle()}>own {o}</span>
-                : null;
+            // Steppers edit REGULAR copies; foils are edited in the card sheet
+            // (their own row) and read here as a quiet ✦ chip.
+            const chips = [];
+            if (f > 0) chips.push(<span key="f" title="Foil copies" style={chipStyle('var(--gold-head)')}>✦ {f}</span>);
+            if (!wishlist && w > 0) chips.push(<span key="w" title="On your wishlist" style={chipStyle()}>♡ {w}</span>);
+            if (wishlist && o + f > 0) chips.push(<span key="o" title="Copies owned" style={chipStyle()}>own {o + f}</span>);
             return (
-              <CollectionCardRow key={c.card_id} card={c} dim={o === 0 && !wishlist} chip={chip}
+              <CollectionCardRow key={c.card_id} card={c} dim={o + f === 0 && !wishlist} chip={chips.length ? chips : null}
                 stepper={{ value: wishlist ? w : o, onStep: (d) => step(c.card_id, d) }}
                 onClick={() => onPeek(c.card_id)} />
             );
