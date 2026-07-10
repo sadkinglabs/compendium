@@ -216,7 +216,7 @@ function ViewToggle({ view, setView }) {
     </button>
   );
   return (
-    <div role="group" aria-label="Card view" style={{ display: 'inline-flex', padding: 3, gap: 2, borderRadius: 20, background: 'transparent', border: '1px solid #4a3c22' }}>
+    <div role="group" aria-label="Card view" style={{ display: 'inline-flex', padding: 3, gap: 2, borderRadius: 20, background: 'rgba(10,10,12,.55)', border: '1px solid #4a3c22', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', boxShadow: '0 6px 18px rgba(0,0,0,.4)' }}>
       {seg('list', 'List view', <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>)}
       {seg('binder', 'Binder view', <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>)}
     </div>
@@ -329,9 +329,10 @@ function Cards({ onOpen, onPeek }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. Transparent band; the
-          toggle's own outline floats over the cards scrolling beneath. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', margin: '0 -20px', background: 'transparent' }}>
+      {/* Sticky centered view toggle - never scrolls away. The band fades from the
+          header's dark at the top to transparent below, so cards dissolve into the
+          header as they scroll under the frosted-glass toggle floating on it. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '8px 0 20px', margin: '0 -20px', background: 'linear-gradient(180deg, #0c0908 0%, rgba(12,9,8,.72) 42%, transparent 100%)' }}>
         <ViewToggle view={view} setView={setView} />
       </div>
 
