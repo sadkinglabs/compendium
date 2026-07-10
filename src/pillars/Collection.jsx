@@ -10,7 +10,7 @@ import { getPool, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import {
   ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
-  deckBuildabilityBulk, subscribeCollection,
+  deckBuildabilityBulk, subscribeCollection, importCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards,
 } from '../store/ownedRepository.js';
@@ -29,6 +29,15 @@ const chipStyle = (color = 'var(--ink-faint)') => ({
   font: "600 11px/1 var(--f-mono)", color, padding: '4px 7px',
   border: '1px solid var(--hair-12)', borderRadius: 999,
 });
+
+// FAB menu-item glyphs (unsized - the fab-menu CSS sizes them), matching the
+// Decks library FAB's icon language.
+const CameraSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.2" /></svg>;
+const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
+const EditSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>;
+const CopySvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
+const TrashSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
+const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></svg>;
 
 // Where-you-left-off cache. App unmounts the whole pillar when a Codex detail
 // opens ("Open in Codex" included), so this survives the round-trip: coming Back
@@ -59,7 +68,8 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
       {view === 'overview' ? (
-        <Overview onGoCards={() => go('cards')} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard} rev={rev} />
+        <Overview onGoCards={() => go('cards')} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard}
+          onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
         <Cards onOpen={onOpen} onPeek={setSheetCard} />
       ) : listOpen ? (
@@ -92,10 +102,49 @@ function Tile({ label, value, sub, onClick }) {
   );
 }
 
-function Overview({ onGoCards, onGoDecks, onPeek, rev }) {
+// Bulk add via pasted text - the deck "Import from text" format ("4 Card Name"
+// lines; headers ignored), imported into the OWNERSHIP ledger (adds copies on
+// top of what's recorded, never overwrites).
+function ImportTextSheet({ open, onClose }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setText(''); setBusy(false); } }, [open]);
+  const go = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      const r = await importCollectionText(text);
+      toast(r.names
+        ? `Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}${r.unresolved ? ` · ${r.unresolved} unrecognised` : ''}`
+        : 'No cards recognised in that text.', r.names ? undefined : { tone: 'danger' });
+      if (r.names) onClose();
+      else setBusy(false);
+    } catch { toast("Couldn't import that text.", { tone: 'danger' }); setBusy(false); }
+  };
+  return (
+    <BottomSheet open={open} title="IMPORT TO COLLECTION" onClose={onClose}>
+      <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+        Paste a list of cards — one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>.
+        Deck exports work too. Copies are ADDED to what you already own.
+      </div>
+      <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
+        placeholder={'4 Wild Boars\n2 Abundance\n1 Grim Reaper…'}
+        style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
+      <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+        <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+        <button onClick={go} disabled={!text.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text.trim() && !busy ? 1 : 0.5 }}>
+          {busy ? 'Importing…' : 'Import'}
+        </button>
+      </div>
+    </BottomSheet>
+  );
+}
+
+function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [deckStat, setDeckStat] = useState(null);
+  const [importOpen, setImportOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     const load = async () => {
@@ -142,6 +191,13 @@ function Overview({ onGoCards, onGoDecks, onPeek, rev }) {
           }}>Add cards ›</button>
         </div>
       )}
+
+      {/* THE add surface: bulk paste or point the camera. */}
+      <Fab variant="lib" label="Add to collection" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
+        { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+      ]} />
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 }
@@ -152,6 +208,7 @@ function Cards({ onOpen, onPeek }) {
   const [q, setQ] = useState(session.q);
   const [filter, setFilter] = useState(session.filter);   // all | owned | wishlist | missing
   useEffect(() => { session.q = q; session.filter = filter; }, [q, filter]);
+  const [filterOpen, setFilterOpen] = useState(false);    // the filter FAB's sheet
   const [pool, setPool] = useState(null);
   const [ow, setOw] = useState(new Map());         // card_id -> {owned(reg), foil, wanted} (optimistic)
   // No mode toggle: steppers always edit Owned - except in the Wishlist filter,
@@ -246,8 +303,20 @@ function Cards({ onOpen, onPeek }) {
         </>
       )}
 
-      <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
-        onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name) })} />
+      {/* Filter FAB - adding lives on Overview (+ / camera); here you refine what
+          you're LOOKING at. The sheet is the home for the deeper filters to come
+          (sets, rarity, elements…); ownership lives here too, synced with the chips. */}
+      <Fab variant="lib" label="Filter cards" icon={<FabGlyph kind="filter" />}
+        active={filterOpen || filter !== 'all'} onClick={() => setFilterOpen(true)} />
+      <BottomSheet open={filterOpen} title="FILTERS" onClose={() => setFilterOpen(false)}>
+        <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 8px' }}>OWNERSHIP</div>
+        <ChipRow>
+          {FILTERS.map(([k, label]) => <Chip key={k} label={label} active={filter === k} onClick={() => setFilter(k)} />)}
+        </ChipRow>
+        <div style={{ font: "italic 400 12px/1.5 var(--f-read)", color: 'var(--ink-faint)', margin: '14px 0 4px', textAlign: 'center' }}>
+          More filters coming — sets, rarity, elements.
+        </div>
+      </BottomSheet>
     </div>
   );
 }
@@ -283,13 +352,37 @@ function Empty({ text }) {
   return <div style={{ padding: '14px 0 6px', font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>{text}</div>;
 }
 
-function MenuRow({ label, tone, onClick }) {
+// Export a list as flat "qty name" text - the Curiosa deck-export format, so it
+// round-trips into Curiosa, Decks > Import from text, or Collection's own bulk
+// import on another profile/device.
+function ExportListSheet({ open, listId, listName, onClose }) {
+  const [text, setText] = useState(null);
+  useEffect(() => {
+    if (!open || !listId) return;
+    let alive = true;
+    setText(null);
+    exportListText(listId).then((t) => alive && setText(t));
+    return () => { alive = false; };
+  }, [open, listId]);
+  async function copy() {
+    if (!text) return;
+    try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
+    catch { toast('Copy failed', { tone: 'danger' }); }
+  }
   return (
-    <button onClick={onClick} style={{
-      display: 'flex', width: '100%', alignItems: 'center', padding: '13px 6px', textAlign: 'left',
-      background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer',
-      font: "600 15px/1 var(--f-read)", color: tone === 'danger' ? 'var(--destructive)' : 'var(--ink-body)',
-    }}>{label}</button>
+    <BottomSheet open={open} title="EXPORT LIST" onClose={onClose}>
+      <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+        “{listName}” as plain text — pastes into Curiosa, a deck’s Import from text, or another Collection.
+      </div>
+      {text == null ? <Loading /> : (
+        <textarea readOnly value={text || 'This list is empty.'} rows={8} onFocus={(e) => e.target.select()}
+          style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
+      )}
+      <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+        <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Close</button>
+        <button onClick={copy} disabled={!text} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text ? 1 : 0.5 }}>Copy to clipboard</button>
+      </div>
+    </BottomSheet>
   );
 }
 
@@ -398,7 +491,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [qty, setQty] = useState(new Map());       // card_id -> target qty (optimistic)
   const [q, setQ] = useState('');
   const [results, setResults] = useState(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [rename, setRename] = useState(false);
   const [missing, setMissing] = useState(null);    // report for MissingSheet
@@ -500,7 +593,6 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           <div style={{ font: "700 18px/1.15 var(--f-display)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
           <div style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', marginTop: 4 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
-        <button onClick={() => setMenuOpen(true)} aria-label="List options" style={iconBtn}>⋯</button>
       </div>
       {meta.description ? <div style={{ font: "400 12.5px/1.45 var(--f-read)", color: 'var(--ink-faint)', margin: '0 2px 12px' }}>{meta.description}</div> : <div style={{ height: 6 }} />}
 
@@ -539,24 +631,28 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      <BottomSheet open={menuOpen} title={isWanted ? 'WANTED LIST' : 'CARD LIST'} onClose={() => { setMenuOpen(false); setConfirmDel(false); }}>
-        {confirmDel ? (
-          <>
-            <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>Delete “{meta.name}”? This can’t be undone.</div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setConfirmDel(false)} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
-              <button onClick={async () => { await deleteList(list.id); toast('List deleted'); onBack(); }} style={{ ...BTN_GHOST, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.5)' }}>Delete</button>
-            </div>
-          </>
-        ) : (
-          <>
-            <MenuRow label="Rename / edit description" onClick={() => { setMenuOpen(false); setRename(true); }} />
-            <MenuRow label="Duplicate list" onClick={async () => { setMenuOpen(false); await duplicateList(list.id); toast('List duplicated'); onBack(); }} />
-            {isWanted && <MenuRow label="Get missing cards" onClick={() => { setMenuOpen(false); openMissing(); }} />}
-            <MenuRow label="Delete list" tone="danger" onClick={() => setConfirmDel(true)} />
-          </>
-        )}
+      {/* List actions live on the 3-dot FAB (matches the deck FAB spine). Delete
+          routes through its OWN confirm sheet - destructive and undoable-never,
+          so it is never one tap. */}
+      <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
+        { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
+        { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+        { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
+        ...(isWanted ? [{ label: 'Get missing cards', icon: SeekSvg, onClick: openMissing }] : []),
+        { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+      ]} />
+
+      <BottomSheet open={confirmDel} title="DELETE LIST" onClose={() => setConfirmDel(false)}>
+        <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>
+          Delete “{meta.name}”{totals.names > 0 ? ` and its ${totals.names} card${totals.names === 1 ? '' : 's'}` : ''}? This can’t be undone.
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={() => setConfirmDel(false)} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+          <button onClick={async () => { await deleteList(list.id); toast('List deleted'); onBack(); }} style={{ ...BTN_GHOST, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.5)' }}>Delete</button>
+        </div>
       </BottomSheet>
+
+      <ExportListSheet open={exportOpen} listId={list.id} listName={meta.name} onClose={() => setExportOpen(false)} />
 
       <ListNameSheet open={rename} kind={isWanted ? 'wanted' : 'custom'} title="RENAME LIST"
         initialName={meta.name} initialDesc={meta.description || ''} submitLabel="Save"

@@ -14,7 +14,7 @@ import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
-import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
+import { deckRequirements, deckRequirementsBulk, parseDeckText } from './deckRepository.js';
 
 /* ---------------- freshness (in-memory revision) ---------------- */
 let _rev = 0;
@@ -124,6 +124,37 @@ async function addCopies(cardId, col, n) {
   bump();
 }
 
+// Bulk text import: any "qty name" text (a deck export, a Curiosa list, a typed
+// inventory) ADDS regular copies to the ledger. Reuses the deck text parser -
+// zone headers are ignored (everything flattens into one add-list, the avatar
+// line included; an avatar you own is a card you own). One tx, one bump.
+// Returns { copies, names, unresolved }.
+export async function importCollectionText(text) {
+  const { avatar, zones } = parseDeckText(text);
+  const lines = [...zones.spellbook, ...zones.atlas, ...zones.collection];
+  if (avatar) lines.push({ name: avatar, qty: 1 });
+  const pid = activeProfileId();
+  const now = nowIso();
+  const stmts = [];
+  let unresolved = 0, copies = 0, names = 0;
+  for (const { name, qty } of lines) {
+    const n = Math.max(1, qty | 0);
+    const c = (await query('SELECT card_id FROM cards WHERE lower(name)=? LIMIT 1;', [name.toLowerCase()]))[0];
+    if (!c) { unresolved++; continue; }
+    names++; copies += n;
+    stmts.push([
+      `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+       VALUES(?,?,?,?,?,0,'',?,?)
+       ON CONFLICT(profile_id,card_id,variant_slug)
+       DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+      [uuid(), pid, c.card_id, '', n, now, now],
+    ]);
+  }
+  if (stmts.length) await tx(stmts);
+  bump();
+  return { copies, names, unresolved };
+}
+
 // Add a shortfall to the general Wishlist. MAX (not +=) so re-running a deck's
 // "add missing to wishlist" never inflates the want beyond the largest shortfall.
 export async function addMissingToWishlist(lines) {
@@ -228,6 +259,14 @@ export async function listCards(listId) {
      FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id WHERE e.list_id=? ORDER BY c.name;`,
     [listId]
   );
+}
+
+// Flat "qty name" text of a list - the Curiosa deck-export format, so it pastes
+// straight into Curiosa, a deck's Import from text, or back into Collection's
+// own bulk import.
+export async function exportListText(listId) {
+  const rows = await listCards(listId);
+  return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
 }
 
 // Lists a card appears in (for card detail "Appears in").
