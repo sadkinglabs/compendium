@@ -11,7 +11,7 @@ import { createPortal } from 'react-dom';
 import { Loading, useFocusTrap } from './ui.jsx';
 import { ThresholdPips } from './ui.jsx';
 import CardArt from './CardArt.jsx';
-import { thresholdRuns } from '../store/cardArt.js';
+import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
 import { listCardLists, listsWithCard, stepListEntry } from '../store/ownedRepository.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
@@ -143,6 +143,43 @@ function ListPicker({ cardId, onBack }) {
   );
 }
 
+// A centered set pill (the sheet's top eyebrow slot).
+function SetPill({ name }) {
+  return (
+    <span style={{ display: 'inline-block', padding: '5px 13px', borderRadius: 20, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', font: "500 11.5px/1 var(--f-display)", letterSpacing: '.16em', color: '#c9b487', textTransform: 'uppercase' }}>{name}</span>
+  );
+}
+
+// Site art in its TRUE landscape orientation. Sites ship as a portrait image (a
+// landscape card rotated 90° for storage), so the FRAME goes landscape (531:380,
+// the real card ratio) and the image is sized to the swapped dimensions then
+// counter-rotated to fill it upright - the canonical .sheet-site-wrap technique.
+function SiteArt({ c }) {
+  const [broken, setBroken] = useState(false);
+  const url = cardImageUrl(c);
+  return (
+    <div style={{ position: 'relative', width: '100%', aspectRatio: '531 / 380', borderRadius: 11, overflow: 'hidden', background: cardFallbackArt(c) }}>
+      {url && !broken && (
+        <img src={url} alt={c.name || ''} loading="lazy" onError={() => setBroken(true)}
+          style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', objectFit: 'cover', transform: 'translate(-50%,-50%) rotate(90deg)', display: 'block' }} />
+      )}
+    </div>
+  );
+}
+
+// The glowing card frame - portrait for cards, flipped landscape for Sites.
+function SheetArt({ c }) {
+  const site = !!c.is_site;
+  return (
+    <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
+      <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
+      <div style={{ position: 'relative', zIndex: 1, borderRadius: 12, padding: 1, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))' }}>
+        {site ? <SiteArt c={c} /> : <CardArt card={c} radius={11} aspect="5/7" />}
+      </div>
+    </div>
+  );
+}
+
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
 function CardBody({ c, onOpenCodex, onPick }) {
   const { qty, step } = useOwnedLedger(c.card_id);
@@ -151,34 +188,27 @@ function CardBody({ c, onOpenCodex, onPick }) {
   const runs = thresholdRuns(c);
   const setName = sets[0]?.name;
   const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
+  const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
+  // Meta row: rarity + type sit together (the type moved down off the header),
+  // then subtype(s), then threshold icons. Hairline-separated, wraps if tight.
   const meta = [];
-  if (c.rarity) meta.push(<span key="r" style={{ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c48b6a', textTransform: 'uppercase' }}>{c.rarity}</span>);
+  if (c.rarity) meta.push(<span key="r" style={smallCaps('#c48b6a')}>{c.rarity}</span>);
+  meta.push(<span key="ty" style={smallCaps('#cba75f')}>{typeLabel(c)}</span>);
   if (subs.length) meta.push(<span key="s" style={{ font: "italic 500 17.5px/1 var(--f-read)", color: '#a99a80' }}>{subs.join(', ')}</span>);
   if (runs.length) meta.push(<ThresholdPips key="t" runs={runs} size={20} />);
   const metaRow = meta.flatMap((node, i) => (i === 0 ? [node] : [React.cloneElement(hair, { key: `h${i}` }), node]));
 
   return (
     <>
-      <div style={{ ...EYEBROW, marginTop: 14 }}>{typeLabel(c)}</div>
+      {/* Header slot: the set pill (was the type eyebrow; the type moved to meta). */}
+      {setName && <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>}
 
-      {/* Glowing card art. */}
-      <div style={{ position: 'relative', width: 172, margin: '14px auto 0' }}>
-        <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
-        <div style={{ position: 'relative', zIndex: 1, borderRadius: 12, padding: 1, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))' }}>
-          <CardArt card={c} radius={11} aspect="5/7" imgStyle={c.is_site ? { transform: 'rotate(90deg) scale(1.42)' } : undefined} />
-        </div>
-      </div>
+      <SheetArt c={c} />
 
       <div style={{ font: "700 27px/1.1 var(--f-display)", color: '#efe7d8', textAlign: 'center', marginTop: 20 }}>{c.name}</div>
 
       {metaRow.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>{metaRow}</div>
-      )}
-
-      {setName && (
-        <div style={{ textAlign: 'center', marginTop: 14 }}>
-          <span style={{ display: 'inline-block', padding: '5px 13px', borderRadius: 20, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', font: "500 11.5px/1 var(--f-display)", letterSpacing: '.16em', color: '#c9b487', textTransform: 'uppercase' }}>{setName}</span>
-        </div>
       )}
 
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
