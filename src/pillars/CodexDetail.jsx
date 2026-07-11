@@ -478,8 +478,10 @@ function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, annotations }
       )}
 
       {card.rules_text && (
-        <div ref={bodyRef} className="cx-cardrule" style={{ maxWidth: 340, margin: '0 auto 16px' }}>
-          <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
+        <div style={{ maxWidth: 340, margin: '0 auto 18px', padding: 1, borderRadius: 15, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5))', boxShadow: '0 10px 26px -14px rgba(0,0,0,.6)' }}>
+          <div ref={bodyRef} className="cx-cardrule" style={{ borderRadius: 14, background: '#0e0b08', padding: '18px 20px' }}>
+            <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
+          </div>
         </div>
       )}
 
