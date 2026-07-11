@@ -327,10 +327,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 
 /* Codex Cards: List / Card (art grid) toggle - parity with the deckbuilder. */
 /* Cards List/Card toggle - gothic segmented pill (matches the deck editor). */
-.cx-view-toggle-row { display: flex; justify-content: center; padding: 2px 0 14px; }
-.cx-view-toggle { display: inline-flex; border: 1px solid #4a3c22; border-radius: 20px; overflow: hidden; }
-.cx-view-btn { background: none; border: none; color: #8a8175; padding: 8px 18px; font: 500 12.5px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.cx-view-btn.on { font-weight: 600; color: #d8c9a4; background: rgba(42,33,20,.7); }
+/* View toggle retired - now the shared SegTabs component (ui.jsx). */
 .cx-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .cx-card-tile { position: relative; display: block; width: 100%; padding: 0; background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-card-tile:active { transform: scale(.985); }

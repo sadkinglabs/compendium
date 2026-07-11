@@ -12,7 +12,7 @@ import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedReposit
 import { deckMatchCount } from '../store/playRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
-import { Chip, ChipRow, Loading, useSwipe, BlankState } from '../components/ui.jsx';
+import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
 import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
@@ -203,15 +203,9 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
                   My Deck FAB (steps aside while editing). */}
               <DockLeft>
                 <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
-                  <div className="pip-seg" onClick={() => setStatTab('list')}>
-                    <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
-                    <span className={`pip-seg-label${statTab === 'list' ? ' active' : ''}`}>List</span>
-                  </div>
-                  <span className="pip-divider" />
-                  <div className="pip-seg" onClick={() => setStatTab('stats')}>
-                    <span className={`pip-seg-label${statTab === 'stats' ? ' active' : ''}`}>Stats</span>
-                    <span className={`pip-dot${statTab === 'stats' ? ' active' : ''}`} />
-                  </div>
+                  <SegTabs ariaLabel="Deck view" value={statTab} onChange={setStatTab}
+                    options={[{ key: 'list', label: 'List', icon: <IcList size={14} /> }, { key: 'stats', label: 'Stats', icon: <IcStats size={14} /> }]}
+                    style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
                 </div>
               </DockLeft>
             </>

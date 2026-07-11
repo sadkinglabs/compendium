@@ -8,7 +8,7 @@ import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { Frost } from '../components/CollectionCardViews.jsx';
-import { ThresholdPips, Chip, ChipRow, SectionLabel } from '../components/ui.jsx';
+import { ThresholdPips, Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid } from '../components/ui.jsx';
 import { thresholdRuns } from '../store/cardArt.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
@@ -94,12 +94,10 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
   return (
     <div className="arc" style={{ padding: '4px 20px 26px', animation: 'arcRise .32s cubic-bezier(.2,.9,.3,1)' }}>
-      {/* View toggle - gothic segmented pill, centred; cards auto-route by type. */}
+      {/* View toggle - the shared gothic segmented pill, centred; cards auto-route by type. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
-        <div className="view-toggle-wrap">
-          <button className={`view-btn${view === 'list' ? ' on' : ''}`} onClick={() => setView('list')}>☰ List</button>
-          <button className={`view-btn${view === 'grid' ? ' on' : ''}`} onClick={() => setView('grid')}>▦ Card</button>
-        </div>
+        <SegTabs ariaLabel="Card view" value={view} onChange={setView}
+          options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'grid', label: 'Card', icon: <IcGrid /> }]} />
       </div>
 
       <div style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55', marginBottom: 12 }}>

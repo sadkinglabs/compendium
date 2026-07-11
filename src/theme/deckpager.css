@@ -29,10 +29,7 @@
 
 /* Search panel view toggle (List / Card). */
 .arc .view-toggle-row { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px 6px; }
-/* Gothic segmented pill (deck editor List/Card view toggle). */
-.arc .view-toggle-wrap { display: inline-flex; border: 1px solid #4a3c22; border-radius: 20px; overflow: hidden; }
-.arc .view-btn { background: transparent; border: none; color: #8a8175; padding: 8px 18px; font: 500 12.5px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 7px; -webkit-tap-highlight-color: transparent; }
-.arc .view-btn.on { font-weight: 600; color: #d8c9a4; background: rgba(42,33,20,.7); }
+/* Deck editor List/Card view toggle retired - now the shared SegTabs (ui.jsx). */
 
 /* Inner List/Stats pager on the Current Deck panel. */
 .arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
@@ -43,12 +40,8 @@
    so its 50% is the viewport centre) rather than centred in the left slot, which
    the FAB would push off-centre. Out of flow, so the FAB still sits flush right.
    No `.arc` ancestor needed - it's portaled into the dock. */
-.deck-pip-bar { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50; width: fit-content; display: flex; align-items: center; gap: 12px; background: rgba(11,11,13,.82); border: 1px solid rgba(160,110,220,.22); border-radius: 24px; padding: 9px 16px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: 0 4px 16px rgba(0,0,0,.45); white-space: nowrap; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
-/* Edit mode owns the floor - the pip bar bows out downward (keep the centring). */
+/* Positioning + step-aside-while-editing wrapper for the docked List/Stats
+   SegTabs (the pill visual is the shared SegTabs component). */
+.deck-pip-bar { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50; width: fit-content; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }
+/* Edit mode owns the floor - the toggle bows out downward (keep the centring). */
 .deck-pip-bar.hidden { opacity: 0; transform: translateX(-50%) translateY(18px); pointer-events: none; }
-.pip-seg { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 0 2px; }
-.pip-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: rgba(160,110,220,.3); transition: background .2s, box-shadow .2s; }
-.pip-dot.active { background: var(--gold-leaf); box-shadow: 0 0 10px rgba(220,184,111,.75); }
-.pip-seg-label { font-family: 'Hanken Grotesk', sans-serif; font-size: 12px; font-weight: 600; color: #7a6e96; transition: color .15s; }
-.pip-seg-label.active { color: #f0e9d8; }
-.pip-divider { width: 1px; height: 14px; background: rgba(160,110,220,.2); flex-shrink: 0; }

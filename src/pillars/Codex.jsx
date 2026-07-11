@@ -9,7 +9,7 @@ import {
 } from '../store/codexRepository.js';
 import { getSets, getArtists } from '../store/deckRepository.js';
 import { deleteAnnotation } from '../store/annotations.js';
-import { Chip, ChipRow, SectionLabel, IconButton, Loading } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -149,11 +149,9 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
 
       {/* Cards get a List / Card (art grid) toggle - parity with the deckbuilder. */}
       {sc === 'cards' && (
-        <div className="cx-view-toggle-row">
-          <div className="cx-view-toggle">
-            <button className={`cx-view-btn${cardView === 'list' ? ' on' : ''}`} onClick={() => setCardView('list')}>☰ List</button>
-            <button className={`cx-view-btn${cardView === 'grid' ? ' on' : ''}`} onClick={() => setCardView('grid')}>▦ Card</button>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0 14px' }}>
+          <SegTabs ariaLabel="Card view" value={cardView} onChange={setCardView}
+            options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'grid', label: 'Card', icon: <IcGrid /> }]} />
         </div>
       )}
 

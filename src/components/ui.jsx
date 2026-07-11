@@ -50,6 +50,39 @@ export function ChipRow({ children, style }) {
   return <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', ...style }}>{children}</div>;
 }
 
+/* The ONE in-content view/segment toggle (pick-one): a gothic segmented pill -
+   border #4a3c22 r20, active #d8c9a4 caps on rgba(42,33,20,.7). One source of
+   truth, replacing the copy-pasted cx-view-toggle / view-toggle-wrap / ds-seg
+   classes, Collection's frosted List/Binder toggle, and the Decks pip-bar. Each
+   option: { key, label?, icon? } - icon is an inline SVG (no Unicode glyphs). */
+export function SegTabs({ options, value, onChange, ariaLabel, style }) {
+  return (
+    <div role="group" aria-label={ariaLabel} style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden', ...style }}>
+      {options.map((o) => {
+        const on = value === o.key;
+        return (
+          <button key={o.key} onClick={() => onChange(o.key)} aria-pressed={on} aria-label={o.label || o.key}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              padding: o.label ? '8px 17px' : '8px 15px', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: on ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase',
+              color: on ? '#d8c9a4' : '#8a8175', background: on ? 'rgba(42,33,20,.7)' : 'transparent',
+              transition: 'background .16s, color .16s', WebkitTapHighlightColor: 'transparent',
+            }}>
+            {o.icon}{o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Shared toggle icons (inline SVG - the app speaks SVG, never Unicode glyphs).
+const seg = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+export const IcList = ({ size = 15 }) => <svg viewBox="0 0 24 24" width={size} height={size} {...seg} aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>;
+export const IcGrid = ({ size = 15 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>;
+export const IcStats = ({ size = 15 }) => <svg viewBox="0 0 24 24" width={size} height={size} {...seg} aria-hidden="true"><line x1="6" y1="20" x2="6" y2="12" /><line x1="12" y1="20" x2="12" y2="5" /><line x1="18" y1="20" x2="18" y2="9" /></svg>;
+
 export function IconButton({ glyph, onClick, tone = 'gold', shape = 'circle', size = 28, title }) {
   const color = tone === 'danger' ? 'var(--destructive)' : tone === 'muted' ? 'var(--ink-muted)' : 'var(--gold-leaf)';
   // Known glyphs render as the house SVG icon; anything else falls back to the

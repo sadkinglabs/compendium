@@ -14,7 +14,7 @@ import {
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
-import { Chip, ChipRow, SectionLabel, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
@@ -203,17 +203,9 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
 
 // The sticky, centered List / Binder segmented control.
 function ViewToggle({ view, setView }) {
-  const seg = (v, label, icon) => (
-    <button onClick={() => setView(v)} aria-pressed={view === v} aria-label={label}
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 62, height: 34, borderRadius: 16, border: 'none', cursor: 'pointer', background: view === v ? '#2a2114' : 'transparent', color: view === v ? '#d8c9a4' : '#8a8175', transition: 'background .16s, color .16s' }}>
-      {icon}
-    </button>
-  );
   return (
-    <div role="group" aria-label="Card view" style={{ display: 'inline-flex', padding: 3, gap: 2, borderRadius: 20, background: 'rgba(10,10,12,.55)', border: '1px solid #4a3c22', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)', boxShadow: '0 6px 18px rgba(0,0,0,.4)' }}>
-      {seg('list', 'List view', <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>)}
-      {seg('binder', 'Binder view', <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>)}
-    </div>
+    <SegTabs ariaLabel="Card view" value={view} onChange={setView}
+      options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'binder', label: 'Binder', icon: <IcGrid /> }]} />
   );
 }
 
