@@ -83,14 +83,8 @@
 /* Sheet chassis is BLACK + gold app-wide: the pillar wash flows top→bottom
    and the bottom of every column is black/gold, so sheets rising from the
    bottom stay black everywhere. Per-pillar accents live in sheet CONTENT. */
-.arc.a-sheet-scrim { position:fixed; inset:0; background:rgba(5,4,3,.7); z-index:600; animation:cxfade .2s ease; }
-.arc.a-sheet { position:fixed; left:0; right:0; bottom:calc(var(--kb,0px) / var(--ui-scale,1)); z-index:601; max-height:88vh; max-height:min(calc(88dvh - env(safe-area-inset-top,0px)), calc(100dvh - env(safe-area-inset-top,0px) - 10px - var(--kb,0px) / var(--ui-scale,1))); display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(20px + env(safe-area-inset-bottom,0px)); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); transition:bottom .2s ease; }
-.arc .a-sheet-grab { display:flex; justify-content:center; padding:10px 0 8px; flex-shrink:0; touch-action:none; -webkit-tap-highlight-color:transparent; cursor:grab; }
-.arc .a-sheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; flex-shrink:0; }
-.arc .a-sheet-header { display:flex; align-items:center; gap:10px; padding:0 16px 10px; flex-shrink:0; }
-.arc .a-sheet-title { flex:1; font:700 22px/1.12 'Cinzel',Georgia,serif; color:var(--gold-leaf); }
-.arc .a-sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
-.arc .a-sheet-body { overflow-y:auto; flex:1; min-height:0; }
+/* The legacy .a-sheet chassis was retired: Sheet.jsx is now a thin adapter over
+   GothicSheet, like BottomSheet. (Rules kept in git history if ever needed.) */
 
 /* Export sheet (#export-sheet) - Markdown/Curiosa toggle + copy */
 .arc .es-format-row { display:flex; justify-content:center; padding:4px 12px 6px; }

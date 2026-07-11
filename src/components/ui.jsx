@@ -3,6 +3,7 @@ import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
 import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
+import GothicSheet from './GothicSheet.jsx';   // the one bottom-sheet chassis (BottomSheet is a thin titled adapter over it)
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -198,29 +199,15 @@ export function useFocusTrap(active) {
   return ref;
 }
 
-/* Bottom sheet - scrim + slide-up panel. */
+/* Titled bottom sheet - a thin adapter over the canonical GothicSheet chassis
+   (portal, drag-to-dismiss, gold hairline, grab handle), with an optional
+   centered Cinzel title. One chassis app-wide; Sheet.jsx is the same adapter. */
 export function BottomSheet({ open, title, onClose, children }) {
-  const trapRef = useFocusTrap(open);
-  // Hardware BACK closes the sheet; register once per open (ref keeps onClose fresh).
-  const closeRef = React.useRef(onClose); closeRef.current = onClose;
-  React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
-  if (!open) return null;
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={title || 'Dialog'} style={{
-        position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--kb,0px) / var(--ui-scale,1))', zIndex: 201,
-        background: 'var(--surface-sheet)', borderTop: '1px solid var(--hair-30)',
-        borderRadius: '26px 26px 0 0', padding: '14px 22px calc(26px + env(safe-area-inset-bottom,0px))',
-        boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
-        maxHeight: 'min(76dvh, calc(100dvh - env(safe-area-inset-top,0px) - 12px - var(--kb,0px) / var(--ui-scale,1)))',
-        overflowY: 'auto', transition: 'bottom .2s ease',
-      }} className="cx-scroll">
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--hair-30)', margin: '0 auto 14px' }} />
-        {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', marginBottom: 16 }}>{title}</div>}
-        {children}
-      </div>
-    </>
+    <GothicSheet open={open} onClose={onClose} label={title || 'Dialog'}>
+      {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', margin: '0 0 16px' }}>{title}</div>}
+      {children}
+    </GothicSheet>
   );
 }
 
