@@ -277,12 +277,12 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     pNumRef.current?.classList.add(winner === 'player' ? 'roll-win' : 'roll-lose');
     eNumRef.current?.classList.add(winner === 'enemy' ? 'roll-win' : 'roll-lose');
     setFlip(winner === 'player' ? 0 : 180);
-    // Reveal the result and HOLD it: the counter stays locked (body.roll-active)
-    // through the full 4s countdown so the winner registers and no early tap drops
-    // the reveal. Put the REAL life totals back over the tumbled dice faces first -
-    // the winner pill conveys who goes first while the countdown runs, then taps
-    // free up when finishRollOff() clears the phase.
-    timers.current.push(setTimeout(() => { renderLife(); setRollPhase('result'); setResultLeft(4); }, 650));
+    // Reveal the result and HOLD it: the rolled dice faces + win/lose highlight
+    // stay on the numerals through the whole 4s countdown (locked by roll-active +
+    // the .roll-lock catcher, so nothing can touch them). Only finishRollOff()
+    // swaps the real life totals back, once the countdown ends - so the result
+    // never jumps to the life total early.
+    timers.current.push(setTimeout(() => { setRollPhase('result'); setResultLeft(4); }, 650));
     for (let i = 1; i <= 3; i++) timers.current.push(setTimeout(() => setResultLeft(4 - i), 650 + i * 1000));
     timers.current.push(setTimeout(() => finishRollOff(), 650 + 4000));
   }
