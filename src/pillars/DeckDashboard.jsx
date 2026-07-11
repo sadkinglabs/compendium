@@ -87,6 +87,7 @@ function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rari
 function HandCard({ zones, avatar, onCardTap }) {
   const [hand, setHand] = useState(null);
   const [shake, setShake] = useState(null);   // 'spell' | 'site' - empty-pile nudge
+  const [leaving, setLeaving] = useState(false); // Redraw sweep-out in progress
   const seq = useRef(0);
   const cap = (q) => Math.max(0, Math.min(q | 0, 99));
   const shuffle = (a) => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
@@ -94,7 +95,7 @@ function HandCard({ zones, avatar, onCardTap }) {
   const siteRot = () => Math.round((Math.random() * 3 - 1.5) * 10) / 10;   // -1.5..+1.5
   const mk = (e, drawn, rotFn) => ({ e, id: seq.current++, rot: rotFn(), drawn });
 
-  function draw() {
+  function build() {
     const subs = avatar?.subTypes || (() => { try { return JSON.parse(avatar?.sub_types || '[]'); } catch { return []; } })();
     const sbN = subs.some((s) => /spellslinger/i.test(s)) ? 4 : 3;
     const atN = subs.some((s) => /pathfinder/i.test(s)) ? 0 : 3;
@@ -105,6 +106,15 @@ function HandCard({ zones, avatar, onCardTap }) {
       sites: atPool.slice(0, atN).map((e) => mk(e, false, siteRot)),
       rest: sbPool.slice(sbN), restAt: atPool.slice(atN), newest: null, dealKey: (h?.dealKey || 0) + 1,
     }));
+    setLeaving(false);
+  }
+  // First deal is instant; a Redraw sweeps the current hand down-and-out first,
+  // then deals the new one once the sweep (250ms + a small per-card stagger) ends.
+  function draw() {
+    if (!hand) return build();
+    setLeaving(true);
+    const n = hand.spells.length + hand.sites.length;
+    setTimeout(build, 250 + Math.min(n, 12) * 30);
   }
   function bump(kind) { setShake(kind); setTimeout(() => setShake((s) => (s === kind ? null : s)), 420); }
   function drawNext(kind) {
@@ -118,15 +128,19 @@ function HandCard({ zones, avatar, onCardTap }) {
   }
   // Fan overlap tightens with hand size: a comfortable spread up to 3, then the
   // held-hand closes as more cards join; 8+ just wraps to new fan rows.
-  const overlap = (n) => (n <= 3 ? -8 : n <= 7 ? -(22 + ((n - 4) / 3) * 30) : -56);
+  // Overlap tightens aggressively so the hand stacks (only ~22px of each buried
+  // card shows) long before it needs a second row - the last draw stays on top,
+  // fully visible.
+  const overlap = (n) => (n <= 3 ? -8 : -(112 - Math.max(22, 92 - (n - 3) * 12)));
 
   const card = (c, i, site) => (
-    <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}`}
-      style={{ '--rot': c.rot + 'deg', animationDelay: (c.drawn ? 0 : i * 70) + 'ms' }}
+    <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
+      style={{ '--rot': c.rot + 'deg', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 70) + 'ms' }}
       onClick={() => c.e.card_id && onCardTap?.(c.e.card_id)}>
       {c.e.image_slug && <img src={`${BASE}cards/${c.e.image_slug}`} loading="lazy" alt=""
         onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
-      {!site && c.id === hand.newest && <span className="dealt-tab">DRAWN</span>}
+      <span className="dealt-frame" aria-hidden="true" />
+      {!site && <span className="dealt-tab">DRAWN</span>}
     </div>
   );
 
