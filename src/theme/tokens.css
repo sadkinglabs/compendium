@@ -319,13 +319,33 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 @keyframes cxHlIn { from { opacity: 0; transform: translateY(12px) scale(.92); } to { opacity: 1; transform: none; } }
 
 /* Codex Cards: List / Card (art grid) toggle - parity with the deckbuilder. */
+/* Cards List/Card toggle - gothic segmented pill (matches the deck editor). */
 .cx-view-toggle-row { display: flex; justify-content: center; padding: 2px 0 14px; }
-.cx-view-toggle { display: inline-flex; background: rgba(12,12,15,.72); border: 1px solid var(--hair-22); border-radius: 999px; padding: 3px; gap: 2px; backdrop-filter: blur(8px); }
-.cx-view-btn { background: transparent; border: 1px solid transparent; color: var(--ink-muted); border-radius: 999px; padding: 7px 22px; font: 600 13px/1 var(--f-ui); cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.cx-view-btn.on { background: rgba(220,184,111,.14); color: var(--gold-leaf); border-color: rgba(220,184,111,.5); }
-.cx-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.cx-card-tile { display: block; width: 100%; padding: 0; border: none; background: none; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-view-toggle { display: inline-flex; border: 1px solid #4a3c22; border-radius: 20px; overflow: hidden; }
+.cx-view-btn { background: none; border: none; color: #8a8175; padding: 8px 18px; font: 500 12.5px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-view-btn.on { font-weight: 600; color: #d8c9a4; background: rgba(42,33,20,.7); }
+.cx-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.cx-card-tile { position: relative; display: block; width: 100%; padding: 0; background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-card-tile:active { transform: scale(.985); }
+/* Frosted bookmark seal on a saved card tile. */
+.cx-card-seal { position: absolute; top: 7px; right: 7px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10,9,8,.75); border: 1px solid rgba(203,167,95,.5); color: #e3c589; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+
+/* Codex A-Z rows - flat text ledger. Letter rubric = the shared section-header
+   rubric; card rows carry a mini thumb + the type . mana meta line. */
+.cx-codex-rubric { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; }
+.cx-codex-letter { font: 700 19px/1 'Cinzel', Georgia, serif; color: #cba75f; flex-shrink: 0; }
+.cx-codex-hair { flex: 1; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
+.cx-codex-row { display: flex; align-items: center; gap: 13px; padding: 15px 20px; margin: 0 -20px; border-bottom: 1px solid rgba(74,60,34,.3); cursor: pointer; }
+.cx-codex-title { flex: 1; min-width: 0; font: 600 18px/1.2 'EB Garamond', Georgia, serif; color: #efe7d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-codex-thumb { width: 48px; flex: none; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); }
+.cx-codex-body { flex: 1; min-width: 0; }
+.cx-codex-name { display: block; font: 600 18px/1.2 'EB Garamond', Georgia, serif; color: #efe7d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-codex-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font: 400 13.5px/1 'EB Garamond', Georgia, serif; color: #8a8175; }
+.cx-codex-type { font: 500 10px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; text-transform: uppercase; color: #a08cc0; flex: none; }
+.cx-codex-sep { width: 1px; height: 11px; background: rgba(107,90,46,.6); flex: none; }
+.cx-codex-mana { font: 600 13px/1 'Cinzel', Georgia, serif; color: #c9a8e8; }
+.cx-codex-bm { color: #e3c589; flex: none; display: flex; }
+.cx-codex-chev { color: #5c554b; flex: none; }
 
 /* ── Global toast stack - black+gold, app-wide feedback (feedback.js host). ── */
 .cx-toast-stack { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top,0px) + 14px); z-index: 700; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }

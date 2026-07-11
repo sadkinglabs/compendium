@@ -72,7 +72,7 @@ export async function getCodexEntries(scope, filters = {}) {
   const items = [
     ...rules.map((r) => ({ id: r.id, name: r.name, kind: 'rule', meta: 'Codex Article', subs: subMap[r.id] || [] })),
     ...cards.map((c) => ({
-      id: c.id, name: c.name, kind: 'card', meta: cardMeta(c),
+      id: c.id, name: c.name, kind: 'card', meta: cardMeta(c), type: c.type, cost: c.cost,
       image_slug: c.image_slug, elements: c.elements, thresholds: c.thresholds, sets: c.sets,
     })),
   ].sort((a, b) => a.name.localeCompare(b.name));

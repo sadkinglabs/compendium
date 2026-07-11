@@ -592,28 +592,30 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
     );
   }
   const marginalia = scope === 'marginalia';
+  // Rules/Cards tabs - the gold pill pattern from the Collection/Deck reskins:
+  // gilt gradient when active, flat dark when not.
+  const tab = (k, label) => (
+    <button key={k} onClick={() => setScope(k)} aria-pressed={scope === k} style={{
+      padding: '7px 16px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 13px/1 var(--f-ui)",
+      background: scope === k ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)',
+      color: scope === k ? '#1a1206' : '#c9bda6',
+      border: `1px solid ${scope === k ? '#e3c589' : '#4a3c22'}`,
+    }}>{label}</button>
+  );
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-      <ChipRow>
-        {[['rules', 'Rules'], ['cards', 'Cards']].map(([k, label]) => (
-          <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
-        ))}
-      </ChipRow>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
-        <span style={{ width: 1, height: 18, background: 'var(--hair-22)' }} />
-        <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
-            padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
-            font: "600 13px/1 var(--f-ui)",
-            background: marginalia ? 'var(--gold-leaf)' : 'transparent',
-            color: marginalia ? '#1a1410' : 'var(--gold-leaf)',
-            border: `1px solid ${marginalia ? 'var(--gold-leaf)' : 'rgba(201,163,90,.5)'}`,
-          }}>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-          Marginalia
-        </button>
-      </div>
+      <div style={{ display: 'flex', gap: 8 }}>{tab('rules', 'Rules')}{tab('cards', 'Cards')}</div>
+      <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
+          padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
+          font: "600 13px/1 var(--f-ui)", color: '#e3c589',
+          background: marginalia ? 'rgba(203,167,95,.16)' : 'transparent',
+          border: `1px solid ${marginalia ? 'rgba(203,167,95,.5)' : 'rgba(203,167,95,.35)'}`,
+        }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+        Marginalia
+      </button>
     </div>
   );
 }
