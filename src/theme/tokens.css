@@ -230,6 +230,12 @@ body.reduce-motion .cx-subrow { animation: none; }
 /* ── Codex article - reflowed, semantically formatted reading ── */
 .cx-article-p { margin: 0 0 16px; font: 400 17.5px/1.65 var(--f-read); color: #d8cebb; }
 .cx-article-p.lead::first-letter { float: left; font: 700 52px/0.78 var(--f-display); color: #cba75f; margin: 6px 12px 0 0; }
+/* Card rule text - short centered prose (no box, no drop cap). The article-body
+   treatment (left-aligned, 52px drop cap) is for long rules; a card's rules read
+   as a centered block under its art. */
+.cx-cardrule .cx-article-p { text-align: center; font-size: 18px; line-height: 1.6; margin: 0 0 12px; }
+.cx-cardrule .cx-article-p:last-child { margin-bottom: 0; }
+.cx-cardrule .cx-article-p.lead::first-letter { float: none; font: 400 18px/1.6 var(--f-read); color: #d8cebb; margin: 0; }
 .cx-article-list { margin: 2px 0 16px; padding-left: 22px; }
 .cx-article-list li { font: 400 16.5px/1.6 var(--f-read); color: #d8cebb; margin: 0 0 9px; padding-left: 4px; }
 .cx-article-list li::marker { color: var(--gold-leaf); font-weight: 600; }

@@ -336,7 +336,7 @@ export default function App() {
       ) : viewDetail ? (
         <div style={S.detailHeader}>
           <button onClick={back} style={S.back}><IcBack size={16} />Back</button>
-          <div style={{ ...S.detailTitle, textTransform: detail.kind === 'rule' ? 'uppercase' : 'none' }}>{detail.title || ''}</div>
+          <div style={{ ...S.detailTitle, fontSize: detail.kind === 'card' ? 15 : 14 }}>{detail.title || ''}</div>
           <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); bump(); }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
             aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
@@ -969,7 +969,7 @@ const S = {
   contextHeader: { padding: '4px 20px 12px' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
   back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, flexShrink: 0 },
-  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', font: "600 14px/1.15 var(--f-display)", letterSpacing: '.1em', color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: 'var(--f-display)', fontWeight: 600, fontSize: 14, lineHeight: 1.15, letterSpacing: '.1em', color: '#efe7d8', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
