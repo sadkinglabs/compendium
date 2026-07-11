@@ -326,9 +326,11 @@ export default function App() {
           show the brand bar + divider above it. */}
       {addActive ? (
         <div style={S.detailHeader}>
-          <button onClick={exitAdd} style={S.back}><IcBack size={15} />Done</button>
-          <div style={S.addEyebrow}>EDITING · {addMode.deckName}</div>
-          <span style={{ width: 56 }} />
+          <button onClick={exitAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, flexShrink: 0 }}><IcBack size={16} />Done</button>
+          <div style={{ flex: 1, minWidth: 0, textAlign: 'right', overflowWrap: 'normal', wordBreak: 'normal' }}>
+            <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.18em', color: '#a08cc0' }}>EDITING</span>
+            <span style={{ font: "600 13px/1.25 var(--f-display)", color: '#e3c589' }}> · {addMode.deckName}</span>
+          </div>
         </div>
       ) : viewDetail ? (
         <div style={S.detailHeader}>
@@ -910,7 +912,6 @@ const S = {
   back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, padding: 0 },
   detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
-  addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
   // lives inside that box, so it only needs nav overlap (62px) + search/FAB clearance

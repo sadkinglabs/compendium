@@ -29,9 +29,10 @@
 
 /* Search panel view toggle (List / Card). */
 .arc .view-toggle-row { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px 6px; }
-.arc .view-toggle-wrap { display: inline-flex; background: rgba(11,7,20,.72); border: 1px solid rgba(220,184,111,.22); border-radius: 999px; padding: 3px; gap: 2px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 2px 16px rgba(0,0,0,.4); }
-.arc .view-btn { background: transparent; border: 1px solid transparent; color: var(--muted); border-radius: 999px; padding: 7px 22px; font-size: 13px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 7px; transition: color .18s; font-family: 'Hanken Grotesk', sans-serif; }
-.arc .view-btn.on { background: rgba(220,184,111,.14); color: var(--gold-leaf); border: 1px solid rgba(220,184,111,.5); box-shadow: 0 0 12px rgba(220,184,111,.14); }
+/* Gothic segmented pill (deck editor List/Card view toggle). */
+.arc .view-toggle-wrap { display: inline-flex; border: 1px solid #4a3c22; border-radius: 20px; overflow: hidden; }
+.arc .view-btn { background: transparent; border: none; color: #8a8175; padding: 8px 18px; font: 500 12.5px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; display: flex; align-items: center; gap: 7px; -webkit-tap-highlight-color: transparent; }
+.arc .view-btn.on { font-weight: 600; color: #d8c9a4; background: rgba(42,33,20,.7); }
 
 /* Inner List/Stats pager on the Current Deck panel. */
 .arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
