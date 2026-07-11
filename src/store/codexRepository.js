@@ -5,6 +5,7 @@ import { query, run } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { parseQuery, cardMatchesQuery } from './cardQuery.js';   // the one shared card-search grammar
+import { getPool } from './deckRepository.js';   // the shared rich card-filter engine (Refine sheet)
 
 /* ---------------- catalog (shared, read-only) ---------------- */
 
@@ -113,6 +114,28 @@ export async function getCodexEntries(scope, filters = {}) {
     });
   }
   return out;
+}
+
+/** Codex > Cards through the shared rich Refine engine: getPool applies the full
+ *  taxonomy (element/type/rarity/set/threshold/mana/artist), then the Codex-only
+ *  toggles layer on top (fav/marg/linked/errata/faq via the indicator sets), and
+ *  each row gets note/saved indicators. Re-sorted A-Z so the browse list's letter
+ *  dividers hold (Codex is a reference index; sort lives only in the deckbuilder).
+ *  `rich` = { els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist };
+ *  `codex` = { fav, marg, linked, errata, faq }. */
+export async function getCodexCards(rich = {}, codex = {}) {
+  let rows = await getPool(rich);
+  const { noted, saved } = await indicatorSets();
+  if (codex.fav) rows = rows.filter((c) => saved.has(c.card_id));
+  if (codex.marg || codex.notes) { const ms = await margSet(); rows = rows.filter((c) => ms.has(c.card_id)); }
+  if (codex.linked) { const ls = await linkedSet(); rows = rows.filter((c) => ls.has(c.card_id)); }
+  if (codex.errata) { const er = await errataCardSet(); rows = rows.filter((c) => er.has(c.card_id)); }
+  if (codex.faq) { const fs = await faqCardSet(); rows = rows.filter((c) => fs.has(c.card_id)); }
+  return rows.map((c) => ({
+    id: c.card_id, name: c.name, kind: 'card', meta: cardMeta(c),
+    type: c.type, cost: c.cost, image_slug: c.image_slug, elements: c.elements, thresholds: c.thresholds, sets: c.sets,
+    hasNote: noted.has(c.card_id), saved: saved.has(c.card_id),
+  })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /* ── Codex search (one grammar, shared with the deckbuilder) ──
