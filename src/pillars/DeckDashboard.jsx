@@ -2,7 +2,7 @@
 // _heroHtml + spellbook/atlas/collection zone lists (templates/index.html
 // L2164-2364). Avatar hero + stat bar, then three collapsible zone cards with
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
@@ -77,57 +77,102 @@ function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rari
   );
 }
 
-// Random Hand - draws an opening hand from the deck pools (Arcanum's drawHand:
-// 3 spells / 3 sites, ±1 for Spellslinger / Pathfinder avatars), then keeps the
-// rest of each pool so you can "Draw spell" / "Draw site" one card at a time.
+// Random Hand ("Dealt") - draws an opening hand from the deck pools (Arcanum's
+// drawHand: 3 spells / 3 sites, ±1 for Spellslinger / Pathfinder avatars), then
+// keeps the rest so you can "Draw spell" / "Draw site" one at a time until the
+// whole deck is in hand. Cards are laid out as an overlapping held-hand fan that
+// wraps to more fan rows as the hand grows; the newest single-drawn card wears a
+// gilt frame + DRAWN tab. Each card keeps a stable seeded tilt (stored in state)
+// so re-renders never reshuffle the fan.
 function HandCard({ zones, avatar, onCardTap }) {
   const [hand, setHand] = useState(null);
+  const [shake, setShake] = useState(null);   // 'spell' | 'site' - empty-pile nudge
+  const seq = useRef(0);
   const cap = (q) => Math.max(0, Math.min(q | 0, 99));
   const shuffle = (a) => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
+  const spellRot = () => Math.round((Math.random() * 19 - 9) * 10) / 10;   // -9..+10
+  const siteRot = () => Math.round((Math.random() * 3 - 1.5) * 10) / 10;   // -1.5..+1.5
+  const mk = (e, drawn, rotFn) => ({ e, id: seq.current++, rot: rotFn(), drawn });
+
   function draw() {
     const subs = avatar?.subTypes || (() => { try { return JSON.parse(avatar?.sub_types || '[]'); } catch { return []; } })();
     const sbN = subs.some((s) => /spellslinger/i.test(s)) ? 4 : 3;
     const atN = subs.some((s) => /pathfinder/i.test(s)) ? 0 : 3;
     const sbPool = shuffle(zones.spellbook.flatMap((e) => Array(cap(e.quantity)).fill(e)));
     const atPool = shuffle(zones.atlas.flatMap((e) => Array(cap(e.quantity)).fill(e)));
-    setHand({ sb: sbPool.slice(0, sbN), at: atPool.slice(0, atN), rest: sbPool.slice(sbN), restAt: atPool.slice(atN), drawn: [], drawnAt: [] });
+    setHand((h) => ({
+      spells: sbPool.slice(0, sbN).map((e) => mk(e, false, spellRot)),
+      sites: atPool.slice(0, atN).map((e) => mk(e, false, siteRot)),
+      rest: sbPool.slice(sbN), restAt: atPool.slice(atN), newest: null, dealKey: (h?.dealKey || 0) + 1,
+    }));
   }
+  function bump(kind) { setShake(kind); setTimeout(() => setShake((s) => (s === kind ? null : s)), 420); }
   function drawNext(kind) {
+    if (kind === 'spell' && !hand?.rest.length) return bump('spell');
+    if (kind === 'site' && !hand?.restAt.length) return bump('site');
     setHand((h) => {
       if (!h) return h;
-      if (kind === 'spell') return h.rest.length ? { ...h, drawn: [...h.drawn, h.rest[0]], rest: h.rest.slice(1) } : h;
-      return h.restAt.length ? { ...h, drawnAt: [...h.drawnAt, h.restAt[0]], restAt: h.restAt.slice(1) } : h;
+      if (kind === 'spell') { const c = mk(h.rest[0], true, spellRot); return { ...h, spells: [...h.spells, c], rest: h.rest.slice(1), newest: c.id }; }
+      const c = mk(h.restAt[0], true, siteRot); return { ...h, sites: [...h.sites, c], restAt: h.restAt.slice(1), newest: c.id };
     });
   }
-  const tile = (e, i, site) => (
-    <div key={i} className="cc-hand-tile" style={{ aspectRatio: site ? '4.1 / 3' : '3 / 4.1', cursor: 'pointer' }} onClick={() => e.card_id && onCardTap?.(e.card_id)}>
-      {e.image_slug && <img src={`${BASE}cards/${e.image_slug}`} loading="lazy" alt=""
-        onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
-        style={site ? { position: 'absolute', top: '50%', left: '50%', width: 'calc(100% * 3 / 4.1)', height: 'calc(100% * 4.1 / 3)', objectFit: 'cover', transform: 'translate(-50%,-50%) rotate(90deg)' } : undefined} />}
+  // Fan overlap tightens with hand size: a comfortable spread up to 3, then the
+  // held-hand closes as more cards join; 8+ just wraps to new fan rows.
+  const overlap = (n) => (n <= 3 ? -8 : n <= 7 ? -(22 + ((n - 4) / 3) * 30) : -56);
+
+  const card = (c, i, site) => (
+    <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}`}
+      style={{ '--rot': c.rot + 'deg', animationDelay: (c.drawn ? 0 : i * 70) + 'ms' }}
+      onClick={() => c.e.card_id && onCardTap?.(c.e.card_id)}>
+      {c.e.image_slug && <img src={`${BASE}cards/${c.e.image_slug}`} loading="lazy" alt=""
+        onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
+      {!site && c.id === hand.newest && <span className="dealt-tab">DRAWN</span>}
     </div>
   );
-  const sect = (label, cards, site) => cards.length > 0 && (
-    <><div className="cc-hand-section-lbl">{label}</div><div className="cc-hand-tiles">{cards.map((e, i) => tile(e, i, site))}</div></>
-  );
-  return (
-    <div className="chart-card cc-list">
-      <div className="cc-hdr">
-        <span className="cc-title">Random Hand</span>
-        <button className="cc-hand-draw-btn" onClick={draw}>{hand ? 'Redraw' : 'Draw'}</button>
+
+  const group = (label, cards) => {
+    if (!cards.length) return null;
+    const open = cards.filter((c) => !c.drawn).length, drawnN = cards.length - open;
+    const site = label === 'SITES';
+    return (
+      <div className="dealt-group">
+        <div className="dealt-sub">
+          <span className="dealt-sub-name">{label}</span>
+          <span className="dealt-sub-count">{open} opening{drawnN ? ` · ${drawnN} drawn` : ''}</span>
+        </div>
+        <div className={site ? 'dealt-strip' : 'dealt-fan'} style={site ? undefined : { '--ov': overlap(cards.length) + 'px' }}>
+          {cards.map((c, i) => card(c, i, site))}
+        </div>
       </div>
-      {!hand ? <p className="cc-hand-empty">Press Draw to reveal a random opening hand.</p> : (
+    );
+  };
+
+  return (
+    <div className="dealt">
+      <div className="dealt-hdr">
+        <span className="mf-sec-name">Random Hand</span>
+        <span className="mf-sec-rule" />
+        <button className="dealt-pill" onClick={draw}>↻ {hand ? 'Redraw' : 'Deal'}</button>
+      </div>
+      {!hand ? (
+        <p className="dealt-empty">Press Deal to reveal a random opening hand.</p>
+      ) : (
         <>
-          {sect('Opening - Spells', hand.sb, false)}
-          {sect('Opening - Sites', hand.at, true)}
-          {sect('Drawn Spells', hand.drawn, false)}
-          {sect('Drawn Sites', hand.drawnAt, true)}
-          {(hand.rest.length > 0 || hand.restAt.length > 0) && (
-            <div className="cc-hand-draw-more">
-              {hand.rest.length > 0 && <button className="cc-hand-more-btn" onClick={() => drawNext('spell')}>↧ Draw spell</button>}
-              {hand.restAt.length > 0 && <button className="cc-hand-more-btn" onClick={() => drawNext('site')}>↧ Draw site</button>}
-              <span className="cc-hand-left">{hand.rest.length} spells · {hand.restAt.length} sites left</span>
-            </div>
-          )}
+          <div className="dealt-scroll" key={hand.dealKey}>
+            {group('SPELLS', hand.spells)}
+            {group('SITES', hand.sites)}
+          </div>
+          <div className="dealt-actions">
+            <button className={`dealt-pill wide${hand.rest.length ? '' : ' empty'}${shake === 'spell' ? ' shake' : ''}`} onClick={() => drawNext('spell')}>⤓ Draw spell</button>
+            <button className={`dealt-pill wide${hand.restAt.length ? '' : ' empty'}${shake === 'site' ? ' shake' : ''}`} onClick={() => drawNext('site')}>⤓ Draw site</button>
+          </div>
+          <div className="dealt-tally">
+            <span className="dealt-num" key={'s' + hand.rest.length}>{hand.rest.length}</span>
+            <span className="dealt-lbl">spells</span>
+            <span className="dealt-tally-sep" />
+            <span className="dealt-num" key={'a' + hand.restAt.length}>{hand.restAt.length}</span>
+            <span className="dealt-lbl">sites left</span>
+          </div>
         </>
       )}
     </div>
@@ -143,31 +188,30 @@ function CuriosaUrlCard({ deckId, initial }) {
   const hasUrl = url.trim().length > 0;
   async function save() { const v = draft.trim(); setUrl(v); setEditing(false); await setCuriosaUrl(deckId, v); }
   return (
-    <div className="chart-card" style={{ margin: '0 12px 12px' }}>
-      <div className="chart-card-header">
-        <h3>Curiosa URL</h3>
-        {!editing && <button className="cc-card-edit-btn" onClick={() => { setDraft(url); setEditing(true); }}>{hasUrl ? 'Edit' : '＋ Add'}</button>}
+    <div className="mx-sec">
+      <div className="mx-hdr">
+        <span className="mf-sec-name">Curiosa URL</span>
+        <span className="mf-sec-rule" />
+        {!editing && <button className="dealt-pill" onClick={() => { setDraft(url); setEditing(true); }}>{hasUrl ? '✎ Edit' : '＋ Add'}</button>}
       </div>
-      <div style={{ padding: '10px 12px 12px' }}>
-        {editing ? (
-          <>
-            <input type="url" className="cc-url-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://curiosa.io/decks/…" autoFocus />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-              <button className="cc-url-btn" onClick={() => setEditing(false)}>Cancel</button>
-              <button className="cc-url-btn primary" onClick={save}>Save</button>
-            </div>
-          </>
-        ) : hasUrl && safeHref(url) ? (
-          <a className="cc-url-link" href={safeHref(url)} target="_blank" rel="noreferrer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-            <span>{url.replace(/^https?:\/\//, '')}</span>
-          </a>
-        ) : hasUrl ? (
-          <div className="cc-url-empty">Saved link isn’t a valid web URL.</div>
-        ) : (
-          <div className="cc-url-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
-        )}
-      </div>
+      {editing ? (
+        <>
+          <input type="url" className="mx-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://curiosa.io/decks/…" autoFocus />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            <button className="dealt-pill" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="dealt-pill" onClick={save}>Save</button>
+          </div>
+        </>
+      ) : hasUrl && safeHref(url) ? (
+        <a className="mx-link" href={safeHref(url)} target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+          <span>{url.replace(/^https?:\/\//, '')}</span>
+        </a>
+      ) : hasUrl ? (
+        <div className="mx-empty">Saved link isn’t a valid web URL.</div>
+      ) : (
+        <div className="mx-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
+      )}
     </div>
   );
 }
@@ -180,16 +224,18 @@ function DeckLogCard({ deckId, rev }) {
   const n = rows?.length || 0;
   const fmt = (ts) => { try { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ts; } };
   return (
-    <div className="chart-card" style={{ margin: '0 12px 12px' }}>
-      <div className="chart-card-header" style={{ cursor: 'pointer' }} onClick={() => setOpenLog((v) => !v)}>
-        <h3>Deck Log {n > 0 && <span style={{ color: '#6e6286', fontWeight: 400 }}>({n})</span>}</h3>
-        <button className="cc-log-toggle">{openLog ? '▲ Hide' : '▼ Show'}</button>
+    <div className="mx-sec">
+      <div className="mx-hdr" style={{ cursor: 'pointer' }} onClick={() => setOpenLog((v) => !v)}>
+        <span className="mf-sec-name">Deck Log</span>
+        {n > 0 && <span className="mx-count">{n}</span>}
+        <span className="mf-sec-rule" />
+        <button className="dealt-pill">{openLog ? 'Hide' : 'Show'}</button>
       </div>
       {openLog && (
-        <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+        <div className="mx-log">
           {n ? rows.map((e, i) => (
-            <div key={i} className="cc-log-row"><span className="cc-log-ts">{fmt(e.ts)}</span><span>{e.text}</span></div>
-          )) : <div className="cc-log-empty">No changes recorded yet.</div>}
+            <div key={i} className="mx-log-row"><span className="mx-log-ts">{fmt(e.ts)}</span><span>{e.text}</span></div>
+          )) : <div className="mx-empty" style={{ textAlign: 'center', padding: '10px 0' }}>No changes recorded yet.</div>}
         </div>
       )}
     </div>
@@ -200,12 +246,13 @@ function NotesCard({ deckId, initial }) {
   const [notes, setNotes] = useState(initial || '');
   useEffect(() => { setNotes(initial || ''); }, [deckId]); // eslint-disable-line
   return (
-    <div className="chart-card" style={{ margin: '0 12px 12px' }}>
-      <div className="chart-card-header"><h3>Notes</h3></div>
-      <div style={{ padding: '10px 12px 12px' }}>
-        <textarea className="cc-notes-area" value={notes} onChange={(e) => setNotes(e.target.value)}
-          onBlur={() => setDeckNotes(deckId, notes)} placeholder="Strategy notes, sideboard ideas, matchup tips…" />
+    <div className="mx-sec">
+      <div className="mx-hdr">
+        <span className="mf-sec-name">Notes</span>
+        <span className="mf-sec-rule" />
       </div>
+      <textarea className="mx-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+        onBlur={() => setDeckNotes(deckId, notes)} placeholder="Strategy notes, sideboard ideas, matchup tips…" />
     </div>
   );
 }
