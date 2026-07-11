@@ -6,7 +6,7 @@
 // compareEngine. Accent is ruby, chrome-only.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { getPool, getSets, listDecks } from '../store/deckRepository.js';
+import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import {
   ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
@@ -14,11 +14,11 @@ import {
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
-import { Chip, ChipRow, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
+import RefineSheet from '../components/RefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
-import GothicSheet from '../components/GothicSheet.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 import { serialChain, ownedChains } from '../components/ownedUi.js';
@@ -217,40 +217,9 @@ function ViewToggle({ view, setView }) {
   );
 }
 
-const TYPE_OPTS = ['Minion', 'Aura', 'Magic', 'Artifact', 'Site'];
-const RARITY_OPTS = ['Ordinary', 'Exceptional', 'Elite', 'Unique'];
-const EL_OPTS = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
 const OWN_OPTS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
 
-// All filters in one gothic sheet (same chrome as the card detail sheet). A
-// compact summary + clear-all sit under the header.
-function FiltersSheet({ open, onClose, own, setOwn, sets, setSets, types, setTypes, rarities, setRarities, els, setEls, setOpts, activeCount, summary, onClear }) {
-  const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const Group = ({ title, children }) => (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: '#cba75f', marginBottom: 9 }}>{title}</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{children}</div>
-    </div>
-  );
-  return (
-    <GothicSheet open={open} onClose={onClose} label="Filters">
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.24em', color: '#cba75f' }}>FILTERS</span>
-        {activeCount > 0 && <button onClick={onClear} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>Clear all</button>}
-      </div>
-      <div style={{ font: "400 12.5px/1.4 var(--f-read)", color: activeCount > 0 ? 'var(--ink-status)' : 'var(--ink-faint)', minHeight: 16, marginBottom: 16 }}>{activeCount > 0 ? summary : 'All cards'}</div>
-      <Group title="OWNERSHIP">{OWN_OPTS.map(([k, l]) => <Chip key={k} label={l} active={own === k} onClick={() => setOwn(k)} />)}</Group>
-      <Group title="TYPE">{TYPE_OPTS.map((t) => <Chip key={t} label={t} active={types.includes(t)} onClick={() => toggle(types, setTypes, t)} />)}</Group>
-      <Group title="RARITY">{RARITY_OPTS.map((r) => <Chip key={r} label={r} active={rarities.includes(r)} onClick={() => toggle(rarities, setRarities, r)} />)}</Group>
-      <Group title="ELEMENT">{EL_OPTS.map(([k, l]) => <Chip key={k} label={l} active={els.includes(k)} onClick={() => toggle(els, setEls, k)} />)}</Group>
-      {setOpts.length > 0 && <Group title="SET">{setOpts.map((s) => <Chip key={s} label={s} active={sets.includes(s)} onClick={() => toggle(sets, setSets, s)} />)}</Group>}
-      <button onClick={onClose} style={{ width: '100%', marginTop: 8, padding: '14px 0', borderRadius: 16, cursor: 'pointer', font: "600 14px/1 var(--f-display)", color: '#1a1206', background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid #e3c589', boxShadow: '0 6px 20px rgba(203,167,95,.22)' }}>Show results</button>
-    </GothicSheet>
-  );
-}
-
 const VIEW_KEY = 'cx-collection-view';
-const EL_LABEL = { air: 'Air', earth: 'Earth', fire: 'Fire', water: 'Water' };
 const OWN_LABEL = { owned: 'Owned', wishlist: 'Wishlist', missing: 'Missing' };
 
 function Cards({ onOpen, onPeek }) {
@@ -265,11 +234,21 @@ function Cards({ onOpen, onPeek }) {
   const [els, setEls] = useState(session.els);
   useEffect(() => { session.q = q; session.filter = own; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, own, sets, types, rarities, els]);
 
+  // Full rich filters - the shared Refine engine (Card Lists live in Collection,
+  // so the comparator granularity earns its place for cube/draft/list building).
+  const [multi, setMulti] = useState(false);
+  const [thByEl, setThByEl] = useState(() => ({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } }));
+  const [totalTh, setTotalTh] = useState({ op: '>=', val: null });
+  const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
+  const [artist, setArtist] = useState('');
+  const [sort, setSort] = useState([]);
+  const [artistOpts, setArtistOpts] = useState([]);
+
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
   const [ow, setOw] = useState(new Map());        // card_id -> {owned(reg), foil, wanted}
   const [setOpts, setSetOpts] = useState([]);
-  useEffect(() => { getSets().then(setSetOpts); }, []);
+  useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
 
   // Steppers edit Owned - except under the Wishlist filter, where the visible
   // filter IS the mode and they edit Wanted.
@@ -277,10 +256,10 @@ function Cards({ onOpen, onPeek }) {
 
   async function loadPool() {
     const parsed = parseQuery(q);
-    const rows = await getPool({ q: parsed.name, sets, types, rarities, els });
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
     setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els]);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, artist, sort]);
   useEffect(() => { ownWantMap().then(setOw); }, []);
   // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
   // so our optimistic steps commit first (see the write path below).
@@ -316,9 +295,13 @@ function Cards({ onOpen, onPeek }) {
     return true;
   });
 
-  const activeCount = (own !== 'all' ? 1 : 0) + sets.length + types.length + rarities.length + els.length;
-  const summary = [OWN_LABEL[own], ...sets, ...rarities, ...types, ...els.map((e) => EL_LABEL[e])].filter(Boolean).join(' · ');
-  const clearAll = () => { setOwn('all'); setSets([]); setTypes([]); setRarities([]); setEls([]); };
+  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
+  const activeCount = (own !== 'all' ? 1 : 0) + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
+  const clearAll = () => {
+    setOwn('all'); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
+    setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
+  };
   const cardProps = (c) => ({ owned: val(c.card_id, 'owned'), foil: val(c.card_id, 'foil'), wanted: val(c.card_id, 'wanted') });
 
   return (
@@ -357,10 +340,26 @@ function Cards({ onOpen, onPeek }) {
       <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search cards…" ariaLabel="Search your collection" />
 
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      <FiltersSheet open={filterOpen} onClose={() => setFilterOpen(false)}
-        own={own} setOwn={setOwn} sets={sets} setSets={setSets} types={types} setTypes={setTypes}
-        rarities={rarities} setRarities={setRarities} els={els} setEls={setEls} setOpts={setOpts}
-        activeCount={activeCount} summary={summary} onClear={clearAll} />
+      <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
+        eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${shown.length} card${shown.length === 1 ? '' : 's'}`}
+        summaryLead={own !== 'all' ? [OWN_LABEL[own]] : []}
+        leadSections={(
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel label="OWNERSHIP" />
+            <div role="group" aria-label="Ownership" style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden' }}>
+              {OWN_OPTS.map(([k, l]) => (
+                <button key={k} onClick={() => setOwn(k)} aria-pressed={own === k}
+                  style={{ padding: '8px 16px', border: 'none', cursor: 'pointer', fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: own === k ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase', color: own === k ? '#d8c9a4' : '#8a8175', background: own === k ? 'rgba(42,33,20,.7)' : 'transparent', transition: 'background .16s, color .16s' }}>{l}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        els={els} setEls={setEls} multi={multi} setMulti={setMulti}
+        types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
+        sets={sets} setSets={setSets} setOpts={setOpts}
+        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp}
+        artist={artist} setArtist={setArtist} artistOpts={artistOpts}
+        sort={sort} setSort={setSort} />
     </div>
   );
 }
