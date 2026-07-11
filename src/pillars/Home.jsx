@@ -107,7 +107,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
 
   const g = d.glance, s = d.duels.stats;
   const pct = s.winPct;
-  const ring = `conic-gradient(#4db38a 0% ${pct || 0}%, rgba(255,255,255,.07) ${pct || 0}% 100%)`;
+  const ring = `conic-gradient(#4db38a 0% ${pct || 0}%, rgba(74,60,34,.5) ${pct || 0}% 100%)`;
   // A brand-new profile with nothing yet gets an orientation line instead of
   // "welcome back" (they've never been here) - says what the app is for.
   const firstRun = g.decks === 0 && g.duels === 0 && g.marginalia === 0 && g.saved === 0;
@@ -116,8 +116,8 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
     <div className={`cx-ov-sec${closed[id] ? ' closed' : ''}`}>
       <div className="cx-ov-sec-head" onClick={() => toggle(id)} role="button">
         <span className="cx-ov-sec-title">{title}</span>
-        {count != null && <span className="cx-ov-sec-count">{count}</span>}
         <span className="cx-ov-sec-spring" />
+        {count != null && <span className="cx-ov-sec-count">{count}</span>}
         {onAll && <span className="cx-ov-sec-all" onClick={(e) => { e.stopPropagation(); onAll(); }}>All<IcoChevR size={12} /></span>}
         <span className="cx-ov-sec-chev"><IcoDown size={13} /></span>
       </div>
@@ -147,13 +147,13 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
         <div className="cx-ov-greet-eyebrow">{firstRun ? 'WELCOME' : 'WELCOME BACK'}</div>
         <div className="cx-ov-greet-name">{profile?.name || 'Sorcerer'}</div>
         {firstRun && (
-          <div style={{ font: "400 14px/1.55 var(--f-read)", color: 'var(--ink-muted)', marginTop: 9, maxWidth: 340 }}>
-            Your offline companion for <b style={{ color: 'var(--ink-body-2)' }}>Sorcery: Contested Realm</b> - build decks, track life in a duel, and keep every card and ruling at hand. Start below.
+          <div style={{ font: "400 15px/1.55 var(--f-read)", color: '#8a8175', marginTop: 9, maxWidth: 340 }}>
+            Your offline companion for <b style={{ color: '#d8cebb' }}>Sorcery: Contested Realm</b> - build decks, track life in a duel, and keep every card and ruling at hand. Start below.
           </div>
         )}
       </div>
       {onStartMatch && (
-        <div style={{ display: 'flex', gap: 10, margin: '16px 0 20px' }}>
+        <div style={{ display: 'flex', gap: 10, margin: '16px 0 22px' }}>
           <button onClick={() => onStartMatch('full')} style={{ ...BTN_GOLD, flex: 1, padding: '13px 0' }}>Start Match</button>
           <button onClick={() => onStartMatch('quick')} style={{ ...BTN_GHOST, flex: 1, padding: '13px 0' }}>Quick Match</button>
         </div>
@@ -166,15 +166,18 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
       </div>
 
       {d.resume && (
-        <div onClick={() => onOpen(d.resume.target_type, d.resume.target_id, d.resume.title)} className="cx-row"
-          style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid var(--hair-20,rgba(201,163,90,.2))', borderRadius: 16, padding: 14, background: 'linear-gradient(180deg,rgba(42,31,19,.6),rgba(26,19,13,.3))', marginBottom: 24, cursor: 'pointer' }}>
-          {/* icon reflects what you're jumping back into: card / article / deck */}
-          <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold-leaf)' }}>
-            <CodexGlyph kind={d.resume.target_type} size={21} />
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.16em', color: 'var(--ink-muted)' }}>JUMP BACK IN</div>
-            <div style={{ font: "600 16px/1.1 var(--f-read)", color: 'var(--ink-body)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.resume.title}</div>
+        <div style={{ padding: 1, borderRadius: 15, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5))', boxShadow: '0 10px 26px -14px rgba(0,0,0,.6)', marginBottom: 26 }}>
+          <div onClick={() => onOpen(d.resume.target_type, d.resume.target_id, d.resume.title)} className="cx-row"
+            style={{ display: 'flex', alignItems: 'center', gap: 13, background: '#0e0b08', borderRadius: 14, padding: '13px 14px', cursor: 'pointer' }}>
+            {/* icon reflects what you're jumping back into: card / article / deck */}
+            <span style={{ width: 42, height: 42, flex: 'none', borderRadius: 12, border: '1px solid rgba(74,60,34,.6)', background: 'rgba(220,184,111,.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#cba75f' }}>
+              <CodexGlyph kind={d.resume.target_type} size={21} />
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', color: '#cba75f' }}>JUMP BACK IN</div>
+              <div style={{ font: "600 17px/1.15 var(--f-read)", color: '#efe7d8', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.resume.title}</div>
+            </div>
+            <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#5c554b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><polyline points="9 18 15 12 9 6" /></svg>
           </div>
         </div>
       )}
@@ -221,7 +224,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
             </div>
             {d.duels.items.map((m, i) => (
               <div key={i} className="cx-ov-duel" onClick={() => onGoTab('play')} role="button">
-                <span className="cx-ov-duel-badge" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? 'var(--ink-muted)' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
+                <span className="cx-ov-duel-badge" style={{ color: m.won ? 'var(--accent-jade)' : m.draw ? '#8a8175' : '#c98f8f' }}>{m.won ? 'W' : m.draw ? 'D' : 'L'}</span>
                 <span className="cx-ov-duel-name">{m.name}</span>
                 {m.deck && <span className="cx-ov-duel-deck"><CodexGlyph kind="deck" size={11} /><span>{m.deck}</span></span>}
                 <span className="cx-ov-duel-score">{m.score}</span>
@@ -237,10 +240,11 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
             const hue = b.type === 'card' ? 'var(--link-violet)' : b.type === 'deck' ? 'var(--accent-violet)' : 'var(--gold-leaf)';
             return (
               <div key={i} onClick={() => onOpen(b.type, b.id, b.name)} className="cx-row"
-                style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'rgba(18,16,13,.72)', border: '1px solid rgba(220,184,111,.2)', borderRadius: 12, padding: '11px 14px', marginBottom: 10, cursor: 'pointer' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 0', borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer' }}>
                 <span style={{ color: hue, flex: 'none', display: 'flex' }}><CodexGlyph kind={b.type} size={15} /></span>
-                <span style={{ flex: 1, minWidth: 0, font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
-                {b.meta && <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)', flex: 'none' }}>{b.meta}</span>}
+                <span style={{ flex: 1, minWidth: 0, font: "600 16px/1.2 var(--f-read)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.name}</span>
+                {b.meta && <span style={{ font: "500 11px/1 var(--f-ui)", color: '#8a8175', flex: 'none' }}>{b.meta}</span>}
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#5c554b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><polyline points="9 18 15 12 9 6" /></svg>
               </div>
             );
           })
@@ -256,13 +260,13 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
             const hue = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
             return (
               <div key={i} onClick={() => onOpen(n.type, n.id, n.on)} className="cx-row"
-                style={{ background: 'rgba(18,16,13,.72)', border: '1px solid rgba(220,184,111,.2)', borderRadius: 12, boxShadow: 'inset 0 1px 0 rgba(255,255,255,.03)', padding: '11px 14px 12px', marginBottom: 10, cursor: 'pointer' }}>
+                style={{ padding: '13px 0', borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
                   <span style={{ color: hue, flex: 'none', display: 'flex' }}><CodexGlyph kind={n.type} size={14} /></span>
-                  <span style={{ font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.on}</span>
-                  <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: hue, flex: 'none' }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
+                  <span style={{ font: "600 15px/1.2 var(--f-read)", color: '#efe7d8', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.on}</span>
+                  <span style={{ font: "500 10px/1 var(--f-display)", letterSpacing: '.14em', color: hue, flex: 'none' }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
                 </div>
-                <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{n.body}</div>
+                <div style={{ font: "400 15px/1.5 var(--f-read)", color: '#d8cebb' }}>{n.body}</div>
               </div>
             );
           })
