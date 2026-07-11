@@ -36,6 +36,14 @@ const noEm = (s) => String(s || '').replace(/\s*—\s*/g, ' - ');
 // Small inline SVG icons - no Unicode glyphs anywhere in the Codex detail.
 const IcoLink = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', verticalAlign: '-1px' }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>;
 const IcoPlus = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ flex: 'none', verticalAlign: '-2px' }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
+// Quiet marginalia remove - a muted ✕ with a generous invisible hit box; reads
+// as incidental chrome, not a danger action (deletion is immediate by design).
+const MargRemove = ({ onClick }) => (
+  <button onClick={onClick} title="Remove"
+    style={{ flex: 'none', width: 32, height: 32, marginTop: -3, marginRight: -6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#5c554b', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent' }}>
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+  </button>
+);
 const CodexTypeIcon = ({ kind, size = 14 }) => kind === 'card'
   ? <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
   : <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></svg>;
@@ -229,7 +237,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
           <div className="cx-mention-rail">
             {ment.cards.map((c) => (
               <div key={c.card_id} className="cx-mention-card" onClick={() => onOpen('card', c.card_id, c.name)}>
-                <CardArt card={c} radius={9} />
+                <span className="cx-mention-frame"><CardArt card={c} radius={10} aspect="5/7" /></span>
                 <div className="cx-mention-name">{c.name}</div>
               </div>
             ))}
@@ -310,28 +318,34 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
         </div>
       )}
 
-      {/* marginalia */}
-      <div style={{ marginTop: 18, borderRadius: 16, background: 'linear-gradient(180deg,rgba(30,22,15,.85),rgba(22,16,11,.6))', border: '1px solid var(--hair-16)', padding: 15 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>
-          <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)' }}>YOUR MARGINALIA</span>
-          <IconButton glyph="+" onClick={() => setComposer(true)} title="Add a note or link" />
+      {/* Marginalia - hand-annotations in the margin, not a boxed panel: a gold
+          rubric with the frosted-rose add control, then borderless entries each
+          led by a coloured vertical rule (gold = your note, violet = a card link). */}
+      <div style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <span style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', color: '#cba75f', whiteSpace: 'nowrap' }}>YOUR MARGINALIA</span>
+          <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
+          <button onClick={() => setComposer(true)} title="Add a note or link"
+            style={{ flex: 'none', width: 44, height: 44, marginRight: -7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent' }}>
+            <span style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(224,169,177,.09)', border: '1px solid rgba(224,169,177,.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: '#f0c8ce' }}><IcoPlus size={14} /></span>
+          </button>
         </div>
         {data.notes.length === 0 && data.links.length === 0 && (
-          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '6px 0 4px' }}>No marginalia yet - add a note or link.</div>
+          <div style={{ font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '2px 0 2px 13px' }}>No marginalia yet - add a note or link.</div>
         )}
         {data.notes.map((n) => (
-          <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
-            <IconButton glyph="✕" tone="danger" size={22} onClick={() => delNote(n.id)} />
+          <div key={n.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '2px 0 2px 13px', borderLeft: '2px solid #cba75f', marginBottom: 14 }}>
+            <div style={{ flex: 1, font: "400 16px/1.5 var(--f-read)", color: '#d8cebb', fontStyle: 'italic' }}>{n.body}</div>
+            <MargRemove onClick={() => delNote(n.id)} />
           </div>
         ))}
         {data.links.map((l) => (
-          <div key={l.id} style={{ borderLeft: '2px solid var(--link-violet)', background: 'rgba(199,154,208,.08)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div key={l.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '2px 0 2px 13px', borderLeft: '2px solid #a08cc0', marginBottom: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div onClick={() => onOpenName(l.otherName)} style={{ display: 'flex', alignItems: 'center', gap: 6, font: "600 14px/1.3 var(--f-read)", color: 'var(--link-violet)', cursor: 'pointer' }}><IcoLink />{l.otherName}</div>
-              {l.description && <div style={{ font: "400 12.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', fontStyle: 'italic', marginTop: 3 }}>{l.description}</div>}
+              <div onClick={() => onOpenName(l.otherName)} style={{ display: 'flex', alignItems: 'center', gap: 6, font: "600 16px/1.3 var(--f-read)", color: '#c9a8e8', cursor: 'pointer' }}><IcoLink />{l.otherName}</div>
+              {l.description && <div style={{ font: "400 13.5px/1.4 var(--f-read)", color: '#8a8175', fontStyle: 'italic', marginTop: 3 }}>{l.description}</div>}
             </div>
-            <IconButton glyph="✕" tone="danger" size={22} onClick={() => delLink(l.id)} />
+            <MargRemove onClick={() => delLink(l.id)} />
           </div>
         ))}
       </div>
@@ -373,10 +387,16 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
 function RuleBody({ doc, subs, subDocs, mainAnn, subAnns, onOpenLink, bodyRef }) {
   return (
     <div ref={bodyRef}>
+      {/* Codex eyebrow - violet caps trailed by a fade hairline, marking the
+          article as a codex entry (the header above is shared with card detail). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 16px' }}>
+        <span style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.2em', color: '#a08cc0', whiteSpace: 'nowrap' }}>CODEX ARTICLE</span>
+        <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,rgba(160,140,192,.45),transparent)' }} />
+      </div>
       <RuleArticle doc={doc} annotations={mainAnn} onOpenLink={onOpenLink} />
       {subs.map((s, i) => (
-        <div key={s.id} style={{ marginTop: 16 }}>
-          <SectionLabel label={s.title.toUpperCase()} />
+        <div key={s.id}>
+          <div className="cx-article-h">{s.title.toUpperCase()}</div>
           <RuleArticle doc={subDocs[i]} annotations={subAnns[i] || []} onOpenLink={onOpenLink} />
         </div>
       ))}

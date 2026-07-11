@@ -228,10 +228,10 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 body.reduce-motion .cx-subrow { animation: none; }
 
 /* ── Codex article - reflowed, semantically formatted reading ── */
-.cx-article-p { margin: 0 0 14px; font: 400 16.5px/1.62 var(--f-read); color: var(--ink-body-2); }
-.cx-article-p.lead::first-letter { float: left; font: 600 47px/0.76 var(--f-display); color: var(--gold); margin: 5px 11px 0 0; text-shadow: 0 2px 14px rgba(207,154,74,.3); }
+.cx-article-p { margin: 0 0 16px; font: 400 17.5px/1.65 var(--f-read); color: #d8cebb; }
+.cx-article-p.lead::first-letter { float: left; font: 700 52px/0.78 var(--f-display); color: #cba75f; margin: 6px 12px 0 0; }
 .cx-article-list { margin: 2px 0 16px; padding-left: 22px; }
-.cx-article-list li { font: 400 16px/1.55 var(--f-read); color: var(--ink-body-2); margin: 0 0 8px; padding-left: 4px; }
+.cx-article-list li { font: 400 16.5px/1.6 var(--f-read); color: #d8cebb; margin: 0 0 9px; padding-left: 4px; }
 .cx-article-list li::marker { color: var(--gold-leaf); font-weight: 600; }
 /* Callout blocks from the compiled document (note / example / warning) - black
    chassis, gold hairline, per-type accent on the left edge (black+gold law). */
@@ -240,25 +240,26 @@ body.reduce-motion .cx-subrow { animation: none; }
 .cx-callout-warning { border-left-color: #d98b5f; background: rgba(217,139,95,.06); }
 /* In-article heading (reserved: the deterministic pass emits none yet; enrichment
    will). Scroll target for deep links. */
-.cx-article-h { margin: 20px 0 10px; font: 600 17px/1.3 var(--f-display); letter-spacing: .01em; color: var(--gold-head); scroll-margin-top: 64px; }
+.cx-article-h { margin: 26px 0 12px; font: 600 15px/1.3 var(--f-display); letter-spacing: .12em; text-transform: uppercase; color: #e3c589; scroll-margin-top: 64px; }
 /* Deep-link flash on the target block (cross-ref / jump-to-section). */
 @keyframes cxBlockFlash { 0% { background: rgba(220,184,111,.22); } 100% { background: transparent; } }
 .cx-block-flash { animation: cxBlockFlash 1.6s ease-out; border-radius: 6px; }
 /* in-text links - gold for rules, violet for cards; both dotted-underlined */
 .cx-inlink { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.cx-inlink-gold { color: var(--gold-leaf); border-bottom: 1px dotted var(--gold-leaf); }
+.cx-inlink-gold { color: #e3c589; border-bottom: 1px dotted rgba(227,197,137,.5); }
 .cx-inlink-violet { color: var(--link-violet); border-bottom: 1px dotted var(--link-violet); }
 /* saved-highlight marks left in the body text */
 mark.cx-hl-gold { background: rgba(220,184,111,.22); color: var(--ink-body); border-radius: 3px; box-shadow: 0 0 0 1px rgba(220,184,111,.25); padding: 0 1px; }
 mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); border-radius: 3px; box-shadow: 0 0 0 1px rgba(199,154,208,.28); padding: 0 1px; }
 
 /* Cards Mentioned carousel + Related-article / Mentioned-in pills */
-.cx-mention-rail { display: flex; gap: 10px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 2px 0 4px; }
+.cx-mention-rail { display: flex; gap: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 2px 0 4px; }
 .cx-mention-rail::-webkit-scrollbar { display: none; }
-.cx-mention-card { flex: none; width: 92px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-mention-card { flex: none; width: 132px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-mention-card:active { transform: scale(.97); }
-.cx-mention-name { margin-top: 6px; font: 500 11px/1.25 var(--f-read); color: var(--ink-status); overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.cx-relpill { display: inline-block; font: 500 12.5px/1 var(--f-read); color: var(--gold-head, #e9d49a); padding: 8px 13px; border: 1px solid rgba(220,184,111,.34); border-radius: 20px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-mention-frame { display: block; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); }
+.cx-mention-name { margin-top: 7px; text-align: center; font: 400 14px/1.3 var(--f-read); color: #a99a80; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cx-relpill { display: inline-block; font: 400 15px/1 var(--f-read); color: #d8c9a4; padding: 7px 16px; border: 1px solid #4a3c22; border-radius: 18px; background: rgba(42,33,20,.4); cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-relpill:active { border-color: var(--gold-leaf); }
 
 /* Return to Match - resume the live tracker (shown in Play + Home while a match is ongoing). */

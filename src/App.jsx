@@ -334,8 +334,8 @@ export default function App() {
         </div>
       ) : viewDetail ? (
         <div style={S.detailHeader}>
-          <button onClick={back} style={S.back}><IcBack size={15} />Back</button>
-          <div style={S.detailTitle}>{detail.title || ''}</div>
+          <button onClick={back} style={S.back}><IcBack size={16} />Back</button>
+          <div style={{ ...S.detailTitle, textTransform: detail.kind === 'rule' ? 'uppercase' : 'none' }}>{detail.title || ''}</div>
           <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); bump(); }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
             aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
@@ -905,8 +905,8 @@ const S = {
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, padding: 0 },
-  detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, flexShrink: 0 },
+  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', font: "600 14px/1.15 var(--f-display)", letterSpacing: '.1em', color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller

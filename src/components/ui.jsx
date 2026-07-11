@@ -70,14 +70,18 @@ export function IconButton({ glyph, onClick, tone = 'gold', shape = 'circle', si
   );
 }
 
-export function SectionLabel({ glyph, label, count }) {
+// Section rubric - Cinzel gold caps trailed by a fade hairline that fills the
+// row, with an optional count sitting at the far right. The Manuscript header
+// shared by the Codex article view and the Collection ownership control.
+export function SectionLabel({ label, count }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
-      <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>
-        {glyph ? glyph + ' ' : ''}{label}
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+      <span style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', color: '#cba75f', whiteSpace: 'nowrap' }}>
+        {label}
       </span>
+      <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
       {count != null && (
-        <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{count}</span>
+        <span style={{ font: "600 15px/1 var(--f-display)", color: '#c9b487' }}>{count}</span>
       )}
     </div>
   );
