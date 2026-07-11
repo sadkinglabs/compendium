@@ -22,7 +22,7 @@ const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } 
 // neutral for colourless cards). rgba of the app-wide element colours.
 const GLOW = { air: 'rgba(196,205,214,.5)', earth: 'rgba(179,92,51,.5)', fire: 'rgba(224,98,63,.5)', water: 'rgba(74,163,212,.5)' };
 // Rarity tag hue - the ONE app-wide rarity language (tokens.css).
-const RARITY_HUE = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
+export const RARITY_HUE = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 function glowColor(c) {
   const th = jp(c?.thresholds, {}) || {};
   let best = null, n = 0;
@@ -34,7 +34,7 @@ function glowColor(c) {
 // The card's type in small caps for the meta row: the base type (MINION, MAGIC,
 // AURA, ARTIFACT) for spells, or SITE / AVATAR. No "spell" prefix; the subtype
 // beside it already reads it as a spell.
-function typeLabel(c) {
+export function typeLabel(c) {
   if (c.is_site) return 'SITE';
   if (c.is_avatar) return 'AVATAR';
   return (c.type || '').trim().toUpperCase() || 'CARD';
@@ -42,12 +42,12 @@ function typeLabel(c) {
 
 /* ---- shared bits ---- */
 
-const EYEBROW = { font: "600 13px/1 var(--f-display)", letterSpacing: '.24em', color: '#cba75f', textAlign: 'center' };
+export const EYEBROW = { font: "600 13px/1 var(--f-display)", letterSpacing: '.24em', color: '#cba75f', textAlign: 'center' };
 
 // A flat frosted-glass stepper button: 32px visual circle inside a >=44px hit
 // area, with a pressed/hover accent lift (no gradients, no shadows). Ruby accent
 // stays chrome-only.
-function StepBtn({ dir, onClick, disabled }) {
+export function StepBtn({ dir, onClick, disabled }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
   return (
@@ -70,7 +70,7 @@ function StepBtn({ dir, onClick, disabled }) {
 
 // One count column: label · big count · − + steppers. Foil's label carries a
 // gold ✦.
-function CountCol({ label, foil = false, field, qty, step }) {
+export function CountCol({ label, foil = false, field, qty, step }) {
   const v = qty?.[field] || 0;
   const loading = qty === null;
   return (
@@ -142,7 +142,7 @@ function ListPicker({ cardId, onBack }) {
 }
 
 // A centered set pill (the sheet's top eyebrow slot).
-function SetPill({ name }) {
+export function SetPill({ name }) {
   return (
     <span style={{ display: 'inline-block', padding: '5px 13px', borderRadius: 20, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', font: "500 11.5px/1 var(--f-display)", letterSpacing: '.16em', color: '#c9b487', textTransform: 'uppercase' }}>{name}</span>
   );
@@ -166,7 +166,7 @@ function SiteArt({ c }) {
 }
 
 // The glowing card frame - portrait for cards, flipped landscape for Sites.
-function SheetArt({ c }) {
+export function SheetArt({ c }) {
   const site = !!c.is_site;
   return (
     <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
