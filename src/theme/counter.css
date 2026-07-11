@@ -246,6 +246,10 @@ body.roll-active #match-clock { display: none !important; }
 }
 .vc-root .fab-menu .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
 
+/* Full-screen tap catcher during the roll-off (spin + result countdown): above
+   the tap-zones/FABs, below the roll pill (z60), so nothing underneath can be
+   tapped until the countdown ends. */
+.roll-lock { position: fixed; inset: 0; z-index: 55; }
 #roll-pill { position: fixed; left: 50%; z-index: 60; display: none; pointer-events: none; }
 #roll-pill.show { display: block; }
 #roll-pill.armed  { top: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer; }

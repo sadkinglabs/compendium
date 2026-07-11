@@ -424,6 +424,15 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
           CSS hides it during the roll-off (body.roll-active). */}
       {clockOn && <div id="match-clock">{fmtClock(elapsedSec())}</div>}
 
+      {/* Hard lock: while the roll spins AND through the 4s result countdown, a
+          full-screen catcher swallows every tap so the reveal is never dropped by
+          an eager tap. The counter only goes live again once the countdown ends. */}
+      {(rollPhase === 'rolling' || rollPhase === 'result') && (
+        <div className="roll-lock" aria-hidden="true"
+          onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
+          onPointerDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }} />
+      )}
+
       {/* Optional turn-order roll. Floats over the live counter as an offer:
           tap it to roll, or dismiss it with the X - it never blocks the match. */}
       <div id="roll-pill" className={rollPhase === 'armed' ? 'show armed' : rollPhase === 'result' ? 'show result' : ''}
