@@ -141,15 +141,14 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     haptic('light');
   }
 
-  // The roll-off is OPTIONAL and never blocks the match. The counter is live
-  // from the first tap; the armed pill just floats as an offer. We only lock the
-  // tap-zones / FABs during the brief 'rolling' + 'result' window, because there
-  // the life numerals are borrowed to tumble the dice - a tap mid-spin would
-  // fight the animation. Armed = fully interactive (tap life, open menus, leave).
-  // Lock only during the brief 'rolling' spin (the life numerals tumble the dice
-  // then). During 'result' the counter is fully live - the pill just floats its
-  // countdown as an offer and never blocks starting the match.
-  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase === 'rolling'); }, [rollPhase]);
+  // The roll-off is OPTIONAL and never blocks *starting* the match (the armed
+  // pill just floats as an offer - armed = fully interactive: tap life, open
+  // menus, leave). But once you commit to rolling, the counter stays locked
+  // through the spin AND the 4s result countdown: the life numerals are borrowed
+  // to tumble the dice, and a stray tap the instant the winner lands is confusing
+  // - it drops the reveal and edits life before you've read it. So block taps /
+  // FABs for the whole 'rolling' + 'result' window; they free up when it finishes.
+  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase === 'rolling' || rollPhase === 'result'); }, [rollPhase]);
 
   // Match clock - re-render once a second while it's showing (elapsedSec() reads
   // live). Stops once the match is decided; CSS hides it during the roll-off.
@@ -278,11 +277,11 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     pNumRef.current?.classList.add(winner === 'player' ? 'roll-win' : 'roll-lose');
     eNumRef.current?.classList.add(winner === 'enemy' ? 'roll-win' : 'roll-lose');
     setFlip(winner === 'player' ? 0 : 180);
-    // Reveal the result, then let it settle on its own - no full-screen tap
-    // catcher gating the app. The pill lingers 4s with a visible countdown so
-    // nobody is caught by surprise when play begins.
-    // Entering 'result' the counter goes live again, so put the REAL life totals
-    // back over the tumbled dice faces first - the winner pill conveys who goes first.
+    // Reveal the result and HOLD it: the counter stays locked (body.roll-active)
+    // through the full 4s countdown so the winner registers and no early tap drops
+    // the reveal. Put the REAL life totals back over the tumbled dice faces first -
+    // the winner pill conveys who goes first while the countdown runs, then taps
+    // free up when finishRollOff() clears the phase.
     timers.current.push(setTimeout(() => { renderLife(); setRollPhase('result'); setResultLeft(4); }, 650));
     for (let i = 1; i <= 3; i++) timers.current.push(setTimeout(() => setResultLeft(4 - i), 650 + i * 1000));
     timers.current.push(setTimeout(() => finishRollOff(), 650 + 4000));
