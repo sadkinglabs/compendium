@@ -143,18 +143,21 @@ function HandCard({ zones, avatar, onCardTap }) {
   // fanned out, each added card gently tightens the fan (existing cards ease
   // closer - a smooth slide, never a re-row), and once a row hits the floor it
   // locks at a constant capacity so cards never jump between rows.
-  const CARD_W = 112, MIN_REVEAL = 24, MAX_REVEAL = 100;
-  const layout = (n) => {
+  // Card widths: spells are 5:7 portrait, sites 7:5 landscape (wider, so they can
+  // overlap harder). ONE row, always: the reveal (visible px of each buried card)
+  // shrinks to fit the whole pile without wrapping - the opening 3 fan out wide,
+  // then each draw stacks to the right while the fan tightens leftward. No lower
+  // floor: with 60 out they're near-slivers, but only the newest (rightmost, on
+  // top) needs to be fully seen, and the lead card stays pinned to the left edge.
+  const SPELL_W = 112, SPELL_MAX = 100, SITE_W = 138, SITE_MAX = 120;
+  const revealOf = (n, cardW, maxRev) => {
     const avail = fanW ? fanW - 28 : 9999;   // fan content width (minus 28px h-padding)
-    if (n <= 1) return { reveal: MAX_REVEAL, per: 1 };
-    const fit = (avail - CARD_W) / (n - 1);  // reveal that would fit all n in one row
-    if (fit >= MIN_REVEAL) return { reveal: Math.min(MAX_REVEAL, fit), per: n };
-    return { reveal: MIN_REVEAL, per: Math.max(1, Math.floor((avail - CARD_W) / MIN_REVEAL) + 1) };
+    return n <= 1 ? maxRev : Math.min(maxRev, (avail - cardW) / (n - 1));
   };
 
   const card = (c, i, site) => (
     <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
-      style={{ '--rot': c.rot + 'deg', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 70) + 'ms' }}
+      style={{ '--rot': c.rot + 'deg', width: (site ? SITE_W : SPELL_W) + 'px', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 55) + 'ms' }}
       onClick={() => c.e.card_id && onCardTap?.(c.e.card_id)}>
       {c.e.image_slug && <img src={`${BASE}cards/${c.e.image_slug}`} loading="lazy" alt=""
         onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
@@ -163,9 +166,9 @@ function HandCard({ zones, avatar, onCardTap }) {
     </div>
   );
 
-  // Each pile is its own block: a header carrying the Draw button (so the button
-  // sits ABOVE its fan and never moves as the fan grows - no drifting tap target)
-  // + a height-capped, internally-scrolling fan.
+  // Each pile is a header (its Draw button sits ABOVE the fan, so it never drifts)
+  // + a single-row overlapping fan. Cards are a flat, stably-keyed list, so adding
+  // one only tightens the row (a smooth margin slide) - nothing remounts/re-animates.
   const group = (label, cards, rest, kind) => {
     if (!cards.length && rest === 0) return null;
     const sub = (
@@ -177,22 +180,14 @@ function HandCard({ zones, avatar, onCardTap }) {
       </div>
     );
     if (!cards.length) return <div className="dealt-group">{sub}<p className="dealt-none">None in hand yet.</p></div>;
-    if (kind === 'site') {
-      return <div className="dealt-group">{sub}<div className="dealt-strip-wrap"><div className="dealt-strip">{cards.map((c, i) => card(c, i, true))}</div></div></div>;
-    }
-    // Cards stay a flat, stably-keyed list - only the break markers move - so the
-    // fan re-flows and re-tightens without ever remounting (re-animating) a card.
-    const { reveal, per } = layout(cards.length);
+    const site = kind === 'site';
+    const cardW = site ? SITE_W : SPELL_W;
+    const reveal = revealOf(cards.length, cardW, site ? SITE_MAX : SPELL_MAX);
     return (
       <div className="dealt-group">{sub}
         <div className="dealt-fan-wrap">
-          <div className="dealt-fan" ref={fanRef} style={{ '--ov': (reveal - CARD_W) + 'px' }}>
-            {cards.map((c, i) => (
-              <React.Fragment key={c.id}>
-                {i > 0 && i % per === 0 && <i className="dealt-break" aria-hidden="true" />}
-                {card(c, i, false)}
-              </React.Fragment>
-            ))}
+          <div className="dealt-fan" ref={site ? undefined : fanRef} style={{ '--ov': (reveal - cardW) + 'px' }}>
+            {cards.map((c, i) => card(c, i, site))}
           </div>
         </div>
       </div>
