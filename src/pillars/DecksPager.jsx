@@ -169,9 +169,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       </ChipRow>
       <div className="dp-topbar-spacer" />
       {view === 'mydeck' && deckOpen && (
-        <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }}>
-          {editMode ? '✓ Done' : '✎ Edit Deck'}
-        </button>
+        <Chip label={editMode ? 'Done' : 'Edit Deck'} active={editMode} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }} />
       )}
     </div>
   );

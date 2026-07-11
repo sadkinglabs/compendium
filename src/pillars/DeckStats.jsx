@@ -8,7 +8,7 @@ import { getDeckCards } from '../store/deckRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
 import { deckBuildability, subscribeCollection } from '../store/ownedRepository.js';
 import * as St from '../store/deckStats.js';
-import { ThresholdPips, Loading } from '../components/ui.jsx';
+import { ThresholdPips, SegTabs, Loading } from '../components/ui.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 
 const GOLD = '#cba75f', ROSE = '#c76d85', ROSE_VAL = '#e0899e', TEAL = '#63c9a3', GOLD_MET = '#e3c589';
@@ -253,9 +253,7 @@ const Section = ({ title, right, children }) => (
   </section>
 );
 const Seg = ({ value, set, opts }) => (
-  <div className="ds-seg">
-    {opts.map(([k, l]) => <button key={k} className={`ds-seg-btn${value === k ? ' on' : ''}`} onClick={() => set(k)}>{l}</button>)}
-  </div>
+  <SegTabs value={value} onChange={set} options={opts.map(([k, l]) => ({ key: k, label: l }))} />
 );
 const Donut = ({ slices, num, label }) => (
   <div className="ds-donut" style={{ background: St.conicGradient(slices) }}>

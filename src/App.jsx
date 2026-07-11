@@ -662,17 +662,7 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
           <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
         ))}
       </ChipRow>
-      <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
-          padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
-          font: "600 13px/1 var(--f-ui)", color: '#e3c589',
-          background: marginalia ? 'rgba(203,167,95,.16)' : 'transparent',
-          border: `1px solid ${marginalia ? 'rgba(203,167,95,.5)' : 'rgba(203,167,95,.35)'}`,
-        }}>
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-        Marginalia
-      </button>
+      <Chip label="Marginalia" active={marginalia} onClick={() => setScope('marginalia')} />
     </div>
   );
 }

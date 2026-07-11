@@ -157,10 +157,7 @@
 .arc .ds-hdr-stat { font: italic 400 13px/1 'EB Garamond', Georgia, serif; color: #8a8175; flex-shrink: 0; }
 .arc .ds-empty { font: italic 400 14px/1.5 'EB Garamond', Georgia, serif; color: #6b6254; text-align: center; padding: 10px 0; }
 
-/* Gothic segmented pill (Element/Rarity, Supply/Odds). */
-.arc .ds-seg { display: flex; border: 1px solid #4a3c22; border-radius: 16px; overflow: hidden; flex-shrink: 0; }
-.arc .ds-seg-btn { font: 500 11.5px/1 'Cinzel', Georgia, serif; letter-spacing: .04em; color: #8a8175; background: none; border: none; padding: 7px 13px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.arc .ds-seg-btn.on { font-weight: 600; color: #d8c9a4; background: rgba(42,33,20,.7); }
+/* Element/Rarity + Supply/Odds toggles retired - now the shared SegTabs (ui.jsx). */
 
 /* Mana / Power curve - element-stacked bars on a hairline baseline. */
 .arc .ds-curve-plot { display: flex; align-items: flex-end; gap: 6px; min-height: 142px; padding: 0 2px; border-bottom: 1px solid rgba(74,60,34,.5); }
