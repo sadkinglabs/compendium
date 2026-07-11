@@ -263,7 +263,7 @@ function RenameSheet({ open, initial, onClose, onSave }) {
       <div style={{ padding: '0 16px', display: 'flex', gap: 10 }}>
         <input value={name} autoFocus onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') onSave(name); }}
-          style={{ flex: 1, height: 44, background: 'rgba(11,7,20,.7)', border: '1px solid rgba(160,110,220,.25)', borderRadius: 12, padding: '0 14px', color: 'var(--text)', font: "400 15px/1 'EB Garamond',Georgia,serif" }} />
+          style={{ flex: 1, height: 44, background: 'rgba(11,7,20,.7)', border: '1px solid rgba(160,110,220,.25)', borderRadius: 12, padding: '0 14px', color: '#efe7d8', font: "400 15px/1 var(--f-read)" }} />
         <button onClick={() => onSave(name)}
           style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 'Hanken Grotesk',sans-serif", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
       </div>
@@ -391,7 +391,7 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
         </div>
       }>
       {!src ? <Loading />
-        : empty ? <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No cards in this deck yet.</div>
+        : empty ? <div style={{ padding: '30px 16px', textAlign: 'center', color: '#8a8175', fontStyle: 'italic' }}>No cards in this deck yet.</div>
           : <>{section('Spellbook', src.spellbook)}{section('Atlas', src.atlas)}{section('Collection', src.collection)}</>}
     </Sheet>
   );

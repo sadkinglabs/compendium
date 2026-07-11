@@ -143,11 +143,11 @@ body.hc {
   --ink-muted: #cdbf9c;
   --ink-faint: #b3a582;
   --ink-status: #e7ddc6;
-  --hair-12: rgba(201,163,90,.24);
-  --hair-16: rgba(201,163,90,.30);
-  --hair-22: rgba(201,163,90,.40);
-  --hair-30: rgba(201,163,90,.52);
-  --hair-40: rgba(201,163,90,.62);
+  --hair-12: rgba(220,184,111,.24);
+  --hair-16: rgba(220,184,111,.30);
+  --hair-22: rgba(220,184,111,.40);
+  --hair-30: rgba(220,184,111,.52);
+  --hair-40: rgba(220,184,111,.62);
 }
 /* Reduced motion: neutralise animations + transitions app-wide. Honoured for
    the OS setting too (appearance.js adds the class when prefers-reduced-motion). */
@@ -178,7 +178,7 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 
 /* ── Bottom nav - VERBATIM from Arcanum (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
-.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(201,163,90,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: 'Hanken Grotesk', sans-serif; border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }

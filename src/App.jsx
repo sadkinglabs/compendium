@@ -282,8 +282,8 @@ export default function App() {
   // Canonical list-row accent, morphing per pillar (grimoire gold default;
   // amethyst in Decks, jade in Play) - consumed by ListRow via --list-accent.
   const LIST = {
-    home:    { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
-    codex:   { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
+    home:    { a: 'var(--gold-leaf)',     g: 'rgba(220,184,111,.5)' },
+    codex:   { a: 'var(--gold-leaf)',     g: 'rgba(220,184,111,.5)' },
     collect: { a: 'var(--accent-ruby)',   g: 'rgba(210,88,115,.5)' },
     decks:   { a: 'var(--accent-violet)', g: 'rgba(199,154,208,.5)' },
     play:    { a: 'var(--accent-jade)',   g: 'rgba(143,211,168,.5)' },
@@ -963,7 +963,7 @@ function Splash({ text, error }) {
 const S = {
   app: { height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--ink-body)', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', position: 'relative', overflow: 'hidden' },
   brandBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px 10px' },
-  diamond: { width: 14, height: 14, transform: 'rotate(45deg)', border: '1.5px solid var(--gold-leaf)', borderRadius: 3, boxShadow: '0 0 8px rgba(201,163,90,.35)' },
+  diamond: { width: 14, height: 14, transform: 'rotate(45deg)', border: '1.5px solid var(--gold-leaf)', borderRadius: 3, boxShadow: '0 0 8px rgba(220,184,111,.35)' },
   wordmark: { font: "600 20px/1 var(--f-display)", color: 'var(--ink-head)', letterSpacing: '.01em' },
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },

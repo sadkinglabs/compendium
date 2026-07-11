@@ -7,21 +7,21 @@
 
 /* ── scoped tokens (verbatim values) ── */
 .vc-root {
-  --bg: #0a130e;
-  --surface: #14261b;
-  --surface2: #1e3a29;
+  /* Manuscript black+gold (was Vitarum green). Fonts inherit the global
+     var(--f-display/read/ui) - no local overrides. --crimson stays: it is a
+     semantic game-state accent (damage / defeat), allowed as chrome. */
+  --bg: #0e0b08;
+  --surface: rgba(42,33,20,.5);
+  --surface2: rgba(42,33,20,.7);
   --border: rgba(220,184,111,.16);
-  --text: #dfe6e1;
-  --muted: #9aa79c;
+  --text: #efe7d8;
+  --muted: #8a8175;
   --gold: var(--gold-leaf);
   --gold-line: rgba(220,184,111,.25);
   --gold-grad: linear-gradient(180deg,var(--gold-leaf),#c9a35a);
-  --gold-head: #e9d49a;
+  --gold-head: #e3c589;
   --crimson: #e0786a;
-  --faint: #7f8d81;
-  --f-display: 'Cinzel', Georgia, 'Times New Roman', serif;
-  --f-read: 'EB Garamond', Georgia, 'Times New Roman', serif;
-  --f-ui: 'Hanken Grotesk', Roboto, system-ui, 'Noto Sans', sans-serif;
+  --faint: #5c554b;
   --safe-top: max(env(safe-area-inset-top), 28px);
   --safe-bottom: max(env(safe-area-inset-bottom), 24px);
   --safe-left: max(env(safe-area-inset-left), 0px);
@@ -35,7 +35,7 @@
 /* Skins retired: the counter wears the app's gold (--sk above), full stop. */
 
 /* ── COUNTER SCREEN ── */
-#counter-screen { background: #06100a; position: fixed; inset: 0; z-index: 100; animation: cxfade .2s ease; }
+#counter-screen { background: #0e0b08; position: fixed; inset: 0; z-index: 100; animation: cxfade .2s ease; }
 
 .counter-half { position: absolute; left: 0; right: 0; overflow: hidden; }
 .counter-half.enemy-half {
@@ -58,16 +58,16 @@
   position: absolute; inset: 0;
   background: linear-gradient(
     to bottom,
-    rgba(6,14,10,.95) 0%,
-    rgba(6,14,10,.5)  8%,
-    rgba(6,14,10,.05) 22%,
-    rgba(6,14,10,0)   40%,
-    rgba(6,14,10,0)   58%,
-    rgba(6,14,10,.4)  75%,
-    rgba(6,14,10,.85) 88%,
-    rgba(6,14,10,.98) 100%
+    rgba(9,7,5,.95) 0%,
+    rgba(9,7,5,.5)  8%,
+    rgba(9,7,5,.05) 22%,
+    rgba(9,7,5,0)   40%,
+    rgba(9,7,5,0)   58%,
+    rgba(9,7,5,.4)  75%,
+    rgba(9,7,5,.85) 88%,
+    rgba(9,7,5,.98) 100%
   );
-  box-shadow: inset 0 0 80px 12px rgba(5,11,8,.5), inset 0 0 0 1px rgba(0,0,0,.32);
+  box-shadow: inset 0 0 80px 12px rgba(6,5,4,.5), inset 0 0 0 1px rgba(0,0,0,.32);
 }
 
 /* Film-grain overlay - painterly texture over each portrait (toggle in Tweaks) */
@@ -91,11 +91,11 @@ body.grain-off .half-grain { display: none; }
 }
 #counter-screen.quick .enemy-half {
   background:
-    radial-gradient(60% 50% at 50% 42%, rgba(176,224,190,.44), transparent 60%),
-    radial-gradient(42% 38% at 70% 66%, rgba(78,179,138,.5), transparent 62%),
-    radial-gradient(38% 32% at 24% 70%, rgba(120,190,150,.38), transparent 60%),
-    radial-gradient(60% 70% at 50% -8%, rgba(6,22,16,.6), transparent 70%),
-    linear-gradient(158deg, #1d5a48, #0c2a20 66%, #07180f);
+    radial-gradient(60% 50% at 50% 42%, rgba(174,152,200,.36), transparent 60%),
+    radial-gradient(42% 38% at 70% 66%, rgba(140,114,184,.42), transparent 62%),
+    radial-gradient(38% 32% at 24% 70%, rgba(150,130,186,.3), transparent 60%),
+    radial-gradient(60% 70% at 50% -8%, rgba(12,9,20,.62), transparent 70%),
+    linear-gradient(158deg, #322650, #16102a 66%, #0b0716);
 }
 #counter-screen.quick .player-half .life-number,
 #counter-screen.quick .enemy-half  .life-number { text-shadow: 0 2px 24px rgba(0,0,0,.9), 0 0 60px rgba(var(--sk),.5); }
@@ -192,7 +192,7 @@ body.grain-off .half-grain { display: none; }
 .status-badge {
   display: inline-flex; align-items: center; gap: 5px;
   height: 30px; padding: 0 11px 0 8px; border-radius: 16px;
-  background: rgba(6,14,10,.62);
+  background: rgba(9,7,5,.62);
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   box-shadow: 0 2px 10px rgba(0,0,0,.55);
   font-family: var(--f-display); font-size: 15px; font-weight: 800; line-height: 1;
@@ -259,7 +259,7 @@ body.roll-active #match-clock { display: none !important; }
   border-radius: 999px; transform: rotate(var(--flip, 0deg));
 }
 #roll-pill.armed #roll-pill-body {
-  background: radial-gradient(120% 120% at 50% 0%, rgba(22,32,26,.8), rgba(8,14,10,.92));
+  background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.8), rgba(14,11,8,.92));
   -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
   border: 1px solid rgba(var(--sk),.5);
   padding: 12px 22px; border-radius: 24px;
@@ -267,7 +267,7 @@ body.roll-active #match-clock { display: none !important; }
 }
 #roll-pill.armed:active #roll-pill-body { transform: scale(.96); }
 #roll-pill.result #roll-pill-body {
-  background: radial-gradient(120% 120% at 50% 0%, rgba(22,32,26,.82), rgba(8,14,10,.94));
+  background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.82), rgba(14,11,8,.94));
   border: 1px solid rgba(var(--sk),.5); border-radius: 24px;
   box-shadow: 0 10px 26px -8px rgba(0,0,0,.7), 0 0 24px rgba(var(--sk),.28), inset 0 1px 0 rgba(255,255,255,.08);
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -291,7 +291,7 @@ body.roll-active #match-clock { display: none !important; }
   position: absolute; top: -9px; right: -9px;
   width: 26px; height: 26px; padding: 0; border-radius: 50%;
   display: grid; place-items: center; pointer-events: auto; cursor: pointer;
-  background: rgba(8,14,10,.94); border: 1px solid rgba(var(--sk),.5);
+  background: rgba(14,11,8,.94); border: 1px solid rgba(var(--sk),.5);
   color: rgb(var(--sk));
   box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 12px rgba(var(--sk),.2);
 }
@@ -331,7 +331,7 @@ body.roll-active .dd-pill { display: none !important; }
 .vc-root .fab-wrap { position: fixed; bottom: calc(20px + var(--fab-inset) + var(--fab-lift)); right: calc(16px + var(--safe-right)); z-index: 50; }
 .vc-root .fab-wrap .fab {
   width: 52px; height: 52px; border-radius: 50%;
-  background: rgba(10,18,13,.55); color: rgb(var(--sk));
+  background: rgba(42,33,20,.55); color: rgb(var(--sk));
   border: 1px solid rgba(var(--sk),.5); font-size: 22px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(var(--sk),.1);
@@ -367,7 +367,7 @@ body.roll-active .dd-pill { display: none !important; }
 }
 .opponent-fab-wrap .fab {
   width: 52px; height: 52px; border-radius: 50%;
-  background: rgba(10,18,13,.55); color: rgb(var(--sk));
+  background: rgba(42,33,20,.55); color: rgb(var(--sk));
   border: 1px solid rgba(var(--sk),.5); font-size: 22px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(var(--sk),.1);
@@ -432,7 +432,7 @@ body.roll-active .dd-pill { display: none !important; }
   display: flex; align-items: center; gap: 8px;
   height: 48px; box-sizing: border-box;
   padding: 6px 8px 6px 16px; border-radius: 999px;
-  background: rgba(16,28,20,.82); border: 1px solid var(--gold-line);
+  background: rgba(28,22,14,.82); border: 1px solid var(--gold-line);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
 .picker-search svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
@@ -513,7 +513,7 @@ body.roll-active .dd-pill { display: none !important; }
    the End-Match screen and the counter's Dice / Max Life / Match Log popups.
    Verbatim port of Vitarum's .overlay/.modal-box system, scoped to .vc-root.
    ═══════════════════════════════════════════════════════════════════════════ */
-.vc-root { --modal: #0e1c14; --sheet: linear-gradient(180deg,#14261b,#0c1812); --well: rgba(10,18,13,.7);
+.vc-root { --modal: #0e0b08; --sheet: linear-gradient(180deg,#151109,#0b0806); --well: rgba(42,33,20,.5);
   --gold-dim: rgba(220,184,111,.16); --jade: #4db38a; --win: #4db38a; --win-2: #7fd3ad; }
 
 /* Counter modals re-skinned onto the app's centered black+gold card chassis

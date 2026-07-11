@@ -11,7 +11,7 @@ export default function CardArt({ card, radius = 8, aspect = '5/7', children, im
   const [broken, setBroken] = useState(false);
   const url = cardImageUrl(card);
   return (
-    <div style={{ position: 'relative', aspectRatio: aspect, borderRadius: radius, overflow: 'hidden', background: cardFallbackArt(card), border: '1px solid var(--hair-18, rgba(201,163,90,.18))' }}>
+    <div style={{ position: 'relative', aspectRatio: aspect, borderRadius: radius, overflow: 'hidden', background: cardFallbackArt(card), border: '1px solid var(--hair-18, rgba(220,184,111,.18))' }}>
       {url && !broken && (
         <img
           src={url} alt={card?.name || ''} loading="lazy" onError={() => setBroken(true)}
