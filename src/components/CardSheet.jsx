@@ -4,12 +4,12 @@
 // surface. Its distinct job: ZONE steppers that add to the card's home zone
 // (Spellbook / Atlas, auto by type) or the deck's Collection, optimistic with a
 // toast for add / remove / limit-reached, plus the card's stats and rule text.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips } from './ui.jsx';
-import { SheetArt, SetPill, CountCol, RARITY_HUE, typeLabel, EYEBROW } from './CollectionCardSheet.jsx';
+import { SheetArt, SetPill, CountCol, RARITY_HUE, typeLabel } from './CollectionCardSheet.jsx';
 import { getCard } from '../store/codexRepository.js';
-import { changeQty, deckQty } from '../store/deckRepository.js';
+import { changeQty, deckQty, getDeck } from '../store/deckRepository.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { haptic } from '../native.js';
 
@@ -20,13 +20,37 @@ const HAIR = { width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'no
 const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
 const DIVIDER = { height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 16px' };
 
+// A one-line label that shrinks its font to fit the row (never wraps) - so the
+// "Add to <deck name>" eyebrow always fits, however long the deck name is.
+function FitText({ text, max = 13, style }) {
+  const ref = useRef(null);
+  const [size, setSize] = useState(max);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    const avail = el.parentElement?.clientWidth || 0;
+    const prev = el.style.fontSize;
+    el.style.fontSize = max + 'px';
+    const w = el.scrollWidth;
+    el.style.fontSize = prev;
+    setSize(avail > 0 && w > avail ? Math.max(8, max * avail / w) : max);
+  }, [text, max]);
+  return <span ref={ref} style={{ ...style, fontSize: size, whiteSpace: 'nowrap', display: 'inline-block' }}>{text}</span>;
+}
+
 export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCodex }) {
   const [c, setC] = useState(null);
   const [counts, setCounts] = useState({ main: 0, collection: 0 });
+  const [deckName, setDeckName] = useState('');
   const [toast, setToast] = useState('');
   const toastT = useRef();
 
   useEffect(() => { if (cardId) { setC(null); getCard(cardId).then(setC); } }, [cardId]);
+  useEffect(() => {
+    if (!deckId) { setDeckName(''); return; }
+    let alive = true;
+    getDeck(deckId).then((d) => { if (alive) setDeckName(d?.name || ''); });
+    return () => { alive = false; };
+  }, [deckId]);
   useEffect(() => {
     if (!c || !deckId) return;
     let alive = true;
@@ -105,7 +129,9 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
               )}
 
               {c.rules_text && (
-                <div style={{ maxWidth: 320, margin: '18px auto 0', textAlign: 'center', font: "400 16px/1.55 var(--f-read)", color: '#d8cebb' }}>{noEm(c.rules_text)}</div>
+                <div style={{ maxWidth: 320, margin: '18px auto 0', padding: 1, borderRadius: 15, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5))', boxShadow: '0 10px 26px -14px rgba(0,0,0,.6)' }}>
+                  <div style={{ background: '#0e0b08', borderRadius: 14, padding: '16px 18px', textAlign: 'center', font: "400 16px/1.6 var(--f-read)", color: '#d8cebb' }}>{noEm(c.rules_text)}</div>
+                </div>
               )}
               {flavor && (
                 <div style={{ maxWidth: 320, margin: '12px auto 0', textAlign: 'center', font: "italic 400 14.5px/1.5 var(--f-read)", color: '#8a8175' }}>{noEm(flavor)}</div>
@@ -114,7 +140,10 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
               {deckId && !c.is_avatar && (
                 <>
                   <div style={DIVIDER} />
-                  <div style={{ ...EYEBROW, marginBottom: 16 }}>ADD TO THIS DECK</div>
+                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                    <FitText max={13} text={`Add to ${deckName || 'this deck'}`}
+                      style={{ fontFamily: 'var(--f-display)', fontWeight: 600, lineHeight: 1, letterSpacing: '.24em', textTransform: 'uppercase', color: '#cba75f' }} />
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, maxWidth: 300, margin: '0 auto' }}>
                     <CountCol label={c.is_site ? 'Atlas' : 'Spellbook'} field="main" qty={counts} step={step} />
                     <CountCol label="Collection" field="collection" qty={counts} step={step} />
