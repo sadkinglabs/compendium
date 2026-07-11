@@ -137,12 +137,12 @@ function HandCard({ zones, avatar, onCardTap }) {
       const c = mk(h.restAt[0], true, siteRot); return { ...h, sites: [...h.sites, c], restAt: h.restAt.slice(1), newest: c.id };
     });
   }
-  // Fan overlap tightens with hand size: a comfortable spread up to 3, then the
-  // held-hand closes as more cards join; 8+ just wraps to new fan rows.
-  // Overlap tightens aggressively so the hand stacks (only ~22px of each buried
-  // card shows) long before it needs a second row - the last draw stays on top,
-  // fully visible.
-  const overlap = (n) => (n <= 3 ? -8 : -(112 - Math.max(22, 92 - (n - 3) * 12)));
+  // A CONSTANT tight overlap: the hand stacks like a held fan, but because the
+  // per-card reveal never changes, the rows never re-flow - a card that lands in
+  // a spot keeps it. Rows fill left-to-right and cards only ever append, so
+  // nothing already dealt shifts or jumps.
+  const REVEAL = 40;                    // visible width of each buried card
+  const overlap = () => REVEAL - 112;   // -72
 
   const card = (c, i, site) => (
     <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
@@ -155,29 +155,40 @@ function HandCard({ zones, avatar, onCardTap }) {
     </div>
   );
 
-  const group = (label, cards) => {
-    if (!cards.length) return null;
-    const open = cards.filter((c) => !c.drawn).length, drawnN = cards.length - open;
-    const site = label === 'SITES';
-    const sub = <div className="dealt-sub"><span className="dealt-sub-name">{label}</span><span className="dealt-sub-count">{open} opening{drawnN ? ` · ${drawnN} drawn` : ''}</span></div>;
-    if (site) {
-      return <div className="dealt-group">{sub}<div className="dealt-strip">{cards.map((c, i) => card(c, i, true))}</div></div>;
+  // Each pile is its own block: a header carrying the Draw button (so the button
+  // sits ABOVE its fan and never moves as the fan grows - no drifting tap target)
+  // + a height-capped, internally-scrolling fan.
+  const group = (label, cards, rest, kind) => {
+    if (!cards.length && rest === 0) return null;
+    const sub = (
+      <div className="dealt-sub">
+        <span className="dealt-sub-name">{label}</span>
+        <span className="dealt-sub-rule" />
+        <span className="dealt-sub-left"><span className="dealt-num" key={rest}>{rest}</span> left</span>
+        <button className={`dealt-pill sm${rest ? '' : ' empty'}${shake === kind ? ' shake' : ''}`} onClick={() => drawNext(kind)}>⤓ Draw</button>
+      </div>
+    );
+    if (!cards.length) return <div className="dealt-group">{sub}<p className="dealt-none">None in hand yet.</p></div>;
+    if (kind === 'site') {
+      return <div className="dealt-group">{sub}<div className="dealt-strip-wrap"><div className="dealt-strip">{cards.map((c, i) => card(c, i, true))}</div></div></div>;
     }
-    // Break the spell fan into rows that fit the measured width, so every row's
-    // lead card sits at margin 0 (centred, never shoved off-edge). The cards stay
-    // a flat, stably-keyed list - only the break markers move - so widening the
-    // fan never remounts (and re-animates) a card.
-    const n = cards.length, rev = 112 + overlap(n);
-    const per = fanW ? Math.max(1, Math.floor((fanW - 12 - 112) / rev) + 1) : n;
+    // Break the spell fan into fixed-width rows (constant reveal -> constant
+    // capacity), so lead cards sit at margin 0 and rows never re-balance. The
+    // cards stay a flat, stably-keyed list - only the break markers move. `per`
+    // is how many cards fit before the row would overflow (avail = clientWidth
+    // minus the 28px h-padding): last card's right = (per-1)*REVEAL + 112 <= avail.
+    const per = fanW ? Math.max(1, Math.floor((fanW - 28 - 112) / REVEAL) + 1) : cards.length;
     return (
       <div className="dealt-group">{sub}
-        <div className="dealt-fan" ref={fanRef} style={{ '--ov': overlap(n) + 'px' }}>
-          {cards.map((c, i) => (
-            <React.Fragment key={c.id}>
-              {i > 0 && i % per === 0 && <i className="dealt-break" aria-hidden="true" />}
-              {card(c, i, false)}
-            </React.Fragment>
-          ))}
+        <div className="dealt-fan-wrap">
+          <div className="dealt-fan" ref={fanRef} style={{ '--ov': overlap() + 'px' }}>
+            {cards.map((c, i) => (
+              <React.Fragment key={c.id}>
+                {i > 0 && i % per === 0 && <i className="dealt-break" aria-hidden="true" />}
+                {card(c, i, false)}
+              </React.Fragment>
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -194,21 +205,8 @@ function HandCard({ zones, avatar, onCardTap }) {
         <p className="dealt-empty">Press Deal to reveal a random opening hand.</p>
       ) : (
         <>
-          <div className="dealt-scroll" key={hand.dealKey}>
-            {group('SPELLS', hand.spells)}
-            {group('SITES', hand.sites)}
-          </div>
-          <div className="dealt-actions">
-            <button className={`dealt-pill wide${hand.rest.length ? '' : ' empty'}${shake === 'spell' ? ' shake' : ''}`} onClick={() => drawNext('spell')}>⤓ Draw spell</button>
-            <button className={`dealt-pill wide${hand.restAt.length ? '' : ' empty'}${shake === 'site' ? ' shake' : ''}`} onClick={() => drawNext('site')}>⤓ Draw site</button>
-          </div>
-          <div className="dealt-tally">
-            <span className="dealt-num" key={'s' + hand.rest.length}>{hand.rest.length}</span>
-            <span className="dealt-lbl">spells</span>
-            <span className="dealt-tally-sep" />
-            <span className="dealt-num" key={'a' + hand.restAt.length}>{hand.restAt.length}</span>
-            <span className="dealt-lbl">sites left</span>
-          </div>
+          {group('SPELLS', hand.spells, hand.rest.length, 'spell')}
+          {group('SITES', hand.sites, hand.restAt.length, 'site')}
         </>
       )}
     </div>
