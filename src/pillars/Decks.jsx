@@ -7,12 +7,17 @@ import '../theme/arcanum.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-// VERBATIM port of renderLibrary()'s .dli card (Arcanum templates/index.html
-// ~L1540). Same DOM nesting, same classes, same inline styles.
+// Small icons - no Unicode glyphs. Filled star = favourite; check = buildable.
+const StarSvg = () => <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.06 6.6.62-4.98 4.42 1.46 6.5L12 16.9l-5.98 3.2 1.46-6.5L2.5 9.18l6.6-.62L12 2.5z" /></svg>;
+const CheckSvg = () => <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>;
+
+// The library deck card - a compact echo of the My-Deck gilt hero: avatar art
+// fading in from the right, Cinzel name, rose archetype eyebrow, threshold pips,
+// record, and a buildability badge from the collection.
 export function DeckCard({ deck, build, onClick }) {
   const hero = deck.avatar?.image_slug;                       // avatar card art
   const matches = (deck.wins || 0) + (deck.losses || 0);
-  const record = matches ? `${deck.wins}W – ${deck.losses}L · ${matches} played` : 'No games recorded';
+  const record = matches ? `${deck.wins}W - ${deck.losses}L · ${matches} played` : 'No games recorded';
   const VALID_ELS = new Set(['air', 'earth', 'fire', 'water']);
   const elPips = (deck.elems || []).map((e) => e.el).filter((e) => VALID_ELS.has(e));
   return (
@@ -22,27 +27,28 @@ export function DeckCard({ deck, build, onClick }) {
       <div className="dli-content">
         <div className="dli-name-row" style={{ cursor: 'pointer' }}>
           <div className="dli-name">{deck.name}</div>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--muted)', flexShrink: 0 }}><polyline points="9 18 15 12 9 6" /></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#8a8175', flexShrink: 0, filter: 'drop-shadow(0 1px 3px rgba(0,0,0,.7))' }}><polyline points="9 18 15 12 9 6" /></svg>
         </div>
-        <div style={{ padding: '0 14px 12px', display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'flex-start' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ padding: '0 14px 13px', display: 'flex', flexDirection: 'column', gap: 9, alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {deck.avatar?.name && <span className="dash-avatar-chip">{deck.avatar.name}</span>}
-            {elPips.map((el) => <img key={el} src={`${BASE}icons/${el}.png`} style={{ width: 13, height: 13, flexShrink: 0 }} alt={el} />)}
+            {deck.avatar?.name && elPips.length > 0 && <span style={{ width: 1, height: 12, background: 'rgba(107,90,46,.6)', flexShrink: 0 }} />}
+            {elPips.map((el) => <img key={el} src={`${BASE}icons/${el}.png`} style={{ width: 14, height: 14, flexShrink: 0 }} alt={el} />)}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'var(--muted)' }}>{record}</span>
+            <span style={{ font: "400 13px/1 var(--f-read)", color: '#8a8175' }}>{record}</span>
             {build && build.totalRequired > 0 && (
               <span title="Buildability from your collection" style={{
-                display: 'inline-flex', alignItems: 'center', padding: '2px 8px', borderRadius: 10, font: "600 10.5px/1 'Hanken Grotesk',sans-serif",
-                color: build.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)',
-                background: build.complete ? 'rgba(143,211,168,.12)' : 'rgba(210,88,115,.12)',
-                border: `1px solid ${build.complete ? 'rgba(143,211,168,.35)' : 'rgba(210,88,115,.35)'}`,
-              }}>{build.complete ? '✓ Buildable' : `${build.totalMissing} missing`}</span>
+                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 10, font: "600 10.5px/1 var(--f-ui)", letterSpacing: '.04em',
+                color: build.complete ? 'var(--accent-jade)' : '#c76d85',
+                background: build.complete ? 'rgba(143,211,168,.1)' : 'rgba(199,109,133,.1)',
+                border: `1px solid ${build.complete ? 'rgba(143,211,168,.3)' : 'rgba(199,109,133,.3)'}`,
+              }}>{build.complete ? <><CheckSvg />Buildable</> : `${build.totalMissing} missing`}</span>
             )}
           </div>
         </div>
       </div>
-      {deck.starred ? <span className="dli-fav">★</span> : null}
+      {deck.starred ? <span className="dli-fav"><StarSvg /></span> : null}
     </div>
   );
 }
