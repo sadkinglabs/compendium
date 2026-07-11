@@ -89,6 +89,17 @@ function HandCard({ zones, avatar, onCardTap }) {
   const [shake, setShake] = useState(null);   // 'spell' | 'site' - empty-pile nudge
   const [leaving, setLeaving] = useState(false); // Redraw sweep-out in progress
   const seq = useRef(0);
+  const fanRef = useRef(null);
+  const [fanW, setFanW] = useState(0);   // measured fan width - drives row breaks
+  useEffect(() => {
+    const el = fanRef.current;
+    if (!el) return;
+    setFanW(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setFanW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hand?.dealKey]);
   const cap = (q) => Math.max(0, Math.min(q | 0, 99));
   const shuffle = (a) => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
   const spellRot = () => Math.round((Math.random() * 19 - 9) * 10) / 10;   // -9..+10
@@ -148,14 +159,25 @@ function HandCard({ zones, avatar, onCardTap }) {
     if (!cards.length) return null;
     const open = cards.filter((c) => !c.drawn).length, drawnN = cards.length - open;
     const site = label === 'SITES';
+    const sub = <div className="dealt-sub"><span className="dealt-sub-name">{label}</span><span className="dealt-sub-count">{open} opening{drawnN ? ` · ${drawnN} drawn` : ''}</span></div>;
+    if (site) {
+      return <div className="dealt-group">{sub}<div className="dealt-strip">{cards.map((c, i) => card(c, i, true))}</div></div>;
+    }
+    // Break the spell fan into rows that fit the measured width, so every row's
+    // lead card sits at margin 0 (centred, never shoved off-edge). The cards stay
+    // a flat, stably-keyed list - only the break markers move - so widening the
+    // fan never remounts (and re-animates) a card.
+    const n = cards.length, rev = 112 + overlap(n);
+    const per = fanW ? Math.max(1, Math.floor((fanW - 12 - 112) / rev) + 1) : n;
     return (
-      <div className="dealt-group">
-        <div className="dealt-sub">
-          <span className="dealt-sub-name">{label}</span>
-          <span className="dealt-sub-count">{open} opening{drawnN ? ` · ${drawnN} drawn` : ''}</span>
-        </div>
-        <div className={site ? 'dealt-strip' : 'dealt-fan'} style={site ? undefined : { '--ov': overlap(cards.length) + 'px' }}>
-          {cards.map((c, i) => card(c, i, site))}
+      <div className="dealt-group">{sub}
+        <div className="dealt-fan" ref={fanRef} style={{ '--ov': overlap(n) + 'px' }}>
+          {cards.map((c, i) => (
+            <React.Fragment key={c.id}>
+              {i > 0 && i % per === 0 && <i className="dealt-break" aria-hidden="true" />}
+              {card(c, i, false)}
+            </React.Fragment>
+          ))}
         </div>
       </div>
     );
