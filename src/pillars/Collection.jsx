@@ -203,9 +203,12 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
 
 // The sticky, centered List / Binder segmented control.
 function ViewToggle({ view, setView }) {
+  // Sits sticky over the scrolling card list, so it needs the frosted-solid
+  // backing (same as the Decks docked List/Stats toggle) to stay legible.
   return (
     <SegTabs ariaLabel="Card view" value={view} onChange={setView}
-      options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'binder', label: 'Binder', icon: <IcGrid /> }]} />
+      options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'binder', label: 'Binder', icon: <IcGrid /> }]}
+      style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
   );
 }
 
