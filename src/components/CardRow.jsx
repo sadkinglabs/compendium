@@ -44,7 +44,7 @@ export default function CardRow({ card, icon, thumb = false, rarityTint = false,
   return (
     <div
       onClick={onClick} className="cx-row"
-      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 48 }}
+      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '13px 4px', borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer', minHeight: 48 }}
     >
       <span style={{ width: 34, height: 34, flex: 'none', position: 'relative' }}>
         {thumb
@@ -67,8 +67,8 @@ export default function CardRow({ card, icon, thumb = false, rarityTint = false,
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{
-          display: 'block', font: "600 16px/1.15 var(--f-read)",
-          color: rarityTint ? (RARITY_COLOR[card.rarity] || 'var(--ink-body)') : 'var(--ink-body)',
+          display: 'block', font: "600 16.5px/1.2 var(--f-read)",
+          color: rarityTint ? (RARITY_COLOR[card.rarity] || '#efe7d8') : '#efe7d8',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}>{card.name}</span>
       </div>

@@ -24,17 +24,19 @@ export function BlankState({ hue = '220,184,111', title, body, action, minHeight
 }
 
 /* One chip language everywhere: filled-gold active, ghost inactive. */
+// The app's tab/filter pill: gilt-gradient gold when active, flat dark when not
+// (the Manuscript pattern shared across Collection / Decks / Codex).
 export function Chip({ label, active, onClick, dot }) {
   return (
     <button
-      onClick={onClick}
+      onClick={onClick} aria-pressed={active}
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
-        padding: '7px 14px', borderRadius: 18, cursor: 'pointer',
+        padding: '7px 16px', borderRadius: 18, cursor: 'pointer',
         font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
-        background: active ? 'var(--gold-leaf)' : 'var(--tint-07)',
-        color: active ? '#1a1410' : 'var(--ink-status)',
-        border: `1px solid ${active ? 'var(--gold-leaf)' : 'rgba(201,163,90,.2)'}`,
+        background: active ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)',
+        color: active ? '#1a1206' : '#c9bda6',
+        border: `1px solid ${active ? '#e3c589' : '#4a3c22'}`,
       }}
     >
       {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />}
@@ -81,31 +83,35 @@ export function SectionLabel({ glyph, label, count }) {
   );
 }
 
+// One flat text-ledger row (search results): EB Garamond title, warm hairline
+// separator, a quiet chevron - the Manuscript row shared with the Codex/deck
+// listings. The 34px entity-icon slot + geometry are kept so it lines up with
+// CardRow in a mixed result list; the per-pillar --list-accent still tints it.
 export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
   return (
     <div
       onClick={onClick} className="cx-row"
       style={{
         display: 'flex', alignItems: 'center', gap: 12, padding: '13px 4px',
-        borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 48,
+        borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer', minHeight: 48,
       }}
     >
       {icon != null && (
         <span style={{
           width: 34, height: 34, flex: 'none', borderRadius: 9,
-          border: '1px solid var(--hair-16)', background: iconBg || 'var(--surface-well)',
+          border: '1px solid rgba(255,255,255,.1)', background: iconBg || 'rgba(20,16,10,.4)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          font: "600 13px/1 var(--f-display)", color: 'var(--list-accent, var(--gold))',
+          font: "600 13px/1 var(--f-display)", color: 'var(--list-accent, #cba75f)',
         }}>{icon}</span>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ font: "600 16px/1.15 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
-          {note && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--list-accent, var(--gold-leaf))', flex: 'none', boxShadow: '0 0 6px var(--list-glow, rgba(201,163,90,.5))' }} />}
+          <span style={{ font: "600 16.5px/1.2 var(--f-read)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</span>
+          {note && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--list-accent, #cba75f)', flex: 'none', boxShadow: '0 0 6px var(--list-glow, rgba(203,167,95,.5))' }} />}
         </div>
-        {sub && <div style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 4 }}>{sub}</div>}
+        {sub && <div style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175', marginTop: 5 }}>{sub}</div>}
       </div>
-      {trailing != null ? trailing : <span style={{ color: 'var(--ink-faint)', fontSize: 16 }}>›</span>}
+      {trailing != null ? trailing : <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#5c554b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }} aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>}
     </div>
   );
 }

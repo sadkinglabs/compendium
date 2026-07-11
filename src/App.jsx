@@ -592,19 +592,13 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
     );
   }
   const marginalia = scope === 'marginalia';
-  // Rules/Cards tabs - the gold pill pattern from the Collection/Deck reskins:
-  // gilt gradient when active, flat dark when not.
-  const tab = (k, label) => (
-    <button key={k} onClick={() => setScope(k)} aria-pressed={scope === k} style={{
-      padding: '7px 16px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 13px/1 var(--f-ui)",
-      background: scope === k ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)',
-      color: scope === k ? '#1a1206' : '#c9bda6',
-      border: `1px solid ${scope === k ? '#e3c589' : '#4a3c22'}`,
-    }}>{label}</button>
-  );
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-      <div style={{ display: 'flex', gap: 8 }}>{tab('rules', 'Rules')}{tab('cards', 'Cards')}</div>
+      <ChipRow>
+        {[['rules', 'Rules'], ['cards', 'Cards']].map(([k, label]) => (
+          <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
+        ))}
+      </ChipRow>
       <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
         style={{
           display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
