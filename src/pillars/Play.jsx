@@ -82,7 +82,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
       Show more ({shown.length - visible.length} older)
     </button>
   );
-  const ring = `conic-gradient(#4db38a 0% ${pct}%, rgba(255,255,255,.07) ${pct}% 100%)`;
+  const ring = `conic-gradient(#4db38a 0% ${pct}%, rgba(74,60,34,.5) ${pct}% 100%)`;
   const toggle = (k) => setCollapsed((c) => ({ ...c, [k]: !c[k] }));
 
   const matchSheet = <MatchSheet matchId={matchId} onClose={() => setMatchId(null)} onChanged={refresh} />;
@@ -116,27 +116,29 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
           body={<>Start a match to track life<br />and record the result.</>} />
       ) : oppFilter ? (
         <>
-          <button onClick={() => setOppFilter(null)} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer', marginBottom: 14 }}>‹ All matches</button>
-          <div className="rec-section">vs {oppFilter}</div>
+          <button onClick={() => setOppFilter(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#cba75f', font: "600 12px/1 var(--f-ui)", letterSpacing: '.06em', cursor: 'pointer', marginBottom: 6 }}><IcChevLeft />All matches</button>
+          <div className="rec-section">vs {oppFilter}<span className="rec-hair" /><span className="rec-count">{shown.length}</span></div>
           {visible.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
           {moreBtn}
           {matchSheet}
         </>
       ) : (
         <>
-          {/* hero - donut win-rate + record + streak */}
-          <div className="rec-hero">
-            {mostPlayed?.img && <img className="rec-hero-bg" src={`${BASE}cards/${mostPlayed.img}`} alt="" aria-hidden="true" />}
-            <div className="rec-ring" style={{ background: ring }}>
-              <div className="rec-ring-inner">
-                <span className="rec-ring-pct">{pct}%</span>
-                <span className="rec-ring-label">WIN RATE</span>
+          {/* hero - gilt-framed donut win-rate + record + streak */}
+          <div className="rec-hero-frame">
+            <div className="rec-hero">
+              {mostPlayed?.img && <img className="rec-hero-bg" src={`${BASE}cards/${mostPlayed.img}`} alt="" aria-hidden="true" />}
+              <div className="rec-ring" style={{ background: ring }}>
+                <div className="rec-ring-inner">
+                  <span className="rec-ring-pct">{pct}%</span>
+                  <span className="rec-ring-label">WIN RATE</span>
+                </div>
               </div>
-            </div>
-            <div className="rec-hero-right">
-              <div className="rec-wl">{wins}<span className="sep">–</span>{losses}</div>
-              <div className="rec-total">{matches.length} MATCH{matches.length === 1 ? '' : 'ES'} PLAYED</div>
-              <span className={`rec-streak${streak > 0 ? '' : ' none'}`}>{streak > 0 ? `▲ ${streak} win streak` : 'No active streak'}</span>
+              <div className="rec-hero-right">
+                <div className="rec-wl">{wins}<span className="sep">–</span>{losses}</div>
+                <div className="rec-total">{matches.length} MATCH{matches.length === 1 ? '' : 'ES'} PLAYED</div>
+                <span className={`rec-streak${streak > 0 ? '' : ' none'}`}>{streak > 0 ? <><IcArrowUp />{streak} win streak</> : 'No active streak'}</span>
+              </div>
             </div>
           </div>
 
@@ -148,7 +150,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
 
           {avatarStats.length > 0 && (
             <div className={`rec-collapse${collapsed.avatar ? ' collapsed' : ''}`}>
-              <button className="rec-section rec-section-toggle" onClick={() => toggle('avatar')}>⬡ Wins by Avatar<span className="rec-chevron">▾</span></button>
+              <button className="rec-section rec-section-toggle" onClick={() => toggle('avatar')}>Wins by Avatar<span className="rec-hair" /><span className="rec-count">{avatarStats.length}</span><span className="rec-chevron"><IcChevDown /></span></button>
               <div className="rec-bars">
                 {avatarStats.map((s) => (
                   <div key={s.name} className="rec-bar">
@@ -164,7 +166,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
 
           {oppStats.length > 0 && (
             <div className={`rec-collapse${collapsed.opponent ? ' collapsed' : ''}`}>
-              <button className="rec-section rec-section-toggle" onClick={() => toggle('opponent')}>⚔ Record by Opponent<span className="rec-chevron">▾</span></button>
+              <button className="rec-section rec-section-toggle" onClick={() => toggle('opponent')}>Record by Opponent<span className="rec-hair" /><span className="rec-count">{oppStats.length}</span><span className="rec-chevron"><IcChevDown /></span></button>
               <div className="rec-bars">
                 {oppStats.map((s) => (
                   <div key={s.name} className="rec-bar rec-bar-tap" onClick={() => setOppFilter(s.name)} role="button" tabIndex={0}>
@@ -178,7 +180,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
             </div>
           )}
 
-          <div className="rec-section">Recent Matches</div>
+          <div className="rec-section">Recent Matches<span className="rec-hair" /><span className="rec-count">{shown.length}</span></div>
           {visible.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
           {moreBtn}
           {matchSheet}
@@ -579,6 +581,10 @@ const gold = { ...BTN_GOLD, padding: '11px 18px' };
 // FAB menu iconography - a plus-in-square (record a match by hand) vs a QR
 // (import one an opponent shared).
 // New Match = full tracked duel (brand diamond). Quick Match = counter only, fast (bolt).
+// Small chrome icons - no Unicode glyphs anywhere in the Play dashboard.
+const IcChevDown = () => <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9" /></svg>;
+const IcArrowUp = () => <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>;
+const IcChevLeft = () => <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>;
 const NewMatchSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="12 2 22 12 12 22 2 12" /></svg>;
 const QuickMatchSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>;
 const AddRecordSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" /></svg>;
