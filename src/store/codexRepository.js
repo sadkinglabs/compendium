@@ -192,11 +192,17 @@ export async function searchCodex(q) {
   if (onlyArticles) { cards = []; cardText = []; }
   if (onlyCards) { articles = []; articleText = []; }
 
+  // Bookmark state for the result rows (parity with the browse A-Z index, whose
+  // rows show a gold bookmark when saved). One indicator read, mapped onto both
+  // domains by id (saved.target_id is the card_id or rule_id).
+  const { saved } = await indicatorSets();
+  const withSaved = (it) => ({ ...it, saved: saved.has(it.id) });
+
   return {
-    articles: articles.slice(0, 40),
-    cards: cards.slice(0, 60).map(asCard),
-    cardText: cardText.slice(0, 80).map((c) => asCard(c)),
-    articleText: articleText.slice(0, 40),
+    articles: articles.slice(0, 40).map(withSaved),
+    cards: cards.slice(0, 60).map((c) => withSaved(asCard(c))),
+    cardText: cardText.slice(0, 80).map((c) => withSaved(asCard(c))),
+    articleText: articleText.slice(0, 40).map(withSaved),
     // legacy flat shape (resolveByName-era callers)
     rules: articles.slice(0, 40),
   };
