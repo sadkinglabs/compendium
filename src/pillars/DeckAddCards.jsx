@@ -6,19 +6,13 @@ import { getPool, getSets, getArtists, changeQty, parseCardQuery, cardMatchesQue
 import { query } from '../store/db.js';
 import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
+import RefineSheet from '../components/RefineSheet.jsx';
 import { Frost } from '../components/CollectionCardViews.jsx';
-import { ThresholdPips } from '../components/ui.jsx';
+import { ThresholdPips, Chip, ChipRow, SectionLabel } from '../components/ui.jsx';
 import { thresholdRuns } from '../store/cardArt.js';
-import { useSheetDrag } from '../components/useSheetDrag.js';
-import { registerBackConsumer } from '../back.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
-import { XSvg } from '../components/CreateDeckWizard.jsx';
 
-const BASE = import.meta.env.BASE_URL;
-const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
-const TYPES = [['Minion', 'Minions'], ['Aura', 'Auras'], ['Magic', 'Magic'], ['Artifact', 'Artifacts'], ['Site', 'Sites']];
-const RAR = [['Ordinary', 'Ordinary'], ['Exceptional', 'Exceptional'], ['Elite', 'Elite'], ['Unique', 'Unique']];
 const RARITY_COLOR = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 const TILE_GILT = 'linear-gradient(160deg, #e8cd92, rgba(203,167,95,.35) 45%, #c2a05a)';
 
@@ -67,7 +61,8 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   useEffect(() => { const t = setTimeout(loadPool, 120); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort]);
   useEffect(() => { loadQtys(); /* eslint-disable-next-line */ }, [deckId]);
   const nComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
-  useEffect(() => { registerCount?.(els.length + types.length + rarities.length + sets.length + (multi ? 1 : 0) + (artist ? 1 : 0) + nComp + (sort.length ? 1 : 0)); }, [els, types, rarities, sets, multi, artist, nComp, sort, registerCount]);
+  const activeCount = els.length + types.length + rarities.length + sets.length + (multi ? 1 : 0) + (artist ? 1 : 0) + nComp + (sort.length ? 1 : 0);
+  useEffect(() => { registerCount?.(activeCount); }, [activeCount, registerCount]);
 
   function clearAll() {
     setEls([]); setTypes([]); setRarities([]); setSets([]); setMulti(false); setArtist('');
@@ -132,15 +127,24 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
       <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange} />
 
-      <FilterSheet open={filterOpen} onClose={() => setFilterOpen(false)}
-        quickAdd={quickAdd} setQuickAdd={setQuickAdd}
-        attackOn={attackOn} setAttackOn={setAttackOn}
-        rarityOn={rarityOn} setRarityOn={setRarityOn}
-        sort={sort} setSort={setSort}
-        els={els} setEls={setEls} types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
-        sets={sets} setSets={setSets} setOpts={setOpts} multi={multi} setMulti={setMulti}
+      <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
+        eyebrow="REFINE" activeCount={activeCount} ctaLabel={`Show ${pool.length} card${pool.length === 1 ? '' : 's'}`}
+        els={els} setEls={setEls} multi={multi} setMulti={setMulti}
+        types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
+        sets={sets} setSets={setSets} setOpts={setOpts}
         thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp}
-        artist={artist} setArtist={setArtist} artistOpts={artistOpts} onClear={clearAll} />
+        artist={artist} setArtist={setArtist} artistOpts={artistOpts}
+        sort={sort} setSort={setSort}
+        trailSections={(
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel label="LIST DISPLAY" />
+            <ChipRow>
+              <Chip label="Quick add" active={quickAdd} onClick={() => setQuickAdd(!quickAdd)} />
+              <Chip label="Rarity colours" active={rarityOn} onClick={() => setRarityOn(!rarityOn)} />
+              <Chip label="Attack stats" active={attackOn} onClick={() => setAttackOn(!attackOn)} />
+            </ChipRow>
+          </div>
+        )} />
     </div>
   );
 }
@@ -212,163 +216,5 @@ function EditorTile({ card, qty, quickAdd, onStep, onOpen }) {
         )}
       </div>
     </div>
-  );
-}
-
-const OP_SYM = { '>=': '≥', '<=': '≤', '=': '=' };
-const OP_NEXT = { '>=': '<=', '<=': '=', '=': '>=' };
-
-// Comparator row (operator + Any/0-max stepper) - Arcanum's cmp-atom.
-function CmpRow({ label, icon, state, set, max }) {
-  const step = (d) => {
-    let v = state.val == null ? (d > 0 ? 0 : null) : state.val + d;
-    if (v != null) v = v < 0 ? null : Math.min(max, v);
-    set({ ...state, val: v });
-  };
-  return (
-    <div className="th-el-row">
-      <span className={`th-el-label${icon ? '' : ' th-total-label'}`}>{icon && <img src={`${BASE}icons/${icon}.png`} alt="" />}{label}</span>
-      <div className="cmp-atom">
-        <button type="button" className="cmp-op" onClick={() => set({ ...state, op: OP_NEXT[state.op] })}>{OP_SYM[state.op]}</button>
-        <div className="cmp-stepper">
-          <button type="button" className="cmp-btn" onClick={() => step(-1)}>−</button>
-          <span className={`cmp-val${state.val != null ? ' set' : ''}`}>{state.val == null ? 'Any' : state.val}</span>
-          <button type="button" className="cmp-btn" onClick={() => step(1)}>+</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Refine sheet - Arcanum's 2-tab (Filters / Sort) amethyst design, full filter set.
-const SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
-
-function FilterSheet({ open, onClose, quickAdd, setQuickAdd, attackOn, setAttackOn, rarityOn, setRarityOn, sort, setSort, els, setEls, types, setTypes, rarities, setRarities,
-  sets, setSets, setOpts, multi, setMulti, thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, artist, setArtist, artistOpts, onClear }) {
-  const [tab, setTab] = useState('filters');
-  const { handleProps, style: dragStyle } = useSheetDrag(onClose);
-  // Hardware BACK closes the Refine sheet instead of exiting the whole add-cards flow.
-  const closeRef = useRef(onClose); closeRef.current = onClose;
-  useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
-  if (!open) return null;
-  const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const nComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
-  const activeCount = els.length + types.length + rarities.length + sets.length + (multi ? 1 : 0) + (artist ? 1 : 0) + nComp + (sort.length ? 1 : 0);
-  const toggleSort = (key) => { const i = sort.findIndex((s) => s.key === key); setSort(i >= 0 ? sort.filter((s) => s.key !== key) : [...sort, { key, dir: 'asc' }]); };
-  const flipSort = (key) => setSort(sort.map((s) => s.key === key ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s));
-  const sortItem = (key, label) => {
-    const i = sort.findIndex((s) => s.key === key);
-    const on = i >= 0;
-    return (
-      <div key={key} className={`sort-item${on ? ' active' : ''}`} onClick={() => toggleSort(key)}>
-        <span className="sort-priority">{on ? i + 1 : ''}</span>
-        <span className="sort-item-label">{label}</span>
-        {on && <button className="sort-dir-btn" onClick={(e) => { e.stopPropagation(); flipSort(key); }}>{sort[i].dir === 'asc' ? '↑' : '↓'}</button>}
-      </div>
-    );
-  };
-  return (
-    <>
-      <div className="arc fsheet-scrim" onClick={onClose} />
-      <div className="arc fsheet" style={dragStyle} onClick={(e) => e.stopPropagation()}>
-        <div className="fsheet-grab" {...handleProps}><div className="fsheet-handle" /></div>
-        <div className="fsheet-header" {...handleProps}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="fsheet-title">Refine</div>
-            <div className="fsheet-sub">{activeCount ? `${activeCount} active` : 'All cards'}</div>
-          </div>
-          <button className="fsheet-close" onClick={onClose} onPointerDown={(e) => e.stopPropagation()} aria-label="Close">{XSvg}</button>
-        </div>
-        <div className="fsheet-tabs">
-          <button className={`fsheet-tab${tab === 'filters' ? ' active' : ''}`} onClick={() => setTab('filters')}>Filters</button>
-          <button className={`fsheet-tab${tab === 'sort' ? ' active' : ''}`} onClick={() => setTab('sort')}>Sort</button>
-        </div>
-        <div className="fsheet-body">
-          {tab === 'filters' ? (
-            <>
-              {/* View toggles first - they change how the list behaves, so they
-                  sit above the content filters. Both off by default. */}
-              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="filter-label" style={{ marginBottom: 0 }}>Quick Add Mode</div>
-                <button className={`rarity-switch${quickAdd ? ' on' : ''}`} onClick={() => setQuickAdd(!quickAdd)} aria-label="Toggle quick add steppers" />
-              </div>
-              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="filter-label" style={{ marginBottom: 0 }}>Rarity Colours</div>
-                <button className={`rarity-switch${rarityOn ? ' on' : ''}`} onClick={() => setRarityOn(!rarityOn)} aria-label="Toggle rarity colours" />
-              </div>
-              <div className="filter-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div className="filter-label" style={{ marginBottom: 0 }}>Attack Stats</div>
-                <button className={`rarity-switch${attackOn ? ' on' : ''}`} onClick={() => setAttackOn(!attackOn)} aria-label="Toggle attack stats" />
-              </div>
-              <div className="filter-section">
-                <div className="filter-label">Element</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {EL.map(([k, l]) => (
-                    <button key={k} className={`el-toggle${els.includes(k) ? ' on' : ''}`} onClick={() => toggle(els, setEls, k)}>
-                      <img src={`${BASE}icons/${k}.png`} alt="" />{l}
-                    </button>
-                  ))}
-                  <button className={`el-toggle${multi ? ' on' : ''}`} onClick={() => setMulti(!multi)}>◈ Multi</button>
-                </div>
-              </div>
-              <div className="filter-section">
-                <div className="filter-label">Type</div>
-                <div className="pill-group">
-                  {TYPES.map(([k, l]) => <button key={k} className={`pill${types.includes(k) ? ' on' : ''}`} onClick={() => toggle(types, setTypes, k)}>{l}</button>)}
-                </div>
-              </div>
-              <div className="filter-section">
-                <div className="filter-label">Rarity</div>
-                <div className="pill-group">
-                  {RAR.map(([k, l]) => <button key={k} className={`pill${rarities.includes(k) ? ` on rarity-${k}` : ''}`} onClick={() => toggle(rarities, setRarities, k)}>{l}</button>)}
-                </div>
-              </div>
-              {setOpts.length > 0 && (
-                <div className="filter-section">
-                  <div className="filter-label">Set</div>
-                  <div className="pill-group">
-                    {setOpts.map((s) => <button key={s} className={`pill${sets.includes(s) ? ' on' : ''}`} onClick={() => toggle(sets, setSets, s)}>{s}</button>)}
-                  </div>
-                </div>
-              )}
-              <div className="filter-section">
-                <div className="filter-label">Threshold by Element</div>
-                <div className="th-el-list">
-                  {['air', 'earth', 'fire', 'water'].map((el) => (
-                    <CmpRow key={el} icon={el} label={el[0].toUpperCase() + el.slice(1)} state={thByEl[el]} set={(next) => setThByEl({ ...thByEl, [el]: next })} max={5} />
-                  ))}
-                </div>
-              </div>
-              <div className="filter-section">
-                <div className="th-el-list">
-                  <CmpRow label="Total threshold" state={totalTh} set={setTotalTh} max={20} />
-                  <CmpRow label="Total mana" state={costCmp} set={setCostCmp} max={20} />
-                </div>
-              </div>
-              {artistOpts.length > 0 && (
-                <div className="filter-section">
-                  <div className="filter-label">Artist</div>
-                  <select className="filter-select" value={artist} onChange={(e) => setArtist(e.target.value)}>
-                    <option value="">Any artist</option>
-                    {artistOpts.map((a) => <option key={a} value={a}>{a}</option>)}
-                  </select>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="sort-panel-title">Tap to add, ↑↓ to flip direction</div>
-              <div className="sort-items">
-                {SORT_KEYS.map(([key, label]) => sortItem(key, label))}
-              </div>
-            </>
-          )}
-        </div>
-        <div className="fsheet-footer">
-          <button className="filter-clear-btn" onClick={onClear}>Clear all</button>
-          <button className="filter-apply-btn" onClick={onClose}>Show results</button>
-        </div>
-      </div>
-    </>
   );
 }
