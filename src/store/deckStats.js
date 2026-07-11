@@ -38,7 +38,10 @@ export function manaCurveData(spellbook) {
 export function powerCurveData(spellbook) {
   const powers = {};
   for (const e of spellbook) {
-    if (!typeIs(e, 'Minion') || e.attack == null) continue;
+    // Minions AND automatons (Artifact / Automaton) have power. Within the
+    // spellbook only those two carry an attack value - sites (which also attack)
+    // live in the atlas - so `attack != null` is exactly "minions and automatons".
+    if (e.attack == null) continue;
     const p = Math.min(e.attack, 10), el = elemKey(e);
     (powers[p] || (powers[p] = {}))[el] = (powers[p][el] || 0) + e.quantity;
   }
