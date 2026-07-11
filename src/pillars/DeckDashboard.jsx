@@ -2,7 +2,7 @@
 // _heroHtml + spellbook/atlas/collection zone lists (templates/index.html
 // L2164-2364). Avatar hero + stat bar, then three collapsible zone cards with
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
@@ -24,103 +24,192 @@ function ThreshDots({ th }) {
   const dots = [];
   ['air', 'earth', 'fire', 'water'].forEach((k) => { for (let i = 0; i < (th[k] || 0); i++) dots.push(`${k}-${i}`); });
   if (!dots.length) return null;
-  return <div className="cc-thresh">{dots.map((d) => <img key={d} src={`${BASE}icons/${d.split('-')[0]}.png`} alt="" />)}</div>;
+  return <div className="mf-thresh">{dots.map((d) => <img key={d} src={`${BASE}icons/${d.split('-')[0]}.png`} alt="" />)}</div>;
 }
 
 function Row({ e, rarityOn, onCardTap, editMode, onStep, stepDelay = 0 }) {
-  const color = rarityOn ? (RARITY_COLOR[e.rarity] || 'var(--text)') : 'var(--text)';
+  const color = rarityOn ? (RARITY_COLOR[e.rarity] || undefined) : undefined;
   return (
-    <div className="cc-sb-row" onClick={() => e.card_id && onCardTap?.(e.card_id)}>
+    <div className="mf-row" onClick={() => e.card_id && onCardTap?.(e.card_id)}>
       {editMode ? (
-        <span className="cc-sb-step" style={{ animationDelay: stepDelay + 'ms' }} onClick={(ev) => ev.stopPropagation()}>
-          <button className="cc-step-mini" onClick={() => onStep(e, -1)} aria-label="Remove one">−</button>
-          <span className="cc-sb-qty" style={{ minWidth: 22, textAlign: 'center' }}>{e.quantity}</span>
-          <button className="cc-step-mini" onClick={() => onStep(e, 1)} aria-label="Add one">+</button>
+        <span className="mf-step" style={{ animationDelay: stepDelay + 'ms' }} onClick={(ev) => ev.stopPropagation()}>
+          <button className="mf-step-btn" onClick={() => onStep(e, -1)} aria-label="Remove one">−</button>
+          <span className="mf-step-qty">{e.quantity}</span>
+          <button className="mf-step-btn" onClick={() => onStep(e, 1)} aria-label="Add one">+</button>
         </span>
       ) : (
-        <span className="cc-sb-qty">{e.quantity}×</span>
+        <span className="mf-row-qty">{e.quantity}×</span>
       )}
-      <span className="cc-sb-name" style={{ color }}>{e.name}</span>
+      <span className="mf-row-name" style={color ? { color } : undefined}>{e.name}</span>
       <ThreshDots th={e.thresholds} />
-      {e.cost != null && <div className="cc-sb-coin">{e.cost}</div>}
+      {e.cost != null && <span className="mf-cost" title={`Mana cost ${e.cost}`}>{e.cost}</span>}
     </div>
   );
 }
 
-function Zone({ title, count, need, groups, collapsed, onToggle, rarityOn, onCardTap, editMode, onStep }) {
-  const cls = count >= need ? 'ok' : 'warn';
+function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rarityOn, onCardTap, editMode, onStep }) {
+  const cls = count >= need ? 'ok' : 'short';
   let rowIx = 0;   // running index - steppers cascade in top to bottom
   return (
-    <div className="chart-card cc-list">
-      <div className="cc-hdr collapsible" onClick={onToggle}>
-        <span className="cc-title">{title}</span>
-        <span className={`cc-count ${cls}`}>{count}/{need === 10 || need === 11 ? need : `${need}+`}</span>
-        <span className="cc-chevron">{collapsed ? '▶' : '▼'}</span>
+    <div className="mf-sec">
+      <div className="mf-sec-hdr" onClick={onToggle}>
+        <span className="mf-sec-name">{title}</span>
+        <span className={`mf-sec-tally ${cls}`}>{count}/{needLabel}</span>
+        <span className="mf-sec-rule" />
+        <span className="mf-sec-chev">{collapsed ? '▸' : '▾'}</span>
       </div>
       {!collapsed && (
         groups.some((g) => g.entries.length) ? groups.filter((g) => g.entries.length).map((g) => (
           <div key={g.label}>
-            {g.label && <div className="cc-sb-group-label">{g.label} ({sum(g.entries)})</div>}
+            {g.label && (
+              <div className="mf-grp">
+                <span className="mf-grp-name">{g.label}</span>
+                <span className="mf-grp-count">{sum(g.entries)}</span>
+                <span className="mf-grp-rule" />
+              </div>
+            )}
             {g.entries.map((e, i) => <Row key={e.name + i} e={e} rarityOn={rarityOn} onCardTap={onCardTap}
               editMode={editMode} onStep={onStep} stepDelay={Math.min(rowIx++ * 22, 260)} />)}
           </div>
-        )) : <div className="cc-empty">No cards - tap ✎ Edit Deck, then the magnifier to search.</div>
+        )) : <div className="mf-empty">No cards - tap ✎ Edit Deck, then the magnifier to search.</div>
       )}
     </div>
   );
 }
 
-// Random Hand - draws an opening hand from the deck pools (Arcanum's drawHand:
-// 3 spells / 3 sites, ±1 for Spellslinger / Pathfinder avatars), then keeps the
-// rest of each pool so you can "Draw spell" / "Draw site" one card at a time.
+// Random Hand ("Dealt") - draws an opening hand from the deck pools (Arcanum's
+// drawHand: 3 spells / 3 sites, ±1 for Spellslinger / Pathfinder avatars), then
+// keeps the rest so you can "Draw spell" / "Draw site" one at a time until the
+// whole deck is in hand. Cards are laid out as an overlapping held-hand fan that
+// wraps to more fan rows as the hand grows; the newest single-drawn card wears a
+// gilt frame + DRAWN tab. Each card keeps a stable seeded tilt (stored in state)
+// so re-renders never reshuffle the fan.
 function HandCard({ zones, avatar, onCardTap }) {
   const [hand, setHand] = useState(null);
+  const [shake, setShake] = useState(null);   // 'spell' | 'site' - empty-pile nudge
+  const [leaving, setLeaving] = useState(false); // Redraw sweep-out in progress
+  const seq = useRef(0);
+  const fanRef = useRef(null);
+  const [fanW, setFanW] = useState(0);   // measured fan width - drives row breaks
+  useEffect(() => {
+    const el = fanRef.current;
+    if (!el) return;
+    setFanW(el.clientWidth);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => setFanW(el.clientWidth));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [hand?.dealKey]);
   const cap = (q) => Math.max(0, Math.min(q | 0, 99));
   const shuffle = (a) => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
-  function draw() {
+  const mk = (e, drawn) => ({ e, id: seq.current++, drawn });
+  // Even, progressive tilt across the hand (not random) so the cards splay in a
+  // clean arc rather than a jagged pile: centred (middle card upright), and the
+  // total spread is capped so a big hand just packs tighter. Pivots from the card
+  // foot (transform-origin) so the tops fan apart.
+  const fanAngle = (i, n) => (n <= 1 ? 0 : (i - (n - 1) / 2) * Math.min(8, 20 / (n - 1)));
+
+  function build() {
     const subs = avatar?.subTypes || (() => { try { return JSON.parse(avatar?.sub_types || '[]'); } catch { return []; } })();
     const sbN = subs.some((s) => /spellslinger/i.test(s)) ? 4 : 3;
     const atN = subs.some((s) => /pathfinder/i.test(s)) ? 0 : 3;
     const sbPool = shuffle(zones.spellbook.flatMap((e) => Array(cap(e.quantity)).fill(e)));
     const atPool = shuffle(zones.atlas.flatMap((e) => Array(cap(e.quantity)).fill(e)));
-    setHand({ sb: sbPool.slice(0, sbN), at: atPool.slice(0, atN), rest: sbPool.slice(sbN), restAt: atPool.slice(atN), drawn: [], drawnAt: [] });
+    setHand((h) => ({
+      spells: sbPool.slice(0, sbN).map((e) => mk(e, false)),
+      sites: atPool.slice(0, atN).map((e) => mk(e, false)),
+      rest: sbPool.slice(sbN), restAt: atPool.slice(atN), newest: null, dealKey: (h?.dealKey || 0) + 1,
+    }));
+    setLeaving(false);
   }
+  // First deal is instant; a Redraw sweeps the current hand down-and-out first,
+  // then deals the new one once the sweep (250ms + a small per-card stagger) ends.
+  function draw() {
+    if (!hand) return build();
+    setLeaving(true);
+    const n = hand.spells.length + hand.sites.length;
+    setTimeout(build, 250 + Math.min(n, 12) * 30);
+  }
+  function bump(kind) { setShake(kind); setTimeout(() => setShake((s) => (s === kind ? null : s)), 420); }
   function drawNext(kind) {
+    if (kind === 'spell' && !hand?.rest.length) return bump('spell');
+    if (kind === 'site' && !hand?.restAt.length) return bump('site');
     setHand((h) => {
       if (!h) return h;
-      if (kind === 'spell') return h.rest.length ? { ...h, drawn: [...h.drawn, h.rest[0]], rest: h.rest.slice(1) } : h;
-      return h.restAt.length ? { ...h, drawnAt: [...h.drawnAt, h.restAt[0]], restAt: h.restAt.slice(1) } : h;
+      if (kind === 'spell') { const c = mk(h.rest[0], true); return { ...h, spells: [...h.spells, c], rest: h.rest.slice(1), newest: c.id }; }
+      const c = mk(h.restAt[0], true); return { ...h, sites: [...h.sites, c], restAt: h.restAt.slice(1), newest: c.id };
     });
   }
-  const tile = (e, i, site) => (
-    <div key={i} className="cc-hand-tile" style={{ aspectRatio: site ? '4.1 / 3' : '3 / 4.1', cursor: 'pointer' }} onClick={() => e.card_id && onCardTap?.(e.card_id)}>
-      {e.image_slug && <img src={`${BASE}cards/${e.image_slug}`} loading="lazy" alt=""
-        onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
-        style={site ? { position: 'absolute', top: '50%', left: '50%', width: 'calc(100% * 3 / 4.1)', height: 'calc(100% * 4.1 / 3)', objectFit: 'cover', transform: 'translate(-50%,-50%) rotate(90deg)' } : undefined} />}
+  // The hand fans wide when small and stacks as it grows: the reveal (visible
+  // width of each buried card) shrinks to fit the whole pile in ONE row, down to
+  // a floor - only then does it wrap to a second row. So the opening 3 are fully
+  // fanned out, each added card gently tightens the fan (existing cards ease
+  // closer - a smooth slide, never a re-row), and once a row hits the floor it
+  // locks at a constant capacity so cards never jump between rows.
+  // Card widths: spells are 5:7 portrait, sites 7:5 landscape (wider, so they can
+  // overlap harder). ONE row, always: the reveal (visible px of each buried card)
+  // shrinks to fit the whole pile without wrapping - the opening 3 fan out wide,
+  // then each draw stacks to the right while the fan tightens leftward. No lower
+  // floor: with 60 out they're near-slivers, but only the newest (rightmost, on
+  // top) needs to be fully seen, and the lead card stays pinned to the left edge.
+  const SPELL_W = 112, SPELL_MAX = 100, SITE_W = 138, SITE_MAX = 120;
+  const revealOf = (n, cardW, maxRev) => {
+    const avail = fanW ? fanW - 28 : 9999;   // fan content width (minus 28px h-padding)
+    return n <= 1 ? maxRev : Math.min(maxRev, (avail - cardW) / (n - 1));
+  };
+
+  const card = (c, i, n, site) => (
+    <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
+      style={{ '--rot': fanAngle(i, n) + 'deg', width: (site ? SITE_W : SPELL_W) + 'px', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 55) + 'ms' }}
+      onClick={() => c.e.card_id && onCardTap?.(c.e.card_id)}>
+      {c.e.image_slug && <img src={`${BASE}cards/${c.e.image_slug}`} loading="lazy" alt=""
+        onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
+      <span className="dealt-frame" aria-hidden="true" />
+      {!site && <span className="dealt-tab">DRAWN</span>}
     </div>
   );
-  const sect = (label, cards, site) => cards.length > 0 && (
-    <><div className="cc-hand-section-lbl">{label}</div><div className="cc-hand-tiles">{cards.map((e, i) => tile(e, i, site))}</div></>
-  );
-  return (
-    <div className="chart-card cc-list">
-      <div className="cc-hdr">
-        <span className="cc-title">Random Hand</span>
-        <button className="cc-hand-draw-btn" onClick={draw}>{hand ? 'Redraw' : 'Draw'}</button>
+
+  // Each pile is a header (its Draw button sits ABOVE the fan, so it never drifts)
+  // + a single-row overlapping fan. Cards are a flat, stably-keyed list, so adding
+  // one only tightens the row (a smooth margin slide) - nothing remounts/re-animates.
+  const group = (label, cards, rest, kind) => {
+    if (!cards.length && rest === 0) return null;
+    const sub = (
+      <div className="dealt-sub">
+        <span className="dealt-sub-name">{label}</span>
+        <span className="dealt-sub-rule" />
+        <span className="dealt-sub-left"><span className="dealt-num" key={rest}>{rest}</span> left</span>
+        <button className={`dealt-pill sm${rest ? '' : ' empty'}${shake === kind ? ' shake' : ''}`} onClick={() => drawNext(kind)}>⤓ Draw</button>
       </div>
-      {!hand ? <p className="cc-hand-empty">Press Draw to reveal a random opening hand.</p> : (
+    );
+    if (!cards.length) return <div className="dealt-group">{sub}<p className="dealt-none">None in hand yet.</p></div>;
+    const site = kind === 'site';
+    const cardW = site ? SITE_W : SPELL_W;
+    const reveal = revealOf(cards.length, cardW, site ? SITE_MAX : SPELL_MAX);
+    return (
+      <div className="dealt-group">{sub}
+        <div className="dealt-fan-wrap">
+          <div className="dealt-fan" ref={site ? undefined : fanRef} style={{ '--ov': (reveal - cardW) + 'px' }}>
+            {cards.map((c, i) => card(c, i, cards.length, site))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="dealt">
+      <div className="dealt-hdr">
+        <span className="mf-sec-name">Random Hand</span>
+        <span className="mf-sec-rule" />
+        <button className="dealt-pill" onClick={draw}>↻ {hand ? 'Redraw' : 'Deal'}</button>
+      </div>
+      {!hand ? (
+        <p className="dealt-empty">Press Deal to reveal a random opening hand.</p>
+      ) : (
         <>
-          {sect('Opening - Spells', hand.sb, false)}
-          {sect('Opening - Sites', hand.at, true)}
-          {sect('Drawn Spells', hand.drawn, false)}
-          {sect('Drawn Sites', hand.drawnAt, true)}
-          {(hand.rest.length > 0 || hand.restAt.length > 0) && (
-            <div className="cc-hand-draw-more">
-              {hand.rest.length > 0 && <button className="cc-hand-more-btn" onClick={() => drawNext('spell')}>↧ Draw spell</button>}
-              {hand.restAt.length > 0 && <button className="cc-hand-more-btn" onClick={() => drawNext('site')}>↧ Draw site</button>}
-              <span className="cc-hand-left">{hand.rest.length} spells · {hand.restAt.length} sites left</span>
-            </div>
-          )}
+          {group('SPELLS', hand.spells, hand.rest.length, 'spell')}
+          {group('SITES', hand.sites, hand.restAt.length, 'site')}
         </>
       )}
     </div>
@@ -136,31 +225,30 @@ function CuriosaUrlCard({ deckId, initial }) {
   const hasUrl = url.trim().length > 0;
   async function save() { const v = draft.trim(); setUrl(v); setEditing(false); await setCuriosaUrl(deckId, v); }
   return (
-    <div className="chart-card" style={{ margin: '0 12px 12px' }}>
-      <div className="chart-card-header">
-        <h3>Curiosa URL</h3>
-        {!editing && <button className="cc-card-edit-btn" onClick={() => { setDraft(url); setEditing(true); }}>{hasUrl ? 'Edit' : '＋ Add'}</button>}
+    <div className="mx-sec">
+      <div className="mx-hdr">
+        <span className="mf-sec-name">Curiosa URL</span>
+        <span className="mf-sec-rule" />
+        {!editing && <button className="dealt-pill" onClick={() => { setDraft(url); setEditing(true); }}>{hasUrl ? '✎ Edit' : '＋ Add'}</button>}
       </div>
-      <div style={{ padding: '10px 12px 12px' }}>
-        {editing ? (
-          <>
-            <input type="url" className="cc-url-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://curiosa.io/decks/…" autoFocus />
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-              <button className="cc-url-btn" onClick={() => setEditing(false)}>Cancel</button>
-              <button className="cc-url-btn primary" onClick={save}>Save</button>
-            </div>
-          </>
-        ) : hasUrl && safeHref(url) ? (
-          <a className="cc-url-link" href={safeHref(url)} target="_blank" rel="noreferrer">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
-            <span>{url.replace(/^https?:\/\//, '')}</span>
-          </a>
-        ) : hasUrl ? (
-          <div className="cc-url-empty">Saved link isn’t a valid web URL.</div>
-        ) : (
-          <div className="cc-url-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
-        )}
-      </div>
+      {editing ? (
+        <>
+          <input type="url" className="mx-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://curiosa.io/decks/…" autoFocus />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+            <button className="dealt-pill" onClick={() => setEditing(false)}>Cancel</button>
+            <button className="dealt-pill" onClick={save}>Save</button>
+          </div>
+        </>
+      ) : hasUrl && safeHref(url) ? (
+        <a className="mx-link" href={safeHref(url)} target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></svg>
+          <span>{url.replace(/^https?:\/\//, '')}</span>
+        </a>
+      ) : hasUrl ? (
+        <div className="mx-empty">Saved link isn’t a valid web URL.</div>
+      ) : (
+        <div className="mx-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
+      )}
     </div>
   );
 }
@@ -173,16 +261,18 @@ function DeckLogCard({ deckId, rev }) {
   const n = rows?.length || 0;
   const fmt = (ts) => { try { return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); } catch { return ts; } };
   return (
-    <div className="chart-card" style={{ margin: '0 12px 12px' }}>
-      <div className="chart-card-header" style={{ cursor: 'pointer' }} onClick={() => setOpenLog((v) => !v)}>
-        <h3>Deck Log {n > 0 && <span style={{ color: '#6e6286', fontWeight: 400 }}>({n})</span>}</h3>
-        <button className="cc-log-toggle">{openLog ? '▲ Hide' : '▼ Show'}</button>
+    <div className="mx-sec">
+      <div className="mx-hdr" style={{ cursor: 'pointer' }} onClick={() => setOpenLog((v) => !v)}>
+        <span className="mf-sec-name">Deck Log</span>
+        {n > 0 && <span className="mx-count">{n}</span>}
+        <span className="mf-sec-rule" />
+        <button className="dealt-pill">{openLog ? 'Hide' : 'Show'}</button>
       </div>
       {openLog && (
-        <div style={{ maxHeight: 260, overflowY: 'auto' }}>
+        <div className="mx-log">
           {n ? rows.map((e, i) => (
-            <div key={i} className="cc-log-row"><span className="cc-log-ts">{fmt(e.ts)}</span><span>{e.text}</span></div>
-          )) : <div className="cc-log-empty">No changes recorded yet.</div>}
+            <div key={i} className="mx-log-row"><span className="mx-log-ts">{fmt(e.ts)}</span><span>{e.text}</span></div>
+          )) : <div className="mx-empty" style={{ textAlign: 'center', padding: '10px 0' }}>No changes recorded yet.</div>}
         </div>
       )}
     </div>
@@ -193,12 +283,13 @@ function NotesCard({ deckId, initial }) {
   const [notes, setNotes] = useState(initial || '');
   useEffect(() => { setNotes(initial || ''); }, [deckId]); // eslint-disable-line
   return (
-    <div className="chart-card" style={{ margin: '0 12px 12px' }}>
-      <div className="chart-card-header"><h3>Notes</h3></div>
-      <div style={{ padding: '10px 12px 12px' }}>
-        <textarea className="cc-notes-area" value={notes} onChange={(e) => setNotes(e.target.value)}
-          onBlur={() => setDeckNotes(deckId, notes)} placeholder="Strategy notes, sideboard ideas, matchup tips…" />
+    <div className="mx-sec">
+      <div className="mx-hdr">
+        <span className="mf-sec-name">Notes</span>
+        <span className="mf-sec-rule" />
       </div>
+      <textarea className="mx-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+        onBlur={() => setDeckNotes(deckId, notes)} placeholder="Strategy notes, sideboard ideas, matchup tips…" />
     </div>
   );
 }
@@ -313,8 +404,6 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
   }));
   const coGroups = [{ label: '', entries: zones.collection.slice().sort((a, b) => a.name.localeCompare(b.name)) }];
 
-  const statColor = (ok) => ok ? 'var(--success)' : 'var(--warn)';
-
   // Quick-edit stepper (edit mode) - OPTIMISTIC, like the CardSheet: the row
   // (and the hero counts derived from zones) update instantly; changeQty then
   // enforces rarity copy-limits / collection cap in the background, and a
@@ -348,25 +437,31 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
 
   return (
     <div>
-      {/* Hero */}
-      <div className="avatar-hero">
-        {deck.avatar?.image_slug && <img className="avatar-hero-img" src={`${BASE}cards/${deck.avatar.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
-        <div className="avatar-hero-gradient" />
-        <div className="avatar-hero-content">
-          <div className="hero-deck-name">{deck.name}</div>
-          <div className="hero-avatar-row">
-            {deck.avatar?.name
-              ? <span className="hero-avatar-name" onClick={() => setAvatarOpen(true)} title="Change avatar">{deck.avatar.name}</span>
-              : <span className="hero-avatar-name" onClick={() => setAvatarOpen(true)} title="Choose avatar">＋ Set avatar</span>}
-            {deck.avatar?.name && els.length > 0 && <span className="hero-avatar-sep">·</span>}
-            {els.map((el) => <img key={el} src={`${BASE}icons/${el}.png`} style={{ width: 16, height: 16, flexShrink: 0 }} alt={el} />)}
-          </div>
-          <div className="hero-stat-bar">
-            <span className="hero-stat-item" style={{ color: statColor(sb >= 60) }}>Spellbook {sb}/60+</span>
-            <span className="hero-stat-divider" />
-            <span className="hero-stat-item" style={{ color: statColor(at >= 30) }}>Atlas {at}/30+</span>
-            <span className="hero-stat-divider" />
-            <span className="hero-stat-item" style={{ color: statColor(co === coMax) }}>Coll {co}/{coMax}</span>
+      {/* Hero plate - framed card: gilt-edged art with a bottom scrim under the
+          deck name, then the archetype eyebrow + threshold icons + per-section
+          tally (teal when a requirement is met, rose when short). */}
+      <div className="mf-hero">
+        <div className="mf-hero-inner">
+          <div className="mf-hero-card">
+            <div className="mf-hero-art">
+              {deck.avatar?.image_slug && <img src={`${BASE}cards/${deck.avatar.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
+              <div className="mf-hero-scrim" />
+              <div className="mf-hero-name">{deck.name}</div>
+            </div>
+            <div className="mf-hero-body">
+              <div className="mf-hero-meta">
+                <button className="mf-hero-arch" onClick={() => setAvatarOpen(true)} title={deck.avatar?.name ? 'Change avatar' : 'Choose avatar'}>
+                  {deck.avatar?.name || '＋ Set avatar'}
+                </button>
+                {els.length > 0 && <span className="mf-hero-sep" />}
+                {els.map((el) => <img key={el} className="mf-hero-el" src={`${BASE}icons/${el}.png`} alt={el} />)}
+              </div>
+              <div className="mf-hero-tally">
+                <span className="mf-tally-item">Spellbook <span className={`mf-tally-val ${sb >= 60 ? 'ok' : 'short'}`}>{sb}/60+</span></span>
+                <span className="mf-tally-item">Atlas <span className={`mf-tally-val ${at >= 30 ? 'ok' : 'short'}`}>{at}/30+</span></span>
+                <span className="mf-tally-item">Coll <span className={`mf-tally-val ${co === coMax ? 'ok' : 'short'}`}>{co}/{coMax}</span></span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -377,10 +472,10 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         <DeckStats deck={deck} rev={rev} onReload={() => { setLocalRev((r) => r + 1); onChanged?.(); }}
           onOpenCodex={onOpenCodex} onChanged={onChanged} />
       ) : (
-        <div style={{ paddingTop: 12 }}>
-          <Zone title="Spellbook" count={sb} need={60} groups={sbGroups} collapsed={collapsed.has('spellbook')} onToggle={() => toggle('spellbook')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('spellbook')} />
-          <Zone title="Atlas" count={at} need={30} groups={atGroups} collapsed={collapsed.has('atlas')} onToggle={() => toggle('atlas')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('atlas')} />
-          <Zone title="Collection" count={co} need={coMax} groups={coGroups} collapsed={collapsed.has('collection')} onToggle={() => toggle('collection')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('collection')} />
+        <div style={{ paddingTop: 4 }}>
+          <Zone title="Spellbook" count={sb} need={60} needLabel="60+" groups={sbGroups} collapsed={collapsed.has('spellbook')} onToggle={() => toggle('spellbook')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('spellbook')} />
+          <Zone title="Atlas" count={at} need={30} needLabel="30+" groups={atGroups} collapsed={collapsed.has('atlas')} onToggle={() => toggle('atlas')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('atlas')} />
+          <Zone title="Collection" count={co} need={coMax} needLabel={String(coMax)} groups={coGroups} collapsed={collapsed.has('collection')} onToggle={() => toggle('collection')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('collection')} />
           <HandCard zones={zones} avatar={deck.avatar} onCardTap={setSheetCardId} />
           <NotesCard deckId={deckId} initial={deck.notes} />
           <CuriosaUrlCard deckId={deckId} initial={deck.curiosa_url} />

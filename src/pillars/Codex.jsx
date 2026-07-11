@@ -8,7 +8,7 @@ import {
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
 import { deleteAnnotation } from '../store/annotations.js';
-import { Chip, ListRow, IconButton, Loading } from '../components/ui.jsx';
+import { Chip, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -114,8 +114,8 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
       {sc === 'cards' && (
         <div className="cx-view-toggle-row">
           <div className="cx-view-toggle">
-            <button className={`cx-view-btn${cardView === 'list' ? ' on' : ''}`} onClick={() => setCardView('list')}>List</button>
-            <button className={`cx-view-btn${cardView === 'grid' ? ' on' : ''}`} onClick={() => setCardView('grid')}>Card</button>
+            <button className={`cx-view-btn${cardView === 'list' ? ' on' : ''}`} onClick={() => setCardView('list')}>☰ List</button>
+            <button className={`cx-view-btn${cardView === 'grid' ? ' on' : ''}`} onClick={() => setCardView('grid')}>▦ Card</button>
           </div>
         </div>
       )}
@@ -128,7 +128,10 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
         <div className="cx-card-grid">
           {entries.map((it) => (
             <button key={it.id} className="cx-card-tile" onClick={() => onOpen('card', it.id, it.name)} aria-label={it.name}>
-              <CardArt card={{ ...it, card_id: it.id }} radius={12} />
+              <CardArt card={{ ...it, card_id: it.id }} radius={14} aspect="5/7" />
+              {it.saved && (
+                <span className="cx-card-seal" aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span>
+              )}
             </button>
           ))}
         </div>
@@ -376,9 +379,18 @@ function MarginaliaView({ onOpen, rev }) {
   );
 }
 
+// Right-edge affordance: gold filled bookmark when saved, else a quiet chevron.
+const BookmarkGlyph = () => (
+  <span className="cx-codex-bm" aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span>
+);
+const ChevGlyph = () => (
+  <svg className="cx-codex-chev" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+);
+
+// A-Z divided list. Rule rows are title-only (tap opens the article - no inline
+// sub-expansion); card rows carry a mini card-art thumb + the shared type · mana
+// meta line. Both end in the bookmark glyph or a quiet chevron.
 function AzList({ entries, onOpen }) {
-  const [expanded, setExpanded] = useState(() => new Set());
-  const toggle = (id) => setExpanded((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
   let cur = '';
   const rows = [];
   entries.forEach((it, i) => {
@@ -386,35 +398,34 @@ function AzList({ entries, onOpen }) {
     if (L !== cur) {
       cur = L;
       rows.push(
-        <div key={'div-' + i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 0 8px' }}>
-          <span style={{ font: "600 13px/1 var(--f-display)", color: 'var(--gold)' }}>{L}</span>
-          <span style={{ flex: 1, height: 1, background: 'var(--hair-12)' }} />
+        <div key={'div-' + i} className="cx-codex-rubric">
+          <span className="cx-codex-letter">{L}</span>
+          <span className="cx-codex-hair" />
         </div>
       );
     }
-    const hasSubs = it.kind === 'rule' && it.subs?.length > 0;
-    const isOpen = expanded.has(it.id);
-    rows.push(
-      <ListRow
-        key={it.kind + it.id}
-        icon={<CodexGlyph kind={it.kind} />}
-        title={it.name}
-        sub={it.meta}
-        note={it.hasNote}
-        trailing={hasSubs
-          ? <button className="cx-sub-chevron" data-open={isOpen ? 'true' : 'false'} onClick={(e) => { e.stopPropagation(); toggle(it.id); }} aria-label={isOpen ? 'Collapse sub-entries' : `Expand ${it.subs.length} sub-entries`} aria-expanded={isOpen}>
-              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-            </button>
-          : (it.saved ? <span style={{ color: 'var(--gold-leaf)', display: 'flex' }} aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span> : undefined)}
-        onClick={() => onOpen(it.kind, it.id, it.name)}
-      />
-    );
-    if (hasSubs && isOpen) {
-      it.subs.forEach((s, si) => rows.push(
-        <div key={'sub-' + s.id} className="cx-subrow" style={{ animationDelay: `${Math.min(si, 6) * 26}ms` }}>
-          <ListRow icon={<CodexGlyph kind="rule" />} title={s.name} onClick={() => onOpen('rule', s.id, s.name)} />
+    if (it.kind === 'card') {
+      const type = (it.type || 'Card').split(/[^A-Za-z]+/)[0];
+      rows.push(
+        <div key={'card' + it.id} className="cx-row cx-codex-row" onClick={() => onOpen('card', it.id, it.name)}>
+          <span className="cx-codex-thumb"><CardArt card={{ ...it, card_id: it.id }} radius={7} aspect="5/7" /></span>
+          <div className="cx-codex-body">
+            <span className="cx-codex-name">{it.name}</span>
+            <span className="cx-codex-meta">
+              <span className="cx-codex-type">{type}</span>
+              {it.cost != null && <><span className="cx-codex-sep" /><span><span className="cx-codex-mana">{it.cost}</span> mana</span></>}
+            </span>
+          </div>
+          {it.saved ? <BookmarkGlyph /> : <ChevGlyph />}
         </div>
-      ));
+      );
+    } else {
+      rows.push(
+        <div key={'rule' + it.id} className="cx-row cx-codex-row" onClick={() => onOpen('rule', it.id, it.name)}>
+          <span className="cx-codex-title">{it.name}</span>
+          {it.saved ? <BookmarkGlyph /> : <ChevGlyph />}
+        </div>
+      );
     }
   });
   return <div className="cx-az-list">{rows}</div>;

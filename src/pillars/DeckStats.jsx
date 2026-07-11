@@ -1,6 +1,8 @@
 // Deck Stats tab - Arcanum's full analysis suite (mana/power curves, composition,
-// atlas supply/odds with 10k Monte-Carlo + turn stepper, spellbook odds, random
-// hand), ported faithfully and skinned to the grimoire palette.
+// atlas supply/odds with 10k Monte-Carlo + turn stepper, spellbook odds), same
+// data + calculations, reskinned to the flat "Manuscript" treatment: gold-headed
+// sections on the page background, no panel cards. Chart key colours (elements,
+// rarity, odds purple, donut segments) are canonical and untouched.
 import React, { useEffect, useMemo, useState } from 'react';
 import { getDeckCards } from '../store/deckRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
@@ -8,6 +10,11 @@ import { deckBuildability, subscribeCollection } from '../store/ownedRepository.
 import * as St from '../store/deckStats.js';
 import { ThresholdPips, Loading } from '../components/ui.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
+
+const GOLD = '#cba75f', ROSE = '#c76d85', ROSE_VAL = '#e0899e', TEAL = '#63c9a3', GOLD_MET = '#e3c589';
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+// Joint/threshold odds status tint (kept 3-tier like the original, mapped to the skin).
+const oddsCol = (p) => (p >= 0.8 ? TEAL : p >= 0.5 ? GOLD : ROSE_VAL);
 
 export default function DeckStats({ deck, rev, onReload, onOpenCodex, onChanged }) {
   const [zones, setZones] = useState(null);
@@ -31,60 +38,89 @@ export default function DeckStats({ deck, rev, onReload, onOpenCodex, onChanged 
   const base = elementalist ? 1 : 0;
   const manaCosts = useMemo(() => St.manaCurveData(sb), [zones]);
   const powerCosts = useMemo(() => St.powerCurveData(sb), [zones]);
+  const manaBars = useMemo(() => St.curveBars(manaCosts), [manaCosts]);
+  const powerBars = useMemo(() => St.curveBars(powerCosts), [powerCosts]);
   const odds = useMemo(() => atlasMode === 'odds' ? St.atlasOdds(sb, at, atlasTurn, 10000, base) : null,
     [zones, atlasMode, atlasTurn, base]); // 10k sims only when on the Odds tab / turn changes
 
   if (!zones) return <Loading />;
 
-  const avatarSlug = deck.avatar_card_id || '';
-  const decided = deck.wins + deck.losses;
-
   return (
-    <div style={{ padding: '12px 0 4px' }}>
-      {/* buildability - a stat, so it leads the Stats suite in a matching card */}
+    <div style={{ padding: '4px 0 12px' }}>
+      {/* Buildability - a stat, so it leads the suite */}
       <Buildability deckId={deck.id} deckName={deck.name} rev={rev} onOpenCodex={onOpenCodex} onChanged={onChanged} />
 
-      {/* mana curve */}
-      <Card title="Mana Curve" right={<Avg spellbook={sb} />}>
-        {Object.keys(manaCosts).length ? <><Svg html={St.curveSVG(manaCosts, { label: 'mana' })} /><Legend costs={manaCosts} /></>
+      {/* Mana curve */}
+      <Section title="Mana Curve" right={<span className="ds-hdr-stat">avg {St.avgCost(sb)}</span>}>
+        {manaBars ? <><Curve data={manaBars} caption="mana" glow="rgba(220,184,111,.55)" /><Legend costs={manaCosts} /></>
           : <Empty text="Add spells to see the curve." />}
-      </Card>
+      </Section>
 
-      {/* composition */}
-      <Card title="Composition" right={<Toggle value={compMode} set={setCompMode} opts={[['element', 'Element'], ['rarity', 'Rarity']]} />}>
+      {/* Composition */}
+      <Section title="Composition" right={<Seg value={compMode} set={setCompMode} opts={[['element', 'Element'], ['rarity', 'Rarity']]} />}>
         <Composition sb={sb} mode={compMode} total={sbCount} />
-      </Card>
+      </Section>
 
-      {/* power curve */}
-      <Card title="Power Curve">
-        {Object.keys(powerCosts).length ? <><Svg html={St.curveSVG(powerCosts, { num: '#c79ad0', border: 'rgba(199,154,208,.5)', label: 'power', peakGlow: 'rgba(199,154,208,.55)' })} /><Legend costs={powerCosts} /></>
+      {/* Power curve */}
+      <Section title="Power Curve">
+        {powerBars ? <><Curve data={powerBars} caption="power" glow="rgba(199,154,208,.55)" /><Legend costs={powerCosts} /></>
           : <Empty text="Add minions to see the power curve." />}
-      </Card>
+      </Section>
 
-      {/* spellbook odds */}
-      <Card title="Spellbook Odds">
+      {/* Spellbook odds */}
+      <Section title="Spellbook Odds">
         <SpellbookOdds sb={sb} />
-      </Card>
+      </Section>
 
-      {/* atlas */}
-      <Card title="Atlas" right={<><span style={{ font: "500 11px/1 'IBM Plex Mono',monospace", color: '#6e6286', marginRight: 8 }}>{atCount}/30+</span><Toggle value={atlasMode} set={setAtlasMode} opts={[['supply', 'Supply'], ['odds', 'Odds']]} /></>}>
+      {/* Atlas */}
+      <Section title="Atlas" right={<>
+        <span style={{ font: "600 13px/1 var(--f-mono)", color: atCount >= 30 ? TEAL : ROSE_VAL, flexShrink: 0 }}>{atCount}/30+</span>
+        <Seg value={atlasMode} set={setAtlasMode} opts={[['supply', 'Supply'], ['odds', 'Odds']]} />
+      </>}>
         <Atlas sb={sb} at={at} atCount={atCount} mode={atlasMode} odds={odds} turn={atlasTurn} base={base} elementalist={elementalist} setTurn={(d) => setAtlasTurn((t) => Math.max(1, Math.min(10, t + d)))} />
-      </Card>
+      </Section>
 
       {/* Match record - DERIVED from matches (single source of truth). No manual
           steppers: to change it, log / edit / delete matches in Play. */}
-      <Card title="Match Record">
-        <div className="cc-wl">
-          <span className="cc-wl-w">{wl.w}</span><span className="cc-wl-sep">–</span><span className="cc-wl-l">{wl.l}</span>
-        </div>
-        <div style={{ textAlign: 'center', font: "italic 400 13px/1 'EB Garamond',serif", color: '#8a7ba6', marginBottom: 8 }}>
+      <Section title="Match Record">
+        <div className="ds-record"><span className="ds-wl-w">{wl.w}</span><span className="ds-wl-sep" /><span className="ds-wl-l">{wl.l}</span></div>
+        <div className="ds-record-line">
           {wl.w + wl.l ? `${Math.round(wl.w / (wl.w + wl.l) * 100)}% win rate over ${wl.w + wl.l} decided game${wl.w + wl.l === 1 ? '' : 's'}` : 'No games recorded yet'}
         </div>
-        <div style={{ textAlign: 'center', font: "400 11px/1.4 var(--f-ui)", color: 'var(--faint)', padding: '0 20px 6px' }}>
+        <div className="ds-record-help">
           {tracked ? `Tracked automatically from ${tracked} match${tracked === 1 ? '' : 'es'} piloted with this deck.`
             : 'Pilot this deck in Play - New Match, Quick Match, or Add Match - and its record fills in here.'}
         </div>
-      </Card>
+      </Section>
+    </div>
+  );
+}
+
+/* ---- Mana / Power curve (element-stacked HTML bars) ---- */
+function Curve({ data, caption, glow }) {
+  const PLOT = 118;
+  return (
+    <div>
+      <div className="ds-curve-plot">
+        {data.cols.map((col) => (
+          <div key={col.cost} className="ds-col">
+            {col.total > 0 && <span className="ds-col-count" style={col.isPeak ? { color: '#f4ecdc', textShadow: `0 0 10px ${glow}` } : undefined}>{col.total}</span>}
+            <div className="ds-bar">
+              {col.segs.map((s, i) => {
+                const first = i === 0, last = i === col.segs.length - 1;
+                return <div key={s.el} style={{
+                  width: '100%', height: (s.frac * PLOT).toFixed(1) + 'px',
+                  background: `linear-gradient(180deg, ${s.grad[0]}, ${s.grad[1]})`,
+                  borderRadius: `${last ? 5 : 0}px ${last ? 5 : 0}px ${first ? 2 : 0}px ${first ? 2 : 0}px`,
+                  boxShadow: last && col.isPeak ? `0 0 12px ${glow}` : undefined,
+                }} />;
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="ds-curve-x">{data.cols.map((c) => <span key={c.cost} className="ds-x-lbl">{c.label}</span>)}</div>
+      <div className="ds-curve-cap">{caption}</div>
     </div>
   );
 }
@@ -94,17 +130,15 @@ function Composition({ sb, mode, total }) {
   const bars = St.typeBars(sb, mode);
   return (
     <div>
-      <div className="cc-body-row">
-        <div className="cc-donut-wrap" style={{ background: St.conicGradient(slices) }}>
-          <div className="cc-donut-hole"><span className="cc-donut-num">{total}</span><span className="cc-donut-lbl">CARDS</span></div>
-        </div>
-        <div className="cc-bar-rows">
+      <div className="ds-comp">
+        <Donut slices={slices} num={total} label="CARDS" />
+        <div className="ds-typebars">
           {bars.length ? bars.map((b) => (
             <div key={b.label}>
-              <div className="cc-bar-label-row"><span className="cc-bar-name">{b.label}</span><span className="cc-bar-count">{b.total}</span></div>
-              <div className="cc-bar-track">{b.segs.map((s, i) => <div key={i} className="cc-bar-seg" style={{ width: s.pct + '%', background: s.color }} />)}</div>
+              <div className="ds-typebar-hd"><span className="ds-typebar-name">{b.label}</span><span className="ds-typebar-count">{b.total}</span></div>
+              <div className="ds-typebar-track">{b.segs.map((s, i) => <div key={i} style={{ width: s.pct + '%', height: '100%', background: s.color }} />)}</div>
             </div>
-          )) : <span className="cc-stat-empty">No spellbook data</span>}
+          )) : <Empty text="No spellbook data" />}
         </div>
       </div>
       <Swatches slices={slices} />
@@ -114,18 +148,15 @@ function Composition({ sb, mode, total }) {
 
 function Atlas({ sb, at, atCount, mode, odds, turn, base = 0, elementalist = false, setTurn }) {
   const { slices } = St.compositionData(at, 'element');
-  const statusCol = (p) => p >= 0.8 ? 'var(--accent-jade)' : p >= 0.5 ? 'var(--gold-leaf)' : 'var(--el-fire)';
   const supply = St.supplyData(sb, at, base);
   return (
-    <div className="cc-body-row">
-      <div className="cc-donut-wrap" style={{ background: St.conicGradient(slices) }}>
-        <div className="cc-donut-hole"><span className="cc-donut-num">{atCount}</span><span className="cc-donut-lbl">SITES</span></div>
-      </div>
+    <div className="ds-comp">
+      <Donut slices={slices} num={atCount} label="SITES" />
       <div style={{ flex: 1, minWidth: 0 }}>
         {mode === 'odds' ? (
           <>
-            <div className="cc-odds-head">
-              <div style={{ font: "italic 400 11px/1 'EB Garamond',serif", color: '#8a7ba6', marginBottom: 8 }}>Threshold odds</div>
+            <div className="ds-odds-head">
+              <div className="ds-odds-caption">Threshold odds</div>
               <div className="cc-turn-line">
                 <button className="cc-turn-btn" onClick={() => setTurn(-1)} disabled={turn <= 1} aria-label="Earlier turn">−</button>
                 <div className="cc-turn-pill"><span className="cc-turn-cap">Draw</span><span className="cc-turn-num">{turn}</span></div>
@@ -134,27 +165,22 @@ function Atlas({ sb, at, atCount, mode, odds, turn, base = 0, elementalist = fal
             </div>
             {odds && odds.need.length ? (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: odds.need.length >= 2 ? 10 : 0 }}>
-                  <span style={{ font: "700 26px/1 var(--f-display)", color: statusCol(odds.joint), flex: 'none' }}>{Math.round(odds.joint * 100)}%</span>
-                  <span style={{ font: "400 11px/1.35 var(--f-read)", color: 'var(--ink-muted)', minWidth: 0 }}>Chance threshold needs are met</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 10px' }}>
+                  <span style={{ font: "700 26px/1 var(--f-display)", color: oddsCol(odds.joint), flex: 'none' }}>{Math.round(odds.joint * 100)}%</span>
+                  <span style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#8a8175', minWidth: 0 }}>Chance threshold needs are met</span>
                 </div>
                 {odds.need.length >= 2 && odds.need.map((k) => (
-                  <NeedRow key={k} el={k} text={`need ${odds.peak[k]}`} status={`${Math.round(odds.prob[k] * 100)}%`} color={statusCol(odds.prob[k])} />
+                  <ThreshRow key={k} el={k} text={`need ${odds.peak[k]}`}
+                    status={<span style={{ font: "600 13px/1 var(--f-display)", color: oddsCol(odds.prob[k]) }}>{Math.round(odds.prob[k] * 100)}%</span>} />
                 ))}
               </>
             ) : <Empty text="No thresholds required" />}
           </>
         ) : (
-          supply.length ? supply.map((s) => (
-            <NeedRow key={s.el} el={s.el} text={`need ${s.peak} · ${s.supply} sites`} status={s.status}
-              color={s.status === 'ok' ? 'var(--accent-jade)' : s.status === 'tight' ? 'var(--gold-leaf)' : 'var(--el-fire)'} />
-          )) : <Empty text="No thresholds required" />
+          supply.length ? supply.map((s) => <ThreshRow key={s.el} el={s.el} text={`need ${s.peak} · ${s.supply} sites`} status={<OkStatus ok={s.status === 'ok'} />} />)
+            : <Empty text="No thresholds required" />
         )}
-        {elementalist && (
-          <div style={{ font: "italic 400 10px/1.35 'EB Garamond',serif", color: '#8a7ba6', marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(160,110,220,.14)' }}>
-            Elementalist: +1 of each element from game start is counted.
-          </div>
-        )}
+        {elementalist && <div className="ds-note">Elementalist: +1 of each element from game start is counted.</div>}
       </div>
     </div>
   );
@@ -165,30 +191,21 @@ function SpellbookOdds({ sb }) {
   if (!rows.length) return <Empty text="Add spells to see draw odds." />;
   return (
     <>
-      <div style={{ font: "italic 400 11px/1 'EB Garamond',serif", color: '#8a7ba6', marginBottom: 10 }}>Odds your next spell is a…</div>
+      <div className="ds-odds-intro">Odds your next spell is a…</div>
       {rows.map((r) => (
-        <div key={r.label} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-          <span style={{ width: 78, font: "500 12px/1 'Hanken Grotesk',sans-serif", color: '#c9bfdc' }}>{r.label}<span style={{ color: '#8a7ba6', marginLeft: 5 }}>{r.count}</span></span>
-          <div className="cc-bar-track" style={{ flex: 1 }}><div className="cc-bar-fill" style={{ width: r.pct + '%' }} /></div>
-          <span style={{ width: 34, textAlign: 'right', font: "600 12px/1 'IBM Plex Mono',monospace", color: '#c79af0' }}>{r.pct}%</span>
+        <div key={r.label} className="ds-odds-row">
+          <span className="ds-odds-lbl">{r.label}<span className="ds-odds-cnt">{r.count}</span></span>
+          <div className="ds-oddsbar-track"><div className="ds-oddsbar-fill" style={{ width: r.pct + '%' }} /></div>
+          <span className="ds-odds-pct">{r.pct}%</span>
         </div>
       ))}
     </>
   );
 }
 
-/* ---- small bits - Arcanum .cc-stat skin ---- */
-const Card = ({ title, right, children }) => (
-  <div className="chart-card cc-stat">
-    <div className="cc-hdr"><span className="cc-title">{title}</span>{right}</div>
-    {children}
-  </div>
-);
-
 // Buildability - can this deck be built from the Collection? A read-only compare
 // via the shared engine; recomputes on the collection revision so recording owned
-// cards flips it live. Rendered in the standard stats Card so it reads identically
-// to the mana/composition cards; tap to see the missing list.
+// cards flips it live. Header tally + progress bar; tap to see the missing list.
 function Buildability({ deckId, deckName, rev, onOpenCodex, onChanged }) {
   const [rep, setRep] = useState(null);
   const [sheet, setSheet] = useState(false);
@@ -200,50 +217,72 @@ function Buildability({ deckId, deckName, rev, onOpenCodex, onChanged }) {
     return () => { alive = false; off(); };
   }, [deckId, rev]);
   if (!rep || rep.totalRequired === 0) return null;
-  const canView = rep.totalMissing > 0;
+  const canView = rep.totalMissing > 0, complete = rep.complete;
   return (
-    <Card title="Buildability" right={
-      <span style={{ marginLeft: 'auto', font: "700 13px/1 var(--f-mono)", color: rep.complete ? 'var(--accent-jade)' : 'var(--ink-body)' }}>
-        {rep.complete ? '✓ Buildable' : `${rep.totalHave}/${rep.totalRequired}`}
-      </span>
-    }>
+    <section className="ds-sec">
+      <div className="ds-hdr">
+        <span className="ds-hdr-name">Buildability</span>
+        <span className="ds-hdr-rule" />
+        <span style={{ flexShrink: 0, lineHeight: 1 }}>
+          <span style={{ font: "600 22px/1 var(--f-display)", color: complete ? GOLD_MET : ROSE_VAL }}>{rep.totalHave}</span>
+          <span style={{ font: "400 14px/1 var(--f-read)", color: '#8a8175' }}>/{rep.totalRequired}</span>
+        </span>
+      </div>
       <div onClick={() => canView && setSheet(true)} style={{ cursor: canView ? 'pointer' : 'default' }}>
-        <div style={{ height: 6, borderRadius: 3, background: 'var(--hair-12)', overflow: 'hidden', marginBottom: 8 }}>
-          <div style={{ height: '100%', width: `${rep.percent}%`, background: rep.complete ? 'var(--accent-jade)' : 'var(--accent-ruby)', borderRadius: 3, transition: 'width .3s ease' }} />
+        <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${rep.percent}%`, background: complete ? GOLD_MET : ROSE_VAL, borderRadius: 3, transition: 'width .3s ease' }} />
         </div>
-        <div style={{ font: "400 12.5px/1.45 var(--f-ui)", color: 'var(--ink-muted)' }}>
-          {rep.complete
-            ? 'You own every card in this deck.'
-            : <>You own {rep.totalHave} of {rep.totalRequired} · <span style={{ color: 'var(--accent-ruby)' }}>missing {rep.totalMissing}</span>{rep.unresolved > 0 ? ` · ${rep.unresolved} unrecognised` : ''}{canView ? ' - tap for list' : ''}</>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+          <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}>
+            {complete ? 'Every card owned' : `${rep.totalMissing} missing${rep.unresolved > 0 ? ` · ${rep.unresolved} unrecognised` : ''}`}
+          </span>
+          {canView && <span style={{ font: "600 12.5px/1 var(--f-ui)", color: ROSE }}>View missing ›</span>}
         </div>
       </div>
       <MissingSheet open={sheet} report={rep} title={deckName ? `Missing for ${deckName}` : 'Missing cards'}
         onOpenCard={onOpenCodex} onClose={() => setSheet(false)} onChanged={onChanged} />
-    </Card>
+    </section>
   );
 }
-const Svg = ({ html }) => <div dangerouslySetInnerHTML={{ __html: html }} />;
+
+/* ---- shared bits ---- */
+const Section = ({ title, right, children }) => (
+  <section className="ds-sec">
+    <div className="ds-hdr"><span className="ds-hdr-name">{title}</span><span className="ds-hdr-rule" />{right}</div>
+    {children}
+  </section>
+);
+const Seg = ({ value, set, opts }) => (
+  <div className="ds-seg">
+    {opts.map(([k, l]) => <button key={k} className={`ds-seg-btn${value === k ? ' on' : ''}`} onClick={() => set(k)}>{l}</button>)}
+  </div>
+);
+const Donut = ({ slices, num, label }) => (
+  <div className="ds-donut" style={{ background: St.conicGradient(slices) }}>
+    <div className="ds-donut-hole"><span className="ds-donut-num">{num}</span><span className="ds-donut-lbl">{label}</span></div>
+  </div>
+);
 const Legend = ({ costs }) => (
-  <div className="cc-key">
-    {St.curveLegend(costs).map((l) => <span key={l.el} className="cc-key-item"><span className="cc-key-dot" style={{ background: l.color }} />{l.el}</span>)}
+  <div className="ds-legend">
+    {St.curveLegend(costs).map((l) => <span key={l.el} className="ds-legend-item"><span className="ds-legend-dot" style={{ background: l.color }} />{l.el}</span>)}
   </div>
 );
 const Swatches = ({ slices }) => slices.length ? (
-  <div className="cc-key">
-    {slices.map((s) => <span key={s.label} className="cc-key-item"><span className="cc-key-dot" style={{ background: s.color, borderRadius: '50%' }} />{s.label}</span>)}
+  <div className="ds-legend">
+    {slices.map((s) => <span key={s.label} className="ds-legend-item"><span className="ds-legend-dot" style={{ background: s.color }} />{s.label}</span>)}
   </div>
 ) : null;
-const NeedRow = ({ el, text, status, color }) => (
-  <div className="cc-need-row">
-    <ThresholdPips runs={[{ el, c: St.EL_CHART[el[0].toUpperCase() + el.slice(1)] }]} size={16} />
-    <span style={{ flex: 1, font: "400 12px/1 'EB Garamond',serif", color: '#c9bfdc' }}>{text}</span>
-    <span style={{ font: "600 12px/1 'Hanken Grotesk',sans-serif", color }}>{status}</span>
+const ThreshRow = ({ el, text, status }) => (
+  <div className="ds-thresh-row">
+    <ThresholdPips runs={[{ el, c: St.EL_CHART[cap(el)] }]} size={16} />
+    <span className="ds-thresh-text">{text}</span>
+    <span className="ds-thresh-status">{status}</span>
   </div>
 );
-const Avg = ({ spellbook }) => <span className="cc-avg">avg {St.avgCost(spellbook)}</span>;
-const Toggle = ({ value, set, opts }) => (
-  <div className="cc-toggle-pill">
-    {opts.map(([k, l]) => <button key={k} className={`cc-toggle-seg${value === k ? ' on' : ''}`} onClick={() => set(k)}>{l}</button>)}
-  </div>
+const OkStatus = ({ ok }) => (
+  <>
+    <span className="ds-status-dot" style={{ background: ok ? TEAL : ROSE_VAL }} />
+    <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.14em', color: ok ? TEAL : ROSE_VAL }}>{ok ? 'OK' : 'SHORT'}</span>
+  </>
 );
-const Empty = ({ text }) => <div className="cc-stat-empty">{text}</div>;
+const Empty = ({ text }) => <div className="ds-empty">{text}</div>;

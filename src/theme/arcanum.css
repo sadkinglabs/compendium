@@ -39,20 +39,23 @@
   -webkit-tap-highlight-color:transparent;
 }
 
-/* ── Library deck card (renderLibrary → .dli) ── verbatim ── */
-.arc .dli { position:relative; border-radius:14px; margin:10px 12px 0; overflow:hidden; border:1px solid rgba(220,184,111,.12); background:rgba(15,15,18,.85); min-height:88px; }
-.arc .dli.dragging { z-index:20; transform:scale(1.03); box-shadow:0 12px 32px rgba(0,0,0,.65); border-color:var(--accent2); opacity:.97; }
+/* ── Library deck card (renderLibrary → .dli) ── Manuscript: black card, warm
+   hairline, Cinzel name over the avatar art, rose archetype eyebrow (a compact
+   echo of the My-Deck gilt hero). ── */
+.arc .dli { position:relative; border-radius:16px; margin:12px 12px 0; overflow:hidden; border:1px solid rgba(74,60,34,.5); background:#0e0b08; min-height:92px; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, border-color .15s; }
+.arc .dli:active { transform:scale(.99); }
+.arc .dli.dragging { z-index:20; transform:scale(1.03); box-shadow:0 12px 32px rgba(0,0,0,.65); border-color:rgba(203,167,95,.5); opacity:.97; }
 .arc.lib-dragging .dli:not(.dragging) { transition:transform .15s ease; }
 .arc .dli-hero { position:absolute; top:0; right:0; height:100%; width:64%; object-fit:cover; object-position:center 25%;
   -webkit-mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
   -webkit-mask-composite:source-in;
   mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
   mask-composite:intersect; }
-.arc .dli-hero-grad { position:absolute; inset:0; background:linear-gradient(to right, rgba(15,15,18,.97) 30%, rgba(15,15,18,.5) 58%, transparent 80%); }
+.arc .dli-hero-grad { position:absolute; inset:0; background:linear-gradient(to right, rgba(14,11,8,.98) 30%, rgba(14,11,8,.55) 58%, transparent 82%); }
 .arc .dli-content { position:relative; z-index:1; }
-.arc .dli-name-row { display:flex; align-items:center; padding:14px 14px 10px; gap:8px; cursor:pointer; }
-.arc .dli-name { font-weight:600; font-size:16px; font-family:'Cinzel',Georgia,serif; letter-spacing:.08em; color:var(--text); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.arc .dli-fav { position:absolute; bottom:10px; right:12px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(11,7,20,.5); border:1px solid rgba(220,184,111,.32); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 8px rgba(0,0,0,.45); color:var(--gold-leaf); font-size:13px; line-height:1; pointer-events:none; }
+.arc .dli-name-row { display:flex; align-items:center; padding:14px 14px 9px; gap:8px; cursor:pointer; }
+.arc .dli-name { font:700 18px/1.15 'Cinzel',Georgia,serif; letter-spacing:.04em; color:#efe7d8; text-shadow:0 1px 6px rgba(0,0,0,.7); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arc .dli-fav { position:absolute; bottom:10px; right:12px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(11,7,20,.5); border:1px solid rgba(203,167,95,.4); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 8px rgba(0,0,0,.45); color:#e3c589; line-height:1; pointer-events:none; }
 .arc .dli-actions { display:flex; border-top:1px solid rgba(160,110,220,.1); }
 .arc .dli-action { flex:1; padding:10px; font-size:12px; font-weight:600; text-align:center; cursor:pointer; color:var(--muted); border:none; background:none; border-right:1px solid rgba(160,110,220,.1); font-family:'Hanken Grotesk',sans-serif; }
 .arc .dli-action:last-child { border-right:none; }
@@ -61,49 +64,15 @@
 .arc .dli-action.share { color:var(--gold-leaf); }
 .arc .dli-action.del   { color:var(--danger); }
 
-/* Avatar chip used inside the library card meta row - verbatim */
-.arc .dash-avatar-chip { display:inline-flex; align-items:center; gap:6px; background:rgba(220,184,111,.1); border:1px solid rgba(220,184,111,.35); border-radius:999px; padding:6px 14px; font-size:13px; font-weight:600; color:var(--gold-leaf); cursor:pointer; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); transition:background .15s,border-color .15s; box-shadow:0 0 10px rgba(220,184,111,.1); font-family:'Hanken Grotesk',sans-serif; }
-.arc .dash-avatar-chip:active { background:rgba(220,184,111,.2); border-color:rgba(220,184,111,.6); }
+/* Avatar/archetype eyebrow in the library card meta row - rose caps, matching
+   the My-Deck hero's .mf-hero-arch (no pill chassis). */
+.arc .dash-avatar-chip { display:inline-flex; align-items:center; font:600 11px/1 'Cinzel',Georgia,serif; letter-spacing:.2em; text-transform:uppercase; color:#c76d85; background:none; border:none; padding:0; box-shadow:none; }
 
 .arc .no-results { padding:24px; text-align:center; color:var(--muted); }
 
-/* ── Add-cards search rows + tiles (Arcanum cardRowHtml / cardImageHtml,
-   templates/index.html L117-174, 4318-4366). ── */
-@keyframes cardTap { 0%{transform:scale(1)} 35%{transform:scale(0.96);background:var(--surface2)} 100%{transform:scale(1)} }
-@keyframes tileShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-.arc .card-row { display:flex; align-items:center; padding:10px 4px; border-bottom:1px solid var(--border); gap:10px; cursor:pointer; user-select:none; }
-.arc .card-row:active { background:var(--surface2); }
-.arc .card-row.tapped { animation:cardTap .25s ease-out; }
-.arc .card-row .name { font-weight:600; font-size:15px; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--text); font-family:'EB Garamond',Georgia,serif; }
-.arc .card-row .meta { font-size:11px; color:var(--muted); white-space:nowrap; }
-.arc .el-pips { display:flex; gap:3px; align-items:center; }
-.arc .el-pips img { width:14px; height:14px; flex-shrink:0; }
-.arc .cost-badge { background:rgba(24,16,40,.9); border:1px solid rgba(160,110,220,.3); border-radius:50%; width:26px; height:26px; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; flex-shrink:0; color:var(--text); font-family:'IBM Plex Mono',monospace; }
-.arc .in-deck-badge { flex-shrink:0; background:rgba(157,106,214,.32); border:1px solid rgba(196,154,240,.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); color:#f0e9d8; font-size:13px; font-weight:700; border-radius:999px; min-width:24px; height:24px; padding:0 7px; display:inline-flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(157,106,214,.3); }
-.arc .in-deck-badge.tile { position:absolute; bottom:7px; right:7px; box-shadow:0 2px 8px rgba(0,0,0,.55), 0 0 10px rgba(157,106,214,.3); z-index:2; }
-/* Inline quick-add stepper on a list row (add N copies without the card sheet). */
-.arc .card-row .name { cursor:pointer; }
-.arc .cr-step { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; }
-.arc .cr-step-btn { width:30px; height:30px; border-radius:50%; border:1px solid rgba(160,110,220,.32); background:rgba(15,14,18,.75); color:#c9bfdc; font-size:17px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; padding:0; -webkit-tap-highlight-color:transparent; }
-.arc .cr-step-btn:active { background:var(--accent,#9d6ad6); border-color:var(--accent,#9d6ad6); color:#fff; }
-.arc .cr-step-btn:disabled { opacity:.35; }
-.arc .card-img-tile { position:relative; cursor:pointer; border-radius:14px; overflow:hidden; aspect-ratio:380/531; background:linear-gradient(110deg, var(--surface) 35%, rgba(60,36,80,.7) 50%, var(--surface) 65%); background-size:200% 100%; animation:tileShimmer 1.6s linear infinite; transition:transform .15s ease,box-shadow .15s ease; }
-/* Quick Add steppers on grid tiles - a black-glass "− qty +" pill centred at
-   the tile foot; the in-deck badge keeps the bottom-right corner (z2, same layer,
-   no overlap: the pill is centred and narrow). */
-.arc .tile-step { position:absolute; left:50%; bottom:7px; transform:translateX(-50%); z-index:2; display:flex; align-items:center; gap:2px; background:rgba(8,7,10,.78); border:1px solid rgba(255,255,255,.16); border-radius:999px; padding:2px; backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 10px rgba(0,0,0,.6); }
-.arc .tile-step-btn { width:30px; height:26px; border:none; background:transparent; color:var(--gold-leaf); font:600 17px/1 'Hanken Grotesk',sans-serif; border-radius:999px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; }
-.arc .tile-step-btn:disabled { color:rgba(233,220,192,.25); }
-.arc .tile-step-btn:active { background:rgba(220,184,111,.16); }
-.arc .tile-step-qty { min-width:16px; text-align:center; font:700 13px/1 'Hanken Grotesk',sans-serif; color:#f0e9d8; }
-.arc .card-img-tile img { width:100%; height:100%; object-fit:cover; display:block; border-radius:14px; }
-.arc .card-img-tile:active { transform:scale(0.96); }
-.arc .card-img-tile:has(img) { animation:none; background:none; }
-/* Inline zone stepper on a row (kept for fast add/remove) */
-.arc .cr-step { display:flex; align-items:center; gap:10px; flex-shrink:0; }
-.arc .cr-step-btn { width:30px; height:30px; border-radius:50%; border:1px solid rgba(160,110,220,.25); background:rgba(36,24,54,.6); color:var(--body); font-size:17px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.arc .cr-step-btn:active { background:var(--accent); border-color:var(--accent); color:#fff; }
-.arc .cr-step-num { font:700 15px/1 'IBM Plex Mono',monospace; min-width:16px; text-align:center; }
+/* The old Arcanum add-cards rows + tiles (card-row / card-img-tile / cr-step /
+   tile-step / in-deck-badge) are gone - the deck editor now renders its own
+   Manuscript EditorRow / EditorTile with inline styles. */
 
 /* ════════════════════════════════════════════════════════════════════════
    Arcanum bottom sheet (the standard sheet across the app; grimoire is kept

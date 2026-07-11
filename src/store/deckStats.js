@@ -13,7 +13,7 @@ export const EL_GRAD = {
   Water: ['#4aa3d4', '#255777'], Multi: ['#d4a83a', '#7a5e1e'], Neutral: ['#c79ad0', '#6a4a78'],
 };
 export const RAR_CHART = { Ordinary: '#c8c8c8', Exceptional: '#4fc3f7', Elite: '#ab47bc', Unique: '#ffd54f' };
-const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
+export const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
 const RAR_ORDER = ['Ordinary', 'Exceptional', 'Elite', 'Unique'];
 
 // one bucket per card: 0 elements → Neutral, >1 → Multi, else the element (verbatim)
@@ -38,59 +38,39 @@ export function manaCurveData(spellbook) {
 export function powerCurveData(spellbook) {
   const powers = {};
   for (const e of spellbook) {
-    if (!typeIs(e, 'Minion') || e.attack == null) continue;
+    // Minions AND automatons (Artifact / Automaton) have power. Within the
+    // spellbook only those two carry an attack value - sites (which also attack)
+    // live in the atlas - so `attack != null` is exactly "minions and automatons".
+    if (e.attack == null) continue;
     const p = Math.min(e.attack, 10), el = elemKey(e);
     (powers[p] || (powers[p] = {}))[el] = (powers[p][el] || 0) + e.quantity;
   }
   return powers;
 }
 
-/** Verbatim port of Arcanum buildManaCurveSVG → returns an SVG string. */
-export function curveSVG(costs, { num = 'rgba(220,184,111,.92)', border = 'rgba(220,184,111,.38)', label = 'mana', peakGlow = 'rgba(220,184,111,.55)' } = {}) {
+/** Layout data for the HTML/CSS mana & power curves (element-stacked). Same math
+ *  as the old SVG builder: nice-rounded y-axis, per-column element segments, and
+ *  the peak column flagged. The view renders the bars/labels so typography is exact. */
+export function curveBars(costs) {
   const present = Object.keys(costs).map(Number);
-  if (!present.length) return '';
+  if (!present.length) return null;
   const maxCost = Math.min(Math.max(...present), 10), minCost = Math.min(...present);
   const elements = EL_ORDER.filter((el) => Object.values(costs).some((slot) => slot[el]));
-  const W = 320, H = 148, PL = 8, PB = 36, PT = 22, PR = 8;
-  const plotW = W - PL - PR, plotH = H - PT - PB;
-  const cols = maxCost - minCost + 1, colW = plotW / cols, barW = Math.max(colW * 0.68, 5);
   const totals = {};
   for (let c = minCost; c <= maxCost; c++) totals[c] = Object.values(costs[c] || {}).reduce((s, v) => s + v, 0);
   const maxY = Math.max(1, ...Object.values(totals));
-  const peakCost = Object.entries(totals).reduce((a, b) => (totals[b[0]] > totals[a[0]] ? b : a), ['0', 0])[0];
+  let peakCost = minCost;
+  for (let c = minCost; c <= maxCost; c++) if (totals[c] > totals[peakCost]) peakCost = c;
   const niceStep = (r, t) => { const raw = r / t, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p; };
   const step = Math.max(1, Math.ceil(niceStep(maxY, 4)));
   const niceMax = Math.max(1, Math.ceil(maxY / step) * step);
-  const yOf = (v) => PT + plotH - (v / niceMax) * plotH;
-  const baselineY = yOf(0);
-  const gradDefs = elements.map((el) => { const [c1, c2] = EL_GRAD[el] || ['#9a90ac', '#5c5470']; return `<linearGradient id="elg-${el}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${c1}"/><stop offset="100%" stop-color="${c2}"/></linearGradient>`; }).join('');
-  const baseline = `<line x1="${PL}" y1="${baselineY.toFixed(1)}" x2="${W - PR}" y2="${baselineY.toFixed(1)}" stroke="rgba(220,184,111,.4)" stroke-width="1.2"/>`;
-  const bars = [];
+  const cols = [];
   for (let c = minCost; c <= maxCost; c++) {
-    const cx = PL + (c - minCost + 0.5) * colW, x = cx - barW / 2;
-    const isPeak = String(c) === String(peakCost) && totals[c] > 0;
-    let yTop = baselineY;
-    const topEl = [...elements].reverse().find((el) => (costs[c]?.[el] || 0) > 0);
-    for (const el of elements) {
-      const v = costs[c]?.[el] || 0; if (!v) continue;
-      const h = (v / niceMax) * plotH, segY = yTop - h, fill = `url(#elg-${el})`;
-      if (el === topEl) {
-        const r = Math.min(4, barW / 2, h), glow = isPeak ? ' filter="url(#peak-glow)"' : '';
-        bars.push(`<path d="M${x.toFixed(1)},${(segY + h).toFixed(1)} L${x.toFixed(1)},${(segY + r).toFixed(1)} Q${x.toFixed(1)},${segY.toFixed(1)} ${(x + r).toFixed(1)},${segY.toFixed(1)} L${(x + barW - r).toFixed(1)},${segY.toFixed(1)} Q${(x + barW).toFixed(1)},${segY.toFixed(1)} ${(x + barW).toFixed(1)},${(segY + r).toFixed(1)} L${(x + barW).toFixed(1)},${(segY + h).toFixed(1)} Z" fill="${fill}"${glow}/>`);
-      } else {
-        bars.push(`<rect x="${x.toFixed(1)}" y="${segY.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="${fill}"/>`);
-      }
-      yTop = segY;
-    }
-    if (totals[c] > 0) bars.push(`<text x="${cx.toFixed(1)}" y="${(yTop - 4).toFixed(1)}" text-anchor="middle" fill="rgba(240,233,216,.85)" font-size="9" font-weight="700">${totals[c]}</text>`);
-    const badgeCY = H - PB / 2, badgeR = Math.min(colW * 0.44, 9);
-    bars.push(`<circle cx="${cx.toFixed(1)}" cy="${badgeCY.toFixed(1)}" r="${badgeR.toFixed(1)}" fill="rgba(14,8,26,.92)" stroke="${border}" stroke-width="1"/>`);
-    bars.push(`<text x="${cx.toFixed(1)}" y="${(badgeCY + 3.5).toFixed(1)}" text-anchor="middle" fill="${num}" font-size="8.5" font-weight="700">${c === 10 ? '10+' : c}</text>`);
+    const slot = costs[c] || {};
+    const segs = elements.filter((el) => slot[el]).map((el) => ({ el, grad: EL_GRAD[el] || ['#9a90ac', '#5c5470'], frac: slot[el] / niceMax }));
+    cols.push({ cost: c, label: c === 10 ? '10+' : String(c), total: totals[c], isPeak: c === peakCost && totals[c] > 0, segs });
   }
-  // Axis title centred BELOW the number badges - at the left edge it sat right
-  // on top of the first badge's value.
-  bars.push(`<text x="${(W / 2).toFixed(1)}" y="${(H - 2).toFixed(1)}" text-anchor="middle" fill="${num}" fill-opacity="0.55" font-size="7.5" font-style="italic" letter-spacing="1.5">${label}</text>`);
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="overflow:hidden;display:block"><defs>${gradDefs}<filter id="peak-glow" x="-60%" y="-60%" width="220%" height="220%"><feDropShadow dx="0" dy="0" stdDeviation="6" flood-color="${peakGlow}" flood-opacity="1"/></filter></defs>${baseline}${bars.join('')}</svg>`;
+  return { cols, niceMax };
 }
 
 export const curveLegend = (costs) => EL_ORDER.filter((el) => Object.values(costs).some((s) => s[el])).map((el) => ({ el, color: EL_CHART[el] }));

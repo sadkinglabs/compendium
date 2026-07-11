@@ -15,7 +15,8 @@ import DecksPager from './pillars/DecksPager.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
 import BottomDock from './components/BottomDock.jsx';
 import SearchPill from './components/SearchPill.jsx';
-import CardRow from './components/CardRow.jsx';
+import CardArt from './components/CardArt.jsx';
+import { thresholdRuns } from './store/cardArt.js';
 import Collection from './pillars/Collection.jsx';
 import CreateDeckWizard from './components/CreateDeckWizard.jsx';
 import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
@@ -34,7 +35,7 @@ import { parseMatchShare } from './store/matchShare.js';
 import { parseDeckShare } from './store/deckShare.js';
 import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
-import { ListRow, IconButton, Loading, Chip, ChipRow, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
@@ -326,14 +327,16 @@ export default function App() {
           show the brand bar + divider above it. */}
       {addActive ? (
         <div style={S.detailHeader}>
-          <button onClick={exitAdd} style={S.back}><IcBack size={15} />Done</button>
-          <div style={S.addEyebrow}>EDITING · {addMode.deckName}</div>
-          <span style={{ width: 56 }} />
+          <button onClick={exitAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, flexShrink: 0 }}><IcBack size={16} />Done</button>
+          <div style={{ flex: 1, minWidth: 0, textAlign: 'right', overflowWrap: 'normal', wordBreak: 'normal' }}>
+            <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.18em', color: '#a08cc0' }}>EDITING</span>
+            <span style={{ font: "600 13px/1.25 var(--f-display)", color: '#e3c589' }}> · {addMode.deckName}</span>
+          </div>
         </div>
       ) : viewDetail ? (
         <div style={S.detailHeader}>
-          <button onClick={back} style={S.back}><IcBack size={15} />Back</button>
-          <div style={S.detailTitle}>{detail.title || ''}</div>
+          <button onClick={back} style={S.back}><IcBack size={16} />Back</button>
+          <div style={{ ...S.detailTitle, fontSize: detail.kind === 'card' ? 15 : 14 }}>{detail.title || ''}</div>
           <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); bump(); }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
             aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
@@ -527,6 +530,72 @@ function ResultIcon({ kind }) {
   return <ASvg><rect x="4" y="3" width="16" height="18" rx="2" /></ASvg>; // card
 }
 
+// Codex result-row chrome, shared by the Articles and Cards groups. Same anatomy
+// as the reskinned browse A-Z index (.cx-codex-* in tokens.css): text-ledger
+// rows, gold bookmark when saved else a quiet chevron. Duplicated here rather
+// than shared out of Codex.jsx so the browse list stays untouched.
+const CxBookmark = () => (
+  <span className="cx-codex-bm" aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span>
+);
+const CxChevron = () => (
+  <svg className="cx-codex-chev" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6" /></svg>
+);
+const CxSword = () => (
+  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }} aria-hidden="true"><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /></svg>
+);
+
+// Match highlighting: light the matched substring gold. Strip the search grammar
+// tokens (is:card, t:minion, set:beta …) and quotes, then highlight the plain
+// terms (>=2 chars) wherever they fall in the title - colour only, no chrome.
+function hlParts(text, q) {
+  const terms = (q || '').replace(/[a-z]+:\S+/gi, ' ').replace(/["']/g, ' ').split(/\s+/).filter((w) => w.length >= 2);
+  if (!terms.length) return text;
+  const esc = terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = new RegExp('(' + esc.join('|') + ')', 'ig');
+  const lower = new Set(terms.map((t) => t.toLowerCase()));
+  return text.split(re).map((p, i) => lower.has(p.toLowerCase())
+    ? <span key={i} style={{ color: '#e3c589' }}>{p}</span> : p);
+}
+
+function SearchRuleRow({ it, q, onOpen }) {
+  return (
+    <div className="cx-row cx-codex-row" onClick={onOpen}>
+      <span className="cx-codex-title">{hlParts(it.name, q)}</span>
+      {it.saved ? <CxBookmark /> : <CxChevron />}
+    </div>
+  );
+}
+
+function SearchCardRow({ it, q, onOpen }) {
+  const runs = thresholdRuns(it);
+  const type = (it.type || 'Card').split(/[^A-Za-z]+/)[0];
+  // Attack chip: a minion/automaton's attack, "N" or "N/Y" when defence differs.
+  const atk = it.attack != null
+    ? (it.defence != null && it.defence !== it.attack ? `${it.attack}/${it.defence}` : `${it.attack}`)
+    : null;
+  return (
+    <div className="cx-row cx-codex-row" onClick={onOpen}>
+      <span className="cx-codex-thumb"><CardArt card={{ ...it, card_id: it.id }} radius={7} aspect="5/7" /></span>
+      <div className="cx-codex-body">
+        <span className="cx-codex-name">{hlParts(it.name, q)}</span>
+        <span className="cx-codex-meta">
+          <span className="cx-codex-type">{type}</span>
+          {it.cost != null && <><span className="cx-codex-sep" /><span><span className="cx-codex-mana">{it.cost}</span> mana</span></>}
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
+        {runs.length > 0 && <ThresholdPips runs={runs} size={11} />}
+        {atk != null && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, height: 20, padding: '0 8px', borderRadius: 9, border: '1px solid rgba(74,60,34,.7)', font: "600 12px/1 var(--f-mono)", color: '#a99a80' }}>
+            <CxSword />{atk}
+          </span>
+        )}
+        <CxChevron />
+      </div>
+    </div>
+  );
+}
+
 function SearchResults({ query, kind = 'all', onOpen, onDuel }) {
   const [res, setRes] = useState(null);
   useEffect(() => {
@@ -541,35 +610,31 @@ function SearchResults({ query, kind = 'all', onOpen, onDuel }) {
     + (kind === 'all' ? res.decks.length + res.duels.length + (res.marginalia?.length || 0) : 0);
   if (total === 0) return (
     <div style={{ padding: '6px 20px 26px' }}>
-      <div style={{ padding: '44px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>No entries match “{query}.”</div>
+      <div style={{ padding: '48px 20px', textAlign: 'center', font: "400 15.5px/1.5 var(--f-read)", color: '#8a8175', fontStyle: 'italic' }}>No matches in the codex for <span style={{ color: '#e3c589' }}>“{query.trim()}”</span></div>
     </div>
   );
-  // rich=true renders the shared CardRow (art/pips/cost) for real card rows;
-  // thumb adds the art thumbnail (CARDS only - the text-match group stays glyph-
-  // light per the perf budget). Everything else keeps the one-line ListRow.
-  const group = (label, dot, items, onItem, iconKind, rich = false, thumb = false) => items.length > 0 && (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 11 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 7, font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />{label}
-        </span>
-        <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{items.length}</span>
-      </div>
-      {items.map((it) => rich
-        ? <CardRow key={'card' + it.id} card={it} thumb={thumb} icon={<ResultIcon kind="card" />} onClick={() => onItem(it)} />
-        : <ListRow key={(it.kind || iconKind) + it.id} icon={<ResultIcon kind={it.kind || iconKind} />} title={it.name} sub={it.meta} onClick={() => onItem(it)} />)}
+  // Section rubric (gold Cinzel caps + fade hairline + count) over the row list.
+  // Articles/cards get the reskinned .cx-codex-* rows; decks/matches/marginalia -
+  // out of this reskin's scope - keep the shared ListRow.
+  const group = (label, items, renderRow) => items.length > 0 && (
+    <div style={{ marginBottom: 22 }}>
+      <SectionLabel label={label} count={items.length} />
+      {items.map(renderRow)}
     </div>
   );
   const openCodex = (it) => onOpen(it.kind, it.id, it.name);
+  const ruleRow = (p) => (it) => <SearchRuleRow key={p + it.id} it={it} q={query} onOpen={() => openCodex(it)} />;
+  const cardRow = (p) => (it) => <SearchCardRow key={p + it.id} it={it} q={query} onOpen={() => openCodex(it)} />;
+  const listRow = (p, iconKind, onItem) => (it) => <ListRow key={p + it.id} icon={<ResultIcon kind={it.kind || iconKind} />} title={it.name} sub={it.meta} onClick={() => onItem(it)} />;
   return (
     <div style={{ padding: '6px 20px 26px' }}>
-      {showRules && group('ARTICLES', 'var(--accent-gold)', res.articles, openCodex, 'rule')}
-      {showCards && group('CARDS', 'var(--accent-gold)', res.cards, openCodex, 'card', true, true)}
-      {showCards && group('MENTIONED IN CARD TEXT', 'var(--accent-gold)', res.cardText, openCodex, 'card', true, false)}
-      {showRules && group('MENTIONED IN ARTICLES', 'var(--accent-gold)', res.articleText, openCodex, 'rule')}
-      {kind === 'all' && group('MARGINALIA', 'var(--link-violet)', res.marginalia || [], openCodex, 'card')}
-      {kind === 'all' && group('DECKS', 'var(--accent-violet)', res.decks, (it) => onOpen('deck', it.id, it.name), 'deck')}
-      {kind === 'all' && group('MATCHES', 'var(--accent-jade)', res.duels, () => onDuel(), 'match')}
+      {showRules && group('ARTICLES', res.articles, ruleRow('a'))}
+      {showCards && group('CARDS', res.cards, cardRow('c'))}
+      {showCards && group('MENTIONED IN CARD TEXT', res.cardText, cardRow('ct'))}
+      {showRules && group('MENTIONED IN ARTICLES', res.articleText, ruleRow('at'))}
+      {kind === 'all' && group('MARGINALIA', res.marginalia || [], listRow('m', 'card', openCodex))}
+      {kind === 'all' && group('DECKS', res.decks, listRow('d', 'deck', (it) => onOpen('deck', it.id, it.name)))}
+      {kind === 'all' && group('MATCHES', res.duels, listRow('x', 'match', () => onDuel()))}
     </div>
   );
 }
@@ -597,21 +662,17 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
           <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
         ))}
       </ChipRow>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 'none' }}>
-        <span style={{ width: 1, height: 18, background: 'var(--hair-22)' }} />
-        <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
-            padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
-            font: "600 13px/1 var(--f-ui)",
-            background: marginalia ? 'var(--gold-leaf)' : 'transparent',
-            color: marginalia ? '#1a1410' : 'var(--gold-leaf)',
-            border: `1px solid ${marginalia ? 'var(--gold-leaf)' : 'rgba(201,163,90,.5)'}`,
-          }}>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-          Marginalia
-        </button>
-      </div>
+      <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
+          padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
+          font: "600 13px/1 var(--f-ui)", color: '#e3c589',
+          background: marginalia ? 'rgba(203,167,95,.16)' : 'transparent',
+          border: `1px solid ${marginalia ? 'rgba(203,167,95,.5)' : 'rgba(203,167,95,.35)'}`,
+        }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+        Marginalia
+      </button>
     </div>
   );
 }
@@ -907,10 +968,9 @@ const S = {
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 14px/1 var(--f-ui)", cursor: 'pointer', width: 56, padding: 0 },
-  detailTitle: { flex: 1, textAlign: 'center', font: "600 16px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, flexShrink: 0 },
+  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: 'var(--f-display)', fontWeight: 600, fontSize: 14, lineHeight: 1.15, letterSpacing: '.1em', color: '#efe7d8', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
-  addEyebrow: { flex: 1, textAlign: 'center', font: "600 11px/1.2 var(--f-ui)", letterSpacing: '.14em', color: 'var(--gold-leaf)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
   // lives inside that box, so it only needs nav overlap (62px) + search/FAB clearance

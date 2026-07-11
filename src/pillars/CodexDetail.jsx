@@ -10,13 +10,13 @@ import {
 } from '../store/codexRepository.js';
 import { annotationsForDoc, addAnnotation, deleteAnnotation, anchorFromSelection, resolveAnnotation } from '../store/annotations.js';
 import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
-import { listsWithCard } from '../store/ownedRepository.js';
+import { qtyFor } from '../store/ownedRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { getDoc, getDocs, getFaqs } from '../store/codexDoc.js';
 import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RuleArticle, InlineText, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
-import OwnedControl from '../components/OwnedControl.jsx';
+import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
@@ -36,9 +36,43 @@ const noEm = (s) => String(s || '').replace(/\s*—\s*/g, ' - ');
 // Small inline SVG icons - no Unicode glyphs anywhere in the Codex detail.
 const IcoLink = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none', verticalAlign: '-1px' }}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg>;
 const IcoPlus = ({ size = 13 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" style={{ flex: 'none', verticalAlign: '-2px' }}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>;
+// Quiet marginalia remove - a muted ✕ with a generous invisible hit box; reads
+// as incidental chrome, not a danger action (deletion is immediate by design).
+const MargRemove = ({ onClick }) => (
+  <button onClick={onClick} title="Remove"
+    style={{ flex: 'none', width: 32, height: 32, marginTop: -3, marginRight: -6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', color: '#5c554b', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent' }}>
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+  </button>
+);
 const CodexTypeIcon = ({ kind, size = 14 }) => kind === 'card'
   ? <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="3" width="16" height="18" rx="2" /></svg>
   : <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Z" /><polyline points="14 4 14 9 19 9" /></svg>;
+
+// One read-only ledger row for "In Your Compendium": a left label, a right
+// value/summary (children), and a quiet chevron when tappable. Flat, hairline-
+// separated - no boxes.
+const LedgerRow = ({ label, onClick, children }) => (
+  <div onClick={onClick} className={onClick ? 'cx-row' : undefined}
+    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '15px 0', borderBottom: '1px solid rgba(74,60,34,.3)', cursor: onClick ? 'pointer' : 'default' }}>
+    <span style={{ flex: 'none', font: "400 16px/1.2 var(--f-read)", color: '#d8cebb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '58%' }}>{label}</span>
+    <span style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 3, textAlign: 'right' }}>{children}</span>
+    {onClick && <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#5c554b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flex: 'none' }}><polyline points="9 18 15 12 9 6" /></svg>}
+  </div>
+);
+
+// The Collection summary shown on the ledger's Collection row: gold counts with
+// EB Garamond labels ("3 owned · ✦ 1 foil"), or a dimmed "not owned" note.
+const CollectionSummary = ({ qty }) => {
+  const owned = qty?.owned || 0, foil = qty?.foil || 0;
+  if (owned === 0 && foil === 0) return <span style={{ font: "400 14.5px/1.4 var(--f-read)", color: '#5c554b' }}>Not in your collection</span>;
+  const num = (n) => <span style={{ font: "600 15px/1 var(--f-display)", color: '#e3c589' }}>{n}</span>;
+  const lab = (t) => <span style={{ font: "400 14.5px/1.4 var(--f-read)", color: '#8a8175', marginLeft: 4 }}>{t}</span>;
+  const dot = (k) => <span key={k} style={{ color: '#5c554b', margin: '0 7px' }}>·</span>;
+  const parts = [];
+  if (owned > 0) parts.push(<span key="o">{num(owned)}{lab('owned')}</span>);
+  if (foil > 0) parts.push(<span key="f"><span style={{ color: '#e3c589', marginRight: 3 }}>✦</span>{num(foil)}{lab('foil')}</span>);
+  return <>{parts.flatMap((p, i) => (i === 0 ? [p] : [dot('d' + i), p]))}</>;
+};
 
 export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOpenDeck, onChanged }) {
   const [data, setData] = useState(null);
@@ -46,6 +80,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   const [noteText, setNoteText] = useState('');
   const [picker, setPicker] = useState(false);
   const [deckAdd, setDeckAdd] = useState(false);
+  const [sheetCard, setSheetCard] = useState(null);    // the card's Collection ownership sheet
   const bodyRef = useRef(null);
   const scrolledRef = useRef(null);                    // deep-link: scroll to a target block once per navigation
   const [selection, setSelection] = useState('');
@@ -54,11 +89,11 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [doc, appearsIn, faqs, notes, ann, links, inDecks, inLists] = await Promise.all([
-        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), annotationsForDoc('card', id), linksFor(id), decksWithCard(id), listsWithCard(id),
+      const [doc, appearsIn, faqs, notes, ann, links, inDecks, qty] = await Promise.all([
+        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), annotationsForDoc('card', id), linksFor(id), decksWithCard(id), qtyFor(id),
       ]);
       const faqDocs = await getFaqs(faqs.map((f) => f.faq_id));
-      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, ann, links, inDecks, inLists });
+      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, ann, links, inDecks, qty });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
@@ -217,10 +252,6 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
       {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} bodyRef={bodyRef} annotations={mainRes.inline} />
                     : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} mainAnn={mainRes.inline} subAnns={subRes.map((r) => r.inline)} onOpenLink={openLink} bodyRef={bodyRef} />}
 
-      {/* ownership - record what you own / want right from the card. Self-contained
-          (keyed to remount on card->card nav so optimistic counts never bleed). */}
-      {k === 'card' && <OwnedControl key={data.card.card_id} cardId={data.card.card_id} />}
-
       {/* Cards Mentioned - carousel of card art referenced by this article. Opens
           by (kind, id) directly - no fragile name resolution. */}
       {k === 'rule' && ment.cards.length > 0 && (
@@ -229,7 +260,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
           <div className="cx-mention-rail">
             {ment.cards.map((c) => (
               <div key={c.card_id} className="cx-mention-card" onClick={() => onOpen('card', c.card_id, c.name)}>
-                <CardArt card={c} radius={9} />
+                <span className="cx-mention-frame"><CardArt card={c} radius={10} aspect="5/7" /></span>
                 <div className="cx-mention-name">{c.name}</div>
               </div>
             ))}
@@ -259,82 +290,78 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
         </div>
       )}
 
-      {/* in your decks - the unification payoff: this card in the profile's decks */}
-      {k === 'card' && data.inDecks.length > 0 && (
-        <div style={{ marginTop: 18 }}>
-          <SectionLabel label="IN YOUR DECKS" count={data.inDecks.length} />
-          {data.inDecks.map((d, i) => (
-            <div key={d.id + d.zone} onClick={() => onOpenDeck?.(d.id, d.name)} className="cx-row"
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', borderBottom: i < data.inDecks.length - 1 ? '1px solid var(--hair-12)' : 'none', cursor: 'pointer' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-violet)', flex: 'none' }} />
-              <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
-              <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{d.zone === 'avatar' ? 'Avatar' : `${d.zone.charAt(0).toUpperCase() + d.zone.slice(1)} · ${d.quantity}×`}</span>
-              <span style={{ color: 'var(--ink-faint)', display: 'flex' }}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* in your lists - the Collection payoff: which of your lists hold this card.
-          Display-only for now (no Codex->list route exists yet), so no chevron. */}
-      {k === 'card' && data.inLists?.length > 0 && (
-        <div style={{ marginTop: 18 }}>
-          <SectionLabel label="IN YOUR LISTS" count={data.inLists.length} />
-          {data.inLists.map((l, i) => (
-            <div key={l.id}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 4px', borderBottom: i < data.inLists.length - 1 ? '1px solid var(--hair-12)' : 'none' }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--accent-ruby)', flex: 'none' }} />
-              <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
-              <span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{l.kind === 'wanted' ? 'Wanted list' : 'Card list'} · {l.quantity}×</span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* highlights - hued per annotation (card = violet, rule = gold). Orphaned
-          ones (text gone after a catalog update) stay here, dimmed + labelled, so
-          user data is never silently lost - a recovery affordance lives here. */}
+      {/* highlights - the personal layer, styled as margin notes (a coloured
+          vertical rule + italic quote), hued per annotation (card = violet, rule =
+          gold). Orphaned ones (text gone after a catalog update) stay dimmed +
+          labelled, so user data is never silently lost. */}
       {allAnn.length > 0 && (
-        <div style={{ marginTop: 18 }}>
+        <div style={{ marginTop: 24 }}>
           <SectionLabel label="HIGHLIGHTS" count={allAnn.length} />
           {allAnn.map((a) => {
             const violet = a.color === 'violet';
             const detached = orphans.some((o) => o.id === a.id);
             return (
-              <div key={a.id} style={{ borderLeft: `3px solid ${violet ? 'var(--link-violet)' : 'var(--gold-leaf)'}`, background: violet ? 'rgba(199,154,208,.08)' : 'rgba(220,184,111,.08)', borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8, opacity: detached ? 0.6 : 1 }}>
-                <div style={{ flex: 1, minWidth: 0, font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>“{a.quote.exact}”{detached && <span style={{ fontStyle: 'normal', color: 'var(--ink-faint)', font: "500 11px/1 var(--f-ui)", marginLeft: 8 }}>· detached</span>}{a.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{a.comment}</span> : null}</div>
-                <IconButton glyph="✕" tone="danger" size={22} onClick={() => delAnn(a.id)} />
+              <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '2px 0 2px 13px', borderLeft: `2px solid ${violet ? '#a08cc0' : '#cba75f'}`, marginBottom: 14, opacity: detached ? 0.6 : 1 }}>
+                <div style={{ flex: 1, minWidth: 0, font: "400 16px/1.5 var(--f-read)", color: '#d8cebb', fontStyle: 'italic' }}>“{a.quote.exact}”{detached && <span style={{ fontStyle: 'normal', color: '#5c554b', font: "500 11px/1 var(--f-ui)", marginLeft: 8 }}>· detached</span>}{a.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: '#8a8175', fontSize: 13.5, marginTop: 4 }}>{a.comment}</span> : null}</div>
+                <MargRemove onClick={() => delAnn(a.id)} />
               </div>
             );
           })}
         </div>
       )}
 
-      {/* marginalia */}
-      <div style={{ marginTop: 18, borderRadius: 16, background: 'linear-gradient(180deg,rgba(30,22,15,.85),rgba(22,16,11,.6))', border: '1px solid var(--hair-16)', padding: 15 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 }}>
-          <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)' }}>YOUR MARGINALIA</span>
-          <IconButton glyph="+" onClick={() => setComposer(true)} title="Add a note or link" />
+      {/* Marginalia - hand-annotations in the margin, not a boxed panel: a gold
+          rubric with the frosted-rose add control, then borderless entries each
+          led by a coloured vertical rule (gold = your note, violet = a card link). */}
+      <div style={{ marginTop: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <span style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', color: '#cba75f', whiteSpace: 'nowrap' }}>YOUR MARGINALIA</span>
+          <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
+          <button onClick={() => setComposer(true)} title="Add a note or link"
+            style={{ flex: 'none', width: 44, height: 44, marginRight: -7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent' }}>
+            <span style={{ width: 30, height: 30, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(224,169,177,.09)', border: '1px solid rgba(224,169,177,.28)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', color: '#f0c8ce' }}><IcoPlus size={14} /></span>
+          </button>
         </div>
         {data.notes.length === 0 && data.links.length === 0 && (
-          <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', textAlign: 'center', padding: '6px 0 4px' }}>No marginalia yet - add a note or link.</div>
+          <div style={{ font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '2px 0 2px 13px' }}>No marginalia yet - add a note or link.</div>
         )}
         {data.notes.map((n) => (
-          <div key={n.id} style={{ borderLeft: '2px solid var(--gold)', background: 'rgba(201,163,90,.06)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', gap: 8 }}>
-            <div style={{ flex: 1, font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body)', fontStyle: 'italic' }}>{n.body}</div>
-            <IconButton glyph="✕" tone="danger" size={22} onClick={() => delNote(n.id)} />
+          <div key={n.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '2px 0 2px 13px', borderLeft: '2px solid #cba75f', marginBottom: 14 }}>
+            <div style={{ flex: 1, font: "400 16px/1.5 var(--f-read)", color: '#d8cebb', fontStyle: 'italic' }}>{n.body}</div>
+            <MargRemove onClick={() => delNote(n.id)} />
           </div>
         ))}
         {data.links.map((l) => (
-          <div key={l.id} style={{ borderLeft: '2px solid var(--link-violet)', background: 'rgba(199,154,208,.08)', borderRadius: '0 10px 10px 0', padding: '11px 13px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div key={l.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '2px 0 2px 13px', borderLeft: '2px solid #a08cc0', marginBottom: 14 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div onClick={() => onOpenName(l.otherName)} style={{ display: 'flex', alignItems: 'center', gap: 6, font: "600 14px/1.3 var(--f-read)", color: 'var(--link-violet)', cursor: 'pointer' }}><IcoLink />{l.otherName}</div>
-              {l.description && <div style={{ font: "400 12.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', fontStyle: 'italic', marginTop: 3 }}>{l.description}</div>}
+              <div onClick={() => onOpenName(l.otherName)} style={{ display: 'flex', alignItems: 'center', gap: 6, font: "600 16px/1.3 var(--f-read)", color: '#c9a8e8', cursor: 'pointer' }}><IcoLink />{l.otherName}</div>
+              {l.description && <div style={{ font: "400 13.5px/1.4 var(--f-read)", color: '#8a8175', fontStyle: 'italic', marginTop: 3 }}>{l.description}</div>}
             </div>
-            <IconButton glyph="✕" tone="danger" size={22} onClick={() => delLink(l.id)} />
+            <MargRemove onClick={() => delLink(l.id)} />
           </div>
         ))}
       </div>
+
+      {/* In Your Compendium - the profile-layer ledger (read-only): where this card
+          sits in your Collection and decks. Ownership is EDITED in the tapped
+          Collection sheet, never here (this is the knowledge base). */}
+      {k === 'card' && (
+        <div style={{ marginTop: 24 }}>
+          <SectionLabel label="IN YOUR COMPENDIUM" />
+          <LedgerRow label="Collection" onClick={() => setSheetCard(data.card.card_id)}>
+            <CollectionSummary qty={data.qty} />
+          </LedgerRow>
+          {data.inDecks.length > 0 ? data.inDecks.map((d) => (
+            <LedgerRow key={d.id + d.zone} label={d.name} onClick={() => onOpenDeck?.(d.id, d.name)}>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: '#e3c589' }}>{d.zone === 'avatar' ? 'Avatar' : `${d.quantity}×`}</span>
+            </LedgerRow>
+          )) : (
+            <LedgerRow label="Decks">
+              <span style={{ font: "400 14.5px/1.4 var(--f-read)", color: '#5c554b' }}>In no decks</span>
+            </LedgerRow>
+          )}
+        </div>
+      )}
 
       {/* selection -> highlight. A full-screen invisible layer is "highlight mode":
           tapping the pill saves, tapping ANYWHERE else rejects the selection and
@@ -356,6 +383,9 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
       <MarginaliaComposer open={composer} onClose={() => setComposer(false)}
         noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={entryId} />
       <CollectionPicker open={picker} targetType={targetType} targetId={entryId} onClose={() => { setPicker(false); load(); }} />
+      {/* The card's ownership sheet (owned / foil / wishlist steppers) - the one
+          place counts are edited; reloads the ledger summary on close. */}
+      <CollectionCardSheet cardId={sheetCard} onClose={() => { setSheetCard(null); load(); }} />
       {k === 'card' && !data.card.is_avatar && (
         <AddToDeckSheet open={deckAdd} card={data.card} onClose={() => { setDeckAdd(false); load(); onChanged?.(); }} />
       )}
@@ -373,10 +403,16 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
 function RuleBody({ doc, subs, subDocs, mainAnn, subAnns, onOpenLink, bodyRef }) {
   return (
     <div ref={bodyRef}>
+      {/* Codex eyebrow - violet caps trailed by a fade hairline, marking the
+          article as a codex entry (the header above is shared with card detail). */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 16px' }}>
+        <span style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.2em', color: '#a08cc0', whiteSpace: 'nowrap' }}>CODEX ARTICLE</span>
+        <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,rgba(160,140,192,.45),transparent)' }} />
+      </div>
       <RuleArticle doc={doc} annotations={mainAnn} onOpenLink={onOpenLink} />
       {subs.map((s, i) => (
-        <div key={s.id} style={{ marginTop: 16 }}>
-          <SectionLabel label={s.title.toUpperCase()} />
+        <div key={s.id}>
+          <div className="cx-article-h">{s.title.toUpperCase()}</div>
           <RuleArticle doc={subDocs[i]} annotations={subAnns[i] || []} onOpenLink={onOpenLink} />
         </div>
       ))}
@@ -385,76 +421,83 @@ function RuleBody({ doc, subs, subDocs, mainAnn, subAnns, onOpenLink, bodyRef })
 }
 
 function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, annotations }) {
-  const subTypes = jp(card.sub_types, []);
   const sets = jp(card.sets, []);
+  const variants = jp(card.variants, []);
+  const flavour = noEm((variants.find((v) => v && v.flavorText)?.flavorText) || '');
   const pips = thresholdRuns(card);
-  const isAvatar = !!card.is_avatar;
+  const isMinion = /minion/i.test(card.type || '');
+  const typeText = card.is_site ? 'Site' : card.is_avatar ? 'Avatar' : (card.type || 'Card');
+
+  // Meta line: type (violet) · rarity (canonical rarity token) · sets (#c9b487),
+  // hairline-separated, centered, wrapping. No subtype/pills - the art carries them.
+  const rarityToken = card.rarity ? `var(--${card.rarity.toLowerCase()}, var(--ink-muted))` : null;
+  const meta = [];
+  meta.push(<span key="ty" style={{ font: "500 11px/1 var(--f-display)", letterSpacing: '.16em', textTransform: 'uppercase', color: '#a08cc0' }}>{typeText}</span>);
+  if (card.rarity) meta.push(<span key="r" style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.08em', textTransform: 'uppercase', color: rarityToken }}>{card.rarity}</span>);
+  if (sets.length) meta.push(<span key="s" style={{ font: "500 11px/1 var(--f-display)", letterSpacing: '.08em', textTransform: 'uppercase', color: '#c9b487' }}>{sets.map((s) => s.name).join(' · ')}</span>);
+  const metaRow = meta.flatMap((n, i) => (i === 0 ? [n] : [<span key={`h${i}`} aria-hidden="true" style={{ width: 1, height: 12, background: 'rgba(107,90,46,.6)', flex: 'none' }} />, n]));
+
+  // Stats as open columns (no boxes). POWER only for minions; LIFE where present
+  // (avatars). THRESHOLD renders the PNG icons in the value slot.
   const stats = [];
   if (card.cost != null) stats.push(['MANA', card.cost]);
-  if (pips.length) stats.push(['THRESHOLD', <ThresholdPips runs={pips} />]);
-  // Power model (deck-builder parity): a minion whose attack equals its defence
-  // shows a single POWER; if they differ, show ATTACK and DEFENCE separately.
-  if (card.attack != null || card.defence != null) {
-    if (card.attack != null && card.attack === card.defence) stats.push(['POWER', card.attack]);
-    else { stats.push(['ATTACK', card.attack ?? '–']); stats.push(['DEFENCE', card.defence ?? '–']); }
-  }
-  if (isAvatar && card.life != null) stats.push(['LIFE', card.life]);
+  if (pips.length) stats.push(['THRESHOLD', <ThresholdPips runs={pips} size={20} />]);
+  if (isMinion && card.attack != null) stats.push(['POWER', card.attack === card.defence || card.defence == null ? card.attack : `${card.attack}/${card.defence}`]);
+  if (card.life != null) stats.push(['LIFE', card.life]);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+      {/* Card image - centered, no gilding (reference context). Sites play sideways. */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
         {card.is_site ? (
-          // Sites play sideways - show the art rotated 90° in a landscape footprint (deck-builder parity).
-          <div style={{ position: 'relative', width: 264, aspectRatio: '7 / 5' }}>
-            <div style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(264px * 5 / 7)', transform: 'translate(-50%,-50%) rotate(90deg)', boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
-              <CardArt card={card} />
+          <div style={{ position: 'relative', width: 300, aspectRatio: '7 / 5' }}>
+            <div style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(300px * 5 / 7)', transform: 'translate(-50%,-50%) rotate(90deg)', borderRadius: 13, overflow: 'hidden', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 40px rgba(0,0,0,.6)' }}>
+              <CardArt card={card} radius={13} />
             </div>
           </div>
         ) : (
-          <div style={{ width: 200, boxShadow: '0 18px 40px -16px rgba(0,0,0,.6)' }}>
-            <CardArt card={card} />
+          <div style={{ width: 248, borderRadius: 13, overflow: 'hidden', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 40px rgba(0,0,0,.6)' }}>
+            <CardArt card={card} radius={13} aspect="5/7" />
           </div>
         )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <span style={{ font: "600 11px/1 var(--f-ui)", letterSpacing: '.06em', color: 'var(--gold-leaf)' }}>{card.type}</span>
-        {card.rarity && <><Dot /><span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{card.rarity}</span></>}
-        {subTypes.length > 0 && <><Dot /><span style={{ font: "500 11px/1 var(--f-ui)", color: 'var(--ink-muted)' }}>{subTypes.join(' · ')}</span></>}
-      </div>
+
+      {metaRow.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 22 }}>{metaRow}</div>
+      )}
 
       {stats.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: 56, marginBottom: 24 }}>
           {stats.map(([l, v], i) => (
-            <div key={i} style={{ flex: 1, textAlign: 'center', border: '1px solid var(--hair-16)', borderRadius: 11, padding: '11px 4px', background: 'var(--surface-well)' }}>
-              <div style={{ font: "600 16px/1.1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{v}</div>
-              <div style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: 'var(--ink-faint)', marginTop: 6 }}>{l}</div>
+            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+              <span style={{ font: "700 26px/1 var(--f-display)", color: '#e3c589', display: 'flex', alignItems: 'center', minHeight: 26 }}>{v}</span>
+              <span style={{ font: "500 9.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#8a8175' }}>{l}</span>
             </div>
           ))}
         </div>
       )}
 
       {card.rules_text && (
-        <div ref={bodyRef}
-          style={{ border: '1px solid var(--hair-16)', borderRadius: 12, background: 'var(--surface-card)', padding: '4px 14px 14px', marginBottom: 14 }}>
-          <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
+        <div style={{ maxWidth: 340, margin: '0 auto 18px', padding: 1, borderRadius: 15, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5))', boxShadow: '0 10px 26px -14px rgba(0,0,0,.6)' }}>
+          <div ref={bodyRef} className="cx-cardrule" style={{ borderRadius: 14, background: '#0e0b08', padding: '18px 20px' }}>
+            <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
+          </div>
         </div>
       )}
 
-      {sets.length > 0 && (
-        <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--ink-faint)', marginBottom: 14 }}>
-          Sets: {sets.map((s) => s.name).join(', ')}
-        </div>
+      {flavour && (
+        <div style={{ maxWidth: 340, margin: '0 auto', textAlign: 'center', font: "italic 400 15px/1.55 var(--f-read)", color: '#8a8175' }}>{flavour}</div>
       )}
 
       {faqs.length > 0 && (
-        <div style={{ marginTop: 4 }}>
+        <div style={{ marginTop: 24 }}>
           <SectionLabel label="OFFICIAL FAQ" count={faqs.length} />
           {faqs.map((f, i) => (
-            <div key={i} style={{ border: '1px solid var(--hair-14)', borderRadius: 12, background: 'var(--surface-card)', padding: '12px 13px', marginBottom: 8 }}>
-              <div style={{ font: "600 13.5px/1.4 var(--f-read)", color: 'var(--ink-head)', marginBottom: 6 }}>
+            <div key={i} style={{ padding: '14px 0', borderBottom: i < faqs.length - 1 ? '1px solid rgba(74,60,34,.3)' : 'none' }}>
+              <div style={{ font: "600 15px/1.45 var(--f-read)", color: '#efe7d8', marginBottom: 6 }}>
                 {faqDocs?.[i]?.q ? <InlineText canon={faqDocs[i].q.canon} links={faqDocs[i].q.links} onOpenLink={onOpenLink} /> : noEm(f.question)}
               </div>
-              <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>
+              <div style={{ font: "400 15px/1.6 var(--f-read)", color: '#d8cebb' }}>
                 {faqDocs?.[i]?.a ? <InlineText canon={faqDocs[i].a.canon} links={faqDocs[i].a.links} onOpenLink={onOpenLink} /> : noEm(f.answer)}
               </div>
             </div>
@@ -589,6 +632,5 @@ function AddToDeckSheet({ open, card, onClose }) {
   );
 }
 
-const Dot = () => <span style={{ width: 3, height: 3, borderRadius: '50%', background: 'rgba(201,163,90,.5)' }} />;
 const btnGold = BTN_GOLD;
 const btnGhost = { ...BTN_GHOST, flex: 1 };
