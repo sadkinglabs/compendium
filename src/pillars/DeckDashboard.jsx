@@ -102,9 +102,12 @@ function HandCard({ zones, avatar, onCardTap }) {
   }, [hand?.dealKey]);
   const cap = (q) => Math.max(0, Math.min(q | 0, 99));
   const shuffle = (a) => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
-  const spellRot = () => Math.round((Math.random() * 19 - 9) * 10) / 10;   // -9..+10
-  const siteRot = () => Math.round((Math.random() * 3 - 1.5) * 10) / 10;   // -1.5..+1.5
-  const mk = (e, drawn, rotFn) => ({ e, id: seq.current++, rot: rotFn(), drawn });
+  const mk = (e, drawn) => ({ e, id: seq.current++, drawn });
+  // Even, progressive tilt across the hand (not random) so the cards splay in a
+  // clean arc rather than a jagged pile: centred (middle card upright), and the
+  // total spread is capped so a big hand just packs tighter. Pivots from the card
+  // foot (transform-origin) so the tops fan apart.
+  const fanAngle = (i, n) => (n <= 1 ? 0 : (i - (n - 1) / 2) * Math.min(8, 20 / (n - 1)));
 
   function build() {
     const subs = avatar?.subTypes || (() => { try { return JSON.parse(avatar?.sub_types || '[]'); } catch { return []; } })();
@@ -113,8 +116,8 @@ function HandCard({ zones, avatar, onCardTap }) {
     const sbPool = shuffle(zones.spellbook.flatMap((e) => Array(cap(e.quantity)).fill(e)));
     const atPool = shuffle(zones.atlas.flatMap((e) => Array(cap(e.quantity)).fill(e)));
     setHand((h) => ({
-      spells: sbPool.slice(0, sbN).map((e) => mk(e, false, spellRot)),
-      sites: atPool.slice(0, atN).map((e) => mk(e, false, siteRot)),
+      spells: sbPool.slice(0, sbN).map((e) => mk(e, false)),
+      sites: atPool.slice(0, atN).map((e) => mk(e, false)),
       rest: sbPool.slice(sbN), restAt: atPool.slice(atN), newest: null, dealKey: (h?.dealKey || 0) + 1,
     }));
     setLeaving(false);
@@ -133,8 +136,8 @@ function HandCard({ zones, avatar, onCardTap }) {
     if (kind === 'site' && !hand?.restAt.length) return bump('site');
     setHand((h) => {
       if (!h) return h;
-      if (kind === 'spell') { const c = mk(h.rest[0], true, spellRot); return { ...h, spells: [...h.spells, c], rest: h.rest.slice(1), newest: c.id }; }
-      const c = mk(h.restAt[0], true, siteRot); return { ...h, sites: [...h.sites, c], restAt: h.restAt.slice(1), newest: c.id };
+      if (kind === 'spell') { const c = mk(h.rest[0], true); return { ...h, spells: [...h.spells, c], rest: h.rest.slice(1), newest: c.id }; }
+      const c = mk(h.restAt[0], true); return { ...h, sites: [...h.sites, c], restAt: h.restAt.slice(1), newest: c.id };
     });
   }
   // The hand fans wide when small and stacks as it grows: the reveal (visible
@@ -155,9 +158,9 @@ function HandCard({ zones, avatar, onCardTap }) {
     return n <= 1 ? maxRev : Math.min(maxRev, (avail - cardW) / (n - 1));
   };
 
-  const card = (c, i, site) => (
+  const card = (c, i, n, site) => (
     <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
-      style={{ '--rot': c.rot + 'deg', width: (site ? SITE_W : SPELL_W) + 'px', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 55) + 'ms' }}
+      style={{ '--rot': fanAngle(i, n) + 'deg', width: (site ? SITE_W : SPELL_W) + 'px', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 55) + 'ms' }}
       onClick={() => c.e.card_id && onCardTap?.(c.e.card_id)}>
       {c.e.image_slug && <img src={`${BASE}cards/${c.e.image_slug}`} loading="lazy" alt=""
         onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
@@ -187,7 +190,7 @@ function HandCard({ zones, avatar, onCardTap }) {
       <div className="dealt-group">{sub}
         <div className="dealt-fan-wrap">
           <div className="dealt-fan" ref={site ? undefined : fanRef} style={{ '--ov': (reveal - cardW) + 'px' }}>
-            {cards.map((c, i) => card(c, i, site))}
+            {cards.map((c, i) => card(c, i, cards.length, site))}
           </div>
         </div>
       </div>
