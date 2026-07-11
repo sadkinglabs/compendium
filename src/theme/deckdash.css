@@ -91,10 +91,8 @@
 .arc .dealt-none { font: italic 400 13px/1.4 'EB Garamond', Georgia, serif; color: #6b6254; padding: 8px 2px 4px; }
 .arc .dealt-pill.sm { padding: 7px 13px; font-size: 12px; }
 
-/* Each fan is height-capped with its own internal vertical scroll (whole-deck
-   hands) and never scrolls horizontally; the header + button stay put above it. */
-.arc .dealt-fan-wrap { max-height: 46vh; overflow: hidden auto; }
-.arc .dealt-strip-wrap { max-height: 30vh; overflow: hidden auto; }
+/* Fans show their full content - no internal scroll, the page scrolls instead
+   (the fan's own padding keeps rotated corners inside the page gutter). */
 /* Rows fill left-to-right (flex-start) so a placed card never re-centres. */
 .arc .dealt-fan { display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: flex-start; padding: 24px 14px 30px; }
 /* A flex line-break: forces the next card onto a new row at a JS-measured spot. */

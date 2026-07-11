@@ -137,12 +137,20 @@ function HandCard({ zones, avatar, onCardTap }) {
       const c = mk(h.restAt[0], true, siteRot); return { ...h, sites: [...h.sites, c], restAt: h.restAt.slice(1), newest: c.id };
     });
   }
-  // A CONSTANT tight overlap: the hand stacks like a held fan, but because the
-  // per-card reveal never changes, the rows never re-flow - a card that lands in
-  // a spot keeps it. Rows fill left-to-right and cards only ever append, so
-  // nothing already dealt shifts or jumps.
-  const REVEAL = 40;                    // visible width of each buried card
-  const overlap = () => REVEAL - 112;   // -72
+  // The hand fans wide when small and stacks as it grows: the reveal (visible
+  // width of each buried card) shrinks to fit the whole pile in ONE row, down to
+  // a floor - only then does it wrap to a second row. So the opening 3 are fully
+  // fanned out, each added card gently tightens the fan (existing cards ease
+  // closer - a smooth slide, never a re-row), and once a row hits the floor it
+  // locks at a constant capacity so cards never jump between rows.
+  const CARD_W = 112, MIN_REVEAL = 24, MAX_REVEAL = 100;
+  const layout = (n) => {
+    const avail = fanW ? fanW - 28 : 9999;   // fan content width (minus 28px h-padding)
+    if (n <= 1) return { reveal: MAX_REVEAL, per: 1 };
+    const fit = (avail - CARD_W) / (n - 1);  // reveal that would fit all n in one row
+    if (fit >= MIN_REVEAL) return { reveal: Math.min(MAX_REVEAL, fit), per: n };
+    return { reveal: MIN_REVEAL, per: Math.max(1, Math.floor((avail - CARD_W) / MIN_REVEAL) + 1) };
+  };
 
   const card = (c, i, site) => (
     <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
@@ -172,16 +180,13 @@ function HandCard({ zones, avatar, onCardTap }) {
     if (kind === 'site') {
       return <div className="dealt-group">{sub}<div className="dealt-strip-wrap"><div className="dealt-strip">{cards.map((c, i) => card(c, i, true))}</div></div></div>;
     }
-    // Break the spell fan into fixed-width rows (constant reveal -> constant
-    // capacity), so lead cards sit at margin 0 and rows never re-balance. The
-    // cards stay a flat, stably-keyed list - only the break markers move. `per`
-    // is how many cards fit before the row would overflow (avail = clientWidth
-    // minus the 28px h-padding): last card's right = (per-1)*REVEAL + 112 <= avail.
-    const per = fanW ? Math.max(1, Math.floor((fanW - 28 - 112) / REVEAL) + 1) : cards.length;
+    // Cards stay a flat, stably-keyed list - only the break markers move - so the
+    // fan re-flows and re-tightens without ever remounting (re-animating) a card.
+    const { reveal, per } = layout(cards.length);
     return (
       <div className="dealt-group">{sub}
         <div className="dealt-fan-wrap">
-          <div className="dealt-fan" ref={fanRef} style={{ '--ov': overlap() + 'px' }}>
+          <div className="dealt-fan" ref={fanRef} style={{ '--ov': (reveal - CARD_W) + 'px' }}>
             {cards.map((c, i) => (
               <React.Fragment key={c.id}>
                 {i > 0 && i % per === 0 && <i className="dealt-break" aria-hidden="true" />}
