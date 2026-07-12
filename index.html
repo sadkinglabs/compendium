@@ -7,38 +7,20 @@
   <title>Compendium</title>
   <!-- Fonts are self-hosted (src/theme/fonts.css) and bundled at build time so the
        app is fully offline. No external font requests. -->
-  <!-- Instant splash: painted from static HTML before the JS bundle parses (which
-       is ~hundreds of ms on a mid-range phone), so the screen is never blank.
-       React renders into #root and replaces this on mount - no JS teardown needed.
-       Uses Georgia (always available) so it needs no font load itself. -->
+  <!-- Pre-React ground: just the dark splash background (no logo/text) so there's
+       no white flash and no second, non-animated splash competing with React's.
+       React renders into #root and its animated <Splash> fades in over this same
+       dark ground - one splash, not two. -->
   <style>
     #boot-splash {
       position: fixed; inset: 0; z-index: 9999;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
       background: radial-gradient(120% 80% at 50% 42%, #120d09 0%, #0a0705 60%, #000 100%);
-      font-family: Georgia, 'Times New Roman', serif;
     }
-    /* The empty diamond outline - React's <BootDiamond> continues from here and
-       fills it as the catalogue seeds, so this frame must match React's first. */
-    #boot-splash .mark { filter: drop-shadow(0 0 12px rgba(203, 167, 95, .3)); animation: boot-pulse 1.8s ease-in-out infinite; line-height: 0; }
-    #boot-splash .word {
-      color: #cba75f; font-size: 15px; letter-spacing: .42em; text-indent: .42em;
-      text-transform: uppercase;
-    }
-    #boot-splash .line { color: #8a7a55; font-style: italic; font-size: 14px; letter-spacing: .03em; opacity: .92; }
-    @keyframes boot-pulse { 0%, 100% { opacity: .7; } 50% { opacity: 1; } }
-    @media (prefers-reduced-motion: reduce) { #boot-splash .mark { animation: none; } }
   </style>
 </head>
 <body>
   <div id="root">
-    <div id="boot-splash">
-      <svg class="mark" viewBox="0 0 100 100" width="60" height="60" aria-hidden="true">
-        <path d="M50 5 L95 50 L50 95 L5 50 Z" fill="none" stroke="#cba75f" stroke-width="4" stroke-linejoin="round" />
-      </svg>
-      <div class="word">Compendium</div>
-      <div class="line">Grinding the pigments…</div>
-    </div>
+    <div id="boot-splash"></div>
   </div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

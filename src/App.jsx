@@ -959,9 +959,8 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
   );
 }
 
-// Whispered incantations while the catalogue seeds. Cycled in order; the last is
-// held once reached (the grimoire opening = the app arriving). Matches the first
-// line baked into index.html's static splash so the hand-off is seamless.
+// Whispered incantations while the catalogue seeds. Shuffled per launch and cycled
+// so a quick boot still shows a fresh one each time.
 const BOOT_LINES = [
   'Grinding the pigments',
   'Marinating the mandrake jars',
@@ -969,7 +968,29 @@ const BOOT_LINES = [
   'Lighting the black candles',
   'Casting the spells',
   'Opening the grimoire',
+  'Consulting the spirits',
+  'Unrolling the scrolls',
+  'Charging the crystals',
+  'Feeding the familiars',
+  'Stirring the cauldron',
+  'Sharpening the athame',
+  'Translating the runes',
+  'Summoning the avatars',
+  'Dusting off the tomes',
+  'Bottling the moonlight',
+  'Waking the gargoyles',
+  'Tuning the ley lines',
+  'Counting the reagents',
+  'Polishing the scrying glass',
+  'Aligning the constellations',
+  'Brewing the elixirs',
 ];
+
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 
 // The Compendium mark: a gold diamond that FILLS from the base as boot advances.
 // SVG so the rising fill can be clipped cleanly to the diamond outline.
@@ -993,9 +1014,14 @@ function BootDiamond({ pct, dim }) {
   );
 }
 
+// Matches index.html's #boot-splash background so the pre-React frame and this one
+// are the same dark ground - the mark + incantation just fade in over it.
+const SPLASH_BG = 'radial-gradient(120% 80% at 50% 42%, #120d09 0%, #0a0705 60%, #000 100%)';
+
 function Splash({ error, errorText }) {
   const [pct, setPct] = useState(0);
   const [line, setLine] = useState(0);
+  const lines = useState(() => shuffled(BOOT_LINES))[0];   // fresh order each launch
   // Ease the fill toward (but not to) full - the mark is empty at launch and nearly
   // brimming by the time the catalogue is ready; it unmounts before hitting 100.
   useEffect(() => {
@@ -1003,22 +1029,22 @@ function Splash({ error, errorText }) {
     const iv = setInterval(() => setPct((p) => (p >= 94 ? 94 : p + Math.max(0.7, (98 - p) * 0.055))), 60);
     return () => clearInterval(iv);
   }, [error]);
-  // Advance the incantation, holding on the last line.
+  // Cycle the incantation (looping through the shuffled list).
   useEffect(() => {
     if (error) return undefined;
-    const iv = setInterval(() => setLine((i) => Math.min(i + 1, BOOT_LINES.length - 1)), 900);
+    const iv = setInterval(() => setLine((i) => (i + 1) % lines.length), 700);
     return () => clearInterval(iv);
-  }, [error]);
+  }, [error, lines.length]);
 
   return (
-    <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20 }}>
+    <div style={{ ...S.app, background: SPLASH_BG, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20, animation: 'cxfade .4s ease' }}>
       <BootDiamond pct={error ? 0 : pct} dim={error} />
       <div style={{ font: "600 15px/1 var(--f-display)", letterSpacing: '.42em', textIndent: '.42em', textTransform: 'uppercase', color: '#cba75f' }}>Compendium</div>
       {error ? (
         <div style={{ font: "600 13.5px/1.5 var(--f-display)", color: 'var(--destructive)', textAlign: 'center', padding: '0 32px', maxWidth: 320 }}>{errorText}</div>
       ) : (
         <div key={line} className="boot-line" style={{ minHeight: 20, font: "italic 400 14px/1.4 var(--f-read)", color: '#8a7a55', letterSpacing: '.03em', textAlign: 'center' }}>
-          {BOOT_LINES[line]}…
+          {lines[line]}…
         </div>
       )}
     </div>
