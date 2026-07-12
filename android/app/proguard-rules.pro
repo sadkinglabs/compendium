@@ -35,6 +35,12 @@
 -keep class com.getcapacitor.community.database.sqlite.** { *; }
 -keep class io.liteglue.** { *; }
 -dontwarn io.liteglue.**
+# SQLCipher: libsqlcipher.so's JNI_OnLoad resolves these Java classes by their
+# ORIGINAL names via FindClass - R8 renaming/removing them aborts the native load
+# at launch (register_android_database_SQLiteCompiledSql -> abort). Keep names + members.
+-keep class net.sqlcipher.** { *; }
+-keep interface net.sqlcipher.** { *; }
+-dontwarn net.sqlcipher.**
 
 # --- WebView JS bridge ---
 -keepclassmembers class * {
