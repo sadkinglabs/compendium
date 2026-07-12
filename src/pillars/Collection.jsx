@@ -227,13 +227,10 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
 
-  // `adding` = the Search-Library sub-mode: show the WHOLE catalog (not just what
-  // you own) so new cards can be added; steppers write Owned. Reached from the
-  // edit-mode + FAB; auto-closes when edit mode ends.
-  const [adding, setAdding] = useState(false);
+  // editMode IS the add surface: reveal the WHOLE catalogue (owned + unowned) with
+  // steppers so you can start adding immediately. Off = read-only owned collection.
   const [importOpen, setImportOpen] = useState(false);
-  useEffect(() => { if (!editMode) setAdding(false); }, [editMode]);
-  const showSteppers = editMode || adding;   // read-first: no steppers until you edit/add
+  const showSteppers = editMode;
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -299,9 +296,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   // My Collection shows only cards you OWN (total = regular + foil). In the
   // Search-Library add sub-mode, show the whole catalog so anything is addable.
   const shown = useMemo(() => {
-    if (adding) return pool || [];
+    if (editMode) return pool || [];   // adding: the whole catalogue is addable
     return (pool || []).filter((c) => { const o = ow.get(c.card_id); return (o?.owned || 0) + (o?.foil || 0) > 0; });
-  }, [pool, ow, adding]);
+  }, [pool, ow, editMode]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
   const activeCount = sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
@@ -314,16 +311,8 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Search-Library sub-mode banner: a distinct state - browsing the whole
-          catalogue to add, not just viewing what you own. */}
-      {adding && (
-        <div style={{ position: 'sticky', top: 0, zIndex: 7, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 8px 9px 14px', marginBottom: 8, borderRadius: 12, background: 'rgba(42,26,20,.94)', border: '1px solid rgba(210,88,115,.45)' }}>
-          <span style={{ font: "600 12px/1.3 var(--f-ui)", color: '#e8c6cd' }}>Adding to collection - <span style={{ color: 'var(--ink-faint)' }}>tap + to add copies</span></span>
-          <button onClick={() => setAdding(false)} style={{ flex: 'none', padding: '6px 15px', borderRadius: 14, cursor: 'pointer', font: "700 12px/1 var(--f-ui)", background: 'linear-gradient(180deg, #d8b872, #b8954f)', color: '#1a1206', border: '1px solid #e3c589' }}>Done</button>
-        </div>
-      )}
       {/* Sticky centered view toggle - never scrolls away. */}
-      <div style={{ position: 'sticky', top: adding ? 46 : 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
         <ViewToggle view={view} setView={setView} />
       </div>
 
@@ -334,7 +323,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
           </div>
           {shown.length === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              {adding ? 'No cards match those filters.'
+              {editMode ? 'No cards match those filters.'
                 : (activeCount || q) ? 'No owned cards match those filters.'
                   : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
@@ -354,12 +343,13 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       )}
 
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={adding ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
 
-      {/* FAB: browse = filter; edit mode = the + add menu; adding = filter the library. */}
-      {editMode && !adding ? (
-        <Fab variant="lib" label="Add cards" icon={<FabGlyph kind="add" />} items={[
-          { label: 'Search the library', icon: SeekSvg, onClick: () => setAdding(true) },
+      {/* Read = filter your owned cards. Add = a + menu of the other add tools
+          (the whole catalogue is already on screen with per-card +). */}
+      {editMode ? (
+        <Fab variant="lib" label="Add tools" icon={<FabGlyph kind="add" />} badge={activeCount} items={[
+          { label: 'Filter the library', icon: <FabGlyph kind="filters" />, onClick: () => setFilterOpen(true) },
           { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
           { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
         ]} />
