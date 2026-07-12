@@ -623,12 +623,16 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
 
 // In-list add picker: a searchable catalogue (rich token search, e:water set:beta)
 // where each row carries a +Add / stepper reflecting how many are already on this
-// list (or the Wishlist). Taps commit straight through onStep(card, delta) so the
-// list behind updates live. Multi-select batch-add lands in P2; this is single-add.
+// list (or the Wishlist). Two ways to add: tap a row's +Add for single, precise
+// edits (commits live through onStep(card, delta)), or hit Select to enter
+// multi-select - tap rows to check them, then one "Add N" bar commits them all at
+// +1. Shared by every list and the Wishlist.
 function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
   const [q, setQ] = useState('');
   const [pool, setPool] = useState(null);
-  useEffect(() => { if (open) { setQ(''); setPool(null); } }, [open]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Map());   // card_id -> full card row (kept for the batch commit)
+  useEffect(() => { if (open) { setQ(''); setPool(null); setSelectMode(false); setSelected(new Map()); } }, [open]);
   useEffect(() => {
     if (!open) return;
     let alive = true;
@@ -641,25 +645,54 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
     return () => { alive = false; clearTimeout(t); };
   }, [q, open]);
 
+  const toggleSel = (c) => setSelected((prev) => { const m = new Map(prev); m.has(c.card_id) ? m.delete(c.card_id) : m.set(c.card_id, c); return m; });
+  const commit = () => {
+    const cards = [...selected.values()];
+    if (!cards.length) return;
+    haptic('light');
+    for (const c of cards) onStep(c, 1);   // distinct ids; each serialises on its own chain
+    toast(`Added ${cards.length} card${cards.length === 1 ? '' : 's'}`);
+    setSelected(new Map());
+    setSelectMode(false);
+  };
+
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
-      {hint && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
+      {hint && !selectMode && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
       <input value={q} autoFocus onChange={(e) => setQ(e.target.value)}
         placeholder="Search the library - e:water set:beta…" style={{ ...SHEET_INPUT, height: 46 }} />
-      <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', margin: '12px 2px 2px' }}>
-        {pool == null ? 'Searching…' : `${pool.length} card${pool.length === 1 ? '' : 's'}${pool.length > 200 ? ' · showing 200' : ''}`}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '12px 2px 2px' }}>
+        <span style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
+          {selectMode ? `${selected.size} selected`
+            : pool == null ? 'Searching…' : `${pool.length} card${pool.length === 1 ? '' : 's'}${pool.length > 200 ? ' · showing 200' : ''}`}
+        </span>
+        <button onClick={() => { setSelectMode((s) => !s); setSelected(new Map()); }} aria-pressed={selectMode}
+          style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
+            background: selectMode ? 'rgba(210,88,115,.16)' : 'rgba(42,33,20,.5)', color: selectMode ? '#f0c8ce' : '#e3c589', border: `1px solid ${selectMode ? 'rgba(210,88,115,.5)' : 'rgba(210,88,115,.5)'}` }}>
+          {selectMode ? 'Cancel' : 'Select'}
+        </button>
       </div>
       {pool == null ? <Loading /> : pool.slice(0, 200).map((c) => {
         const inList = membership.get(c.card_id) || 0;
         const setName = listSetName(c);
+        const isSel = selected.has(c.card_id);
         return (
-          <div key={c.card_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
+          <div key={c.card_id} onClick={selectMode ? () => toggleSel(c) : undefined}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)', cursor: selectMode ? 'pointer' : 'default' }}>
             <span style={{ width: 42, flex: 'none' }}><CardArt card={c} radius={6} aspect="5/7" /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
-              {setName && <div style={{ marginTop: 5 }}><span style={listSetPill}>{setName}</span></div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                {setName && <span style={listSetPill}>{setName}</span>}
+                {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: '#e3c589' }}>on list ×{inList}</span>}
+              </div>
             </div>
-            {inList > 0 ? (
+            {selectMode ? (
+              <span aria-hidden="true" style={{ flex: 'none', width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? '#e3c589' : 'rgba(203,167,95,.4)'}` }}>
+                {isSel && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1a1206" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+              </span>
+            ) : inList > 0 ? (
               <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
                 <Frost label="One fewer" onClick={() => onStep(c, -1)}>−</Frost>
                 <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: '#efe7d8' }}>{inList}</span>
@@ -672,6 +705,14 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
           </div>
         );
       })}
+      {/* Running batch bar - sticks to the sheet's scroll floor while you check rows. */}
+      {selectMode && selected.size > 0 && (
+        <div style={{ position: 'sticky', bottom: 0, marginTop: 8, padding: '12px 0 2px', background: 'linear-gradient(0deg, #0b0806 68%, transparent)' }}>
+          <button onClick={commit} style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center' }}>
+            Add {selected.size} card{selected.size === 1 ? '' : 's'}
+          </button>
+        </div>
+      )}
     </BottomSheet>
   );
 }
