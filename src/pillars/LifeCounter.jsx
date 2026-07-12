@@ -469,7 +469,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
             <button className="modal-btn" onClick={() => setConfirm(null)}>Cancel</button>
             <button className="modal-btn danger" onClick={() => { const a = confirm.action; setConfirm(null); a?.(); }}>Discard</button>
           </>}>
-          <div style={{ padding: '18px 22px 4px', textAlign: 'center', font: "400 15px/1.5 'EB Garamond',Georgia,serif", color: 'var(--muted)' }}>{confirm.label}</div>
+          <div style={{ padding: '18px 22px 4px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--muted)' }}>{confirm.label}</div>
         </VModal>
       )}
     </div>
@@ -525,7 +525,7 @@ function MatchLogModal({ open, log, onClose }) {
   return (
     <VModal title="Match Log" subtitle="A record of life given and taken" onClose={onClose}
       actions={<button className="modal-btn" onClick={onClose}>Close</button>}>
-      <div className="log-divider"><span>❖</span></div>
+      <div className="log-divider"><span><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor" aria-hidden="true"><rect x="8" y="8" width="8" height="8" transform="rotate(45 12 12)" /></svg></span></div>
       <div className="log-list">
         {rows.length === 0 ? <div className="log-empty">No life changes yet.</div>
           : rows.map((r, i) => (
@@ -593,7 +593,7 @@ function DiceModal({ open, dice, setDice, onClose, rotated }) {
   const shown = rolling ? (display ?? '–') : (dice.value ?? '–');
   const label = rolling ? `Rolling d${dice.type}…`
     : dice.value != null
-      ? (dice.value === dice.type ? '⚡ Maximum roll!' : dice.value === 1 ? '💀 Critical fail' : `on a d${dice.type}`)
+      ? (dice.value === dice.type ? 'Maximum roll!' : dice.value === 1 ? 'Critical fail' : `on a d${dice.type}`)
       : 'Select a die and roll';
   return (
     <VModal title="Roll a Die" rotated={rotated} subtitle="Choose your die, then roll" onClose={onClose}
@@ -711,7 +711,7 @@ function ShareQRModal({ link, onClose }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 22px 18px', gap: 15 }}>
           <QRCode text={link} size={224} />
-          <div style={{ font: "400 13px/1.55 'EB Garamond',Georgia,serif", color: 'var(--muted)', textAlign: 'center', maxWidth: 280 }}>
+          <div style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--muted)', textAlign: 'center', maxWidth: 280 }}>
             Have your opponent scan this with their camera, or send them the link. They attribute their own deck.
           </div>
           <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 280 }}>

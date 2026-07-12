@@ -10,9 +10,12 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,8 +43,8 @@ import com.sorcerycompendium.compendium.scanner.model.GuideGeometry
 import com.sorcerycompendium.compendium.scanner.model.Phase
 import com.sorcerycompendium.compendium.scanner.model.RectFraction
 
-private val Purple = Color(0xFF9C6BE0)   // searching
-private val Gold = Color(0xFFE8B84B)     // a card being confirmed - "getting there"
+private val Purple = Color(0xFFC79AD0)   // searching - Decks violet (= --accent-violet)
+private val Gold = Color(0xFFDCB86F)      // a card being confirmed - "getting there"
 
 /**
  * Card-shaped alignment guide (rounded corners) drawn in the SAME letterboxed frame
@@ -125,7 +128,8 @@ fun CameraOverlay(phase: Phase, lockEvent: Int, lockColor: Color, modifier: Modi
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(top = 70.dp, start = 32.dp, end = 32.dp)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(top = 24.dp, start = 32.dp, end = 32.dp)
                 .semantics { contentDescription = label },
         )
     }

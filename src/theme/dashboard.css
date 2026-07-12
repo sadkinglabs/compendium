@@ -17,7 +17,6 @@
 .dw[data-pillar="collect"] .dw-title { color: var(--accent-ruby); }
 .dw-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); flex: none; }
 .dw-body { padding: 0 13px 13px; }
-.dw-tools { display: flex; gap: 4px; flex: none; }
 .dw-mini { width: 25px; height: 25px; border-radius: 6px; border: 1px solid var(--hair-22); background: rgba(0,0,0,.3); color: var(--ink-status); display: flex; align-items: center; justify-content: center; cursor: pointer; flex: none; padding: 0; }
 .dw-mini:disabled { opacity: .35; cursor: default; }
 .dw-mini.danger { color: var(--destructive); border-color: rgba(168,88,74,.4); }
@@ -52,13 +51,6 @@
 .dw-deckcard .r { position: absolute; left: 8px; bottom: 7px; font: 500 10px/1 var(--f-mono); color: rgba(255,255,255,.74); }
 .dw-deckph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 30%, rgba(199,154,208,.08), #150c15); }
 .dw-deckph::before { content: ''; width: 58%; aspect-ratio: 5 / 7; border-radius: 6px; border: 1.5px solid rgba(199,154,208,.32); background: linear-gradient(155deg, rgba(199,154,208,.07), rgba(0,0,0,.2)); }
-
-/* ── Element affinity bars ── */
-.dw-el { display: flex; align-items: center; gap: 9px; margin: 8px 0; }
-.dw-el img { width: 17px; height: 17px; flex: none; }
-.dw-el-track { flex: 1; height: 7px; border-radius: 4px; background: rgba(255,255,255,.06); overflow: hidden; }
-.dw-el-fill { height: 100%; border-radius: 4px; transition: width .4s cubic-bezier(.3,1,.5,1); }
-.dw-el-n { font: 500 10px/1 var(--f-mono); color: var(--ink-faint); width: 15px; text-align: right; flex: none; }
 
 /* ── Win-rate ring ── */
 .dw-ring-wrap { display: flex; align-items: center; gap: 15px; }

@@ -13,6 +13,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { haptic } from '../native.js';
 import { registerBackConsumer } from '../back.js';
+import { GLYPH_ICON } from './icons.jsx';
 
 // FAB glyphs - three vertical dots (menus) · magnifying glass (search) ·
 // filter sliders (filters/sort).
@@ -97,7 +98,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
               onClick={() => run(it)} style={it.danger ? { color: 'var(--danger)' } : undefined}>
               {it.icon}
               <span>{it.label}</span>
-              {it.state != null && <span className="fab-state">{it.state}</span>}
+              {it.state != null && <span className="fab-state">{GLYPH_ICON[it.state] ? React.createElement(GLYPH_ICON[it.state]) : it.state}</span>}
             </button>
           ))}
         </div>

@@ -12,7 +12,8 @@ import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedReposit
 import { deckMatchCount } from '../store/playRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
-import { Chip, ChipRow, Loading, useSwipe, BlankState } from '../components/ui.jsx';
+import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
+import { ShuffleIcon } from '../components/icons.jsx';
 import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
@@ -21,7 +22,7 @@ import Sheet from '../components/Sheet.jsx';
 import QRCode from '../components/QRCode.jsx';
 import { buildDeckShare } from '../store/deckShare.js';
 import { launchScanner } from '../cardScanner.js';
-import { confirmAction } from '../feedback.js';
+import { toast, confirmAction } from '../feedback.js';
 import DeckDashboard from './DeckDashboard.jsx';
 import '../theme/deckpager.css';
 
@@ -47,9 +48,9 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   const [exportOpen, setExportOpen] = useState(false);
   const [spreadOpen, setSpreadOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const [toast, setToast] = useState('');
-  const toastT = useRef();
-  function flash(msg, ms = 1900) { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), ms); }
+  // Route through the app-wide toast() host (one toast system) - kept as `flash`
+  // so the many call sites + the onToast/flash props don't have to change.
+  const flash = (msg, ms) => toast(msg, ms ? { ms } : {});
 
 
   async function refresh() { setDecks(await listDecks()); }
@@ -86,7 +87,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   async function actFavourite() {
     await toggleStar(deckOpen.id);
     const d = await getDeck(deckOpen.id); setMeta(d);
-    flash(d.starred ? '★ Favourited' : '☆ Unfavourited');
+    flash(d.starred ? 'Favourited' : 'Unfavourited');
     refresh();   // library re-sorts starred-first
   }
   async function actRename(name) {
@@ -169,9 +170,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       </ChipRow>
       <div className="dp-topbar-spacer" />
       {view === 'mydeck' && deckOpen && (
-        <button className={`dp-add-pill${editMode ? ' on' : ''}`} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }}>
-          {editMode ? '✓ Done' : '✎ Edit Deck'}
-        </button>
+        <Chip label={editMode ? 'Done' : 'Edit Deck'} active={editMode} onClick={() => { setStatTab('list'); setEditMode((v) => !v); }} />
       )}
     </div>
   );
@@ -184,7 +183,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
           <div className="dpage-scroll">
             {decks == null ? <Loading />
               : libList.length === 0 ? (
-                <BlankState hue="160,110,220" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
+                <BlankState hue="160,140,192" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
               ) : libList.map((d) => <DeckCard key={d.id} deck={d} build={buildMap.get(d.id)} onClick={() => openDeck(d)} />)}
           </div>
@@ -203,20 +202,14 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
                   My Deck FAB (steps aside while editing). */}
               <DockLeft>
                 <div className={`deck-pip-bar${editMode ? ' hidden' : ''}`}>
-                  <div className="pip-seg" onClick={() => setStatTab('list')}>
-                    <span className={`pip-dot${statTab === 'list' ? ' active' : ''}`} />
-                    <span className={`pip-seg-label${statTab === 'list' ? ' active' : ''}`}>List</span>
-                  </div>
-                  <span className="pip-divider" />
-                  <div className="pip-seg" onClick={() => setStatTab('stats')}>
-                    <span className={`pip-seg-label${statTab === 'stats' ? ' active' : ''}`}>Stats</span>
-                    <span className={`pip-dot${statTab === 'stats' ? ' active' : ''}`} />
-                  </div>
+                  <SegTabs ariaLabel="Deck view" value={statTab} onChange={setStatTab}
+                    options={[{ key: 'list', label: 'List', icon: <IcList size={14} /> }, { key: 'stats', label: 'Stats', icon: <IcStats size={14} /> }]}
+                    style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
                 </div>
               </DockLeft>
             </>
           ) : (
-            <BlankState hue="160,110,220" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
+            <BlankState hue="160,140,192" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
           )}
         </div>
       )}
@@ -249,7 +242,6 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       <ExportSheet open={exportOpen} deckId={deckOpen?.id} onClose={() => setExportOpen(false)} flash={flash} />
       <DeckSpreadSheet open={spreadOpen} deckId={deckOpen?.id} onClose={() => setSpreadOpen(false)} />
       <RenameSheet open={renameOpen} initial={deckOpen?.name || ''} onClose={() => setRenameOpen(false)} onSave={actRename} />
-      <div className={`arc a-toast${toast ? ' show' : ''}`}>{toast}</div>
     </div>
   );
 }
@@ -263,9 +255,9 @@ function RenameSheet({ open, initial, onClose, onSave }) {
       <div style={{ padding: '0 16px', display: 'flex', gap: 10 }}>
         <input value={name} autoFocus onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') onSave(name); }}
-          style={{ flex: 1, height: 44, background: 'rgba(11,7,20,.7)', border: '1px solid rgba(160,110,220,.25)', borderRadius: 12, padding: '0 14px', color: 'var(--text)', font: "400 15px/1 'EB Garamond',Georgia,serif" }} />
+          style={{ flex: 1, height: 44, background: 'rgba(42,33,20,.5)', border: '1px solid #4a3c22', borderRadius: 12, padding: '0 14px', color: '#efe7d8', font: "400 15px/1 var(--f-read)" }} />
         <button onClick={() => onSave(name)}
-          style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 'Hanken Grotesk',sans-serif", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
+          style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
       </div>
     </Sheet>
   );
@@ -317,7 +309,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
             ? <>
                 <QRCode text={share.link} size={224} />
                 <div style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', maxWidth: 300 }}>
-                  Have a friend scan this in Compendium — <b style={{ color: 'var(--ink-body)' }}>Decks › + › Import from QR</b> — or send them the link. {share.cards} card{share.cards === 1 ? '' : 's'}.
+                  Have a friend scan this in Compendium - <b style={{ color: 'var(--ink-body)' }}>Decks › + › Import from QR</b> - or send them the link. {share.cards} card{share.cards === 1 ? '' : 's'}.
                 </div>
                 <button onClick={copy} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer', padding: 4 }}>Copy link</button>
               </>
@@ -387,11 +379,11 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
       footer={
         <div className="ds-toggle-wrap">
           <button className={`ds-view-btn${!shuf ? ' on' : ''}`} onClick={() => setShuf(null)}>Deck</button>
-          <button className={`ds-view-btn${shuf ? ' on' : ''}`} onClick={doShuffle}>⤨ Shuffle</button>
+          <button className={`ds-view-btn${shuf ? ' on' : ''}`} onClick={doShuffle} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><ShuffleIcon width={13} height={13} />Shuffle</button>
         </div>
       }>
       {!src ? <Loading />
-        : empty ? <div style={{ padding: '30px 16px', textAlign: 'center', color: 'var(--muted)', fontStyle: 'italic' }}>No cards in this deck yet.</div>
+        : empty ? <div style={{ padding: '30px 16px', textAlign: 'center', color: '#8a8175', fontStyle: 'italic' }}>No cards in this deck yet.</div>
           : <>{section('Spellbook', src.spellbook)}{section('Atlas', src.atlas)}{section('Collection', src.collection)}</>}
     </Sheet>
   );

@@ -7,6 +7,7 @@ import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCurio
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { Loading } from '../components/ui.jsx';
+import { ChevronIcon, EditIcon, PlusIcon } from '../components/icons.jsx';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
 import { safeHref } from '../util.js';
 import { haptic } from '../native.js';
@@ -56,7 +57,7 @@ function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rari
         <span className="mf-sec-name">{title}</span>
         <span className={`mf-sec-tally ${cls}`}>{count}/{needLabel}</span>
         <span className="mf-sec-rule" />
-        <span className="mf-sec-chev">{collapsed ? '▸' : '▾'}</span>
+        <span className="mf-sec-chev"><ChevronIcon width={16} height={16} style={{ transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .2s' }} /></span>
       </div>
       {!collapsed && (
         groups.some((g) => g.entries.length) ? groups.filter((g) => g.entries.length).map((g) => (
@@ -71,7 +72,7 @@ function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rari
             {g.entries.map((e, i) => <Row key={e.name + i} e={e} rarityOn={rarityOn} onCardTap={onCardTap}
               editMode={editMode} onStep={onStep} stepDelay={Math.min(rowIx++ * 22, 260)} />)}
           </div>
-        )) : <div className="mf-empty">No cards - tap ✎ Edit Deck, then the magnifier to search.</div>
+        )) : <div className="mf-empty">No cards - tap Edit Deck, then the magnifier to search.</div>
       )}
     </div>
   );
@@ -229,7 +230,7 @@ function CuriosaUrlCard({ deckId, initial }) {
       <div className="mx-hdr">
         <span className="mf-sec-name">Curiosa URL</span>
         <span className="mf-sec-rule" />
-        {!editing && <button className="dealt-pill" onClick={() => { setDraft(url); setEditing(true); }}>{hasUrl ? '✎ Edit' : '＋ Add'}</button>}
+        {!editing && <button className="dealt-pill" onClick={() => { setDraft(url); setEditing(true); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{hasUrl ? <EditIcon width={12} height={12} /> : <PlusIcon width={12} height={12} />}{hasUrl ? 'Edit' : 'Add'}</button>}
       </div>
       {editing ? (
         <>
@@ -376,9 +377,9 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
     // The deck resolved to nothing - deleted, or a stale resume/link target.
     // Offer an escape instead of spinning forever.
     <div style={{ minHeight: '48vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 16 }}>
-      <div style={{ font: "600 17px/1.3 'Cinzel',Georgia,serif", color: '#dcb86f' }}>This deck no longer exists</div>
-      <div style={{ font: "400 14px/1.5 'EB Garamond',Georgia,serif", color: '#9a8cae' }}>It may have been deleted or belongs to another profile.</div>
-      {onMissing && <button onClick={onMissing} style={{ padding: '11px 22px', borderRadius: 14, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: '#dcb86f', font: "600 13px/1 'Hanken Grotesk',sans-serif", cursor: 'pointer' }}>Open Library</button>}
+      <div style={{ font: "600 17px/1.3 var(--f-display)", color: '#dcb86f' }}>This deck no longer exists</div>
+      <div style={{ font: "400 14px/1.5 var(--f-read)", color: '#8a8175' }}>It may have been deleted or belongs to another profile.</div>
+      {onMissing && <button onClick={onMissing} style={{ padding: '11px 22px', borderRadius: 14, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: '#dcb86f', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' }}>Open Library</button>}
     </div>
   ) : <Loading />;
 

@@ -41,12 +41,14 @@ import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
 
+// Bottom-nav pillars. Icons come from <NavIcon icon={key} /> (inline SVG); only
+// key + label are read (glyph/eyebrow/accent fields were retired in the sweep).
 const PILLARS = [
-  { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
-  { key: 'codex', glyph: '▤', label: 'Codex', eyebrow: 'RULES & CARDS',     accent: 'var(--accent-gold)' },
-  { key: 'collect', glyph: '◆', label: 'Collection', eyebrow: 'CARDS YOU OWN', accent: 'var(--accent-ruby)' },
-  { key: 'decks', glyph: '◈', label: 'Decks', eyebrow: 'YOUR DECKS',        accent: 'var(--accent-violet)' },
-  { key: 'play',  glyph: '♥', label: 'Play',  eyebrow: 'DUEL & TRACK LIFE', accent: 'var(--accent-jade)' },
+  { key: 'home',    label: 'Home' },
+  { key: 'codex',   label: 'Codex' },
+  { key: 'collect', label: 'Collection' },
+  { key: 'decks',   label: 'Decks' },
+  { key: 'play',    label: 'Play' },
 ];
 const SWIPE_TABS = PILLARS.map((p) => p.key);   // cross-pillar swipe order
 
@@ -282,8 +284,8 @@ export default function App() {
   // Canonical list-row accent, morphing per pillar (grimoire gold default;
   // amethyst in Decks, jade in Play) - consumed by ListRow via --list-accent.
   const LIST = {
-    home:    { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
-    codex:   { a: 'var(--gold-leaf)',     g: 'rgba(201,163,90,.5)' },
+    home:    { a: 'var(--gold-leaf)',     g: 'rgba(220,184,111,.5)' },
+    codex:   { a: 'var(--gold-leaf)',     g: 'rgba(220,184,111,.5)' },
     collect: { a: 'var(--accent-ruby)',   g: 'rgba(210,88,115,.5)' },
     decks:   { a: 'var(--accent-violet)', g: 'rgba(199,154,208,.5)' },
     play:    { a: 'var(--accent-jade)',   g: 'rgba(143,211,168,.5)' },
@@ -317,7 +319,7 @@ export default function App() {
 
       {storageFull && (
         <div onClick={() => setStorageFull(false)} role="alert"
-          style={{ margin: '0 16px 8px', padding: '10px 14px', borderRadius: 12, background: 'rgba(60,20,16,.9)', border: '1px solid rgba(224,120,106,.5)', color: '#f0c9c2', font: "500 12.5px/1.45 var(--f-ui)", cursor: 'pointer' }}>
+          style={{ margin: '0 16px 8px', padding: '10px 14px', borderRadius: 12, background: 'rgba(42,26,20,.92)', border: '1px solid rgba(200,120,106,.45)', color: '#f0c9c2', font: "500 12.5px/1.45 var(--f-ui)", cursor: 'pointer' }}>
           Storage is full - recent changes may not be saved. Free up space or export a profile, then tap to dismiss.
         </div>
       )}
@@ -662,17 +664,7 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
           <Chip key={k} label={label} active={scope === k} onClick={() => setScope(k)} />
         ))}
       </ChipRow>
-      <button onClick={() => setScope('marginalia')} aria-pressed={marginalia}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, flex: 'none',
-          padding: '7px 13px', borderRadius: 18, cursor: 'pointer', whiteSpace: 'nowrap',
-          font: "600 13px/1 var(--f-ui)", color: '#e3c589',
-          background: marginalia ? 'rgba(203,167,95,.16)' : 'transparent',
-          border: `1px solid ${marginalia ? 'rgba(203,167,95,.5)' : 'rgba(203,167,95,.35)'}`,
-        }}>
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
-        Marginalia
-      </button>
+      <Chip label="Marginalia" active={marginalia} onClick={() => setScope('marginalia')} />
     </div>
   );
 }
@@ -915,14 +907,11 @@ function ImportPasteModal({ open, onClose, onParsed }) {
 function SearchHelpModal({ open, kind = 'codex', onClose }) {
   if (!open) return null;
   const deck = kind === 'deck';
-  // Chassis + chip palette: gold for the codex, the deck pillar's amethyst here.
-  const chassis = deck
-    ? { background: 'linear-gradient(180deg,#1c1330,#0e0a1a)', border: '1px solid rgba(160,110,220,.32)' }
-    : { background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)' };
-  const glow = deck ? 'rgba(157,106,214,.14)' : 'rgba(220,184,111,.12)';
-  const chip = deck
-    ? { color: '#c79af0', background: 'rgba(157,106,214,.12)', border: '1px solid rgba(160,110,220,.32)' }
-    : { color: 'var(--gold-leaf)', background: 'rgba(220,184,111,.1)', border: '1px solid rgba(220,184,111,.22)' };
+  // One gold chassis + chip (large fills stay black+gold); the deck variant only
+  // carries a subtle violet glow as chrome wayfinding.
+  const chassis = { background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)' };
+  const glow = deck ? 'rgba(160,140,192,.13)' : 'rgba(220,184,111,.12)';
+  const chip = { color: 'var(--gold-leaf)', background: 'rgba(220,184,111,.1)', border: '1px solid rgba(220,184,111,.22)' };
   const example = deck
     ? ['t:minion el:f c<=3 kw:charge', 'every cheap Fire minion with Charge']
     : ['t:minion e:air airborne', 'every Air minion whose text mentions airborne'];
@@ -941,7 +930,7 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
           </div>
           {QUERY_HELP.map(Row)}
           <div style={{ marginTop: 16, marginBottom: 2, font: "600 10.5px/1 var(--f-mono)", letterSpacing: '.14em', color: 'var(--ink-muted)' }}>
-            {deck ? 'CODEX SCOPE — IGNORED HERE' : 'CODEX SCOPE'}
+            {deck ? 'CODEX SCOPE - IGNORED HERE' : 'CODEX SCOPE'}
           </div>
           <div style={{ opacity: deck ? 0.5 : 1 }}>{SCOPE_HELP.map(Row)}</div>
           <div style={{ marginTop: 14, font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)' }}>
@@ -963,7 +952,7 @@ function Splash({ text, error }) {
 const S = {
   app: { height: '100%', display: 'flex', flexDirection: 'column', background: 'var(--bg)', color: 'var(--ink-body)', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)', position: 'relative', overflow: 'hidden' },
   brandBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 18px 10px' },
-  diamond: { width: 14, height: 14, transform: 'rotate(45deg)', border: '1.5px solid var(--gold-leaf)', borderRadius: 3, boxShadow: '0 0 8px rgba(201,163,90,.35)' },
+  diamond: { width: 14, height: 14, transform: 'rotate(45deg)', border: '1.5px solid var(--gold-leaf)', borderRadius: 3, boxShadow: '0 0 8px rgba(220,184,111,.35)' },
   wordmark: { font: "600 20px/1 var(--f-display)", color: 'var(--ink-head)', letterSpacing: '.01em' },
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },

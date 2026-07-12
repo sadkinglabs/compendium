@@ -143,11 +143,11 @@ body.hc {
   --ink-muted: #cdbf9c;
   --ink-faint: #b3a582;
   --ink-status: #e7ddc6;
-  --hair-12: rgba(201,163,90,.24);
-  --hair-16: rgba(201,163,90,.30);
-  --hair-22: rgba(201,163,90,.40);
-  --hair-30: rgba(201,163,90,.52);
-  --hair-40: rgba(201,163,90,.62);
+  --hair-12: rgba(220,184,111,.24);
+  --hair-16: rgba(220,184,111,.30);
+  --hair-22: rgba(220,184,111,.40);
+  --hair-30: rgba(220,184,111,.52);
+  --hair-40: rgba(220,184,111,.62);
 }
 /* Reduced motion: neutralise animations + transitions app-wide. Honoured for
    the OS setting too (appearance.js adds the class when prefers-reduced-motion). */
@@ -173,13 +173,10 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   transition: color .55s ease;
 }
 
-/* Gold hairline under the top header - present on every screen. */
-.cx-header-rule { height: 1px; background: var(--hair-30); flex-shrink: 0; }
-
 /* ── Bottom nav - VERBATIM from Arcanum (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
-.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(201,163,90,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-.cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: 'Hanken Grotesk', sans-serif; border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
+.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
@@ -207,11 +204,6 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }
 .cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 0; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; }
-
-/* Codex sticky top bar (scope chips + List/Card toggle stay visible while scrolling). */
-/* Scope chips scroll with the page (transparent) so the header wash stays a full
-   smooth gradient - no sticky black band / hard edge. */
-.cx-codex-topbar { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; padding: 2px 0 4px; }
 /* Sub-entry disclosure - Material expand_more: a chevron in a circular icon
    button that rotates 180° (down → up) when the group is expanded. */
 .cx-sub-chevron { background: none; border: none; color: var(--ink-muted); cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; -webkit-tap-highlight-color: transparent; transition: transform .24s cubic-bezier(.4,0,.2,1), color .2s ease, background .2s ease; }
@@ -220,12 +212,6 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 /* Collapsible Marginalia category headers (Notes / Highlights / Links / Collections). */
 .cx-marg-head { display: flex; align-items: center; gap: 8px; padding: 3px 0 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-marg-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); }
-
-/* Nested sub-entry rows - indented under a hairline rail, revealed with a soft slide. */
-.cx-subrow { position: relative; padding-left: 30px; animation: cx-subrow-in .2s ease both; }
-.cx-subrow::before { content: ''; position: absolute; left: 14px; top: 0; bottom: 0; width: 1px; background: var(--hair-16); }
-@keyframes cx-subrow-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: none; } }
-body.reduce-motion .cx-subrow { animation: none; }
 
 /* ── Codex article - reflowed, semantically formatted reading ── */
 .cx-article-p { margin: 0 0 16px; font: 400 17.5px/1.65 var(--f-read); color: #d8cebb; }
@@ -253,7 +239,6 @@ body.reduce-motion .cx-subrow { animation: none; }
 /* in-text links - gold for rules, violet for cards; both dotted-underlined */
 .cx-inlink { cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-inlink-gold { color: #e3c589; border-bottom: 1px dotted rgba(227,197,137,.5); }
-.cx-inlink-violet { color: var(--link-violet); border-bottom: 1px dotted var(--link-violet); }
 /* saved-highlight marks left in the body text */
 mark.cx-hl-gold { background: rgba(220,184,111,.22); color: var(--ink-body); border-radius: 3px; box-shadow: 0 0 0 1px rgba(220,184,111,.25); padding: 0 1px; }
 mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); border-radius: 3px; box-shadow: 0 0 0 1px rgba(199,154,208,.28); padding: 0 1px; }
@@ -282,22 +267,20 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-deck-card-bg { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 22%; }
 .cx-deck-card-grad { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,6,8,.12) 0%, rgba(6,6,8,.5) 55%, rgba(6,6,8,.95) 100%); }
 .cx-deck-card-info { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 14px; z-index: 1; }
-.cx-deck-card-name { font: 600 17px/1.15 'Cinzel', Georgia, serif; letter-spacing: .04em; color: #f0e9d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cx-deck-card-sub { display: flex; align-items: center; gap: 5px; font: 500 11px/1 'Hanken Grotesk', sans-serif; color: rgba(220,184,111,.85); margin-top: 6px; }
+.cx-deck-card-name { font: 600 17px/1.15 var(--f-display); letter-spacing: .04em; color: #f0e9d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-deck-card-sub { display: flex; align-items: center; gap: 5px; font: 500 11px/1 var(--f-ui); color: rgba(220,184,111,.85); margin-top: 6px; }
 .cx-deck-card-sub img { width: 13px; height: 13px; flex: none; }
 .cx-deck-card-sub span { margin-left: 3px; letter-spacing: .04em; }
 .cx-deck-card-sub img + span { margin-left: 5px; }
 /* Terminal carousel card - the doorway to the full library when it overflows. */
 .cx-deck-card-all { display: flex; align-items: center; justify-content: center; background: rgba(12,12,15,.6); border: 1px dashed rgba(220,184,111,.3); }
-.cx-deck-card-all span { font: 600 14px/1.3 'Cinzel', Georgia, serif; letter-spacing: .06em; color: var(--gold-leaf); text-align: center; padding: 0 18px; }
+.cx-deck-card-all span { font: 600 14px/1.3 var(--f-display); letter-spacing: .06em; color: var(--gold-leaf); text-align: center; padding: 0 18px; }
 
 /* Tap-target floor - small icon buttons keep their visual size but gain a 44px
    invisible hit area (WCAG 2.5.5 / Android 48dp), so dense controls stop being
    fat-finger traps. Applied to the sub-40px buttons across the app. */
-.mh .match-mini-btn, .arc .cc-step-mini, .arc .cr-step-btn, .arc .cc-step-btn,
-.arc .cc-turn-btn { position: relative; }
-.mh .match-mini-btn::after, .arc .cc-step-mini::after, .arc .cr-step-btn::after,
-.arc .cc-step-btn::after, .arc .cc-turn-btn::after, .cx-iconbtn::after {
+.mh .match-mini-btn, .arc .cc-turn-btn { position: relative; }
+.mh .match-mini-btn::after, .arc .cc-turn-btn::after, .cx-iconbtn::after {
   content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   min-width: 44px; min-height: 44px; width: 100%; height: 100%;
 }
@@ -319,7 +302,6 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Highlight mode: an invisible full-screen tap-catcher with the pill at the bottom.
    Tap the pill = save; tap anywhere else = dismiss (handled in CodexDetail). */
 .cx-hl-layer { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-end; justify-content: center; padding-bottom: calc(62px + env(safe-area-inset-bottom) + 16px); -webkit-tap-highlight-color: transparent; }
-.cx-hl-actions { display: flex; gap: 10px; animation: cxHlIn .2s cubic-bezier(.2,1.35,.5,1); }
 .cx-hl-pill { display: inline-flex; align-items: center; gap: 7px; padding: 10px 18px; border-radius: 22px; background: linear-gradient(180deg,#dcb86f,#c9a35a); color: #1a1410; font: 700 13px/1 var(--f-ui); border: none; cursor: pointer; box-shadow: 0 10px 26px -8px rgba(0,0,0,.62); -webkit-tap-highlight-color: transparent; }
 /* Secondary action (Bookmark) - black glass + gold hairline (gold is never a fill for the non-primary). */
 .cx-hl-pill.ghost { background: rgba(18,16,13,.92); color: var(--gold-leaf); border: 1px solid rgba(220,184,111,.45); }
@@ -327,10 +309,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 
 /* Codex Cards: List / Card (art grid) toggle - parity with the deckbuilder. */
 /* Cards List/Card toggle - gothic segmented pill (matches the deck editor). */
-.cx-view-toggle-row { display: flex; justify-content: center; padding: 2px 0 14px; }
-.cx-view-toggle { display: inline-flex; border: 1px solid #4a3c22; border-radius: 20px; overflow: hidden; }
-.cx-view-btn { background: none; border: none; color: #8a8175; padding: 8px 18px; font: 500 12.5px/1 'Cinzel', Georgia, serif; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.cx-view-btn.on { font-weight: 600; color: #d8c9a4; background: rgba(42,33,20,.7); }
+/* View toggle retired - now the shared SegTabs component (ui.jsx). */
 .cx-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .cx-card-tile { position: relative; display: block; width: 100%; padding: 0; background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-card-tile:active { transform: scale(.985); }
@@ -340,17 +319,17 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Codex A-Z rows - flat text ledger. Letter rubric = the shared section-header
    rubric; card rows carry a mini thumb + the type . mana meta line. */
 .cx-codex-rubric { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; }
-.cx-codex-letter { font: 700 19px/1 'Cinzel', Georgia, serif; color: #cba75f; flex-shrink: 0; }
+.cx-codex-letter { font: 700 19px/1 var(--f-display); color: #cba75f; flex-shrink: 0; }
 .cx-codex-hair { flex: 1; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
 .cx-codex-row { display: flex; align-items: center; gap: 13px; padding: 15px 20px; margin: 0 -20px; border-bottom: 1px solid rgba(74,60,34,.3); cursor: pointer; }
-.cx-codex-title { flex: 1; min-width: 0; font: 600 18px/1.2 'EB Garamond', Georgia, serif; color: #efe7d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-codex-title { flex: 1; min-width: 0; font: 600 18px/1.2 var(--f-read); color: #efe7d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-codex-thumb { width: 48px; flex: none; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.1); }
 .cx-codex-body { flex: 1; min-width: 0; }
-.cx-codex-name { display: block; font: 600 18px/1.2 'EB Garamond', Georgia, serif; color: #efe7d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cx-codex-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font: 400 13.5px/1 'EB Garamond', Georgia, serif; color: #8a8175; }
-.cx-codex-type { font: 500 10px/1 'Cinzel', Georgia, serif; letter-spacing: .14em; text-transform: uppercase; color: #a08cc0; flex: none; }
+.cx-codex-name { display: block; font: 600 18px/1.2 var(--f-read); color: #efe7d8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-codex-meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; font: 400 13.5px/1 var(--f-read); color: #8a8175; }
+.cx-codex-type { font: 500 10px/1 var(--f-display); letter-spacing: .14em; text-transform: uppercase; color: #a08cc0; flex: none; }
 .cx-codex-sep { width: 1px; height: 11px; background: rgba(107,90,46,.6); flex: none; }
-.cx-codex-mana { font: 600 13px/1 'Cinzel', Georgia, serif; color: #c9a8e8; }
+.cx-codex-mana { font: 600 13px/1 var(--f-display); color: #c9a8e8; }
 .cx-codex-bm { color: #e3c589; flex: none; display: flex; }
 .cx-codex-chev { color: #5c554b; flex: none; }
 
@@ -411,7 +390,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
    active one. Classy over busy: black rows, gold only where it means something. ── */
 .pf-row { display: flex; align-items: center; gap: 13px; padding: 13px 2px; border-bottom: 1px solid var(--hair-12); }
 .pf-row:last-of-type { border-bottom: none; }
-.pf-disc { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 600 18px/1 'Cinzel', Georgia, serif; color: #1a1410; background: linear-gradient(140deg, #cf9a4a, #8c5a2a); cursor: pointer; border: 2px solid transparent; transition: box-shadow .2s ease, border-color .2s ease; }
+.pf-disc { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 600 18px/1 var(--f-display); color: #1a1410; background: linear-gradient(140deg, #cf9a4a, #8c5a2a); cursor: pointer; border: 2px solid transparent; transition: box-shadow .2s ease, border-color .2s ease; }
 .pf-row.active .pf-disc { border-color: rgba(220,184,111,.85); box-shadow: 0 0 14px rgba(220,184,111,.35); }
 .pf-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; cursor: pointer; }
 .pf-name { display: flex; align-items: center; gap: 8px; font: 600 16px/1.15 var(--f-read); color: var(--ink-body); overflow: hidden; }

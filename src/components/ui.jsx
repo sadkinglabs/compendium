@@ -3,6 +3,7 @@ import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
 import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
+import GothicSheet from './GothicSheet.jsx';   // the one bottom-sheet chassis (BottomSheet is a thin titled adapter over it)
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -13,11 +14,13 @@ export const BTN_GHOST = { padding: '12px 0', borderRadius: 12, background: 'tra
    in the pillar's hue, a Cinzel title, a Garamond line, optional action.
    `hue` is "r,g,b" - decks violet "160,110,220", play jade "143,211,168". */
 export function BlankState({ hue = '220,184,111', title, body, action, minHeight = '52vh' }) {
+  // The diamond stays gold (a large chrome mark); the pillar hue lives only in
+  // the soft glow behind it - subtle tint, never a large fill.
   return (
     <div style={{ minHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32 }}>
-      <div style={{ width: 52, height: 52, border: `2px solid rgba(${hue},.28)`, transform: 'rotate(45deg)', marginBottom: 32, boxShadow: `0 0 28px rgba(${hue},.18)` }} />
-      <h2 style={{ font: "600 20px/1.2 'Cinzel',Georgia,serif", color: '#dcb86f', marginBottom: 10 }}>{title}</h2>
-      {body && <p style={{ font: "400 15px/1.6 'EB Garamond',Georgia,serif", color: 'var(--ink-muted)', marginBottom: action ? 24 : 0 }}>{body}</p>}
+      <div style={{ width: 52, height: 52, border: '2px solid rgba(220,184,111,.28)', transform: 'rotate(45deg)', marginBottom: 32, boxShadow: `0 0 28px rgba(${hue},.2)` }} />
+      <h2 style={{ font: "600 20px/1.2 var(--f-display)", color: '#dcb86f', marginBottom: 10 }}>{title}</h2>
+      {body && <p style={{ font: "400 15px/1.6 var(--f-read)", color: 'var(--ink-muted)', marginBottom: action ? 24 : 0 }}>{body}</p>}
       {action}
     </div>
   );
@@ -48,6 +51,39 @@ export function Chip({ label, active, onClick, dot }) {
 export function ChipRow({ children, style }) {
   return <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', ...style }}>{children}</div>;
 }
+
+/* The ONE in-content view/segment toggle (pick-one): a gothic segmented pill -
+   border #4a3c22 r20, active #d8c9a4 caps on rgba(42,33,20,.7). One source of
+   truth, replacing the copy-pasted cx-view-toggle / view-toggle-wrap / ds-seg
+   classes, Collection's frosted List/Binder toggle, and the Decks pip-bar. Each
+   option: { key, label?, icon? } - icon is an inline SVG (no Unicode glyphs). */
+export function SegTabs({ options, value, onChange, ariaLabel, style }) {
+  return (
+    <div role="group" aria-label={ariaLabel} style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden', ...style }}>
+      {options.map((o) => {
+        const on = value === o.key;
+        return (
+          <button key={o.key} onClick={() => onChange(o.key)} aria-pressed={on} aria-label={o.label || o.key}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+              padding: o.label ? '8px 17px' : '8px 15px', border: 'none', cursor: 'pointer',
+              fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: on ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase',
+              color: on ? '#d8c9a4' : '#8a8175', background: on ? 'rgba(42,33,20,.7)' : 'transparent',
+              transition: 'background .16s, color .16s', WebkitTapHighlightColor: 'transparent',
+            }}>
+            {o.icon}{o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Shared toggle icons (inline SVG - the app speaks SVG, never Unicode glyphs).
+const seg = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+export const IcList = ({ size = 15 }) => <svg viewBox="0 0 24 24" width={size} height={size} {...seg} aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7" /><line x1="4" y1="12" x2="20" y2="12" /><line x1="4" y1="17" x2="20" y2="17" /></svg>;
+export const IcGrid = ({ size = 15 }) => <svg viewBox="0 0 24 24" width={size} height={size} fill="currentColor" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5" /><rect x="13" y="3" width="8" height="8" rx="1.5" /><rect x="3" y="13" width="8" height="8" rx="1.5" /><rect x="13" y="13" width="8" height="8" rx="1.5" /></svg>;
+export const IcStats = ({ size = 15 }) => <svg viewBox="0 0 24 24" width={size} height={size} {...seg} aria-hidden="true"><line x1="6" y1="20" x2="6" y2="12" /><line x1="12" y1="20" x2="12" y2="5" /><line x1="18" y1="20" x2="18" y2="9" /></svg>;
 
 export function IconButton({ glyph, onClick, tone = 'gold', shape = 'circle', size = 28, title }) {
   const color = tone === 'danger' ? 'var(--destructive)' : tone === 'muted' ? 'var(--ink-muted)' : 'var(--gold-leaf)';
@@ -126,7 +162,7 @@ export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
 export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   const start = React.useRef(null);
   const onTouchStart = (e) => {
-    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .a-sheet, .a-sheet-scrim, .fsheet, .fsheet-scrim, .cx-picker-modal, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
+    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .cx-picker-modal, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
     const t = e.touches[0];
     start.current = { x: t.clientX, y: t.clientY };
   };
@@ -198,29 +234,15 @@ export function useFocusTrap(active) {
   return ref;
 }
 
-/* Bottom sheet - scrim + slide-up panel. */
+/* Titled bottom sheet - a thin adapter over the canonical GothicSheet chassis
+   (portal, drag-to-dismiss, gold hairline, grab handle), with an optional
+   centered Cinzel title. One chassis app-wide; Sheet.jsx is the same adapter. */
 export function BottomSheet({ open, title, onClose, children }) {
-  const trapRef = useFocusTrap(open);
-  // Hardware BACK closes the sheet; register once per open (ref keeps onClose fresh).
-  const closeRef = React.useRef(onClose); closeRef.current = onClose;
-  React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
-  if (!open) return null;
   return (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
-      <div ref={trapRef} role="dialog" aria-modal="true" aria-label={title || 'Dialog'} style={{
-        position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--kb,0px) / var(--ui-scale,1))', zIndex: 201,
-        background: 'var(--surface-sheet)', borderTop: '1px solid var(--hair-30)',
-        borderRadius: '26px 26px 0 0', padding: '14px 22px calc(26px + env(safe-area-inset-bottom,0px))',
-        boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
-        maxHeight: 'min(76dvh, calc(100dvh - env(safe-area-inset-top,0px) - 12px - var(--kb,0px) / var(--ui-scale,1)))',
-        overflowY: 'auto', transition: 'bottom .2s ease',
-      }} className="cx-scroll">
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--hair-30)', margin: '0 auto 14px' }} />
-        {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', marginBottom: 16 }}>{title}</div>}
-        {children}
-      </div>
-    </>
+    <GothicSheet open={open} onClose={onClose} label={title || 'Dialog'}>
+      {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', margin: '0 0 16px' }}>{title}</div>}
+      {children}
+    </GothicSheet>
   );
 }
 

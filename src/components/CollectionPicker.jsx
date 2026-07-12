@@ -4,6 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import { collectionsForTarget, toggleCollectionItem, createCollection } from '../store/codexRepository.js';
 import { BottomSheet, BTN_GOLD } from './ui.jsx';
+import { CheckIcon } from './icons.jsx';
 
 export default function CollectionPicker({ open, targetType, targetId, onClose }) {
   const [cols, setCols] = useState([]);
@@ -23,7 +24,7 @@ export default function CollectionPicker({ open, targetType, targetId, onClose }
         <div key={c.id} onClick={async () => { await toggleCollectionItem(c.id, targetType, targetId); refresh(); }}
           className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
           <span style={{ font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)' }}>{c.name}</span>
-          <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: c.inIt ? 'var(--gold-leaf)' : 'transparent', fontSize: 13 }}>{c.inIt ? '✓' : ''}</span>
+          <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: c.inIt ? 'var(--gold-leaf)' : 'transparent' }}>{c.inIt ? <CheckIcon width={14} height={14} /> : null}</span>
         </div>
       ))}
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>

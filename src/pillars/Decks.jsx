@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Sheet from '../components/Sheet.jsx';
 import { BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { ChevronIcon } from '../components/icons.jsx';
 import '../theme/arcanum.css';
 
 const BASE = import.meta.env.BASE_URL;
@@ -111,8 +112,8 @@ export function ImportTextSheet({ open, onClose, onImport }) {
       <p style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 12px' }}>
         Paste a deck list. Start with a <b style={{ color: 'var(--ink-body)' }}>#</b> deck name, then <b style={{ color: 'var(--ink-body)' }}>## Avatar / Spellbook / Atlas / Collection</b> sections, each with <b style={{ color: 'var(--ink-body)' }}>N× Card</b> lines.
       </p>
-      <button onClick={() => setShowEg((v) => !v)} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer', padding: 0, marginBottom: showEg ? 8 : 12 }}>
-        {showEg ? '▾ Hide format example' : '▸ Show format example'}
+      <button onClick={() => setShowEg((v) => !v)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer', padding: 0, marginBottom: showEg ? 8 : 12 }}>
+        <ChevronIcon width={12} height={12} style={{ transform: showEg ? 'none' : 'rotate(-90deg)', transition: 'transform .2s' }} />{showEg ? 'Hide format example' : 'Show format example'}
       </button>
       {showEg && <pre style={{ background: 'var(--surface-well)', border: '1px solid var(--hair-12)', borderRadius: 10, padding: 12, margin: '0 0 12px', font: "400 12px/1.5 var(--f-mono)", color: 'var(--ink-status)', whiteSpace: 'pre-wrap', overflowX: 'auto' }}>{BULK_EXAMPLE}</pre>}
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Deck name (optional)…" style={{ ...S.input, marginBottom: 10 }} />

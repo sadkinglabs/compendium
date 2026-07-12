@@ -4,12 +4,14 @@
 // scope gathers the whole personal layer (notes, highlights, links, collections).
 import React, { useEffect, useState } from 'react';
 import {
-  getCodexEntries, marginaliaAll, deleteNote, deleteLink, toggleSaved,
+  getCodexEntries, getCodexCards, marginaliaAll, deleteNote, deleteLink, toggleSaved,
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
+import { getSets, getArtists } from '../store/deckRepository.js';
 import { deleteAnnotation } from '../store/annotations.js';
-import { Chip, IconButton, Loading } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import RefineSheet from '../components/RefineSheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import CardArt from '../components/CardArt.jsx';
 import { toast, confirmAction } from '../feedback.js';
@@ -41,14 +43,29 @@ const CARD_FILTERS = [
   ['fav', 'Bookmarked'], ['marg', 'Has marginalia'], ['faq', 'Contains FAQ'],
   ['errata', 'Errata cards'], ['linked', 'Linked'],
 ];
-const SET_CHIPS = ['Alpha', 'Beta', 'Arthurian Legends', 'Gothic', 'Dragonlord', 'Promotional'];
 
 export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
   const sc = scope === 'all' ? 'rules' : scope;   // stale persisted scope → Rules
   const [entries, setEntries] = useState(null);
-  const [filters, setFilters] = useState({ rules: {}, cards: {} });   // per-scope, both survive switching
+  const [filters, setFilters] = useState({ rules: {}, cards: {} });   // Codex-only toggles (fav/marg/faq/errata/linked), per-scope
   const [filterSheet, setFilterSheet] = useState(false);
   const [cardView, setCardView] = useState('list');   // Cards scope: list rows vs art grid (parity with the deckbuilder)
+
+  // Rich card filters (Cards scope) - the shared Refine engine, same as the
+  // deckbuilder (element/type/rarity/set/threshold/mana/artist). Sort is left off
+  // on purpose: the browse list is an A-Z reference index.
+  const [cEls, setCEls] = useState([]);
+  const [cTypes, setCTypes] = useState([]);
+  const [cRarities, setCRarities] = useState([]);
+  const [cSets, setCSets] = useState([]);
+  const [cMulti, setCMulti] = useState(false);
+  const [cThByEl, setCThByEl] = useState(() => ({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } }));
+  const [cTotalTh, setCTotalTh] = useState({ op: '>=', val: null });
+  const [cCostCmp, setCCostCmp] = useState({ op: '>=', val: null });
+  const [cArtist, setCArtist] = useState('');
+  const [setOpts, setSetOpts] = useState([]);
+  const [artistOpts, setArtistOpts] = useState([]);
+  useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
 
   // One-shot filter preset from elsewhere in the app (e.g. Home "All notes ›"
   // lands here pre-filtered to entries carrying your marginalia).
@@ -60,14 +77,30 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
   const marginalia = sc === 'marginalia';
   const cur = filters[sc] || {};
   const setCur = (updater) => setFilters((f) => ({ ...f, [sc]: typeof updater === 'function' ? updater(f[sc] || {}) : updater }));
-  const activeCount = Object.entries(cur).reduce((n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0);
+  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => cThByEl[el].val != null).length + (cTotalTh.val != null ? 1 : 0) + (cCostCmp.val != null ? 1 : 0);
+  const richCount = cEls.length + cTypes.length + cRarities.length + cSets.length + (cMulti ? 1 : 0) + (cArtist ? 1 : 0) + richComp;
+  const curCount = Object.entries(cur).reduce((n, [, v]) => n + (Array.isArray(v) ? v.length : v ? 1 : 0), 0);
+  const activeCount = sc === 'cards' ? richCount + curCount : curCount;
+
   useEffect(() => {
     if (marginalia) return;
     let alive = true;
-    getCodexEntries(sc, cur).then((e) => alive && setEntries(e));
+    if (sc === 'cards') {
+      const rich = { els: cEls, types: cTypes, rarities: cRarities, sets: cSets, multi: cMulti, thByEl: cThByEl, totalTh: cTotalTh, costCmp: cCostCmp, artist: cArtist };
+      getCodexCards(rich, cur).then((e) => alive && setEntries(e));
+    } else {
+      getCodexEntries(sc, cur).then((e) => alive && setEntries(e));
+    }
     return () => { alive = false; };
     // eslint-disable-next-line
-  }, [sc, rev, filters, marginalia]);
+  }, [sc, rev, filters, marginalia, cEls, cTypes, cRarities, cSets, cMulti, cThByEl, cTotalTh, cCostCmp, cArtist]);
+
+  const clearCards = () => {
+    setCEls([]); setCTypes([]); setCRarities([]); setCSets([]); setCMulti(false); setCArtist('');
+    setCThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
+    setCTotalTh({ op: '>=', val: null }); setCCostCmp({ op: '>=', val: null });
+    setCur({});
+  };
 
   return (
     <div style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
@@ -78,45 +111,47 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
       ) : (
       <>
 
-      <Sheet open={filterSheet} title={sc === 'cards' ? 'Card Filters' : 'Article Filters'} onClose={() => setFilterSheet(false)}>
-        <div style={{ padding: '0 16px' }}>
-        {(sc === 'cards' ? CARD_FILTERS : RULE_FILTERS).map(([k, label]) => (
-          <div key={k} onClick={() => setCur((f) => ({ ...f, [k]: !f[k] }))} className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
-            <span style={{ font: "600 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
-            <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: cur[k] ? 'var(--gold-leaf)' : 'transparent' }}>
-              {cur[k] && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
-            </span>
-          </div>
-        ))}
-        {sc === 'cards' && (
-          <div style={{ padding: '14px 0 4px' }}>
-            <div style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)', marginBottom: 10 }}>BY SET</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {SET_CHIPS.map((s) => (
-                <Chip key={s} label={s} active={(cur.sets || []).includes(s)}
-                  onClick={() => setCur((f) => {
-                    const has = (f.sets || []).includes(s);
-                    const sets = has ? (f.sets || []).filter((x) => x !== s) : [...(f.sets || []), s];
-                    return { ...f, sets };
-                  })} />
-              ))}
+      {sc === 'cards' ? (
+        <RefineSheet open={filterSheet} onClose={() => setFilterSheet(false)} onClear={clearCards}
+          eyebrow="CARD FILTERS" activeCount={activeCount} ctaLabel={`Show ${entries?.length ?? 0} card${entries?.length === 1 ? '' : 's'}`}
+          summaryLead={CARD_FILTERS.filter(([k]) => cur[k]).map(([, label]) => label)}
+          leadSections={(
+            <div style={{ marginBottom: 22 }}>
+              <SectionLabel label="SHOWING ONLY" count={CARD_FILTERS.filter(([k]) => cur[k]).length || undefined} />
+              <ChipRow>
+                {CARD_FILTERS.map(([k, label]) => <Chip key={k} label={label} active={!!cur[k]} onClick={() => setCur((f) => ({ ...f, [k]: !f[k] }))} />)}
+              </ChipRow>
             </div>
+          )}
+          els={cEls} setEls={setCEls} multi={cMulti} setMulti={setCMulti}
+          types={cTypes} setTypes={setCTypes} rarities={cRarities} setRarities={setCRarities}
+          sets={cSets} setSets={setCSets} setOpts={setOpts}
+          thByEl={cThByEl} setThByEl={setCThByEl} totalTh={cTotalTh} setTotalTh={setCTotalTh} costCmp={cCostCmp} setCostCmp={setCCostCmp}
+          artist={cArtist} setArtist={setCArtist} artistOpts={artistOpts} />
+      ) : (
+        <Sheet open={filterSheet} title="Article Filters" onClose={() => setFilterSheet(false)}>
+          <div style={{ padding: '0 16px' }}>
+          {RULE_FILTERS.map(([k, label]) => (
+            <div key={k} onClick={() => setCur((f) => ({ ...f, [k]: !f[k] }))} className="cx-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>
+              <span style={{ font: "600 14px/1 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
+              <span style={{ width: 22, height: 22, borderRadius: 6, border: '1px solid var(--hair-40)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1a1410', background: cur[k] ? 'var(--gold-leaf)' : 'transparent' }}>
+                {cur[k] && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+              </span>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button onClick={() => setCur({})} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' }}>Clear</button>
+            <button onClick={() => setFilterSheet(false)} style={{ flex: 2, padding: '12px 0', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 14px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Show results</button>
           </div>
-        )}
-        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-          <button onClick={() => setCur({})} style={{ flex: 1, padding: '12px 0', borderRadius: 12, background: 'transparent', color: 'var(--ink-status)', font: "600 13px/1 var(--f-ui)", border: '1px solid var(--hair-22)', cursor: 'pointer' }}>Clear</button>
-          <button onClick={() => setFilterSheet(false)} style={{ flex: 2, padding: '12px 0', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', font: "700 14px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Show results</button>
-        </div>
-        </div>
-      </Sheet>
+          </div>
+        </Sheet>
+      )}
 
       {/* Cards get a List / Card (art grid) toggle - parity with the deckbuilder. */}
       {sc === 'cards' && (
-        <div className="cx-view-toggle-row">
-          <div className="cx-view-toggle">
-            <button className={`cx-view-btn${cardView === 'list' ? ' on' : ''}`} onClick={() => setCardView('list')}>☰ List</button>
-            <button className={`cx-view-btn${cardView === 'grid' ? ' on' : ''}`} onClick={() => setCardView('grid')}>▦ Card</button>
-          </div>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0 14px' }}>
+          <SegTabs ariaLabel="Card view" value={cardView} onChange={setCardView}
+            options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'grid', label: 'Card', icon: <IcGrid /> }]} />
         </div>
       )}
 
