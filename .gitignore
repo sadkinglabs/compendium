@@ -11,3 +11,6 @@ dist/
 
 # Named release APKs (compendium-<ver>.apk)
 dist-apk/
+
+# Firebase project config (client keys; keep out of history)
+android/app/google-services.json

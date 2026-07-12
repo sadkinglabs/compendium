@@ -8,7 +8,10 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.6.0'
-        classpath 'com.google.gms:google-services:4.4.0'
+        classpath 'com.google.gms:google-services:4.4.2'
+        // Crashlytics gradle plugin: uploads the R8 mapping on release builds so
+        // obfuscated stack traces symbolicate in the Crashlytics dashboard.
+        classpath 'com.google.firebase:firebase-crashlytics-gradle:3.0.2'
         // Literal, NOT $kotlinVersion - buildscript{} is evaluated before
         // `apply from: variables.gradle` below, so the ext prop isn't defined yet.
         classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24'

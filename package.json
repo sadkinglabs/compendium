@@ -13,7 +13,8 @@
     "test:query": "node --test \"src/store/**/*.test.mjs\"",
     "cap:sync": "cap sync",
     "android": "vite build && cap sync android && node scripts/strip-native-wasm.mjs",
-    "cap:open": "cap open android"
+    "cap:open": "cap open android",
+    "distribute": "node scripts/distribute.mjs"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^5.0.1",
@@ -37,6 +38,7 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "firebase-tools": "^15.23.0",
     "vite": "^6.0.7",
     "vite-plugin-static-copy": "^2.2.0"
   }
