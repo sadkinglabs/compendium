@@ -94,11 +94,11 @@ export function PlaysetProgress({ limit, total, complete }) {
 
 /* ------------------------------ List view ------------------------------ */
 
-export const LedgerRow = React.memo(function LedgerRow({ card, owned = 0, foil = 0, wanted = 0, value = 0, onStep, onPeek }) {
+export const LedgerRow = React.memo(function LedgerRow({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, value = 0, onStep, onPeek }) {
   const total = owned + foil;
   const { limit, complete } = playsetOf(card, total);
   const missing = total === 0;
-  const setName = firstSetName(card);
+  const setName = setLabel || firstSetName(card);
   const nameColor = complete ? '#f4ecdc' : missing ? '#8a8175' : '#efe7d8';
   const stop = (e) => e.stopPropagation();
   return (
@@ -143,12 +143,12 @@ export const LedgerRow = React.memo(function LedgerRow({ card, owned = 0, foil =
         <span onClick={stop} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
           {value > 0 ? (
             <>
-              <Frost label="Decrease" onClick={() => onStep(card.card_id, -1)}>−</Frost>
+              <Frost label="Decrease" onClick={() => onStep(card.card_id, set, -1)}>−</Frost>
               <span style={{ minWidth: 20, textAlign: 'center', font: "500 16px/1 var(--f-display)", color: '#efe7d8' }}>{value}</span>
-              <Frost label="Increase" onClick={() => onStep(card.card_id, 1)}>+</Frost>
+              <Frost label="Increase" onClick={() => onStep(card.card_id, set, 1)}>+</Frost>
             </>
           ) : (
-            <button onClick={() => onStep(card.card_id, 1)} aria-label="Add one"
+            <button onClick={() => onStep(card.card_id, set, 1)} aria-label="Add one"
               style={{ minHeight: 44, padding: '0 16px', borderRadius: 999, cursor: 'pointer', font: "600 12.5px/1 var(--f-display)", letterSpacing: '.04em', color: '#f0c8ce', background: 'rgba(224,169,177,.12)', border: '1px solid rgba(224,169,177,.28)' }}>+ Add</button>
           )}
         </span>
@@ -164,7 +164,7 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
   const total = owned + foil;
   const { complete } = playsetOf(card, total);
   const missing = total === 0;
@@ -204,7 +204,7 @@ export const BinderTile = React.memo(function BinderTile({ card, owned = 0, foil
       {/* Missing sleeves get a quick add. */}
       {missing && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
-          <Frost label={`Add ${card.name}`} size={30} onClick={() => onStep(card.card_id, 1)}>+</Frost>
+          <Frost label={`Add ${card.name}`} size={30} onClick={() => onStep(card.card_id, set, 1)}>+</Frost>
         </span>
       )}
     </div>

@@ -104,6 +104,60 @@ export async function setFoil(cardId, qty) {
   bump();
 }
 
+/* ---------------- per-set ownership (My Collection) ----------------
+   Alpha and Beta are physically distinct printings, so OWNED copies live on a
+   per-set row: variant_slug = the numeric set code ("001" = Alpha regular,
+   "001:f" = Alpha foil). The wishlist stays card-level on the '' row. Legacy
+   card-level owned (scanner/import/old card sheet, written on '' / 'foil') has
+   no set and surfaces under an "Unspecified" group ('' key) so nothing is lost.
+   ownedMap() still SUMs every owned row, so deck buildability is unaffected. */
+const SET_UNSPEC = '';   // group key for owned copies with no recorded set
+
+function parseVslug(slug) {
+  if (slug === 'foil') return { set: SET_UNSPEC, foil: true };   // legacy foil
+  const foil = slug.endsWith(':f');
+  return { set: foil ? slug.slice(0, -2) : slug, foil };          // '' stays unspecified
+}
+const vslug = (set, foil) => (foil ? set + ':f' : set);
+
+// Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.
+export async function ownedBySet() {
+  const pid = activeProfileId();
+  const rows = await query('SELECT card_id, variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND qty_owned>0;', [pid]);
+  const m = new Map();
+  for (const r of rows) {
+    const { set, foil } = parseVslug(r.variant_slug);
+    const key = r.card_id + '|' + set;
+    const cur = m.get(key) || { owned: 0, foil: 0 };
+    cur[foil ? 'foil' : 'owned'] += r.qty_owned;
+    m.set(key, cur);
+  }
+  return m;
+}
+
+// One (card, set) breakdown, for the optimistic-step re-read.
+export async function qtyForInSet(cardId, set) {
+  const pid = activeProfileId();
+  const rows = await query('SELECT variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (?,?);', [pid, cardId, vslug(set, false), vslug(set, true)]);
+  let owned = 0, foil = 0;
+  for (const r of rows) { if (parseVslug(r.variant_slug).foil) foil += r.qty_owned; else owned += r.qty_owned; }
+  return { owned, foil };
+}
+
+async function writeSetRow(cardId, set, foil, qty) {
+  const pid = activeProfileId();
+  const now = nowIso();
+  const slug = vslug(set, foil);
+  const q = Math.max(0, qty | 0);
+  const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
+  if (q === 0) { if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]); }
+  else if (cur) await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
+  else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
+  bump();
+}
+export async function setOwnedInSet(cardId, set, qty) { return writeSetRow(cardId, set, false, qty); }
+export async function setFoilInSet(cardId, set, qty) { return writeSetRow(cardId, set, true, qty); }
+
 // Atomic +N to owned/wanted via a single upsert (no read-modify-write). For callers
 // that can't serialize their writes - notably the scanner's rapid, independent
 // scanAction events, where step*'s read-then-write would lose overlapping increments.

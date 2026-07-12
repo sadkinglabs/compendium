@@ -9,7 +9,8 @@ import { createPortal } from 'react-dom';
 import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import {
-  ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
+  ownedMap, collectionStats, recentlyAdded,
+  ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, importCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
@@ -223,6 +224,27 @@ function ViewToggle({ view, setView }) {
 
 const VIEW_KEY = 'cx-collection-view';
 
+// Curiosa's numeric set model (catalog v2). Labels + a fixed display order; the
+// trailing '' bucket is legacy / set-unspecified owned rows (variant_slug ''|'foil').
+const SET_LABEL = { '001': 'Alpha', '002': 'Beta', '004': 'Arthurian Legends', '005': 'Dragonlord', '006': 'Gothic', '999': 'Promotional', '': 'Unspecified' };
+const SET_RANK = { '001': 0, '002': 1, '004': 2, '005': 3, '006': 4, '999': 5, '': 6 };
+const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
+
+// Sticky, tappable set header: name + owned/total, chevron folds the group.
+function SetHeader({ name, owned, total, collapsed, onToggle }) {
+  return (
+    <button onClick={onToggle} aria-expanded={!collapsed}
+      style={{ position: 'sticky', top: 52, zIndex: 5, width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '9px 4px', margin: '10px 0 0', cursor: 'pointer', textAlign: 'left',
+        background: 'linear-gradient(180deg, var(--bg) 62%, rgba(0,0,0,0))', border: 'none', borderBottom: '1px solid var(--hair-22)' }}>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c76d85" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
+        aria-hidden="true" style={{ flex: 'none', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
+      <span style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase', color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      <span style={{ flex: 'none', font: "600 12px/1 var(--f-mono)", color: '#8a8175' }}><span style={{ color: '#e3c589' }}>{owned}</span> / {total}</span>
+    </button>
+  );
+}
+
 function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
@@ -251,12 +273,11 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
-  const [ow, setOw] = useState(new Map());        // card_id -> {owned(reg), foil, wanted}
+  const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const toggleSet = useCallback((code) => setCollapsed((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }), []);
   const [setOpts, setSetOpts] = useState([]);
   useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
-
-  // My Collection steppers always edit OWNED (the one place owned counts change).
-  const field = 'owned';
 
   async function loadPool() {
     const parsed = parseQuery(q);
@@ -264,41 +285,72 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, artist, sort]);
-  useEffect(() => { ownWantMap().then(setOw); }, []);
+  useEffect(() => { ownedBySet().then(setOwBySet); }, []);
   // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
   // so our optimistic steps commit first (see the write path below).
   useEffect(() => {
     let t = null;
-    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(() => ownWantMap().then(setOw), 250); });
+    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(() => ownedBySet().then(setOwBySet), 250); });
     return () => { clearTimeout(t); off(); };
   }, []);
 
-  const val = (id, key) => (ow.get(id)?.[key] || 0);
-  // Stable across renders (deps: field only) so the memoized rows don't all
-  // re-render when an unrelated bit of state changes. onPeek (setSheetCard) is
-  // already a stable setState, so both row handlers are now referentially stable.
-  const step = useCallback((cardId, delta) => {
-    // Optimistic off the cached map; the WRITE re-reads qtyFor inside the app-wide
-    // per-card chain, so a sheet edit can't be clobbered by a stale absolute write.
-    setOw((prev) => {
-      const cur = prev.get(cardId) || { owned: 0, foil: 0, wanted: 0 };
-      const next = { ...cur, [field]: Math.max(0, (cur[field] || 0) + delta) };
-      const m = new Map(prev); m.set(cardId, next);
+  // A stepper edits OWNED for ONE (card, set) printing - the only place owned
+  // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
+  // inside the app-wide per-(card,set) chain so overlapping steps can't clobber.
+  const stepSet = useCallback((cardId, set, delta) => {
+    const key = cardId + '|' + set;
+    setOwBySet((prev) => {
+      const cur = prev.get(key) || { owned: 0, foil: 0 };
+      const next = { ...cur, owned: Math.max(0, cur.owned + delta) };
+      const m = new Map(prev); m.set(key, next);
       return m;
     });
-    serialChain(ownedChains, cardId, async () => {
-      const cur = await qtyFor(cardId);
-      const write = Math.max(0, (cur[field] || 0) + delta);
-      return field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write);
+    serialChain(ownedChains, key, async () => {
+      const cur = await qtyForInSet(cardId, set);
+      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta));
     });
-  }, [field]);
+  }, []);
 
-  // My Collection shows only cards you OWN (total = regular + foil). In the
-  // Search-Library add sub-mode, show the whole catalog so anything is addable.
-  const shown = useMemo(() => {
-    if (editMode) return pool || [];   // adding: the whole catalogue is addable
-    return (pool || []).filter((c) => { const o = ow.get(c.card_id); return (o?.owned || 0) + (o?.foil || 0) > 0; });
-  }, [pool, ow, editMode]);
+  // Per-set ownership: expand every catalogue card into one row per set it was
+  // printed in. Read view keeps only (card, set) pairs you own; add mode shows
+  // every printing so anything is addable. Rows are grouped + collapsible by set.
+  const setTotals = useMemo(() => {
+    const t = new Map();
+    for (const c of (pool || [])) for (const s of (c._sets || [])) if (s.code) t.set(s.code, (t.get(s.code) || 0) + 1);
+    return t;
+  }, [pool]);
+
+  const groups = useMemo(() => {
+    const g = new Map();   // code -> { code, name, rows:[{card,set,owned,foil}] }
+    const push = (code, name, row) => {
+      let x = g.get(code);
+      if (!x) { x = { code, name: name || SET_LABEL[code] || code, rows: [] }; g.set(code, x); }
+      x.rows.push(row);
+    };
+    for (const c of (pool || [])) {
+      for (const s of (c._sets || [])) {
+        if (!s.code) continue;
+        const oc = owBySet.get(c.card_id + '|' + s.code);
+        const owned = oc?.owned || 0, foil = oc?.foil || 0;
+        if (!editMode && owned + foil === 0) continue;   // read view: owned only
+        push(s.code, s.name, { card: c, set: s.code, owned, foil });
+      }
+    }
+    // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set).
+    if (!editMode) {
+      const byId = new Map((pool || []).map((c) => [c.card_id, c]));
+      for (const [k, v] of owBySet) {
+        const i = k.lastIndexOf('|');
+        if (k.slice(i + 1) !== '') continue;
+        if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+        const card = byId.get(k.slice(0, i));
+        if (card) push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
+      }
+    }
+    return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
+  }, [pool, owBySet, editMode]);
+
+  const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
   const activeCount = sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
@@ -307,7 +359,6 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
     setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
   };
-  const cardProps = (c) => ({ owned: val(c.card_id, 'owned'), foil: val(c.card_id, 'foil'), wanted: val(c.card_id, 'wanted') });
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
@@ -319,26 +370,45 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       {pool == null ? <Loading /> : (
         <>
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
-            {shown.length} cards{shown.length > 250 ? ' · showing 250' : ''}
+            {totalRows} card{totalRows === 1 ? '' : 's'}{totalRows > 250 ? ' · showing 250' : ''}
           </div>
-          {shown.length === 0 ? (
+          {totalRows === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
               {editMode ? 'No cards match those filters.'
                 : (activeCount || q) ? 'No owned cards match those filters.'
                   : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
-          ) : view === 'binder' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {shown.slice(0, 250).map((c) => (
-                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={showSteppers ? step : undefined} onPeek={onPeek} />
-              ))}
-            </div>
-          ) : (
-            shown.slice(0, 250).map((c) => (
-              <LedgerRow key={c.card_id} card={c} {...cardProps(c)} value={val(c.card_id, 'owned')}
-                onStep={showSteppers ? step : undefined} onPeek={onPeek} />
-            ))
-          )}
+          ) : (() => {
+            // Render groups in set order, budgeting 250 rows total across all
+            // open groups so a huge add-mode catalogue stays responsive.
+            let budget = 250;
+            return groups.map((grp) => {
+              const isOpen = !collapsed.has(grp.code);
+              const ownedCount = grp.rows.reduce((n, r) => n + (r.owned + r.foil > 0 ? 1 : 0), 0);
+              const total = setTotals.get(grp.code) || grp.rows.length;
+              const rows = isOpen ? grp.rows.slice(0, budget) : [];
+              budget -= rows.length;
+              return (
+                <div key={grp.code || 'unspec'}>
+                  <SetHeader name={grp.name} owned={ownedCount} total={total} collapsed={!isOpen} onToggle={() => toggleSet(grp.code)} />
+                  {isOpen && (view === 'binder' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                      {rows.map((r) => (
+                        <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} owned={r.owned} foil={r.foil}
+                          onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                      ))}
+                    </div>
+                  ) : (
+                    rows.map((r) => (
+                      <LedgerRow key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name}
+                        owned={r.owned} foil={r.foil} value={r.owned + r.foil}
+                        onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                    ))
+                  ))}
+                </div>
+              );
+            });
+          })()}
         </>
       )}
 
@@ -359,7 +429,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
       <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
-        eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${shown.length} card${shown.length === 1 ? '' : 's'}`}
+        eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts}
