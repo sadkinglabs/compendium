@@ -6,7 +6,7 @@
 // chrome-only - it rides the stepper buttons; the count stays gold/ink.
 import React, { useEffect, useRef, useState } from 'react';
 import { SectionLabel } from './ui.jsx';
-import { qtyFor, setOwned, setWanted, setFoil, subscribeCollection } from '../store/ownedRepository.js';
+import { qtyFor, setWanted, setFoil, stepOwnedBucket, subscribeCollection } from '../store/ownedRepository.js';
 import { stepBtn, serialChain, ownedChains } from './ownedUi.js';
 import { haptic } from '../native.js';
 
@@ -56,9 +56,13 @@ export function useOwnedLedger(cardId) {
     // write off a stale mirror would silently revert it. Delta-on-fresh-read
     // under the shared chain makes concurrent edits commute.
     serialChain(ownedChains, cardId, async () => {
+      // Owned edits the '' bucket by DELTA (setOwned off the summed total would
+      // double-count per-set rows). Foil/wanted live on a single row, so an
+      // absolute write off their read is still correct.
+      if (field === 'owned') return stepOwnedBucket(cardId, delta);
       const cur = await qtyFor(cardId);
       const val = Math.max(0, (cur[field] || 0) + delta);
-      return field === 'owned' ? setOwned(cardId, val) : field === 'foil' ? setFoil(cardId, val) : setWanted(cardId, val);
+      return field === 'foil' ? setFoil(cardId, val) : setWanted(cardId, val);
     })
       .finally(() => {
         pending.current--;

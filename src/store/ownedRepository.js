@@ -83,6 +83,16 @@ async function writeQty(cardId, { owned, wanted }) {
 }
 export async function setOwned(cardId, qty) { return writeQty(cardId, { owned: qty }); }
 export async function setWanted(cardId, qty) { return writeQty(cardId, { wanted: qty }); }
+
+// Card-level owned edit as a DELTA on the '' ("Unspecified") bucket. qtyFor sums
+// owned across EVERY row (incl. the per-set '001'… rows My Collection writes), so
+// reading that total and writing it back to '' (setOwned) double-counts the set
+// rows - the +2-on-plus / dead-minus bug. Stepping the '' bucket directly composes
+// correctly with the set rows the card sheet doesn't manage.
+export async function stepOwnedBucket(cardId, delta) {
+  const cur = (await query("SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [activeProfileId(), cardId]))[0];
+  return writeQty(cardId, { owned: Math.max(0, (cur?.qty_owned || 0) + delta) });
+}
 export async function stepOwned(cardId, delta) { const { owned } = await qtyFor(cardId); return setOwned(cardId, owned + delta); }
 export async function stepWanted(cardId, delta) { const { wanted } = await qtyFor(cardId); return setWanted(cardId, wanted + delta); }
 

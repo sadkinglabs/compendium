@@ -89,7 +89,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
           unmounts for the Codex page, and Back should land right back on this
           sheet - that's where the user left. */}
       <CollectionCardSheet cardId={sheetCard} onClose={() => setSheetCard(null)}
-        onOpenCodex={(id, name) => onOpen('card', id, name)} />
+        onOpenCodex={(id, name) => onOpen('card', id, name)} editable={view === 'cards' && editMode} />
     </div>
   );
 }
