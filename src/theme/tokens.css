@@ -357,11 +357,13 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Glance - a flat stat strip (shared recipe with Play's minis): hairline top +
    bottom, thin dividers between the four doorway tiles, gold Cinzel numerals. */
 .cx-ov-glance { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid rgba(74,60,34,.3); border-bottom: 1px solid rgba(74,60,34,.3); margin-bottom: 26px; }
-.cx-ov-tile { border: none; border-radius: 0; background: transparent; padding: 13px 2px 12px; text-align: center; min-height: 44px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-ov-tile { border: none; border-radius: 0; background: transparent; padding: 16px 2px 14px; text-align: center; min-height: 44px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-tile + .cx-ov-tile { border-left: 1px solid rgba(74,60,34,.5); }
 .cx-ov-tile:active { background: rgba(220,184,111,.05); }
-.cx-ov-tile-val { font: 600 19px/1 var(--f-display); color: #e3c589; text-shadow: 0 0 11px rgba(220,184,111,.4); }
-.cx-ov-tile-lbl { font: 600 9px/1.2 var(--f-ui); letter-spacing: .14em; color: #8a8175; margin-top: 7px; }
+/* Hero-number treatment (matches the life counter / deck donut): big Cinzel 700,
+   glowing gold. */
+.cx-ov-tile-val { font: 700 29px/1 var(--f-display); letter-spacing: .01em; color: #e3c589; text-shadow: 0 0 15px rgba(220,184,111,.45); }
+.cx-ov-tile-lbl { font: 600 9px/1.2 var(--f-ui); letter-spacing: .14em; color: #8a8175; margin-top: 9px; }
 .cx-ov-sec { margin-bottom: 14px; }
 .cx-ov-sec-head { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; margin-bottom: 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-sec-title { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; white-space: nowrap; }
