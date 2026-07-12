@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import {
   listDecks, getDeck, toggleStar, renameDeck, duplicateDeck, deleteDeck,
   historyCount, clearHistory, exportMarkdown, exportCuriosa, getDeckCards,
+  planDeckTextAdd, applyDeckAdds,
 } from '../store/deckRepository.js';
 import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
@@ -33,6 +34,7 @@ const NewDeckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" st
 const CuriosaSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.07 0l2.5-2.5a5 5 0 0 0-7.07-7.07l-1.4 1.4" /><path d="M14 11a5 5 0 0 0-7.07 0L4.43 13.5a5 5 0 0 0 7.07 7.07l1.4-1.4" /></svg>;
 const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
 const QrSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><line x1="14" y1="14" x2="14" y2="17" /><line x1="17" y1="14" x2="21" y2="14" /><line x1="21" y1="17" x2="21" y2="21" /><line x1="14" y1="21" x2="17" y2="21" /></svg>;
+const CameraSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.2" /></svg>;
 
 export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
@@ -47,6 +49,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   const [exportOpen, setExportOpen] = useState(false);
   const [spreadOpen, setSpreadOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [textAddOpen, setTextAddOpen] = useState(false);
   // Route through the app-wide toast() host (one toast system) - kept as `flash`
   // so the many call sites + the onToast/flash props don't have to change.
   const flash = (msg, ms) => toast(msg, ms ? { ms } : {});
@@ -228,11 +231,17 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       )}
       {view === 'mydeck' && deckOpen && (
         editMode ? (
-          // Edit mode: the FAB becomes a magnifying glass - the doorway to the
-          // full searchable card list. The key forces a remount so the spin-in
-          // (now built into Fab) replays on the role change.
-          <Fab key="search" variant="deck" icon={<FabGlyph kind="search" />}
-            label="Search all cards" onClick={onAddCards} />
+          // Edit mode = two stacked FABs. Bottom: the magnifying glass (search the
+          // whole library, the current function). Top: a + that rises above it with
+          // the bulk-add tools search can't do - scan a card, or paste a list.
+          <>
+            <Fab key="search" variant="deck" icon={<FabGlyph kind="search" />}
+              label="Search all cards" onClick={onAddCards} />
+            <Fab key="add" variant="lib" icon={<FabGlyph kind="add" />} className="fab-stacked" label="Add tools" items={[
+              { label: 'Add with scanner', icon: CameraSvg, onClick: () => launchScanner({ mode: 'deck', deckId: deckOpen.id, onOpenCard: onOpenCodex, onChanged }) },
+              { label: 'Add from text', icon: TextImportSvg, onClick: () => setTextAddOpen(true) },
+            ]} />
+          </>
         ) : (
           <Fab key="menu" variant="deck" icon={<FabGlyph kind="dots" />}
             label="Deck actions" items={deckFabItems} />
@@ -240,6 +249,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       )}
 
       <ExportSheet open={exportOpen} deckId={deckOpen?.id} onClose={() => setExportOpen(false)} flash={flash} />
+      <DeckTextAddSheet open={textAddOpen} deckId={deckOpen?.id} onClose={() => setTextAddOpen(false)} onChanged={onChanged} />
       <DeckSpreadSheet open={spreadOpen} deckId={deckOpen?.id} onClose={() => setSpreadOpen(false)} />
       <RenameSheet open={renameOpen} initial={deckOpen?.name || ''} onClose={() => setRenameOpen(false)} onSave={actRename} />
     </div>
@@ -258,6 +268,96 @@ function RenameSheet({ open, initial, onClose, onSave }) {
           style={{ flex: 1, height: 44, background: 'rgba(42,33,20,.5)', border: '1px solid #4a3c22', borderRadius: 12, padding: '0 14px', color: '#efe7d8', font: "400 15px/1 var(--f-read)" }} />
         <button onClick={() => onSave(name)}
           style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
+      </div>
+    </Sheet>
+  );
+}
+
+// Add from text - paste a "qty name" list, REVIEW it (a dry-run that resolves each
+// line, home-zones it, and caps by the rarity limit), then confirm. The confirmation
+// shows exactly what will be added, what was already at its limit, and what wasn't
+// recognised - nothing is written until "Add".
+function DeckTextAddSheet({ open, deckId, onClose, onChanged }) {
+  const [text, setText] = useState('');
+  const [plan, setPlan] = useState(null);   // { adds, atLimit, unknown }
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setText(''); setPlan(null); setBusy(false); } }, [open]);
+
+  const review = async () => {
+    if (!text.trim() || !deckId || busy) return;
+    setBusy(true);
+    try { setPlan(await planDeckTextAdd(deckId, text)); }
+    catch { toast("Couldn't read that list.", { tone: 'danger' }); }
+    setBusy(false);
+  };
+  const commit = async () => {
+    if (!plan?.adds?.length || busy) return;
+    setBusy(true);
+    try {
+      const n = await applyDeckAdds(deckId, plan.adds);
+      toast(`Added ${n} card${n === 1 ? '' : 's'} to the deck`);
+      onChanged?.();
+      onClose();
+    } catch { toast("Couldn't add those cards.", { tone: 'danger' }); setBusy(false); }
+  };
+  const totalAdd = plan ? plan.adds.reduce((s, a) => s + a.addQty, 0) : 0;
+
+  const input = { width: '100%', boxSizing: 'border-box', background: 'rgba(42,33,20,.5)', border: '1px solid #4a3c22', borderRadius: 12, padding: '11px 14px', color: '#efe7d8', font: "400 13.5px/1.5 var(--f-mono)", resize: 'none' };
+  const ghost = { flex: 1, padding: '13px 0', borderRadius: 12, background: 'transparent', border: '1px solid #4a3c22', color: '#d8c9a4', font: "600 13px/1 var(--f-display)", cursor: 'pointer' };
+  const gold = { flex: 1.4, padding: '13px 0', borderRadius: 12, background: 'linear-gradient(180deg,#d8b872,#b8954f)', border: '1px solid #e3c589', color: '#1a1206', font: "700 13px/1 var(--f-display)", cursor: 'pointer' };
+  const Section = ({ label, color, children }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.18em', color, textTransform: 'uppercase', marginBottom: 8 }}>{label}</div>
+      {children}
+    </div>
+  );
+  const Line = ({ name, note, dim }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? '#8a8175' : '#d8cebb' }}>{name}</span>
+      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? '#8a8175' : '#cba75f' }}>{note}</span>
+    </div>
+  );
+
+  return (
+    <Sheet open={open} title="Add from text" onClose={onClose}>
+      <div style={{ padding: '0 16px 8px' }}>
+        {!plan ? (
+          <>
+            <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: '#8a8175', marginBottom: 12 }}>
+              Paste a list - one per line, like <span style={{ color: '#d8cebb', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>. Sites go to Atlas, everything else to Spellbook; rarity limits are respected.
+            </div>
+            <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={8}
+              placeholder={'4 Wild Boars\n2 Sea Serpent\n1 Avatar of Fire…'} style={input} />
+            <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button onClick={onClose} style={ghost}>Cancel</button>
+              <button onClick={review} disabled={!text.trim() || busy} style={{ ...gold, opacity: text.trim() && !busy ? 1 : 0.5 }}>{busy ? 'Reading…' : 'Review'}</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {plan.adds.length > 0 ? (
+              <Section label={`Adding · ${totalAdd}`} color="#8fd3a8">
+                {plan.adds.map((a) => <Line key={a.cardId} name={a.name} note={a.capped ? `+${a.addQty} · of ${a.requested}, cap ${a.limit}` : `+${a.addQty}`} />)}
+              </Section>
+            ) : (
+              <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px' }}>Nothing new to add - it's all at its limit or unrecognised.</div>
+            )}
+            {plan.atLimit.length > 0 && (
+              <Section label="Already at limit" color="#c9a86a">
+                {plan.atLimit.map((a) => <Line key={a.name} dim name={a.name} note={`${a.already}/${a.limit}`} />)}
+              </Section>
+            )}
+            {plan.unknown.length > 0 && (
+              <Section label="Not recognised" color="#c98f8f">
+                {plan.unknown.map((u, i) => <Line key={u.name + i} dim name={u.name} note={`${u.qty}×`} />)}
+              </Section>
+            )}
+            <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+              <button onClick={() => setPlan(null)} style={ghost}>Back</button>
+              <button onClick={commit} disabled={!plan.adds.length || busy} style={{ ...gold, opacity: plan.adds.length && !busy ? 1 : 0.5 }}>{busy ? 'Adding…' : `Add ${totalAdd} card${totalAdd === 1 ? '' : 's'}`}</button>
+            </div>
+          </>
+        )}
       </div>
     </Sheet>
   );

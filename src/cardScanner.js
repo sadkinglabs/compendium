@@ -7,7 +7,7 @@ import { registerPlugin } from '@capacitor/core';
 import { query } from './store/db.js';
 import { addOwnedCopies, addOwnedCopiesInSet, addWantedCopies } from './store/ownedRepository.js';
 import { parseDeckShare } from './store/deckShare.js';
-import { importDeckShare } from './store/deckRepository.js';
+import { importDeckShare, addScannedToDeck } from './store/deckRepository.js';
 import { toast } from './feedback.js';
 import { isNative } from './native.js';
 
@@ -43,7 +43,7 @@ async function catalogForScan() {
  * overlay) or 'collection' (a focused build-your-collection loop: identify, pick a
  * quantity, Add, keep scanning). Safe on web (shows a hint and returns).
  */
-export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mode = 'universal' } = {}) {
+export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onChanged, deckId = null, mode = 'universal' } = {}) {
   if (!isNative()) {
     toast('Card scanning is available in the installed app.');
     return;
@@ -69,11 +69,15 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mod
   // so overlapping same-card taps can't lose an increment; failures are counted and
   // surfaced once the scanner closes (the WebView is behind the Activity, so a toast
   // mid-scan wouldn't be seen).
-  let failed = 0;
+  let failed = 0, deckAdded = 0, deckBlocked = 0;
   const sub = await CardScanner.addListener('scanAction', async (ev) => {
     try {
-      const n = Math.max(1, ev.qty || 1);   // collection mode picks a quantity; universal +1s
-      if (ev.action === 'collection') {
+      const n = Math.max(1, ev.qty || 1);   // collection/deck modes pick a quantity; universal +1s
+      if (ev.action === 'deck') {
+        // Deck mode: file the card in its home zone, capped by the rarity copy limit.
+        const res = deckId ? await addScannedToDeck(deckId, ev.cardId, n) : { ok: false };
+        if (res.ok) deckAdded += n; else deckBlocked += 1;
+      } else if (ev.action === 'collection') {
         // Collection mode sends the chosen printing (ev.set: auto for single-set,
         // user-picked for a reprint). Universal +1 sends none -> auto-file if the
         // card is single-set, else Unspecified.
@@ -108,6 +112,8 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mod
     else if (!/cancel/i.test(code)) toast('Scanner error.', { tone: 'danger' });
   } finally {
     try { await sub.remove(); } catch { /* noop */ }
+    if (deckAdded > 0) { onChanged?.(); toast(`Added ${deckAdded} card${deckAdded === 1 ? '' : 's'} to the deck`); }
+    if (deckBlocked > 0) toast(`${deckBlocked} card${deckBlocked === 1 ? '' : 's'} hit the rarity limit`, { tone: 'danger' });
     if (failed > 0) toast(`${failed} scanned add${failed === 1 ? '' : 's'} didn't save`, { tone: 'danger' });
   }
 }

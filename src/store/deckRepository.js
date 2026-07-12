@@ -464,6 +464,59 @@ export function parseDeckText(text) {
   return { avatar, zones };
 }
 
+// Dry-run a pasted "qty name" list against an EXISTING deck: resolve each line,
+// place it in its home zone (sites -> Atlas, else Spellbook), and cap by the rarity
+// copy limit given what's already in the deck. Nothing is written - returns a plan
+// { adds, atLimit, unknown } for a confirmation step (see applyDeckAdds).
+export async function planDeckTextAdd(deckId, text) {
+  const { zones } = parseDeckText(text);
+  const cat = await getCatalog();
+  const byName = new Map(cat.map((c) => [c._nameLc, c]));
+  const merged = new Map();   // card_id -> { card, requested } (dedupe repeated lines)
+  const unknown = [];
+  for (const { name, qty } of [...zones.spellbook, ...zones.atlas, ...zones.collection]) {
+    const card = byName.get(String(name).toLowerCase().trim());
+    if (!card) { unknown.push({ name, qty }); continue; }
+    const cur = merged.get(card.card_id) || { card, requested: 0 };
+    cur.requested += Math.max(0, qty | 0);
+    merged.set(card.card_id, cur);
+  }
+  const adds = [], atLimit = [];
+  for (const { card, requested } of merged.values()) {
+    if (requested <= 0) continue;
+    const zone = card.is_site ? 'atlas' : 'spellbook';
+    const already = await totalQty(deckId, card.card_id);
+    const limit = copyLimit(card);
+    const room = Math.max(0, limit - already);
+    const addQty = Math.min(requested, room);
+    const entry = { cardId: card.card_id, name: card.name, rarity: card.rarity, rulesText: card.rules_text, zone, requested, already, limit };
+    if (addQty > 0) adds.push({ ...entry, addQty, capped: addQty < requested });
+    else atLimit.push(entry);
+  }
+  return { adds, atLimit, unknown };
+}
+
+// Commit a confirmed plan's adds. changeQty re-checks the limit, so a stale plan
+// can never over-fill. Returns the total copies actually written.
+export async function applyDeckAdds(deckId, adds) {
+  let added = 0;
+  for (const a of adds || []) {
+    const res = await changeQty(deckId, a.zone, { card_id: a.cardId, name: a.name, rarity: a.rarity, rules_text: a.rulesText }, a.addQty);
+    if (res.ok) added += a.addQty;
+  }
+  return added;
+}
+
+// Add a scanner-recognised card to a deck: files it in its home zone and lets
+// changeQty enforce the rarity copy limit (returns {ok,reason} - a limit hit is
+// surfaced by the caller). Used by the deck-mode scanner.
+export async function addScannedToDeck(deckId, cardId, qty = 1) {
+  const cat = await getCatalog();
+  const card = cat.find((c) => c.card_id === cardId);
+  if (!card) return { ok: false, reason: 'Unknown card' };
+  return changeQty(deckId, card.is_site ? 'atlas' : 'spellbook', card, Math.max(1, qty | 0));
+}
+
 /* ---- Curiosa-URL import (ported from Arcanum) ---- */
 
 // Only a real device build can bypass CORS with CapacitorHttp. On web (incl. the
