@@ -47,13 +47,16 @@ async function getCatalogCounts() {
   };
 }
 
-/** Seed once. Returns { seeded, counts }. */
-export async function seedCatalogIfNeeded() {
+/** Seed once. Returns { seeded, counts }. `onProgress(label)` (optional) is called
+ *  only on the first-run / version-bump path so the splash can show what the
+ *  one-time multi-second setup is doing instead of a frozen screen. */
+export async function seedCatalogIfNeeded(onProgress) {
   const cur = (await query("SELECT value FROM catalog_meta WHERE key='version';"))[0]?.value;
   if (cur === String(CATALOG_VERSION)) {
-    return { seeded: false, counts: await getCatalogCounts() };
+    return { seeded: false, counts: await getCatalogCounts() };   // warm boot: fast, no progress
   }
 
+  onProgress?.('Fetching the catalogue…');
   const [cardsObj, articles, faqs, links] = await Promise.all([
     fetchJson('cards.json'),
     fetchJson('articles_normalized.json'),
@@ -88,6 +91,7 @@ export async function seedCatalogIfNeeded() {
     ['INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?,?);', ['version', String(CATALOG_VERSION)]],
   ];
 
+  onProgress?.('Setting up for offline use…');
   await tx(statements);
   await persist();
   invalidateCatalog();   // the parsed in-memory cache must not outlive a re-seed

@@ -120,7 +120,7 @@ export default function App() {
     (async () => {
       try {
         await openDatabase();
-        const { counts } = await seedCatalogIfNeeded();
+        const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
         // One-time backfill of legacy highlights into the annotation model (runs
         // after migrations create the tables + the catalog is seeded; gated so it's
         // idempotent). Never blocks boot - a failure just retries next launch.
@@ -170,7 +170,7 @@ export default function App() {
   // "Browse all decks" always lands on the Library, not whatever deck was last open.
   const goLibrary = () => { setDeckOpen(null); goTab('decks'); };
 
-  if (boot.status === 'loading') return <Splash text="Opening the grimoire…" />;
+  if (boot.status === 'loading') return <Splash text={boot.msg || 'Opening the grimoire…'} />;
   if (boot.status === 'error') return <Splash text={'Store error: ' + boot.error} error />;
 
   const pillar = PILLARS.find((p) => p.key === tab);
@@ -961,8 +961,9 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
 
 function Splash({ text, error }) {
   return (
-    <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ font: "600 16px/1.4 var(--f-display)", color: error ? 'var(--destructive)' : 'var(--gold-leaf)', textAlign: 'center', padding: 24 }}>{text}</div>
+    <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20 }}>
+      {!error && <div className="boot-mark" aria-hidden="true" />}
+      <div style={{ font: "600 15px/1.5 var(--f-display)", letterSpacing: '.02em', color: error ? 'var(--destructive)' : 'var(--gold-leaf)', textAlign: 'center', padding: '0 32px' }}>{text}</div>
     </div>
   );
 }
