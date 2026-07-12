@@ -170,8 +170,8 @@ export default function App() {
   // "Browse all decks" always lands on the Library, not whatever deck was last open.
   const goLibrary = () => { setDeckOpen(null); goTab('decks'); };
 
-  if (boot.status === 'loading') return <Splash text={boot.msg || 'Opening the grimoire…'} />;
-  if (boot.status === 'error') return <Splash text={'Store error: ' + boot.error} error />;
+  if (boot.status === 'loading') return <Splash />;
+  if (boot.status === 'error') return <Splash error errorText={'Store error: ' + boot.error} />;
 
   const pillar = PILLARS.find((p) => p.key === tab);
   const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
@@ -959,11 +959,68 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
   );
 }
 
-function Splash({ text, error }) {
+// Whispered incantations while the catalogue seeds. Cycled in order; the last is
+// held once reached (the grimoire opening = the app arriving). Matches the first
+// line baked into index.html's static splash so the hand-off is seamless.
+const BOOT_LINES = [
+  'Grinding the pigments',
+  'Marinating the mandrake jars',
+  'Drawing the pentagram',
+  'Lighting the black candles',
+  'Casting the spells',
+  'Opening the grimoire',
+];
+
+// The Compendium mark: a gold diamond that FILLS from the base as boot advances.
+// SVG so the rising fill can be clipped cleanly to the diamond outline.
+function BootDiamond({ pct, dim }) {
+  const p = Math.max(0, Math.min(100, pct));
+  const D = 'M50 5 L95 50 L50 95 L5 50 Z';
+  return (
+    <div className={`boot-diamond${dim ? ' dim' : ''}`} aria-hidden="true" style={{ lineHeight: 0 }}>
+      <svg viewBox="0 0 100 100" width="60" height="60">
+        <defs>
+          <linearGradient id="bootFill" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stopColor="#e8cd92" /><stop offset="1" stopColor="#c2a05a" />
+          </linearGradient>
+          <clipPath id="bootClip"><path d={D} /></clipPath>
+        </defs>
+        <rect clipPath="url(#bootClip)" x="0" y={100 - p} width="100" height={p} fill="url(#bootFill)"
+          style={{ transition: 'y .25s linear, height .25s linear' }} />
+        <path d={D} fill="none" stroke="#cba75f" strokeWidth="4" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+function Splash({ error, errorText }) {
+  const [pct, setPct] = useState(0);
+  const [line, setLine] = useState(0);
+  // Ease the fill toward (but not to) full - the mark is empty at launch and nearly
+  // brimming by the time the catalogue is ready; it unmounts before hitting 100.
+  useEffect(() => {
+    if (error) return undefined;
+    const iv = setInterval(() => setPct((p) => (p >= 94 ? 94 : p + Math.max(0.7, (98 - p) * 0.055))), 60);
+    return () => clearInterval(iv);
+  }, [error]);
+  // Advance the incantation, holding on the last line.
+  useEffect(() => {
+    if (error) return undefined;
+    const iv = setInterval(() => setLine((i) => Math.min(i + 1, BOOT_LINES.length - 1)), 900);
+    return () => clearInterval(iv);
+  }, [error]);
+
   return (
     <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20 }}>
-      {!error && <div className="boot-mark" aria-hidden="true" />}
-      <div style={{ font: "600 15px/1.5 var(--f-display)", letterSpacing: '.02em', color: error ? 'var(--destructive)' : 'var(--gold-leaf)', textAlign: 'center', padding: '0 32px' }}>{text}</div>
+      <BootDiamond pct={error ? 0 : pct} dim={error} />
+      <div style={{ font: "600 15px/1 var(--f-display)", letterSpacing: '.42em', textIndent: '.42em', textTransform: 'uppercase', color: '#cba75f' }}>Compendium</div>
+      {error ? (
+        <div style={{ font: "600 13.5px/1.5 var(--f-display)", color: 'var(--destructive)', textAlign: 'center', padding: '0 32px', maxWidth: 320 }}>{errorText}</div>
+      ) : (
+        <div key={line} className="boot-line" style={{ minHeight: 20, font: "italic 400 14px/1.4 var(--f-read)", color: '#8a7a55', letterSpacing: '.03em', textAlign: 'center' }}>
+          {BOOT_LINES[line]}…
+        </div>
+      )}
     </div>
   );
 }

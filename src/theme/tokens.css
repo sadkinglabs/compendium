@@ -161,10 +161,15 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 
-/* Boot splash mark - matches the static #boot-splash in index.html so the
-   pre-React HTML splash and the React <Splash> read as one continuous state. */
-@keyframes bootPulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
-.boot-mark { width: 34px; height: 34px; transform: rotate(45deg); border: 2px solid rgba(203,167,95,.5); border-radius: 6px; box-shadow: 0 0 26px rgba(203,167,95,.22); animation: bootPulse 1.6s ease-in-out infinite; }
+/* Boot splash: the gold diamond glimmers while it fills, matching the static
+   #boot-splash in index.html so the pre-React HTML and the React <Splash> read as
+   one continuous screen. The rising fill itself is inline SVG in <BootDiamond>. */
+.boot-diamond { filter: drop-shadow(0 0 12px rgba(203,167,95,.4)); animation: bootGlow 2.4s ease-in-out infinite; }
+.boot-diamond.dim { opacity: .5; animation: none; filter: none; }
+@keyframes bootGlow { 0%, 100% { filter: drop-shadow(0 0 8px rgba(203,167,95,.28)); } 50% { filter: drop-shadow(0 0 17px rgba(203,167,95,.52)); } }
+@keyframes bootLineIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.boot-line { animation: bootLineIn .45s ease; }
+@media (prefers-reduced-motion: reduce) { .boot-diamond { animation: none; } .boot-line { animation: none; } }
 
 /* Per-pillar section wash: a top-down radial glow of --wash over pure black.
    The gradient uses currentColor so a plain `color` transition animates the hue
