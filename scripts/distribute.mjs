@@ -39,7 +39,10 @@ if (process.env.FAD_TESTERS) { args.push('--testers', process.env.FAD_TESTERS); 
 if (process.env.FAD_GROUP) { args.push('--groups', process.env.FAD_GROUP); hasRecipient = true; }
 if (!hasRecipient) args.push('--groups', 'alpha-testers');
 
-const bin = fileURLToPath(new URL(`node_modules/.bin/firebase${process.platform === 'win32' ? '.cmd' : ''}`, root));
+// Run the CLI's JS entry through node (not the .cmd shim): Node 20+ rejects
+// execFileSync on a .cmd (EINVAL) without a shell, and a shell would mangle the
+// spaces in --release-notes. node + the .js entry sidesteps both, cross-platform.
+const cliJs = fileURLToPath(new URL('node_modules/firebase-tools/lib/bin/firebase.js', root));
 const recipients = [process.env.FAD_TESTERS, process.env.FAD_GROUP ? `group:${process.env.FAD_GROUP}` : (!process.env.FAD_TESTERS ? 'group:alpha-testers' : '')].filter(Boolean).join(', ');
 console.log(`\n→ Distributing ${apk}\n  app:    ${appId}\n  notes:  ${notes}\n  to:     ${recipients}\n`);
-execFileSync(bin, args, { stdio: 'inherit', cwd: fileURLToPath(root) });
+execFileSync(process.execPath, [cliJs, ...args], { stdio: 'inherit', cwd: fileURLToPath(root) });
