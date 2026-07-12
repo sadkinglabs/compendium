@@ -377,6 +377,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       const isWish = wishSet.has(c.card_id);
       for (const s of (c._sets || [])) {
         if (!s.code) continue;
+        // The SET filter is per-PRINTING here: a card printed in both Alpha and Beta,
+        // filtered to Beta, shows only its Beta row (not the Alpha one too).
+        if (sets.length && !sets.includes(s.name)) continue;
         const oc = owBySet.get(c.card_id + '|' + s.code);
         const owned = oc?.owned || 0, foil = oc?.foil || 0;
         if (!matches(owned + foil > 0, isWish)) continue;
@@ -384,8 +387,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       }
     }
     // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set). These
-    // are always owned, so they surface in the default read view or an owned/wishlist filter.
-    const wantLegacy = ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode;
+    // are always owned, so they surface in the default read view or an owned/wishlist
+    // filter - but never when the user has narrowed to specific SET(s), since '' is none.
+    const wantLegacy = sets.length === 0 && (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode);
     if (wantLegacy) {
       const byId = new Map((pool || []).map((c) => [c.card_id, c]));
       for (const [k, v] of owBySet) {
@@ -399,7 +403,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       }
     }
     return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
-  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive]);
+  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets]);
 
   const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
 
