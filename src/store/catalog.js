@@ -19,7 +19,7 @@ function insertStmts(table, cols, rows, toRow) {
   return rows.map((r) => [stmt, toRow(r)]);
 }
 
-export const CATALOG_VERSION = 1;
+export const CATALOG_VERSION = 2;   // v2: Curiosa numeric set codes (001 Alpha … 999 Promotional) + per-printing variants
 const BASE = import.meta.env.BASE_URL; // './' -> resolves relative to the page
 
 /** curiosa-style slug, so it matches faqs[].cards and gives a stable card_id. */
