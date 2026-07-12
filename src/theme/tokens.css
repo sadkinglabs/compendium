@@ -363,7 +363,9 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Hero-number treatment (matches the life counter / deck donut): big Cinzel 700,
    glowing gold. */
 .cx-ov-tile-val { font: 700 29px/1 var(--f-display); letter-spacing: .01em; color: #e3c589; text-shadow: 0 0 15px rgba(220,184,111,.45); }
-.cx-ov-tile-lbl { font: 600 9px/1.2 var(--f-ui); letter-spacing: .14em; color: #8a8175; margin-top: 9px; }
+/* Manuscript rubric label (Cinzel), not the plain sans micro-caption; the section
+   accent (set inline) carries the colour. */
+.cx-ov-tile-lbl { font: 600 10px/1.3 var(--f-display); letter-spacing: .06em; color: #8a8175; margin-top: 9px; }
 .cx-ov-sec { margin-bottom: 14px; }
 .cx-ov-sec-head { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; margin-bottom: 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-sec-title { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; white-space: nowrap; }
