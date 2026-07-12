@@ -43,7 +43,7 @@ import com.sorcerycompendium.compendium.scanner.model.GuideGeometry
 import com.sorcerycompendium.compendium.scanner.model.Phase
 import com.sorcerycompendium.compendium.scanner.model.RectFraction
 
-private val Purple = Color(0xFFA08CC0)   // searching  - Manuscript violet (160,140,192)
+private val Purple = Color(0xFFC79AD0)   // searching - Decks violet (= --accent-violet)
 private val Gold = Color(0xFFDCB86F)      // a card being confirmed - "getting there"
 
 /**
