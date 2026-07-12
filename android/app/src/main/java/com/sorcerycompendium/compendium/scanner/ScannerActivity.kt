@@ -121,10 +121,14 @@ class ScannerActivity : ComponentActivity() {
     }
 
     /** Deck mode: emit +qty of the recognised card to the open deck (JS files it in
-     *  its home zone, rarity-capped). Set is irrelevant to a deck (name-level). */
+     *  its home zone, rarity-capped). Set is irrelevant to a deck (name-level). The
+     *  sheet already capped qty at the remaining headroom; bump the live session
+     *  count so re-scanning the same card offers the reduced remainder. */
     private fun onAddToDeck(rec: Recognition, qty: Int) {
+        val id = rec.cardId ?: return
+        ScannerChannel.deckCounts[id] = (ScannerChannel.deckCounts[id] ?: 0) + qty
         ScannerChannel.onEvent?.invoke(
-            JSObject().put("action", "deck").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty),
+            JSObject().put("action", "deck").put("cardId", id).put("name", rec.title).put("qty", qty),
         )
     }
 

@@ -22,7 +22,7 @@ object Catalog {
                     sets.add(SetRef(s.optString("name").ifBlank { code }, code))
                 }
             }
-            out.add(CardRef(id, name, o.optBoolean("isSite", false), sets))
+            out.add(CardRef(id, name, o.optBoolean("isSite", false), sets, o.optInt("limit", 99)))
         }
         return out
     }

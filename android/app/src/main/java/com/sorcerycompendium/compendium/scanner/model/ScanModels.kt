@@ -18,6 +18,11 @@ data class Recognition(
     val cardId: String? = null,
     val url: String? = null,
     val sets: List<SetRef> = emptyList(),
+    // Deck mode: the copy cap for this card and how many are already in the open
+    // deck (a snapshot at lock time, kept live across the session), so the sheet
+    // can cap "add N" at the remaining headroom.
+    val limit: Int = 99,
+    val inDeck: Int = 0,
 )
 
 /** A rectangle in fractional (0..1) coordinates of the upright analysis frame. */

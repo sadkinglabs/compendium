@@ -7,7 +7,7 @@ import { registerPlugin } from '@capacitor/core';
 import { query } from './store/db.js';
 import { addOwnedCopies, addOwnedCopiesInSet, addWantedCopies } from './store/ownedRepository.js';
 import { parseDeckShare } from './store/deckShare.js';
-import { importDeckShare, addScannedToDeck } from './store/deckRepository.js';
+import { importDeckShare, addScannedToDeck, copyLimit } from './store/deckRepository.js';
 import { toast } from './feedback.js';
 import { isNative } from './native.js';
 
@@ -24,13 +24,15 @@ const CardScanner = registerPlugin('CardScanner', {
 // collection-mode printing picker). ORDER BY is_site, card_id keeps reprints adjacent
 // so the native de-dupe-by-name is deterministic (prevents the identical-name deadlock).
 async function catalogForScan() {
-  const rows = await query('SELECT card_id, name, is_site, sets FROM cards ORDER BY is_site ASC, card_id ASC;');
+  const rows = await query('SELECT card_id, name, is_site, sets, rarity, rules_text FROM cards ORDER BY is_site ASC, card_id ASC;');
   return rows
     .filter((r) => r.card_id && r.name)
     .map((r) => {
       let sets = [];
       try { sets = JSON.parse(r.sets || '[]'); } catch { /* keep [] */ }
-      return { id: r.card_id, name: r.name, isSite: !!r.is_site, sets };
+      // limit = the deck-building copy cap (rarity, or 99 for "any number of"),
+      // so deck-mode can gate the stepper at scan time without a DB round-trip.
+      return { id: r.card_id, name: r.name, isSite: !!r.is_site, sets, limit: copyLimit(r) };
     });
 }
 
@@ -65,6 +67,18 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
   } catch { /* fall back to Unspecified for all */ }
   const soleSet = (cardId) => { const s = setsById.get(cardId); return s && s.length === 1 && s[0]?.code ? s[0].code : null; };
 
+  // Deck mode: the deck's CURRENT per-card counts, so the recognition sheet can
+  // cap the quantity stepper at (copy limit − already in deck) and never let the
+  // user pick more than will fit. The native side keeps this live as adds stream
+  // in this session, so re-scanning the same card sees the reduced headroom.
+  const deckCounts = {};
+  if (mode === 'deck' && deckId) {
+    try {
+      const rows = await query('SELECT card_id, SUM(quantity) n FROM deck_entries WHERE deck_id=? GROUP BY card_id;', [deckId]);
+      for (const r of rows) deckCounts[r.card_id] = r.n;
+    } catch { /* empty deck / query failure -> no headroom info, native falls back to the limit */ }
+  }
+
   // Add-actions stream in while the scanner stays open. Writes are ATOMIC (+N upsert)
   // so overlapping same-card taps can't lose an increment; failures are counted and
   // surfaced once the scanner closes (the WebView is behind the Activity, so a toast
@@ -90,7 +104,7 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
 
   try {
     const cards = await catalogForScan();
-    const res = await CardScanner.scan({ cards, mode });
+    const res = await CardScanner.scan({ cards, mode, deckCounts });
     if (res?.action === 'codex' && res.cardId) {
       onOpenCard?.(res.cardId, res.name);
     } else if (res?.action === 'deckUrl' && res.url) {

@@ -10,6 +10,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.sorcerycompendium.compendium.scanner.match.CardIndex
 import com.sorcerycompendium.compendium.scanner.match.Catalog
 import com.sorcerycompendium.compendium.scanner.match.Matcher
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -53,12 +54,24 @@ class CardScannerPlugin : Plugin() {
         val minStreak = call.getInt("minStreak") ?: 2
         val mode = call.getString("mode") ?: "universal"
 
+        // Deck mode: seed the live per-card deck counts (cardId -> qty) so the sheet
+        // can cap the quantity stepper at the remaining copy headroom.
+        val counts = ConcurrentHashMap<String, Int>()
+        call.getObject("deckCounts")?.let { obj ->
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val k = keys.next()
+                counts[k] = obj.optInt(k, 0)
+            }
+        }
+
         // Build the index off the caller thread, then hand off + launch.
         Thread {
             val matcher = Matcher(CardIndex(cards), threshold)
             ScannerChannel.matcher = matcher
             ScannerChannel.minStreak = minStreak
             ScannerChannel.mode = mode
+            ScannerChannel.deckCounts = counts
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }
             terminated.set(false)

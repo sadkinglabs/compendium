@@ -160,12 +160,23 @@ fun RecognitionCard(
                         ) { for (s in rec.sets) SetPill(s.name, accent) }
                         Spacer(Modifier.height(20.dp))
                     }
-                    QtyStepper(qty, accent, onDec = { if (qty > 1) qty -= 1 }, onInc = { if (qty < 99) qty += 1 })
-                    Spacer(Modifier.height(18.dp))
-                    PrimaryAction(
-                        if (qty == 1) "Add 1 to deck" else "Add $qty to deck",
-                        Icons.Filled.Add, accent,
-                    ) { onAddToDeck(qty) }
+                    // Rarity copy limit, minus what the deck already holds: the max we can
+                    // add. At 0 the card is full - no stepper, a spent-out note instead.
+                    val remaining = (rec.limit - rec.inDeck).coerceAtLeast(0)
+                    DeckLimitNote(inDeck = rec.inDeck, limit = rec.limit, remaining = remaining, accent = accent)
+                    if (remaining > 0) {
+                        val shown = qty.coerceIn(1, remaining)
+                        Spacer(Modifier.height(16.dp))
+                        QtyStepper(shown, accent, onDec = { if (shown > 1) qty = shown - 1 }, onInc = { if (shown < remaining) qty = shown + 1 }, max = remaining)
+                        Spacer(Modifier.height(18.dp))
+                        PrimaryAction(
+                            if (shown == 1) "Add 1 to deck" else "Add $shown to deck",
+                            Icons.Filled.Add, accent,
+                        ) { onAddToDeck(shown) }
+                    } else {
+                        Spacer(Modifier.height(16.dp))
+                        PrimaryAction("Already at the limit", Icons.Filled.Add, accent, enabled = false) { }
+                    }
                 } else {
                     // A card reprinted across sets: pick the printing (both modes) before adding.
                     if (rec.sets.size > 1) {
@@ -295,9 +306,10 @@ private fun SetChips(sets: List<SetRef>, selected: String?, accent: Color, onPic
     }
 }
 
-/** Collection mode: a big −/N/+ stepper for how many copies to record. */
+/** A big −/N/+ stepper for how many copies to record. [max] caps the + button -
+ *  99 for collection, or the remaining deck headroom (limit − already in deck). */
 @Composable
-private fun QtyStepper(qty: Int, accent: Color, onDec: () -> Unit, onInc: () -> Unit) {
+private fun QtyStepper(qty: Int, accent: Color, onDec: () -> Unit, onInc: () -> Unit, max: Int = 99) {
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
@@ -312,8 +324,32 @@ private fun QtyStepper(qty: Int, accent: Color, onDec: () -> Unit, onInc: () -> 
             textAlign = TextAlign.Center,
             modifier = Modifier.width(96.dp),
         )
-        StepButton("+", accent, enabled = qty < 99, onClick = onInc)
+        StepButton("+", accent, enabled = qty < max, onClick = onInc)
     }
+}
+
+/** Deck mode: a one-line note on where the card sits against its copy limit -
+ *  how many the deck already holds and how many more may be added. Turns to the
+ *  accent when the card is full. Unlimited cards ("any number of") say so. */
+@Composable
+private fun DeckLimitNote(inDeck: Int, limit: Int, remaining: Int, accent: Color) {
+    val muted = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f)
+    val unlimited = limit >= 99
+    val text = when {
+        remaining <= 0 -> "At the copy limit · $inDeck of $limit in this deck"
+        unlimited && inDeck <= 0 -> "Any number allowed in a deck"
+        unlimited -> "$inDeck in this deck · any number allowed"
+        inDeck <= 0 -> "None in this deck yet · up to $limit"
+        else -> "$inDeck of $limit in this deck · $remaining more"
+    }
+    Text(
+        text,
+        color = if (remaining <= 0) accent else muted,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /** A round outlined step button; the glyph dims when the step is disabled. */
