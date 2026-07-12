@@ -14,7 +14,8 @@
     "cap:sync": "cap sync",
     "android": "vite build && cap sync android && node scripts/strip-native-wasm.mjs",
     "cap:open": "cap open android",
-    "distribute": "node scripts/distribute.mjs"
+    "distribute": "node scripts/distribute.mjs",
+    "fb:login": "firebase login"
   },
   "dependencies": {
     "@capacitor-community/keep-awake": "^5.0.1",
