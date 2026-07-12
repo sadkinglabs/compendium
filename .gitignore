@@ -8,3 +8,6 @@ dist/
 # build artifacts). Remove the lines below if you'd rather regenerate them.
 # android/
 # ios/
+
+# Named release APKs (compendium-<ver>.apk)
+dist-apk/
