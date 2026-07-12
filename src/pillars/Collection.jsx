@@ -4,7 +4,7 @@
 // tapping a card opens the shared CollectionCardSheet (ownership steppers +
 // Codex hand-off) lifted to the pillar root. Data layer is ownedRepository +
 // compareEngine. Accent is ruby, chrome-only.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
@@ -174,7 +174,7 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
           </div>
           {recent.map((c) => (
             <LedgerRow key={c.card_id} card={c} owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted}
-              onPeek={() => onPeek(c.card_id)} />
+              onPeek={onPeek} />
           ))}
         </>
       ) : (
@@ -265,7 +265,10 @@ function Cards({ onOpen, onPeek }) {
   }, []);
 
   const val = (id, key) => (ow.get(id)?.[key] || 0);
-  function step(cardId, delta) {
+  // Stable across renders (deps: field only) so the memoized rows don't all
+  // re-render when an unrelated bit of state changes. onPeek (setSheetCard) is
+  // already a stable setState, so both row handlers are now referentially stable.
+  const step = useCallback((cardId, delta) => {
     // Optimistic off the cached map; the WRITE re-reads qtyFor inside the app-wide
     // per-card chain, so a sheet edit can't be clobbered by a stale absolute write.
     setOw((prev) => {
@@ -279,7 +282,7 @@ function Cards({ onOpen, onPeek }) {
       const write = Math.max(0, (cur[field] || 0) + delta);
       return field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write);
     });
-  }
+  }, [field]);
 
   // Ownership post-filter (total = regular + foil: a foil-only card is owned).
   // Memoised: re-scans the pool only when the pool, ownership map, or scope
@@ -322,13 +325,13 @@ function Cards({ onOpen, onPeek }) {
           ) : view === 'binder' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {shown.slice(0, 250).map((c) => (
-                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={step} onPeek={onPeek} />
               ))}
             </div>
           ) : (
             shown.slice(0, 250).map((c) => (
               <LedgerRow key={c.card_id} card={c} {...cardProps(c)} value={own === 'wishlist' ? val(c.card_id, 'wanted') : val(c.card_id, 'owned')}
-                onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+                onStep={step} onPeek={onPeek} />
             ))
           )}
         </>

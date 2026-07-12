@@ -1,7 +1,7 @@
 // Scoped add-cards flow - pick a zone (Spellbook/Atlas/Collection), search,
 // List ⇄ Card view, per-card +/- steppers (List) or tap-to-add (Card), and a
 // Filters & Sort sheet built from catalogue values. Enforces rarity/zone limits.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { getPool, getSets, getArtists, changeQty, parseCardQuery, cardMatchesQuery } from '../store/deckRepository.js';
 import { query } from '../store/db.js';
 import CardArt from '../components/CardArt.jsx';
@@ -78,7 +78,13 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   // safe: the count reads a live ref (not a render closure) and each card's DB
   // writes run through a serialising promise chain - two concurrent changeQty
   // calls once both saw "no entry" and each INSERTed a duplicate row.
-  function step(c, delta) {
+  // `step` and `setSheetCardId` are passed to every EditorRow/EditorTile; keeping
+  // them referentially stable (step via useCallback + refs for the render-varying
+  // deps) is what lets React.memo skip re-rendering all 250 rows when only the
+  // search text changes (App re-renders on each keystroke; the pool doesn't).
+  const onChangedRef = useRef(onChanged); onChangedRef.current = onChanged;
+  const loadQtysRef = useRef(null); loadQtysRef.current = loadQtys;
+  const step = useCallback((c, delta) => {
     const id = c.card_id;
     const zone = c.is_site ? 'atlas' : 'spellbook';
     const cur = qtysRef.current[id] || 0;
@@ -88,10 +94,10 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
     setQtys(qtysRef.current);
     stepChains.current[id] = (stepChains.current[id] || Promise.resolve()).then(async () => {
       const res = await changeQty(deckId, zone, c, delta);
-      if (!res.ok) { await loadQtys(); toast(res.reason || 'Not allowed'); return; }
-      onChanged?.();
-    }).catch(() => loadQtys());
-  }
+      if (!res.ok) { await loadQtysRef.current(); toast(res.reason || 'Not allowed'); return; }
+      onChangedRef.current?.();
+    }).catch(() => loadQtysRef.current());
+  }, [deckId]);
 
   return (
     <div className="arc" style={{ padding: '4px 20px 26px', animation: 'arcRise .32s cubic-bezier(.2,.9,.3,1)' }}>
@@ -112,14 +118,14 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
           {pool.slice(0, 250).map((c) => (
             <EditorTile key={c.card_id} card={c} qty={qtys[c.card_id] || 0} quickAdd={quickAdd}
-              onStep={(d) => step(c, d)} onOpen={() => setSheetCardId(c.card_id)} />
+              onStep={step} onOpen={setSheetCardId} />
           ))}
         </div>
       ) : (
         <div>
           {pool.slice(0, 250).map((c) => (
             <EditorRow key={c.card_id} card={c} qty={qtys[c.card_id] || 0} quickAdd={quickAdd} rarityOn={rarityOn} attackOn={attackOn}
-              onStep={(d) => step(c, d)} onOpen={() => setSheetCardId(c.card_id)} />
+              onStep={step} onOpen={setSheetCardId} />
           ))}
         </div>
       )}
@@ -152,21 +158,21 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 // Quantity + frosted steppers sit on the LEFT (deck-builder convention); the
 // right carries the PNG threshold icons, the mana cost (purple), and the attack
 // chip (only when the attack toggle is on). In-deck rows glow gold + wash.
-function EditorRow({ card, qty, quickAdd, rarityOn, attackOn, onStep, onOpen }) {
+const EditorRow = React.memo(function EditorRow({ card, qty, quickAdd, rarityOn, attackOn, onStep, onOpen }) {
   const inDeck = qty > 0;
   const runs = thresholdRuns(card);
   const nameColor = rarityOn ? (RARITY_COLOR[card.rarity] || '#d8cebb') : (inDeck ? '#f4ecdc' : '#d8cebb');
   return (
-    <div onClick={onOpen} className="cx-row" style={{
+    <div onClick={() => onOpen(card.card_id)} className="cx-row" style={{
       display: 'flex', alignItems: 'center', gap: 12, margin: '0 -20px', padding: '13px 20px',
       borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer',
       background: inDeck ? 'linear-gradient(90deg, rgba(203,167,95,.05), transparent 70%)' : 'none',
     }}>
       {quickAdd ? (
         <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', flex: 'none' }}>
-          <Frost label="Remove one" onClick={() => onStep(-1)} disabled={qty === 0}>−</Frost>
+          <Frost label="Remove one" onClick={() => onStep(card, -1)} disabled={qty === 0}>−</Frost>
           <span style={{ minWidth: 30, textAlign: 'center', font: "600 17px/1 var(--f-display)", color: inDeck ? '#e3c589' : '#5c554b' }}>{inDeck ? `${qty}×` : '-'}</span>
-          <Frost label="Add one" onClick={() => onStep(1)}>+</Frost>
+          <Frost label="Add one" onClick={() => onStep(card, 1)}>+</Frost>
         </span>
       ) : (inDeck && <span style={{ flex: 'none', minWidth: 34, font: "600 17px/1 var(--f-display)", color: '#e3c589' }}>{qty}×</span>)}
       <span style={{ flex: 1, minWidth: 0, font: "600 17px/1.2 var(--f-read)", color: nameColor, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.name}</span>
@@ -179,24 +185,23 @@ function EditorRow({ card, qty, quickAdd, rarityOn, attackOn, onStep, onOpen }) 
       </span>
     </div>
   );
-}
+});
 
 // One catalogue tile in the editor's Card view - the art IS the row. In-deck: a
 // gilt gradient frame + glow + a gold ×N chip top-left. Quick-add on: a frosted
 // stepper dock centred on the bottom edge; otherwise tapping opens the preview.
-function EditorTile({ card, qty, quickAdd, onStep, onOpen }) {
+const EditorTile = React.memo(function EditorTile({ card, qty, quickAdd, onStep, onOpen }) {
   const inDeck = qty > 0;
   const dockBtn = (glyph, onClick, disabled, aria) => (
     <button aria-label={aria} disabled={disabled} onClick={onClick} style={{
       width: 30, height: 30, borderRadius: '50%', flex: 'none', padding: 0,
-      border: '1px solid rgba(224,169,177,.28)', background: 'rgba(224,169,177,.09)', color: '#f0c8ce',
+      border: '1px solid rgba(224,169,177,.28)', background: 'rgba(224,169,177,.12)', color: '#f0c8ce',
       font: "600 17px/1 var(--f-ui)", display: 'flex', alignItems: 'center', justifyContent: 'center',
       cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
-      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
     }}>{glyph}</button>
   );
   return (
-    <div onClick={onOpen} style={{
+    <div onClick={() => onOpen(card.card_id)} style={{
       position: 'relative', padding: 1, borderRadius: 14, cursor: 'pointer',
       background: inDeck ? TILE_GILT : 'rgba(255,255,255,.1)',
       boxShadow: inDeck ? '0 0 16px rgba(203,167,95,.25)' : 'none',
@@ -204,16 +209,16 @@ function EditorTile({ card, qty, quickAdd, onStep, onOpen }) {
       <div style={{ position: 'relative', borderRadius: 13, overflow: 'hidden' }}>
         <CardArt card={card} radius={13} aspect="5/7" />
         {inDeck && (
-          <span style={{ position: 'absolute', top: 8, left: 8, font: "700 13px/1 var(--f-display)", color: '#e3c589', background: 'rgba(10,9,8,.78)', border: '1px solid rgba(203,167,95,.5)', borderRadius: 12, padding: '3px 8px', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}>×{qty}</span>
+          <span style={{ position: 'absolute', top: 8, left: 8, font: "700 13px/1 var(--f-display)", color: '#e3c589', background: 'rgba(10,9,8,.88)', border: '1px solid rgba(203,167,95,.5)', borderRadius: 12, padding: '3px 8px' }}>×{qty}</span>
         )}
         {quickAdd && (
-          <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'inline-flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 22, background: 'rgba(10,9,8,.72)', border: `1px solid ${inDeck ? 'rgba(224,169,177,.28)' : 'rgba(224,169,177,.18)'}`, backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}>
-            {dockBtn('−', () => onStep(-1), qty === 0, 'Remove one')}
+          <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', left: '50%', bottom: 8, transform: 'translateX(-50%)', display: 'inline-flex', alignItems: 'center', gap: 4, padding: 2, borderRadius: 22, background: 'rgba(10,9,8,.85)', border: `1px solid ${inDeck ? 'rgba(224,169,177,.28)' : 'rgba(224,169,177,.18)'}` }}>
+            {dockBtn('−', () => onStep(card, -1), qty === 0, 'Remove one')}
             <span style={{ minWidth: 22, textAlign: 'center', font: "600 17px/1 var(--f-display)", color: inDeck ? '#efe7d8' : '#8a8175' }}>{qty}</span>
-            {dockBtn('+', () => onStep(1), false, 'Add one')}
+            {dockBtn('+', () => onStep(card, 1), false, 'Add one')}
           </span>
         )}
       </div>
     </div>
   );
-}
+});
