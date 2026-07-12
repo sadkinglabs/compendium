@@ -164,11 +164,11 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, set, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
   const total = owned + foil;
   const { complete } = playsetOf(card, total);
   const missing = total === 0;
-  const setName = firstSetName(card);
+  const setName = setLabel || firstSetName(card);
   return (
     <div onClick={() => onPeek(card.card_id, set)} style={{ position: 'relative', cursor: 'pointer' }}>
       {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. */}

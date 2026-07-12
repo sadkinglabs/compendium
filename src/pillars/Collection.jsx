@@ -456,7 +456,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                   {isOpen && (view === 'binder' ? (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
                       {rows.map((r) => (
-                        <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} owned={r.owned} foil={r.foil}
+                        <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
                           onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
                       ))}
                     </div>
