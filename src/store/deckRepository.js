@@ -259,8 +259,10 @@ export async function changeQty(deckId, zone, card, delta) {
     if (total + delta > copyLimit(card)) return { ok: false, reason: `Max ${copyLimit(card)} copies (${card.rarity}).` };
     if (zone === 'collection') {
       const counts = await zoneCounts(deckId);
-      const deck = await getDeck(deckId);
-      if (counts.collection + delta > collectionMax(deck)) return { ok: false, reason: `Collection limit ${collectionMax(deck)}.` };
+      // collectionMax only needs avatar_card_id (dragonlord => 11); avoid a full
+      // getDeck (SELECT * + avatar row + element-pip JOIN) on every collection tap.
+      const av = (await query('SELECT avatar_card_id FROM decks WHERE id=?;', [deckId]))[0];
+      if (counts.collection + delta > collectionMax(av)) return { ok: false, reason: `Collection limit ${collectionMax(av)}.` };
     }
   }
   const cur = await deckQty(deckId, zone, card.card_id);

@@ -313,6 +313,9 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   // grid reorders live and persists on drop. Moving before the hold fires just
   // scrolls (the press is cancelled). ──
   const pd = useRef({ id: null, active: false, sx: 0, sy: 0, el: null, pid: 0, timer: null });
+  // Clear a pending long-press timer on unmount (a tab switch mid-hold would
+  // otherwise fire setDragId on an unmounted component).
+  useEffect(() => () => clearTimeout(pd.current.timer), []);
   function pdDown(e, id) {
     if (!edit) return;
     const d = pd.current;

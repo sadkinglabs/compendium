@@ -192,19 +192,26 @@ export async function searchCodex(q) {
   let articles = [], articleText = [];
   if (like) {
     const titleRows = await query('SELECT rule_id id, parent_id, title FROM rules WHERE lower(title) LIKE ? ORDER BY title;', [like]);
+    const bodyRows = await query('SELECT rule_id id, parent_id, title FROM rules WHERE lower(content) LIKE ? ORDER BY title;', [like]);
+    // Resolve every sub-entry's parent-article title in ONE query (was one query
+    // per sub-entry hit, per keystroke). Mirrors the batched mentions() pattern.
+    const parentIds = [...new Set([...titleRows, ...bodyRows].map((r) => r.parent_id).filter(Boolean))];
+    const parentTitle = new Map();
+    if (parentIds.length) {
+      const prows = await query(`SELECT rule_id, title FROM rules WHERE rule_id IN (${parentIds.map(() => '?').join(',')});`, parentIds);
+      for (const r of prows) parentTitle.set(r.rule_id, r.title);
+    }
+    const titleOf = (r) => (r.parent_id ? (parentTitle.get(r.parent_id) || r.title) : r.title);
     const seen = new Set();
     for (const r of titleRows) {
       const id = r.parent_id || r.id;
       if (seen.has(id)) continue; seen.add(id);
-      const title = r.parent_id ? (await query('SELECT title FROM rules WHERE rule_id=?;', [r.parent_id]))[0]?.title || r.title : r.title;
-      articles.push({ id, name: title, kind: 'rule', meta: r.parent_id ? `Codex Article · ${r.title}` : 'Codex Article' });
+      articles.push({ id, name: titleOf(r), kind: 'rule', meta: r.parent_id ? `Codex Article · ${r.title}` : 'Codex Article' });
     }
-    const bodyRows = await query('SELECT rule_id id, parent_id, title FROM rules WHERE lower(content) LIKE ? ORDER BY title;', [like]);
     for (const r of bodyRows) {
       const id = r.parent_id || r.id;
       if (seen.has(id)) continue; seen.add(id);
-      const title = r.parent_id ? (await query('SELECT title FROM rules WHERE rule_id=?;', [r.parent_id]))[0]?.title || r.title : r.title;
-      articleText.push({ id, name: title, kind: 'rule', meta: 'Codex Article' });
+      articleText.push({ id, name: titleOf(r), kind: 'rule', meta: 'Codex Article' });
     }
   }
 

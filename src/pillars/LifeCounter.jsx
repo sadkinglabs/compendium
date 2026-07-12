@@ -691,9 +691,11 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
 // the match mirrored to their side.
 function ShareQRModal({ link, onClose }) {
   const [copied, setCopied] = useState(false);
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
   // Hardware BACK closes just the QR modal, not the whole end screen behind it.
   useEffect(() => registerBackConsumer(() => { onClose(); return true; }), [onClose]);
-  const flashCopied = () => { setCopied(true); setTimeout(() => setCopied(false), 1600); };
+  const flashCopied = () => { setCopied(true); clearTimeout(copyTimer.current); copyTimer.current = setTimeout(() => setCopied(false), 1600); };
   const copy = async () => { try { await navigator.clipboard.writeText(link); flashCopied(); haptic('light'); } catch { /* clipboard blocked */ } };
   // One-tap into WhatsApp/Messages/Discord via the OS share sheet; if the target
   // has no share sheet (older desktop web) it falls back to a copy.
