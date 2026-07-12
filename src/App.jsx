@@ -6,6 +6,7 @@ import {
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
 import { migrateAnnotationsIfNeeded } from './store/annotations.js';
+import { backfillSingleSetOwned } from './store/ownedRepository.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
@@ -127,6 +128,9 @@ export default function App() {
         try { await migrateAnnotationsIfNeeded(); } catch (e) { console.error('annotation migration failed', e); }
         const p = await initProfiles();
         setProfile(p);
+        // Move any single-set card owned in the Unspecified bucket onto its real
+        // set row (e.g. older scanner adds). Idempotent; never blocks boot.
+        try { await backfillSingleSetOwned(); } catch (e) { console.error('single-set backfill failed', e); }
         try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
         if (import.meta.env.DEV) {
           window.__cx = {

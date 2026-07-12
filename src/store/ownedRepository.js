@@ -188,6 +188,48 @@ async function addCopies(cardId, col, n) {
   bump();
 }
 
+// Atomic +N owned onto a specific PRINTING (set-coded row). Same overlap-safe
+// upsert as addOwnedCopies, but on the '001'/'002'/… row - the scanner uses this
+// to file a recognised single-set card under its (only) set instead of Unspecified.
+export async function addOwnedCopiesInSet(cardId, set, n = 1) {
+  if (!cardId || !set || !(n > 0)) return;
+  const pid = activeProfileId();
+  const now = nowIso();
+  await run(
+    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+     VALUES(?,?,?,?,?,0,'',?,?)
+     ON CONFLICT(profile_id,card_id,variant_slug)
+     DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+    [uuid(), pid, cardId, set, n, now, now]
+  );
+  bump();
+}
+
+// One-time cleanup: a card owned in the '' ("Unspecified") bucket that exists in
+// exactly ONE set can only BE that set, so move its owned copies onto the real set
+// row. Multi-set cards (Alpha/Beta reprints) stay Unspecified - the printing is
+// genuinely unknowable from the name. Idempotent (re-running finds nothing to move).
+export async function backfillSingleSetOwned() {
+  const pid = activeProfileId();
+  const rows = await query("SELECT card_id, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND variant_slug='' AND qty_owned>0;", [pid]);
+  if (!rows.length) return 0;
+  const catRows = await query('SELECT card_id, sets FROM cards;');
+  const setsById = new Map();
+  for (const r of catRows) { try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ } }
+  let moved = 0;
+  for (const r of rows) {
+    const sets = setsById.get(r.card_id) || [];
+    if (sets.length !== 1 || !sets[0]?.code) continue;   // multi-set / unknown -> leave in Unspecified
+    await addOwnedCopiesInSet(r.card_id, sets[0].code, r.qty_owned);
+    // Clear the '' owned, preserving any wishlist (qty_wanted) that also lives there.
+    if ((r.qty_wanted || 0) > 0) await run("UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE profile_id=? AND card_id=? AND variant_slug='';", [nowIso(), pid, r.card_id]);
+    else await run("DELETE FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [pid, r.card_id]);
+    moved++;
+  }
+  if (moved) bump();
+  return moved;
+}
+
 // Bulk text import: any "qty name" text (a deck export, a Curiosa list, a typed
 // inventory) ADDS regular copies to the ledger. Reuses the deck text parser -
 // zone headers are ignored (everything flattens into one add-list, the avatar

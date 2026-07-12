@@ -5,7 +5,7 @@
 // drives Codex navigation. On web / in the preview it degrades to a graceful stub.
 import { registerPlugin } from '@capacitor/core';
 import { query } from './store/db.js';
-import { addOwnedCopies, addWantedCopies } from './store/ownedRepository.js';
+import { addOwnedCopies, addOwnedCopiesInSet, addWantedCopies } from './store/ownedRepository.js';
 import { parseDeckShare } from './store/deckShare.js';
 import { importDeckShare } from './store/deckRepository.js';
 import { toast } from './feedback.js';
@@ -50,6 +50,17 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mod
     return;
   }
 
+  // A recognised card's set is a catalogue attribute: a card printed in exactly ONE
+  // set can only BE that set, so file it there (not the Unspecified bucket). Cards
+  // reprinted across sets (Alpha/Beta) are ambiguous from the name alone, so they
+  // fall back to Unspecified. Built once, up front (card_id -> [{name,code}]).
+  const setsById = new Map();
+  try {
+    const setRows = await query('SELECT card_id, sets FROM cards;');
+    for (const r of setRows) { try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ } }
+  } catch { /* fall back to Unspecified for all */ }
+  const soleSet = (cardId) => { const s = setsById.get(cardId); return s && s.length === 1 && s[0]?.code ? s[0].code : null; };
+
   // Add-actions stream in while the scanner stays open. Writes are ATOMIC (+N upsert)
   // so overlapping same-card taps can't lose an increment; failures are counted and
   // surfaced once the scanner closes (the WebView is behind the Activity, so a toast
@@ -58,8 +69,11 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mod
   const sub = await CardScanner.addListener('scanAction', async (ev) => {
     try {
       const n = Math.max(1, ev.qty || 1);   // collection mode picks a quantity; universal +1s
-      if (ev.action === 'collection') await addOwnedCopies(ev.cardId, n);
-      else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, n);
+      if (ev.action === 'collection') {
+        const set = soleSet(ev.cardId);
+        if (set) await addOwnedCopiesInSet(ev.cardId, set, n);
+        else await addOwnedCopies(ev.cardId, n);   // multi-set / unknown -> Unspecified
+      } else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, n);
     } catch { failed += 1; }
   });
 
