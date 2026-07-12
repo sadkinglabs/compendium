@@ -6,7 +6,7 @@
 // chrome-only - it rides the stepper buttons; the count stays gold/ink.
 import React, { useEffect, useRef, useState } from 'react';
 import { SectionLabel } from './ui.jsx';
-import { qtyFor, setOwned, setWanted, setFoil, subscribeCollection } from '../store/ownedRepository.js';
+import { qtyFor, setWanted, setFoil, stepOwnedBucket, qtyForInSet, setOwnedInSet, setFoilInSet, subscribeCollection } from '../store/ownedRepository.js';
 import { stepBtn, serialChain, ownedChains } from './ownedUi.js';
 import { haptic } from '../native.js';
 
@@ -16,10 +16,17 @@ import { haptic } from '../native.js';
 // render. Returns { qty, step }: qty is {owned, foil, wanted} (null until first
 // read; steppers should stay inert until then), step(field, delta) mutates -
 // field is 'owned' (regular copies), 'foil', or 'wanted'.
-export function useOwnedLedger(cardId) {
+export function useOwnedLedger(cardId, set = null) {
   const [qty, setQty] = useState(null);            // {owned, foil, wanted} - null until first read
   const qtyRef = useRef({ owned: 0, foil: 0, wanted: 0 });  // synchronous optimistic mirror
   const pending = useRef(0);                        // in-flight writes
+
+  // Scoped to a PRINTING when `set` is given: owned/foil are that (card, set)'s -
+  // so Alpha and Beta are edited independently. Wishlist stays card-level (the
+  // wishlist isn't per-printing). set null = name-level totals (Codex/Overview).
+  const read = () => (set
+    ? Promise.all([qtyForInSet(cardId, set), qtyFor(cardId)]).then(([o, c]) => ({ owned: o.owned, foil: o.foil, wanted: c.wanted }))
+    : qtyFor(cardId));
 
   // Apply a DB read only if no write is in flight. A read dispatched while the
   // ledger was settled can still resolve AFTER a later optimistic tap; applying it
@@ -27,12 +34,13 @@ export function useOwnedLedger(cardId) {
   // this avoids the visible flash).
   const applyIfCurrent = (v) => { if (pending.current === 0) { qtyRef.current = v; setQty(v); } };
 
-  // Read on mount / card change.
+  // Read on mount / card or set change.
   useEffect(() => {
     let alive = true;
-    qtyFor(cardId).then((v) => { if (alive && pending.current === 0) { qtyRef.current = v; setQty(v); } });
+    read().then((v) => { if (alive && pending.current === 0) { qtyRef.current = v; setQty(v); } });
     return () => { alive = false; };
-  }, [cardId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardId, set]);
 
   // Live refresh - but NEVER while our own writes are in flight: each write bumps
   // the very bus we subscribe to, so re-reading mid-chain would stomp the
@@ -40,8 +48,9 @@ export function useOwnedLedger(cardId) {
   // this handler only needs to catch edits made elsewhere while we sit idle.
   useEffect(() => subscribeCollection(() => {
     if (pending.current > 0) return;
-    qtyFor(cardId).then(applyIfCurrent);
-  }), [cardId]);
+    read().then(applyIfCurrent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [cardId, set]);
 
   function step(field, delta) {
     if (qty === null) return;                       // never write off the phantom {0,0} baseline - it would clobber the real row
@@ -50,19 +59,27 @@ export function useOwnedLedger(cardId) {
     qtyRef.current = next;
     setQty(next);                                   // optimistic, synchronous (pre-await)
     pending.current++;
-    // Queue on the APP-WIDE per-card chain (not a hook-local one) and re-read the
-    // committed count inside our turn: another surface (e.g. the Cards tab's row
-    // stepper) may have written since our mirror last synced, and an absolute
-    // write off a stale mirror would silently revert it. Delta-on-fresh-read
-    // under the shared chain makes concurrent edits commute.
-    serialChain(ownedChains, cardId, async () => {
+    // Owned/foil for a printing serialize on the per-(card,set) chain - the SAME
+    // key My Collection's row steppers use - so the sheet and the row commute.
+    // Wishlist (card-level) rides the card chain. Each write re-reads the committed
+    // count inside its turn so an absolute write can't clobber a concurrent edit.
+    const perSet = !!set && field !== 'wanted';
+    const key = perSet ? `${cardId}|${set}` : cardId;
+    serialChain(ownedChains, key, async () => {
+      if (field === 'wanted') { const cur = await qtyFor(cardId); return setWanted(cardId, Math.max(0, (cur.wanted || 0) + delta)); }
+      if (perSet) {
+        const cur = await qtyForInSet(cardId, set);
+        const v = Math.max(0, (field === 'owned' ? cur.owned : cur.foil) + delta);
+        return field === 'owned' ? setOwnedInSet(cardId, set, v) : setFoilInSet(cardId, set, v);
+      }
+      // Name-level (no printing): owned edits the '' bucket by delta; foil its own row.
+      if (field === 'owned') return stepOwnedBucket(cardId, delta);
       const cur = await qtyFor(cardId);
-      const val = Math.max(0, (cur[field] || 0) + delta);
-      return field === 'owned' ? setOwned(cardId, val) : field === 'foil' ? setFoil(cardId, val) : setWanted(cardId, val);
+      return setFoil(cardId, Math.max(0, (cur.foil || 0) + delta));
     })
       .finally(() => {
         pending.current--;
-        if (pending.current === 0) qtyFor(cardId).then(applyIfCurrent);
+        if (pending.current === 0) read().then(applyIfCurrent);
       });
   }
 

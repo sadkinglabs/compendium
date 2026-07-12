@@ -1,13 +1,17 @@
 package com.sorcerycompendium.compendium.scanner.match
 
+import com.sorcerycompendium.compendium.scanner.model.SetRef
 import java.text.Normalizer
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-/** A catalog card as supplied by JS. `id` is opaque - never numeric-coerce it. */
-data class CardRef(val id: String, val name: String, val isSite: Boolean)
+/** A catalog card as supplied by JS. `id` is opaque - never numeric-coerce it.
+ *  `sets` is the printings the card exists in, for the collection-mode set picker.
+ *  `limit` is the deck-building copy cap (rarity, or 99 for "any number of"), used
+ *  by deck-mode to gate the quantity stepper. */
+data class CardRef(val id: String, val name: String, val isSite: Boolean, val sets: List<SetRef> = emptyList(), val limit: Int = 99)
 
 /** A catalog card pre-normalized for scoring. */
 data class IndexedCard(val ref: CardRef, val norm: String, val tokens: String)

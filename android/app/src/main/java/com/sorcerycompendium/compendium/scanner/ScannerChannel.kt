@@ -2,6 +2,7 @@ package com.sorcerycompendium.compendium.scanner
 
 import com.getcapacitor.JSObject
 import com.sorcerycompendium.compendium.scanner.match.Matcher
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * In-process handoff between the Capacitor plugin (which owns the retained
@@ -12,6 +13,18 @@ import com.sorcerycompendium.compendium.scanner.match.Matcher
 object ScannerChannel {
     @Volatile var matcher: Matcher? = null
     @Volatile var minStreak: Int = 2
+
+    /** Scanner mode: "universal" (Home/Decks - identify, then Codex / +1 collection /
+     *  wishlist / deck / match) or "collection" (a focused build-your-collection loop:
+     *  identify -> pick a quantity -> Add -> keep scanning). */
+    @Volatile var mode: String = "universal"
+
+    /** Deck mode: the open deck's per-card counts (cardId -> qty across all zones).
+     *  Seeded from JS at scan start and incremented as deck-adds stream this session,
+     *  so the recognition sheet can gate "add N" at (card limit − already in deck)
+     *  and re-scanning a card sees the reduced headroom. Concurrent: written on the
+     *  UI thread (add), read on the analysis thread (Recognition build). */
+    @Volatile var deckCounts: MutableMap<String, Int> = ConcurrentHashMap()
 
     /** Streaming add-actions (collection / wishlist) -> plugin.notifyListeners. The
      *  Activity stays open and keeps scanning. */
@@ -25,5 +38,7 @@ object ScannerChannel {
         matcher = null
         onEvent = null
         onTerminal = null
+        mode = "universal"
+        deckCounts = ConcurrentHashMap()
     }
 }

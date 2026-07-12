@@ -4,12 +4,14 @@
 // tapping a card opens the shared CollectionCardSheet (ownership steppers +
 // Codex hand-off) lifted to the pillar root. Data layer is ownedRepository +
 // compareEngine. Accent is ruby, chrome-only.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
+import { isTokenCard } from '../store/tokens.js';
 import {
-  ownWantMap, qtyFor, setOwned, setWanted, ownedMap, collectionStats, recentlyAdded,
+  ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
+  ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, importCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
@@ -41,7 +43,7 @@ const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
+const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   const [view, setView] = useState(session.view);       // overview | cards | lists
@@ -50,35 +52,48 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
   const [sheetCard, setSheetCard] = useState(session.sheetCard);
-  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; }, [view, listOpen, sheetCard]);
-  const go = (v) => { setListOpen(null); setView(v); };
+  const [sheetSet, setSheetSet] = useState(session.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
+  const [editMode, setEditMode] = useState(false);   // My Collection edit mode: steppers + the + add FAB
+  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; session.sheetSet = sheetSet; }, [view, listOpen, sheetCard, sheetSet]);
+  // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
+  // = name-level. Stable so the memoized rows don't re-render.
+  const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
+  const go = (v) => { setListOpen(null); setEditMode(false); setView(v); };
+  const goAdd = () => { setListOpen(null); setView('cards'); setEditMode(true); };
   const pills = (
-    <div style={{ padding: '0 20px 10px' }}>
-      <ChipRow>
+    <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="cx-scroll" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, overflowX: 'auto' }}>
         <Chip label="Overview" active={view === 'overview'} onClick={() => go('overview')} />
-        <Chip label="Cards" active={view === 'cards'} onClick={() => go('cards')} />
+        <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
-      </ChipRow>
+      </div>
+      {view === 'cards' && (
+        <button onClick={() => setEditMode((e) => !e)} aria-pressed={editMode}
+          style={{ flex: 'none', padding: '7px 15px', borderRadius: 18, cursor: 'pointer', font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
+            background: editMode ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editMode ? '#1a1206' : '#e3c589', border: `1px solid ${editMode ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
+          {editMode ? 'Done' : '+ Add'}
+        </button>
+      )}
     </div>
   );
   return (
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
       {view === 'overview' ? (
-        <Overview onGoCards={() => go('cards')} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard}
+        <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={peek}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
-        <Cards onOpen={onOpen} onPeek={setSheetCard} />
+        <Cards onOpen={onOpen} onPeek={peek} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
       ) : listOpen ? (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onGoCards={() => go('cards')} onChanged={onChanged} />
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
       {/* "Open in Codex" deliberately KEEPS the sheet open in state: the pillar
           unmounts for the Codex page, and Back should land right back on this
           sheet - that's where the user left. */}
-      <CollectionCardSheet cardId={sheetCard} onClose={() => setSheetCard(null)}
-        onOpenCodex={(id, name) => onOpen('card', id, name)} />
+      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }}
+        onOpenCodex={(id, name) => onOpen('card', id, name)} editable={view === 'cards' && editMode} />
     </div>
   );
 }
@@ -137,7 +152,7 @@ function ImportTextSheet({ open, onClose }) {
   );
 }
 
-function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
+function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev }) {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [deckStat, setDeckStat] = useState(null);
@@ -162,7 +177,7 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
-        <Tile label="WISHLIST" value={stats.wishlist} sub="cards you want" onClick={onGoCards} />
+        <Tile label="WISHLIST" value={stats.wishlist} sub="cards you want" onClick={onGoLists} />
         <Tile label="DECKS BUILDABLE" value={deckStat ? `${deckStat.buildable}/${deckStat.total}` : '-'} sub="from your collection" onClick={onGoDecks} />
       </div>
 
@@ -174,7 +189,7 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
           </div>
           {recent.map((c) => (
             <LedgerRow key={c.card_id} card={c} owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted}
-              onPeek={() => onPeek(c.card_id)} />
+              onPeek={onPeek} />
           ))}
         </>
       ) : (
@@ -191,7 +206,7 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
 
       {/* THE add surface: bulk paste or point the camera. */}
       <Fab variant="lib" label="Add to collection" icon={<FabGlyph kind="add" />} items={[
-        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
+        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
         { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
       ]} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
@@ -212,22 +227,61 @@ function ViewToggle({ view, setView }) {
   );
 }
 
-const OWN_OPTS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
-
 const VIEW_KEY = 'cx-collection-view';
-const OWN_LABEL = { owned: 'Owned', wishlist: 'Wishlist', missing: 'Missing' };
 
-function Cards({ onOpen, onPeek }) {
+// The pinned, un-deletable Wishlist is a VIRTUAL list (kind 'wishlist') backed by
+// the owned_cards.qty_wanted ledger, not a card_lists row - this sentinel id keeps
+// it distinct from real lists while sharing the ListDetail surface.
+const WISHLIST_ID = '__wishlist__';
+const wishlistRef = () => ({ id: WISHLIST_ID, kind: 'wishlist', name: 'Wishlist' });
+
+// Curiosa's numeric set model (catalog v2). Labels + a fixed display order; the
+// trailing '' bucket is legacy / set-unspecified owned rows (variant_slug ''|'foil').
+const SET_LABEL = { '001': 'Alpha', '002': 'Beta', '004': 'Arthurian Legends', '005': 'Dragonlord', '006': 'Gothic', '999': 'Promotional', '': 'Unspecified' };
+const SET_RANK = { '001': 0, '002': 1, '004': 2, '005': 3, '006': 4, '999': 5, '': 6 };
+const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
+
+// My Collection ownership filter (multi-select). Empty = the mode default
+// (read view = owned only, add view = everything).
+const OWN_OPTS = [['owned', 'Owned'], ['unowned', 'Not owned'], ['wishlist', 'Wishlisted']];
+const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted' };
+
+// Tappable set header - the canonical Manuscript rubric (gold Cinzel label, fade
+// hairline, gold count) with a quiet chevron folding the group. Transparent, flat,
+// exactly like the section rubrics everywhere else in the app.
+function SetHeader({ name, owned, total, collapsed, onToggle }) {
+  return (
+    <button onClick={onToggle} aria-expanded={!collapsed}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '18px 0 8px', margin: '0 0 4px',
+        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer',
+        font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: '#cba75f' }}>
+      <span style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
+      <span style={{ flex: 'none', font: "600 15px/1 var(--f-display)", letterSpacing: 'normal', color: '#c9b487' }}>
+        <span style={{ color: '#e3c589' }}>{owned}</span> / {total}
+      </span>
+      <span aria-hidden="true" style={{ flex: 'none', color: '#5c554b', display: 'inline-flex', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .2s' }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </span>
+    </button>
+  );
+}
+
+function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
 
+  // editMode IS the add surface: reveal the WHOLE catalogue (owned + unowned) with
+  // steppers so you can start adding immediately. Off = read-only owned collection.
+  const [importOpen, setImportOpen] = useState(false);
+  const showSteppers = editMode;
+
   const [q, setQ] = useState(session.q);
-  const [own, setOwn] = useState(session.filter);           // all | owned | wishlist | missing
   const [sets, setSets] = useState(session.sets);
   const [types, setTypes] = useState(session.types);
   const [rarities, setRarities] = useState(session.rarities);
   const [els, setEls] = useState(session.els);
-  useEffect(() => { session.q = q; session.filter = own; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, own, sets, types, rarities, els]);
+  useEffect(() => { session.q = q; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, sets, types, rarities, els]);
 
   // Full rich filters - the shared Refine engine (Card Lists live in Collection,
   // so the comparator granularity earns its place for cube/draft/list building).
@@ -235,74 +289,142 @@ function Cards({ onOpen, onPeek }) {
   const [thByEl, setThByEl] = useState(() => ({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } }));
   const [totalTh, setTotalTh] = useState({ op: '>=', val: null });
   const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
+  const [powerCmp, setPowerCmp] = useState({ op: '>=', val: null });
   const [artist, setArtist] = useState('');
   const [sort, setSort] = useState([]);
   const [artistOpts, setArtistOpts] = useState([]);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
-  const [ow, setOw] = useState(new Map());        // card_id -> {owned(reg), foil, wanted}
+  const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
+  const [wishSet, setWishSet] = useState(() => new Set());   // card_ids on the wishlist
+  const [ownScope, setOwnScope] = useState([]);       // ownership filter: 'owned' | 'unowned' | 'wishlist'
+  const ownActive = ownScope.length > 0;
+  const toggleOwn = useCallback((v) => setOwnScope((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])), []);
+  const [collapsed, setCollapsed] = useState(() => new Set());
+  const toggleSet = useCallback((code) => setCollapsed((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }), []);
   const [setOpts, setSetOpts] = useState([]);
   useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
 
-  // Steppers edit Owned - except under the Wishlist filter, where the visible
-  // filter IS the mode and they edit Wanted.
-  const field = own === 'wishlist' ? 'wanted' : 'owned';
-
   async function loadPool() {
     const parsed = parseQuery(q);
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
-    setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
+    const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
+    setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, artist, sort]);
-  useEffect(() => { ownWantMap().then(setOw); }, []);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
+  const refreshOwnership = useCallback(async () => {
+    const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
+    setOwBySet(obs);
+    setWishSet(new Set(wl.map((r) => r.card_id)));
+  }, []);
+  useEffect(() => { refreshOwnership(); }, [refreshOwnership]);
   // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
   // so our optimistic steps commit first (see the write path below).
   useEffect(() => {
     let t = null;
-    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(() => ownWantMap().then(setOw), 250); });
+    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(refreshOwnership, 250); });
     return () => { clearTimeout(t); off(); };
-  }, []);
+  }, [refreshOwnership]);
 
-  const val = (id, key) => (ow.get(id)?.[key] || 0);
-  function step(cardId, delta) {
-    // Optimistic off the cached map; the WRITE re-reads qtyFor inside the app-wide
-    // per-card chain, so a sheet edit can't be clobbered by a stale absolute write.
-    setOw((prev) => {
-      const cur = prev.get(cardId) || { owned: 0, foil: 0, wanted: 0 };
-      const next = { ...cur, [field]: Math.max(0, (cur[field] || 0) + delta) };
-      const m = new Map(prev); m.set(cardId, next);
+  // A stepper edits OWNED for ONE (card, set) printing - the only place owned
+  // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
+  // inside the app-wide per-(card,set) chain so overlapping steps can't clobber.
+  const stepSet = useCallback((cardId, set, delta) => {
+    const key = cardId + '|' + set;
+    setOwBySet((prev) => {
+      const cur = prev.get(key) || { owned: 0, foil: 0 };
+      const next = { ...cur, owned: Math.max(0, cur.owned + delta) };
+      const m = new Map(prev); m.set(key, next);
       return m;
     });
-    serialChain(ownedChains, cardId, async () => {
-      const cur = await qtyFor(cardId);
-      const write = Math.max(0, (cur[field] || 0) + delta);
-      return field === 'owned' ? setOwned(cardId, write) : setWanted(cardId, write);
+    serialChain(ownedChains, key, async () => {
+      const cur = await qtyForInSet(cardId, set);
+      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta));
     });
-  }
+  }, []);
 
-  // Ownership post-filter (total = regular + foil: a foil-only card is owned).
-  const shown = (pool || []).filter((c) => {
-    const t = val(c.card_id, 'owned') + val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
-    if (own === 'owned') return t > 0;
-    if (own === 'wishlist') return w > 0;
-    if (own === 'missing') return t === 0;
-    return true;
-  });
+  // Per-set ownership: expand every catalogue card into one row per set it was
+  // printed in. Read view keeps only (card, set) pairs you own; add mode shows
+  // every printing so anything is addable. Rows are grouped + collapsible by set.
+  const setTotals = useMemo(() => {
+    const t = new Map();
+    for (const c of (pool || [])) for (const s of (c._sets || [])) if (s.code) t.set(s.code, (t.get(s.code) || 0) + 1);
+    return t;
+  }, [pool]);
 
-  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
-  const activeCount = (own !== 'all' ? 1 : 0) + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
+  // True owned-per-set (all owned rows, independent of the row filter) - drives the
+  // header's owned/total so it stays honest even under a "Not owned" filter.
+  const ownedPerSet = useMemo(() => {
+    const m = new Map();
+    for (const [k, v] of owBySet) {
+      if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+      const code = k.slice(k.lastIndexOf('|') + 1);
+      m.set(code, (m.get(code) || 0) + 1);
+    }
+    return m;
+  }, [owBySet]);
+
+  const groups = useMemo(() => {
+    const g = new Map();   // code -> { code, name, rows:[{card,set,owned,foil}] }
+    const push = (code, name, row) => {
+      let x = g.get(code);
+      if (!x) { x = { code, name: name || SET_LABEL[code] || code, rows: [] }; g.set(code, x); }
+      x.rows.push(row);
+    };
+    // Ownership filter: when set it decides what shows (owned / not-owned / wishlisted
+    // union); when empty, fall back to the mode default (read = owned only, add = all).
+    const matches = (isOwned, isWish) => {
+      if (!ownActive) return editMode ? true : isOwned;
+      return (ownScope.includes('owned') && isOwned)
+        || (ownScope.includes('unowned') && !isOwned)
+        || (ownScope.includes('wishlist') && isWish);
+    };
+    for (const c of (pool || [])) {
+      const isWish = wishSet.has(c.card_id);
+      for (const s of (c._sets || [])) {
+        if (!s.code) continue;
+        // The SET filter is per-PRINTING here: a card printed in both Alpha and Beta,
+        // filtered to Beta, shows only its Beta row (not the Alpha one too).
+        if (sets.length && !sets.includes(s.name)) continue;
+        const oc = owBySet.get(c.card_id + '|' + s.code);
+        const owned = oc?.owned || 0, foil = oc?.foil || 0;
+        if (!matches(owned + foil > 0, isWish)) continue;
+        push(s.code, s.name, { card: c, set: s.code, owned, foil });
+      }
+    }
+    // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set). These
+    // are always owned, so they surface in the default read view or an owned/wishlist
+    // filter - but never when the user has narrowed to specific SET(s), since '' is none.
+    const wantLegacy = sets.length === 0 && (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode);
+    if (wantLegacy) {
+      const byId = new Map((pool || []).map((c) => [c.card_id, c]));
+      for (const [k, v] of owBySet) {
+        const i = k.lastIndexOf('|');
+        if (k.slice(i + 1) !== '') continue;
+        if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+        const card = byId.get(k.slice(0, i));
+        if (!card) continue;
+        if (ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
+        push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
+      }
+    }
+    return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
+  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets]);
+
+  const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
+
+  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
+  const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
   const clearAll = () => {
-    setOwn('all'); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
+    setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
-    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setSort([]);
   };
-  const cardProps = (c) => ({ owned: val(c.card_id, 'owned'), foil: val(c.card_id, 'foil'), wanted: val(c.card_id, 'wanted') });
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. Transparent band: cards
-          just scroll up past the frosted-glass toggle and clip under the header. */}
+      {/* Sticky centered view toggle - never scrolls away. */}
       <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
         <ViewToggle view={view} setView={setView} />
       </div>
@@ -310,49 +432,79 @@ function Cards({ onOpen, onPeek }) {
       {pool == null ? <Loading /> : (
         <>
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
-            {shown.length} cards{shown.length > 250 ? ' · showing 250' : ''}
+            {totalRows} card{totalRows === 1 ? '' : 's'}{totalRows > 250 ? ' · showing 250' : ''}
           </div>
-          {shown.length === 0 ? (
-            <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              No cards match{activeCount || q ? ' those filters' : ''}.
+          {totalRows === 0 ? (
+            <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+              {editMode ? 'No cards match those filters.'
+                : (activeCount || q) ? 'No owned cards match those filters.'
+                  : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
-          ) : view === 'binder' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {shown.slice(0, 250).map((c) => (
-                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
-              ))}
-            </div>
-          ) : (
-            shown.slice(0, 250).map((c) => (
-              <LedgerRow key={c.card_id} card={c} {...cardProps(c)} value={own === 'wishlist' ? val(c.card_id, 'wanted') : val(c.card_id, 'owned')}
-                onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
-            ))
-          )}
+          ) : (() => {
+            // Render groups in set order, budgeting 250 rows total across all
+            // open groups so a huge add-mode catalogue stays responsive.
+            let budget = 250;
+            return groups.map((grp) => {
+              const isOpen = !collapsed.has(grp.code);
+              const ownedCount = ownedPerSet.get(grp.code) || 0;
+              const total = setTotals.get(grp.code) || grp.rows.length;
+              const rows = isOpen ? grp.rows.slice(0, budget) : [];
+              budget -= rows.length;
+              return (
+                <div key={grp.code || 'unspec'}>
+                  <SetHeader name={grp.name} owned={ownedCount} total={total} collapsed={!isOpen} onToggle={() => toggleSet(grp.code)} />
+                  {isOpen && (view === 'binder' ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                      {rows.map((r) => (
+                        <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
+                          onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                      ))}
+                    </div>
+                  ) : (
+                    rows.map((r) => (
+                      <LedgerRow key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name}
+                        owned={r.owned} foil={r.foil} value={r.owned + r.foil}
+                        onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                    ))
+                  ))}
+                </div>
+              );
+            });
+          })()}
         </>
       )}
 
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search cards…" ariaLabel="Search your collection" />
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
 
+      {/* Filter is its own FAB and never moves - the docked spot beside the search
+          bar, in BOTH modes. Adding by search happens naturally in that bar, so in
+          edit mode a SECOND FAB rises above it with just the tools search can't do:
+          camera + text import. The one place in the app with two stacked FABs. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
+      {editMode && (
+        <Fab variant="lib" label="Add tools" icon={<FabGlyph kind="add" />} className="fab-stacked" items={[
+          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+        ]} />
+      )}
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
+
       <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
-        eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${shown.length} card${shown.length === 1 ? '' : 's'}`}
-        summaryLead={own !== 'all' ? [OWN_LABEL[own]] : []}
+        eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
+        summaryLead={ownScope.map((s) => OWN_LABEL[s])}
         leadSections={(
           <div style={{ marginBottom: 22 }}>
-            <SectionLabel label="OWNERSHIP" />
-            <div role="group" aria-label="Ownership" style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden' }}>
-              {OWN_OPTS.map(([k, l]) => (
-                <button key={k} onClick={() => setOwn(k)} aria-pressed={own === k}
-                  style={{ padding: '8px 16px', border: 'none', cursor: 'pointer', fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: own === k ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase', color: own === k ? '#d8c9a4' : '#8a8175', background: own === k ? 'rgba(42,33,20,.7)' : 'transparent', transition: 'background .16s, color .16s' }}>{l}</button>
-              ))}
-            </div>
+            <SectionLabel label="OWNERSHIP" count={ownScope.length || undefined} />
+            <ChipRow>
+              {OWN_OPTS.map(([k, l]) => <Chip key={k} label={l} active={ownScope.includes(k)} onClick={() => toggleOwn(k)} />)}
+            </ChipRow>
           </div>
         )}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts}
-        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp}
+        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         sort={sort} setSort={setSort} />
     </div>
@@ -387,15 +539,15 @@ function Empty({ text }) {
 // Export a list as flat "qty name" text - the Curiosa deck-export format, so it
 // round-trips into Curiosa, Decks > Import from text, or Collection's own bulk
 // import on another profile/device.
-function ExportListSheet({ open, listId, listName, onClose }) {
+function ExportListSheet({ open, fetchText, listName, onClose }) {
   const [text, setText] = useState(null);
   useEffect(() => {
-    if (!open || !listId) return;
+    if (!open || !fetchText) return;
     let alive = true;
     setText(null);
-    exportListText(listId).then((t) => alive && setText(t));
+    Promise.resolve(fetchText()).then((t) => alive && setText(t));
     return () => { alive = false; };
-  }, [open, listId]);
+  }, [open, fetchText]);
   async function copy() {
     if (!text) return;
     try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
@@ -534,17 +686,143 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
   );
 }
 
+// In-list add picker: a searchable catalogue (rich token search, e:water set:beta)
+// where each row carries a +Add / stepper reflecting how many are already on this
+// list (or the Wishlist). Two ways to add: tap a row's +Add for single, precise
+// edits (commits live through onStep(card, delta)), or hit Select to enter
+// multi-select - tap rows to check them, then one "Add N" bar commits them all at
+// +1. Shared by every list and the Wishlist.
+function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
+  const [q, setQ] = useState('');
+  const [pool, setPool] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Map());   // card_id -> full card row (kept for the batch commit)
+  useEffect(() => { if (open) { setQ(''); setPool(null); setSelectMode(false); setSelected(new Map()); } }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const t = setTimeout(async () => {
+      const parsed = parseQuery(q);
+      const rows = (await getPool({ q: parsed.name })).filter((c) => !isTokenCard(c));
+      const filtered = parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows;
+      if (alive) setPool(filtered);
+    }, 130);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q, open]);
+
+  const toggleSel = (c) => setSelected((prev) => { const m = new Map(prev); m.has(c.card_id) ? m.delete(c.card_id) : m.set(c.card_id, c); return m; });
+  const commit = () => {
+    const cards = [...selected.values()];
+    if (!cards.length) return;
+    haptic('light');
+    for (const c of cards) onStep(c, 1);   // distinct ids; each serialises on its own chain
+    toast(`Added ${cards.length} card${cards.length === 1 ? '' : 's'}`);
+    setSelected(new Map());
+    setSelectMode(false);
+  };
+
+  return (
+    <BottomSheet open={open} title={title} onClose={onClose}>
+      {hint && !selectMode && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
+      <input value={q} autoFocus onChange={(e) => setQ(e.target.value)}
+        placeholder="Search the library - e:water set:beta…" style={{ ...SHEET_INPUT, height: 46 }} />
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '12px 2px 2px' }}>
+        <span style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
+          {selectMode ? `${selected.size} selected`
+            : pool == null ? 'Searching…' : `${pool.length} card${pool.length === 1 ? '' : 's'}${pool.length > 200 ? ' · showing 200' : ''}`}
+        </span>
+        <button onClick={() => { setSelectMode((s) => !s); setSelected(new Map()); }} aria-pressed={selectMode}
+          style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
+            background: selectMode ? 'rgba(210,88,115,.16)' : 'rgba(42,33,20,.5)', color: selectMode ? '#f0c8ce' : '#e3c589', border: `1px solid ${selectMode ? 'rgba(210,88,115,.5)' : 'rgba(210,88,115,.5)'}` }}>
+          {selectMode ? 'Cancel' : 'Select'}
+        </button>
+      </div>
+      {pool == null ? <Loading /> : pool.slice(0, 200).map((c) => {
+        const inList = membership.get(c.card_id) || 0;
+        const setName = listSetName(c);
+        const isSel = selected.has(c.card_id);
+        return (
+          <div key={c.card_id} onClick={selectMode ? () => toggleSel(c) : undefined}
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)', cursor: selectMode ? 'pointer' : 'default' }}>
+            <span style={{ width: 42, flex: 'none' }}><CardArt card={c} radius={6} aspect="5/7" /></span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                {setName && <span style={listSetPill}>{setName}</span>}
+                {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: '#e3c589' }}>on list ×{inList}</span>}
+              </div>
+            </div>
+            {selectMode ? (
+              <span aria-hidden="true" style={{ flex: 'none', width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? '#e3c589' : 'rgba(203,167,95,.4)'}` }}>
+                {isSel && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1a1206" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+              </span>
+            ) : inList > 0 ? (
+              <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                <Frost label="One fewer" onClick={() => onStep(c, -1)}>−</Frost>
+                <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: '#efe7d8' }}>{inList}</span>
+                <Frost label="One more" onClick={() => onStep(c, 1)}>+</Frost>
+              </span>
+            ) : (
+              <button onClick={() => onStep(c, 1)} aria-label={`Add ${c.name}`}
+                style={{ flex: 'none', minHeight: 40, padding: '0 15px', borderRadius: 999, cursor: 'pointer', font: "600 12.5px/1 var(--f-display)", letterSpacing: '.04em', color: '#f0c8ce', background: 'rgba(224,169,177,.12)', border: '1px solid rgba(224,169,177,.28)' }}>+ Add</button>
+            )}
+          </div>
+        );
+      })}
+      {/* Running batch bar - sticks to the sheet's scroll floor while you check rows. */}
+      {selectMode && selected.size > 0 && (
+        <div style={{ position: 'sticky', bottom: 0, marginTop: 8, padding: '12px 0 2px', background: 'linear-gradient(0deg, #0b0806 68%, transparent)' }}>
+          <button onClick={commit} style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center' }}>
+            Add {selected.size} card{selected.size === 1 ? '' : 's'}
+          </button>
+        </div>
+      )}
+    </BottomSheet>
+  );
+}
+
+// The pinned Wishlist row - a distinct gold-framed card above the user's own
+// lists, showing its want-tally and a fan of the first few wanted cards. Always
+// present, never renamed or deleted; taps into the shared ListDetail surface.
+function WishlistCard({ summary, onClick }) {
+  const empty = !summary || summary.count === 0;
+  return (
+    <div onClick={onClick} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 22, padding: '16px 20px', borderRadius: 19, border: '1px solid rgba(227,197,137,.42)', background: 'linear-gradient(180deg, rgba(203,167,95,.07), rgba(203,167,95,.02))' }}>
+      <ListFan cards={summary?.thumbs || []} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#e3c589" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wishlist</span>
+        </div>
+        <div style={{ font: "400 14px/1.4 var(--f-read)", color: '#8a8175', marginTop: 6 }}>
+          {empty ? 'Cards you want - add from any card or here' : `${summary.count} card${summary.count === 1 ? '' : 's'} wanted`}
+        </div>
+      </div>
+      {!empty && (
+        <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+          <span style={{ font: "600 24px/1 var(--f-display)", color: '#e3c589' }}>{summary.total}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ListsIndex({ onOpenList, rev }) {
   const [lists, setLists] = useState(null);
   const [progress, setProgress] = useState(new Map());
   const [thumbs, setThumbs] = useState(new Map());
+  const [wl, setWl] = useState(null);            // pinned Wishlist summary
   const [create, setCreate] = useState(null);   // 'wanted' | 'custom' | null
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const all = await listCardLists();
+      const [all, wlRows] = await Promise.all([listCardLists(), wishlistCards()]);
       if (!alive) return;
       setLists(all);
+      setWl({ count: wlRows.length, total: wlRows.reduce((n, r) => n + (r.quantity || 0), 0), thumbs: wlRows.slice(0, 3) });
       const wantedIds = all.filter((l) => l.kind === 'wanted').map((l) => l.id);
       const [pr, th] = await Promise.all([
         wantedIds.length ? listProgressBulk(wantedIds) : new Map(),
@@ -566,6 +844,7 @@ function ListsIndex({ onOpenList, rev }) {
   );
   return (
     <div style={{ padding: '2px 20px' }}>
+      <WishlistCard summary={wl} onClick={() => onOpenList(wishlistRef())} />
       <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
         {wanted.length ? wanted.map(card) : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
@@ -602,7 +881,7 @@ function listSetName(card) {
 // frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
-function ListCardRow({ card, owned, target, isWanted, onStep, onPeek }) {
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }) {
   const goalMet = isWanted && target > 0 && owned >= target;
   const ownedAny = owned >= 1;
   const setName = listSetName(card);
@@ -665,24 +944,36 @@ function ListCardRow({ card, owned, target, isWanted, onStep, onPeek }) {
         </span>
       </div>
 
-      {/* Frosted -/+ editing the GOAL (wanted qty). The WANT label marks this as
-          goal-editing, distinct from the unlabeled owned-editing on the Cards tab. */}
-      <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
-        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
-          <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
-          <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+      {/* Right rail. Edit mode: frosted -/+ on the GOAL (wanted qty / copies) - the
+          WANT/COPIES label marks it as goal-editing, distinct from the unlabeled
+          owned-editing on the Cards tab. Read mode: the same figure, static. */}
+      {editable ? (
+        <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
+            <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+            <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+          </span>
+          <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
         </span>
-        <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
-      </span>
+      ) : (
+        <span style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 44 }}>
+          <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#8a7a55' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+          <span style={{ font: "600 19px/1 var(--f-display)", color: '#c9bfa8', marginTop: 4 }}>{target}</span>
+        </span>
+      )}
     </div>
   );
 }
 
-function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
+function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
+  const isWishlist = list.kind === 'wishlist';   // the virtual, un-deletable Wishlist (qty_wanted ledger)
   const isWanted = list.kind === 'wanted';
+  const showProgress = isWanted || isWishlist;   // owned-vs-goal bar + "X of Y wanted" figure
   const [meta, setMeta] = useState(list);
-  const [loaded, setLoaded] = useState(false);     // initial listCards fetch done
+  const [loaded, setLoaded] = useState(false);     // initial fetch done
+  const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
+  const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty (live)
   const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
@@ -695,7 +986,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
 
   const load = async () => {
     setLoaded(false);
-    const rows = await listCards(list.id);
+    // Wishlist rows come from the qty_wanted ledger (quantity aliased to wanted);
+    // regular lists from card_list_entries. Both carry `quantity` = the goal.
+    const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
     for (const c of rows) cardIndex.current.set(c.card_id, c);
     setQty(new Map(rows.map((r) => [r.card_id, r.quantity])));
     setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
@@ -720,9 +1013,21 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
+  // Wishlist writes the ownership ledger's qty_wanted; a real list writes its entry.
   const write = (cardId, next) => {
     chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
-      .then(() => setListEntry(list.id, cardId, next)).catch(() => {});
+      .then(() => (isWishlist ? setWanted(cardId, next) : setListEntry(list.id, cardId, next))).catch(() => {});
+  };
+  // The in-list picker's add/step - stashes the full card row so a brand-new card
+  // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
+  // no confirm, since you're actively curating.
+  const addStep = (card, delta) => {
+    const id = card.card_id;
+    cardIndex.current.set(id, card);
+    const next = Math.max(0, (qty.get(id) || 0) + delta);
+    haptic('light');
+    setQty((prev) => { const m = new Map(prev); if (next <= 0) m.delete(id); else m.set(id, next); return m; });
+    write(id, next);
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
@@ -757,6 +1062,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
   }, [qty, ownQty]);
 
   const openMissing = async () => setMissing(await listProgress(list.id));
+  const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
 
   return (
     <div style={{ padding: '0 20px' }}>
@@ -770,9 +1076,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
         }}>‹</button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ font: "700 22px/1.1 var(--f-display)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
-        {isWanted && totals.req > 0 && (
+        {showProgress && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
             <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? '#e3c589' : '#e0899e' }}>{totals.have}</span>
             <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{totals.req}</span>
@@ -784,7 +1090,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
 
       {/* Progress bar (wanted only): fills rose as the collection acquires copies,
           turning gold at 100%. "View missing ›" filters to what is still short. */}
-      {isWanted && totals.req > 0 && (
+      {showProgress && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${totals.percent}%`, background: totals.complete ? '#e3c589' : '#e0899e', borderRadius: 3, transition: 'width .3s ease' }} />
@@ -793,28 +1099,37 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
             <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}>
               {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
             </span>
-            {totals.missing > 0 && (
+            {isWanted && totals.missing > 0 && (
               <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: '#c76d85' }}>View missing ›</button>
             )}
           </div>
         </div>
       )}
 
-      {/* Summary + hairline rows, or the empty state. Cards join a list from the
-          card sheet's "Add to a list" - there is no inline search here anymore. */}
+      {/* Summary + hairline rows, or the empty state. Read-first: steppers hide
+          until Edit; cards join via the in-list "Add cards" picker. */}
       {!loaded ? <Loading /> : listRows.length === 0 ? (
         <div style={{ padding: '40px 0', textAlign: 'center' }}>
-          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>No cards yet.</div>
-          <button onClick={onGoCards} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Browse the catalog ›</button>
+          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>
+            {isWishlist ? 'Nothing on your wishlist yet.' : 'No cards yet.'}
+          </div>
+          <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Add cards ›</button>
         </div>
       ) : (
         <>
-          <div style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55', marginBottom: 6 }}>
-            {totals.names} card{totals.names === 1 ? '' : 's'}{isWanted && totals.done > 0 ? ` · ${totals.done} complete` : ''}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+            <span style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
+              {totals.names} card{totals.names === 1 ? '' : 's'}{isWanted && totals.done > 0 ? ` · ${totals.done} complete` : ''}
+            </span>
+            <button onClick={() => setEditing((e) => !e)} aria-pressed={editing}
+              style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
+                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : '#e3c589', border: `1px solid ${editing ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
+              {editing ? 'Done' : 'Edit'}
+            </button>
           </div>
           {listRows.map((c) => (
             <ListCardRow key={c.card_id} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(c.card_id)}
-              isWanted={isWanted} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+              isWanted={showProgress} editable={editing} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
           ))}
         </>
       )}
@@ -823,12 +1138,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
           routes through its OWN confirm sheet - destructive and undoable-never,
           so it is never one tap. */}
       <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
-        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: onGoCards },
-        { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
-        { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: () => setAddOpen(true) },
+        // The Wishlist is virtual + fixed: no rename, duplicate, or delete.
+        ...(isWishlist ? [] : [
+          { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
+          { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+        ]),
         { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
         ...(isWanted ? [{ label: 'Get missing cards', icon: SeekSvg, onClick: openMissing }] : []),
-        { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+        ...(isWishlist ? [] : [{ label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) }]),
       ]} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
@@ -851,12 +1169,17 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
         </div>
       </BottomSheet>
 
-      <ExportListSheet open={exportOpen} listId={list.id} listName={meta.name} onClose={() => setExportOpen(false)} />
+      <ExportListSheet open={exportOpen} fetchText={exportText} listName={meta.name} onClose={() => setExportOpen(false)} />
 
       <ListNameSheet open={rename} kind={isWanted ? 'wanted' : 'custom'} title="RENAME LIST"
         initialName={meta.name} initialDesc={meta.description || ''} submitLabel="Save"
         onClose={() => setRename(false)}
         onSubmit={async (nm, desc) => { await renameList(list.id, nm, desc); setMeta((m) => ({ ...m, name: nm, description: desc })); setRename(false); }} />
+
+      <AddCardsSheet open={addOpen} onClose={() => setAddOpen(false)}
+        title={isWishlist ? 'ADD TO WISHLIST' : 'ADD CARDS'}
+        hint={isWishlist ? 'Search the library and tap + to add cards you want.' : `Search the library and tap + to add to ${meta.name}.`}
+        membership={qty} onStep={addStep} />
 
       <MissingSheet open={!!missing} report={missing} title={`Missing for ${meta.name}`}
         onOpenCard={(id) => onOpen('card', id)} onClose={() => setMissing(null)} onChanged={() => onChanged?.()} />

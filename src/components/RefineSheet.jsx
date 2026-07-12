@@ -6,9 +6,9 @@
 // element, comparator ledger row = number, priority seal = sort). Pure
 // presentation - every filter/behaviour is driven by props from the parent, and
 // the sheet renders only the groups whose setters are supplied.
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import GothicSheet from './GothicSheet.jsx';
-import { SectionLabel, Chip, ChipRow, BTN_GHOST } from './ui.jsx';
+import { SectionLabel, Chip, ChipRow, BTN_GHOST, SegTabs } from './ui.jsx';
 import { StepBtn, EYEBROW } from './CollectionCardSheet.jsx';
 import { elementIconUrl } from '../store/cardArt.js';
 
@@ -23,6 +23,7 @@ const OP_NEXT = { '>=': '<=', '<=': '=', '=': '>=' };
 const GILT = 'linear-gradient(180deg, #d8b872, #b8954f)';
 const cnt = (n) => n || undefined;
 const HAIR_ROW = { borderBottom: '1px solid rgba(74,60,34,.3)' };
+const DOT = { width: 6, height: 6, borderRadius: '50%', background: '#e3c589', flex: 'none' };   // "this tab has active choices" mark
 
 // Element chip carrying the real PNG threshold icon (togglable). Chip geometry.
 function PipChip({ el, label, active, onClick }) {
@@ -53,7 +54,7 @@ function CmpRow({ label, icon, state, set, max, valueTint }) {
       </span>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flex: 'none' }}>
         <button onClick={() => set({ ...state, op: OP_NEXT[state.op] })} aria-label="Cycle operator" style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', color: '#d8c9a4', font: "600 15px/1 var(--f-ui)", cursor: 'pointer', flex: 'none' }}>{OP_SYM[state.op]}</button>
-        <StepBtn dir={-1} disabled={state.val == null || state.val === 0} onClick={() => stepVal(-1)} />
+        <StepBtn dir={-1} disabled={state.val == null} onClick={() => stepVal(-1)} />
         <span style={{ minWidth: 40, textAlign: 'center', ...(state.val != null ? { font: "600 19px/1 var(--f-display)", color: valueTint || '#e3c589' } : { font: "italic 400 14px/1 var(--f-read)", color: '#8a8175' }) }}>{state.val == null ? 'Any' : state.val}</span>
         <StepBtn dir={1} disabled={false} onClick={() => stepVal(1)} />
       </span>
@@ -84,12 +85,21 @@ export default function RefineSheet({
   summaryLead = [], leadSections, trailSections,
   els, setEls, multi, setMulti,
   types, setTypes, rarities, setRarities, sets, setSets, setOpts = [],
-  thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp,
+  thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, powerCmp, setPowerCmp,
   artist, setArtist, artistOpts = [], sort, setSort,
 }) {
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const toggleSort = (key) => { const i = sort.findIndex((s) => s.key === key); setSort(i >= 0 ? sort.filter((s) => s.key !== key) : [...sort, { key, dir: 'asc' }]); };
   const flipSort = (key) => setSort(sort.map((s) => (s.key === key ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)));
+
+  // Filters / Sort live behind a top toggle so sort isn't buried below a long
+  // filter scroll. The toggle only appears when the surface actually sorts
+  // (setSort supplied - the deckbuilder + Collection; Codex re-sorts A-Z, no sort).
+  const [tab, setTab] = useState('filters');
+  useEffect(() => { if (open) setTab('filters'); }, [open]);   // reopen on Filters
+  const hasSort = !!setSort;
+  const showFilters = !hasSort || tab === 'filters';
+  const showSort = hasSort && tab === 'sort';
 
   // Summary hero: write the active refinement as a manuscript line.
   const labels = [...summaryLead];
@@ -101,6 +111,7 @@ export default function RefineSheet({
   if (thByEl) ['air', 'earth', 'fire', 'water'].forEach((el) => { if (thByEl[el]?.val != null) labels.push(`${EL_LABEL[el]} thr`); });
   if (totalTh?.val != null) labels.push('Threshold');
   if (costCmp?.val != null) labels.push('Mana');
+  if (powerCmp?.val != null) labels.push('Power');
   if (artist) labels.push(artist);
   const shown = labels.length > 4 ? [...labels.slice(0, 3), `+${labels.length - 3} more`] : labels;
 
@@ -114,6 +125,17 @@ export default function RefineSheet({
       </div>
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '18px 0 20px' }} />
 
+      {hasSort && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}>
+          <SegTabs ariaLabel="Filters or sort" value={tab} onChange={setTab}
+            options={[
+              { key: 'filters', label: 'Filters', icon: labels.length ? <span style={DOT} /> : null },
+              { key: 'sort', label: 'Sort', icon: sort.length ? <span style={DOT} /> : null },
+            ]} />
+        </div>
+      )}
+
+      {showFilters && (<>
       {leadSections}
 
       {setEls && (
@@ -156,11 +178,12 @@ export default function RefineSheet({
         </div>
       )}
 
-      {(setTotalTh || setCostCmp) && (
+      {(setTotalTh || setCostCmp || setPowerCmp) && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel label="TOTALS" count={cnt((totalTh?.val != null ? 1 : 0) + (costCmp?.val != null ? 1 : 0))} />
+          <SectionLabel label="TOTALS" count={cnt((totalTh?.val != null ? 1 : 0) + (costCmp?.val != null ? 1 : 0) + (powerCmp?.val != null ? 1 : 0))} />
           {setTotalTh && <CmpRow label="Threshold" state={totalTh} set={setTotalTh} max={20} />}
           {setCostCmp && <CmpRow label="Mana" state={costCmp} set={setCostCmp} max={20} valueTint="#c9a8e8" />}
+          {setPowerCmp && <CmpRow label="Power" state={powerCmp} set={setPowerCmp} max={12} valueTint="#e0a58f" />}
         </div>
       )}
 
@@ -174,8 +197,9 @@ export default function RefineSheet({
           </select>
         </div>
       )}
+      </>)}
 
-      {setSort && (
+      {showSort && (
         <div style={{ marginBottom: 22 }}>
           <SectionLabel label="SORT" count={cnt(sort.length)} />
           <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 4px' }}>Tap to add - order sets priority.</div>
@@ -186,7 +210,7 @@ export default function RefineSheet({
         </div>
       )}
 
-      {trailSections}
+      {showFilters && trailSections}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
         <button onClick={onClear} style={{ ...BTN_GHOST, flex: 1, opacity: activeCount ? 1 : 0.4 }}>Clear</button>

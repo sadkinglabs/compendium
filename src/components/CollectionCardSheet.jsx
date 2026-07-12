@@ -70,7 +70,7 @@ export function StepBtn({ dir, onClick, disabled }) {
 
 // One count column: label · big count · − + steppers. Foil's label carries a
 // gold ✦.
-export function CountCol({ label, foil = false, field, qty, step }) {
+export function CountCol({ label, foil = false, field, qty, step, editable = true }) {
   const v = qty?.[field] || 0;
   const loading = qty === null;
   return (
@@ -79,10 +79,14 @@ export function CountCol({ label, foil = false, field, qty, step }) {
         {label}{foil && <span style={{ color: '#e3c589', marginLeft: 3, textShadow: '0 0 8px rgba(227,197,137,.5)' }}>✦</span>}
       </span>
       <span style={{ font: "500 29px/1 var(--f-display)", color: '#efe7d8', fontVariantNumeric: 'tabular-nums' }}>{v}</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <StepBtn dir={-1} disabled={loading || v === 0} onClick={() => step(field, -1)} />
-        <StepBtn dir={1} disabled={loading} onClick={() => step(field, 1)} />
-      </div>
+      {editable ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <StepBtn dir={-1} disabled={loading || v === 0} onClick={() => step(field, -1)} />
+          <StepBtn dir={1} disabled={loading} onClick={() => step(field, 1)} />
+        </div>
+      ) : (
+        <div style={{ height: 44 }} aria-hidden="true" />   // keep column heights aligned with editable siblings
+      )}
     </div>
   );
 }
@@ -179,12 +183,14 @@ export function SheetArt({ c }) {
 }
 
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
-function CardBody({ c, onOpenCodex, onPick }) {
-  const { qty, step } = useOwnedLedger(c.card_id);
+// `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
+// distinct cards in the collection, so tapping the Alpha row edits only Alpha.
+function CardBody({ c, onOpenCodex, onPick, editable, set }) {
+  const { qty, step } = useOwnedLedger(c.card_id, set || null);
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
   const runs = thresholdRuns(c);
-  const setName = sets[0]?.name;
+  const setName = (set && sets.find((s) => s.code === set)?.name) || sets[0]?.name;
   const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
   const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
   // Meta row: rarity + type sit together (the type moved down off the header),
@@ -211,11 +217,19 @@ function CardBody({ c, onOpenCodex, onPick }) {
 
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
 
+      {/* Owned + Foil are the collection ledger - editable only from My Collection's
+          edit mode (read-only in Overview, Lists, Codex). Wishlist is a list, not
+          the owned collection, so it stays editable everywhere. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-        <CountCol label="Owned" field="owned" qty={qty} step={step} />
-        <CountCol label="Foil" foil field="foil" qty={qty} step={step} />
+        <CountCol label="Owned" field="owned" qty={qty} step={step} editable={editable} />
+        <CountCol label="Foil" foil field="foil" qty={qty} step={step} editable={editable} />
         <CountCol label="Wishlist" field="wanted" qty={qty} step={step} />
       </div>
+      {!editable && (
+        <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 10 }}>
+          Edit owned copies in My Collection.
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 14, marginTop: 26 }}>
         <button onClick={onPick} style={{ flex: 1, padding: '15px 0', borderRadius: 16, background: 'transparent', border: '1px solid #4a3c22', color: '#d8c9a4', font: "500 13.5px/1 var(--f-display)", cursor: 'pointer' }}>Add to a list</button>
@@ -227,7 +241,7 @@ function CardBody({ c, onOpenCodex, onPick }) {
   );
 }
 
-export default function CollectionCardSheet({ cardId, onClose, onOpenCodex }) {
+export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, editable = false, set = null }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
@@ -235,7 +249,7 @@ export default function CollectionCardSheet({ cardId, onClose, onOpenCodex }) {
     <GothicSheet open={!!cardId} onClose={onClose} label="Card">
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} />}
+        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} editable={editable} set={set} />}
     </GothicSheet>
   );
 }

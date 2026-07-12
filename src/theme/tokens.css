@@ -161,6 +161,16 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
 
+/* Boot splash: the gold diamond glimmers while it fills, matching the static
+   #boot-splash in index.html so the pre-React HTML and the React <Splash> read as
+   one continuous screen. The rising fill itself is inline SVG in <BootDiamond>. */
+.boot-diamond { filter: drop-shadow(0 0 12px rgba(203,167,95,.4)); animation: bootGlow 2.4s ease-in-out infinite; }
+.boot-diamond.dim { opacity: .5; animation: none; filter: none; }
+@keyframes bootGlow { 0%, 100% { filter: drop-shadow(0 0 8px rgba(203,167,95,.28)); } 50% { filter: drop-shadow(0 0 17px rgba(203,167,95,.52)); } }
+@keyframes bootLineIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.boot-line { animation: bootLineIn .45s ease; }
+@media (prefers-reduced-motion: reduce) { .boot-diamond { animation: none; } .boot-line { animation: none; } }
+
 /* Per-pillar section wash: a top-down radial glow of --wash over pure black.
    The gradient uses currentColor so a plain `color` transition animates the hue
    smoothly when --wash changes between pillars (gradients can't transition, but
@@ -193,9 +203,15 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
    FAB can never diverge when the keyboard opens. Transparent + pass-through; only
    the pill and the FAB (the grandchildren) take pointer events. The empty search
    slot (flex:1) simply pushes a lone FAB to the right. */
-.cx-dock { position: fixed; left: 16px; right: 16px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
+/* Bottom offset: clear the bottom nav when the keyboard is closed, or sit just
+   above the keyboard when it's open - whichever is higher. max() (not a sum) so
+   the two don't STACK: the nav base is behind the keyboard while typing, so
+   adding it on top of --kb floated the dock ~78px above the keyboard with a dead
+   band of list rows showing through. Closed: --kb=0, the nav base wins. Open:
+   --kb dwarfs the base, so the dock rides 12px above the keyboard, flush. */
+.cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(62px + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
 .cx-dock-search { flex: 1; min-width: 0; }
-.cx-dock-fab { flex: none; }
+.cx-dock-fab { flex: none; position: relative; }   /* anchor for the stacked add FAB (My Collection edit mode) */
 .cx-dock > * > * { pointer-events: auto; }
 
 /* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
@@ -347,11 +363,15 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Glance - a flat stat strip (shared recipe with Play's minis): hairline top +
    bottom, thin dividers between the four doorway tiles, gold Cinzel numerals. */
 .cx-ov-glance { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid rgba(74,60,34,.3); border-bottom: 1px solid rgba(74,60,34,.3); margin-bottom: 26px; }
-.cx-ov-tile { border: none; border-radius: 0; background: transparent; padding: 13px 2px 12px; text-align: center; min-height: 44px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-ov-tile { border: none; border-radius: 0; background: transparent; padding: 16px 2px 14px; text-align: center; min-height: 44px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-tile + .cx-ov-tile { border-left: 1px solid rgba(74,60,34,.5); }
 .cx-ov-tile:active { background: rgba(220,184,111,.05); }
-.cx-ov-tile-val { font: 600 19px/1 var(--f-display); color: #e3c589; }
-.cx-ov-tile-lbl { font: 600 9px/1.2 var(--f-ui); letter-spacing: .14em; color: #8a8175; margin-top: 7px; }
+/* Hero-number treatment (matches the life counter / deck donut): big Cinzel 700,
+   glowing gold. */
+.cx-ov-tile-val { font: 700 29px/1 var(--f-display); letter-spacing: .01em; color: #e3c589; text-shadow: 0 0 15px rgba(220,184,111,.45); }
+/* Manuscript rubric label (Cinzel), not the plain sans micro-caption; the section
+   accent (set inline) carries the colour. */
+.cx-ov-tile-lbl { font: 600 10px/1.3 var(--f-display); letter-spacing: .06em; color: #8a8175; margin-top: 9px; }
 .cx-ov-sec { margin-bottom: 14px; }
 .cx-ov-sec-head { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; margin-bottom: 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-sec-title { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; white-space: nowrap; }
@@ -424,7 +444,12 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-row:active { background: var(--hair-08) !important; }
 /* Codex A–Z list (~1379 rows) - skip render/layout of off-screen rows. The
    intrinsic size reserves scroll height so the bar stays accurate. */
-.cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 50px; }
+/* Virtualise the ~1100-row A-Z browse: the WebView skips layout/paint for
+   off-screen rows, remembering each row's real size once rendered (the `auto`
+   keyword). The fallback estimate is tuned to the real card-row height (~88px,
+   thumb + two lines) so the initial scroll-height is accurate before rows are
+   measured - 50px was ~half, which drifted the scrollbar on first scroll. */
+.cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 
 @keyframes cxfade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }

@@ -170,7 +170,13 @@ async function resolveTargets(pairs) {
 
 /* ---------------- per-widget data ---------------- */
 
-export async function widgetData(block) {
+// `ctx` is a per-dashboard-load cache so widgets that need the same expensive
+// source share ONE fetch: Deck Spotlight + Your Decks + Card Collection all want
+// listDecks() (3 queries + enrichment each), so without this a 3-widget board ran
+// it three times. Pass the same ctx object to every widgetData() call in a load.
+const _decks = (ctx) => (ctx.decks ||= listDecks());
+
+export async function widgetData(block, ctx = {}) {
   const pid = activeProfileId();
   const k = normalizeKind(block.type);
 
@@ -192,18 +198,17 @@ export async function widgetData(block) {
     return { count: items.length, items, empty: 'Play named opponents to build rivalries.' };
   }
   if (k === 'deckSpotlight') {
-    const decks = await listDecks();
+    const decks = await _decks(ctx);
     if (!decks.length) return { empty: 'No decks yet - build one in Decks.' };
     const pick = decks.find((d) => d.starred) || [...decks].sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses))[0];
     return { spotlight: { id: pick.id, name: pick.name, image: pick.avatar?.image_slug || null, record: pick.record, winPct: pick.winPct, elems: pick.elems || [] } };
   }
   if (k === 'yourDecks') {
-    const decks = await listDecks();
+    const decks = await _decks(ctx);
     return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet - build one in Decks.' };
   }
   if (k === 'collectionStats') {
-    const s = await collectionStats();
-    const decks = await listDecks();
+    const [s, decks] = await Promise.all([collectionStats(), _decks(ctx)]);
     const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
     let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
     return { owned: s.owned, unique: s.unique, wishlist: s.wishlist, buildable, decks: decks.length, empty: 'No cards owned yet.' };
@@ -230,8 +235,8 @@ export async function widgetData(block) {
   if (k === 'notes') {
     const rows = await query('SELECT body, target_type, target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT 6;', [pid]);
     const count = (await query('SELECT COUNT(*) c FROM notes WHERE profile_id=?;', [pid]))[0].c;
-    const items = [];
-    for (const r of rows) { const t = await resolveTarget(r.target_type, r.target_id); items.push({ body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }); }
+    const resolved = await resolveTargets(rows.map((r) => ({ type: r.target_type, id: r.target_id })));
+    const items = rows.map((r) => { const t = resolved.get(r.target_type + ':' + r.target_id); return { body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }; });
     return { count, items, quotes: true, empty: 'No marginalia yet.' };
   }
   if (k === 'highlights') {
@@ -315,12 +320,17 @@ export async function overview() {
   const cnt = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
   const [savedN, notesN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('links')]);
   const hlN = (await query("SELECT COUNT(*) c FROM annotations WHERE profile_id=? AND kind='highlight';", [pid]))[0].c;
+  // Total copies owned (not distinct cards) - the "Cards collected" glance figure.
+  const cardsCollected = (await query('SELECT COALESCE(SUM(qty_owned),0) n FROM owned_cards WHERE profile_id=?;', [pid]))[0].n;
   const noteRows = await query('SELECT body,target_type,target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT ?;', [pid, OV_NOTES]);
-  const notes = [];
-  for (const r of noteRows) { const t = await resolveTarget(r.target_type, r.target_id); notes.push({ body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }); }
   const bmRows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT ?;', [pid, OV_BOOKMARKS]);
+  // Resolve note + bookmark targets with the batch helper (one query per kind)
+  // instead of resolveTarget() per row.
+  const resolved = await resolveTargets([...noteRows, ...bmRows].map((r) => ({ type: r.target_type, id: r.target_id })));
+  const at = (r) => resolved.get(r.target_type + ':' + r.target_id);
+  const notes = noteRows.map((r) => { const t = at(r); return { body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }; });
   const bookmarks = [];
-  for (const r of bmRows) { const t = await resolveTarget(r.target_type, r.target_id); if (t) bookmarks.push({ name: t.name, meta: t.meta, type: r.target_type, id: r.target_id }); }
+  for (const r of bmRows) { const t = at(r); if (t) bookmarks.push({ name: t.name, meta: t.meta, type: r.target_type, id: r.target_id }); }
   return {
     resume,
     glance: {
@@ -329,6 +339,7 @@ export async function overview() {
       winPct: stats.winPct,           // null until a game is decided
       saved: savedN,
       marginalia: notesN + hlN + linksN,
+      cardsCollected,
     },
     decks: { total: allDecks.length, items: allDecks.slice(0, OV_DECKS) },
     duels: { stats, items: duelItems },

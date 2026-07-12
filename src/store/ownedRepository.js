@@ -83,6 +83,16 @@ async function writeQty(cardId, { owned, wanted }) {
 }
 export async function setOwned(cardId, qty) { return writeQty(cardId, { owned: qty }); }
 export async function setWanted(cardId, qty) { return writeQty(cardId, { wanted: qty }); }
+
+// Card-level owned edit as a DELTA on the '' ("Unspecified") bucket. qtyFor sums
+// owned across EVERY row (incl. the per-set '001'… rows My Collection writes), so
+// reading that total and writing it back to '' (setOwned) double-counts the set
+// rows - the +2-on-plus / dead-minus bug. Stepping the '' bucket directly composes
+// correctly with the set rows the card sheet doesn't manage.
+export async function stepOwnedBucket(cardId, delta) {
+  const cur = (await query("SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [activeProfileId(), cardId]))[0];
+  return writeQty(cardId, { owned: Math.max(0, (cur?.qty_owned || 0) + delta) });
+}
 export async function stepOwned(cardId, delta) { const { owned } = await qtyFor(cardId); return setOwned(cardId, owned + delta); }
 export async function stepWanted(cardId, delta) { const { wanted } = await qtyFor(cardId); return setWanted(cardId, wanted + delta); }
 
@@ -104,6 +114,60 @@ export async function setFoil(cardId, qty) {
   bump();
 }
 
+/* ---------------- per-set ownership (My Collection) ----------------
+   Alpha and Beta are physically distinct printings, so OWNED copies live on a
+   per-set row: variant_slug = the numeric set code ("001" = Alpha regular,
+   "001:f" = Alpha foil). The wishlist stays card-level on the '' row. Legacy
+   card-level owned (scanner/import/old card sheet, written on '' / 'foil') has
+   no set and surfaces under an "Unspecified" group ('' key) so nothing is lost.
+   ownedMap() still SUMs every owned row, so deck buildability is unaffected. */
+const SET_UNSPEC = '';   // group key for owned copies with no recorded set
+
+function parseVslug(slug) {
+  if (slug === 'foil') return { set: SET_UNSPEC, foil: true };   // legacy foil
+  const foil = slug.endsWith(':f');
+  return { set: foil ? slug.slice(0, -2) : slug, foil };          // '' stays unspecified
+}
+const vslug = (set, foil) => (foil ? set + ':f' : set);
+
+// Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.
+export async function ownedBySet() {
+  const pid = activeProfileId();
+  const rows = await query('SELECT card_id, variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND qty_owned>0;', [pid]);
+  const m = new Map();
+  for (const r of rows) {
+    const { set, foil } = parseVslug(r.variant_slug);
+    const key = r.card_id + '|' + set;
+    const cur = m.get(key) || { owned: 0, foil: 0 };
+    cur[foil ? 'foil' : 'owned'] += r.qty_owned;
+    m.set(key, cur);
+  }
+  return m;
+}
+
+// One (card, set) breakdown, for the optimistic-step re-read.
+export async function qtyForInSet(cardId, set) {
+  const pid = activeProfileId();
+  const rows = await query('SELECT variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (?,?);', [pid, cardId, vslug(set, false), vslug(set, true)]);
+  let owned = 0, foil = 0;
+  for (const r of rows) { if (parseVslug(r.variant_slug).foil) foil += r.qty_owned; else owned += r.qty_owned; }
+  return { owned, foil };
+}
+
+async function writeSetRow(cardId, set, foil, qty) {
+  const pid = activeProfileId();
+  const now = nowIso();
+  const slug = vslug(set, foil);
+  const q = Math.max(0, qty | 0);
+  const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
+  if (q === 0) { if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]); }
+  else if (cur) await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
+  else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
+  bump();
+}
+export async function setOwnedInSet(cardId, set, qty) { return writeSetRow(cardId, set, false, qty); }
+export async function setFoilInSet(cardId, set, qty) { return writeSetRow(cardId, set, true, qty); }
+
 // Atomic +N to owned/wanted via a single upsert (no read-modify-write). For callers
 // that can't serialize their writes - notably the scanner's rapid, independent
 // scanAction events, where step*'s read-then-write would lose overlapping increments.
@@ -122,6 +186,48 @@ async function addCopies(cardId, col, n) {
     [uuid(), pid, cardId, '', col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]
   );
   bump();
+}
+
+// Atomic +N owned onto a specific PRINTING (set-coded row). Same overlap-safe
+// upsert as addOwnedCopies, but on the '001'/'002'/… row - the scanner uses this
+// to file a recognised single-set card under its (only) set instead of Unspecified.
+export async function addOwnedCopiesInSet(cardId, set, n = 1) {
+  if (!cardId || !set || !(n > 0)) return;
+  const pid = activeProfileId();
+  const now = nowIso();
+  await run(
+    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+     VALUES(?,?,?,?,?,0,'',?,?)
+     ON CONFLICT(profile_id,card_id,variant_slug)
+     DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+    [uuid(), pid, cardId, set, n, now, now]
+  );
+  bump();
+}
+
+// One-time cleanup: a card owned in the '' ("Unspecified") bucket that exists in
+// exactly ONE set can only BE that set, so move its owned copies onto the real set
+// row. Multi-set cards (Alpha/Beta reprints) stay Unspecified - the printing is
+// genuinely unknowable from the name. Idempotent (re-running finds nothing to move).
+export async function backfillSingleSetOwned() {
+  const pid = activeProfileId();
+  const rows = await query("SELECT card_id, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND variant_slug='' AND qty_owned>0;", [pid]);
+  if (!rows.length) return 0;
+  const catRows = await query('SELECT card_id, sets FROM cards;');
+  const setsById = new Map();
+  for (const r of catRows) { try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ } }
+  let moved = 0;
+  for (const r of rows) {
+    const sets = setsById.get(r.card_id) || [];
+    if (sets.length !== 1 || !sets[0]?.code) continue;   // multi-set / unknown -> leave in Unspecified
+    await addOwnedCopiesInSet(r.card_id, sets[0].code, r.qty_owned);
+    // Clear the '' owned, preserving any wishlist (qty_wanted) that also lives there.
+    if ((r.qty_wanted || 0) > 0) await run("UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE profile_id=? AND card_id=? AND variant_slug='';", [nowIso(), pid, r.card_id]);
+    else await run("DELETE FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [pid, r.card_id]);
+    moved++;
+  }
+  if (moved) bump();
+  return moved;
 }
 
 // Bulk text import: any "qty name" text (a deck export, a Curiosa list, a typed
@@ -279,11 +385,32 @@ export async function listCards(listId) {
   );
 }
 
+// The Wishlist: every card you want (qty_wanted>0), joined to the catalog, with
+// its owned + wanted quantities. A virtual, un-deletable "list" backed by the
+// ownership ledger (qty_wanted) rather than a card_lists row - so `quantity` here
+// is the wanted goal, matching listCards' shape for a shared detail view.
+export async function wishlistCards() {
+  const pid = activeProfileId();
+  return query(
+    `SELECT o.card_id, SUM(o.qty_wanted) quantity, SUM(o.qty_owned) owned,
+            c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
+     FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
+     WHERE o.profile_id=? GROUP BY o.card_id HAVING SUM(o.qty_wanted)>0 ORDER BY c.name;`,
+    [pid]
+  );
+}
+
 // Flat "qty name" text of a list - the Curiosa deck-export format, so it pastes
 // straight into Curiosa, a deck's Import from text, or back into Collection's
 // own bulk import.
 export async function exportListText(listId) {
   const rows = await listCards(listId);
+  return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
+}
+
+// Same flat export for the Wishlist (qty_wanted ledger) - take it to a shop.
+export async function wishlistExportText() {
+  const rows = await wishlistCards();
   return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
 }
 

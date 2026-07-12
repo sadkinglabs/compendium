@@ -81,7 +81,12 @@ class ScannerViewModel : ViewModel() {
         }
         val crossed = gate.onMatch(best?.card)
         if (crossed != null) {
-            val rec = Recognition(ScanKind.CARD, crossed.name, cardId = crossed.id)
+            // Snapshot the deck headroom at lock time: limit from the catalog, inDeck
+            // from the live session count (deck mode; 0/unlimited otherwise).
+            val rec = Recognition(
+                ScanKind.CARD, crossed.name, cardId = crossed.id, sets = crossed.sets,
+                limit = crossed.limit, inDeck = ScannerChannel.deckCounts[crossed.id] ?: 0,
+            )
             locked = rec
             _sheet.value = rec                        // sticky sheet
             _lockEvent.value = _lockEvent.value + 1   // gold flash + haptic + reveal

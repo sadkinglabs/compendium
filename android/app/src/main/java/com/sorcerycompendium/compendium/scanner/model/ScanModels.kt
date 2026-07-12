@@ -5,13 +5,24 @@ import android.graphics.Rect
 /** The kind of thing the scanner locked onto - drives the sheet colour + actions. */
 enum class ScanKind { CARD, DECK, MATCH }
 
-/** A locked scan result: a catalog card (cardId), or a shared deck / match QR (url).
- *  For a QR the native side does NOT decode the payload - it hands the url to JS. */
+/** One printing's set - name for display, code ('001'…) written to the ledger. */
+data class SetRef(val name: String, val code: String)
+
+/** A locked scan result: a catalog card (cardId + its sets), or a shared deck /
+ *  match QR (url). For a QR the native side does NOT decode the payload - it hands
+ *  the url to JS. `sets` drives the collection-mode set picker: one set files
+ *  automatically, several prompts a per-card choice. */
 data class Recognition(
     val kind: ScanKind,
     val title: String,
     val cardId: String? = null,
     val url: String? = null,
+    val sets: List<SetRef> = emptyList(),
+    // Deck mode: the copy cap for this card and how many are already in the open
+    // deck (a snapshot at lock time, kept live across the session), so the sheet
+    // can cap "add N" at the remaining headroom.
+    val limit: Int = 99,
+    val inDeck: Int = 0,
 )
 
 /** A rectangle in fractional (0..1) coordinates of the upright analysis frame. */

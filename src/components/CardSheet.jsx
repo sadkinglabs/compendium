@@ -7,7 +7,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips } from './ui.jsx';
-import { SheetArt, SetPill, CountCol, RARITY_HUE, typeLabel } from './CollectionCardSheet.jsx';
+import { SheetArt, CountCol, RARITY_HUE, typeLabel } from './CollectionCardSheet.jsx';
 import { getCard } from '../store/codexRepository.js';
 import { changeQty, deckQty, getDeck } from '../store/deckRepository.js';
 import { thresholdRuns } from '../store/cardArt.js';
@@ -83,7 +83,10 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
         {!c ? <Loading /> : (() => {
           const subs = jp(c.sub_types, []) || [];
           const sets = jp(c.sets, []) || [];
-          const setName = sets[0]?.name;
+          // A deck is name-level, so the printing barely matters here - list every
+          // set the card appears in as a small footnote under the text (not a top
+          // pill, which mislabelled Beta cards as Alpha by taking only sets[0]).
+          const setNames = sets.map((s) => s?.name).filter(Boolean);
           const runs = thresholdRuns(c);
           const flavor = jp(c.variants, []).map((v) => v?.flavorText).filter(Boolean)[0];
           const isMinion = /minion/i.test(c.type || '');
@@ -105,7 +108,6 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
 
           return (
             <>
-              {setName && <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>}
               <SheetArt c={c} />
               <div style={{ font: "700 27px/1.1 var(--f-display)", color: '#efe7d8', textAlign: 'center', marginTop: 20 }}>{c.name}</div>
 
@@ -131,6 +133,11 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
               )}
               {flavor && (
                 <div style={{ maxWidth: 320, margin: '12px auto 0', textAlign: 'center', font: "italic 400 14.5px/1.5 var(--f-read)", color: '#8a8175' }}>{noEm(flavor)}</div>
+              )}
+              {setNames.length > 0 && (
+                <div style={{ maxWidth: 320, margin: '14px auto 0', textAlign: 'center', font: "500 12px/1.4 var(--f-ui)", letterSpacing: '.02em', color: '#8a8175' }}>
+                  {setNames.length === 1 ? 'Set: ' : 'Sets: '}{setNames.join(', ')}
+                </div>
               )}
 
               {deckId && !c.is_avatar && (

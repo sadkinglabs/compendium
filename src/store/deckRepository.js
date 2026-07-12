@@ -2,6 +2,7 @@
 // (spellbook/atlas/collection), deck avatar, rarity copy-limits, stats, and the
 // Curiosa/Markdown import-export remapped. All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
+import { getCatalog } from './catalogCache.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso, slugify } from './ids.js';
 
@@ -258,8 +259,10 @@ export async function changeQty(deckId, zone, card, delta) {
     if (total + delta > copyLimit(card)) return { ok: false, reason: `Max ${copyLimit(card)} copies (${card.rarity}).` };
     if (zone === 'collection') {
       const counts = await zoneCounts(deckId);
-      const deck = await getDeck(deckId);
-      if (counts.collection + delta > collectionMax(deck)) return { ok: false, reason: `Collection limit ${collectionMax(deck)}.` };
+      // collectionMax only needs avatar_card_id (dragonlord => 11); avoid a full
+      // getDeck (SELECT * + avatar row + element-pip JOIN) on every collection tap.
+      const av = (await query('SELECT avatar_card_id FROM decks WHERE id=?;', [deckId]))[0];
+      if (counts.collection + delta > collectionMax(av)) return { ok: false, reason: `Collection limit ${collectionMax(av)}.` };
     }
   }
   const cur = await deckQty(deckId, zone, card.card_id);
@@ -330,20 +333,17 @@ export async function getDeckCards(deckId) {
 /* ---------------- add-flow pool ---------------- */
 
 const _cmp = (a, op, b) => op === '=' ? a === b : op === '<=' ? a <= b : a >= b;
-const _els = (c) => jp(c.elements, []).filter((x) => x && x.toLowerCase() !== 'none');
-const _totalTh = (th) => (th.air || 0) + (th.earth || 0) + (th.fire || 0) + (th.water || 0);
 
-/** Distinct set names / artists for the Refine sheet's Set + Artist filters. */
+/** Distinct set names / artists for the Refine sheet's Set + Artist filters.
+ *  Both derive from the immutable catalog, so they read the parsed cache. */
 export async function getSets() {
-  const rows = await query('SELECT sets FROM cards WHERE sets IS NOT NULL;');
   const s = new Set();
-  for (const r of rows) for (const x of jp(r.sets, [])) if (x?.name) s.add(x.name);
+  for (const c of await getCatalog()) for (const x of c._sets) if (x?.name) s.add(x.name);
   return [...s].sort();
 }
 export async function getArtists() {
-  const rows = await query('SELECT variants FROM cards WHERE variants IS NOT NULL;');
   const s = new Set();
-  for (const r of rows) for (const v of jp(r.variants, [])) if (v?.artist) s.add(v.artist);
+  for (const c of await getCatalog()) for (const v of c._variants) if (v?.artist) s.add(v.artist);
   return [...s].sort();
 }
 
@@ -357,34 +357,50 @@ export { parseQuery, parseCardQuery, cardMatchesQuery } from './cardQuery.js';
 // Full card-pool query mirroring Arcanum's Refine filters: element (+multi),
 // type, rarity, set, per-element & total threshold comparators, mana comparator,
 // artist, and name/mana/element sort.
+// Power = a card's attack points; when it also has a defence, the two are averaged
+// (rounded down). No attack -> no power (excluded from a power filter).
+export function cardPower(c) {
+  const a = c.attack, d = c.defence;
+  if (a == null) return null;
+  return d != null ? Math.floor((a + d) / 2) : a;
+}
+
 export async function getPool({
   q = '', els = [], types = [], rarities = [], sets = [], multi = false,
-  thByEl = {}, totalTh = null, costCmp = null, artist = '', sort = [],
+  thByEl = {}, totalTh = null, costCmp = null, powerCmp = null, artist = '', sort = [],
 } = {}) {
-  let sql = 'SELECT card_id, name, type, sub_types, cost, rarity, elements, thresholds, sets, variants, image_slug, is_site, rules_text, attack, defence, life FROM cards';
-  const where = [], params = [];
-  if (q) { where.push('lower(name) LIKE ?'); params.push(`%${q.toLowerCase()}%`); }
-  if (types.length) { where.push(`type IN (${types.map(() => '?').join(',')})`); params.push(...types); }
-  if (rarities.length) { where.push(`rarity IN (${rarities.map(() => '?').join(',')})`); params.push(...rarities); }
-  if (where.length) sql += ' WHERE ' + where.join(' AND ');
-  let rows = await query(sql + ';', params);
+  const all = await getCatalog();   // parsed once; rows carry _th/_els/_sets/etc.
+  const ql = q ? q.toLowerCase() : null;
+  const typeSet = types.length ? new Set(types) : null;
+  const raritySet = rarities.length ? new Set(rarities) : null;
+  const setSet = sets.length ? new Set(sets) : null;
+  const elCmps = [];   // active per-element threshold comparators
+  for (const el of ['air', 'earth', 'fire', 'water']) { const f = thByEl[el]; if (f && f.val != null) elCmps.push([el, f.op, f.val]); }
 
-  if (els.length) rows = rows.filter((c) => { const th = jp(c.thresholds, {}); return els.some((e) => (th[e] || 0) > 0); });
-  if (multi) rows = rows.filter((c) => _els(c).length > 1);
-  if (sets.length) rows = rows.filter((c) => jp(c.sets, []).some((s) => sets.includes(s.name)));
-  if (artist) rows = rows.filter((c) => jp(c.variants, []).some((v) => v.artist === artist));
-  for (const el of ['air', 'earth', 'fire', 'water']) {
-    const f = thByEl[el]; if (f && f.val != null) rows = rows.filter((c) => _cmp(jp(c.thresholds, {})[el] || 0, f.op, f.val));
-  }
-  if (totalTh && totalTh.val != null) rows = rows.filter((c) => _cmp(_totalTh(jp(c.thresholds, {})), totalTh.op, totalTh.val));
-  if (costCmp && costCmp.val != null) rows = rows.filter((c) => _cmp(c.cost ?? 0, costCmp.op, costCmp.val));
+  // One pass over the cache, reading pre-parsed fields (no JSON.parse per row).
+  // .filter() returns a fresh array, so the sort below never mutates the cache.
+  const rows = all.filter((c) => {
+    if (ql && !c._nameLc.includes(ql)) return false;
+    if (typeSet && !typeSet.has(c.type)) return false;
+    if (raritySet && !raritySet.has(c.rarity)) return false;
+    if (els.length && !els.some((e) => (c._th[e] || 0) > 0)) return false;
+    if (multi && c._elsF.length <= 1) return false;
+    if (setSet && !c._sets.some((s) => setSet.has(s.name))) return false;
+    if (artist && !c._variants.some((v) => v.artist === artist)) return false;
+    for (const [el, op, val] of elCmps) if (!_cmp(c._th[el] || 0, op, val)) return false;
+    if (totalTh && totalTh.val != null && !_cmp(c._totalTh, totalTh.op, totalTh.val)) return false;
+    if (costCmp && costCmp.val != null && !_cmp(c.cost ?? 0, costCmp.op, costCmp.val)) return false;
+    if (powerCmp && powerCmp.val != null) { const p = cardPower(c); if (p == null || !_cmp(p, powerCmp.op, powerCmp.val)) return false; }
+    return true;
+  });
 
-  // Multi-key sort in priority order (Arcanum: tap to add, ↑/↓ per key).
+  // Multi-key sort in priority order (Arcanum: tap to add, ↑/↓ per key). Keys are
+  // precomputed on the cached row, so the comparator does no parsing/allocation.
   const KEY = {
-    name: (c) => c.name.toLowerCase(),
+    name: (c) => c._nameLc,
     cost: (c) => c.cost ?? 0,
-    element: (c) => (_els(c)[0] || 'zzz').toLowerCase(),
-    th: (c) => _totalTh(jp(c.thresholds, {})),
+    element: (c) => c._el0,
+    th: (c) => c._totalTh,
   };
   const cmp = (k, a, b) => { const x = KEY[k](a), y = KEY[k](b); return typeof x === 'number' ? x - y : String(x).localeCompare(String(y)); };
   const list = sort.length ? sort : [{ key: 'name', dir: 'asc' }];
@@ -446,6 +462,59 @@ export function parseDeckText(text) {
     zones[zone].push({ name, qty });
   }
   return { avatar, zones };
+}
+
+// Dry-run a pasted "qty name" list against an EXISTING deck: resolve each line,
+// place it in its home zone (sites -> Atlas, else Spellbook), and cap by the rarity
+// copy limit given what's already in the deck. Nothing is written - returns a plan
+// { adds, atLimit, unknown } for a confirmation step (see applyDeckAdds).
+export async function planDeckTextAdd(deckId, text) {
+  const { zones } = parseDeckText(text);
+  const cat = await getCatalog();
+  const byName = new Map(cat.map((c) => [c._nameLc, c]));
+  const merged = new Map();   // card_id -> { card, requested } (dedupe repeated lines)
+  const unknown = [];
+  for (const { name, qty } of [...zones.spellbook, ...zones.atlas, ...zones.collection]) {
+    const card = byName.get(String(name).toLowerCase().trim());
+    if (!card) { unknown.push({ name, qty }); continue; }
+    const cur = merged.get(card.card_id) || { card, requested: 0 };
+    cur.requested += Math.max(0, qty | 0);
+    merged.set(card.card_id, cur);
+  }
+  const adds = [], atLimit = [];
+  for (const { card, requested } of merged.values()) {
+    if (requested <= 0) continue;
+    const zone = card.is_site ? 'atlas' : 'spellbook';
+    const already = await totalQty(deckId, card.card_id);
+    const limit = copyLimit(card);
+    const room = Math.max(0, limit - already);
+    const addQty = Math.min(requested, room);
+    const entry = { cardId: card.card_id, name: card.name, rarity: card.rarity, rulesText: card.rules_text, zone, requested, already, limit };
+    if (addQty > 0) adds.push({ ...entry, addQty, capped: addQty < requested });
+    else atLimit.push(entry);
+  }
+  return { adds, atLimit, unknown };
+}
+
+// Commit a confirmed plan's adds. changeQty re-checks the limit, so a stale plan
+// can never over-fill. Returns the total copies actually written.
+export async function applyDeckAdds(deckId, adds) {
+  let added = 0;
+  for (const a of adds || []) {
+    const res = await changeQty(deckId, a.zone, { card_id: a.cardId, name: a.name, rarity: a.rarity, rules_text: a.rulesText }, a.addQty);
+    if (res.ok) added += a.addQty;
+  }
+  return added;
+}
+
+// Add a scanner-recognised card to a deck: files it in its home zone and lets
+// changeQty enforce the rarity copy limit (returns {ok,reason} - a limit hit is
+// surfaced by the caller). Used by the deck-mode scanner.
+export async function addScannedToDeck(deckId, cardId, qty = 1) {
+  const cat = await getCatalog();
+  const card = cat.find((c) => c.card_id === cardId);
+  if (!card) return { ok: false, reason: 'Unknown card' };
+  return changeQty(deckId, card.is_site ? 'atlas' : 'spellbook', card, Math.max(1, qty | 0));
 }
 
 /* ---- Curiosa-URL import (ported from Arcanum) ---- */

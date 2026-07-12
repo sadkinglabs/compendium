@@ -45,6 +45,10 @@ class ScannerActivity : ComponentActivity() {
             return
         }
 
+        // Snapshot once - the mode is fixed for this scan session.
+        val collectionMode = ScannerChannel.mode == "collection"
+        val deckMode = ScannerChannel.mode == "deck"
+
         setContent {
             CompendiumScannerTheme {
                 var granted by remember {
@@ -78,8 +82,12 @@ class ScannerActivity : ComponentActivity() {
                 ScannerScreen(
                     granted = granted,
                     viewModel = vm,
+                    collectionMode = collectionMode,
+                    deckMode = deckMode,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
                     onAdd = { rec, action -> onAdd(rec, action) },
+                    onSaveCollection = { rec, qty, set -> onSaveCollection(rec, qty, set) },
+                    onAddToDeck = { rec, qty -> onAddToDeck(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
                     onDismissSheet = { vm.onDismiss() },
@@ -100,6 +108,27 @@ class ScannerActivity : ComponentActivity() {
         // Emit the add to JS; the sheet stays up (sticky) so both actions can be used.
         ScannerChannel.onEvent?.invoke(
             JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title),
+        )
+    }
+
+    /** Collection mode: emit +qty owned for the recognised card, onto the chosen
+     *  printing (set code) when one was picked/auto-selected. The scanner stays open
+     *  (the screen dismisses the sheet) so the build-your-collection loop keeps going. */
+    private fun onSaveCollection(rec: Recognition, qty: Int, set: String?) {
+        val js = JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty)
+        if (set != null) js.put("set", set)
+        ScannerChannel.onEvent?.invoke(js)
+    }
+
+    /** Deck mode: emit +qty of the recognised card to the open deck (JS files it in
+     *  its home zone, rarity-capped). Set is irrelevant to a deck (name-level). The
+     *  sheet already capped qty at the remaining headroom; bump the live session
+     *  count so re-scanning the same card offers the reduced remainder. */
+    private fun onAddToDeck(rec: Recognition, qty: Int) {
+        val id = rec.cardId ?: return
+        ScannerChannel.deckCounts[id] = (ScannerChannel.deckCounts[id] ?: 0) + qty
+        ScannerChannel.onEvent?.invoke(
+            JSObject().put("action", "deck").put("cardId", id).put("name", rec.title).put("qty", qty),
         )
     }
 

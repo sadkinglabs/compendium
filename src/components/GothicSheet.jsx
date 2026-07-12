@@ -21,24 +21,31 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', children 
   const tree = (
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
+      {/* The slide-in animation lives on the OUTER shell and the scroll on an
+          INNER body - deliberately separate elements. Putting `animation:
+          transform` AND `overflow:auto` on ONE element leaves the content
+          unpainted on Android WebView until a scroll forces a repaint (fine in
+          desktop Chrome). This mirrors the wizard/picker sheets, which don't
+          have the bug. */}
       <div
         ref={trapRef} role="dialog" aria-modal="true" aria-label={label}
-        onClick={(e) => e.stopPropagation()} className="cx-scroll"
+        onClick={(e) => e.stopPropagation()}
         style={{
           position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--kb,0px) / var(--ui-scale,1))', zIndex: 201,
           borderRadius: '30px 30px 0 0', borderTop: '1px solid rgba(203,167,95,.35)',
           background: 'linear-gradient(180deg, #181209 0%, #100c08 42%, #0b0806 100%)',
-          padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))',
           boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
           maxHeight: 'min(88dvh, calc(100dvh - env(safe-area-inset-top,0px) - 12px - var(--kb,0px) / var(--ui-scale,1)))',
-          overflowY: 'auto', ...dragStyle,
+          display: 'flex', flexDirection: 'column', overflow: 'hidden', ...dragStyle,
         }}
       >
-        {/* Drag the top chrome (handle) to dismiss; the body still scrolls. */}
-        <div {...handleProps} style={{ ...handleProps.style, padding: '4px 0 10px', margin: '0 -26px', display: 'flex', justifyContent: 'center' }}>
-          <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
+        <div className="cx-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))' }}>
+          {/* Drag the top chrome (handle) to dismiss; the body still scrolls. */}
+          <div {...handleProps} style={{ ...handleProps.style, padding: '4px 0 10px', margin: '0 -26px', display: 'flex', justifyContent: 'center' }}>
+            <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
+          </div>
+          {children}
         </div>
-        {children}
       </div>
     </>
   );

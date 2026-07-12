@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export const MIGRATIONS = [
   {
@@ -326,6 +326,16 @@ export const MIGRATIONS = [
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_list_entries_key ON card_list_entries(list_id, card_id, variant_slug);
     CREATE INDEX IF NOT EXISTS idx_list_entries_card ON card_list_entries(card_id);
+    `,
+  },
+  {
+    // link_graph (card<->article edges) shipped with NO indexes, so every card /
+    // article detail open (relatedFor/mentions: WHERE source_id=?) and the Codex
+    // "examples" filter (exampleRuleSet: WHERE target_type='card') full-scanned it.
+    version: 9,
+    sql: `
+    CREATE INDEX IF NOT EXISTS idx_linkgraph_source ON link_graph(source_id);
+    CREATE INDEX IF NOT EXISTS idx_linkgraph_target ON link_graph(target_type, target_id);
     `,
   },
 ];

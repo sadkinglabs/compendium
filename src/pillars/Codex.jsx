@@ -2,7 +2,7 @@
 // (Rules / Cards / Marginalia) is chosen by the shared control in the app
 // contextHeader (App.CodexScopeBar) and passed in as `scope`; the Marginalia
 // scope gathers the whole personal layer (notes, highlights, links, collections).
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   getCodexEntries, getCodexCards, marginaliaAll, deleteNote, deleteLink, toggleSaved,
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
@@ -426,43 +426,48 @@ const ChevGlyph = () => (
 // sub-expansion); card rows carry a mini card-art thumb + the shared type · mana
 // meta line. Both end in the bookmark glyph or a quiet chevron.
 function AzList({ entries, onOpen }) {
-  let cur = '';
-  const rows = [];
-  entries.forEach((it, i) => {
-    const L = it.name.charAt(0).toUpperCase();
-    if (L !== cur) {
-      cur = L;
-      rows.push(
-        <div key={'div-' + i} className="cx-codex-rubric">
-          <span className="cx-codex-letter">{L}</span>
-          <span className="cx-codex-hair" />
-        </div>
-      );
-    }
-    if (it.kind === 'card') {
-      const type = (it.type || 'Card').split(/[^A-Za-z]+/)[0];
-      rows.push(
-        <div key={'card' + it.id} className="cx-row cx-codex-row" onClick={() => onOpen('card', it.id, it.name)}>
-          <span className="cx-codex-thumb"><CardArt card={{ ...it, card_id: it.id }} radius={7} aspect="5/7" /></span>
-          <div className="cx-codex-body">
-            <span className="cx-codex-name">{it.name}</span>
-            <span className="cx-codex-meta">
-              <span className="cx-codex-type">{type}</span>
-              {it.cost != null && <><span className="cx-codex-sep" /><span><span className="cx-codex-mana">{it.cost}</span> mana</span></>}
-            </span>
+  // The browse index can be the whole catalog (~1100 rows), so rebuild the element
+  // list only when the data (or handler) actually changes - not on every re-render.
+  const rows = useMemo(() => {
+    let cur = '';
+    const out = [];
+    entries.forEach((it, i) => {
+      const L = it.name.charAt(0).toUpperCase();
+      if (L !== cur) {
+        cur = L;
+        out.push(
+          <div key={'div-' + i} className="cx-codex-rubric">
+            <span className="cx-codex-letter">{L}</span>
+            <span className="cx-codex-hair" />
           </div>
-          {it.saved ? <BookmarkGlyph /> : <ChevGlyph />}
-        </div>
-      );
-    } else {
-      rows.push(
-        <div key={'rule' + it.id} className="cx-row cx-codex-row" onClick={() => onOpen('rule', it.id, it.name)}>
-          <span className="cx-codex-title">{it.name}</span>
-          {it.saved ? <BookmarkGlyph /> : <ChevGlyph />}
-        </div>
-      );
-    }
-  });
+        );
+      }
+      if (it.kind === 'card') {
+        const type = (it.type || 'Card').split(/[^A-Za-z]+/)[0];
+        out.push(
+          <div key={'card' + it.id} className="cx-row cx-codex-row" onClick={() => onOpen('card', it.id, it.name)}>
+            <span className="cx-codex-thumb"><CardArt card={{ ...it, card_id: it.id }} radius={7} aspect="5/7" /></span>
+            <div className="cx-codex-body">
+              <span className="cx-codex-name">{it.name}</span>
+              <span className="cx-codex-meta">
+                <span className="cx-codex-type">{type}</span>
+                {it.cost != null && <><span className="cx-codex-sep" /><span><span className="cx-codex-mana">{it.cost}</span> mana</span></>}
+              </span>
+            </div>
+            {it.saved ? <BookmarkGlyph /> : <ChevGlyph />}
+          </div>
+        );
+      } else {
+        out.push(
+          <div key={'rule' + it.id} className="cx-row cx-codex-row" onClick={() => onOpen('rule', it.id, it.name)}>
+            <span className="cx-codex-title">{it.name}</span>
+            {it.saved ? <BookmarkGlyph /> : <ChevGlyph />}
+          </div>
+        );
+      }
+    });
+    return out;
+  }, [entries, onOpen]);
   return <div className="cx-az-list">{rows}</div>;
 }
 

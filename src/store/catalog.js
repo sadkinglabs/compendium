@@ -2,6 +2,7 @@
 // FAQs, link graph) from Lexicum's dataset into the catalog tables on first run.
 // Idempotent: keyed by CATALOG_VERSION in catalog_meta; re-seed clears + reloads.
 import { query, tx, persist } from './db.js';
+import { invalidateCatalog } from './catalogCache.js';
 
 // Native-safe bulk insert. Each row becomes ONE parameterized statement bound by
 // '?' placeholders - never inline SQL literals. This is critical: sql.js (web)
@@ -18,7 +19,7 @@ function insertStmts(table, cols, rows, toRow) {
   return rows.map((r) => [stmt, toRow(r)]);
 }
 
-export const CATALOG_VERSION = 1;
+export const CATALOG_VERSION = 2;   // v2: Curiosa numeric set codes (001 Alpha … 999 Promotional) + per-printing variants
 const BASE = import.meta.env.BASE_URL; // './' -> resolves relative to the page
 
 /** curiosa-style slug, so it matches faqs[].cards and gives a stable card_id. */
@@ -46,13 +47,16 @@ async function getCatalogCounts() {
   };
 }
 
-/** Seed once. Returns { seeded, counts }. */
-export async function seedCatalogIfNeeded() {
+/** Seed once. Returns { seeded, counts }. `onProgress(label)` (optional) is called
+ *  only on the first-run / version-bump path so the splash can show what the
+ *  one-time multi-second setup is doing instead of a frozen screen. */
+export async function seedCatalogIfNeeded(onProgress) {
   const cur = (await query("SELECT value FROM catalog_meta WHERE key='version';"))[0]?.value;
   if (cur === String(CATALOG_VERSION)) {
-    return { seeded: false, counts: await getCatalogCounts() };
+    return { seeded: false, counts: await getCatalogCounts() };   // warm boot: fast, no progress
   }
 
+  onProgress?.('Fetching the catalogue…');
   const [cardsObj, articles, faqs, links] = await Promise.all([
     fetchJson('cards.json'),
     fetchJson('articles_normalized.json'),
@@ -87,8 +91,10 @@ export async function seedCatalogIfNeeded() {
     ['INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?,?);', ['version', String(CATALOG_VERSION)]],
   ];
 
+  onProgress?.('Setting up for offline use…');
   await tx(statements);
   await persist();
+  invalidateCatalog();   // the parsed in-memory cache must not outlive a re-seed
 
   return { seeded: true, counts: await getCatalogCounts() };
 }

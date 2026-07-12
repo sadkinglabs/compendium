@@ -7,9 +7,21 @@
   <title>Compendium</title>
   <!-- Fonts are self-hosted (src/theme/fonts.css) and bundled at build time so the
        app is fully offline. No external font requests. -->
+  <!-- Pre-React ground: just the dark splash background (no logo/text) so there's
+       no white flash and no second, non-animated splash competing with React's.
+       React renders into #root and its animated <Splash> fades in over this same
+       dark ground - one splash, not two. -->
+  <style>
+    #boot-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      background: radial-gradient(120% 80% at 50% 42%, #120d09 0%, #0a0705 60%, #000 100%);
+    }
+  </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div id="boot-splash"></div>
+  </div>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>

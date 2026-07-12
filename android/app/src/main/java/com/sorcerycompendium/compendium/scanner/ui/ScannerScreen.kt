@@ -44,8 +44,12 @@ import kotlinx.coroutines.launch
 fun ScannerScreen(
     granted: Boolean,
     viewModel: ScannerViewModel,
+    collectionMode: Boolean,
+    deckMode: Boolean,
     onSearchCodex: (Recognition) -> Unit,
     onAdd: (Recognition, String) -> Unit,
+    onSaveCollection: (Recognition, Int, String?) -> Unit,
+    onAddToDeck: (Recognition, Int) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
     onImportMatch: (Recognition) -> Unit,
     onDismissSheet: () -> Unit,
@@ -88,14 +92,28 @@ fun ScannerScreen(
             SparkleBurst(key, accentFor(rec.kind), Modifier.fillMaxSize())
             RecognitionCard(
                 rec = rec,
+                collectionMode = collectionMode,
+                deckMode = deckMode,
                 onSearchCodex = { onSearchCodex(rec) },
-                onAddCollection = {
-                    onAdd(rec, "collection")
+                onAddCollection = { set ->
+                    // Universal-mode quick +1: files onto the chosen printing (single-set
+                    // auto, reprint via the picker), then stays open to keep scanning.
+                    onSaveCollection(rec, 1, set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
                 },
                 onAddWishlist = {
                     onAdd(rec, "wishlist")
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
+                },
+                onSaveCollection = { qty, set ->
+                    onSaveCollection(rec, qty, set)
+                    scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
+                    onDismissSheet()   // keep scanning: drop the sheet and resume
+                },
+                onAddToDeck = { qty ->
+                    onAddToDeck(rec, qty)
+                    scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title} to the deck") }
+                    onDismissSheet()   // keep scanning
                 },
                 onSaveDeck = { onSaveDeck(rec) },
                 onImportMatch = { onImportMatch(rec) },

@@ -24,13 +24,6 @@ import '../theme/dashboard.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-// Compact play-time for a glance tile: "45s" → "12m" → "3h" (details live in Play).
-function fmtSpanShort(secs) {
-  secs = Math.max(0, Math.round(secs || 0));
-  if (secs >= 3600) return `${Math.floor(secs / 3600)}h`;
-  if (secs >= 60) return `${Math.floor(secs / 60)}m`;
-  return `${secs}s`;
-}
 
 export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes, onMarginalia, onStartMatch, onImportMatch, registerApi, profile, rev, pillSlot }) {
   const [tab, setTab] = useState('overview');
@@ -124,10 +117,12 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
       <div className="cx-ov-sec-body">{children}</div>
     </div>
   );
-  const Tile = ({ val, lbl, onClick }) => (
+  // Glance tile: the number always glows gold; the LABEL takes its section's accent
+  // so each tile reads as a doorway to its pillar.
+  const Tile = ({ val, lbl, hue, onClick }) => (
     <div className="cx-ov-tile" onClick={onClick} role="button">
       <div className="cx-ov-tile-val">{val}</div>
-      <div className="cx-ov-tile-lbl">{lbl}</div>
+      <div className="cx-ov-tile-lbl" style={hue ? { color: hue } : undefined}>{lbl}</div>
     </div>
   );
 
@@ -159,10 +154,10 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
         </div>
       )}
       <div className="cx-ov-glance">
-        <Tile val={g.marginalia} lbl="MARGINALIA" onClick={onMarginalia} />
-        <Tile val={g.decks} lbl="DECKS" onClick={onGoLibrary} />
-        <Tile val={g.duels} lbl="MATCHES" onClick={() => onGoTab('play')} />
-        <Tile val={fmtSpanShort(s.totalSec)} lbl="TIME PLAYED" onClick={() => onGoTab('play')} />
+        <Tile val={g.marginalia} lbl="MARGINALIA" hue="var(--accent-gold)" onClick={onMarginalia} />
+        <Tile val={g.cardsCollected ?? 0} lbl="CARDS COLLECTED" hue="var(--accent-ruby)" onClick={() => onGoTab('collect')} />
+        <Tile val={g.decks} lbl="DECKS" hue="var(--accent-violet)" onClick={onGoLibrary} />
+        <Tile val={g.duels} lbl="MATCHES" hue="var(--accent-jade)" onClick={() => onGoTab('play')} />
       </div>
 
       {d.resume && (
@@ -292,9 +287,11 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   async function load() {
     const bs = await listBlocks();
     setBlocks(bs);
-    const d = {};
-    for (const b of bs) d[b.id] = await widgetData(b);
-    setData(d);
+    // Fetch every widget concurrently, sharing one ctx so common sources
+    // (listDecks) resolve once instead of per-widget, and serially no more.
+    const ctx = {};
+    const pairs = await Promise.all(bs.map(async (b) => [b.id, await widgetData(b, ctx)]));
+    setData(Object.fromEntries(pairs));
   }
   const refreshLayouts = () => listLayouts().then(setLayouts);
   // Re-roll a single widget (Random Card / Random Article) without reloading all.
@@ -311,6 +308,9 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   // grid reorders live and persists on drop. Moving before the hold fires just
   // scrolls (the press is cancelled). ──
   const pd = useRef({ id: null, active: false, sx: 0, sy: 0, el: null, pid: 0, timer: null });
+  // Clear a pending long-press timer on unmount (a tab switch mid-hold would
+  // otherwise fire setDragId on an unmounted component).
+  useEffect(() => () => clearTimeout(pd.current.timer), []);
   function pdDown(e, id) {
     if (!edit) return;
     const d = pd.current;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { openDatabase } from './store/db.js';
 import {
   initProfiles, getActiveProfile, listProfiles, profileStats,
@@ -6,33 +6,23 @@ import {
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
 import { migrateAnnotationsIfNeeded } from './store/annotations.js';
+import { backfillSingleSetOwned } from './store/ownedRepository.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
-import Codex from './pillars/Codex.jsx';
-import CodexDetail from './pillars/CodexDetail.jsx';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
-import DecksPager from './pillars/DecksPager.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
 import BottomDock from './components/BottomDock.jsx';
 import SearchPill from './components/SearchPill.jsx';
 import CardArt from './components/CardArt.jsx';
 import { thresholdRuns } from './store/cardArt.js';
-import Collection from './pillars/Collection.jsx';
-import CreateDeckWizard from './components/CreateDeckWizard.jsx';
 import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
-import DeckAddCards from './pillars/DeckAddCards.jsx';
-import Play, { ImportMatchSheet } from './pillars/Play.jsx';
-import LifeCounter from './pillars/LifeCounter.jsx';
-import AvatarPicker from './pillars/AvatarPicker.jsx';
 import Home from './pillars/Home.jsx';
 import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
 import { setResume } from './store/homeRepository.js';
-import { exportToFile, pickAndImport, duplicateProfile } from './store/profileTransfer.js';
 import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
 import { runBackConsumers } from './back.js';
 import { parseMatchShare } from './store/matchShare.js';
-import { parseDeckShare } from './store/deckShare.js';
 import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
 import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
@@ -40,6 +30,21 @@ import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
+
+// Route-split: only Home + the app shell load eagerly (the landing screen). Every
+// other pillar and the cold overlays (match, wizard, deck editor, card detail)
+// load their own chunk on first use, so the initial bundle is a fraction of the
+// whole app. Each renders behind a <Suspense fallback={<Loading/>}> below.
+const Codex = lazy(() => import('./pillars/Codex.jsx'));
+const CodexDetail = lazy(() => import('./pillars/CodexDetail.jsx'));
+const Collection = lazy(() => import('./pillars/Collection.jsx'));
+const DecksPager = lazy(() => import('./pillars/DecksPager.jsx'));
+const DeckAddCards = lazy(() => import('./pillars/DeckAddCards.jsx'));
+const Play = lazy(() => import('./pillars/Play.jsx'));
+const ImportMatchSheet = lazy(() => import('./pillars/Play.jsx').then((m) => ({ default: m.ImportMatchSheet })));
+const LifeCounter = lazy(() => import('./pillars/LifeCounter.jsx'));
+const AvatarPicker = lazy(() => import('./pillars/AvatarPicker.jsx'));
+const CreateDeckWizard = lazy(() => import('./components/CreateDeckWizard.jsx'));
 
 // Bottom-nav pillars. Icons come from <NavIcon icon={key} /> (inline SVG); only
 // key + label are read (glyph/eyebrow/accent fields were retired in the sweep).
@@ -93,8 +98,10 @@ export default function App() {
   useEffect(() => { if (import.meta.env.DEV) window.__back = () => backRef.current?.(); }, []);
   // A shared QR / link opens compendium://match?d=... (review sheet) or
   // compendium://deck?d=... (import + open), whatever tab we're on.
-  useEffect(() => onAppUrlOpen((url) => {
+  useEffect(() => onAppUrlOpen(async (url) => {
     const m = parseMatchShare(url); if (m) { setMatchImport(m); return; }
+    // deckShare pulls fflate - load it only when a deck link actually arrives.
+    const { parseDeckShare } = await import('./store/deckShare.js');
     const d = parseDeckShare(url);
     if (d) importDeckShare(d)
       .then((r) => { open('deck', r.id, r.name); toast(`Imported “${r.name}”${r.missing ? ` · ${r.missing} unknown` : ''}`); })
@@ -114,13 +121,16 @@ export default function App() {
     (async () => {
       try {
         await openDatabase();
-        const { counts } = await seedCatalogIfNeeded();
+        const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
         // One-time backfill of legacy highlights into the annotation model (runs
         // after migrations create the tables + the catalog is seeded; gated so it's
         // idempotent). Never blocks boot - a failure just retries next launch.
         try { await migrateAnnotationsIfNeeded(); } catch (e) { console.error('annotation migration failed', e); }
         const p = await initProfiles();
         setProfile(p);
+        // Move any single-set card owned in the Unspecified bucket onto its real
+        // set row (e.g. older scanner adds). Idempotent; never blocks boot.
+        try { await backfillSingleSetOwned(); } catch (e) { console.error('single-set backfill failed', e); }
         try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
         if (import.meta.env.DEV) {
           window.__cx = {
@@ -164,8 +174,8 @@ export default function App() {
   // "Browse all decks" always lands on the Library, not whatever deck was last open.
   const goLibrary = () => { setDeckOpen(null); goTab('decks'); };
 
-  if (boot.status === 'loading') return <Splash text="Opening the grimoire…" />;
-  if (boot.status === 'error') return <Splash text={'Store error: ' + boot.error} error />;
+  if (boot.status === 'loading') return <Splash />;
+  if (boot.status === 'error') return <Splash error errorText={'Store error: ' + boot.error} />;
 
   const pillar = PILLARS.find((p) => p.key === tab);
   const enterAdd = (deckId, deckName) => { setAddMode({ deckId, deckName }); setAddQuery(''); setAddFilterOpen(false); };
@@ -339,7 +349,7 @@ export default function App() {
         <div style={S.detailHeader}>
           <button onClick={back} style={S.back}><IcBack size={16} />Back</button>
           <div style={{ ...S.detailTitle, fontSize: detail.kind === 'card' ? 15 : 14 }}>{detail.title || ''}</div>
-          <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); bump(); }}
+          <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); /* no bump(): the browse list is unmounted behind the detail and reloads its saved state on remount, so a global rev bump here just re-renders the whole App for nothing */ }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
             aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
             <IcBookmark filled={detailSaved} />
@@ -369,6 +379,7 @@ export default function App() {
           in the swipe direction. Decks is the full-height pager; the rest scroll in
           the standard body. */}
       <div key={tab} className={`cx-pillar-slide from-${slideDirRef.current}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <Suspense fallback={<Loading />}>
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
           onImportMatch={(url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }}
@@ -408,6 +419,7 @@ export default function App() {
         )}
       </div>
       )}
+      </Suspense>
       </div>
 
       {/* THE bottom dock - one keyboard-aware container the search pill + FAB both
@@ -448,13 +460,15 @@ export default function App() {
       </nav>
       <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
         onSwitch={onSwitchProfile} onChanged={reloadProfile}
-        onExport={async () => { try { await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } }}
-        onImport={async () => { try { const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } }} />
+        onExport={async () => { try { const { exportToFile } = await import('./store/profileTransfer.js'); await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } }}
+        onImport={async () => { try { const { pickAndImport } = await import('./store/profileTransfer.js'); const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } }} />
 
       {/* Create-deck wizard (mandatory name → avatar) */}
       {deckWizard && (
-        <CreateDeckWizard onClose={() => setDeckWizard(false)}
-          onCreated={(id, name) => { setDeckWizard(false); bump(); goTab('decks'); setDeckOpen({ id, name }); }} />
+        <Suspense fallback={<Loading />}>
+          <CreateDeckWizard onClose={() => setDeckWizard(false)}
+            onCreated={(id, name) => { setDeckWizard(false); bump(); goTab('decks'); setDeckOpen({ id, name }); }} />
+        </Suspense>
       )}
 
       {/* Import from Curiosa URL - separate flow, lands on the deck in the pager */}
@@ -479,22 +493,30 @@ export default function App() {
       {preMatch && (
         <div className="cx-picker-modal" onClick={() => setPreMatch(null)}>
           <div className="cx-picker-box" onClick={(e) => e.stopPropagation()}>
-            <AvatarPicker onConfirm={beginMatch} onCancel={() => setPreMatch(null)} />
+            <Suspense fallback={<Loading />}>
+              <AvatarPicker onConfirm={beginMatch} onCancel={() => setPreMatch(null)} />
+            </Suspense>
           </div>
         </div>
       )}
       {match && (
-        <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
-          deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
-          onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
+        <Suspense fallback={<Loading />}>
+          <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
+            deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
+            onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
+        </Suspense>
       )}
       <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} onCredits={() => setCreditsOpen(true)} />
       <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
       <SearchHelpModal open={searchHelpOpen} kind={addActive ? 'deck' : 'codex'} onClose={() => setSearchHelpOpen(false)} />
       <ImportPasteModal open={resultPaste} onClose={() => setResultPaste(false)}
         onParsed={(p) => { setResultPaste(false); setMatchImport(p); }} />
-      <ImportMatchSheet payload={matchImport} onClose={() => setMatchImport(null)}
-        onSaved={() => { setMatchImport(null); bump(); goTab('play'); toast('Match imported'); }} />
+      {matchImport && (
+        <Suspense fallback={null}>
+          <ImportMatchSheet payload={matchImport} onClose={() => setMatchImport(null)}
+            onSaved={() => { setMatchImport(null); bump(); goTab('play'); toast('Match imported'); }} />
+        </Suspense>
+      )}
       <ToastHost />
       <ConfirmHost />
     </div>
@@ -704,7 +726,7 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
   async function duplicate(p) {
     if (busy) return;
     setBusy(true);
-    try { await duplicateProfile(p.id); await refresh(); toast(`Duplicated “${p.name}”`); }
+    try { const { duplicateProfile } = await import('./store/profileTransfer.js'); await duplicateProfile(p.id); await refresh(); toast(`Duplicated “${p.name}”`); }
     catch (e) { toast('Could not duplicate: ' + e.message, { tone: 'danger' }); }
     finally { setBusy(false); }
   }
@@ -941,10 +963,94 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
   );
 }
 
-function Splash({ text, error }) {
+// Whispered incantations while the catalogue seeds. Shuffled per launch and cycled
+// so a quick boot still shows a fresh one each time.
+const BOOT_LINES = [
+  'Grinding the pigments',
+  'Marinating the mandrake jars',
+  'Drawing the pentagram',
+  'Lighting the black candles',
+  'Casting the spells',
+  'Opening the grimoire',
+  'Consulting the spirits',
+  'Unrolling the scrolls',
+  'Charging the crystals',
+  'Feeding the familiars',
+  'Stirring the cauldron',
+  'Sharpening the athame',
+  'Translating the runes',
+  'Summoning the avatars',
+  'Dusting off the tomes',
+  'Bottling the moonlight',
+  'Waking the gargoyles',
+  'Tuning the ley lines',
+  'Counting the reagents',
+  'Polishing the scrying glass',
+  'Aligning the constellations',
+  'Brewing the elixirs',
+];
+
+function shuffled(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+// The Compendium mark: a gold diamond that FILLS from the base as boot advances.
+// SVG so the rising fill can be clipped cleanly to the diamond outline.
+function BootDiamond({ pct, dim }) {
+  const p = Math.max(0, Math.min(100, pct));
+  const D = 'M50 5 L95 50 L50 95 L5 50 Z';
   return (
-    <div style={{ ...S.app, alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ font: "600 16px/1.4 var(--f-display)", color: error ? 'var(--destructive)' : 'var(--gold-leaf)', textAlign: 'center', padding: 24 }}>{text}</div>
+    <div className={`boot-diamond${dim ? ' dim' : ''}`} aria-hidden="true" style={{ lineHeight: 0 }}>
+      <svg viewBox="0 0 100 100" width="60" height="60">
+        <defs>
+          <linearGradient id="bootFill" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stopColor="#e8cd92" /><stop offset="1" stopColor="#c2a05a" />
+          </linearGradient>
+          <clipPath id="bootClip"><path d={D} /></clipPath>
+        </defs>
+        <rect clipPath="url(#bootClip)" x="0" y={100 - p} width="100" height={p} fill="url(#bootFill)"
+          style={{ transition: 'y .25s linear, height .25s linear' }} />
+        <path d={D} fill="none" stroke="#cba75f" strokeWidth="4" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
+
+// Matches index.html's #boot-splash background so the pre-React frame and this one
+// are the same dark ground - the mark + incantation just fade in over it.
+const SPLASH_BG = 'radial-gradient(120% 80% at 50% 42%, #120d09 0%, #0a0705 60%, #000 100%)';
+
+function Splash({ error, errorText }) {
+  const [pct, setPct] = useState(0);
+  const [line, setLine] = useState(0);
+  const lines = useState(() => shuffled(BOOT_LINES))[0];   // fresh order each launch
+  // Ease the fill toward (but not to) full - the mark is empty at launch and nearly
+  // brimming by the time the catalogue is ready; it unmounts before hitting 100.
+  useEffect(() => {
+    if (error) return undefined;
+    const iv = setInterval(() => setPct((p) => (p >= 94 ? 94 : p + Math.max(0.7, (98 - p) * 0.055))), 60);
+    return () => clearInterval(iv);
+  }, [error]);
+  // Cycle the incantation (looping through the shuffled list).
+  useEffect(() => {
+    if (error) return undefined;
+    const iv = setInterval(() => setLine((i) => (i + 1) % lines.length), 700);
+    return () => clearInterval(iv);
+  }, [error, lines.length]);
+
+  return (
+    <div style={{ ...S.app, background: SPLASH_BG, alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20, animation: 'cxfade .4s ease' }}>
+      <BootDiamond pct={error ? 0 : pct} dim={error} />
+      <div style={{ font: "600 15px/1 var(--f-display)", letterSpacing: '.42em', textIndent: '.42em', textTransform: 'uppercase', color: '#cba75f' }}>Compendium</div>
+      {error ? (
+        <div style={{ font: "600 13.5px/1.5 var(--f-display)", color: 'var(--destructive)', textAlign: 'center', padding: '0 32px', maxWidth: 320 }}>{errorText}</div>
+      ) : (
+        <div key={line} className="boot-line" style={{ minHeight: 20, font: "italic 400 14px/1.4 var(--f-read)", color: '#8a7a55', letterSpacing: '.03em', textAlign: 'center' }}>
+          {lines[line]}…
+        </div>
+      )}
     </div>
   );
 }

@@ -101,6 +101,10 @@ function HandCard({ zones, avatar, onCardTap }) {
     ro.observe(el);
     return () => ro.disconnect();
   }, [hand?.dealKey]);
+  // Deal/redraw/shake timeouts fire setState; clear any pending on unmount so a
+  // tab switch mid-animation can't update an unmounted component.
+  const timers = useRef([]);
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const cap = (q) => Math.max(0, Math.min(q | 0, 99));
   const shuffle = (a) => { const r = [...a]; for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; } return r; };
   const mk = (e, drawn) => ({ e, id: seq.current++, drawn });
@@ -129,9 +133,9 @@ function HandCard({ zones, avatar, onCardTap }) {
     if (!hand) return build();
     setLeaving(true);
     const n = hand.spells.length + hand.sites.length;
-    setTimeout(build, 250 + Math.min(n, 12) * 30);
+    timers.current.push(setTimeout(build, 250 + Math.min(n, 12) * 30));
   }
-  function bump(kind) { setShake(kind); setTimeout(() => setShake((s) => (s === kind ? null : s)), 420); }
+  function bump(kind) { setShake(kind); timers.current.push(setTimeout(() => setShake((s) => (s === kind ? null : s)), 420)); }
   function drawNext(kind) {
     if (kind === 'spell' && !hand?.rest.length) return bump('spell');
     if (kind === 'site' && !hand?.restAt.length) return bump('site');
