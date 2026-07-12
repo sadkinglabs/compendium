@@ -18,20 +18,24 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', children 
   if (!open) return null;
 
   const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
+  // Two DELIBERATELY separate elements (mirrors the working wizard .ob-overlay/
+  // .ob-inner and the avatar picker): the OUTER is the position:fixed scrim +
+  // flex column, animated with cxfade (OPACITY only). The INNER panel is
+  // position:relative, pinned to the bottom via margin-top:auto, and carries the
+  // cxsheet TRANSFORM slide-in, overflow:hidden clip, and the drag transform.
+  // Keeping transform-animation + overflow OFF the fixed element is what stops the
+  // Android-WebView deferred-paint bug (nested scroller stays blank until scroll)
+  // that a single combined element re-introduces (the Refine sheet symptom).
   const tree = (
-    <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease' }} />
-      {/* The slide-in animation lives on the OUTER shell and the scroll on an
-          INNER body - deliberately separate elements. Putting `animation:
-          transform` AND `overflow:auto` on ONE element leaves the content
-          unpainted on Android WebView until a scroll forces a repaint (fine in
-          desktop Chrome). This mirrors the wizard/picker sheets, which don't
-          have the bug. */}
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease', display: 'flex', flexDirection: 'column' }}
+    >
       <div
         ref={trapRef} role="dialog" aria-modal="true" aria-label={label}
         onClick={(e) => e.stopPropagation()}
         style={{
-          position: 'fixed', left: 0, right: 0, bottom: 'calc(var(--kb,0px) / var(--ui-scale,1))', zIndex: 201,
+          position: 'relative', marginTop: 'auto', marginBottom: 'calc(var(--kb,0px) / var(--ui-scale,1))',
           borderRadius: '30px 30px 0 0', borderTop: '1px solid rgba(203,167,95,.35)',
           background: 'linear-gradient(180deg, #181209 0%, #100c08 42%, #0b0806 100%)',
           boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
@@ -47,7 +51,7 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', children 
           {children}
         </div>
       </div>
-    </>
+    </div>
   );
   return root ? createPortal(tree, root) : tree;
 }
