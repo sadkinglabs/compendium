@@ -267,6 +267,15 @@ function SetHeader({ name, owned, total, collapsed, onToggle }) {
   );
 }
 
+// The view-lens FAB glyph - an eye, for "how you're viewing the collection".
+function EyeGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22 }}>
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
 function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
@@ -274,7 +283,16 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   // editMode IS the add surface: reveal the WHOLE catalogue (owned + unowned) with
   // steppers so you can start adding immediately. Off = read-only owned collection.
   const [importOpen, setImportOpen] = useState(false);
-  const showSteppers = editMode;
+  // View lens on the add surface: 'all' (add anything, steppers on) | 'owned' |
+  // 'unowned' - the last two are READ-ONLY lenses (no steppers, no add tools), per
+  // the request. Reset when leaving edit mode so a stale lens can't distort the
+  // plain read-only owned view.
+  const [viewMode, setViewMode] = useState('all');
+  useEffect(() => { if (!editMode) setViewMode('all'); }, [editMode]);
+  const showSteppers = editMode && viewMode === 'all';
+  // Growable render window: the perf pass caps the initial paint at 250 rows; a
+  // "Show all" affordance lifts it so nothing is unreachable (even under a query).
+  const [limit, setLimit] = useState(250);
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -313,6 +331,8 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
+  // Any change to the result set (query, filters, lens, mode) resets the window.
+  useEffect(() => { setLimit(250); }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort, ownScope, viewMode, editMode]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
     setOwBySet(obs);
@@ -375,6 +395,10 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     // Ownership filter: when set it decides what shows (owned / not-owned / wishlisted
     // union); when empty, fall back to the mode default (read = owned only, add = all).
     const matches = (isOwned, isWish) => {
+      // The view-mode lens takes precedence over the Refine ownership chips: a lens
+      // is the quick, explicit "show me X" control. 'all' falls back to the chips.
+      if (viewMode === 'owned') return isOwned;
+      if (viewMode === 'unowned') return !isOwned;
       if (!ownActive) return editMode ? true : isOwned;
       return (ownScope.includes('owned') && isOwned)
         || (ownScope.includes('unowned') && !isOwned)
@@ -396,7 +420,12 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set). These
     // are always owned, so they surface in the default read view or an owned/wishlist
     // filter - but never when the user has narrowed to specific SET(s), since '' is none.
-    const wantLegacy = sets.length === 0 && (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode);
+    // Legacy '' owned rows are always owned: they belong in the owned/all lenses
+    // (and the default read view / owned|wishlist chips), never in 'unowned'.
+    const wantLegacy = sets.length === 0 && (
+      viewMode === 'owned' ? true
+        : viewMode === 'unowned' ? false
+          : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode));
     if (wantLegacy) {
       const byId = new Map((pool || []).map((c) => [c.card_id, c]));
       for (const [k, v] of owBySet) {
@@ -405,14 +434,19 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
         if ((v.owned || 0) + (v.foil || 0) === 0) continue;
         const card = byId.get(k.slice(0, i));
         if (!card) continue;
-        if (ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
+        // Under the 'all' lens the Refine chips still narrow; the owned/unowned lens
+        // already decided inclusion above.
+        if (viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
         push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
       }
     }
     return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
-  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets]);
+  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
 
   const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
+  // Rows in OPEN groups only - the render budget applies to these, so the "show
+  // all" affordance tracks what's actually being truncated.
+  const openRows = useMemo(() => groups.reduce((n, gr) => n + (collapsed.has(gr.code) ? 0 : gr.rows.length), 0), [groups, collapsed]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
@@ -432,7 +466,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       {pool == null ? <Loading /> : (
         <>
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
-            {totalRows} card{totalRows === 1 ? '' : 's'}{totalRows > 250 ? ' · showing 250' : ''}
+            {totalRows} card{totalRows === 1 ? '' : 's'}{openRows > limit ? ` · showing ${limit}` : ''}
           </div>
           {totalRows === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
@@ -441,10 +475,11 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                   : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
           ) : (() => {
-            // Render groups in set order, budgeting 250 rows total across all
-            // open groups so a huge add-mode catalogue stays responsive.
-            let budget = 250;
-            return groups.map((grp) => {
+            // Render groups in set order, budgeting `limit` rows total across all
+            // open groups so a huge add-mode catalogue stays responsive; "Show all"
+            // lifts the budget on demand.
+            let budget = limit;
+            const rendered = groups.map((grp) => {
               const isOpen = !collapsed.has(grp.code);
               const ownedCount = ownedPerSet.get(grp.code) || 0;
               const total = setTotals.get(grp.code) || grp.rows.length;
@@ -470,6 +505,19 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                 </div>
               );
             });
+            return (
+              <>
+                {rendered}
+                {openRows > limit && (
+                  <button onClick={() => setLimit(1e9)}
+                    style={{ display: 'block', width: '100%', margin: '18px 0 0', padding: '13px 0', borderRadius: 14,
+                      background: 'rgba(203,167,95,.06)', border: '1px solid rgba(203,167,95,.28)', color: '#cba75f',
+                      font: "600 13px/1 var(--f-ui)", letterSpacing: '.04em', cursor: 'pointer' }}>
+                    Show all {totalRows} cards
+                  </button>
+                )}
+              </>
+            );
           })()}
         </>
       )}
@@ -483,9 +531,17 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
           camera + text import. The one place in the app with two stacked FABs. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
       {editMode && (
-        <Fab variant="lib" label="Add tools" icon={<FabGlyph kind="add" />} className="fab-stacked" items={[
-          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+        // The secondary stacked FAB: a view lens (All / Owned / Not owned, ✓ on the
+        // active one). The camera + text-import tools ride under it, but ONLY in the
+        // 'all' lens - the owned/not-owned lenses are read-only, so no editing.
+        <Fab variant="lib" label="View & add tools" className="fab-stacked" icon={<EyeGlyph />} items={[
+          { label: 'View all', state: viewMode === 'all' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('all') },
+          { label: 'Owned', state: viewMode === 'owned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('owned') },
+          { label: 'Not owned', state: viewMode === 'unowned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('unowned') },
+          ...(viewMode === 'all' ? [
+            { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+            { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+          ] : []),
         ]} />
       )}
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
