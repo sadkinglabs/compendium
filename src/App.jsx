@@ -345,7 +345,7 @@ export default function App() {
         <div style={S.detailHeader}>
           <button onClick={back} style={S.back}><IcBack size={16} />Back</button>
           <div style={{ ...S.detailTitle, fontSize: detail.kind === 'card' ? 15 : 14 }}>{detail.title || ''}</div>
-          <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); bump(); }}
+          <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); /* no bump(): the browse list is unmounted behind the detail and reloads its saved state on remount, so a global rev bump here just re-renders the whole App for nothing */ }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
             aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
             <IcBookmark filled={detailSaved} />
