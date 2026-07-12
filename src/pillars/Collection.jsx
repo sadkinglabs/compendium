@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom';
 import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
+import { isTokenCard } from '../store/tokens.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   ownedBySet, qtyForInSet, setOwnedInSet,
@@ -303,7 +304,8 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   async function loadPool() {
     const parsed = parseQuery(q);
     const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
-    setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
+    const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
+    setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, artist, sort]);
   const refreshOwnership = useCallback(async () => {
@@ -696,7 +698,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
     let alive = true;
     const t = setTimeout(async () => {
       const parsed = parseQuery(q);
-      const rows = await getPool({ q: parsed.name });
+      const rows = (await getPool({ q: parsed.name })).filter((c) => !isTokenCard(c));
       const filtered = parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows;
       if (alive) setPool(filtered);
     }, 130);
