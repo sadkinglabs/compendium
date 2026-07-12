@@ -43,7 +43,7 @@ const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
+const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   const [view, setView] = useState(session.view);       // overview | cards | lists
@@ -52,8 +52,12 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
   const [sheetCard, setSheetCard] = useState(session.sheetCard);
+  const [sheetSet, setSheetSet] = useState(session.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
   const [editMode, setEditMode] = useState(false);   // My Collection edit mode: steppers + the + add FAB
-  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; }, [view, listOpen, sheetCard]);
+  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; session.sheetSet = sheetSet; }, [view, listOpen, sheetCard, sheetSet]);
+  // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
+  // = name-level. Stable so the memoized rows don't re-render.
+  const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
   const go = (v) => { setListOpen(null); setEditMode(false); setView(v); };
   const goAdd = () => { setListOpen(null); setView('cards'); setEditMode(true); };
   const pills = (
@@ -76,19 +80,19 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
       {view === 'overview' ? (
-        <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard}
+        <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={peek}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
-        <Cards onOpen={onOpen} onPeek={setSheetCard} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
+        <Cards onOpen={onOpen} onPeek={peek} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
       ) : listOpen ? (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onChanged={onChanged} />
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
       {/* "Open in Codex" deliberately KEEPS the sheet open in state: the pillar
           unmounts for the Codex page, and Back should land right back on this
           sheet - that's where the user left. */}
-      <CollectionCardSheet cardId={sheetCard} onClose={() => setSheetCard(null)}
+      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }}
         onOpenCodex={(id, name) => onOpen('card', id, name)} editable={view === 'cards' && editMode} />
     </div>
   );

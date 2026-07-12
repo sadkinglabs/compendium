@@ -183,12 +183,14 @@ export function SheetArt({ c }) {
 }
 
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
-function CardBody({ c, onOpenCodex, onPick, editable }) {
-  const { qty, step } = useOwnedLedger(c.card_id);
+// `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
+// distinct cards in the collection, so tapping the Alpha row edits only Alpha.
+function CardBody({ c, onOpenCodex, onPick, editable, set }) {
+  const { qty, step } = useOwnedLedger(c.card_id, set || null);
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
   const runs = thresholdRuns(c);
-  const setName = sets[0]?.name;
+  const setName = (set && sets.find((s) => s.code === set)?.name) || sets[0]?.name;
   const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
   const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
   // Meta row: rarity + type sit together (the type moved down off the header),
@@ -239,7 +241,7 @@ function CardBody({ c, onOpenCodex, onPick, editable }) {
   );
 }
 
-export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, editable = false }) {
+export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, editable = false, set = null }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
@@ -247,7 +249,7 @@ export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, edit
     <GothicSheet open={!!cardId} onClose={onClose} label="Card">
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} editable={editable} />}
+        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} editable={editable} set={set} />}
     </GothicSheet>
   );
 }
