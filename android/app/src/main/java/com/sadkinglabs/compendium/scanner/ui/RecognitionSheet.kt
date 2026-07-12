@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner.ui
+package com.sadkinglabs.compendium.scanner.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -63,9 +63,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.sorcerycompendium.compendium.scanner.model.Recognition
-import com.sorcerycompendium.compendium.scanner.model.ScanKind
-import com.sorcerycompendium.compendium.scanner.model.SetRef
+import com.sadkinglabs.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.model.ScanKind
+import com.sadkinglabs.compendium.scanner.model.SetRef
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random

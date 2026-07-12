@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner
+package com.sadkinglabs.compendium.scanner
 
 import android.content.Context
 import android.os.Build

@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner.model
+package com.sadkinglabs.compendium.scanner.model
 
 import android.graphics.Rect
 

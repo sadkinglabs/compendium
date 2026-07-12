@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner.camera
+package com.sadkinglabs.compendium.scanner.camera
 
 import android.content.Context
 import androidx.camera.core.CameraSelector

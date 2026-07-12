@@ -10,10 +10,10 @@ if (keystorePropsFile.exists()) {
 }
 
 android {
-    namespace "com.sorcerycompendium.compendium"
+    namespace "com.sadkinglabs.compendium"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.sorcerycompendium.compendium"
+        applicationId "com.sadkinglabs.compendium"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 13

@@ -1,9 +1,9 @@
-package com.sorcerycompendium.compendium;
+package com.sadkinglabs.compendium;
 
 import android.os.Bundle;
 
 import com.getcapacitor.BridgeActivity;
-import com.sorcerycompendium.compendium.scanner.CardScannerPlugin;
+import com.sadkinglabs.compendium.scanner.CardScannerPlugin;
 
 public class MainActivity extends BridgeActivity {
     @Override

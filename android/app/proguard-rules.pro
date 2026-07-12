@@ -24,7 +24,7 @@
 
 # --- The whole app package (small; keeps MainActivity + the reflection-
 #     registered CardScannerPlugin + its Compose/CameraX/ML Kit scanner) ---
--keep class com.sorcerycompendium.compendium.** { *; }
+-keep class com.sadkinglabs.compendium.** { *; }
 
 # --- ML Kit text recognition + barcode (bundled offline models) ---
 -keep class com.google.mlkit.** { *; }

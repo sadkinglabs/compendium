@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner
+package com.sadkinglabs.compendium.scanner
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,16 +7,16 @@ import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
-import com.sorcerycompendium.compendium.scanner.camera.TitleStripAnalyzer
-import com.sorcerycompendium.compendium.scanner.match.MatchResult
-import com.sorcerycompendium.compendium.scanner.match.Norm
-import com.sorcerycompendium.compendium.scanner.model.Phase
-import com.sorcerycompendium.compendium.scanner.model.Recognition
-import com.sorcerycompendium.compendium.scanner.model.ScanKind
-import com.sorcerycompendium.compendium.scanner.ocr.BarcodeReader
-import com.sorcerycompendium.compendium.scanner.ocr.Extraction
-import com.sorcerycompendium.compendium.scanner.ocr.StripExtractor
-import com.sorcerycompendium.compendium.scanner.stability.StabilityGate
+import com.sadkinglabs.compendium.scanner.camera.TitleStripAnalyzer
+import com.sadkinglabs.compendium.scanner.match.MatchResult
+import com.sadkinglabs.compendium.scanner.match.Norm
+import com.sadkinglabs.compendium.scanner.model.Phase
+import com.sadkinglabs.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.model.ScanKind
+import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
+import com.sadkinglabs.compendium.scanner.ocr.Extraction
+import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
+import com.sadkinglabs.compendium.scanner.stability.StabilityGate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

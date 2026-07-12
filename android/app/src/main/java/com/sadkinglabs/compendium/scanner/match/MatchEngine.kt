@@ -1,6 +1,6 @@
-package com.sorcerycompendium.compendium.scanner.match
+package com.sadkinglabs.compendium.scanner.match
 
-import com.sorcerycompendium.compendium.scanner.model.SetRef
+import com.sadkinglabs.compendium.scanner.model.SetRef
 import java.text.Normalizer
 import java.util.Locale
 import kotlin.math.abs

@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner.ocr
+package com.sadkinglabs.compendium.scanner.ocr
 
 import com.google.mlkit.vision.text.Text
 

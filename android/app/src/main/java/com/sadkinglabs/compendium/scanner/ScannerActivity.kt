@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner
+package com.sadkinglabs.compendium.scanner
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -18,10 +18,10 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.getcapacitor.JSObject
-import com.sorcerycompendium.compendium.scanner.model.Phase
-import com.sorcerycompendium.compendium.scanner.model.Recognition
-import com.sorcerycompendium.compendium.scanner.ui.CompendiumScannerTheme
-import com.sorcerycompendium.compendium.scanner.ui.ScannerScreen
+import com.sadkinglabs.compendium.scanner.model.Phase
+import com.sadkinglabs.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.ui.CompendiumScannerTheme
+import com.sadkinglabs.compendium.scanner.ui.ScannerScreen
 
 /**
  * The full-screen scanner. A plain ComponentActivity hosting Compose; it requests the

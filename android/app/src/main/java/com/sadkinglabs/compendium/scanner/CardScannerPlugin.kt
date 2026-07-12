@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner
+package com.sadkinglabs.compendium.scanner
 
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -7,9 +7,9 @@ import com.getcapacitor.Plugin
 import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
-import com.sorcerycompendium.compendium.scanner.match.CardIndex
-import com.sorcerycompendium.compendium.scanner.match.Catalog
-import com.sorcerycompendium.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.match.CardIndex
+import com.sadkinglabs.compendium.scanner.match.Catalog
+import com.sadkinglabs.compendium.scanner.match.Matcher
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 

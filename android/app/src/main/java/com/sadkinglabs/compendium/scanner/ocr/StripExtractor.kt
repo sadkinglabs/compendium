@@ -1,11 +1,11 @@
-package com.sorcerycompendium.compendium.scanner.ocr
+package com.sadkinglabs.compendium.scanner.ocr
 
 import android.graphics.Bitmap
 import android.graphics.Rect
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognizer
-import com.sorcerycompendium.compendium.scanner.model.GuideGeometry
+import com.sadkinglabs.compendium.scanner.model.GuideGeometry
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 

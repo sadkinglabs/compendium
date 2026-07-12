@@ -1,10 +1,10 @@
-package com.sorcerycompendium.compendium.scanner.ui
+package com.sadkinglabs.compendium.scanner.ui
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import com.sorcerycompendium.compendium.scanner.model.ScanKind
+import com.sadkinglabs.compendium.scanner.model.ScanKind
 
 // Compendium's black + gold identity, mapped onto a Material 3 dark scheme.
 private val Gold = Color(0xFFDCB86F)

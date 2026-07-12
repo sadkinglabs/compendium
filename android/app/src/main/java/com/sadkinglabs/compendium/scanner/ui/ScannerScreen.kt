@@ -1,4 +1,4 @@
-package com.sorcerycompendium.compendium.scanner.ui
+package com.sadkinglabs.compendium.scanner.ui
 
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -28,9 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.sorcerycompendium.compendium.scanner.ScannerViewModel
-import com.sorcerycompendium.compendium.scanner.camera.CameraController
-import com.sorcerycompendium.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.ScannerViewModel
+import com.sadkinglabs.compendium.scanner.camera.CameraController
+import com.sadkinglabs.compendium.scanner.model.Recognition
 import kotlinx.coroutines.launch
 
 /**

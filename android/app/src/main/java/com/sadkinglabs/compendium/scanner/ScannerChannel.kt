@@ -1,7 +1,7 @@
-package com.sorcerycompendium.compendium.scanner
+package com.sadkinglabs.compendium.scanner
 
 import com.getcapacitor.JSObject
-import com.sorcerycompendium.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.match.Matcher
 import java.util.concurrent.ConcurrentHashMap
 
 /**

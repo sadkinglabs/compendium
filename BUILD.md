@@ -25,7 +25,7 @@ npm run cap:open     # opens the project in Android Studio
 
 Then in Android Studio: **Build → Build APK** (or Run on a device/emulator).
 
-- App id: `com.sorcerycompendium.compendium`
+- App id: `com.sadkinglabs.compendium`
 - Native plugins: SQLite, App (back button), Filesystem, Haptics, Preferences,
   Share, Status Bar.
 

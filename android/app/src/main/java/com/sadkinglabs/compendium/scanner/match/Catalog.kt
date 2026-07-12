@@ -1,7 +1,7 @@
-package com.sorcerycompendium.compendium.scanner.match
+package com.sadkinglabs.compendium.scanner.match
 
 import com.getcapacitor.JSArray
-import com.sorcerycompendium.compendium.scanner.model.SetRef
+import com.sadkinglabs.compendium.scanner.model.SetRef
 
 /** Parses the JS-supplied catalog array (`[{id,name,isSite,sets:[{name,code}]}]`)
  *  into [CardRef]s. `sets` is optional; missing/blank codes are dropped. */

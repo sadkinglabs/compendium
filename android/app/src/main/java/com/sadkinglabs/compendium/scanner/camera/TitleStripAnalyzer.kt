@@ -1,11 +1,11 @@
-package com.sorcerycompendium.compendium.scanner.camera
+package com.sadkinglabs.compendium.scanner.camera
 
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import com.sorcerycompendium.compendium.scanner.ocr.BarcodeReader
-import com.sorcerycompendium.compendium.scanner.ocr.Extraction
-import com.sorcerycompendium.compendium.scanner.ocr.FrameConverter
-import com.sorcerycompendium.compendium.scanner.ocr.StripExtractor
+import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
+import com.sadkinglabs.compendium.scanner.ocr.Extraction
+import com.sadkinglabs.compendium.scanner.ocr.FrameConverter
+import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

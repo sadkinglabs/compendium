@@ -1,6 +1,6 @@
-package com.sorcerycompendium.compendium.scanner.stability
+package com.sadkinglabs.compendium.scanner.stability
 
-import com.sorcerycompendium.compendium.scanner.match.CardRef
+import com.sadkinglabs.compendium.scanner.match.CardRef
 
 /**
  * Anti-flicker lock. Requires the SAME confident card id over [minStreak] consecutive
