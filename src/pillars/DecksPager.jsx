@@ -10,7 +10,6 @@ import {
 } from '../store/deckRepository.js';
 import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
-import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
 import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
 import { ShuffleIcon } from '../components/icons.jsx';
@@ -107,7 +106,8 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   }
   async function actShareImage() {
     flash('Building image…', 8000);
-    try { await shareDeckPoster(deckOpen.id); flash('Image ready'); }
+    // The poster renderer (canvas + wrap/glyph code) is a cold path - load on tap.
+    try { const { shareDeckPoster } = await import('../store/deckPoster.js'); await shareDeckPoster(deckOpen.id); flash('Image ready'); }
     catch { flash('Could not build image'); }
   }
   async function actClearLog() {

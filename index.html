@@ -7,9 +7,38 @@
   <title>Compendium</title>
   <!-- Fonts are self-hosted (src/theme/fonts.css) and bundled at build time so the
        app is fully offline. No external font requests. -->
+  <!-- Instant splash: painted from static HTML before the JS bundle parses (which
+       is ~hundreds of ms on a mid-range phone), so the screen is never blank.
+       React renders into #root and replaces this on mount - no JS teardown needed.
+       Uses Georgia (always available) so it needs no font load itself. -->
+  <style>
+    #boot-splash {
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+      background: radial-gradient(120% 80% at 50% 42%, #120d09 0%, #0a0705 60%, #000 100%);
+      font-family: Georgia, 'Times New Roman', serif;
+    }
+    #boot-splash .mark {
+      width: 34px; height: 34px; transform: rotate(45deg);
+      border: 2px solid rgba(203, 167, 95, .5); border-radius: 6px;
+      box-shadow: 0 0 26px rgba(203, 167, 95, .22);
+      animation: boot-pulse 1.6s ease-in-out infinite;
+    }
+    #boot-splash .word {
+      color: #cba75f; font-size: 15px; letter-spacing: .42em; text-indent: .42em;
+      text-transform: uppercase; opacity: .85;
+    }
+    @keyframes boot-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { #boot-splash .mark { animation: none; } }
+  </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div id="boot-splash">
+      <div class="mark"></div>
+      <div class="word">Compendium</div>
+    </div>
+  </div>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
