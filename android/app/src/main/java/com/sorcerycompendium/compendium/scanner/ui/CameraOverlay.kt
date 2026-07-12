@@ -40,8 +40,8 @@ import com.sorcerycompendium.compendium.scanner.model.GuideGeometry
 import com.sorcerycompendium.compendium.scanner.model.Phase
 import com.sorcerycompendium.compendium.scanner.model.RectFraction
 
-private val Purple = Color(0xFF9C6BE0)   // searching
-private val Gold = Color(0xFFE8B84B)     // a card being confirmed - "getting there"
+private val Purple = Color(0xFFA08CC0)   // searching  - Manuscript violet (160,140,192)
+private val Gold = Color(0xFFDCB86F)      // a card being confirmed - "getting there"
 
 /**
  * Card-shaped alignment guide (rounded corners) drawn in the SAME letterboxed frame

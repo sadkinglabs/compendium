@@ -5,6 +5,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -99,6 +100,7 @@ fun RecognitionCard(
             .semantics { contentDescription = "$eyebrow: $title" },
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, Color(0x3DDCB86F)),   // GothicSheet gilt hairline (gold @ .24)
         tonalElevation = 6.dp,
         shadowElevation = 16.dp,
     ) {
