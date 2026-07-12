@@ -421,16 +421,16 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
       <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
 
-      {/* Read = filter your owned cards. Add = a + menu of the other add tools
-          (the whole catalogue is already on screen with per-card +). */}
-      {editMode ? (
-        <Fab variant="lib" label="Add tools" icon={<FabGlyph kind="add" />} badge={activeCount} items={[
-          { label: 'Filter the library', icon: <FabGlyph kind="filters" />, onClick: () => setFilterOpen(true) },
-          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+      {/* Filter is its own FAB and never moves - the docked spot beside the search
+          bar, in BOTH modes. Adding by search happens naturally in that bar, so in
+          edit mode a SECOND FAB rises above it with just the tools search can't do:
+          camera + text import. The one place in the app with two stacked FABs. */}
+      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
+      {editMode && (
+        <Fab variant="lib" label="Add tools" icon={<FabGlyph kind="add" />} className="fab-stacked" items={[
           { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
+          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
         ]} />
-      ) : (
-        <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
       )}
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
