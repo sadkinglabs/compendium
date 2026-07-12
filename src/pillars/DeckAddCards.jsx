@@ -9,6 +9,7 @@ import CardSheet from '../components/CardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { Frost } from '../components/CollectionCardViews.jsx';
 import { ThresholdPips, Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid } from '../components/ui.jsx';
+import { SwordIcon } from '../components/icons.jsx';
 import { thresholdRuns } from '../store/cardArt.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
@@ -173,7 +174,7 @@ function EditorRow({ card, qty, quickAdd, rarityOn, attackOn, onStep, onOpen }) 
         {runs.length > 0 && <ThresholdPips runs={runs} size={12} />}
         {card.cost != null && <span title="Mana cost" style={{ font: "600 14px/1 var(--f-display)", color: '#c9a8e8' }}>{card.cost}</span>}
         {attackOn && card.attack != null && (
-          <span title="Attack" style={{ display: 'inline-flex', alignItems: 'center', gap: 3, font: "600 12px/1 var(--f-mono)", color: '#a99a80', border: '1px solid rgba(74,60,34,.7)', borderRadius: 9, padding: '2px 7px' }}>⚔ {card.attack}</span>
+          <span title="Attack" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: "600 12px/1 var(--f-mono)", color: '#a99a80', border: '1px solid rgba(74,60,34,.7)', borderRadius: 9, padding: '2px 7px' }}><SwordIcon width={11} height={11} />{card.attack}</span>
         )}
       </span>
     </div>

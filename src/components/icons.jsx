@@ -17,6 +17,10 @@ export const CloseIcon = svg(<><line x1="18" y1="6" x2="6" y2="18" /><line x1="6
 export const CopyIcon = svg(<><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>);
 export const GearIcon = svg(<><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" /></>);
 export const ChevronIcon = svg(<polyline points="6 9 12 15 18 9" />);
+export const StarIcon = svg(<polygon points="12 2 15.1 8.6 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.6 12 2" />, { fill: 'currentColor', stroke: 'none' });
+export const StarOutlineIcon = svg(<polygon points="12 2 15.1 8.6 22 9.3 17 14.1 18.2 21 12 17.8 5.8 21 7 14.1 2 9.3 8.9 8.6 12 2" />);
+export const SwordIcon = svg(<><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><line x1="13" y1="19" x2="19" y2="13" /><line x1="16" y1="16" x2="20" y2="20" /><line x1="19" y1="21" x2="21" y2="19" /></>);
+export const ShuffleIcon = svg(<><polyline points="16 3 21 3 21 8" /><line x1="4" y1="20" x2="21" y2="3" /><polyline points="21 16 21 21 16 21" /><line x1="15" y1="15" x2="21" y2="21" /><line x1="4" y1="4" x2="9" y2="9" /></>);
 
 // Map the legacy Unicode glyph strings used across IconButton call sites to the
 // house SVG, so existing call sites upgrade without being individually edited.
@@ -24,4 +28,5 @@ export const GLYPH_ICON = {
   '✎': EditIcon, '✕': CloseIcon, '✗': CloseIcon, '×': CloseIcon,
   '+': PlusIcon, '＋': PlusIcon, '−': MinusIcon, '-': MinusIcon,
   '✓': CheckIcon, '⧉': CopyIcon, '⚙': GearIcon, '⌄': ChevronIcon,
+  '★': StarIcon, '☆': StarOutlineIcon,
 };

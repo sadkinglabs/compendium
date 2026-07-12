@@ -13,6 +13,7 @@ import { deckMatchCount } from '../store/playRepository.js';
 import { shareDeckPoster } from '../store/deckPoster.js';
 import { DeckCard } from './Decks.jsx';
 import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
+import { ShuffleIcon } from '../components/icons.jsx';
 import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
@@ -21,7 +22,7 @@ import Sheet from '../components/Sheet.jsx';
 import QRCode from '../components/QRCode.jsx';
 import { buildDeckShare } from '../store/deckShare.js';
 import { launchScanner } from '../cardScanner.js';
-import { confirmAction } from '../feedback.js';
+import { toast, confirmAction } from '../feedback.js';
 import DeckDashboard from './DeckDashboard.jsx';
 import '../theme/deckpager.css';
 
@@ -47,9 +48,9 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   const [exportOpen, setExportOpen] = useState(false);
   const [spreadOpen, setSpreadOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-  const [toast, setToast] = useState('');
-  const toastT = useRef();
-  function flash(msg, ms = 1900) { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), ms); }
+  // Route through the app-wide toast() host (one toast system) - kept as `flash`
+  // so the many call sites + the onToast/flash props don't have to change.
+  const flash = (msg, ms) => toast(msg, ms ? { ms } : {});
 
 
   async function refresh() { setDecks(await listDecks()); }
@@ -86,7 +87,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   async function actFavourite() {
     await toggleStar(deckOpen.id);
     const d = await getDeck(deckOpen.id); setMeta(d);
-    flash(d.starred ? '★ Favourited' : '☆ Unfavourited');
+    flash(d.starred ? 'Favourited' : 'Unfavourited');
     refresh();   // library re-sorts starred-first
   }
   async function actRename(name) {
@@ -241,7 +242,6 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       <ExportSheet open={exportOpen} deckId={deckOpen?.id} onClose={() => setExportOpen(false)} flash={flash} />
       <DeckSpreadSheet open={spreadOpen} deckId={deckOpen?.id} onClose={() => setSpreadOpen(false)} />
       <RenameSheet open={renameOpen} initial={deckOpen?.name || ''} onClose={() => setRenameOpen(false)} onSave={actRename} />
-      <div className={`arc a-toast${toast ? ' show' : ''}`}>{toast}</div>
     </div>
   );
 }
@@ -379,7 +379,7 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
       footer={
         <div className="ds-toggle-wrap">
           <button className={`ds-view-btn${!shuf ? ' on' : ''}`} onClick={() => setShuf(null)}>Deck</button>
-          <button className={`ds-view-btn${shuf ? ' on' : ''}`} onClick={doShuffle}>⤨ Shuffle</button>
+          <button className={`ds-view-btn${shuf ? ' on' : ''}`} onClick={doShuffle} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><ShuffleIcon width={13} height={13} />Shuffle</button>
         </div>
       }>
       {!src ? <Loading />

@@ -12,6 +12,7 @@ import { getCard } from '../store/codexRepository.js';
 import { changeQty, deckQty, getDeck } from '../store/deckRepository.js';
 import { thresholdRuns } from '../store/cardArt.js';
 import { haptic } from '../native.js';
+import { toast } from '../feedback.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
 // Never render an em dash (app-wide rule) - swap for a spaced hyphen.
@@ -41,8 +42,6 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
   const [c, setC] = useState(null);
   const [counts, setCounts] = useState({ main: 0, collection: 0 });
   const [deckName, setDeckName] = useState('');
-  const [toast, setToast] = useState('');
-  const toastT = useRef();
 
   useEffect(() => { if (cardId) { setC(null); getCard(cardId).then(setC); } }, [cardId]);
   useEffect(() => {
@@ -60,8 +59,6 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
     return () => { alive = false; };
   }, [c, deckId]);
 
-  function showToast(msg) { setToast(msg); clearTimeout(toastT.current); toastT.current = setTimeout(() => setToast(''), 1700); }
-
   // step(field, delta) - field is 'main' (Spellbook/Atlas) or 'collection'; the
   // CountCol steppers call this. Optimistic, reverting + toasting on rejection.
   async function step(which, delta) {
@@ -74,15 +71,14 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
     const res = await changeQty(deckId, zone, c, delta);
     if (!res.ok) {
       setCounts((m) => ({ ...m, [which]: prev }));                 // revert on rejection
-      showToast(res.reason || 'Not allowed');
+      toast(res.reason || 'Not allowed', { tone: 'danger' });
       return;
     }
-    showToast(delta > 0 ? `Added to ${label}` : `Removed from ${label}`);
+    toast(delta > 0 ? `Added to ${label}` : `Removed from ${label}`);
     onChange?.();
   }
 
   return (
-    <>
       <GothicSheet open={!!cardId} onClose={onClose} label="Card">
         {!c ? <Loading /> : (() => {
           const subs = jp(c.sub_types, []) || [];
@@ -161,7 +157,5 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
           );
         })()}
       </GothicSheet>
-      <div className={`arc a-toast${toast ? ' show' : ''}`}>{toast}</div>
-    </>
   );
 }

@@ -141,8 +141,8 @@
 .arc .sheet-codex-link:active { background:rgba(220,184,111,.14); }
 
 /* Toast (Arcanum #toast) */
-.arc.a-toast { position:fixed; top:calc(env(safe-area-inset-top,0px) + 16px); left:50%; transform:translateX(-50%) translateY(-16px); background:linear-gradient(180deg,#1a1712,#0e0c0a); border:1px solid rgba(220,184,111,.28); border-radius:20px; padding:9px 18px; font:500 13px/1 'Hanken Grotesk',sans-serif; color:#efe7d8; z-index:999; opacity:0; transition:opacity .22s, transform .22s; pointer-events:none; white-space:nowrap; box-shadow:0 4px 20px rgba(0,0,0,.5); }
-.arc.a-toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+/* The legacy .a-toast was retired - all toasts now go through the app-wide
+   toast() -> ToastHost / .cx-toast (one toast system). */
 
 /* ── Refine (filter + sort) sheet - Arcanum #search-sheet (L414-490). ── */
 /* Refine sheet - re-homed onto the app-standard black sheet chassis; the deck
