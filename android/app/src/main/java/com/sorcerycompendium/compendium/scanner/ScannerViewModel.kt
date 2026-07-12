@@ -81,7 +81,7 @@ class ScannerViewModel : ViewModel() {
         }
         val crossed = gate.onMatch(best?.card)
         if (crossed != null) {
-            val rec = Recognition(ScanKind.CARD, crossed.name, cardId = crossed.id)
+            val rec = Recognition(ScanKind.CARD, crossed.name, cardId = crossed.id, sets = crossed.sets)
             locked = rec
             _sheet.value = rec                        // sticky sheet
             _lockEvent.value = _lockEvent.value + 1   // gold flash + haptic + reveal

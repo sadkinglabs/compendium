@@ -7,7 +7,11 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,7 +24,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -56,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sorcerycompendium.compendium.scanner.model.Recognition
 import com.sorcerycompendium.compendium.scanner.model.ScanKind
+import com.sorcerycompendium.compendium.scanner.model.SetRef
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -75,7 +83,7 @@ fun RecognitionCard(
     onSearchCodex: () -> Unit,
     onAddCollection: () -> Unit,
     onAddWishlist: () -> Unit,
-    onSaveCollection: (Int) -> Unit,
+    onSaveCollection: (Int, String?) -> Unit,
     onSaveDeck: () -> Unit,
     onImportMatch: () -> Unit,
     onDismiss: () -> Unit,
@@ -86,6 +94,9 @@ fun RecognitionCard(
     val reveal = remember(key) { Animatable(0f) }
     // Collection-mode quantity, reset for each newly recognised card.
     var qty by remember(key) { mutableStateOf(1) }
+    // Collection-mode set choice: a single-set card auto-selects; a reprint starts
+    // null (a pick is required); an unknown card has no sets (files Unspecified).
+    var selectedSet by remember(key) { mutableStateOf(if (rec.sets.size == 1) rec.sets[0].code else null) }
     LaunchedEffect(key) {
         reveal.snapTo(0f)
         reveal.animateTo(1f, spring(dampingRatio = 0.52f, stiffness = Spring.StiffnessMediumLow))
@@ -126,15 +137,30 @@ fun RecognitionCard(
             Spacer(Modifier.height(18.dp))
             when (rec.kind) {
                 ScanKind.CARD -> if (collectionMode) {
-                    // Focused build-your-collection loop: pick how many copies, then add.
+                    // Which printing? One set files automatically (shown as a pill); a card
+                    // reprinted across sets prompts a per-card pick before you can add.
+                    if (rec.sets.isNotEmpty()) {
+                        if (rec.sets.size > 1) {
+                            Text("WHICH PRINTING?", color = accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        SetChips(rec.sets, selectedSet, single = rec.sets.size == 1, accent = accent, onPick = { selectedSet = it })
+                        Spacer(Modifier.height(16.dp))
+                    }
                     QtyStepper(qty, accent, onDec = { if (qty > 1) qty -= 1 }, onInc = { if (qty < 99) qty += 1 })
                     Spacer(Modifier.height(14.dp))
+                    val effectiveSet = when {
+                        rec.sets.size == 1 -> rec.sets[0].code
+                        rec.sets.size > 1 -> selectedSet
+                        else -> null
+                    }
+                    val ready = rec.sets.size <= 1 || selectedSet != null
                     PrimaryAction(
                         if (qty == 1) "Add 1 copy" else "Add $qty copies",
-                        Icons.Filled.Add, accent,
-                    ) { onSaveCollection(qty) }
+                        Icons.Filled.Add, accent, enabled = ready,
+                    ) { onSaveCollection(qty, effectiveSet) }
                 } else {
-                    PrimaryAction("Search Codex", Icons.Filled.Search, accent, onSearchCodex)
+                    PrimaryAction("Search Codex", Icons.Filled.Search, accent, onClick = onSearchCodex)
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         OutlinedButton(onClick = onAddCollection, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
@@ -149,8 +175,8 @@ fun RecognitionCard(
                         }
                     }
                 }
-                ScanKind.DECK -> PrimaryAction("Save to My Decks", Icons.Filled.Add, accent, onSaveDeck)
-                ScanKind.MATCH -> PrimaryAction("Review & import", Icons.Filled.PlayArrow, accent, onImportMatch)
+                ScanKind.DECK -> PrimaryAction("Save to My Decks", Icons.Filled.Add, accent, onClick = onSaveDeck)
+                ScanKind.MATCH -> PrimaryAction("Review & import", Icons.Filled.PlayArrow, accent, onClick = onImportMatch)
             }
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) {
@@ -160,17 +186,50 @@ fun RecognitionCard(
     }
 }
 
-/** The full-width primary action, filled in the result's type accent. */
+/** The full-width primary action, filled in the result's type accent. Disabled
+ *  (greyed) until [enabled] - used to gate "Add" on a set pick for reprints. */
 @Composable
-private fun PrimaryAction(label: String, icon: ImageVector, accent: Color, onClick: () -> Unit) {
+private fun PrimaryAction(label: String, icon: ImageVector, accent: Color, enabled: Boolean = true, onClick: () -> Unit) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
         colors = ButtonDefaults.buttonColors(containerColor = accent, contentColor = OnPillar),
     ) {
         Icon(icon, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text(label)
+    }
+}
+
+/** Set chooser for collection mode: a scrollable row of set pills. A single-set
+ *  card shows one filled, non-interactive pill (auto-selected); a reprint shows
+ *  pick-one pills that fill when chosen. */
+@Composable
+private fun SetChips(sets: List<SetRef>, selected: String?, single: Boolean, accent: Color, onPick: (String) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        for (s in sets) {
+            val on = single || s.code == selected
+            val mod = Modifier
+                .clip(CircleShape)
+                .then(if (single) Modifier else Modifier.clickable { onPick(s.code) })
+                .background(if (on) accent else Color.Transparent)
+                .border(1.dp, if (on) accent else accent.copy(alpha = 0.4f), CircleShape)
+                .heightIn(min = 40.dp)
+                .padding(horizontal = 16.dp)
+                .wrapContentHeight(Alignment.CenterVertically)
+            Text(
+                s.name.uppercase(),
+                modifier = mod,
+                color = if (on) OnPillar else accent,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 1.sp,
+            )
+        }
     }
 }
 

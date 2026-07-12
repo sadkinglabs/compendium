@@ -47,7 +47,7 @@ fun ScannerScreen(
     collectionMode: Boolean,
     onSearchCodex: (Recognition) -> Unit,
     onAdd: (Recognition, String) -> Unit,
-    onSaveCollection: (Recognition, Int) -> Unit,
+    onSaveCollection: (Recognition, Int, String?) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
     onImportMatch: (Recognition) -> Unit,
     onDismissSheet: () -> Unit,
@@ -100,8 +100,8 @@ fun ScannerScreen(
                     onAdd(rec, "wishlist")
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
                 },
-                onSaveCollection = { qty ->
-                    onSaveCollection(rec, qty)
+                onSaveCollection = { qty, set ->
+                    onSaveCollection(rec, qty, set)
                     scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
                     onDismissSheet()   // keep scanning: drop the sheet and resume
                 },

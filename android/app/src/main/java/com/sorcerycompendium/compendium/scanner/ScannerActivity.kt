@@ -84,7 +84,7 @@ class ScannerActivity : ComponentActivity() {
                     collectionMode = collectionMode,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
                     onAdd = { rec, action -> onAdd(rec, action) },
-                    onSaveCollection = { rec, qty -> onSaveCollection(rec, qty) },
+                    onSaveCollection = { rec, qty, set -> onSaveCollection(rec, qty, set) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
                     onDismissSheet = { vm.onDismiss() },
@@ -108,12 +108,13 @@ class ScannerActivity : ComponentActivity() {
         )
     }
 
-    /** Collection mode: emit +qty owned for the recognised card. The scanner stays
-     *  open (the screen dismisses the sheet) so the build-your-collection loop keeps going. */
-    private fun onSaveCollection(rec: Recognition, qty: Int) {
-        ScannerChannel.onEvent?.invoke(
-            JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty),
-        )
+    /** Collection mode: emit +qty owned for the recognised card, onto the chosen
+     *  printing (set code) when one was picked/auto-selected. The scanner stays open
+     *  (the screen dismisses the sheet) so the build-your-collection loop keeps going. */
+    private fun onSaveCollection(rec: Recognition, qty: Int, set: String?) {
+        val js = JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty)
+        if (set != null) js.put("set", set)
+        ScannerChannel.onEvent?.invoke(js)
     }
 
     /** A shared deck / match QR: hand the url to JS (which decodes + imports) and exit. */

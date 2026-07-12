@@ -20,14 +20,18 @@ const CardScanner = registerPlugin('CardScanner', {
   },
 });
 
-// The catalog the native matcher indexes: id + name + orientation. ORDER BY
-// is_site, card_id keeps reprints adjacent so the native de-dupe-by-name is
-// deterministic (prevents the identical-name ambiguity deadlock).
+// The catalog the native matcher indexes: id + name + orientation + sets (for the
+// collection-mode printing picker). ORDER BY is_site, card_id keeps reprints adjacent
+// so the native de-dupe-by-name is deterministic (prevents the identical-name deadlock).
 async function catalogForScan() {
-  const rows = await query('SELECT card_id, name, is_site FROM cards ORDER BY is_site ASC, card_id ASC;');
+  const rows = await query('SELECT card_id, name, is_site, sets FROM cards ORDER BY is_site ASC, card_id ASC;');
   return rows
     .filter((r) => r.card_id && r.name)
-    .map((r) => ({ id: r.card_id, name: r.name, isSite: !!r.is_site }));
+    .map((r) => {
+      let sets = [];
+      try { sets = JSON.parse(r.sets || '[]'); } catch { /* keep [] */ }
+      return { id: r.card_id, name: r.name, isSite: !!r.is_site, sets };
+    });
 }
 
 /**
@@ -70,9 +74,12 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mod
     try {
       const n = Math.max(1, ev.qty || 1);   // collection mode picks a quantity; universal +1s
       if (ev.action === 'collection') {
-        const set = soleSet(ev.cardId);
+        // Collection mode sends the chosen printing (ev.set: auto for single-set,
+        // user-picked for a reprint). Universal +1 sends none -> auto-file if the
+        // card is single-set, else Unspecified.
+        const set = ev.set || soleSet(ev.cardId);
         if (set) await addOwnedCopiesInSet(ev.cardId, set, n);
-        else await addOwnedCopies(ev.cardId, n);   // multi-set / unknown -> Unspecified
+        else await addOwnedCopies(ev.cardId, n);   // multi-set + no pick -> Unspecified
       } else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, n);
     } catch { failed += 1; }
   });
