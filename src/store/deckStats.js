@@ -7,10 +7,10 @@
 // tokens.css): Air grey, Earth brown, Fire red, Water blue, Multi gold; rarity
 // = Ordinary silver, Exceptional blue, Elite purple, Unique gold (the same hues
 // the "Show Rarity Colours" toggle paints card names with).
-export const EL_CHART = { Air: '#c4cdd6', Earth: '#b35c33', Fire: '#e0623f', Water: '#4aa3d4', Multi: '#d4a83a', Neutral: '#c79ad0' };
+export const EL_CHART = { Air: '#c4cdd6', Earth: '#b35c33', Fire: '#e0623f', Water: '#4aa3d4', Multi: '#d4a83a', Neutral: '#a08cc0' };
 export const EL_GRAD = {
   Air: ['#c4cdd6', '#5f6b76'], Earth: ['#b35c33', '#5f2e1a'], Fire: ['#e0623f', '#7a2a1c'],
-  Water: ['#4aa3d4', '#255777'], Multi: ['#d4a83a', '#7a5e1e'], Neutral: ['#c79ad0', '#6a4a78'],
+  Water: ['#4aa3d4', '#255777'], Multi: ['#d4a83a', '#7a5e1e'], Neutral: ['#a08cc0', '#6a5a80'],
 };
 export const RAR_CHART = { Ordinary: '#c8c8c8', Exceptional: '#4fc3f7', Elite: '#ab47bc', Unique: '#ffd54f' };
 export const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];

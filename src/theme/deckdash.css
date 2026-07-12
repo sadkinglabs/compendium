@@ -191,7 +191,7 @@
 .arc .ds-odds-lbl { width: 86px; flex-shrink: 0; font: 400 15px/1 var(--f-read); color: #d8cebb; }
 .arc .ds-odds-cnt { font: 400 13.5px/1 var(--f-read); color: #6b6254; margin-left: 6px; }
 .arc .ds-oddsbar-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; }
-.arc .ds-oddsbar-fill { height: 100%; background: linear-gradient(90deg,#7a47b8,#c79af0); border-radius: 3px; }
+.arc .ds-oddsbar-fill { height: 100%; background: linear-gradient(90deg,#a08cc0,#c9a8e8); border-radius: 3px; }
 .arc .ds-odds-pct { width: 44px; text-align: right; font: 600 15px/1 var(--f-display); color: #c9a8e8; }
 
 /* Atlas threshold rows + status. */
