@@ -92,8 +92,10 @@ fun ScannerScreen(
                 rec = rec,
                 collectionMode = collectionMode,
                 onSearchCodex = { onSearchCodex(rec) },
-                onAddCollection = {
-                    onAdd(rec, "collection")
+                onAddCollection = { set ->
+                    // Universal-mode quick +1: files onto the chosen printing (single-set
+                    // auto, reprint via the picker), then stays open to keep scanning.
+                    onSaveCollection(rec, 1, set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
                 },
                 onAddWishlist = {
