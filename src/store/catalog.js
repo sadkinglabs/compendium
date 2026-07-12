@@ -2,6 +2,7 @@
 // FAQs, link graph) from Lexicum's dataset into the catalog tables on first run.
 // Idempotent: keyed by CATALOG_VERSION in catalog_meta; re-seed clears + reloads.
 import { query, tx, persist } from './db.js';
+import { invalidateCatalog } from './catalogCache.js';
 
 // Native-safe bulk insert. Each row becomes ONE parameterized statement bound by
 // '?' placeholders - never inline SQL literals. This is critical: sql.js (web)
@@ -89,6 +90,7 @@ export async function seedCatalogIfNeeded() {
 
   await tx(statements);
   await persist();
+  invalidateCatalog();   // the parsed in-memory cache must not outlive a re-seed
 
   return { seeded: true, counts: await getCatalogCounts() };
 }

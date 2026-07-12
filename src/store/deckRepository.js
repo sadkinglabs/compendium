@@ -2,6 +2,7 @@
 // (spellbook/atlas/collection), deck avatar, rarity copy-limits, stats, and the
 // Curiosa/Markdown import-export remapped. All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
+import { getCatalog } from './catalogCache.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso, slugify } from './ids.js';
 
@@ -330,20 +331,17 @@ export async function getDeckCards(deckId) {
 /* ---------------- add-flow pool ---------------- */
 
 const _cmp = (a, op, b) => op === '=' ? a === b : op === '<=' ? a <= b : a >= b;
-const _els = (c) => jp(c.elements, []).filter((x) => x && x.toLowerCase() !== 'none');
-const _totalTh = (th) => (th.air || 0) + (th.earth || 0) + (th.fire || 0) + (th.water || 0);
 
-/** Distinct set names / artists for the Refine sheet's Set + Artist filters. */
+/** Distinct set names / artists for the Refine sheet's Set + Artist filters.
+ *  Both derive from the immutable catalog, so they read the parsed cache. */
 export async function getSets() {
-  const rows = await query('SELECT sets FROM cards WHERE sets IS NOT NULL;');
   const s = new Set();
-  for (const r of rows) for (const x of jp(r.sets, [])) if (x?.name) s.add(x.name);
+  for (const c of await getCatalog()) for (const x of c._sets) if (x?.name) s.add(x.name);
   return [...s].sort();
 }
 export async function getArtists() {
-  const rows = await query('SELECT variants FROM cards WHERE variants IS NOT NULL;');
   const s = new Set();
-  for (const r of rows) for (const v of jp(r.variants, [])) if (v?.artist) s.add(v.artist);
+  for (const c of await getCatalog()) for (const v of c._variants) if (v?.artist) s.add(v.artist);
   return [...s].sort();
 }
 
@@ -361,30 +359,37 @@ export async function getPool({
   q = '', els = [], types = [], rarities = [], sets = [], multi = false,
   thByEl = {}, totalTh = null, costCmp = null, artist = '', sort = [],
 } = {}) {
-  let sql = 'SELECT card_id, name, type, sub_types, cost, rarity, elements, thresholds, sets, variants, image_slug, is_site, rules_text, attack, defence, life FROM cards';
-  const where = [], params = [];
-  if (q) { where.push('lower(name) LIKE ?'); params.push(`%${q.toLowerCase()}%`); }
-  if (types.length) { where.push(`type IN (${types.map(() => '?').join(',')})`); params.push(...types); }
-  if (rarities.length) { where.push(`rarity IN (${rarities.map(() => '?').join(',')})`); params.push(...rarities); }
-  if (where.length) sql += ' WHERE ' + where.join(' AND ');
-  let rows = await query(sql + ';', params);
+  const all = await getCatalog();   // parsed once; rows carry _th/_els/_sets/etc.
+  const ql = q ? q.toLowerCase() : null;
+  const typeSet = types.length ? new Set(types) : null;
+  const raritySet = rarities.length ? new Set(rarities) : null;
+  const setSet = sets.length ? new Set(sets) : null;
+  const elCmps = [];   // active per-element threshold comparators
+  for (const el of ['air', 'earth', 'fire', 'water']) { const f = thByEl[el]; if (f && f.val != null) elCmps.push([el, f.op, f.val]); }
 
-  if (els.length) rows = rows.filter((c) => { const th = jp(c.thresholds, {}); return els.some((e) => (th[e] || 0) > 0); });
-  if (multi) rows = rows.filter((c) => _els(c).length > 1);
-  if (sets.length) rows = rows.filter((c) => jp(c.sets, []).some((s) => sets.includes(s.name)));
-  if (artist) rows = rows.filter((c) => jp(c.variants, []).some((v) => v.artist === artist));
-  for (const el of ['air', 'earth', 'fire', 'water']) {
-    const f = thByEl[el]; if (f && f.val != null) rows = rows.filter((c) => _cmp(jp(c.thresholds, {})[el] || 0, f.op, f.val));
-  }
-  if (totalTh && totalTh.val != null) rows = rows.filter((c) => _cmp(_totalTh(jp(c.thresholds, {})), totalTh.op, totalTh.val));
-  if (costCmp && costCmp.val != null) rows = rows.filter((c) => _cmp(c.cost ?? 0, costCmp.op, costCmp.val));
+  // One pass over the cache, reading pre-parsed fields (no JSON.parse per row).
+  // .filter() returns a fresh array, so the sort below never mutates the cache.
+  const rows = all.filter((c) => {
+    if (ql && !c._nameLc.includes(ql)) return false;
+    if (typeSet && !typeSet.has(c.type)) return false;
+    if (raritySet && !raritySet.has(c.rarity)) return false;
+    if (els.length && !els.some((e) => (c._th[e] || 0) > 0)) return false;
+    if (multi && c._elsF.length <= 1) return false;
+    if (setSet && !c._sets.some((s) => setSet.has(s.name))) return false;
+    if (artist && !c._variants.some((v) => v.artist === artist)) return false;
+    for (const [el, op, val] of elCmps) if (!_cmp(c._th[el] || 0, op, val)) return false;
+    if (totalTh && totalTh.val != null && !_cmp(c._totalTh, totalTh.op, totalTh.val)) return false;
+    if (costCmp && costCmp.val != null && !_cmp(c.cost ?? 0, costCmp.op, costCmp.val)) return false;
+    return true;
+  });
 
-  // Multi-key sort in priority order (Arcanum: tap to add, ↑/↓ per key).
+  // Multi-key sort in priority order (Arcanum: tap to add, ↑/↓ per key). Keys are
+  // precomputed on the cached row, so the comparator does no parsing/allocation.
   const KEY = {
-    name: (c) => c.name.toLowerCase(),
+    name: (c) => c._nameLc,
     cost: (c) => c.cost ?? 0,
-    element: (c) => (_els(c)[0] || 'zzz').toLowerCase(),
-    th: (c) => _totalTh(jp(c.thresholds, {})),
+    element: (c) => c._el0,
+    th: (c) => c._totalTh,
   };
   const cmp = (k, a, b) => { const x = KEY[k](a), y = KEY[k](b); return typeof x === 'number' ? x - y : String(x).localeCompare(String(y)); };
   const list = sort.length ? sort : [{ key: 'name', dir: 'asc' }];

@@ -2,6 +2,7 @@
 // (saved, marginalia notes, highlights, collections). Every profile-scoped read
 // and write passes through activeProfileId(), so isolation is structural.
 import { query, run } from './db.js';
+import { getCatalog } from './catalogCache.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { parseQuery, cardMatchesQuery } from './cardQuery.js';   // the one shared card-search grammar
@@ -66,9 +67,7 @@ export async function getCodexEntries(scope, filters = {}) {
     const kids = await query('SELECT rule_id id, title, parent_id FROM rules WHERE parent_id IS NOT NULL ORDER BY title;');
     for (const k of kids) (subMap[k.parent_id] = subMap[k.parent_id] || []).push({ id: k.id, name: k.title, kind: 'rule' });
   }
-  const cards = wantCards
-    ? await query('SELECT card_id id, name, type, cost, image_slug, elements, thresholds, sets FROM cards;')
-    : [];
+  const cards = wantCards ? await getCatalog() : [];
   const { noted, saved } = await indicatorSets();
   const items = [
     ...rules.map((r) => ({ id: r.id, name: r.name, kind: 'rule', meta: 'Codex Article', subs: subMap[r.id] || [] })),
@@ -158,9 +157,9 @@ export async function searchCodex(q) {
   const like = needle ? `%${needle}%` : null;
   const hasScope = scopes.has.length + scopes.is.length > 0;
 
-  // Card pool - WIDE select so every rich predicate (rules_text/attack/elements/etc.)
-  // can evaluate. Mirrors the deckbuilder's getPool columns.
-  let cardRows = await query('SELECT card_id id, name, type, sub_types, rarity, elements, cost, attack, defence, life, thresholds, rules_text, sets, variants, image_slug, is_site FROM cards;');
+  // Card pool - the parsed catalog cache (rows carry every rich predicate's field
+  // plus _nameLc/_rulesLc for the substring scans below). No per-keystroke query.
+  let cardRows = await getCatalog();
   if (parsed.clauses.length) cardRows = cardRows.filter((c) => cardMatchesQuery(c, parsed));
   if (scopes.has.includes('faq')) { const fs = await faqCardSet(); cardRows = cardRows.filter((c) => fs.has(c.id)); }
   if (scopes.has.some((h) => h.startsWith('marg') || h === 'notes')) { const ms = await margSet(); cardRows = cardRows.filter((c) => ms.has(c.id)); }
@@ -177,12 +176,12 @@ export async function searchCodex(q) {
   });
   let cards = [], cardText = [];
   if (like) {
-    cards = cardRows.filter((c) => c.name.toLowerCase().includes(needle));
+    cards = cardRows.filter((c) => c._nameLc.includes(needle));
     const named = new Set(cards.map((c) => c.id));
     // text hits, grouped by type then name - "all minions with airborne" reads
     // as one run of Minions, then Auras, etc.
     cardText = cardRows
-      .filter((c) => !named.has(c.id) && (c.rules_text || '').toLowerCase().includes(needle))
+      .filter((c) => !named.has(c.id) && c._rulesLc.includes(needle))
       .sort((a, b) => (a.type || '').localeCompare(b.type || '') || a.name.localeCompare(b.name));
     cards.sort((a, b) => a.name.localeCompare(b.name));
   } else if (parsed.clauses.length || hasScope) {
