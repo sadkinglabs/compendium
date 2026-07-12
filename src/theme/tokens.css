@@ -360,7 +360,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-ov-tile { border: none; border-radius: 0; background: transparent; padding: 13px 2px 12px; text-align: center; min-height: 44px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-ov-tile + .cx-ov-tile { border-left: 1px solid rgba(74,60,34,.5); }
 .cx-ov-tile:active { background: rgba(220,184,111,.05); }
-.cx-ov-tile-val { font: 600 19px/1 var(--f-display); color: #e3c589; }
+.cx-ov-tile-val { font: 600 19px/1 var(--f-display); color: #e3c589; text-shadow: 0 0 11px rgba(220,184,111,.4); }
 .cx-ov-tile-lbl { font: 600 9px/1.2 var(--f-ui); letter-spacing: .14em; color: #8a8175; margin-top: 7px; }
 .cx-ov-sec { margin-bottom: 14px; }
 .cx-ov-sec-head { display: flex; align-items: center; gap: 10px; padding: 18px 0 8px; margin-bottom: 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }

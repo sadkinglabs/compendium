@@ -320,6 +320,8 @@ export async function overview() {
   const cnt = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
   const [savedN, notesN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('links')]);
   const hlN = (await query("SELECT COUNT(*) c FROM annotations WHERE profile_id=? AND kind='highlight';", [pid]))[0].c;
+  // Total copies owned (not distinct cards) - the "Cards collected" glance figure.
+  const cardsCollected = (await query('SELECT COALESCE(SUM(qty_owned),0) n FROM owned_cards WHERE profile_id=?;', [pid]))[0].n;
   const noteRows = await query('SELECT body,target_type,target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT ?;', [pid, OV_NOTES]);
   const bmRows = await query('SELECT target_type,target_id FROM saved WHERE profile_id=? ORDER BY created_at DESC LIMIT ?;', [pid, OV_BOOKMARKS]);
   // Resolve note + bookmark targets with the batch helper (one query per kind)
@@ -337,6 +339,7 @@ export async function overview() {
       winPct: stats.winPct,           // null until a game is decided
       saved: savedN,
       marginalia: notesN + hlN + linksN,
+      cardsCollected,
     },
     decks: { total: allDecks.length, items: allDecks.slice(0, OV_DECKS) },
     duels: { stats, items: duelItems },
