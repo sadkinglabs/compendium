@@ -285,6 +285,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [thByEl, setThByEl] = useState(() => ({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } }));
   const [totalTh, setTotalTh] = useState({ op: '>=', val: null });
   const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
+  const [powerCmp, setPowerCmp] = useState({ op: '>=', val: null });
   const [artist, setArtist] = useState('');
   const [sort, setSort] = useState([]);
   const [artistOpts, setArtistOpts] = useState([]);
@@ -303,11 +304,11 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
   async function loadPool() {
     const parsed = parseQuery(q);
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
     const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, artist, sort]);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
     setOwBySet(obs);
@@ -409,12 +410,12 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
   const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
 
-  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
+  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
   const clearAll = () => {
     setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
-    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setSort([]);
   };
 
   return (
@@ -499,7 +500,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts}
-        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp}
+        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         sort={sort} setSort={setSort} />
     </div>

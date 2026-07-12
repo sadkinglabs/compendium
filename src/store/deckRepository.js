@@ -357,9 +357,17 @@ export { parseQuery, parseCardQuery, cardMatchesQuery } from './cardQuery.js';
 // Full card-pool query mirroring Arcanum's Refine filters: element (+multi),
 // type, rarity, set, per-element & total threshold comparators, mana comparator,
 // artist, and name/mana/element sort.
+// Power = a card's attack points; when it also has a defence, the two are averaged
+// (rounded down). No attack -> no power (excluded from a power filter).
+export function cardPower(c) {
+  const a = c.attack, d = c.defence;
+  if (a == null) return null;
+  return d != null ? Math.floor((a + d) / 2) : a;
+}
+
 export async function getPool({
   q = '', els = [], types = [], rarities = [], sets = [], multi = false,
-  thByEl = {}, totalTh = null, costCmp = null, artist = '', sort = [],
+  thByEl = {}, totalTh = null, costCmp = null, powerCmp = null, artist = '', sort = [],
 } = {}) {
   const all = await getCatalog();   // parsed once; rows carry _th/_els/_sets/etc.
   const ql = q ? q.toLowerCase() : null;
@@ -382,6 +390,7 @@ export async function getPool({
     for (const [el, op, val] of elCmps) if (!_cmp(c._th[el] || 0, op, val)) return false;
     if (totalTh && totalTh.val != null && !_cmp(c._totalTh, totalTh.op, totalTh.val)) return false;
     if (costCmp && costCmp.val != null && !_cmp(c.cost ?? 0, costCmp.op, costCmp.val)) return false;
+    if (powerCmp && powerCmp.val != null) { const p = cardPower(c); if (p == null || !_cmp(p, powerCmp.op, powerCmp.val)) return false; }
     return true;
   });
 

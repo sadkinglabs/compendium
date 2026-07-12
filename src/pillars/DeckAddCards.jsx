@@ -31,6 +31,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const [thByEl, setThByEl] = useState(() => ({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } }));
   const [totalTh, setTotalTh] = useState({ op: '>=', val: null });
   const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
+  const [powerCmp, setPowerCmp] = useState({ op: '>=', val: null });
   const [artist, setArtist] = useState('');
   const [setOpts, setSetOpts] = useState([]);
   const [artistOpts, setArtistOpts] = useState([]);
@@ -51,7 +52,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
     // and reported so the user knows they had no effect.
     const parsed = parseCardQuery(q);
     setIgnoredScopes([...parsed.scopes.has.map((v) => `has:${v}`), ...parsed.scopes.is.map((v) => `is:${v}`)]);
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort });
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
     setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
   async function loadQtys() {
@@ -59,16 +60,16 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
     const m = {}; for (const r of rows) m[r.card_id] = r.n;
     qtysRef.current = m; setQtys(m);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 120); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, artist, sort]);
+  useEffect(() => { const t = setTimeout(loadPool, 120); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
   useEffect(() => { loadQtys(); /* eslint-disable-next-line */ }, [deckId]);
-  const nComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
+  const nComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = els.length + types.length + rarities.length + sets.length + (multi ? 1 : 0) + (artist ? 1 : 0) + nComp + (sort.length ? 1 : 0);
   useEffect(() => { registerCount?.(activeCount); }, [activeCount, registerCount]);
 
   function clearAll() {
     setEls([]); setTypes([]); setRarities([]); setSets([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
-    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setSort([]);
   }
 
   const afterChange = () => { loadQtys(); onChanged?.(); };
@@ -137,7 +138,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts}
-        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp}
+        thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         sort={sort} setSort={setSort}
         trailSections={(

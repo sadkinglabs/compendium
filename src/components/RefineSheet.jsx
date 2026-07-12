@@ -54,7 +54,7 @@ function CmpRow({ label, icon, state, set, max, valueTint }) {
       </span>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, flex: 'none' }}>
         <button onClick={() => set({ ...state, op: OP_NEXT[state.op] })} aria-label="Cycle operator" style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', color: '#d8c9a4', font: "600 15px/1 var(--f-ui)", cursor: 'pointer', flex: 'none' }}>{OP_SYM[state.op]}</button>
-        <StepBtn dir={-1} disabled={state.val == null || state.val === 0} onClick={() => stepVal(-1)} />
+        <StepBtn dir={-1} disabled={state.val == null} onClick={() => stepVal(-1)} />
         <span style={{ minWidth: 40, textAlign: 'center', ...(state.val != null ? { font: "600 19px/1 var(--f-display)", color: valueTint || '#e3c589' } : { font: "italic 400 14px/1 var(--f-read)", color: '#8a8175' }) }}>{state.val == null ? 'Any' : state.val}</span>
         <StepBtn dir={1} disabled={false} onClick={() => stepVal(1)} />
       </span>
@@ -85,7 +85,7 @@ export default function RefineSheet({
   summaryLead = [], leadSections, trailSections,
   els, setEls, multi, setMulti,
   types, setTypes, rarities, setRarities, sets, setSets, setOpts = [],
-  thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp,
+  thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, powerCmp, setPowerCmp,
   artist, setArtist, artistOpts = [], sort, setSort,
 }) {
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -111,6 +111,7 @@ export default function RefineSheet({
   if (thByEl) ['air', 'earth', 'fire', 'water'].forEach((el) => { if (thByEl[el]?.val != null) labels.push(`${EL_LABEL[el]} thr`); });
   if (totalTh?.val != null) labels.push('Threshold');
   if (costCmp?.val != null) labels.push('Mana');
+  if (powerCmp?.val != null) labels.push('Power');
   if (artist) labels.push(artist);
   const shown = labels.length > 4 ? [...labels.slice(0, 3), `+${labels.length - 3} more`] : labels;
 
@@ -177,11 +178,12 @@ export default function RefineSheet({
         </div>
       )}
 
-      {(setTotalTh || setCostCmp) && (
+      {(setTotalTh || setCostCmp || setPowerCmp) && (
         <div style={{ marginBottom: 22 }}>
-          <SectionLabel label="TOTALS" count={cnt((totalTh?.val != null ? 1 : 0) + (costCmp?.val != null ? 1 : 0))} />
+          <SectionLabel label="TOTALS" count={cnt((totalTh?.val != null ? 1 : 0) + (costCmp?.val != null ? 1 : 0) + (powerCmp?.val != null ? 1 : 0))} />
           {setTotalTh && <CmpRow label="Threshold" state={totalTh} set={setTotalTh} max={20} />}
           {setCostCmp && <CmpRow label="Mana" state={costCmp} set={setCostCmp} max={20} valueTint="#c9a8e8" />}
+          {setPowerCmp && <CmpRow label="Power" state={powerCmp} set={setPowerCmp} max={12} valueTint="#e0a58f" />}
         </div>
       )}
 
