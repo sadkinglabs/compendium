@@ -162,7 +162,7 @@ export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
 export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   const start = React.useRef(null);
   const onTouchStart = (e) => {
-    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .a-sheet, .a-sheet-scrim, .fsheet, .fsheet-scrim, .cx-picker-modal, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
+    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .cx-picker-modal, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
     const t = e.touches[0];
     start.current = { x: t.clientX, y: t.clientY };
   };

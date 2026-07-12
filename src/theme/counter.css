@@ -284,7 +284,7 @@ body.roll-active #match-clock { display: none !important; }
 @keyframes roll-pill-out { to { opacity: 0; transform: translate(-50%, calc(-50% - 16px)); } }
 #roll-pill .roll-pill-go, #roll-pill .roll-pill-pick { display: none; }
 #roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 10px; color: rgb(var(--sk)); }
-#roll-pill .rp-glyph, #roll-pill .roll-pill-go svg { color: rgb(var(--sk)); filter: drop-shadow(0 0 8px rgba(var(--sk),.28)); }
+#roll-pill .roll-pill-go svg { color: rgb(var(--sk)); filter: drop-shadow(0 0 8px rgba(var(--sk),.28)); }
 #roll-pill .rp-label { font: 700 13px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
 /* Dismiss the offer without rolling - a small X clinging to the pill's corner. */
 .roll-pill-dismiss {
@@ -394,7 +394,6 @@ body.roll-active .dd-pill { display: none !important; }
   flex-shrink: 0; position: relative;
 }
 .picker-header h2 { font-family: var(--f-display); font-size: 23px; font-weight: 600; color: var(--gold-head); }
-.picker-hint { margin-top: 6px; font: 400 13px/1.4 var(--f-read); color: var(--muted); }
 
 /* Match preview - You (pick) VS Opponent (pick), under the title. */
 .picker-matchup { display: flex; align-items: center; gap: 12px; padding: 14px 20px 4px; }
@@ -452,7 +451,6 @@ body.roll-active .dd-pill { display: none !important; }
 /* Keep the 26px circle but extend the tap target to ~44px. */
 .picker-search-clear::before { content: ''; position: absolute; inset: -9px; }
 .picker-search.has-text .picker-search-clear { display: flex; }
-.picker-search-empty { padding: 50px 24px; text-align: center; color: var(--muted); font-size: 14px; }
 
 .avatar-grid {
   display: grid;

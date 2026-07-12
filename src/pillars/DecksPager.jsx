@@ -309,7 +309,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
             ? <>
                 <QRCode text={share.link} size={224} />
                 <div style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', maxWidth: 300 }}>
-                  Have a friend scan this in Compendium — <b style={{ color: 'var(--ink-body)' }}>Decks › + › Import from QR</b> — or send them the link. {share.cards} card{share.cards === 1 ? '' : 's'}.
+                  Have a friend scan this in Compendium - <b style={{ color: 'var(--ink-body)' }}>Decks › + › Import from QR</b> - or send them the link. {share.cards} card{share.cards === 1 ? '' : 's'}.
                 </div>
                 <button onClick={copy} style={{ background: 'none', border: 'none', color: 'var(--gold-leaf)', font: "600 13px/1 var(--f-ui)", cursor: 'pointer', padding: 4 }}>Copy link</button>
               </>

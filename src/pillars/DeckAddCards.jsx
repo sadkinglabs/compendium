@@ -102,9 +102,9 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       </div>
 
       <div style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55', marginBottom: 12 }}>
-        {pool.length} cards{pool.length > 250 ? ' · showing 250 — refine' : ''}
+        {pool.length} cards{pool.length > 250 ? ' · showing 250 - refine' : ''}
         {ignoredScopes.length > 0 && (
-          <span style={{ opacity: .82 }}> · {ignoredScopes.join(' ')} {ignoredScopes.length > 1 ? 'are Codex filters' : 'is a Codex filter'} — ignored here</span>
+          <span style={{ opacity: .82 }}> · {ignoredScopes.join(' ')} {ignoredScopes.length > 1 ? 'are Codex filters' : 'is a Codex filter'} - ignored here</span>
         )}
       </div>
 
@@ -165,7 +165,7 @@ function EditorRow({ card, qty, quickAdd, rarityOn, attackOn, onStep, onOpen }) 
       {quickAdd ? (
         <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', flex: 'none' }}>
           <Frost label="Remove one" onClick={() => onStep(-1)} disabled={qty === 0}>−</Frost>
-          <span style={{ minWidth: 30, textAlign: 'center', font: "600 17px/1 var(--f-display)", color: inDeck ? '#e3c589' : '#5c554b' }}>{inDeck ? `${qty}×` : '—'}</span>
+          <span style={{ minWidth: 30, textAlign: 'center', font: "600 17px/1 var(--f-display)", color: inDeck ? '#e3c589' : '#5c554b' }}>{inDeck ? `${qty}×` : '-'}</span>
           <Frost label="Add one" onClick={() => onStep(1)}>+</Frost>
         </span>
       ) : (inDeck && <span style={{ flex: 'none', minWidth: 34, font: "600 17px/1 var(--f-display)", color: '#e3c589' }}>{qty}×</span>)}

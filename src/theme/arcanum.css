@@ -18,8 +18,6 @@
   /* Brand metal - now inherits :root (--gold-leaf var(--gold-leaf), --gold #cf9a4a, --gold-deep
      #c9a35a). The old override made bare --gold a different metal in Decks than
      elsewhere; Decks consumers now use var(--gold-leaf) directly. */
-  /* World - Amethyst */
-  --accent:#9d6ad6; --accent2:#c79af0; --accent-mid:#7a47b8; --accent-deep:#5e2f9a;
   /* Surfaces */
   --bg:#0b0714; --surface:rgba(24,16,40,.88); --surface2:rgba(36,24,54,.88);
   --bg-grad:radial-gradient(130% 70% at 50% -6%, #2a1c44 0%, #0b0714 52%, #06040d 100%);
@@ -34,7 +32,7 @@
   --success:#8fd3a8; --danger:#e0907c; --warn:#d4a83a;
 
   color:var(--body);
-  font-family:'Hanken Grotesk',system-ui,sans-serif;
+  font-family:var(--f-ui);
   font-size:15px;
   -webkit-tap-highlight-color:transparent;
 }
@@ -45,7 +43,6 @@
 .arc .dli { position:relative; border-radius:16px; margin:12px 12px 0; overflow:hidden; border:1px solid rgba(74,60,34,.5); background:#0e0b08; min-height:92px; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, border-color .15s; }
 .arc .dli:active { transform:scale(.99); }
 .arc .dli.dragging { z-index:20; transform:scale(1.03); box-shadow:0 12px 32px rgba(0,0,0,.65); border-color:rgba(203,167,95,.5); opacity:.97; }
-.arc.lib-dragging .dli:not(.dragging) { transition:transform .15s ease; }
 .arc .dli-hero { position:absolute; top:0; right:0; height:100%; width:64%; object-fit:cover; object-position:center 25%;
   -webkit-mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
   -webkit-mask-composite:source-in;
@@ -54,21 +51,12 @@
 .arc .dli-hero-grad { position:absolute; inset:0; background:linear-gradient(to right, rgba(14,11,8,.98) 30%, rgba(14,11,8,.55) 58%, transparent 82%); }
 .arc .dli-content { position:relative; z-index:1; }
 .arc .dli-name-row { display:flex; align-items:center; padding:14px 14px 9px; gap:8px; cursor:pointer; }
-.arc .dli-name { font:700 18px/1.15 'Cinzel',Georgia,serif; letter-spacing:.04em; color:#efe7d8; text-shadow:0 1px 6px rgba(0,0,0,.7); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.arc .dli-name { font:700 18px/1.15 var(--f-display); letter-spacing:.04em; color:#efe7d8; text-shadow:0 1px 6px rgba(0,0,0,.7); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .arc .dli-fav { position:absolute; bottom:10px; right:12px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(11,7,20,.5); border:1px solid rgba(203,167,95,.4); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 8px rgba(0,0,0,.45); color:#e3c589; line-height:1; pointer-events:none; }
-.arc .dli-actions { display:flex; border-top:1px solid rgba(160,110,220,.1); }
-.arc .dli-action { flex:1; padding:10px; font-size:12px; font-weight:600; text-align:center; cursor:pointer; color:var(--muted); border:none; background:none; border-right:1px solid rgba(160,110,220,.1); font-family:'Hanken Grotesk',sans-serif; }
-.arc .dli-action:last-child { border-right:none; }
-.arc .dli-action:hover { color:#efe7d8; background:rgba(157,106,214,.08); }
-.arc .dli-action.load  { color:var(--accent2); }
-.arc .dli-action.share { color:var(--gold-leaf); }
-.arc .dli-action.del   { color:var(--danger); }
 
 /* Avatar/archetype eyebrow in the library card meta row - rose caps, matching
    the My-Deck hero's .mf-hero-arch (no pill chassis). */
-.arc .dash-avatar-chip { display:inline-flex; align-items:center; font:600 11px/1 'Cinzel',Georgia,serif; letter-spacing:.2em; text-transform:uppercase; color:#c76d85; background:none; border:none; padding:0; box-shadow:none; }
-
-.arc .no-results { padding:24px; text-align:center; color:var(--muted); }
+.arc .dash-avatar-chip { display:inline-flex; align-items:center; font:600 11px/1 var(--f-display); letter-spacing:.2em; text-transform:uppercase; color:#c76d85; background:none; border:none; padding:0; box-shadow:none; }
 
 /* The old Arcanum add-cards rows + tiles (card-row / card-img-tile / cr-step /
    tile-step / in-deck-badge) are gone - the deck editor now renders its own
@@ -102,103 +90,15 @@
 .arc .ds-tile { position:relative; border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background:rgba(14,11,8,.7); }
 .arc .ds-tile img { width:100%; height:100%; object-fit:cover; display:block; }
 .arc .ds-qty { position:absolute; bottom:6px; right:6px; min-width:22px; height:22px; padding:0 6px; border-radius:999px; background:rgba(10,9,8,.85); border:1px solid rgba(203,167,95,.5); color:#efe7d8; font:700 12px/22px var(--f-display); text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.55); z-index:2; }
-
-/* Rarity Colours flat-glass switch (Refine filter sheet) */
-.arc .rarity-switch { position:relative; width:50px; height:28px; border-radius:15px; border:1px solid rgba(255,255,255,.14); background:rgba(18,16,13,.6); cursor:pointer; padding:0; flex-shrink:0; transition:background .18s,border-color .18s; }
-.arc .rarity-switch::after { content:''; position:absolute; top:2px; left:2px; width:22px; height:22px; border-radius:50%; background:rgba(233,220,192,.4); transition:transform .18s,background .18s; }
-.arc .rarity-switch.on { background:linear-gradient(180deg,rgba(157,106,214,.5),rgba(122,71,184,.35)); border-color:rgba(196,154,240,.6); }
-.arc .rarity-switch.on::after { transform:translateX(22px); background:#f0e9d8; }
 .arc .ds-toggle-wrap { display:inline-flex; margin:0 auto; background:rgba(42,33,20,.5); border:1px solid #4a3c22; border-radius:999px; padding:3px; gap:2px; }
 .arc .ds-view-btn { background:transparent; border:none; color:#8a8175; border-radius:999px; padding:9px 28px; font:600 13px/1 var(--f-ui); cursor:pointer; transition:color .18s; }
 .arc .ds-view-btn.on { background:rgba(42,33,20,.9); color:#d8c9a4; }
-
-/* Card detail sheet content */
-.arc .sheet-card-img { width:auto; max-width:min(220px,60vw); max-height:34vh; display:block; margin:4px auto 16px; border-radius:14px; box-shadow:0 12px 32px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.4); }
 /* Sites are landscape - the portrait image is rotated 90° clockwise to read right. */
 .arc .sheet-site-wrap { position:relative; width:min(320px,84vw); aspect-ratio:531/380; margin:4px auto 16px; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.4); }
 .arc .sheet-site-wrap img { position:absolute; top:50%; left:50%; width:calc(100% * 380 / 531); height:calc(100% * 531 / 380); object-fit:cover; transform:translate(-50%,-50%) rotate(90deg); display:block; }
-.arc .sheet-name-row { display:flex; align-items:baseline; gap:8px; padding:0 16px; flex-wrap:wrap; }
-.arc .sheet-name { font-size:20px; font-weight:600; color:#efe7d8; font-family:'EB Garamond',Georgia,serif; }
-.arc .sheet-type-inline { font-size:13px; color:var(--muted); font-style:italic; }
-.arc .sheet-meta { font-size:12px; color:var(--muted); padding:2px 16px 10px; }
-.arc .sheet-flavor { padding:8px 16px; font-size:13px; color:var(--faint); font-style:italic; font-family:'EB Garamond',Georgia,serif; }
-.arc .sheet-stats { display:flex; gap:8px; padding:6px 16px 12px; flex-wrap:wrap; }
-.arc .stat-chip { background:rgba(36,24,54,.7); border:1px solid rgba(160,110,220,.18); border-radius:10px; padding:5px 10px; font-size:12px; display:flex; flex-direction:column; align-items:center; gap:1px; }
-.arc .stat-chip .label { font-size:9px; color:var(--faint); text-transform:uppercase; letter-spacing:.08em; font-family:'Hanken Grotesk',sans-serif; }
-.arc .stat-chip .value { font-weight:700; font-size:15px; font-family:'IBM Plex Mono',monospace; color:#efe7d8; display:flex; gap:2px; align-items:center; }
-.arc .sheet-rules { padding:11px 16px; font-size:13px; line-height:1.6; background:rgba(11,7,20,.7); border:1px solid rgba(160,110,220,.14); margin:0 12px; border-radius:12px; white-space:pre-wrap; color:var(--body); font-family:'EB Garamond',Georgia,serif; }
-.arc .zone-stepper { display:flex; flex-direction:column; gap:6px; padding:16px 16px 4px; }
-.arc .zone-stepper-row { display:flex; align-items:center; gap:10px; }
-.arc .zone-stepper-label { flex:1; font-size:14px; color:var(--muted); font-family:'Hanken Grotesk',sans-serif; }
-.arc .zone-stepper-count { font-size:18px; font-weight:700; min-width:24px; text-align:center; font-family:'IBM Plex Mono',monospace; color:#efe7d8; display:inline-block; }
-.arc .zone-stepper-count.pop { animation:countPop .18s ease-out; }
-@keyframes countPop { 0%{transform:scale(1)} 40%{transform:scale(1.35)} 100%{transform:scale(1)} }
-.arc .zone-stepper-btn { width:32px; height:32px; border-radius:50%; border:1px solid rgba(160,110,220,.25); background:rgba(36,24,54,.6); color:var(--body); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .1s; }
-.arc .zone-stepper-btn:active { background:var(--accent); border-color:var(--accent); color:#fff; }
-
-/* Cross-pillar jump: card sheet → its Codex article (rulings/FAQ/marginalia). */
-.arc .sheet-codex-link { display:block; width:calc(100% - 32px); margin:12px 16px 4px; padding:12px 0; border-radius:12px; border:1px solid rgba(220,184,111,.28); background:rgba(220,184,111,.06); color:var(--gold-leaf); font:600 12.5px/1 'Hanken Grotesk',sans-serif; letter-spacing:.03em; cursor:pointer; text-align:center; }
-.arc .sheet-codex-link:active { background:rgba(220,184,111,.14); }
-
-/* Toast (Arcanum #toast) */
-/* The legacy .a-toast was retired - all toasts now go through the app-wide
-   toast() -> ToastHost / .cx-toast (one toast system). */
-
-/* ── Refine (filter + sort) sheet - Arcanum #search-sheet (L414-490). ── */
-/* Refine sheet - re-homed onto the app-standard black sheet chassis; the deck
-   world's amethyst survives as the ACCENT (active pills/tabs), never the ground. */
-.arc.fsheet-scrim { position:fixed; inset:0; z-index:200; background:rgba(5,4,3,.7); animation:cxfade .2s ease; }
-.arc.fsheet { position:fixed; left:0; right:0; bottom:0; z-index:201; max-height:82vh; max-height:min(calc(82dvh - env(safe-area-inset-top,0px)), calc(100dvh - env(safe-area-inset-top,0px) - 10px)); display:flex; flex-direction:column; overflow:hidden; background:linear-gradient(180deg,#151310,#0a0908); border-radius:26px 26px 0 0; border-top:1px solid rgba(220,184,111,.16); box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); padding-bottom:calc(6px + env(safe-area-inset-bottom,0px)); animation:cxsheet .28s cubic-bezier(.2,.9,.3,1); }
-.arc .fsheet-grab { display:flex; justify-content:center; padding:12px 0 2px; flex-shrink:0; touch-action:none; -webkit-tap-highlight-color:transparent; cursor:grab; }
-.arc .fsheet-handle { width:36px; height:4px; background:rgba(220,184,111,.28); border-radius:2px; flex-shrink:0; }
-.arc .fsheet-header { display:flex; align-items:flex-start; gap:10px; padding:6px 22px 2px; flex-shrink:0; }
-.arc .fsheet-title { flex:1; font:700 24px/1.12 'Cinzel',Georgia,serif; color:var(--gold-leaf); }
-.arc .fsheet-sub { font:italic 400 13px/1 'EB Garamond',Georgia,serif; color:rgba(233,220,192,.5); margin-top:3px; }
-.arc .fsheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.arc .fsheet-tabs { display:flex; margin:12px 22px; padding:3px; background:rgba(18,16,13,.7); border:1px solid rgba(255,255,255,.1); border-radius:11px; flex-shrink:0; }
-.arc .fsheet-tab { flex:1; padding:9px; font:600 13px/1 'Hanken Grotesk',sans-serif; text-align:center; background:transparent; border:none; border-radius:9px; color:rgba(233,220,192,.45); cursor:pointer; }
-.arc .fsheet-tab.active { background:linear-gradient(180deg,rgba(157,106,214,.4),rgba(122,71,184,.25)); color:#f0e9d8; }
-.arc .fsheet-body { flex:1; overflow-y:auto; }
-.arc .filter-section { padding:14px 22px; border-bottom:1px solid rgba(255,255,255,.07); }
-.arc .filter-label { font:600 10px/1 'Hanken Grotesk',sans-serif; text-transform:uppercase; letter-spacing:.18em; color:rgba(233,220,192,.42); margin-bottom:9px; }
-.arc .el-toggle { display:flex; align-items:center; gap:6px; padding:10px 16px; border-radius:13px; border:1px solid rgba(255,255,255,.12); background:rgba(18,16,13,.6); color:rgba(233,220,192,.75); font:600 12px/1 'Hanken Grotesk',sans-serif; cursor:pointer; white-space:nowrap; }
-.arc .el-toggle img { width:16px; height:16px; }
-.arc .el-toggle.on { background:linear-gradient(180deg,rgba(157,106,214,.32),rgba(122,71,184,.18)); border-color:rgba(196,154,240,.55); color:#f0e9d8; box-shadow:0 0 12px rgba(157,106,214,.28); }
-.arc .pill-group { display:flex; flex-wrap:wrap; gap:6px; }
-.arc .pill { padding:10px 16px; border-radius:13px; border:1px solid rgba(255,255,255,.12); background:rgba(18,16,13,.6); color:rgba(233,220,192,.75); font:600 12px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
-.arc .pill.on { background:linear-gradient(180deg,rgba(157,106,214,.32),rgba(122,71,184,.18)); border-color:rgba(196,154,240,.55); color:#f0e9d8; box-shadow:0 0 12px rgba(157,106,214,.28); }
-.arc .pill.on.rarity-Ordinary { border-color:var(--ordinary); color:var(--ordinary); }
-.arc .pill.on.rarity-Exceptional { border-color:var(--exceptional); color:var(--exceptional); }
-.arc .pill.on.rarity-Elite { border-color:var(--elite); color:var(--elite); }
-.arc .pill.on.rarity-Unique { border-color:var(--unique); color:var(--unique); }
-.arc .sort-panel-title { font:italic 400 13px/1.3 'EB Garamond',Georgia,serif; color:rgba(233,220,192,.5); padding:14px 22px 4px; }
-.arc .sort-priority { width:20px; height:20px; border-radius:50%; background:var(--gold-leaf); color:#1a1206; font:800 10px/1 'Hanken Grotesk',sans-serif; display:none; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 0 10px rgba(220,184,111,.5); }
-.arc .sort-item.active .sort-priority { display:flex; }
-.arc .sort-items { display:flex; flex-direction:column; gap:8px; padding:8px 22px 4px; }
-.arc .sort-item { display:flex; align-items:center; padding:12px 16px; border-radius:13px; border:1px solid rgba(255,255,255,.12); background:rgba(18,16,13,.6); gap:10px; cursor:pointer; }
-.arc .sort-item.active { background:linear-gradient(180deg,rgba(157,106,214,.32),rgba(122,71,184,.18)); border-color:rgba(196,154,240,.55); box-shadow:0 0 12px rgba(157,106,214,.28); }
-.arc .sort-item-label { flex:1; font:600 14px/1 'Hanken Grotesk',sans-serif; color:rgba(233,220,192,.75); }
-.arc .sort-item.active .sort-item-label { color:#f0e9d8; }
-.arc .sort-dir-btn { width:46px; padding:7px 0; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(12,11,9,.7); color:#c9a9f0; font:700 14px/1 'IBM Plex Mono',monospace; cursor:pointer; }
-/* Footer sits inside the chassis, which already pads env(safe-area-inset-bottom);
-   pad only the visual gap here so the inset isn't counted twice (dead band). */
-.arc .fsheet-footer { padding:14px 22px 16px; display:flex; gap:10px; flex-shrink:0; border-top:1px solid rgba(220,184,111,.12); }
-.arc .filter-clear-btn { flex:1; padding:13px; border-radius:14px; border:1px solid rgba(255,255,255,.14); background:transparent; color:rgba(233,220,192,.75); font:600 14px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
-.arc .filter-apply-btn { flex:2; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:var(--gold-leaf); font:700 15px/1 'Hanken Grotesk',sans-serif; cursor:pointer; }
-.arc .filter-apply-btn:active { background:rgba(220,184,111,.14); }
-/* Comparator rows (threshold-by-element, totals, mana) */
-.arc .th-el-list { display:flex; flex-direction:column; gap:10px; }
-.arc .th-el-row { display:flex; align-items:center; gap:12px; }
-.arc .th-el-label { flex:0 0 78px; display:flex; align-items:center; gap:6px; font:400 13px/1 'EB Garamond',Georgia,serif; color:rgba(233,220,192,.75); white-space:nowrap; }
-.arc .th-el-label img { width:14px; height:14px; }
-.arc .th-total-label { flex:0 0 116px; }
-.arc .cmp-atom { flex:1; display:flex; align-items:stretch; min-width:0; }
-.arc .cmp-op { flex:0 0 50px; border:1px solid rgba(255,255,255,.14); border-radius:11px 0 0 11px; background:rgba(12,11,9,.7); color:#c9a9f0; font:700 16px/1 'IBM Plex Mono',monospace; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-.arc .cmp-stepper { flex:1; display:flex; align-items:center; min-width:0; border:1px solid rgba(255,255,255,.14); border-left:none; border-radius:0 11px 11px 0; background:rgba(12,11,9,.7); }
-.arc .cmp-btn { flex:0 0 46px; align-self:stretch; border:none; background:none; color:#c9a9f0; font:400 22px/1 'Hanken Grotesk',sans-serif; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:11px 0; }
-.arc .cmp-val { flex:1; min-width:0; text-align:center; font:600 14px 'IBM Plex Mono',monospace; color:rgba(233,220,192,.35); }
-.arc .cmp-val.set { color:#f0e9d8; }
-.arc .filter-select { width:100%; box-sizing:border-box; height:48px; -webkit-appearance:none; appearance:none; border:1px solid rgba(255,255,255,.12); border-radius:13px; padding:0 38px 0 14px; color:rgba(233,220,192,.8); font:400 15px/1 'EB Garamond',Georgia,serif; outline:none; background:rgba(18,16,13,.6) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a99878' stroke-width='2'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 16px center; }
+/* (Legacy Refine-sheet innards - fsheet/pill/el-toggle/sort/rarity/cmp/
+   zone-stepper/stat-chip/a-toast - were swept in the cohesion pass; RefineSheet
+   now renders its own chips + active states with inline styles.) */
 
 /* ════════════════════════════════════════════════════════════════════════
    GLOBAL FAB - verbatim from Arcanum (.fab / .fab-wrap / .fab-menu /

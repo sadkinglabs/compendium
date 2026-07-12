@@ -41,12 +41,14 @@ import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
 
+// Bottom-nav pillars. Icons come from <NavIcon icon={key} /> (inline SVG); only
+// key + label are read (glyph/eyebrow/accent fields were retired in the sweep).
 const PILLARS = [
-  { key: 'home',  glyph: '⌂', label: 'Home',  eyebrow: 'YOUR WORKSPACE',   accent: 'var(--accent-gold)' },
-  { key: 'codex', glyph: '▤', label: 'Codex', eyebrow: 'RULES & CARDS',     accent: 'var(--accent-gold)' },
-  { key: 'collect', glyph: '◆', label: 'Collection', eyebrow: 'CARDS YOU OWN', accent: 'var(--accent-ruby)' },
-  { key: 'decks', glyph: '◈', label: 'Decks', eyebrow: 'YOUR DECKS',        accent: 'var(--accent-violet)' },
-  { key: 'play',  glyph: '♥', label: 'Play',  eyebrow: 'DUEL & TRACK LIFE', accent: 'var(--accent-jade)' },
+  { key: 'home',    label: 'Home' },
+  { key: 'codex',   label: 'Codex' },
+  { key: 'collect', label: 'Collection' },
+  { key: 'decks',   label: 'Decks' },
+  { key: 'play',    label: 'Play' },
 ];
 const SWIPE_TABS = PILLARS.map((p) => p.key);   // cross-pillar swipe order
 

@@ -18,20 +18,12 @@
 /* Inside the env()-padded .cx-app shell already, so no extra env() here (nav overlap + FAB/pill clearance only). */
 .arc .dpage-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding-bottom: calc(var(--nav-h) + 90px + var(--kb, 0px) / var(--ui-scale, 1)); }
 
-/* Blank current-deck state (Arcanum #deck-blank). */
-.arc .deck-blank { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px; text-align: center; }
-
 /* (Retired: the Decks library search is now the shared <SearchPill> in the unified
    .cx-dock - the old .pill-bar-outer / .bottom-pill-bar clone is gone.) */
 
-/* Search panel view toggle (List / Card). */
-.arc .view-toggle-row { flex-shrink: 0; display: flex; justify-content: center; padding: 10px 12px 6px; }
-/* Deck editor List/Card view toggle retired - now the shared SegTabs (ui.jsx). */
+/* Deck editor List/Card + inner List/Stats view toggles retired - now the shared
+   SegTabs (ui.jsx). */
 
-/* Inner List/Stats pager on the Current Deck panel. */
-.arc .deck-inner-pager { flex: 1; min-height: 0; display: flex; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; }
-.arc .deck-inner-pager::-webkit-scrollbar { display: none; }
-.arc .deck-panel { flex: 0 0 100%; width: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; scroll-snap-align: start; scroll-snap-stop: always; padding-bottom: calc(var(--nav-h) + 90px); }
 /* The List/Stats toggle lives in the shared .cx-dock (beside the FAB), but is
    SCREEN-centred: absolutely centred on the dock (which spans left:16/right:16,
    so its 50% is the viewport centre) rather than centred in the left slot, which
