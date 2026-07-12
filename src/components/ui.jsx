@@ -219,7 +219,10 @@ export function useFocusTrap(active) {
     const opener = document.activeElement;
     const sel = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
     const first = panel.querySelector(sel);
-    if (first) setTimeout(() => first.focus?.(), 0);
+    // preventScroll: focusing must not scroll the panel's scroll body to the first
+    // control (in the missing-cards sheet that's a button BELOW the list, which
+    // opened the list scrolled past its top). Keeps focus, drops the implicit jump.
+    if (first) setTimeout(() => first.focus?.({ preventScroll: true }), 0);
     const onKey = (e) => {
       if (e.key !== 'Tab') return;
       const items = [...panel.querySelectorAll(sel)].filter((el) => el.offsetParent !== null);
