@@ -50,25 +50,34 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
   const [sheetCard, setSheetCard] = useState(session.sheetCard);
+  const [editMode, setEditMode] = useState(false);   // My Collection edit mode: steppers + the + add FAB
   useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; }, [view, listOpen, sheetCard]);
-  const go = (v) => { setListOpen(null); setView(v); };
+  const go = (v) => { setListOpen(null); setEditMode(false); setView(v); };
+  const goAdd = () => { setListOpen(null); setView('cards'); setEditMode(true); };
   const pills = (
-    <div style={{ padding: '0 20px 10px' }}>
-      <ChipRow>
+    <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div className="cx-scroll" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, overflowX: 'auto' }}>
         <Chip label="Overview" active={view === 'overview'} onClick={() => go('overview')} />
-        <Chip label="Cards" active={view === 'cards'} onClick={() => go('cards')} />
+        <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
-      </ChipRow>
+      </div>
+      {view === 'cards' && (
+        <button onClick={() => setEditMode((e) => !e)} aria-pressed={editMode}
+          style={{ flex: 'none', padding: '7px 15px', borderRadius: 18, cursor: 'pointer', font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
+            background: editMode ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editMode ? '#1a1206' : '#e3c589', border: `1px solid ${editMode ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
+          {editMode ? 'Done' : '+ Add'}
+        </button>
+      )}
     </div>
   );
   return (
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
       {view === 'overview' ? (
-        <Overview onGoCards={() => go('cards')} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard}
+        <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={setSheetCard}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
-        <Cards onOpen={onOpen} onPeek={setSheetCard} />
+        <Cards onOpen={onOpen} onPeek={setSheetCard} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
       ) : listOpen ? (
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onGoCards={() => go('cards')} onChanged={onChanged} />
       ) : (
@@ -212,22 +221,26 @@ function ViewToggle({ view, setView }) {
   );
 }
 
-const OWN_OPTS = [['all', 'All'], ['owned', 'Owned'], ['wishlist', 'Wishlist'], ['missing', 'Missing']];
-
 const VIEW_KEY = 'cx-collection-view';
-const OWN_LABEL = { owned: 'Owned', wishlist: 'Wishlist', missing: 'Missing' };
 
-function Cards({ onOpen, onPeek }) {
+function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
 
+  // `adding` = the Search-Library sub-mode: show the WHOLE catalog (not just what
+  // you own) so new cards can be added; steppers write Owned. Reached from the
+  // edit-mode + FAB; auto-closes when edit mode ends.
+  const [adding, setAdding] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  useEffect(() => { if (!editMode) setAdding(false); }, [editMode]);
+  const showSteppers = editMode || adding;   // read-first: no steppers until you edit/add
+
   const [q, setQ] = useState(session.q);
-  const [own, setOwn] = useState(session.filter);           // all | owned | wishlist | missing
   const [sets, setSets] = useState(session.sets);
   const [types, setTypes] = useState(session.types);
   const [rarities, setRarities] = useState(session.rarities);
   const [els, setEls] = useState(session.els);
-  useEffect(() => { session.q = q; session.filter = own; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, own, sets, types, rarities, els]);
+  useEffect(() => { session.q = q; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, sets, types, rarities, els]);
 
   // Full rich filters - the shared Refine engine (Card Lists live in Collection,
   // so the comparator granularity earns its place for cube/draft/list building).
@@ -245,9 +258,8 @@ function Cards({ onOpen, onPeek }) {
   const [setOpts, setSetOpts] = useState([]);
   useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
 
-  // Steppers edit Owned - except under the Wishlist filter, where the visible
-  // filter IS the mode and they edit Wanted.
-  const field = own === 'wishlist' ? 'wanted' : 'owned';
+  // My Collection steppers always edit OWNED (the one place owned counts change).
+  const field = 'owned';
 
   async function loadPool() {
     const parsed = parseQuery(q);
@@ -284,22 +296,17 @@ function Cards({ onOpen, onPeek }) {
     });
   }, [field]);
 
-  // Ownership post-filter (total = regular + foil: a foil-only card is owned).
-  // Memoised: re-scans the pool only when the pool, ownership map, or scope
-  // change - not on every render (e.g. a sheet open or an unrelated state flip).
-  const shown = useMemo(() => (pool || []).filter((c) => {
-    const o = ow.get(c.card_id);
-    const t = (o?.owned || 0) + (o?.foil || 0), w = o?.wanted || 0;
-    if (own === 'owned') return t > 0;
-    if (own === 'wishlist') return w > 0;
-    if (own === 'missing') return t === 0;
-    return true;
-  }), [pool, ow, own]);
+  // My Collection shows only cards you OWN (total = regular + foil). In the
+  // Search-Library add sub-mode, show the whole catalog so anything is addable.
+  const shown = useMemo(() => {
+    if (adding) return pool || [];
+    return (pool || []).filter((c) => { const o = ow.get(c.card_id); return (o?.owned || 0) + (o?.foil || 0) > 0; });
+  }, [pool, ow, adding]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
-  const activeCount = (own !== 'all' ? 1 : 0) + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
+  const activeCount = sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
   const clearAll = () => {
-    setOwn('all'); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
+    setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
     setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
   };
@@ -307,9 +314,16 @@ function Cards({ onOpen, onPeek }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. Transparent band: cards
-          just scroll up past the frosted-glass toggle and clip under the header. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
+      {/* Search-Library sub-mode banner: a distinct state - browsing the whole
+          catalogue to add, not just viewing what you own. */}
+      {adding && (
+        <div style={{ position: 'sticky', top: 0, zIndex: 7, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 8px 9px 14px', marginBottom: 8, borderRadius: 12, background: 'rgba(42,26,20,.94)', border: '1px solid rgba(210,88,115,.45)' }}>
+          <span style={{ font: "600 12px/1.3 var(--f-ui)", color: '#e8c6cd' }}>Adding to collection - <span style={{ color: 'var(--ink-faint)' }}>tap + to add copies</span></span>
+          <button onClick={() => setAdding(false)} style={{ flex: 'none', padding: '6px 15px', borderRadius: 14, cursor: 'pointer', font: "700 12px/1 var(--f-ui)", background: 'linear-gradient(180deg, #d8b872, #b8954f)', color: '#1a1206', border: '1px solid #e3c589' }}>Done</button>
+        </div>
+      )}
+      {/* Sticky centered view toggle - never scrolls away. */}
+      <div style={{ position: 'sticky', top: adding ? 46 : 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
         <ViewToggle view={view} setView={setView} />
       </div>
 
@@ -319,42 +333,43 @@ function Cards({ onOpen, onPeek }) {
             {shown.length} cards{shown.length > 250 ? ' · showing 250' : ''}
           </div>
           {shown.length === 0 ? (
-            <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              No cards match{activeCount || q ? ' those filters' : ''}.
+            <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+              {adding ? 'No cards match those filters.'
+                : (activeCount || q) ? 'No owned cards match those filters.'
+                  : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
           ) : view === 'binder' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {shown.slice(0, 250).map((c) => (
-                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={step} onPeek={onPeek} />
+                <BinderTile key={c.card_id} card={c} {...cardProps(c)} onStep={showSteppers ? step : undefined} onPeek={onPeek} />
               ))}
             </div>
           ) : (
             shown.slice(0, 250).map((c) => (
-              <LedgerRow key={c.card_id} card={c} {...cardProps(c)} value={own === 'wishlist' ? val(c.card_id, 'wanted') : val(c.card_id, 'owned')}
-                onStep={step} onPeek={onPeek} />
+              <LedgerRow key={c.card_id} card={c} {...cardProps(c)} value={val(c.card_id, 'owned')}
+                onStep={showSteppers ? step : undefined} onPeek={onPeek} />
             ))
           )}
         </>
       )}
 
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search cards…" ariaLabel="Search your collection" />
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={adding ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
 
-      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
+      {/* FAB: browse = filter; edit mode = the + add menu; adding = filter the library. */}
+      {editMode && !adding ? (
+        <Fab variant="lib" label="Add cards" icon={<FabGlyph kind="add" />} items={[
+          { label: 'Search the library', icon: SeekSvg, onClick: () => setAdding(true) },
+          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
+        ]} />
+      ) : (
+        <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
+      )}
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
+
       <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${shown.length} card${shown.length === 1 ? '' : 's'}`}
-        summaryLead={own !== 'all' ? [OWN_LABEL[own]] : []}
-        leadSections={(
-          <div style={{ marginBottom: 22 }}>
-            <SectionLabel label="OWNERSHIP" />
-            <div role="group" aria-label="Ownership" style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden' }}>
-              {OWN_OPTS.map(([k, l]) => (
-                <button key={k} onClick={() => setOwn(k)} aria-pressed={own === k}
-                  style={{ padding: '8px 16px', border: 'none', cursor: 'pointer', fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: own === k ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase', color: own === k ? '#d8c9a4' : '#8a8175', background: own === k ? 'rgba(42,33,20,.7)' : 'transparent', transition: 'background .16s, color .16s' }}>{l}</button>
-              ))}
-            </div>
-          </div>
-        )}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts}
