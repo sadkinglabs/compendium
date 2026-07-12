@@ -333,11 +333,32 @@ export async function listCards(listId) {
   );
 }
 
+// The Wishlist: every card you want (qty_wanted>0), joined to the catalog, with
+// its owned + wanted quantities. A virtual, un-deletable "list" backed by the
+// ownership ledger (qty_wanted) rather than a card_lists row - so `quantity` here
+// is the wanted goal, matching listCards' shape for a shared detail view.
+export async function wishlistCards() {
+  const pid = activeProfileId();
+  return query(
+    `SELECT o.card_id, SUM(o.qty_wanted) quantity, SUM(o.qty_owned) owned,
+            c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
+     FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
+     WHERE o.profile_id=? GROUP BY o.card_id HAVING SUM(o.qty_wanted)>0 ORDER BY c.name;`,
+    [pid]
+  );
+}
+
 // Flat "qty name" text of a list - the Curiosa deck-export format, so it pastes
 // straight into Curiosa, a deck's Import from text, or back into Collection's
 // own bulk import.
 export async function exportListText(listId) {
   const rows = await listCards(listId);
+  return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
+}
+
+// Same flat export for the Wishlist (qty_wanted ledger) - take it to a shop.
+export async function wishlistExportText() {
+  const rows = await wishlistCards();
   return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
 }
 

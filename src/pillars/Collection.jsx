@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom';
 import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import {
-  ownedMap, collectionStats, recentlyAdded,
+  ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, importCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
@@ -80,7 +80,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       ) : view === 'cards' ? (
         <Cards onOpen={onOpen} onPeek={setSheetCard} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
       ) : listOpen ? (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onGoCards={() => go('cards')} onChanged={onChanged} />
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={setSheetCard} onChanged={onChanged} />
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
@@ -147,7 +147,7 @@ function ImportTextSheet({ open, onClose }) {
   );
 }
 
-function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
+function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev }) {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [deckStat, setDeckStat] = useState(null);
@@ -172,7 +172,7 @@ function Overview({ onGoCards, onGoDecks, onPeek, onOpenCodex, rev }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
-        <Tile label="WISHLIST" value={stats.wishlist} sub="cards you want" onClick={onGoCards} />
+        <Tile label="WISHLIST" value={stats.wishlist} sub="cards you want" onClick={onGoLists} />
         <Tile label="DECKS BUILDABLE" value={deckStat ? `${deckStat.buildable}/${deckStat.total}` : '-'} sub="from your collection" onClick={onGoDecks} />
       </div>
 
@@ -223,6 +223,12 @@ function ViewToggle({ view, setView }) {
 }
 
 const VIEW_KEY = 'cx-collection-view';
+
+// The pinned, un-deletable Wishlist is a VIRTUAL list (kind 'wishlist') backed by
+// the owned_cards.qty_wanted ledger, not a card_lists row - this sentinel id keeps
+// it distinct from real lists while sharing the ListDetail surface.
+const WISHLIST_ID = '__wishlist__';
+const wishlistRef = () => ({ id: WISHLIST_ID, kind: 'wishlist', name: 'Wishlist' });
 
 // Curiosa's numeric set model (catalog v2). Labels + a fixed display order; the
 // trailing '' bucket is legacy / set-unspecified owned rows (variant_slug ''|'foil').
@@ -468,15 +474,15 @@ function Empty({ text }) {
 // Export a list as flat "qty name" text - the Curiosa deck-export format, so it
 // round-trips into Curiosa, Decks > Import from text, or Collection's own bulk
 // import on another profile/device.
-function ExportListSheet({ open, listId, listName, onClose }) {
+function ExportListSheet({ open, fetchText, listName, onClose }) {
   const [text, setText] = useState(null);
   useEffect(() => {
-    if (!open || !listId) return;
+    if (!open || !fetchText) return;
     let alive = true;
     setText(null);
-    exportListText(listId).then((t) => alive && setText(t));
+    Promise.resolve(fetchText()).then((t) => alive && setText(t));
     return () => { alive = false; };
-  }, [open, listId]);
+  }, [open, fetchText]);
   async function copy() {
     if (!text) return;
     try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
@@ -615,17 +621,102 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
   );
 }
 
+// In-list add picker: a searchable catalogue (rich token search, e:water set:beta)
+// where each row carries a +Add / stepper reflecting how many are already on this
+// list (or the Wishlist). Taps commit straight through onStep(card, delta) so the
+// list behind updates live. Multi-select batch-add lands in P2; this is single-add.
+function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
+  const [q, setQ] = useState('');
+  const [pool, setPool] = useState(null);
+  useEffect(() => { if (open) { setQ(''); setPool(null); } }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const t = setTimeout(async () => {
+      const parsed = parseQuery(q);
+      const rows = await getPool({ q: parsed.name });
+      const filtered = parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows;
+      if (alive) setPool(filtered);
+    }, 130);
+    return () => { alive = false; clearTimeout(t); };
+  }, [q, open]);
+
+  return (
+    <BottomSheet open={open} title={title} onClose={onClose}>
+      {hint && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
+      <input value={q} autoFocus onChange={(e) => setQ(e.target.value)}
+        placeholder="Search the library - e:water set:beta…" style={{ ...SHEET_INPUT, height: 46 }} />
+      <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', margin: '12px 2px 2px' }}>
+        {pool == null ? 'Searching…' : `${pool.length} card${pool.length === 1 ? '' : 's'}${pool.length > 200 ? ' · showing 200' : ''}`}
+      </div>
+      {pool == null ? <Loading /> : pool.slice(0, 200).map((c) => {
+        const inList = membership.get(c.card_id) || 0;
+        const setName = listSetName(c);
+        return (
+          <div key={c.card_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
+            <span style={{ width: 42, flex: 'none' }}><CardArt card={c} radius={6} aspect="5/7" /></span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+              {setName && <div style={{ marginTop: 5 }}><span style={listSetPill}>{setName}</span></div>}
+            </div>
+            {inList > 0 ? (
+              <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
+                <Frost label="One fewer" onClick={() => onStep(c, -1)}>−</Frost>
+                <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: '#efe7d8' }}>{inList}</span>
+                <Frost label="One more" onClick={() => onStep(c, 1)}>+</Frost>
+              </span>
+            ) : (
+              <button onClick={() => onStep(c, 1)} aria-label={`Add ${c.name}`}
+                style={{ flex: 'none', minHeight: 40, padding: '0 15px', borderRadius: 999, cursor: 'pointer', font: "600 12.5px/1 var(--f-display)", letterSpacing: '.04em', color: '#f0c8ce', background: 'rgba(224,169,177,.12)', border: '1px solid rgba(224,169,177,.28)' }}>+ Add</button>
+            )}
+          </div>
+        );
+      })}
+    </BottomSheet>
+  );
+}
+
+// The pinned Wishlist row - a distinct gold-framed card above the user's own
+// lists, showing its want-tally and a fan of the first few wanted cards. Always
+// present, never renamed or deleted; taps into the shared ListDetail surface.
+function WishlistCard({ summary, onClick }) {
+  const empty = !summary || summary.count === 0;
+  return (
+    <div onClick={onClick} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 22, padding: '16px 20px', borderRadius: 19, border: '1px solid rgba(227,197,137,.42)', background: 'linear-gradient(180deg, rgba(203,167,95,.07), rgba(203,167,95,.02))' }}>
+      <ListFan cards={summary?.thumbs || []} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#e3c589" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
+          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wishlist</span>
+        </div>
+        <div style={{ font: "400 14px/1.4 var(--f-read)", color: '#8a8175', marginTop: 6 }}>
+          {empty ? 'Cards you want - add from any card or here' : `${summary.count} card${summary.count === 1 ? '' : 's'} wanted`}
+        </div>
+      </div>
+      {!empty && (
+        <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+          <span style={{ font: "600 24px/1 var(--f-display)", color: '#e3c589' }}>{summary.total}</span>
+        </span>
+      )}
+    </div>
+  );
+}
+
 function ListsIndex({ onOpenList, rev }) {
   const [lists, setLists] = useState(null);
   const [progress, setProgress] = useState(new Map());
   const [thumbs, setThumbs] = useState(new Map());
+  const [wl, setWl] = useState(null);            // pinned Wishlist summary
   const [create, setCreate] = useState(null);   // 'wanted' | 'custom' | null
   useEffect(() => {
     let alive = true;
     const load = async () => {
-      const all = await listCardLists();
+      const [all, wlRows] = await Promise.all([listCardLists(), wishlistCards()]);
       if (!alive) return;
       setLists(all);
+      setWl({ count: wlRows.length, total: wlRows.reduce((n, r) => n + (r.quantity || 0), 0), thumbs: wlRows.slice(0, 3) });
       const wantedIds = all.filter((l) => l.kind === 'wanted').map((l) => l.id);
       const [pr, th] = await Promise.all([
         wantedIds.length ? listProgressBulk(wantedIds) : new Map(),
@@ -647,6 +738,7 @@ function ListsIndex({ onOpenList, rev }) {
   );
   return (
     <div style={{ padding: '2px 20px' }}>
+      <WishlistCard summary={wl} onClick={() => onOpenList(wishlistRef())} />
       <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
         {wanted.length ? wanted.map(card) : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
@@ -683,7 +775,7 @@ function listSetName(card) {
 // frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
-function ListCardRow({ card, owned, target, isWanted, onStep, onPeek }) {
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }) {
   const goalMet = isWanted && target > 0 && owned >= target;
   const ownedAny = owned >= 1;
   const setName = listSetName(card);
@@ -746,24 +838,36 @@ function ListCardRow({ card, owned, target, isWanted, onStep, onPeek }) {
         </span>
       </div>
 
-      {/* Frosted -/+ editing the GOAL (wanted qty). The WANT label marks this as
-          goal-editing, distinct from the unlabeled owned-editing on the Cards tab. */}
-      <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
-        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
-          <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
-          <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+      {/* Right rail. Edit mode: frosted -/+ on the GOAL (wanted qty / copies) - the
+          WANT/COPIES label marks it as goal-editing, distinct from the unlabeled
+          owned-editing on the Cards tab. Read mode: the same figure, static. */}
+      {editable ? (
+        <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
+          <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
+            <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+            <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+          </span>
+          <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
         </span>
-        <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
-      </span>
+      ) : (
+        <span style={{ flex: 'none', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', minWidth: 44 }}>
+          <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#8a7a55' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+          <span style={{ font: "600 19px/1 var(--f-display)", color: '#c9bfa8', marginTop: 4 }}>{target}</span>
+        </span>
+      )}
     </div>
   );
 }
 
-function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
+function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
+  const isWishlist = list.kind === 'wishlist';   // the virtual, un-deletable Wishlist (qty_wanted ledger)
   const isWanted = list.kind === 'wanted';
+  const showProgress = isWanted || isWishlist;   // owned-vs-goal bar + "X of Y wanted" figure
   const [meta, setMeta] = useState(list);
-  const [loaded, setLoaded] = useState(false);     // initial listCards fetch done
+  const [loaded, setLoaded] = useState(false);     // initial fetch done
+  const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
+  const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty (live)
   const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
@@ -776,7 +880,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
 
   const load = async () => {
     setLoaded(false);
-    const rows = await listCards(list.id);
+    // Wishlist rows come from the qty_wanted ledger (quantity aliased to wanted);
+    // regular lists from card_list_entries. Both carry `quantity` = the goal.
+    const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
     for (const c of rows) cardIndex.current.set(c.card_id, c);
     setQty(new Map(rows.map((r) => [r.card_id, r.quantity])));
     setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
@@ -801,9 +907,21 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
+  // Wishlist writes the ownership ledger's qty_wanted; a real list writes its entry.
   const write = (cardId, next) => {
     chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
-      .then(() => setListEntry(list.id, cardId, next)).catch(() => {});
+      .then(() => (isWishlist ? setWanted(cardId, next) : setListEntry(list.id, cardId, next))).catch(() => {});
+  };
+  // The in-list picker's add/step - stashes the full card row so a brand-new card
+  // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
+  // no confirm, since you're actively curating.
+  const addStep = (card, delta) => {
+    const id = card.card_id;
+    cardIndex.current.set(id, card);
+    const next = Math.max(0, (qty.get(id) || 0) + delta);
+    haptic('light');
+    setQty((prev) => { const m = new Map(prev); if (next <= 0) m.delete(id); else m.set(id, next); return m; });
+    write(id, next);
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
@@ -838,6 +956,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
   }, [qty, ownQty]);
 
   const openMissing = async () => setMissing(await listProgress(list.id));
+  const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
 
   return (
     <div style={{ padding: '0 20px' }}>
@@ -851,9 +970,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
         }}>‹</button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ font: "700 22px/1.1 var(--f-display)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
-        {isWanted && totals.req > 0 && (
+        {showProgress && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
             <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? '#e3c589' : '#e0899e' }}>{totals.have}</span>
             <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{totals.req}</span>
@@ -865,7 +984,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
 
       {/* Progress bar (wanted only): fills rose as the collection acquires copies,
           turning gold at 100%. "View missing ›" filters to what is still short. */}
-      {isWanted && totals.req > 0 && (
+      {showProgress && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${totals.percent}%`, background: totals.complete ? '#e3c589' : '#e0899e', borderRadius: 3, transition: 'width .3s ease' }} />
@@ -874,28 +993,37 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
             <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}>
               {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
             </span>
-            {totals.missing > 0 && (
+            {isWanted && totals.missing > 0 && (
               <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: '#c76d85' }}>View missing ›</button>
             )}
           </div>
         </div>
       )}
 
-      {/* Summary + hairline rows, or the empty state. Cards join a list from the
-          card sheet's "Add to a list" - there is no inline search here anymore. */}
+      {/* Summary + hairline rows, or the empty state. Read-first: steppers hide
+          until Edit; cards join via the in-list "Add cards" picker. */}
       {!loaded ? <Loading /> : listRows.length === 0 ? (
         <div style={{ padding: '40px 0', textAlign: 'center' }}>
-          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>No cards yet.</div>
-          <button onClick={onGoCards} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Browse the catalog ›</button>
+          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>
+            {isWishlist ? 'Nothing on your wishlist yet.' : 'No cards yet.'}
+          </div>
+          <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Add cards ›</button>
         </div>
       ) : (
         <>
-          <div style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55', marginBottom: 6 }}>
-            {totals.names} card{totals.names === 1 ? '' : 's'}{isWanted && totals.done > 0 ? ` · ${totals.done} complete` : ''}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 6 }}>
+            <span style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
+              {totals.names} card{totals.names === 1 ? '' : 's'}{isWanted && totals.done > 0 ? ` · ${totals.done} complete` : ''}
+            </span>
+            <button onClick={() => setEditing((e) => !e)} aria-pressed={editing}
+              style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
+                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : '#e3c589', border: `1px solid ${editing ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
+              {editing ? 'Done' : 'Edit'}
+            </button>
           </div>
           {listRows.map((c) => (
             <ListCardRow key={c.card_id} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(c.card_id)}
-              isWanted={isWanted} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+              isWanted={showProgress} editable={editing} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
           ))}
         </>
       )}
@@ -904,12 +1032,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
           routes through its OWN confirm sheet - destructive and undoable-never,
           so it is never one tap. */}
       <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
-        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: onGoCards },
-        { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
-        { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: () => setAddOpen(true) },
+        // The Wishlist is virtual + fixed: no rename, duplicate, or delete.
+        ...(isWishlist ? [] : [
+          { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
+          { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+        ]),
         { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
         ...(isWanted ? [{ label: 'Get missing cards', icon: SeekSvg, onClick: openMissing }] : []),
-        { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+        ...(isWishlist ? [] : [{ label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) }]),
       ]} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
@@ -932,12 +1063,17 @@ function ListDetail({ list, onBack, onOpen, onPeek, onGoCards, onChanged }) {
         </div>
       </BottomSheet>
 
-      <ExportListSheet open={exportOpen} listId={list.id} listName={meta.name} onClose={() => setExportOpen(false)} />
+      <ExportListSheet open={exportOpen} fetchText={exportText} listName={meta.name} onClose={() => setExportOpen(false)} />
 
       <ListNameSheet open={rename} kind={isWanted ? 'wanted' : 'custom'} title="RENAME LIST"
         initialName={meta.name} initialDesc={meta.description || ''} submitLabel="Save"
         onClose={() => setRename(false)}
         onSubmit={async (nm, desc) => { await renameList(list.id, nm, desc); setMeta((m) => ({ ...m, name: nm, description: desc })); setRename(false); }} />
+
+      <AddCardsSheet open={addOpen} onClose={() => setAddOpen(false)}
+        title={isWishlist ? 'ADD TO WISHLIST' : 'ADD CARDS'}
+        hint={isWishlist ? 'Search the library and tap + to add cards you want.' : `Search the library and tap + to add to ${meta.name}.`}
+        membership={qty} onStep={addStep} />
 
       <MissingSheet open={!!missing} report={missing} title={`Missing for ${meta.name}`}
         onOpenCard={(id) => onOpen('card', id)} onClose={() => setMissing(null)} onChanged={() => onChanged?.()} />
