@@ -292,9 +292,11 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
   async function load() {
     const bs = await listBlocks();
     setBlocks(bs);
-    const d = {};
-    for (const b of bs) d[b.id] = await widgetData(b);
-    setData(d);
+    // Fetch every widget concurrently, sharing one ctx so common sources
+    // (listDecks) resolve once instead of per-widget, and serially no more.
+    const ctx = {};
+    const pairs = await Promise.all(bs.map(async (b) => [b.id, await widgetData(b, ctx)]));
+    setData(Object.fromEntries(pairs));
   }
   const refreshLayouts = () => listLayouts().then(setLayouts);
   // Re-roll a single widget (Random Card / Random Article) without reloading all.

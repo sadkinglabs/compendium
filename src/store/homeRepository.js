@@ -170,7 +170,13 @@ async function resolveTargets(pairs) {
 
 /* ---------------- per-widget data ---------------- */
 
-export async function widgetData(block) {
+// `ctx` is a per-dashboard-load cache so widgets that need the same expensive
+// source share ONE fetch: Deck Spotlight + Your Decks + Card Collection all want
+// listDecks() (3 queries + enrichment each), so without this a 3-widget board ran
+// it three times. Pass the same ctx object to every widgetData() call in a load.
+const _decks = (ctx) => (ctx.decks ||= listDecks());
+
+export async function widgetData(block, ctx = {}) {
   const pid = activeProfileId();
   const k = normalizeKind(block.type);
 
@@ -192,18 +198,17 @@ export async function widgetData(block) {
     return { count: items.length, items, empty: 'Play named opponents to build rivalries.' };
   }
   if (k === 'deckSpotlight') {
-    const decks = await listDecks();
+    const decks = await _decks(ctx);
     if (!decks.length) return { empty: 'No decks yet - build one in Decks.' };
     const pick = decks.find((d) => d.starred) || [...decks].sort((a, b) => (b.wins + b.losses) - (a.wins + a.losses))[0];
     return { spotlight: { id: pick.id, name: pick.name, image: pick.avatar?.image_slug || null, record: pick.record, winPct: pick.winPct, elems: pick.elems || [] } };
   }
   if (k === 'yourDecks') {
-    const decks = await listDecks();
+    const decks = await _decks(ctx);
     return { count: decks.length, decks: decks.slice(0, 8).map((d) => ({ id: d.id, name: d.name, image: d.avatar?.image_slug || null, record: d.record })), empty: 'No decks yet - build one in Decks.' };
   }
   if (k === 'collectionStats') {
-    const s = await collectionStats();
-    const decks = await listDecks();
+    const [s, decks] = await Promise.all([collectionStats(), _decks(ctx)]);
     const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
     let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
     return { owned: s.owned, unique: s.unique, wishlist: s.wishlist, buildable, decks: decks.length, empty: 'No cards owned yet.' };

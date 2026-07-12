@@ -282,13 +282,16 @@ function Cards({ onOpen, onPeek }) {
   }
 
   // Ownership post-filter (total = regular + foil: a foil-only card is owned).
-  const shown = (pool || []).filter((c) => {
-    const t = val(c.card_id, 'owned') + val(c.card_id, 'foil'), w = val(c.card_id, 'wanted');
+  // Memoised: re-scans the pool only when the pool, ownership map, or scope
+  // change - not on every render (e.g. a sheet open or an unrelated state flip).
+  const shown = useMemo(() => (pool || []).filter((c) => {
+    const o = ow.get(c.card_id);
+    const t = (o?.owned || 0) + (o?.foil || 0), w = o?.wanted || 0;
     if (own === 'owned') return t > 0;
     if (own === 'wishlist') return w > 0;
     if (own === 'missing') return t === 0;
     return true;
-  });
+  }), [pool, ow, own]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
   const activeCount = (own !== 'all' ? 1 : 0) + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);

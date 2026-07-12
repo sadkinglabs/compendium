@@ -520,7 +520,11 @@ body.roll-active .dd-pill { display: none !important; }
    and every bespoke body stay put. */
 /* padding-bottom carries --kb so a modal with a bottom input (end-screen opponent
    name) rides above the soft keyboard instead of being covered. */
-.vc-modal-overlay { position: fixed; inset: 0; background: rgba(4,3,2,.72); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px 24px calc(24px + var(--kb, 0px) / var(--ui-scale, 1)); animation: cxfade .18s ease; }
+/* No backdrop-filter: this overlay covers the whole viewport while the live
+   counter's infinite pulse animations run underneath, so a blur would force the
+   WebView to re-rasterise the full screen every frame (jank + battery). The
+   opaque scrim alone reads fine. */
+.vc-modal-overlay { position: fixed; inset: 0; background: rgba(4,3,2,.86); z-index: 120; display: flex; align-items: center; justify-content: center; padding: 24px 24px calc(24px + var(--kb, 0px) / var(--ui-scale, 1)); animation: cxfade .18s ease; }
 /* The Hold-on confirm is summoned FROM the end screen (also a z-120 overlay) -
    it must always paint above it, independent of DOM order. */
 #confirm-overlay { z-index: 130; }
