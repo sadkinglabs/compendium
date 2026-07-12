@@ -656,6 +656,27 @@ export async function commitImportText(plan, deckName) {
   return { id, name, added };
 }
 
+// Resolve a pasted "qty name" list to catalogue rows for a card LIST (no zones,
+// no rarity caps - a list just tallies cards). Merges duplicate lines by card and
+// reports unrecognised names. Returns { adds:[{card, qty}], unknown:[{name,qty}] }.
+export async function resolveCardList(text) {
+  const { zones } = parseDeckText(text);
+  const cat = await getCatalog();
+  const byName = new Map(cat.map((c) => [c._nameLc, c]));
+  const merged = new Map();
+  const unknown = [];
+  for (const zone of ZONES) {
+    for (const { name, qty } of zones[zone]) {
+      const card = byName.get(String(name).toLowerCase().trim());
+      if (!card) { unknown.push({ name, qty }); continue; }
+      const cur = merged.get(card.card_id) || { card, qty: 0 };
+      cur.qty += Math.max(0, qty | 0);
+      merged.set(card.card_id, cur);
+    }
+  }
+  return { adds: [...merged.values()].filter((a) => a.qty > 0), unknown };
+}
+
 /** A deck name unique within the active profile. If `base` already exists (case-
  *  insensitively), appends " (1)", " (2)", … - so importing a deck whose name you already
  *  have never silently creates two identically-named decks. */

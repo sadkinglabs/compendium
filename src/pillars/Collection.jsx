@@ -6,7 +6,7 @@
 // compareEngine. Accent is ruby, chrome-only.
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getPool, getSets, getArtists, listDecks } from '../store/deckRepository.js';
+import { getPool, getSets, getArtists, listDecks, resolveCardList } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
 import {
@@ -148,6 +148,73 @@ function ImportTextSheet({ open, onClose }) {
           {busy ? 'Importing…' : 'Import'}
         </button>
       </div>
+    </BottomSheet>
+  );
+}
+
+// Bulk-add to a card list: paste a "qty name" list (a deck export, or the copy
+// from the buildability widget), review recognised vs not, then add. Copies are
+// ADDED via the caller's onApply, so it works for the wishlist too.
+function ListBulkAddSheet({ open, onClose, onApply, listName }) {
+  const [text, setText] = useState('');
+  const [plan, setPlan] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setText(''); setPlan(null); setBusy(false); } }, [open]);
+  const review = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try { setPlan(await resolveCardList(text)); } catch { toast("Couldn't read that list.", { tone: 'danger' }); }
+    setBusy(false);
+  };
+  const apply = () => { if (!plan?.adds.length) return; onApply(plan.adds); onClose(); };
+  const totalQ = plan ? plan.adds.reduce((s, a) => s + a.qty, 0) : 0;
+  const Section = ({ label, color, children }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.18em', color, textTransform: 'uppercase', marginBottom: 8 }}>{label}</div>
+      {children}
+    </div>
+  );
+  const Line = ({ name, note, dim }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? '#8a8175' : '#d8cebb' }}>{name}</span>
+      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? '#8a8175' : '#cba75f' }}>{note}</span>
+    </div>
+  );
+  return (
+    <BottomSheet open={open} title="ADD FROM TEXT" onClose={onClose}>
+      {!plan ? (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            Paste a list - one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>. Deck &amp; buildability exports work too. Copies are added to {listName}.
+          </div>
+          <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
+            placeholder={'4 Wild Boars\n2 Abundance\n1 Grim Reaper…'}
+            style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+            <button onClick={review} disabled={!text.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text.trim() && !busy ? 1 : 0.5 }}>{busy ? 'Reading…' : 'Review'}</button>
+          </div>
+        </>
+      ) : (
+        <>
+          {plan.adds.length > 0 ? (
+            <Section label={`Adding · ${totalQ}`} color="#8fd3a8">
+              {plan.adds.map((a) => <Line key={a.card.card_id} name={a.card.name} note={`${a.qty}×`} />)}
+            </Section>
+          ) : (
+            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px', textAlign: 'center' }}>Nothing recognised in that text.</div>
+          )}
+          {plan.unknown.length > 0 && (
+            <Section label="Not recognised" color="#c98f8f">
+              {plan.unknown.map((u, i) => <Line key={u.name + i} dim name={u.name} note={`${u.qty}×`} />)}
+            </Section>
+          )}
+          <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+            <button onClick={() => setPlan(null)} style={{ ...BTN_GHOST, flex: 1 }}>Back</button>
+            <button onClick={apply} disabled={!plan.adds.length} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: plan.adds.length ? 1 : 0.5 }}>Add {totalQ} card{totalQ === 1 ? '' : 's'}</button>
+          </div>
+        </>
+      )}
     </BottomSheet>
   );
 }
@@ -1030,6 +1097,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [loaded, setLoaded] = useState(false);     // initial fetch done
   const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
   const [addOpen, setAddOpen] = useState(false);   // in-list add picker
+  const [bulkOpen, setBulkOpen] = useState(false); // paste-a-list bulk add
   const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty (live)
   const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
@@ -1195,6 +1263,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           so it is never one tap. */}
       <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
         { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: () => setAddOpen(true) },
+        { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
         // The Wishlist is virtual + fixed: no rename, duplicate, or delete.
         ...(isWishlist ? [] : [
           { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
@@ -1236,6 +1305,18 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         title={isWishlist ? 'ADD TO WISHLIST' : 'ADD CARDS'}
         hint={isWishlist ? 'Search the library and tap + to add cards you want.' : `Search the library and tap + to add to ${meta.name}.`}
         membership={qty} onStep={addStep} />
+
+      <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
+        onApply={(adds) => {
+          // ADD each resolved qty onto the list in one state write; `write` routes
+          // to the wishlist ledger or the list entry per the existing path.
+          haptic('light');
+          const m = new Map(qty);
+          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); const next = (m.get(a.card.card_id) || 0) + a.qty; m.set(a.card.card_id, next); write(a.card.card_id, next); }
+          setQty(m);
+          const copies = adds.reduce((s, a) => s + a.qty, 0);
+          toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
+        }} />
 
       <MissingSheet open={!!missing} report={missing} title={`Missing for ${meta.name}`}
         onOpenCard={(id) => onOpen('card', id)} onClose={() => setMissing(null)} onChanged={() => onChanged?.()} />
