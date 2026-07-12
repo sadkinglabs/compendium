@@ -3,6 +3,7 @@
 // Filters & Sort sheet built from catalogue values. Enforces rarity/zone limits.
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { getPool, getSets, getArtists, changeQty, parseCardQuery, cardMatchesQuery } from '../store/deckRepository.js';
+import { ownedMap, subscribeCollection } from '../store/ownedRepository.js';
 import { query } from '../store/db.js';
 import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
@@ -33,6 +34,8 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
   const [powerCmp, setPowerCmp] = useState({ op: '>=', val: null });
   const [artist, setArtist] = useState('');
+  const [ownedOnly, setOwnedOnly] = useState(false);   // filter to cards in My Collection
+  const [ownedSet, setOwnedSet] = useState(() => new Set());
   const [setOpts, setSetOpts] = useState([]);
   const [artistOpts, setArtistOpts] = useState([]);
   const [pool, setPool] = useState([]);
@@ -52,7 +55,8 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
     // and reported so the user knows they had no effect.
     const parsed = parseCardQuery(q);
     setIgnoredScopes([...parsed.scopes.has.map((v) => `has:${v}`), ...parsed.scopes.is.map((v) => `is:${v}`)]);
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
+    let rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
+    if (ownedOnly) rows = rows.filter((c) => ownedSet.has(c.card_id));   // only cards in My Collection
     setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
   async function loadQtys() {
@@ -60,16 +64,23 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
     const m = {}; for (const r of rows) m[r.card_id] = r.n;
     qtysRef.current = m; setQtys(m);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 120); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
+  useEffect(() => { const t = setTimeout(loadPool, 120); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort, ownedOnly, ownedSet]);
   useEffect(() => { loadQtys(); /* eslint-disable-next-line */ }, [deckId]);
+  // Owned card_ids for the "In my collection" filter; refreshes live with the ledger.
+  useEffect(() => {
+    const load = () => ownedMap().then((m) => setOwnedSet(new Set(m.keys())));
+    load();
+    const off = subscribeCollection(load);
+    return off;
+  }, []);
   const nComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
-  const activeCount = els.length + types.length + rarities.length + sets.length + (multi ? 1 : 0) + (artist ? 1 : 0) + nComp + (sort.length ? 1 : 0);
+  const activeCount = els.length + types.length + rarities.length + sets.length + (multi ? 1 : 0) + (artist ? 1 : 0) + (ownedOnly ? 1 : 0) + nComp + (sort.length ? 1 : 0);
   useEffect(() => { registerCount?.(activeCount); }, [activeCount, registerCount]);
 
   function clearAll() {
     setEls([]); setTypes([]); setRarities([]); setSets([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
-    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setSort([]);
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setOwnedOnly(false); setSort([]);
   }
 
   const afterChange = () => { loadQtys(); onChanged?.(); };
@@ -141,6 +152,15 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
         thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         sort={sort} setSort={setSort}
+        summaryLead={ownedOnly ? ['In my collection'] : []}
+        leadSections={(
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel label="COLLECTION" />
+            <ChipRow>
+              <Chip label="In my collection" active={ownedOnly} onClick={() => setOwnedOnly((v) => !v)} />
+            </ChipRow>
+          </div>
+        )}
         trailSections={(
           <div style={{ marginBottom: 22 }}>
             <SectionLabel label="LIST DISPLAY" />
