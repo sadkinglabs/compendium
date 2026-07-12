@@ -10,9 +10,12 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -125,7 +128,8 @@ fun CameraOverlay(phase: Phase, lockEvent: Int, lockColor: Color, modifier: Modi
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .padding(top = 70.dp, start = 32.dp, end = 32.dp)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(top = 24.dp, start = 32.dp, end = 32.dp)
                 .semantics { contentDescription = label },
         )
     }

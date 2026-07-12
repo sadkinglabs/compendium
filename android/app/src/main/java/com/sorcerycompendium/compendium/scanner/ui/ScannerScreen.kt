@@ -4,8 +4,12 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -96,7 +100,7 @@ fun ScannerScreen(
                 onSaveDeck = { onSaveDeck(rec) },
                 onImportMatch = { onImportMatch(rec) },
                 onDismiss = onDismissSheet,
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding(),
             )
         }
 
@@ -111,7 +115,8 @@ fun ScannerScreen(
                 fontFamily = FontFamily.Monospace,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(start = 10.dp, top = 60.dp, end = 10.dp)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(start = 10.dp, top = 44.dp, end = 10.dp)
                     .background(Color(0xAA000000))
                     .padding(6.dp),
             )
@@ -120,12 +125,18 @@ fun ScannerScreen(
         // Close (exit scanner) - drawn last so it stays tappable above the dismiss scrim.
         TextButton(
             onClick = onClose,
-            modifier = Modifier.align(Alignment.TopStart).padding(8.dp),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(8.dp),
         ) { Text("Close", color = Color.White) }
 
         SnackbarHost(
             snackbarHost,
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(bottom = 8.dp),
         )
     }
 }
