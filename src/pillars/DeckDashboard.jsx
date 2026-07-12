@@ -377,9 +377,9 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
     // The deck resolved to nothing - deleted, or a stale resume/link target.
     // Offer an escape instead of spinning forever.
     <div style={{ minHeight: '48vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32, gap: 16 }}>
-      <div style={{ font: "600 17px/1.3 'Cinzel',Georgia,serif", color: '#dcb86f' }}>This deck no longer exists</div>
-      <div style={{ font: "400 14px/1.5 'EB Garamond',Georgia,serif", color: '#9a8cae' }}>It may have been deleted or belongs to another profile.</div>
-      {onMissing && <button onClick={onMissing} style={{ padding: '11px 22px', borderRadius: 14, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: '#dcb86f', font: "600 13px/1 'Hanken Grotesk',sans-serif", cursor: 'pointer' }}>Open Library</button>}
+      <div style={{ font: "600 17px/1.3 var(--f-display)", color: '#dcb86f' }}>This deck no longer exists</div>
+      <div style={{ font: "400 14px/1.5 var(--f-read)", color: '#8a8175' }}>It may have been deleted or belongs to another profile.</div>
+      {onMissing && <button onClick={onMissing} style={{ padding: '11px 22px', borderRadius: 14, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: '#dcb86f', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' }}>Open Library</button>}
     </div>
   ) : <Loading />;
 

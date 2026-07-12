@@ -46,7 +46,7 @@ export function ConfirmHost() {
   return (
     <Sheet open title={opts.title || 'Confirm'} onClose={() => answer(false)}>
       <div style={{ padding: '0 16px' }}>
-        {opts.body && <p style={{ font: "400 14px/1.5 'EB Garamond',Georgia,serif", color: 'var(--ink-body-2,#c9bfae)', margin: '0 0 18px' }}>{opts.body}</p>}
+        {opts.body && <p style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2,#c9bfae)', margin: '0 0 18px' }}>{opts.body}</p>}
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={() => answer(false)} style={btnGhost}>{opts.cancelLabel || 'Cancel'}</button>
           <button onClick={() => answer(true)} style={opts.danger ? btnDanger : btnGold}>{opts.confirmLabel || 'Confirm'}</button>

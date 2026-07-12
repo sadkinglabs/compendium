@@ -183,7 +183,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
           <div className="dpage-scroll">
             {decks == null ? <Loading />
               : libList.length === 0 ? (
-                <BlankState hue="160,110,220" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
+                <BlankState hue="160,140,192" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
               ) : libList.map((d) => <DeckCard key={d.id} deck={d} build={buildMap.get(d.id)} onClick={() => openDeck(d)} />)}
           </div>
@@ -209,7 +209,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
               </DockLeft>
             </>
           ) : (
-            <BlankState hue="160,110,220" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
+            <BlankState hue="160,140,192" title="No Deck Open" body={<>Choose a deck from your Library<br />to start building.</>} />
           )}
         </div>
       )}
@@ -255,9 +255,9 @@ function RenameSheet({ open, initial, onClose, onSave }) {
       <div style={{ padding: '0 16px', display: 'flex', gap: 10 }}>
         <input value={name} autoFocus onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') onSave(name); }}
-          style={{ flex: 1, height: 44, background: 'rgba(11,7,20,.7)', border: '1px solid rgba(160,110,220,.25)', borderRadius: 12, padding: '0 14px', color: '#efe7d8', font: "400 15px/1 var(--f-read)" }} />
+          style={{ flex: 1, height: 44, background: 'rgba(42,33,20,.5)', border: '1px solid #4a3c22', borderRadius: 12, padding: '0 14px', color: '#efe7d8', font: "400 15px/1 var(--f-read)" }} />
         <button onClick={() => onSave(name)}
-          style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 'Hanken Grotesk',sans-serif", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
+          style={{ padding: '0 18px', borderRadius: 12, background: 'rgba(18,16,13,.85)', color: '#dcb86f', font: "700 13px/1 var(--f-ui)", border: '1px solid rgba(220,184,111,.45)', cursor: 'pointer' }}>Save</button>
       </div>
     </Sheet>
   );

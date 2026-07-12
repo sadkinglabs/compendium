@@ -14,11 +14,13 @@ export const BTN_GHOST = { padding: '12px 0', borderRadius: 12, background: 'tra
    in the pillar's hue, a Cinzel title, a Garamond line, optional action.
    `hue` is "r,g,b" - decks violet "160,110,220", play jade "143,211,168". */
 export function BlankState({ hue = '220,184,111', title, body, action, minHeight = '52vh' }) {
+  // The diamond stays gold (a large chrome mark); the pillar hue lives only in
+  // the soft glow behind it - subtle tint, never a large fill.
   return (
     <div style={{ minHeight, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: 32 }}>
-      <div style={{ width: 52, height: 52, border: `2px solid rgba(${hue},.28)`, transform: 'rotate(45deg)', marginBottom: 32, boxShadow: `0 0 28px rgba(${hue},.18)` }} />
-      <h2 style={{ font: "600 20px/1.2 'Cinzel',Georgia,serif", color: '#dcb86f', marginBottom: 10 }}>{title}</h2>
-      {body && <p style={{ font: "400 15px/1.6 'EB Garamond',Georgia,serif", color: 'var(--ink-muted)', marginBottom: action ? 24 : 0 }}>{body}</p>}
+      <div style={{ width: 52, height: 52, border: '2px solid rgba(220,184,111,.28)', transform: 'rotate(45deg)', marginBottom: 32, boxShadow: `0 0 28px rgba(${hue},.2)` }} />
+      <h2 style={{ font: "600 20px/1.2 var(--f-display)", color: '#dcb86f', marginBottom: 10 }}>{title}</h2>
+      {body && <p style={{ font: "400 15px/1.6 var(--f-read)", color: 'var(--ink-muted)', marginBottom: action ? 24 : 0 }}>{body}</p>}
       {action}
     </div>
   );

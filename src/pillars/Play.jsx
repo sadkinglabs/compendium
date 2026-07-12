@@ -364,13 +364,13 @@ function DeckPicker({ decks, value, onChange }) {
   const selected = decks.find((d) => d.id === value) || null;
   const recent = [...decks].sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || '')).slice(0, 6);
   const results = needle ? decks.filter((d) => d.name.toLowerCase().includes(needle)).slice(0, 14) : recent;
-  const chipOn = { ...chip, borderColor: 'rgba(220,184,111,.6)', color: 'var(--gold-head)' };
+  const chipOn = { ...chip, borderColor: 'rgba(220,184,111,.6)', color: '#e3c589' };
   const searchable = decks.length > 6;
   return (
     <div>
       <Lbl t="PILOTED DECK" />
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: selected ? 'var(--gold-head)' : 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected ? selected.name : 'No deck attributed'}</span>
+        <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: selected ? '#e3c589' : 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selected ? selected.name : 'No deck attributed'}</span>
         {selected && <button onClick={() => onChange(null)} style={{ ...ghost, flex: 'none', padding: '7px 13px', font: "600 11px/1 var(--f-ui)" }}>Clear</button>}
       </div>
       {searchable && (
@@ -518,8 +518,8 @@ export function ImportMatchSheet({ payload, onClose, onSaved }) {
   return (
     <Sheet open title="Import result" onClose={onClose}>
       <div style={{ padding: '0 20px' }}>
-        <div style={{ font: "italic 400 13px/1.5 'EB Garamond',Georgia,serif", color: 'var(--ink-muted)', marginBottom: 16 }}>
-          Shared by <span style={{ fontStyle: 'normal', color: 'var(--gold-head)' }}>{payload.opponentName || 'your opponent'}</span>. Confirm the result and attribute your own deck.
+        <div style={{ font: "italic 400 13px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 16 }}>
+          Shared by <span style={{ fontStyle: 'normal', color: '#e3c589' }}>{payload.opponentName || 'your opponent'}</span>. Confirm the result and attribute your own deck.
         </div>
         <div style={{ marginBottom: 22 }}>
           <Lbl t="RESULT" />

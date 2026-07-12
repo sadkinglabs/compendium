@@ -469,7 +469,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
             <button className="modal-btn" onClick={() => setConfirm(null)}>Cancel</button>
             <button className="modal-btn danger" onClick={() => { const a = confirm.action; setConfirm(null); a?.(); }}>Discard</button>
           </>}>
-          <div style={{ padding: '18px 22px 4px', textAlign: 'center', font: "400 15px/1.5 'EB Garamond',Georgia,serif", color: 'var(--muted)' }}>{confirm.label}</div>
+          <div style={{ padding: '18px 22px 4px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--muted)' }}>{confirm.label}</div>
         </VModal>
       )}
     </div>
@@ -711,7 +711,7 @@ function ShareQRModal({ link, onClose }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '8px 22px 18px', gap: 15 }}>
           <QRCode text={link} size={224} />
-          <div style={{ font: "400 13px/1.55 'EB Garamond',Georgia,serif", color: 'var(--muted)', textAlign: 'center', maxWidth: 280 }}>
+          <div style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--muted)', textAlign: 'center', maxWidth: 280 }}>
             Have your opponent scan this with their camera, or send them the link. They attribute their own deck.
           </div>
           <div style={{ display: 'flex', gap: 10, width: '100%', maxWidth: 280 }}>

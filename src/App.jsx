@@ -317,7 +317,7 @@ export default function App() {
 
       {storageFull && (
         <div onClick={() => setStorageFull(false)} role="alert"
-          style={{ margin: '0 16px 8px', padding: '10px 14px', borderRadius: 12, background: 'rgba(60,20,16,.9)', border: '1px solid rgba(224,120,106,.5)', color: '#f0c9c2', font: "500 12.5px/1.45 var(--f-ui)", cursor: 'pointer' }}>
+          style={{ margin: '0 16px 8px', padding: '10px 14px', borderRadius: 12, background: 'rgba(42,26,20,.92)', border: '1px solid rgba(200,120,106,.45)', color: '#f0c9c2', font: "500 12.5px/1.45 var(--f-ui)", cursor: 'pointer' }}>
           Storage is full - recent changes may not be saved. Free up space or export a profile, then tap to dismiss.
         </div>
       )}
@@ -905,14 +905,11 @@ function ImportPasteModal({ open, onClose, onParsed }) {
 function SearchHelpModal({ open, kind = 'codex', onClose }) {
   if (!open) return null;
   const deck = kind === 'deck';
-  // Chassis + chip palette: gold for the codex, the deck pillar's amethyst here.
-  const chassis = deck
-    ? { background: 'linear-gradient(180deg,#1c1330,#0e0a1a)', border: '1px solid rgba(160,110,220,.32)' }
-    : { background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)' };
-  const glow = deck ? 'rgba(157,106,214,.14)' : 'rgba(220,184,111,.12)';
-  const chip = deck
-    ? { color: '#c79af0', background: 'rgba(157,106,214,.12)', border: '1px solid rgba(160,110,220,.32)' }
-    : { color: 'var(--gold-leaf)', background: 'rgba(220,184,111,.1)', border: '1px solid rgba(220,184,111,.22)' };
+  // One gold chassis + chip (large fills stay black+gold); the deck variant only
+  // carries a subtle violet glow as chrome wayfinding.
+  const chassis = { background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid rgba(220,184,111,.24)' };
+  const glow = deck ? 'rgba(160,140,192,.13)' : 'rgba(220,184,111,.12)';
+  const chip = { color: 'var(--gold-leaf)', background: 'rgba(220,184,111,.1)', border: '1px solid rgba(220,184,111,.22)' };
   const example = deck
     ? ['t:minion el:f c<=3 kw:charge', 'every cheap Fire minion with Charge']
     : ['t:minion e:air airborne', 'every Air minion whose text mentions airborne'];
@@ -931,7 +928,7 @@ function SearchHelpModal({ open, kind = 'codex', onClose }) {
           </div>
           {QUERY_HELP.map(Row)}
           <div style={{ marginTop: 16, marginBottom: 2, font: "600 10.5px/1 var(--f-mono)", letterSpacing: '.14em', color: 'var(--ink-muted)' }}>
-            {deck ? 'CODEX SCOPE — IGNORED HERE' : 'CODEX SCOPE'}
+            {deck ? 'CODEX SCOPE - IGNORED HERE' : 'CODEX SCOPE'}
           </div>
           <div style={{ opacity: deck ? 0.5 : 1 }}>{SCOPE_HELP.map(Row)}</div>
           <div style={{ marginTop: 14, font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)' }}>
