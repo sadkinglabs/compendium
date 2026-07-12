@@ -203,7 +203,13 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
    FAB can never diverge when the keyboard opens. Transparent + pass-through; only
    the pill and the FAB (the grandchildren) take pointer events. The empty search
    slot (flex:1) simply pushes a lone FAB to the right. */
-.cx-dock { position: fixed; left: 16px; right: 16px; bottom: calc(62px + env(safe-area-inset-bottom) + 16px + var(--kb, 0px) / var(--ui-scale, 1)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
+/* Bottom offset: clear the bottom nav when the keyboard is closed, or sit just
+   above the keyboard when it's open - whichever is higher. max() (not a sum) so
+   the two don't STACK: the nav base is behind the keyboard while typing, so
+   adding it on top of --kb floated the dock ~78px above the keyboard with a dead
+   band of list rows showing through. Closed: --kb=0, the nav base wins. Open:
+   --kb dwarfs the base, so the dock rides 12px above the keyboard, flush. */
+.cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(62px + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
 .cx-dock-search { flex: 1; min-width: 0; }
 .cx-dock-fab { flex: none; position: relative; }   /* anchor for the stacked add FAB (My Collection edit mode) */
 .cx-dock > * > * { pointer-events: auto; }
