@@ -236,6 +236,11 @@ const SET_LABEL = { '001': 'Alpha', '002': 'Beta', '004': 'Arthurian Legends', '
 const SET_RANK = { '001': 0, '002': 1, '004': 2, '005': 3, '006': 4, '999': 5, '': 6 };
 const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 
+// My Collection ownership filter (multi-select). Empty = the mode default
+// (read view = owned only, add view = everything).
+const OWN_OPTS = [['owned', 'Owned'], ['unowned', 'Not owned'], ['wishlist', 'Wishlisted']];
+const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted' };
+
 // Tappable set header - the canonical Manuscript rubric (gold Cinzel label, fade
 // hairline, gold count) with a quiet chevron folding the group. Transparent, flat,
 // exactly like the section rubrics everywhere else in the app.
@@ -286,6 +291,10 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
   const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
+  const [wishSet, setWishSet] = useState(() => new Set());   // card_ids on the wishlist
+  const [ownScope, setOwnScope] = useState([]);       // ownership filter: 'owned' | 'unowned' | 'wishlist'
+  const ownActive = ownScope.length > 0;
+  const toggleOwn = useCallback((v) => setOwnScope((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])), []);
   const [collapsed, setCollapsed] = useState(() => new Set());
   const toggleSet = useCallback((code) => setCollapsed((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }), []);
   const [setOpts, setSetOpts] = useState([]);
@@ -297,14 +306,19 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     setPool(parsed.clauses.length ? rows.filter((c) => cardMatchesQuery(c, parsed)) : rows);
   }
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, artist, sort]);
-  useEffect(() => { ownedBySet().then(setOwBySet); }, []);
+  const refreshOwnership = useCallback(async () => {
+    const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
+    setOwBySet(obs);
+    setWishSet(new Set(wl.map((r) => r.card_id)));
+  }, []);
+  useEffect(() => { refreshOwnership(); }, [refreshOwnership]);
   // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
   // so our optimistic steps commit first (see the write path below).
   useEffect(() => {
     let t = null;
-    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(() => ownedBySet().then(setOwBySet), 250); });
+    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(refreshOwnership, 250); });
     return () => { clearTimeout(t); off(); };
-  }, []);
+  }, [refreshOwnership]);
 
   // A stepper edits OWNED for ONE (card, set) printing - the only place owned
   // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
@@ -332,6 +346,18 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     return t;
   }, [pool]);
 
+  // True owned-per-set (all owned rows, independent of the row filter) - drives the
+  // header's owned/total so it stays honest even under a "Not owned" filter.
+  const ownedPerSet = useMemo(() => {
+    const m = new Map();
+    for (const [k, v] of owBySet) {
+      if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+      const code = k.slice(k.lastIndexOf('|') + 1);
+      m.set(code, (m.get(code) || 0) + 1);
+    }
+    return m;
+  }, [owBySet]);
+
   const groups = useMemo(() => {
     const g = new Map();   // code -> { code, name, rows:[{card,set,owned,foil}] }
     const push = (code, name, row) => {
@@ -339,35 +365,48 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       if (!x) { x = { code, name: name || SET_LABEL[code] || code, rows: [] }; g.set(code, x); }
       x.rows.push(row);
     };
+    // Ownership filter: when set it decides what shows (owned / not-owned / wishlisted
+    // union); when empty, fall back to the mode default (read = owned only, add = all).
+    const matches = (isOwned, isWish) => {
+      if (!ownActive) return editMode ? true : isOwned;
+      return (ownScope.includes('owned') && isOwned)
+        || (ownScope.includes('unowned') && !isOwned)
+        || (ownScope.includes('wishlist') && isWish);
+    };
     for (const c of (pool || [])) {
+      const isWish = wishSet.has(c.card_id);
       for (const s of (c._sets || [])) {
         if (!s.code) continue;
         const oc = owBySet.get(c.card_id + '|' + s.code);
         const owned = oc?.owned || 0, foil = oc?.foil || 0;
-        if (!editMode && owned + foil === 0) continue;   // read view: owned only
+        if (!matches(owned + foil > 0, isWish)) continue;
         push(s.code, s.name, { card: c, set: s.code, owned, foil });
       }
     }
-    // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set).
-    if (!editMode) {
+    // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set). These
+    // are always owned, so they surface in the default read view or an owned/wishlist filter.
+    const wantLegacy = ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode;
+    if (wantLegacy) {
       const byId = new Map((pool || []).map((c) => [c.card_id, c]));
       for (const [k, v] of owBySet) {
         const i = k.lastIndexOf('|');
         if (k.slice(i + 1) !== '') continue;
         if ((v.owned || 0) + (v.foil || 0) === 0) continue;
         const card = byId.get(k.slice(0, i));
-        if (card) push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
+        if (!card) continue;
+        if (ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
+        push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
       }
     }
     return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
-  }, [pool, owBySet, editMode]);
+  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive]);
 
   const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0);
-  const activeCount = sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
+  const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
   const clearAll = () => {
-    setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
+    setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
     setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setSort([]);
   };
@@ -396,7 +435,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
             let budget = 250;
             return groups.map((grp) => {
               const isOpen = !collapsed.has(grp.code);
-              const ownedCount = grp.rows.reduce((n, r) => n + (r.owned + r.foil > 0 ? 1 : 0), 0);
+              const ownedCount = ownedPerSet.get(grp.code) || 0;
               const total = setTotals.get(grp.code) || grp.rows.length;
               const rows = isOpen ? grp.rows.slice(0, budget) : [];
               budget -= rows.length;
@@ -442,6 +481,15 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
       <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
+        summaryLead={ownScope.map((s) => OWN_LABEL[s])}
+        leadSections={(
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel label="OWNERSHIP" count={ownScope.length || undefined} />
+            <ChipRow>
+              {OWN_OPTS.map(([k, l]) => <Chip key={k} label={l} active={ownScope.includes(k)} onClick={() => toggleOwn(k)} />)}
+            </ChipRow>
+          </div>
+        )}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         sets={sets} setSets={setSets} setOpts={setOpts}
