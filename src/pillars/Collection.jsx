@@ -236,17 +236,23 @@ const SET_LABEL = { '001': 'Alpha', '002': 'Beta', '004': 'Arthurian Legends', '
 const SET_RANK = { '001': 0, '002': 1, '004': 2, '005': 3, '006': 4, '999': 5, '': 6 };
 const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 
-// Sticky, tappable set header: name + owned/total, chevron folds the group.
+// Tappable set header - the canonical Manuscript rubric (gold Cinzel label, fade
+// hairline, gold count) with a quiet chevron folding the group. Transparent, flat,
+// exactly like the section rubrics everywhere else in the app.
 function SetHeader({ name, owned, total, collapsed, onToggle }) {
   return (
     <button onClick={onToggle} aria-expanded={!collapsed}
-      style={{ position: 'sticky', top: 52, zIndex: 5, width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-        padding: '9px 4px', margin: '10px 0 0', cursor: 'pointer', textAlign: 'left',
-        background: 'linear-gradient(180deg, var(--bg) 62%, rgba(0,0,0,0))', border: 'none', borderBottom: '1px solid var(--hair-22)' }}>
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#c76d85" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"
-        aria-hidden="true" style={{ flex: 'none', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .15s' }}><polyline points="6 9 12 15 18 9" /></svg>
-      <span style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase', color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-      <span style={{ flex: 'none', font: "600 12px/1 var(--f-mono)", color: '#8a8175' }}><span style={{ color: '#e3c589' }}>{owned}</span> / {total}</span>
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '18px 0 8px', margin: '0 0 4px',
+        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer',
+        font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: '#cba75f' }}>
+      <span style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+      <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
+      <span style={{ flex: 'none', font: "600 15px/1 var(--f-display)", letterSpacing: 'normal', color: '#c9b487' }}>
+        <span style={{ color: '#e3c589' }}>{owned}</span> / {total}
+      </span>
+      <span aria-hidden="true" style={{ flex: 'none', color: '#5c554b', display: 'inline-flex', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .2s' }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </span>
     </button>
   );
 }
