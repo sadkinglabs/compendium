@@ -15,7 +15,7 @@ import BottomDock from './components/BottomDock.jsx';
 import SearchPill from './components/SearchPill.jsx';
 import CardArt from './components/CardArt.jsx';
 import { thresholdRuns } from './store/cardArt.js';
-import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
+import { importCuriosaUrl } from './store/deckRepository.js';
 import Home from './pillars/Home.jsx';
 import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
@@ -480,13 +480,10 @@ export default function App() {
           goTab('decks'); setDeckOpen({ id, name });
         }} />
 
-      {/* Import from pasted text (Arcanum Format) */}
+      {/* Import from pasted text - the sheet now runs its own parse -> review ->
+          confirm; we just navigate to the created deck. */}
       <ImportTextSheet open={importMode === 'text'} onClose={() => setImportMode(null)}
-        onImport={async (text, name) => {
-          const { id, unresolved } = await importFromText(text, name); setImportMode(null); bump();
-          toast(unresolved ? `Imported · ${unresolved} card(s) kept as placeholders` : 'Deck imported');
-          goTab('decks'); setDeckOpen({ id, name: name || 'Imported deck' });
-        }} />
+        onDone={(id, name) => { setImportMode(null); bump(); goTab('decks'); setDeckOpen({ id, name }); }} />
 
       {/* Pre-match avatar picker - centered modal over the (dimmed) app, so it
           doesn't take over the interface. Scrim tap cancels. */}

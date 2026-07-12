@@ -613,6 +613,49 @@ export async function importFromText(text, deckName) {
   return { id, unresolved };
 }
 
+// Dry-run a pasted deck list for a NEW deck: resolve the avatar + each card line,
+// merge by card_id, cap by the rarity copy limit (empty deck -> already 0), and
+// report the unrecognised lines. Writes nothing - returns a plan for a confirm
+// step (see commitImportText). Mirrors planDeckTextAdd so the review UI is shared.
+export async function planImportText(text, deckName) {
+  const { avatar, zones } = parseDeckText(text);
+  const cat = await getCatalog();
+  const byName = new Map(cat.map((c) => [c._nameLc, c]));
+  const lc = (s) => String(s || '').toLowerCase().trim();
+  let avatarPlan = null;
+  if (avatar) { const a = byName.get(lc(avatar)); avatarPlan = { name: avatar, cardId: a?.card_id || null, resolved: !!a }; }
+  const merged = new Map();   // card_id -> { card, zone, requested }
+  const unknown = [];
+  for (const zone of ZONES) {
+    for (const { name, qty } of zones[zone]) {
+      const card = byName.get(lc(name));
+      if (!card) { unknown.push({ name, qty }); continue; }
+      const cur = merged.get(card.card_id) || { card, zone, requested: 0 };
+      cur.requested += Math.max(0, qty | 0);
+      merged.set(card.card_id, cur);
+    }
+  }
+  const adds = [];
+  for (const { card, zone, requested } of merged.values()) {
+    if (requested <= 0) continue;
+    const limit = copyLimit(card);
+    const addQty = Math.min(requested, limit);   // new deck: nothing already in it
+    adds.push({ cardId: card.card_id, name: card.name, rarity: card.rarity, rulesText: card.rules_text, zone, requested, limit, addQty, capped: addQty < requested });
+  }
+  return { deckName: (deckName || '').trim() || null, avatar: avatarPlan, adds, unknown };
+}
+
+// Commit a confirmed import plan: create the deck (with the resolved avatar) and
+// file its adds via applyDeckAdds (changeQty re-checks limits). Unrecognised lines
+// were surfaced in the plan and are intentionally dropped. Returns { id, name, added }.
+export async function commitImportText(plan, deckName) {
+  const name = await uniqueDeckName(deckName || plan?.deckName || 'Imported deck');
+  const id = await createDeck(name, { avatarCardId: plan?.avatar?.cardId || null });
+  const added = await applyDeckAdds(id, plan?.adds || []);
+  await logHistory(id, `Imported ${added} card${added === 1 ? '' : 's'} from text`);
+  return { id, name, added };
+}
+
 /** A deck name unique within the active profile. If `base` already exists (case-
  *  insensitively), appends " (1)", " (2)", … - so importing a deck whose name you already
  *  have never silently creates two identically-named decks. */
