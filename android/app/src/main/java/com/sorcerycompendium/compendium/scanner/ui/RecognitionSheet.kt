@@ -82,10 +82,12 @@ import kotlin.random.Random
 fun RecognitionCard(
     rec: Recognition,
     collectionMode: Boolean,
+    deckMode: Boolean,
     onSearchCodex: () -> Unit,
     onAddCollection: (String?) -> Unit,
     onAddWishlist: () -> Unit,
     onSaveCollection: (Int, String?) -> Unit,
+    onAddToDeck: (Int) -> Unit,
     onSaveDeck: () -> Unit,
     onImportMatch: () -> Unit,
     onDismiss: () -> Unit,
@@ -145,7 +147,26 @@ fun RecognitionCard(
             Hairline()
             Spacer(Modifier.height(18.dp))
             when (rec.kind) {
-                ScanKind.CARD -> {
+                ScanKind.CARD -> if (deckMode) {
+                    // A deck is name-level (Alpha & Beta are the same card in a list), so
+                    // the printing is informational only - no pick, no gate. Multi-set cards
+                    // show their printings as quiet pills; single-set shows one in the header.
+                    if (rec.sets.size > 1) {
+                        Text("PRINTINGS", color = accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+                        Spacer(Modifier.height(11.dp))
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) { for (s in rec.sets) SetPill(s.name, accent) }
+                        Spacer(Modifier.height(20.dp))
+                    }
+                    QtyStepper(qty, accent, onDec = { if (qty > 1) qty -= 1 }, onInc = { if (qty < 99) qty += 1 })
+                    Spacer(Modifier.height(18.dp))
+                    PrimaryAction(
+                        if (qty == 1) "Add 1 to deck" else "Add $qty to deck",
+                        Icons.Filled.Add, accent,
+                    ) { onAddToDeck(qty) }
+                } else {
                     // A card reprinted across sets: pick the printing (both modes) before adding.
                     if (rec.sets.size > 1) {
                         Text("WHICH PRINTING?", color = accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)

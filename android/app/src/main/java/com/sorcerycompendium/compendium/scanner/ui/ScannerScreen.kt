@@ -45,9 +45,11 @@ fun ScannerScreen(
     granted: Boolean,
     viewModel: ScannerViewModel,
     collectionMode: Boolean,
+    deckMode: Boolean,
     onSearchCodex: (Recognition) -> Unit,
     onAdd: (Recognition, String) -> Unit,
     onSaveCollection: (Recognition, Int, String?) -> Unit,
+    onAddToDeck: (Recognition, Int) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
     onImportMatch: (Recognition) -> Unit,
     onDismissSheet: () -> Unit,
@@ -91,6 +93,7 @@ fun ScannerScreen(
             RecognitionCard(
                 rec = rec,
                 collectionMode = collectionMode,
+                deckMode = deckMode,
                 onSearchCodex = { onSearchCodex(rec) },
                 onAddCollection = { set ->
                     // Universal-mode quick +1: files onto the chosen printing (single-set
@@ -106,6 +109,11 @@ fun ScannerScreen(
                     onSaveCollection(rec, qty, set)
                     scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
                     onDismissSheet()   // keep scanning: drop the sheet and resume
+                },
+                onAddToDeck = { qty ->
+                    onAddToDeck(rec, qty)
+                    scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title} to the deck") }
+                    onDismissSheet()   // keep scanning
                 },
                 onSaveDeck = { onSaveDeck(rec) },
                 onImportMatch = { onImportMatch(rec) },

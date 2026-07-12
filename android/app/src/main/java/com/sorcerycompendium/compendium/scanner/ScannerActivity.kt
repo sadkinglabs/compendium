@@ -47,6 +47,7 @@ class ScannerActivity : ComponentActivity() {
 
         // Snapshot once - the mode is fixed for this scan session.
         val collectionMode = ScannerChannel.mode == "collection"
+        val deckMode = ScannerChannel.mode == "deck"
 
         setContent {
             CompendiumScannerTheme {
@@ -82,9 +83,11 @@ class ScannerActivity : ComponentActivity() {
                     granted = granted,
                     viewModel = vm,
                     collectionMode = collectionMode,
+                    deckMode = deckMode,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
                     onAdd = { rec, action -> onAdd(rec, action) },
                     onSaveCollection = { rec, qty, set -> onSaveCollection(rec, qty, set) },
+                    onAddToDeck = { rec, qty -> onAddToDeck(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
                     onDismissSheet = { vm.onDismiss() },
@@ -115,6 +118,14 @@ class ScannerActivity : ComponentActivity() {
         val js = JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty)
         if (set != null) js.put("set", set)
         ScannerChannel.onEvent?.invoke(js)
+    }
+
+    /** Deck mode: emit +qty of the recognised card to the open deck (JS files it in
+     *  its home zone, rarity-capped). Set is irrelevant to a deck (name-level). */
+    private fun onAddToDeck(rec: Recognition, qty: Int) {
+        ScannerChannel.onEvent?.invoke(
+            JSObject().put("action", "deck").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty),
+        )
     }
 
     /** A shared deck / match QR: hand the url to JS (which decodes + imports) and exit. */
