@@ -2,7 +2,7 @@
 // (saved, marginalia notes, highlights, collections). Every profile-scoped read
 // and write passes through activeProfileId(), so isolation is structural.
 import { query, run } from './db.js';
-import { getCatalog } from './catalogCache.js';
+import { getCatalog, getFaqs } from './catalogCache.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { parseQuery, cardMatchesQuery } from './cardQuery.js';   // the one shared card-search grammar
@@ -20,9 +20,8 @@ export async function getRule(id) {
 }
 
 async function faqCardSet() {
-  const rows = await query('SELECT card_ids FROM faqs;');
   const set = new Set();
-  for (const r of rows) { try { for (const id of JSON.parse(r.card_ids || '[]')) set.add(id); } catch { /* noop */ } }
+  for (const f of await getFaqs()) for (const id of f._cards) set.add(id);
   return set;
 }
 
@@ -326,10 +325,13 @@ export async function mentions(ruleId) {
 }
 
 export async function faqsForCard(cardId) {
-  // card_ids stored as a JSON array of curiosa slugs (== card_id)
-  return query("SELECT faq_id, question, answer FROM faqs WHERE card_ids LIKE ? ORDER BY rowid LIMIT 50;", [
-    `%"${cardId}"%`,
-  ]);
+  // card_ids is a JSON array of curiosa slugs (== card_id); filter the parsed,
+  // cached faqs instead of a per-open LIKE '%"id"%' full-table scan.
+  const out = [];
+  for (const f of await getFaqs()) {
+    if (f._cards.includes(cardId)) { out.push({ faq_id: f.faq_id, question: f.question, answer: f.answer }); if (out.length >= 50) break; }
+  }
+  return out;
 }
 
 /* ---------------- profile-scoped personal layer ---------------- */

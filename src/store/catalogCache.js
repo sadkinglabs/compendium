@@ -38,6 +38,7 @@
 import { query } from './db.js';
 
 let _cache = null;
+let _faqs = null;
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
@@ -65,6 +66,19 @@ export async function getCatalog() {
   return _cache;
 }
 
-/** Drop the cache so the next getCatalog() re-reads the DB. Called by the
- *  re-seed path (catalog.js) when CATALOG_VERSION changes. */
-export function invalidateCatalog() { _cache = null; }
+/** FAQs are immutable catalog data too. faqCardSet() (search) and faqsForCard()
+ *  (card detail) both scanned the faqs table (a LIKE '%"id"%' substring scan for
+ *  the latter) on every call. Parse the table once; the consumers filter the
+ *  cached, pre-parsed rows in JS. Ordered by rowid so faqsForCard keeps its
+ *  original ordering. */
+export async function getFaqs() {
+  if (_faqs) return _faqs;
+  const rows = await query('SELECT faq_id, question, answer, card_ids FROM faqs ORDER BY rowid;');
+  for (const f of rows) f._cards = jp(f.card_ids, []);
+  _faqs = rows;
+  return _faqs;
+}
+
+/** Drop the caches so the next getCatalog()/getFaqs() re-reads the DB. Called by
+ *  the re-seed path (catalog.js) when CATALOG_VERSION changes. */
+export function invalidateCatalog() { _cache = null; _faqs = null; }

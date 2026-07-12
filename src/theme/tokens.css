@@ -424,7 +424,12 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-row:active { background: var(--hair-08) !important; }
 /* Codex A–Z list (~1379 rows) - skip render/layout of off-screen rows. The
    intrinsic size reserves scroll height so the bar stays accurate. */
-.cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 50px; }
+/* Virtualise the ~1100-row A-Z browse: the WebView skips layout/paint for
+   off-screen rows, remembering each row's real size once rendered (the `auto`
+   keyword). The fallback estimate is tuned to the real card-row height (~88px,
+   thumb + two lines) so the initial scroll-height is accurate before rows are
+   measured - 50px was ~half, which drifted the scrollbar on first scroll. */
+.cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 
 @keyframes cxfade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
