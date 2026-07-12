@@ -201,7 +201,7 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
 
       {/* THE add surface: bulk paste or point the camera. */}
       <Fab variant="lib" label="Add to collection" icon={<FabGlyph kind="add" />} items={[
-        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
+        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
         { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
       ]} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
@@ -434,7 +434,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
       {editMode && (
         <Fab variant="lib" label="Add tools" icon={<FabGlyph kind="add" />} className="fab-stacked" items={[
-          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex }) },
+          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
           { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
         ]} />
       )}

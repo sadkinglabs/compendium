@@ -45,6 +45,9 @@ class ScannerActivity : ComponentActivity() {
             return
         }
 
+        // Snapshot once - the mode is fixed for this scan session.
+        val collectionMode = ScannerChannel.mode == "collection"
+
         setContent {
             CompendiumScannerTheme {
                 var granted by remember {
@@ -78,8 +81,10 @@ class ScannerActivity : ComponentActivity() {
                 ScannerScreen(
                     granted = granted,
                     viewModel = vm,
+                    collectionMode = collectionMode,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
                     onAdd = { rec, action -> onAdd(rec, action) },
+                    onSaveCollection = { rec, qty -> onSaveCollection(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
                     onDismissSheet = { vm.onDismiss() },
@@ -100,6 +105,14 @@ class ScannerActivity : ComponentActivity() {
         // Emit the add to JS; the sheet stays up (sticky) so both actions can be used.
         ScannerChannel.onEvent?.invoke(
             JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title),
+        )
+    }
+
+    /** Collection mode: emit +qty owned for the recognised card. The scanner stays
+     *  open (the screen dismisses the sheet) so the build-your-collection loop keeps going. */
+    private fun onSaveCollection(rec: Recognition, qty: Int) {
+        ScannerChannel.onEvent?.invoke(
+            JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty),
         )
     }
 

@@ -13,6 +13,11 @@ object ScannerChannel {
     @Volatile var matcher: Matcher? = null
     @Volatile var minStreak: Int = 2
 
+    /** Scanner mode: "universal" (Home/Decks - identify, then Codex / +1 collection /
+     *  wishlist / deck / match) or "collection" (a focused build-your-collection loop:
+     *  identify -> pick a quantity -> Add -> keep scanning). */
+    @Volatile var mode: String = "universal"
+
     /** Streaming add-actions (collection / wishlist) -> plugin.notifyListeners. The
      *  Activity stays open and keeps scanning. */
     @Volatile var onEvent: ((JSObject) -> Unit)? = null
@@ -25,5 +30,6 @@ object ScannerChannel {
         matcher = null
         onEvent = null
         onTerminal = null
+        mode = "universal"
     }
 }

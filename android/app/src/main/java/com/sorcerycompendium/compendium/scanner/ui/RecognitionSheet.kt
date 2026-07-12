@@ -10,6 +10,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -33,7 +36,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -45,6 +51,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sorcerycompendium.compendium.scanner.model.Recognition
@@ -64,9 +71,11 @@ import kotlin.random.Random
 @Composable
 fun RecognitionCard(
     rec: Recognition,
+    collectionMode: Boolean,
     onSearchCodex: () -> Unit,
     onAddCollection: () -> Unit,
     onAddWishlist: () -> Unit,
+    onSaveCollection: (Int) -> Unit,
     onSaveDeck: () -> Unit,
     onImportMatch: () -> Unit,
     onDismiss: () -> Unit,
@@ -75,6 +84,8 @@ fun RecognitionCard(
     val accent = accentFor(rec.kind)
     val key = rec.cardId ?: rec.url ?: rec.title
     val reveal = remember(key) { Animatable(0f) }
+    // Collection-mode quantity, reset for each newly recognised card.
+    var qty by remember(key) { mutableStateOf(1) }
     LaunchedEffect(key) {
         reveal.snapTo(0f)
         reveal.animateTo(1f, spring(dampingRatio = 0.52f, stiffness = Spring.StiffnessMediumLow))
@@ -114,7 +125,15 @@ fun RecognitionCard(
             }
             Spacer(Modifier.height(18.dp))
             when (rec.kind) {
-                ScanKind.CARD -> {
+                ScanKind.CARD -> if (collectionMode) {
+                    // Focused build-your-collection loop: pick how many copies, then add.
+                    QtyStepper(qty, accent, onDec = { if (qty > 1) qty -= 1 }, onInc = { if (qty < 99) qty += 1 })
+                    Spacer(Modifier.height(14.dp))
+                    PrimaryAction(
+                        if (qty == 1) "Add 1 copy" else "Add $qty copies",
+                        Icons.Filled.Add, accent,
+                    ) { onSaveCollection(qty) }
+                } else {
                     PrimaryAction("Search Codex", Icons.Filled.Search, accent, onSearchCodex)
                     Spacer(Modifier.height(10.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -135,7 +154,7 @@ fun RecognitionCard(
             }
             Spacer(Modifier.height(6.dp))
             TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                Text("Scan another")
+                Text(if (collectionMode && rec.kind == ScanKind.CARD) "Skip / keep scanning" else "Scan another")
             }
         }
     }
@@ -152,6 +171,42 @@ private fun PrimaryAction(label: String, icon: ImageVector, accent: Color, onCli
         Icon(icon, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text(label)
+    }
+}
+
+/** Collection mode: a big −/N/+ stepper for how many copies to record. */
+@Composable
+private fun QtyStepper(qty: Int, accent: Color, onDec: () -> Unit, onInc: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StepButton("−", accent, enabled = qty > 1, onClick = onDec)   // minus sign
+        Text(
+            qty.toString(),
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.width(96.dp),
+        )
+        StepButton("+", accent, enabled = qty < 99, onClick = onInc)
+    }
+}
+
+/** A round outlined step button; the glyph dims when the step is disabled. */
+@Composable
+private fun StepButton(glyph: String, accent: Color, enabled: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        modifier = Modifier.size(56.dp),
+        contentPadding = PaddingValues(0.dp),
+        border = BorderStroke(1.dp, accent.copy(alpha = if (enabled) 0.6f else 0.22f)),
+    ) {
+        Text(glyph, color = accent.copy(alpha = if (enabled) 1f else 0.35f), fontSize = 26.sp, fontWeight = FontWeight.Bold)
     }
 }
 

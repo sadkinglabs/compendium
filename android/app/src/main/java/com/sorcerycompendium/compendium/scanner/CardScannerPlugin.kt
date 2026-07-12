@@ -51,12 +51,14 @@ class CardScannerPlugin : Plugin() {
         }
         val threshold = call.getDouble("threshold") ?: 0.80
         val minStreak = call.getInt("minStreak") ?: 2
+        val mode = call.getString("mode") ?: "universal"
 
         // Build the index off the caller thread, then hand off + launch.
         Thread {
             val matcher = Matcher(CardIndex(cards), threshold)
             ScannerChannel.matcher = matcher
             ScannerChannel.minStreak = minStreak
+            ScannerChannel.mode = mode
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }
             terminated.set(false)

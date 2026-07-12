@@ -31,13 +31,15 @@ async function catalogForScan() {
 }
 
 /**
- * Launch the universal scanner. It auto-detects the target and, on close, reports one
- * terminal outcome: a card (Codex), a shared deck (compendium://deck), or a shared
- * match (compendium://match). JS owns all writes/nav - the deck is imported here (never
- * on the native side). Callbacks: `onOpenCard(id,name)`, `onOpenDeck(id,name)`,
- * `onImportMatch(url)`. Safe on web (shows a hint and returns).
+ * Launch the scanner. It auto-detects the target and, on close, reports one terminal
+ * outcome: a card (Codex), a shared deck (compendium://deck), or a shared match
+ * (compendium://match). JS owns all writes/nav - the deck is imported here (never on
+ * the native side). Callbacks: `onOpenCard(id,name)`, `onOpenDeck(id,name)`,
+ * `onImportMatch(url)`. `mode`: 'universal' (default - the Home/Decks identify-and-act
+ * overlay) or 'collection' (a focused build-your-collection loop: identify, pick a
+ * quantity, Add, keep scanning). Safe on web (shows a hint and returns).
  */
-export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch } = {}) {
+export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, mode = 'universal' } = {}) {
   if (!isNative()) {
     toast('Card scanning is available in the installed app.');
     return;
@@ -55,14 +57,15 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch } = 
   let failed = 0;
   const sub = await CardScanner.addListener('scanAction', async (ev) => {
     try {
-      if (ev.action === 'collection') await addOwnedCopies(ev.cardId, 1);
-      else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, 1);
+      const n = Math.max(1, ev.qty || 1);   // collection mode picks a quantity; universal +1s
+      if (ev.action === 'collection') await addOwnedCopies(ev.cardId, n);
+      else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, n);
     } catch { failed += 1; }
   });
 
   try {
     const cards = await catalogForScan();
-    const res = await CardScanner.scan({ cards });
+    const res = await CardScanner.scan({ cards, mode });
     if (res?.action === 'codex' && res.cardId) {
       onOpenCard?.(res.cardId, res.name);
     } else if (res?.action === 'deckUrl' && res.url) {

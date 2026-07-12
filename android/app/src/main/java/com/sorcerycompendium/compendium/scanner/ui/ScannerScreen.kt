@@ -44,8 +44,10 @@ import kotlinx.coroutines.launch
 fun ScannerScreen(
     granted: Boolean,
     viewModel: ScannerViewModel,
+    collectionMode: Boolean,
     onSearchCodex: (Recognition) -> Unit,
     onAdd: (Recognition, String) -> Unit,
+    onSaveCollection: (Recognition, Int) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
     onImportMatch: (Recognition) -> Unit,
     onDismissSheet: () -> Unit,
@@ -88,6 +90,7 @@ fun ScannerScreen(
             SparkleBurst(key, accentFor(rec.kind), Modifier.fillMaxSize())
             RecognitionCard(
                 rec = rec,
+                collectionMode = collectionMode,
                 onSearchCodex = { onSearchCodex(rec) },
                 onAddCollection = {
                     onAdd(rec, "collection")
@@ -96,6 +99,11 @@ fun ScannerScreen(
                 onAddWishlist = {
                     onAdd(rec, "wishlist")
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
+                },
+                onSaveCollection = { qty ->
+                    onSaveCollection(rec, qty)
+                    scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
+                    onDismissSheet()   // keep scanning: drop the sheet and resume
                 },
                 onSaveDeck = { onSaveDeck(rec) },
                 onImportMatch = { onImportMatch(rec) },
