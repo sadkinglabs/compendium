@@ -850,12 +850,13 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
           </>
         ) : (
           <>
-            {/* Select all / Deselect all with the count of what it acts on, so bulk
-                import is one tap: search -> Select all -> Add. */}
+            {/* Cancel takes the count's spot on the LEFT; the Select button transforms
+                in place on the RIGHT into "Select all · N ⇄ Deselect all · N" - the
+                count rides on it, so no separate count is needed. One-tap bulk import. */}
+            <button onClick={() => { setSelectMode(false); setSelected(new Map()); }} style={pillRose}>Cancel</button>
             <button onClick={toggleAll} disabled={!shown.length} style={{ ...pillGold, opacity: shown.length ? 1 : 0.5 }}>
               {allSelected ? 'Deselect all' : 'Select all'} · {shown.length}
             </button>
-            <button onClick={() => { setSelectMode(false); setSelected(new Map()); }} style={pillRose}>Cancel</button>
           </>
         )}
       </div>

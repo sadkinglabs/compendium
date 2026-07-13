@@ -201,8 +201,12 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
         </span>
       )}
-      {/* Missing sleeves get a quick add. */}
-      {missing && (
+      {/* Missing sleeves get a quick add - ONLY where adding is enabled. Like
+          LedgerRow, the add control is omitted entirely when the caller passes no
+          onStep (read-only: the My Collection lens, Overview). Without this guard the
+          read-view View-all / Not-owned binder showed a dead "+" on every unowned
+          tile that threw on tap. */}
+      {missing && onStep && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
           <Frost label={`Add ${card.name}`} size={30} onClick={() => onStep(card.card_id, set, 1)}>+</Frost>
         </span>
