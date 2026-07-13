@@ -103,7 +103,7 @@ export const LedgerRow = React.memo(function LedgerRow({ card, set, setLabel, ow
   const stop = (e) => e.stopPropagation();
   return (
     <div className="cx-row" onClick={() => onPeek(card.card_id, set)}
-      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 90 }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 90, contentVisibility: 'auto', containIntrinsicSize: 'auto 90px' }}>
       {/* Thumb: the whole card (no zoom, sites unrotated), gilt frame when owned
           (brighter at playset), dark overlay when missing. */}
       <span style={{ width: 64, flex: 'none', position: 'relative' }}>
@@ -170,7 +170,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
   const missing = total === 0;
   const setName = setLabel || firstSetName(card);
   return (
-    <div onClick={() => onPeek(card.card_id, set)} style={{ position: 'relative', cursor: 'pointer' }}>
+    <div onClick={() => onPeek(card.card_id, set)} style={{ position: 'relative', cursor: 'pointer', contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
       {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. */}
       <div style={{
         position: 'relative', borderRadius: 13, overflow: 'hidden',

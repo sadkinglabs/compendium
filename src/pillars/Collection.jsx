@@ -362,9 +362,6 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [viewMode, setViewMode] = useState('all');
   useEffect(() => { if (!editMode) setViewMode('all'); }, [editMode]);
   const showSteppers = editMode && viewMode === 'all';
-  // Growable render window: the perf pass caps the initial paint at 250 rows; a
-  // "Show all" affordance lifts it so nothing is unreachable (even under a query).
-  const [limit, setLimit] = useState(250);
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -403,8 +400,6 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
-  // Any change to the result set (query, filters, lens, mode) resets the window.
-  useEffect(() => { setLimit(250); }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort, ownScope, viewMode, editMode]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
     setOwBySet(obs);
@@ -516,9 +511,6 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   }, [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
 
   const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
-  // Rows in OPEN groups only - the render budget applies to these, so the "show
-  // all" affordance tracks what's actually being truncated.
-  const openRows = useMemo(() => groups.reduce((n, gr) => n + (collapsed.has(gr.code) ? 0 : gr.rows.length), 0), [groups, collapsed]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
@@ -538,7 +530,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       {pool == null ? <Loading /> : (
         <>
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
-            {totalRows} card{totalRows === 1 ? '' : 's'}{openRows > limit ? ` · showing ${limit}` : ''}
+            {totalRows} card{totalRows === 1 ? '' : 's'}
           </div>
           {totalRows === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
@@ -546,29 +538,26 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                 : (activeCount || q) ? 'No owned cards match those filters.'
                   : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
-          ) : (() => {
-            // Render groups in set order, budgeting `limit` rows total across all
-            // open groups so a huge add-mode catalogue stays responsive; "Show all"
-            // lifts the budget on demand.
-            let budget = limit;
-            const rendered = groups.map((grp) => {
+          ) : (
+            // No cap: every card renders. Off-screen rows are skipped by the browser
+            // (content-visibility on the row components), so the full catalogue stays
+            // smooth without a virtualization lib.
+            groups.map((grp) => {
               const isOpen = !collapsed.has(grp.code);
               const ownedCount = ownedPerSet.get(grp.code) || 0;
               const total = setTotals.get(grp.code) || grp.rows.length;
-              const rows = isOpen ? grp.rows.slice(0, budget) : [];
-              budget -= rows.length;
               return (
                 <div key={grp.code || 'unspec'}>
                   <SetHeader name={grp.name} owned={ownedCount} total={total} collapsed={!isOpen} onToggle={() => toggleSet(grp.code)} />
                   {isOpen && (view === 'binder' ? (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-                      {rows.map((r) => (
+                      {grp.rows.map((r) => (
                         <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
                           onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
                       ))}
                     </div>
                   ) : (
-                    rows.map((r) => (
+                    grp.rows.map((r) => (
                       <LedgerRow key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name}
                         owned={r.owned} foil={r.foil} value={r.owned + r.foil}
                         onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
@@ -576,21 +565,8 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                   ))}
                 </div>
               );
-            });
-            return (
-              <>
-                {rendered}
-                {openRows > limit && (
-                  <button onClick={() => setLimit(1e9)}
-                    style={{ display: 'block', width: '100%', margin: '18px 0 0', padding: '13px 0', borderRadius: 14,
-                      background: 'rgba(203,167,95,.06)', border: '1px solid rgba(203,167,95,.28)', color: '#cba75f',
-                      font: "600 13px/1 var(--f-ui)", letterSpacing: '.04em', cursor: 'pointer' }}>
-                    Show all {totalRows} cards
-                  </button>
-                )}
-              </>
-            );
-          })()}
+            })
+          )}
         </>
       )}
 
