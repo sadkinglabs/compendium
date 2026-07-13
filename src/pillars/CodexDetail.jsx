@@ -108,6 +108,17 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   }
   useEffect(() => { setData(null); load(); /* eslint-disable-next-line */ }, [kind, id]);
 
+  // Every article opens at the TOP - a related-article tap from a scrolled position
+  // must not land you mid-page (you'd have to scroll up to see the header). A
+  // deep-link target (below) scrolls itself, so skip when one is present. Keyed on
+  // [kind,id] only, so re-renders from note/highlight edits never yank the scroll.
+  useEffect(() => {
+    if (target) return;
+    const sc = document.querySelector('.cx-scroll');
+    if (sc) sc.scrollTop = 0; else window.scrollTo(0, 0);
+    /* eslint-disable-next-line */
+  }, [kind, id]);
+
   // Deep link: scroll to a target block (bookmark jump / cross-ref to a section)
   // with a brief flash. Gated on `data` so it fires only once the blocks have
   // rendered AND the render is stable (an earlier imperative flash got wiped by the
@@ -402,7 +413,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
 
 function RuleBody({ doc, subs, subDocs, mainAnn, subAnns, onOpenLink, bodyRef }) {
   return (
-    <div ref={bodyRef}>
+    <div ref={bodyRef} className="cx-selectable">
       {/* Codex eyebrow - violet caps trailed by a fade hairline, marking the
           article as a codex entry (the header above is shared with card detail). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 16px' }}>
@@ -479,7 +490,7 @@ function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, annotations }
 
       {card.rules_text && (
         <div style={{ maxWidth: 340, margin: '0 auto 18px', padding: 1, borderRadius: 15, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5))', boxShadow: '0 10px 26px -14px rgba(0,0,0,.6)' }}>
-          <div ref={bodyRef} className="cx-cardrule" style={{ borderRadius: 14, background: '#0e0b08', padding: '18px 20px' }}>
+          <div ref={bodyRef} className="cx-cardrule cx-selectable" style={{ borderRadius: 14, background: '#0e0b08', padding: '18px 20px' }}>
             <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
           </div>
         </div>

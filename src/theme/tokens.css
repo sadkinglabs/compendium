@@ -176,6 +176,13 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
    smoothly when --wash changes between pillars (gradients can't transition, but
    `color` can, and currentColor re-resolves each frame). */
 .cx-app { background: #000; position: relative; z-index: 0; }  /* root stacking context */
+/* Text selection is OFF app-wide (native-app feel + it stops the Android WebView's
+   long-press from ballooning a codex highlight across the whole page - selection
+   can only span nodes that are user-select:text). Only the article prose
+   (.cx-selectable) and form fields opt back in. */
+.cx-app { -webkit-user-select: none; user-select: none; }
+.cx-selectable, .cx-selectable * { -webkit-user-select: text; user-select: text; }
+input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-app::before {
   content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
   background: radial-gradient(125% 70% at 50% -8%, currentColor 0%, transparent 56%);
