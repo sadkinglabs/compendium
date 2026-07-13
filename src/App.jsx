@@ -119,6 +119,7 @@ export default function App() {
     if (booted.current) return;   // run boot once (StrictMode double-invokes effects)
     booted.current = true;
     (async () => {
+      const t0 = Date.now();
       try {
         await openDatabase();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
@@ -140,6 +141,13 @@ export default function App() {
             profile: await import('./store/profileRepository.js'),
           };
         }
+        // Floor the splash so the branded animation actually paints on a fast warm
+        // boot (native SQLite resolves this whole chain in a few ms, faster than the
+        // splash's own fade-in - so on device it flashed by unseen). Success path
+        // only; an error must surface immediately.
+        const MIN_SPLASH_MS = 1100;
+        const rest = MIN_SPLASH_MS - (Date.now() - t0);
+        if (rest > 0) await new Promise((r) => setTimeout(r, rest));
         setBoot({ status: 'ready', counts });
       } catch (e) {
         setBoot({ status: 'error', error: String(e?.message || e) });
