@@ -38,7 +38,7 @@ function FitText({ text, max = 13, style }) {
   return <span ref={ref} style={{ ...style, fontSize: size, whiteSpace: 'nowrap', display: 'inline-block' }}>{text}</span>;
 }
 
-export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCodex }) {
+export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCodex, onChangeAvatar }) {
   const [c, setC] = useState(null);
   const [counts, setCounts] = useState({ main: 0, collection: 0 });
   const [deckName, setDeckName] = useState('');
@@ -154,9 +154,21 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
                 </>
               )}
 
+              {/* An avatar isn't added like a card (no steppers): its action is to
+                  swap it, opening the same avatar wizard the hero used to. */}
+              {c.is_avatar && onChangeAvatar && (
+                <>
+                  <div style={DIVIDER} />
+                  <button onClick={() => { onClose?.(); onChangeAvatar(); }}
+                    style={{ display: 'block', width: '100%', padding: '15px 0', borderRadius: 16, background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid #e3c589', color: '#1a1206', font: "600 13.5px/1 var(--f-display)", boxShadow: '0 6px 20px rgba(203,167,95,.22)', cursor: 'pointer' }}>
+                    Change avatar
+                  </button>
+                </>
+              )}
+
               {onOpenCodex && (
                 <button onClick={() => { onClose?.(); onOpenCodex(c.card_id, c.name); }}
-                  style={{ display: 'block', width: '100%', marginTop: 24, padding: '15px 0', borderRadius: 16, background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid #e3c589', color: '#1a1206', font: "600 13.5px/1 var(--f-display)", boxShadow: '0 6px 20px rgba(203,167,95,.22)', cursor: 'pointer' }}>
+                  style={{ display: 'block', width: '100%', marginTop: c.is_avatar && onChangeAvatar ? 10 : 24, padding: '15px 0', borderRadius: 16, background: c.is_avatar && onChangeAvatar ? 'rgba(18,16,13,.85)' : 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid rgba(220,184,111,.45)', color: c.is_avatar && onChangeAvatar ? 'var(--gold-leaf)' : '#1a1206', font: "600 13.5px/1 var(--f-display)", boxShadow: c.is_avatar && onChangeAvatar ? 'none' : '0 6px 20px rgba(203,167,95,.22)', cursor: 'pointer' }}>
                   Open in Codex - rulings & FAQ ›
                 </button>
               )}

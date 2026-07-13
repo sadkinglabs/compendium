@@ -455,7 +455,8 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
             </div>
             <div className="mf-hero-body">
               <div className="mf-hero-meta">
-                <button className="mf-hero-arch" onClick={() => setAvatarOpen(true)} title={deck.avatar?.name ? 'Change avatar' : 'Choose avatar'}>
+                <button className="mf-hero-arch" title={deck.avatar?.name ? 'View avatar' : 'Choose avatar'}
+                  onClick={() => deck.avatar_card_id ? setSheetCardId(deck.avatar_card_id) : setAvatarOpen(true)}>
                   {deck.avatar?.name || '＋ Set avatar'}
                 </button>
                 {els.length > 0 && <span className="mf-hero-sep" />}
@@ -488,7 +489,8 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         </div>
       )}
 
-      <CardSheet cardId={sheetCardId} deckId={deckId} onChange={() => setLocalRev((r) => r + 1)} onClose={() => setSheetCardId(null)} onOpenCodex={onOpenCodex} />
+      <CardSheet cardId={sheetCardId} deckId={deckId} onChange={() => setLocalRev((r) => r + 1)} onClose={() => setSheetCardId(null)} onOpenCodex={onOpenCodex}
+        onChangeAvatar={() => { setSheetCardId(null); setAvatarOpen(true); }} />
       {avatarOpen && (
         <ChangeAvatarSheet deckId={deckId} current={deck.avatar_card_id} onClose={() => setAvatarOpen(false)}
           onSaved={() => { setLocalRev((r) => r + 1); onChanged?.(); }} />
