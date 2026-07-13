@@ -354,6 +354,8 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-toast { max-width: min(88vw, 420px); padding: 11px 18px; border-radius: 14px; background: linear-gradient(180deg,#1a1712,#0e0c0a); border: 1px solid rgba(220,184,111,.28); color: var(--ink-body); font: 500 13px/1.4 var(--f-ui); text-align: center; box-shadow: 0 8px 26px rgba(0,0,0,.55); animation: cxToastIn .26s cubic-bezier(.2,.9,.3,1); }
 .cx-toast.danger { border-color: rgba(224,120,106,.5); color: #f0c9c2; }
 @keyframes cxToastIn { from { opacity: 0; transform: translateY(-10px) scale(.96); } to { opacity: 1; transform: none; } }
+/* Multi-select checkboxes sliding in from the right when Select mode turns on. */
+@keyframes cxSelIn { from { opacity: 0; transform: translateX(14px) scale(.7); } to { opacity: 1; transform: none; } }
 
 /* ── Home Overview - welcome digest. Everything capped; sections collapse and
    redirect to the pillar where the items actually live. ── */

@@ -355,13 +355,12 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   // editMode IS the add surface: reveal the WHOLE catalogue (owned + unowned) with
   // steppers so you can start adding immediately. Off = read-only owned collection.
   const [importOpen, setImportOpen] = useState(false);
-  // View lens on the add surface: 'all' (add anything, steppers on) | 'owned' |
-  // 'unowned' - the last two are READ-ONLY lenses (no steppers, no add tools), per
-  // the request. Reset when leaving edit mode so a stale lens can't distort the
-  // plain read-only owned view.
-  const [viewMode, setViewMode] = useState('all');
-  useEffect(() => { if (!editMode) setViewMode('all'); }, [editMode]);
-  const showSteppers = editMode && viewMode === 'all';
+  // READ-VIEW lens (My Collection, not +Add): 'owned' (default - your collection) |
+  // 'all' (owned + unowned) | 'unowned' (gaps). Read-only, so it never affects
+  // editing. The +Add surface ignores it entirely (it always shows the whole
+  // catalogue so anything is addable).
+  const [viewMode, setViewMode] = useState('owned');
+  const showSteppers = editMode;
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -461,15 +460,18 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     };
     // Ownership filter: when set it decides what shows (owned / not-owned / wishlisted
     // union); when empty, fall back to the mode default (read = owned only, add = all).
+    const chip = (isOwned, isWish) => (ownScope.includes('owned') && isOwned)
+      || (ownScope.includes('unowned') && !isOwned)
+      || (ownScope.includes('wishlist') && isWish);
     const matches = (isOwned, isWish) => {
-      // The view-mode lens takes precedence over the Refine ownership chips: a lens
-      // is the quick, explicit "show me X" control. 'all' falls back to the chips.
+      // +Add shows the WHOLE catalogue (owned + unowned) so anything is addable; the
+      // Refine ownership chips can still narrow it. The read-view lens has no say here.
+      if (editMode) return ownActive ? chip(isOwned, isWish) : true;
+      // Read view: the lens decides (Owned default / All / Not owned); within 'all',
+      // the Refine chips refine further.
       if (viewMode === 'owned') return isOwned;
       if (viewMode === 'unowned') return !isOwned;
-      if (!ownActive) return editMode ? true : isOwned;
-      return (ownScope.includes('owned') && isOwned)
-        || (ownScope.includes('unowned') && !isOwned)
-        || (ownScope.includes('wishlist') && isWish);
+      return ownActive ? chip(isOwned, isWish) : true;   // 'all'
     };
     for (const c of (pool || [])) {
       const isWish = wishSet.has(c.card_id);
@@ -487,12 +489,13 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set). These
     // are always owned, so they surface in the default read view or an owned/wishlist
     // filter - but never when the user has narrowed to specific SET(s), since '' is none.
-    // Legacy '' owned rows are always owned: they belong in the owned/all lenses
-    // (and the default read view / owned|wishlist chips), never in 'unowned'.
+    // Legacy '' owned rows are always owned: they belong wherever owned cards show
+    // (+Add "all", read Owned, read All), never under the read "Not owned" lens.
     const wantLegacy = sets.length === 0 && (
-      viewMode === 'owned' ? true
+      editMode ? true
         : viewMode === 'unowned' ? false
-          : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : !editMode));
+          : viewMode === 'owned' ? true
+            : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : true));   // read 'all'
     if (wantLegacy) {
       const byId = new Map((pool || []).map((c) => [c.card_id, c]));
       for (const [k, v] of owBySet) {
@@ -501,9 +504,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
         if ((v.owned || 0) + (v.foil || 0) === 0) continue;
         const card = byId.get(k.slice(0, i));
         if (!card) continue;
-        // Under the 'all' lens the Refine chips still narrow; the owned/unowned lens
+        // Read 'all' with active Refine chips still narrows; +Add and the owned lens
         // already decided inclusion above.
-        if (viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
+        if (!editMode && viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
         push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
       }
     }
@@ -534,7 +537,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
           </div>
           {totalRows === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              {editMode ? 'No cards match those filters.'
+              {editMode || viewMode !== 'owned' ? 'No cards match those filters.'
                 : (activeCount || q) ? 'No owned cards match those filters.'
                   : 'Your collection is empty.\nTap + Add to record what you own.'}
             </div>
@@ -573,23 +576,21 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
       <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
 
-      {/* Filter is its own FAB and never moves - the docked spot beside the search
-          bar, in BOTH modes. Adding by search happens naturally in that bar, so in
-          edit mode a SECOND FAB rises above it with just the tools search can't do:
-          camera + text import. The one place in the app with two stacked FABs. */}
+      {/* Filter FAB - the docked spot beside the search bar, in BOTH views. A SECOND
+          stacked FAB rises above it, its role by view: on the +Add surface it's the
+          ADD tools (camera + text) search can't do; in the read view it's the VIEW
+          lens (Owned default / All / Not owned) - a read-only toggle for what shows. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {editMode && (
-        // The secondary stacked FAB: a view lens (All / Owned / Not owned, ✓ on the
-        // active one). The camera + text-import tools ride under it, but ONLY in the
-        // 'all' lens - the owned/not-owned lenses are read-only, so no editing.
-        <Fab variant="lib" label="View & add tools" className="fab-stacked" icon={<EyeGlyph />} items={[
-          { label: 'View all', state: viewMode === 'all' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('all') },
+      {editMode ? (
+        <Fab variant="lib" label="Add tools" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+        ]} />
+      ) : (
+        <Fab variant="lib" label="View" className="fab-stacked" icon={<EyeGlyph />} items={[
           { label: 'Owned', state: viewMode === 'owned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('owned') },
+          { label: 'View all', state: viewMode === 'all' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('all') },
           { label: 'Not owned', state: viewMode === 'unowned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('unowned') },
-          ...(viewMode === 'all' ? [
-            { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-            { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-          ] : []),
         ]} />
       )}
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
@@ -824,30 +825,47 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
     setSelected(new Map());
     setSelectMode(false);
   };
+  // Select-all across the CURRENT (searched/filtered) result set - the whole point
+  // of bulk import: "water beta -> Select all -> Add". Toggles to Deselect all.
+  const shown = pool || [];
+  const allSelected = shown.length > 0 && shown.every((c) => selected.has(c.card_id));
+  const toggleAll = () => { haptic('light'); setSelected(allSelected ? new Map() : new Map(shown.map((c) => [c.card_id, c]))); };
+
+  const pillBase = { flex: 'none', padding: '7px 15px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap' };
+  const pillGold = { ...pillBase, background: 'rgba(42,33,20,.5)', color: '#e3c589', border: '1px solid rgba(203,167,95,.45)' };
+  const pillRose = { ...pillBase, background: 'rgba(210,88,115,.16)', color: '#f0c8ce', border: '1px solid rgba(210,88,115,.5)' };
 
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
       {hint && !selectMode && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
       <input value={q} autoFocus onChange={(e) => setQ(e.target.value)}
         placeholder="Search the library - e:water set:beta…" style={{ ...SHEET_INPUT, height: 46 }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '12px 2px 2px' }}>
-        <span style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
-          {selectMode ? `${selected.size} selected`
-            : pool == null ? 'Searching…' : `${pool.length} card${pool.length === 1 ? '' : 's'}${pool.length > 200 ? ' · showing 200' : ''}`}
-        </span>
-        <button onClick={() => { setSelectMode((s) => !s); setSelected(new Map()); }} aria-pressed={selectMode}
-          style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
-            background: selectMode ? 'rgba(210,88,115,.16)' : 'rgba(42,33,20,.5)', color: selectMode ? '#f0c8ce' : '#e3c589', border: `1px solid ${selectMode ? 'rgba(210,88,115,.5)' : 'rgba(210,88,115,.5)'}` }}>
-          {selectMode ? 'Cancel' : 'Select'}
-        </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '12px 2px 2px' }}>
+        {!selectMode ? (
+          <>
+            <span style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
+              {pool == null ? 'Searching…' : `${shown.length} card${shown.length === 1 ? '' : 's'}`}
+            </span>
+            <button onClick={() => { setSelectMode(true); setSelected(new Map()); }} style={pillGold}>Select</button>
+          </>
+        ) : (
+          <>
+            {/* Select all / Deselect all with the count of what it acts on, so bulk
+                import is one tap: search -> Select all -> Add. */}
+            <button onClick={toggleAll} disabled={!shown.length} style={{ ...pillGold, opacity: shown.length ? 1 : 0.5 }}>
+              {allSelected ? 'Deselect all' : 'Select all'} · {shown.length}
+            </button>
+            <button onClick={() => { setSelectMode(false); setSelected(new Map()); }} style={pillRose}>Cancel</button>
+          </>
+        )}
       </div>
-      {pool == null ? <Loading /> : pool.slice(0, 200).map((c) => {
+      {pool == null ? <Loading /> : shown.map((c, i) => {
         const inList = membership.get(c.card_id) || 0;
         const setName = listSetName(c);
         const isSel = selected.has(c.card_id);
         return (
           <div key={c.card_id} onClick={selectMode ? () => toggleSel(c) : undefined}
-            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)', cursor: selectMode ? 'pointer' : 'default' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)', cursor: selectMode ? 'pointer' : 'default', contentVisibility: 'auto', containIntrinsicSize: 'auto 62px' }}>
             <span style={{ width: 42, flex: 'none' }}><CardArt card={c} radius={6} aspect="5/7" /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
@@ -857,8 +875,11 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
               </div>
             </div>
             {selectMode ? (
-              <span aria-hidden="true" style={{ flex: 'none', width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? '#e3c589' : 'rgba(203,167,95,.4)'}` }}>
+              // The switch slides in from the right when Select mode turns on (staggered
+              // by row for a gentle "apparition"); reduced-motion opts out via the class.
+              <span aria-hidden="true" className="cx-sel-switch" style={{ flex: 'none', width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? '#e3c589' : 'rgba(203,167,95,.4)'}`,
+                animation: 'cxSelIn .24s cubic-bezier(.2,.9,.3,1) both', animationDelay: `${Math.min(i, 14) * 16}ms` }}>
                 {isSel && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1a1206" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
               </span>
             ) : inList > 0 ? (
