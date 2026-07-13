@@ -37,13 +37,19 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', children 
         style={{
           position: 'relative', marginTop: 'auto', marginBottom: 'calc(var(--kb,0px) / var(--ui-scale,1))',
           borderRadius: '30px 30px 0 0', borderTop: '1px solid rgba(203,167,95,.35)',
-          background: 'linear-gradient(180deg, #181209 0%, #100c08 42%, #0b0806 100%)',
+          background: '#100c08',
           boxShadow: '0 -20px 50px -10px rgba(0,0,0,.5)', animation: 'cxsheet .28s cubic-bezier(.2,.9,.3,1)',
           maxHeight: 'min(88dvh, calc(100dvh - env(safe-area-inset-top,0px) - 12px - var(--kb,0px) / var(--ui-scale,1)))',
-          display: 'flex', flexDirection: 'column', overflow: 'hidden', ...dragStyle,
+          display: 'flex', flexDirection: 'column', overflow: 'hidden', willChange: 'transform', ...dragStyle,
         }}
       >
-        <div className="cx-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))' }}>
+        {/* The scroll body carries its OWN opaque background and its own compositor
+            layer (translateZ). On Android WebView a transform-animated ancestor with
+            overflow:hidden fails to paint its background under a nested scroller - the
+            sheet's lower half went transparent and the page bled through. An opaque,
+            self-compositing scroller can't depend on the ancestor's paint, so it's
+            always solid. */}
+        <div className="cx-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))', background: '#100c08', transform: 'translateZ(0)', WebkitOverflowScrolling: 'touch' }}>
           {/* Drag the top chrome (handle) to dismiss; the body still scrolls. */}
           <div {...handleProps} style={{ ...handleProps.style, padding: '4px 0 10px', margin: '0 -26px', display: 'flex', justifyContent: 'center' }}>
             <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
