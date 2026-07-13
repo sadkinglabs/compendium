@@ -7,7 +7,7 @@ import { createPortal } from 'react-dom';
 import {
   listDecks, getDeck, toggleStar, renameDeck, duplicateDeck, deleteDeck,
   historyCount, clearHistory, exportMarkdown, exportCuriosa, getDeckCards,
-  planDeckTextAdd, applyDeckAdds,
+  planDeckTextAdd, applyDeckAdds, setAvatar,
 } from '../store/deckRepository.js';
 import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
@@ -290,15 +290,21 @@ function DeckTextAddSheet({ open, deckId, onClose, onChanged }) {
     catch { toast("Couldn't read that list.", { tone: 'danger' }); }
     setBusy(false);
   };
+  const canCommit = !!(plan && (plan.adds.length || plan.avatar));
   const commit = async () => {
-    if (!plan?.adds?.length || busy) return;
+    if (!canCommit || busy) return;
     setBusy(true);
     try {
-      const n = await applyDeckAdds(deckId, plan.adds);
-      toast(`Added ${n} card${n === 1 ? '' : 's'} to the deck`);
+      const n = plan.adds.length ? await applyDeckAdds(deckId, plan.adds) : 0;
+      // An avatar in the paste swaps the deck's avatar (it's not a deck card).
+      if (plan.avatar) await setAvatar(deckId, plan.avatar.cardId);
+      const parts = [];
+      if (n) parts.push(`Added ${n} card${n === 1 ? '' : 's'}`);
+      if (plan.avatar) parts.push(`avatar → ${plan.avatar.name}`);
+      toast(parts.join(' · ') || 'Done');
       onChanged?.();
       onClose();
-    } catch { toast("Couldn't add those cards.", { tone: 'danger' }); setBusy(false); }
+    } catch { toast("Couldn't apply that.", { tone: 'danger' }); setBusy(false); }
   };
   const totalAdd = plan ? plan.adds.reduce((s, a) => s + a.addQty, 0) : 0;
 
@@ -335,13 +341,18 @@ function DeckTextAddSheet({ open, deckId, onClose, onChanged }) {
           </>
         ) : (
           <>
+            {plan.avatar && (
+              <Section label="Set avatar" color="#c79ad0">
+                <Line name={plan.avatar.name} note="→ avatar" />
+              </Section>
+            )}
             {plan.adds.length > 0 ? (
               <Section label={`Adding · ${totalAdd}`} color="#8fd3a8">
                 {plan.adds.map((a) => <Line key={a.cardId} name={a.name} note={a.capped ? `+${a.addQty} · of ${a.requested}, cap ${a.limit}` : `+${a.addQty}`} />)}
               </Section>
-            ) : (
+            ) : !plan.avatar ? (
               <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px' }}>Nothing new to add - it's all at its limit or unrecognised.</div>
-            )}
+            ) : null}
             {plan.atLimit.length > 0 && (
               <Section label="Already at limit" color="#c9a86a">
                 {plan.atLimit.map((a) => <Line key={a.name} dim name={a.name} note={`${a.already}/${a.limit}`} />)}
@@ -354,7 +365,7 @@ function DeckTextAddSheet({ open, deckId, onClose, onChanged }) {
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
               <button onClick={() => setPlan(null)} style={ghost}>Back</button>
-              <button onClick={commit} disabled={!plan.adds.length || busy} style={{ ...gold, opacity: plan.adds.length && !busy ? 1 : 0.5 }}>{busy ? 'Adding…' : `Add ${totalAdd} card${totalAdd === 1 ? '' : 's'}`}</button>
+              <button onClick={commit} disabled={!canCommit || busy} style={{ ...gold, opacity: canCommit && !busy ? 1 : 0.5 }}>{busy ? 'Applying…' : totalAdd > 0 ? `Add ${totalAdd} card${totalAdd === 1 ? '' : 's'}${plan.avatar ? ' + avatar' : ''}` : 'Set avatar'}</button>
             </div>
           </>
         )}

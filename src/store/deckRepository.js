@@ -469,14 +469,22 @@ export function parseDeckText(text) {
 // copy limit given what's already in the deck. Nothing is written - returns a plan
 // { adds, atLimit, unknown } for a confirmation step (see applyDeckAdds).
 export async function planDeckTextAdd(deckId, text) {
-  const { zones } = parseDeckText(text);
+  const { avatar, zones } = parseDeckText(text);
   const cat = await getCatalog();
   const byName = new Map(cat.map((c) => [c._nameLc, c]));
+  const lc = (s) => String(s || '').toLowerCase().trim();
+  // Avatars aren't deck cards - an avatar in the paste SWAPS the deck's avatar, so
+  // pull any out of the card adds. Source: an explicit `## Avatar` line, or any card
+  // line that resolves to an avatar (people paste them into the bare list). The
+  // explicit Avatar line wins; otherwise the first avatar-resolving line.
+  let avatarCard = null;
+  if (avatar) { const a = byName.get(lc(avatar)); if (a?.is_avatar) avatarCard = a; }
   const merged = new Map();   // card_id -> { card, requested } (dedupe repeated lines)
   const unknown = [];
   for (const { name, qty } of [...zones.spellbook, ...zones.atlas, ...zones.collection]) {
-    const card = byName.get(String(name).toLowerCase().trim());
+    const card = byName.get(lc(name));
     if (!card) { unknown.push({ name, qty }); continue; }
+    if (card.is_avatar) { if (!avatarCard) avatarCard = card; continue; }   // avatar, not a deck entry
     const cur = merged.get(card.card_id) || { card, requested: 0 };
     cur.requested += Math.max(0, qty | 0);
     merged.set(card.card_id, cur);
@@ -493,7 +501,7 @@ export async function planDeckTextAdd(deckId, text) {
     if (addQty > 0) adds.push({ ...entry, addQty, capped: addQty < requested });
     else atLimit.push(entry);
   }
-  return { adds, atLimit, unknown };
+  return { avatar: avatarCard ? { cardId: avatarCard.card_id, name: avatarCard.name } : null, adds, atLimit, unknown };
 }
 
 // Commit a confirmed plan's adds. changeQty re-checks the limit, so a stale plan
