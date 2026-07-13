@@ -553,7 +553,11 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                 <div key={grp.code || 'unspec'}>
                   <SetHeader name={grp.name} owned={ownedCount} total={total} collapsed={!isOpen} onToggle={() => toggleSet(grp.code)} />
                   {isOpen && (view === 'binder' ? (
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                    // minmax(0,1fr), NOT 1fr: 1fr = minmax(auto,1fr), and a content-
+                    // visibility tile reports its intrinsic width as min-content, which
+                    // inflated the tracks to 240px (tiles overflowed + resized between
+                    // lenses). Pinning the min to 0 keeps every tile at a true 50%.
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
                       {grp.rows.map((r) => (
                         <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
                           onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />

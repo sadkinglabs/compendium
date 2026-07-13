@@ -129,7 +129,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       {/* No cap: the whole pool renders. content-visibility on the rows/tiles keeps
           off-screen ones free, so the full library stays smooth without windowing. */}
       {view === 'grid' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16 }}>
           {pool.map((c) => (
             <EditorTile key={c.card_id} card={c} qty={qtys[c.card_id] || 0} quickAdd={quickAdd}
               onStep={step} onOpen={setSheetCardId} />
