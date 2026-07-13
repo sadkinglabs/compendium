@@ -5,7 +5,6 @@ import React, { useState, useEffect } from 'react';
 import { BottomSheet, BTN_GOLD, BTN_GHOST } from './ui.jsx';
 import { missingLines, formatMissingText } from '../store/compareEngine.js';
 import { addMissingToWishlist, cardNames } from '../store/ownedRepository.js';
-import { saveTextFile } from '../native.js';
 import { toast } from '../feedback.js';
 
 export default function MissingSheet({ open, report, title, onOpenCard, onClose, onChanged }) {
@@ -20,10 +19,6 @@ export default function MissingSheet({ open, report, title, onOpenCard, onClose,
   const copy = async () => {
     try { await navigator.clipboard.writeText(text()); toast(`Copied ${missing.length} card${missing.length === 1 ? '' : 's'}`); }
     catch { toast('Copy failed', { tone: 'danger' }); }
-  };
-  const exportTxt = async () => {
-    const safe = (title || 'missing').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-    try { await saveTextFile(`${safe}.txt`, text(), 'text/plain'); } catch { toast('Export failed', { tone: 'danger' }); }
   };
   const wish = async () => {
     const n = await addMissingToWishlist(missing);
@@ -50,8 +45,7 @@ export default function MissingSheet({ open, report, title, onOpenCard, onClose,
       {missing.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
           <button onClick={wish} style={{ ...BTN_GOLD, flex: '1 1 100%', justifyContent: 'center' }}>Add all to Wishlist</button>
-          <button onClick={copy} style={{ ...BTN_GHOST, flex: 1, justifyContent: 'center' }}>Copy list</button>
-          <button onClick={exportTxt} style={{ ...BTN_GHOST, flex: 1, justifyContent: 'center' }}>Export</button>
+          <button onClick={copy} style={{ ...BTN_GHOST, flex: '1 1 100%', justifyContent: 'center' }}>Copy list</button>
         </div>
       )}
     </BottomSheet>

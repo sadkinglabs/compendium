@@ -120,22 +120,24 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       </div>
 
       <div style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55', marginBottom: 12 }}>
-        {pool.length} cards{pool.length > 250 ? ' · showing 250 - refine' : ''}
+        {pool.length} cards
         {ignoredScopes.length > 0 && (
           <span style={{ opacity: .82 }}> · {ignoredScopes.join(' ')} {ignoredScopes.length > 1 ? 'are Codex filters' : 'is a Codex filter'} - ignored here</span>
         )}
       </div>
 
+      {/* No cap: the whole pool renders. content-visibility on the rows/tiles keeps
+          off-screen ones free, so the full library stays smooth without windowing. */}
       {view === 'grid' ? (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          {pool.slice(0, 250).map((c) => (
+          {pool.map((c) => (
             <EditorTile key={c.card_id} card={c} qty={qtys[c.card_id] || 0} quickAdd={quickAdd}
               onStep={step} onOpen={setSheetCardId} />
           ))}
         </div>
       ) : (
         <div>
-          {pool.slice(0, 250).map((c) => (
+          {pool.map((c) => (
             <EditorRow key={c.card_id} card={c} qty={qtys[c.card_id] || 0} quickAdd={quickAdd} rarityOn={rarityOn} attackOn={attackOn}
               onStep={step} onOpen={setSheetCardId} />
           ))}
@@ -188,6 +190,7 @@ const EditorRow = React.memo(function EditorRow({ card, qty, quickAdd, rarityOn,
       display: 'flex', alignItems: 'center', gap: 12, margin: '0 -20px', padding: '13px 20px',
       borderBottom: '1px solid rgba(74,60,34,.3)', cursor: 'pointer',
       background: inDeck ? 'linear-gradient(90deg, rgba(203,167,95,.05), transparent 70%)' : 'none',
+      contentVisibility: 'auto', containIntrinsicSize: 'auto 52px',
     }}>
       {quickAdd ? (
         <span onClick={(e) => e.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', flex: 'none' }}>
@@ -226,6 +229,7 @@ const EditorTile = React.memo(function EditorTile({ card, qty, quickAdd, onStep,
       position: 'relative', padding: 1, borderRadius: 14, cursor: 'pointer',
       background: inDeck ? TILE_GILT : 'rgba(255,255,255,.1)',
       boxShadow: inDeck ? '0 0 16px rgba(203,167,95,.25)' : 'none',
+      contentVisibility: 'auto', containIntrinsicSize: 'auto 240px',
     }}>
       <div style={{ position: 'relative', borderRadius: 13, overflow: 'hidden' }}>
         <CardArt card={card} radius={13} aspect="5/7" />

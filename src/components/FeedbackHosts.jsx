@@ -15,7 +15,13 @@ export function ToastHost() {
       const id = ++seq;
       const { message, tone = 'default', ms = 2100 } = e.detail || {};
       if (!message) return;
-      setItems((xs) => [...xs, { id, message, tone }]);
+      // Single slot: cancel any pending timer and REPLACE the toast, so rapid edits
+      // show the latest one over the previous instead of stacking a wall of toasts.
+      // The id increments every time, so React remounts the node and the cxToastIn
+      // appear animation replays - enough to signal a new toast landed.
+      Object.values(timers.current).forEach(clearTimeout);
+      timers.current = {};
+      setItems([{ id, message, tone }]);
       timers.current[id] = setTimeout(() => {
         setItems((xs) => xs.filter((x) => x.id !== id));
         delete timers.current[id];

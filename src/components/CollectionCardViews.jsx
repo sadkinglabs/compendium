@@ -103,7 +103,7 @@ export const LedgerRow = React.memo(function LedgerRow({ card, set, setLabel, ow
   const stop = (e) => e.stopPropagation();
   return (
     <div className="cx-row" onClick={() => onPeek(card.card_id, set)}
-      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 90 }}>
+      style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', minHeight: 90, contentVisibility: 'auto', containIntrinsicSize: 'auto 90px' }}>
       {/* Thumb: the whole card (no zoom, sites unrotated), gilt frame when owned
           (brighter at playset), dark overlay when missing. */}
       <span style={{ width: 64, flex: 'none', position: 'relative' }}>
@@ -170,7 +170,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
   const missing = total === 0;
   const setName = setLabel || firstSetName(card);
   return (
-    <div onClick={() => onPeek(card.card_id, set)} style={{ position: 'relative', cursor: 'pointer' }}>
+    <div onClick={() => onPeek(card.card_id, set)} style={{ position: 'relative', cursor: 'pointer', contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
       {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. */}
       <div style={{
         position: 'relative', borderRadius: 13, overflow: 'hidden',
@@ -201,8 +201,12 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
         </span>
       )}
-      {/* Missing sleeves get a quick add. */}
-      {missing && (
+      {/* Missing sleeves get a quick add - ONLY where adding is enabled. Like
+          LedgerRow, the add control is omitted entirely when the caller passes no
+          onStep (read-only: the My Collection lens, Overview). Without this guard the
+          read-view View-all / Not-owned binder showed a dead "+" on every unowned
+          tile that threw on tap. */}
+      {missing && onStep && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
           <Frost label={`Add ${card.name}`} size={30} onClick={() => onStep(card.card_id, set, 1)}>+</Frost>
         </span>

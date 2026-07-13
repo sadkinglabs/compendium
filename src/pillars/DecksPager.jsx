@@ -395,7 +395,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
     ? <button className="es-copy-btn" onClick={doShare} disabled={!share?.link}>Share link</button>
     : <button className="es-copy-btn" onClick={copy}>Copy to clipboard</button>;
   return (
-    <Sheet open={open} title="Export Deck" onClose={onClose} footer={footer}>
+    <Sheet open={open} title="Export Deck" onClose={onClose} footer={footer} bodyClass="arc">
       <div className="es-format-row">
         <div className="es-format-wrap">
           <button className={`es-format-btn${fmt === 'markdown' ? ' on' : ''}`} onClick={() => setFmt('markdown')}>Markdown</button>
@@ -475,7 +475,7 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
   const empty = src && (src.spellbook.length + src.atlas.length + src.collection.length === 0);
 
   return (
-    <Sheet open={open} title="Deck Spread" onClose={onClose}
+    <Sheet open={open} title="Deck Spread" onClose={onClose} bodyClass="arc"
       footer={
         <div className="ds-toggle-wrap">
           <button className={`ds-view-btn${!shuf ? ' on' : ''}`} onClick={() => setShuf(null)}>Deck</button>

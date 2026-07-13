@@ -35,7 +35,12 @@
 /* Skins retired: the counter wears the app's gold (--sk above), full stop. */
 
 /* ── COUNTER SCREEN ── */
-#counter-screen { background: #0e0b08; position: fixed; inset: 0; z-index: 100; animation: cxfade .2s ease; }
+/* Enter with the app's sheet vocabulary (fade + rise + settle) instead of a bare
+   opacity fade, so starting a match reads as a deliberate takeover, not a hard cut.
+   #counter-screen itself never scrolls (its inner regions do), so the transform is
+   safe from the WebView paint gotcha. Reduced-motion collapses it globally. */
+@keyframes cxCounterIn { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
+#counter-screen { background: #0e0b08; position: fixed; inset: 0; z-index: 100; animation: cxCounterIn .3s cubic-bezier(.2,.9,.3,1); }
 
 .counter-half { position: absolute; left: 0; right: 0; overflow: hidden; }
 .counter-half.enemy-half {

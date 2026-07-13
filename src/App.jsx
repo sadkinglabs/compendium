@@ -15,7 +15,7 @@ import BottomDock from './components/BottomDock.jsx';
 import SearchPill from './components/SearchPill.jsx';
 import CardArt from './components/CardArt.jsx';
 import { thresholdRuns } from './store/cardArt.js';
-import { importFromText, importCuriosaUrl } from './store/deckRepository.js';
+import { importCuriosaUrl } from './store/deckRepository.js';
 import Home from './pillars/Home.jsx';
 import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
@@ -119,6 +119,7 @@ export default function App() {
     if (booted.current) return;   // run boot once (StrictMode double-invokes effects)
     booted.current = true;
     (async () => {
+      const t0 = Date.now();
       try {
         await openDatabase();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
@@ -140,6 +141,13 @@ export default function App() {
             profile: await import('./store/profileRepository.js'),
           };
         }
+        // Floor the splash so the branded animation actually paints on a fast warm
+        // boot (native SQLite resolves this whole chain in a few ms, faster than the
+        // splash's own fade-in - so on device it flashed by unseen). Success path
+        // only; an error must surface immediately.
+        const MIN_SPLASH_MS = 1100;
+        const rest = MIN_SPLASH_MS - (Date.now() - t0);
+        if (rest > 0) await new Promise((r) => setTimeout(r, rest));
         setBoot({ status: 'ready', counts });
       } catch (e) {
         setBoot({ status: 'error', error: String(e?.message || e) });
@@ -480,13 +488,10 @@ export default function App() {
           goTab('decks'); setDeckOpen({ id, name });
         }} />
 
-      {/* Import from pasted text (Arcanum Format) */}
+      {/* Import from pasted text - the sheet now runs its own parse -> review ->
+          confirm; we just navigate to the created deck. */}
       <ImportTextSheet open={importMode === 'text'} onClose={() => setImportMode(null)}
-        onImport={async (text, name) => {
-          const { id, unresolved } = await importFromText(text, name); setImportMode(null); bump();
-          toast(unresolved ? `Imported · ${unresolved} card(s) kept as placeholders` : 'Deck imported');
-          goTab('decks'); setDeckOpen({ id, name: name || 'Imported deck' });
-        }} />
+        onDone={(id, name) => { setImportMode(null); bump(); goTab('decks'); setDeckOpen({ id, name }); }} />
 
       {/* Pre-match avatar picker - centered modal over the (dimmed) app, so it
           doesn't take over the interface. Scrim tap cancels. */}
@@ -865,7 +870,7 @@ function CreditsModal({ open, onClose }) {
             <span style={{ position: 'absolute', top: '50%', left: '50%', width: 18, height: 18, transform: 'translate(-50%,-50%) rotate(45deg)', border: '2px solid var(--gold-leaf)', borderRadius: 3 }} />
           </span>
           <div style={{ font: "600 27px/1.1 var(--f-display)", color: 'var(--gold-leaf)', letterSpacing: '.01em' }}>Compendium</div>
-          <div style={{ font: "500 11px/1 var(--f-mono)", letterSpacing: '.05em', color: '#b08d4e', margin: '8px 0 14px' }}>v1.0.0 alpha</div>
+          <div style={{ font: "500 11px/1 var(--f-mono)", letterSpacing: '.05em', color: '#b08d4e', margin: '8px 0 14px' }}>v1.0.1 alpha</div>
           <div style={{ font: "400 13.5px/1.6 var(--f-read)", color: 'var(--ink-muted)' }}>
             Compendium is an unofficial, fan-made companion app for <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>Sorcery: Contested Realm</strong> - unifying your codex, decks and life tracker in one place.
             <br /><br />

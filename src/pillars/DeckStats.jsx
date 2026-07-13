@@ -216,7 +216,22 @@ function Buildability({ deckId, deckName, rev, onOpenCodex, onChanged }) {
     const off = subscribeCollection(load);
     return () => { alive = false; off(); };
   }, [deckId, rev]);
-  if (!rep || rep.totalRequired === 0) return null;
+  // Reserve the section's real height while the compare loads, so the rest of the
+  // Stats suite doesn't jump when the result arrives (the widget leads the suite;
+  // it used to render null then pop in at the top, shoving every section down).
+  if (rep === null) {
+    return (
+      <section className="ds-sec" aria-busy="true">
+        <div className="ds-hdr">
+          <span className="ds-hdr-name">Buildability</span><span className="ds-hdr-rule" />
+          <span style={{ font: "600 22px/1 var(--f-display)", color: '#5c554b' }}>–</span>
+        </div>
+        <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)' }} />
+        <div style={{ font: "400 12.5px/1 var(--f-read)", color: '#5c554b', marginTop: 8 }}>Checking your collection…</div>
+      </section>
+    );
+  }
+  if (rep.totalRequired === 0) return null;
   const canView = rep.totalMissing > 0, complete = rep.complete;
   return (
     <section className="ds-sec">
