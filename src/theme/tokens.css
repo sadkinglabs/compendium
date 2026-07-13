@@ -454,5 +454,7 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 .cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 
 @keyframes cxfade { from { opacity: 0; } to { opacity: 1; } }
+/* Collection card area: a short fade replayed on each view/lens change. */
+.cx-view-fade { animation: cxfade .22s ease; }
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes cxpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }

@@ -361,6 +361,14 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   // catalogue so anything is addable).
   const [viewMode, setViewMode] = useState('owned');
   const showSteppers = editMode;
+  // Fade the card area on a view (list/binder) or lens (owned/all/not-owned) change.
+  // Replays the animation by toggling the class on the SAME node (offsetWidth reflow
+  // between remove/add), so the list reconciles in place - the tiles never remount.
+  const listRef = useRef(null);
+  useEffect(() => {
+    const el = listRef.current; if (!el) return;
+    el.classList.remove('cx-view-fade'); void el.offsetWidth; el.classList.add('cx-view-fade');
+  }, [viewMode, view]);
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -535,6 +543,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
             {totalRows} card{totalRows === 1 ? '' : 's'}
           </div>
+          {/* Card area fades on a view/lens change (replayed by ref in the effect
+              above, so the list reconciles in place - the 1500 tiles never remount). */}
+          <div ref={listRef}>
           {totalRows === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
               {editMode || viewMode !== 'owned' ? 'No cards match those filters.'
@@ -574,6 +585,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
               );
             })
           )}
+          </div>
         </>
       )}
 
