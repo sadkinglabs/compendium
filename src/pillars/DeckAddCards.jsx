@@ -45,7 +45,10 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const [sheetCardId, setSheetCardId] = useState(null);
   const [ignoredScopes, setIgnoredScopes] = useState([]);   // has:/is: are Codex-only - swallowed here, surfaced as a note
 
-  useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
+  // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
+  // those sections mount mid-slide and hitch the open animation (see open= below).
+  const [optsLoaded, setOptsLoaded] = useState(false);
+  useEffect(() => { Promise.all([getSets().then(setSetOpts), getArtists().then(setArtistOpts)]).then(() => setOptsLoaded(true)); }, []);
 
   async function loadPool() {
     // Curiosa-style search syntax: bare words narrow by name in SQL; every
@@ -146,7 +149,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
 
       <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange} />
 
-      <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
+      <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="REFINE" activeCount={activeCount} ctaLabel={`Show ${pool.length} card${pool.length === 1 ? '' : 's'}`}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}

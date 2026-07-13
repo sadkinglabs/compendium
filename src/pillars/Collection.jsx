@@ -398,7 +398,10 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [collapsed, setCollapsed] = useState(() => new Set());
   const toggleSet = useCallback((code) => setCollapsed((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }), []);
   const [setOpts, setSetOpts] = useState([]);
-  useEffect(() => { getSets().then(setSetOpts); getArtists().then(setArtistOpts); }, []);
+  // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
+  // those sections mount mid-slide and hitch the open animation (see open= below).
+  const [optsLoaded, setOptsLoaded] = useState(false);
+  useEffect(() => { Promise.all([getSets().then(setSetOpts), getArtists().then(setArtistOpts)]).then(() => setOptsLoaded(true)); }, []);
 
   async function loadPool() {
     const parsed = parseQuery(q);
@@ -611,7 +614,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
       )}
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
-      <RefineSheet open={filterOpen} onClose={() => setFilterOpen(false)} onClear={clearAll}
+      <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
         summaryLead={ownScope.map((s) => OWN_LABEL[s])}
         leadSections={(
