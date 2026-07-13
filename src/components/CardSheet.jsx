@@ -156,7 +156,7 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
 
               {/* An avatar isn't added like a card (no steppers): its action is to
                   swap it, opening the same avatar wizard the hero used to. */}
-              {c.is_avatar && onChangeAvatar && (
+              {!!c.is_avatar && onChangeAvatar && (
                 <>
                   <div style={DIVIDER} />
                   <button onClick={() => { onClose?.(); onChangeAvatar(); }}
