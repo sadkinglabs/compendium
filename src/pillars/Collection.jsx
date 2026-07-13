@@ -254,10 +254,15 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
             <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)' }}>RECENTLY ADDED</span>
             <button onClick={onGoCards} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>All cards ›</button>
           </div>
-          {recent.map((c) => (
-            <LedgerRow key={c.card_id} card={c} owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted}
-              onPeek={onPeek} />
-          ))}
+          {recent.map((c) => {
+            // Label the row with the printing you actually own (owned_slug), not
+            // sets[0] - which mislabelled every Beta (and later) reprint as Alpha.
+            const code = (!c.owned_slug || c.owned_slug === 'foil') ? '' : String(c.owned_slug).split(':')[0];
+            return (
+              <LedgerRow key={c.card_id} card={c} set={code} setLabel={SET_LABEL[code] || code}
+                owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted} onPeek={onPeek} />
+            );
+          })}
         </>
       ) : (
         <div style={{ padding: '40px 12px', textAlign: 'center' }}>

@@ -491,6 +491,9 @@ export async function recentlyAdded(limit = 8) {
             SUM(CASE WHEN o.variant_slug='foil' THEN 0 ELSE o.qty_owned END) qty_owned,
             SUM(CASE WHEN o.variant_slug='foil' THEN o.qty_owned ELSE 0 END) qty_foil,
             SUM(o.qty_wanted) qty_wanted,
+            (SELECT o2.variant_slug FROM owned_cards o2
+             WHERE o2.profile_id=o.profile_id AND o2.card_id=o.card_id AND o2.qty_owned>0
+             ORDER BY o2.updated_at DESC LIMIT 1) owned_slug,
             c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets, c.rules_text
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=?
