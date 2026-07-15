@@ -261,10 +261,9 @@ body.roll-active #match-clock { display: none !important; }
 #roll-pill { position: fixed; left: 50%; z-index: 60; display: none; pointer-events: none; }
 #roll-pill.show { display: block; }
 #roll-pill.armed  { top: 50%; transform: translate(-50%, -50%); pointer-events: auto; cursor: pointer; }
-#roll-pill.result { top: 50%; transform: translate(-50%, -50%); }
 #roll-pill-body {
   display: flex; flex-direction: column; align-items: center;
-  border-radius: 999px; transform: rotate(var(--flip, 0deg));
+  border-radius: 999px;
 }
 #roll-pill.armed #roll-pill-body {
   background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.8), rgba(14,11,8,.92));
@@ -274,23 +273,11 @@ body.roll-active #match-clock { display: none !important; }
   box-shadow: 0 10px 26px -8px rgba(0,0,0,.7), 0 0 20px rgba(var(--sk),.28), inset 0 1px 0 rgba(255,255,255,.05);
 }
 #roll-pill.armed:active #roll-pill-body { transform: scale(.96); }
-#roll-pill.result #roll-pill-body {
-  background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.82), rgba(14,11,8,.94));
-  border: 1px solid rgba(var(--sk),.5); border-radius: 24px;
-  box-shadow: 0 10px 26px -8px rgba(0,0,0,.7), 0 0 24px rgba(var(--sk),.28), inset 0 1px 0 rgba(255,255,255,.08);
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-  padding: 14px 30px;
-  animation: roll-magnify .5s cubic-bezier(.2,1.05,.35,1);
-}
-@keyframes roll-magnify {
-  from { opacity: 0; transform: rotate(var(--flip,0deg)) scale(.3); }
-  to   { opacity: 1; transform: rotate(var(--flip,0deg)) scale(1); }
-}
 /* Retiring the offer: a soft upward fade (manual dismiss or auto after N taps).
    The animated transform overrides .armed's centring for the exit tween. */
 #roll-pill.roll-exit { animation: roll-pill-out .34s cubic-bezier(.4,0,.2,1) forwards; pointer-events: none; }
 @keyframes roll-pill-out { to { opacity: 0; transform: translate(-50%, calc(-50% - 16px)); } }
-#roll-pill .roll-pill-go, #roll-pill .roll-pill-pick { display: none; }
+#roll-pill .roll-pill-go { display: none; }
 #roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 10px; color: rgb(var(--sk)); }
 #roll-pill .roll-pill-go svg { color: rgb(var(--sk)); filter: drop-shadow(0 0 8px rgba(var(--sk),.28)); }
 #roll-pill .rp-label { font: 700 13px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
@@ -307,34 +294,45 @@ body.roll-active #match-clock { display: none !important; }
 .roll-pill-dismiss::before { content: ''; position: absolute; inset: -10px; }
 .roll-pill-dismiss svg { width: 13px; height: 13px; }
 .roll-pill-dismiss:active { transform: scale(.9); }
-#roll-pill.result #roll-pill-body { min-width: 172px; }
-#roll-pill.result .roll-pill-pick { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 100%; text-align: center; }
-#roll-pill .rp-main { font-family: var(--f-display); font-size: 24px; font-weight: 800; color: rgb(var(--sk)); line-height: 1; }
-/* tabular digits: the countdown ticks without the line wobbling */
-#roll-pill .rp-hint { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+/* ONE AXIS, read both ways: monochrome = life has not arrived · colour = life is here
+   · Death's Door takes it away again. Nobody is dying in the opening ash, because
+   nobody is alive yet. The layer the Toll RAISES is the one birth LOWERS - same layer,
+   opposite direction, no extra texture. That is why this screen is one system rather
+   than two vocabularies sharing a surface.
+   --birth: 0 = unborn (ash) · 1 = alive (colour). React owns it - see LifeCounter, and
+   the note there on why it must not be an imperative style write. */
+#counter-screen { --birth: 0; --birth-ms: 450ms; --birth-ease: ease; --dd-fall-ms: 900ms; }
 
-/* Death's Door reminder */
-/* ════════════════════════════════════════════════════════════════════════
-   DEATH'S DOOR - "The Toll"
-   Zero is a live game state in Sorcery, not a loss. Everything below says
-   GRAVE and never says OVER: no terminal iconography, and the colour that
-   drains out floods back on the first + (and faster than it left - death is
-   a slow toll, recovery is a gasp).
-   The drama is also the guard. Reaching 0 plays a ~0.9s ceremony while the
-   arming controller waits for the hand to leave the glass, so the wait is
-   spent as theatre rather than as lag. The guard itself is NOT animation -
-   it is explicit state; see src/pillars/ddArming.js.
-   ════════════════════════════════════════════════════════════════════════ */
-
-/* The ash twin. Two forms, one behaviour. With art: an <img> carrying a STATIC
-   grayscale filter. Artless: the inline sigil, achromatic. Both crossfade by
-   OPACITY ONLY - the filter is rasterised once and never animated, because
-   animating filter on a full-bleed layer re-rasterises half the screen every
-   frame on Android. That is the entire reason a twin exists rather than a
-   filter transition on the original. */
-.half-bg-dd { opacity: 0; transition: opacity .45s ease; }   /* .45s = the recovery rush */
+/* The ash twin. With art: an <img> carrying a STATIC grayscale filter. Artless: a flat
+   achromatic wash. Both crossfade by OPACITY ONLY - the filter is rasterised once and
+   never animated, because animating filter on a full-bleed layer re-rasterises half the
+   screen every frame on Android. That is the entire reason a twin exists. */
+.half-bg-dd {
+  opacity: calc(1 - var(--birth));
+  transition: opacity var(--birth-ms) var(--birth-ease);
+}
 img.half-bg-dd { filter: grayscale(1) brightness(.55) contrast(1.06); }
-.counter-half.dd .half-bg-dd { opacity: 1; transition-duration: .9s; }   /* .9s = the fall */
+/* Death's Door overrides birth outright - a fallen side is ash however alive the realm
+   is - and carries its OWN duration, so the fall never depends on whatever timing a
+   ceremony last used. (0,3,0) beats (0,1,0). */
+.counter-half.dd .half-bg-dd { opacity: 1; transition: opacity var(--dd-fall-ms) ease; }
+
+/* THE FILL, and the whole trick: REVEAL BY UNMASKING.
+   The ash fades uniformly - but you cannot SEE colour where this vignette is still
+   dark. It lifts LAST (40% delay, 60% duration), so the region where colour is visible
+   grows from the centre outward. The perceived front is real; it costs two opacity
+   animations instead of a per-frame repaint.
+   Rejected on arithmetic: animated clip-path/mask (paint every frame - the filter trap
+   in a new costume), and a scaled vignette (its hole must clear a half-diagonal ~810px,
+   forcing a ~2950px element ≈ 35MB per half, 70MB for two).
+   Duration and delay are fractions of --birth-ms, so every path - the 4s hold, the
+   900ms wave-off, 420ms per tap - gets the same centre-out shape for free. */
+.half-birth-rim {
+  position: absolute; inset: 0; pointer-events: none;
+  opacity: calc(1 - var(--birth));
+  background: radial-gradient(circle at 50% 50%, transparent 0 22%, rgba(11,9,7,.30) 48%, rgba(11,9,7,.62) 84%);
+  transition: opacity calc(var(--birth-ms) * .6) var(--birth-ease) calc(var(--birth-ms) * .4);
+}
 
 /* The veil: a crimson rim closing into dark. Present in EVERY case - it is what
    makes an artless half grave, and it never depended on imagery. */
@@ -894,3 +892,141 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
 .cx-life-tracker .log-life { display: flex; align-items: center; gap: 5px; min-width: 46px; justify-content: flex-end; font-family: var(--f-mono, 'IBM Plex Mono', monospace); font-size: 14px; color: var(--text); }
 .cx-life-tracker .log-life svg { width: 13px; height: 13px; color: var(--win); }
 .cx-life-tracker .log-empty { text-align: center; color: var(--muted); font-family: var(--f-read); font-size: 14px; line-height: 1.6; padding: 30px 10px; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   TURN ORDER - "First Light"
+   Two channels, deliberately NOT merged: COLOUR says who is alive (both
+   players, always - see --birth above). LIGHT says who chooses. A player who
+   lost a roll must never look like a player who is dying, so the loser keeps
+   every drop of their colour; they are simply not lit.
+   Opt-in: nothing below can render unless the player tapped Roll for Turn.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* The lights. Neutral - deliberately NOT .half-dd-veil, which carries a crimson rim.
+   .5 = house lights down (both sides, wind-up + tumble). 1 = not chosen. */
+.half-roll-veil {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  opacity: 0; transition: opacity .45s ease;
+  background: radial-gradient(150% 120% at 50% 50%, rgba(6,5,4,.35) 0%, rgba(6,5,4,.92) 100%);
+}
+.counter-half.roll-windup .half-roll-veil,
+.counter-half.roll-tumble .half-roll-veil { opacity: .5; transition-duration: .42s; transition-timing-function: cubic-bezier(.55,0,.95,.35); }
+.counter-half.roll-win .half-roll-veil { opacity: 0; transition-duration: .35s; }
+/* Only .35 alpha at its centre, on purpose: the loser's realm still comes alive during
+   the hold, in shadow. Light and colour coexist; neither cancels the other. The +120ms
+   is the stagger - the winner is chosen first, the other side falls away after. */
+.counter-half.roll-lose .half-roll-veil { opacity: 1; transition-duration: .35s; transition-delay: .12s; }
+
+/* The bloom. Gold light laid OVER the half's own colour - it never repaints it, so it
+   lands on card art, on an element gradient, and on Quick Match's gold or violet alike. */
+.half-roll-light {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  opacity: 0; transition: opacity .45s ease;
+  background:
+    radial-gradient(70% 55% at 50% 45%, rgba(220,184,111,.30), transparent 66%),
+    radial-gradient(140% 100% at 50% 50%, rgba(220,184,111,.10), transparent 70%);
+}
+.counter-half.roll-win .half-roll-light { opacity: 1; transition-duration: .35s; }
+
+/* The wind-up: numerals pull in, ACCELERATING. ease-in is the point - it winds rather
+   than settles. */
+.counter-half.roll-windup .life-number {
+  transform: scale(.8); opacity: .45;
+  transition: transform .42s cubic-bezier(.55,0,.95,.35), opacity .42s cubic-bezier(.55,0,.95,.35);
+}
+/* roll-tick's 100% is `none`, which is exactly this - so the per-tick animation and
+   this class agree on transform and cannot fight over it. */
+.counter-half.roll-tumble .life-number {
+  transform: none; opacity: 1; color: rgba(241,232,208,.5);
+  transition: transform .2s cubic-bezier(.2,1.6,.4,1), opacity .2s, color .12s;
+}
+/* THE LEAD - the one thing that turns a flicker into a fight. Whichever face is
+   currently higher takes gold, so it visibly jumps the divider and changes hands in the
+   readable final ticks. State is COLOUR, only ever colour; the event is TRANSFORM, only
+   ever transform. They never share a property, so class and animation cannot fight -
+   and the lead survives reduced motion, because a class is not an animation. */
+.life-number.roll-lead {
+  color: var(--gold-head);
+  text-shadow: 0 0 34px rgba(220,184,111,.85), 0 0 84px rgba(220,184,111,.4), 0 2px 22px rgba(0,0,0,.85);
+  transition: color .12s, text-shadow .12s;
+}
+.life-number.roll-tick { animation: roll-tick .11s ease-out; }
+@keyframes roll-tick { 0% { transform: scale(1.07) rotate(var(--tk, 0deg)); } 100% { transform: none; } }
+/* The strike. Deliberately the INVERSE of dd-slam (1.6 -> .94 -> 1): the toll drops in,
+   the verdict rises into place. */
+.life-number.roll-land { animation: roll-land .42s cubic-bezier(.2,.9,.3,1); }
+@keyframes roll-land { 0% { transform: scale(.7); opacity: .35; } 58% { transform: scale(1.08); opacity: 1; } 100% { transform: none; } }
+
+/* The verdict on the numerals - re-parented to the half so one class drives a side. */
+.counter-half.roll-win .life-number {
+  color: var(--gold);
+  text-shadow: 0 0 34px rgba(220,184,111,.95), 0 0 84px rgba(220,184,111,.55), 0 2px 24px rgba(0,0,0,.85);
+  transform: scale(1.06); transition: color .5s ease, text-shadow .5s ease, transform .5s ease;
+}
+.counter-half.roll-lose .life-number {
+  color: rgba(255,255,255,.22); text-shadow: 0 2px 18px rgba(0,0,0,.6);
+  transform: scale(.88); transition: color .5s ease, text-shadow .5s ease, transform .5s ease;
+}
+
+/* The words. .dd-eyebrow's exact recipe, in gold, inside the half so it rotates with
+   it. Two labels, each upright to its own reader - which is why there is no centred
+   pill: a 180deg-rotated pill only reads if you already know which way up you sit. */
+.roll-eyebrow {
+  margin-top: 10px; font: 700 13px/1 var(--f-display);
+  letter-spacing: .3em; text-transform: uppercase;
+  opacity: 0; transform: translateY(4px); pointer-events: none;
+  transition: opacity .4s ease .5s, transform .4s ease .5s;
+}
+.counter-half.roll-win .roll-eyebrow { opacity: 1; transform: none; color: var(--gold-head); text-shadow: 0 0 18px rgba(220,184,111,.45), 0 2px 10px rgba(0,0,0,.8); }
+.counter-half.roll-lose .roll-eyebrow { opacity: 1; transform: none; color: rgba(255,255,255,.3); }
+/* The countdown. Dim and small: the eyebrow is the loud line and the fill is the loud
+   event. It exists because under reduced motion the fill is INSTANTANEOUS, and this
+   number is then the only thing saying the wait is finite - one design serving both
+   modes rather than a special case. A dim 4-3-2-1 under a blooming realm is a clock on
+   a wall, not a timer on a conversation. */
+.roll-sub {
+  margin-top: 8px; font: 600 10px/1 var(--f-display);
+  letter-spacing: .22em; text-transform: uppercase; color: var(--faint);
+  font-variant-numeric: tabular-nums; pointer-events: none;
+  opacity: 0; transition: opacity .4s ease .7s;
+}
+.counter-half.roll-win .roll-sub, .counter-half.roll-lose .roll-sub { opacity: 1; }
+
+/* .dd-shock's geometry and keyframes, gold rim. Mounts once per verdict. */
+.roll-burst {
+  position: absolute; left: 50%; top: 50%; width: 40vmin; height: 40vmin;
+  margin: -20vmin 0 0 -20vmin; border-radius: 50%; pointer-events: none; z-index: 3;
+  border: 2px solid rgba(220,184,111,.75);
+  box-shadow: 0 0 34px rgba(220,184,111,.4), inset 0 0 22px rgba(220,184,111,.22);
+  animation: dd-shock .6s cubic-bezier(.2,.7,.3,1) forwards;
+}
+
+/* The unlock: both totals arrive together - the match begins for both players in the
+   same frame, which is the entire point of the beat. */
+.life-number.roll-restore { animation: roll-restore .38s cubic-bezier(.2,.9,.3,1); }
+@keyframes roll-restore { 0% { opacity: .25; transform: scale(.88); } 100% { opacity: 1; transform: none; } }
+/* The divider's idle pulse would read as a heartbeat under a still verdict. */
+body.roll-active .counter-divider { animation: none; opacity: 1; }
+/* The curtain. Outward from centre, so it reads identically from either seat. */
+.roll-open-gleam {
+  position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px;
+  z-index: 11; pointer-events: none; transform-origin: 50% 50%;
+  background: linear-gradient(to right, transparent, rgba(220,184,111,1) 30%, rgba(220,184,111,1) 70%, transparent);
+  box-shadow: 0 0 18px rgba(220,184,111,.8);
+  animation: roll-open .5s cubic-bezier(.2,.8,.3,1) forwards;
+}
+@keyframes roll-open { 0% { transform: scaleX(0); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+/* The pill is CAST, not dismissed. .roll-exit stays: that is the X / auto-retire's soft
+   upward fade - a different act, a different shape. */
+#roll-pill.roll-cast { animation: roll-cast .26s cubic-bezier(.4,0,1,.6) forwards; pointer-events: none; }
+@keyframes roll-cast { to { opacity: 0; transform: translate(-50%, -50%) scale(.3); } }
+
+/* ── reduced motion ──────────────────────────────────────────────────────
+   Every transition above is dead, so each step CUTS. That is fine, and deliberate:
+   unborn-vs-alive, who chooses, and the match having begun are all STATIC properties.
+   The lead still jumps (a class, not an animation). The countdown still counts (React
+   state, which the neutraliser cannot touch) - and it is what carries the hold once the
+   fill is instantaneous. Only these are noise when frozen: */
+body.reduce-motion .roll-burst,
+body.reduce-motion .roll-open-gleam { display: none; }
+body.reduce-motion .counter-half.roll-windup .life-number { transform: none; opacity: 1; }

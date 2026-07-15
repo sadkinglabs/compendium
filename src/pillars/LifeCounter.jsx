@@ -17,6 +17,10 @@ import { createDdArming, DD } from './ddArming.js';
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
+const WINDUP_MS = 420;         // the throw: lights down, numerals pull in, then release
+const HOLD_MS = 4000;          // the verdict hold - two humans decide who goes first
+const BIRTH_REST_MS = 450;     // the ash's resting transition; also Death's Door's recovery rush
+const BIRTH_WAVE_MS = 900;     // waving the ceremony off: the Toll's fall duration, inverted
 
 function fmtDur(secs) {
   secs = Math.max(0, Math.round(secs || 0));
@@ -42,9 +46,53 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const eRef = useRef(resume ? { life: resume.eLife, max: resume.eMax } : { life: start, max: start });
   const [, force] = useState(0);            // re-render for dd-pill / status badge / max
   const [deltas, setDeltas] = useState([]);
-  const [rollPhase, setRollPhase] = useState(resume ? null : 'armed');   // 'armed'|'rolling'|'result'|null
-  const [resultLeft, setResultLeft] = useState(4);   // seconds left on the "Your pick" pill
-  const [flip, setFlip] = useState(0);
+  const [rollPhase, setRollPhase] = useState(resume ? null : 'armed');   // 'armed'|'windup'|'rolling'|'result'|null
+  const [resultLeft, setResultLeft] = useState(4);   // seconds left on "Match begins in"
+  const [rollWin, setRollWin] = useState(null);      // 'player' | 'opponent' | null
+  const [openSeq, setOpenSeq] = useState(0);         // bumped at the unlock; remounts the curtain
+
+  // ── birth: colour as life arriving ──
+  // ONE axis for the whole screen: monochrome = life has not arrived · colour = life
+  // is here · Death's Door takes it away again. Nobody is dying in the opening ash,
+  // because nobody is alive yet. The ash layer the Toll RAISES is the one birth
+  // LOWERS - same layer, opposite direction, no extra texture.
+  //
+  // `birth` is React STATE, not an imperative style write. It has to be: the ceremony
+  // sets rollPhase/rollWin/resultLeft and therefore guarantees re-renders, and React
+  // owns this element's style prop - it would restore its own value over any
+  // element.style mutation, mid-fill.
+  //
+  // Seeded from `resume` in the initialiser, so a resumed match is COLOURED IN ITS
+  // FIRST PAINTED FRAME. Not an effect: an effect runs after paint, which is one
+  // frame of ash on every resume.
+  const [birth, setBirthValue] = useState(() => (resume ? 1 : 0));
+  const [birthMs, setBirthMs] = useState(BIRTH_REST_MS);
+  const [birthEase, setBirthEase] = useState('ease');
+  // The ONE writer. Monotonic BY CONSTRUCTION (Math.max), not by convention: colour
+  // must never retreat, because a realm losing colour is Death's Door's sentence and
+  // this must never accidentally speak it. Fidget-then-roll therefore fills from
+  // wherever you left it, over the same 4s - a subtler birth, which is the honest
+  // trade rather than contradicting the language.
+  const setBirth = (value, ms, ease = 'ease') => {
+    setBirthMs(ms); setBirthEase(ease);
+    setBirthValue((cur) => Math.max(cur, value));
+  };
+  // The single exception, and it is not a drain: a fresh match is UNMADE, not killed.
+  // Instant (0ms) is what makes that read as unmaking rather than dying.
+  const unbirth = () => { setBirthMs(0); setBirthValue(0); };
+  // --birth-ms times the ash, and the ash is ALSO what a Death's Door recovery fades.
+  // The two can never overlap (birth only runs at match start, with life at 20), but a
+  // duration parked by the ceremony would make a LATER recovery tween over four
+  // seconds. So the resting value is restored once each fill has landed.
+  // Keyed on the duration itself rather than a timer per path: no future skip path can
+  // forget it, unmount cleans it up, and a throttled/late restore is harmless because
+  // birth has already arrived. Death's Door's FALL is fully decoupled - it carries its
+  // own --dd-fall-ms and never reads this.
+  useEffect(() => {
+    if (birthMs === BIRTH_REST_MS) return;
+    const t = setTimeout(() => setBirthMs(BIRTH_REST_MS), birthMs + 60);
+    return () => clearTimeout(t);
+  }, [birthMs]);
   const [fabP, setFabP] = useState(false);
   const [fabE, setFabE] = useState(false);
   const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
@@ -200,10 +248,13 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   //
   // useLayoutEffect, not useEffect: the flush must land BEFORE paint, so no frame
   // exists in which an armed pill coexists with an open overlay.
-  const overlayOpen = rollPhase === 'rolling' || rollPhase === 'result'
-    || endInfo != null || sheet != null || confirm != null || fabP || fabE;
-  const centredOverlay = rollPhase === 'rolling' || rollPhase === 'result'
-    || endInfo != null || sheet != null || confirm != null;
+  // ONE uninterrupted suppression interval. All three ceremony phases map to true, so
+  // centredOverlay cannot dip between windup -> rolling -> result and momentarily
+  // hand back a live pill. It goes false exactly once, at finishRollOff, where life is
+  // 20 on both sides and the un-suppress is a no-op anyway.
+  const rollLocked = rollPhase === 'windup' || rollPhase === 'rolling' || rollPhase === 'result';
+  const overlayOpen = rollLocked || endInfo != null || sheet != null || confirm != null || fabP || fabE;
+  const centredOverlay = rollLocked || endInfo != null || sheet != null || confirm != null;
   useLayoutEffect(() => {
     dd.setSuppressed(centredOverlay, (who) => (who === 'player' ? pRef : eRef).current.life);
     // eslint-disable-next-line
@@ -226,7 +277,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // to tumble the dice, and a stray tap the instant the winner lands is confusing
   // - it drops the reveal and edits life before you've read it. So block taps /
   // FABs for the whole 'rolling' + 'result' window; they free up when it finishes.
-  useEffect(() => { document.body.classList.toggle('roll-active', rollPhase === 'rolling' || rollPhase === 'result'); }, [rollPhase]);
+  useEffect(() => { document.body.classList.toggle('roll-active', rollLocked); }, [rollLocked]);
 
   // Match clock - re-render once a second while it's showing (elapsedSec() reads
   // live). Stops once the match is decided; CSS hides it during the roll-off.
@@ -325,9 +376,17 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (next <= 0) { numAnim(who, 'dd-slam'); bumpFallSeq(who); haptic('heavy'); }
     else { bump(who, delta); haptic('light'); }
     force((n) => n + 1);
-    // Once the player has clearly settled into tracking life, retire the centre
-    // roll offer (with a fade) so it can never sit in the way of a fast tap.
-    if (rollPhase === 'armed' && ++lifeTaps.current >= ROLL_DISMISS_TAPS) fadeOutRoll();
+    // Once the player has clearly settled into tracking life, retire the centre roll
+    // offer (with a fade) so it can never sit in the way of a fast tap - and bring the
+    // realm to life as they go: a fifth per tap, life breathed in by touch. At the
+    // fifth the realm is whole AND the offer retires, so "fully alive" and "no
+    // ceremony available" arrive together, enforced by the shipped rule rather than a
+    // new one.
+    if (rollPhase === 'armed') {
+      const n = ++lifeTaps.current;
+      setBirth(Math.min(1, n / ROLL_DISMISS_TAPS), 420, 'cubic-bezier(.2,.8,.3,1)');
+      if (n >= ROLL_DISMISS_TAPS) fadeOutRoll();
+    }
   }
   // Max is floored at 1 by MaxLifeModal, so this can never drive a living side to
   // zero (Math.min(life, >=1) >= 1). It routes through commitLife anyway: no writer
@@ -352,30 +411,55 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   }
 
   // ── turn-order roll-off (constants) ──
-  function _clearRoll() {
-    clearTimers();
-    pNumRef.current?.classList.remove('roll-win', 'roll-lose');
-    eNumRef.current?.classList.remove('roll-win', 'roll-lose');
-  }
-  function armRollOff() { _clearRoll(); setFlip(0); lifeTaps.current = 0; setRollPhase('armed'); }
+  function _clearRoll() { clearTimers(); setRollWin(null); }
+  // A fresh match is unborn again - the realm unmade, not killed.
+  function armRollOff() { _clearRoll(); lifeTaps.current = 0; unbirth(); setRollPhase('armed'); }
+
   function startRollOff() {
     if (rollPhase !== 'armed') return;
-    setRollPhase('rolling'); _clearRoll();
+    _clearRoll(); setRollPhase('windup');
+    haptic('medium');   // the one committing act on this screen was silent
+    timers.current.push(setTimeout(_tumble, WINDUP_MS));
+  }
+  function _tumble() {
+    setRollPhase('rolling');
     const pEl = pNumRef.current, eEl = eNumRef.current;
+    // The numerals are borrowed as dice. 12-15 announcements out of a polite live
+    // region is a screen-reader firehose; say the verdict once instead.
+    pEl?.setAttribute('aria-live', 'off'); eEl?.setAttribute('aria-live', 'off');
     const d20 = () => 1 + Math.floor(Math.random() * 20);
     let pVal = d20(), eVal = d20();
     while (eVal === pVal) eVal = d20();
     const winner = pVal > eVal ? 'player' : 'opponent';
-    const total = 10 + Math.floor(Math.random() * 6);   // ~1s shorter tumble than Play pillar's 16-23 ticks
+    const total = 10 + Math.floor(Math.random() * 6);   // curve untouched: its deceleration is what makes the last faces readable
     let step = 0;
+    // Dice clatter: a random tilt per tick, so it reads as two dice fighting rather
+    // than a number flickering.
+    const jolt = (el) => {
+      if (!el) return;
+      el.style.setProperty('--tk', `${(Math.random() * 7 - 3.5).toFixed(1)}deg`);
+      el.classList.remove('roll-tick'); void el.offsetWidth; el.classList.add('roll-tick');
+    };
+    // THE LEAD: whichever face is currently higher takes gold, so the lead visibly
+    // jumps the divider and changes hands in the readable final ticks.
+    // Colour carries state, transform carries the event - they never share a
+    // property, so the class and the per-tick animation cannot fight over transform.
+    const lead = (pf, ef) => {
+      pEl?.classList.toggle('roll-lead', pf > ef);
+      eEl?.classList.toggle('roll-lead', ef > pf);
+    };
     const tick = () => {
       if (step >= total) {
-        pEl.textContent = pVal; eEl.textContent = eVal;
-        haptic('medium');
-        timers.current.push(setTimeout(() => _rollDone(winner), 360));
+        if (pEl) pEl.textContent = pVal; if (eEl) eEl.textContent = eVal;
+        lead(pVal, eVal);
+        numAnim('player', 'roll-land'); numAnim('opponent', 'roll-land');
+        haptic('heavy');   // was 'medium', which the tumble's own ticks already spend
+        timers.current.push(setTimeout(() => _rollDone(winner), 360));   // the coin in the air
         return;
       }
-      pEl.textContent = d20(); eEl.textContent = d20();
+      const pf = d20(), ef = d20();
+      if (pEl) pEl.textContent = pf; if (eEl) eEl.textContent = ef;
+      lead(pf, ef); jolt(pEl); jolt(eEl);
       step++;
       const delay = 45 + Math.pow(step / total, 2.7) * 520;
       if (delay > 170) haptic('light');
@@ -384,21 +468,31 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     tick();
   }
   function _rollDone(winner) {
-    pNumRef.current?.classList.add(winner === 'player' ? 'roll-win' : 'roll-lose');
-    eNumRef.current?.classList.add(winner === 'opponent' ? 'roll-win' : 'roll-lose');
-    setFlip(winner === 'player' ? 0 : 180);
-    // Reveal the result and HOLD it: the rolled dice faces + win/lose highlight
-    // stay on the numerals through the whole 4s countdown (locked by roll-active +
-    // the .roll-lock catcher, so nothing can touch them). Only finishRollOff()
-    // swaps the real life totals back, once the countdown ends - so the result
-    // never jumps to the life total early.
-    timers.current.push(setTimeout(() => { setRollPhase('result'); setResultLeft(4); }, 650));
-    for (let i = 1; i <= 3; i++) timers.current.push(setTimeout(() => setResultLeft(4 - i), 650 + i * 1000));
-    timers.current.push(setTimeout(() => finishRollOff(), 650 + 4000));
+    setRollWin(winner); setRollPhase('result'); setResultLeft(4);
+    // Birth rides the hold: from wherever the player's taps already left it, to alive,
+    // across exactly the four seconds the countdown names. The wait is not dead air -
+    // the fill IS the countdown, made physical.
+    setBirth(1, HOLD_MS, 'cubic-bezier(.4,0,.3,1)');
+    const wEl = (winner === 'player' ? pNumRef : eNumRef).current;
+    wEl?.setAttribute('aria-live', 'polite');
+    wEl?.setAttribute('aria-label', winner === 'player'
+      ? 'You won the roll. You choose who plays first. The match begins in four seconds.'
+      : 'Your opponent won the roll. They choose who plays first. The match begins in four seconds.');
+    for (let i = 1; i <= 3; i++) timers.current.push(setTimeout(() => setResultLeft(4 - i), i * 1000));
+    timers.current.push(setTimeout(finishRollOff, HOLD_MS));
   }
+  // The unlock. Everything lands together: the ceremony ends, the real totals return,
+  // and DD un-suppresses in one transition - the match begins for both players in the
+  // same frame.
   function finishRollOff() {
-    setRollPhase(null); _clearRoll();
-    renderLife();   // restore the real life totals over the tumbled dice faces
+    setRollPhase(null); setRollWin(null);
+    pNumRef.current?.classList.remove('roll-lead'); eNumRef.current?.classList.remove('roll-lead');
+    pNumRef.current?.setAttribute('aria-live', 'polite'); eNumRef.current?.setAttribute('aria-live', 'polite');
+    renderLife();   // real totals over the tumbled faces; setNum clears the roll aria-label
+    numAnim('player', 'roll-restore'); numAnim('opponent', 'roll-restore');
+    setOpenSeq((n) => n + 1);
+    haptic('light');
+    clearTimers();
   }
   // Retire the armed offer with a soft upward fade - whether waved off by the X
   // or auto-retired once the player is clearly just tracking life. Falls back to
@@ -411,8 +505,11 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       pill.classList.remove('roll-exit'); _clearRoll(); setRollPhase(null); renderLife();
     }, 340));
   }
-  // Waving the roll away without rolling - it's an offer, not a gate.
-  function dismissRollOff() { haptic('light'); fadeOutRoll(); }
+  // Waving the roll away without rolling - it's an offer, not a gate. Colour still
+  // arrives: declining the pageantry must never leave you on a grey table. 900ms is
+  // the Toll's fall duration inverted - the toll drains a realm over 900, this floods
+  // it back over 900.
+  function dismissRollOff() { haptic('light'); setBirth(1, BIRTH_WAVE_MS, 'cubic-bezier(.2,.8,.3,1)'); fadeOutRoll(); }
 
   // ── end match → full-screen decision modal (Play) ──
   function triggerEnd(winner) {
@@ -497,6 +594,25 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       </button>
     );
   };
+  // Which side of the verdict a half is on. One class drives the whole side.
+  const rollCls = (who) => {
+    if (rollPhase === 'windup') return ' roll-windup';
+    if (rollPhase !== 'rolling' && rollPhase !== 'result') return '';
+    if (rollWin == null) return ' roll-tumble';
+    return rollWin === who ? ' roll-win' : ' roll-lose';
+  };
+  // The verdict, inside the half so it rotates with it - each player reads their own
+  // the right way up, from their own seat. That is why there is no centred pill.
+  const rollWords = (who) => (
+    <>
+      <div className="roll-eyebrow" aria-hidden="true">{rollWin === who ? 'You choose' : 'They choose'}</div>
+      {/* Dim, small, and it earns its place: under reduced motion the fill is
+          instantaneous, and this is the only thing left saying the wait is finite and
+          short. One design for both modes rather than a special case. */}
+      <div className="roll-sub" aria-hidden="true">Match begins in {resultLeft}</div>
+      {rollWin === who && <div className="roll-burst" aria-hidden="true" />}
+    </>
+  );
   const halfArt = (img, id) => (
     <>
       {img && <img className="half-bg" id={id} src={img} alt="" />}
@@ -510,20 +626,25 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       {img
         ? <img className="half-bg half-bg-dd" src={img} alt="" aria-hidden="true" />
         : <div className="half-bg half-bg-dd half-bg-ash" aria-hidden="true" />}
+      <div className="half-birth-rim" aria-hidden="true" />
     </>
   );
 
   return (
-    <div id="counter-screen" className={`cx-life-tracker${quick ? ' quick' : ''}`}>
+    <div id="counter-screen" className={`cx-life-tracker${quick ? ' quick' : ''}`}
+         style={{ '--birth': birth, '--birth-ms': `${birthMs}ms`, '--birth-ease': birthEase }}>
       {/* Enemy half (rotated 180° for across-table reading) */}
-      <div className={`counter-half enemy-half${e.life <= 0 ? ' dd' : ''}`} id="enemy-half"
+      <div className={`counter-half enemy-half${e.life <= 0 ? ' dd' : ''}${rollCls('opponent')}`} id="enemy-half"
            style={!eImg && eFall ? { background: eFall } : undefined}>
         {halfArt(eImg, 'enemy-bg')}
         <div className="half-dd-veil" />
+        <div className="half-roll-veil" />
+        <div className="half-roll-light" />
         <div className="half-grain" />
         <div className="life-display">
           <div className="life-number" id="enemy-life-num" ref={eNumRef} role="status" aria-live="polite" />
           <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
+          {rollWords('opponent')}
           {e.life <= 0 && <div key={fallSeq.opponent} className="dd-shock" aria-hidden="true" />}
           {ddPill('opponent')}
         </div>
@@ -542,14 +663,17 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       <div className="counter-divider" />
 
       {/* Player half */}
-      <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}`} id="player-half"
+      <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}${rollCls('player')}`} id="player-half"
            style={!pImg && pFall ? { background: pFall } : undefined}>
         {halfArt(pImg, 'player-bg')}
         <div className="half-dd-veil" />
+        <div className="half-roll-veil" />
+        <div className="half-roll-light" />
         <div className="half-grain" />
         <div className="life-display">
           <div className="life-number" id="player-life-num" ref={pNumRef} role="status" aria-live="polite" />
           <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
+          {rollWords('player')}
           {p.life <= 0 && <div key={fallSeq.player} className="dd-shock" aria-hidden="true" />}
           {ddPill('player')}
         </div>
@@ -596,19 +720,23 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       {/* Hard lock: while the roll spins AND through the 4s result countdown, a
           full-screen catcher swallows every tap so the reveal is never dropped by
           an eager tap. The counter only goes live again once the countdown ends. */}
-      {(rollPhase === 'rolling' || rollPhase === 'result') && (
+      {rollLocked && (
         <div className="roll-lock" aria-hidden="true"
           onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); }}
           onPointerDown={(ev) => { ev.preventDefault(); ev.stopPropagation(); }} />
       )}
+      {/* The curtain: a gold seam sweeping outward from centre as the match opens.
+          Outward, so it reads identically from either seat. */}
+      {openSeq > 0 && <div key={openSeq} className="roll-open-gleam" aria-hidden="true" />}
 
-      {/* Optional turn-order roll. Floats over the live counter as an offer:
-          tap it to roll, or dismiss it with the X - it never blocks the match. */}
-      <div id="roll-pill" className={rollPhase === 'armed' ? 'show armed' : rollPhase === 'result' ? 'show result' : ''}
+      {/* Optional turn-order roll. An offer, never a gate: tap to roll, or wave it off
+          with the X. The verdict is NOT shown here any more - it lives inside each
+          half (see .roll-eyebrow), because a centred pill can only be read the right
+          way up by one of the two people at the table. */}
+      <div id="roll-pill" className={`${rollPhase === 'armed' ? 'show armed' : ''}${rollPhase === 'windup' ? ' show armed roll-cast' : ''}`}
         onClick={rollPhase === 'armed' ? startRollOff : undefined} role="button" aria-label="Roll for turn order">
-        <div id="roll-pill-body" style={{ '--flip': flip + 'deg' }}>
+        <div id="roll-pill-body">
           <span className="roll-pill-go">{RollHexSvg}<span className="rp-label">Roll for Turn</span></span>
-          <span className="roll-pill-pick"><span className="rp-main">Your pick</span><span className="rp-hint">Play begins in {resultLeft}</span></span>
         </div>
         {rollPhase === 'armed' && (
           <button className="roll-pill-dismiss" onClick={(ev) => { ev.stopPropagation(); dismissRollOff(); }} aria-label="Dismiss the turn roll">{CloseSvg}</button>
