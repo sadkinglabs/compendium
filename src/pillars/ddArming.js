@@ -1,0 +1,150 @@
+// Death's Door arming - when the centred "End Match" control becomes pressable.
+// Pure transition table + a thin timer-owning wrapper, kept out of the component so
+// the whole thing is provable with fake timers. Run: npm run test:ui
+//
+// THE BUG THIS EXISTS TO KILL
+// `.dd-pill` used to become interactive the instant life hit 0, dead-centre - the
+// exact spot being tapped. The tap that *causes* zero cannot be retargeted (the
+// button did not exist when that event dispatched); the failure is that the NEXT
+// rapid tap finds a newly-interactive target in the same place. There was a second,
+// larger path too: a minus tap at zero called triggerEnd() directly from a tap zone
+// covering half the screen. Both are gone - ending a match is now always explicit.
+//
+// THE MODEL
+// Life is the SOLE source of truth for whether a side is at Death's Door. This
+// controller owns interaction phase ONLY, and learns about life exclusively through
+// syncLife(). It never remembers "alive" - ask the life.
+//
+//   ALIVE --syncLife(->0)--> FALLEN --quiet--> REVEALING --reveal--> ARMED
+//     ^                        ^  ^_______tap_______|________tap________|
+//     |________________syncLife(->positive), any state, cancels timers___|
+//
+// WHY TWO STAGES
+// FALLEN->REVEALING proves the hand has left the glass. REVEALING->ARMED covers the
+// case quiet alone cannot: a player who pauses, then resumes draining, must not land
+// their first resumed tap on a hot button. During REVEALING the pill is visible but
+// `pointer-events: none`, so taps pass THROUGH it to the tap zone beneath and knock
+// the machine back to FALLEN. That pass-through is load-bearing: a merely `disabled`
+// button still occupies the hit-test slot, swallows the tap, and lets the quiet timer
+// expire under a live finger - the original bug, wearing a different hat.
+//
+// WHAT IS NOT THE GUARD
+// Not animation timing. Not an absolute timeout (one would eventually arm the pill
+// under an active finger - the same defect). Only verified quiet arms. The always-
+// available exit is the player FAB's End Match item, which lives outside both tap
+// zones.
+
+export const DD_ARM_QUIET_MS = 1200;   // verified-quiet window. Deliberately NOT LOG_GAP_MS:
+                                       // log coalescing and destructive-action arming are
+                                       // separate product knobs that merely start equal.
+export const DD_ARM_REVEAL_MS = 300;   // materialised-but-inert stage
+
+export const DD = {
+  ALIVE: 'alive',
+  FALLEN: 'fallen',
+  REVEALING: 'revealing',
+  ARMED: 'armed',
+  SUPPRESSED: 'suppressed',   // an overlay owns the screen; no timers, no armed residue
+};
+
+// A timer instruction, kept separate from phase so the reducer stays pure:
+//   'quiet' | 'reveal' -> (re)start that timer   ·   null -> cancel   ·   undefined -> leave alone
+const KEEP = undefined;
+
+/**
+ * The whole transition table. Pure: (phase, event) -> { phase, timer }.
+ * `event` is { type, prev?, next?, on?, life? }.
+ */
+export function ddReduce(phase, event) {
+  switch (event.type) {
+    // The ONLY way life reaches this controller. Every writer funnels through it.
+    case 'SYNC_LIFE': {
+      // An overlay owns the screen: life may move underneath, but phase must not.
+      // Un-suppressing re-derives from life, so nothing is lost by ignoring it here.
+      if (phase === DD.SUPPRESSED) return { phase, timer: KEEP };
+      // Recovery. Unconditional, from any phase, and it cancels pending timers in the
+      // same tick - which is what makes a stale timer after recovery impossible.
+      if (event.next > 0) return { phase: DD.ALIVE, timer: null };
+      // Fell. Only on the crossing, so a write that leaves a fallen side fallen
+      // (e.g. setMax at zero) must not restart the quiet window.
+      if (event.prev > 0) return { phase: DD.FALLEN, timer: 'quiet' };
+      return { phase, timer: KEEP };   // already at/below zero: nothing changes
+    }
+
+    // A tap landed in that half's life-adjustment region - plus, minus, capped,
+    // refused, it makes no difference. Any tap means the hand is still on the glass.
+    case 'TAP':
+      if (phase === DD.ALIVE || phase === DD.SUPPRESSED) return { phase, timer: KEEP };
+      return { phase: DD.FALLEN, timer: 'quiet' };
+
+    case 'QUIET_DONE':
+      if (phase !== DD.FALLEN) return { phase, timer: KEEP };
+      return { phase: DD.REVEALING, timer: 'reveal' };
+
+    case 'REVEAL_DONE':
+      if (phase !== DD.REVEALING) return { phase, timer: KEEP };
+      return { phase: DD.ARMED, timer: null };
+
+    case 'SET_SUPPRESSED':
+      if (event.on) return { phase: DD.SUPPRESSED, timer: null };
+      if (phase !== DD.SUPPRESSED) return { phase, timer: KEEP };
+      // Coming back: re-derive from life. At zero this starts a FRESH quiet window
+      // rather than restoring ARMED, so an overlay can never hand back a hot pill.
+      return event.life > 0 ? { phase: DD.ALIVE, timer: null } : { phase: DD.FALLEN, timer: 'quiet' };
+
+    default:
+      return { phase, timer: KEEP };
+  }
+}
+
+/** Phase a side should start in, derived from life - never assumed. */
+export const initialPhase = (life) => (life > 0 ? DD.ALIVE : DD.FALLEN);
+
+const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites - NOT 'enemy'
+
+/**
+ * Owns one timer handle per side and applies ddReduce. Timers are injected so tests
+ * can drive them; nothing else in the app may create a DD timer.
+ *
+ * `initialLife` is REQUIRED and derives the starting phase per side: a match resumed
+ * with a side already at zero enters FALLEN at mount and arms without a further tap.
+ */
+export function createDdArming({ initialLife, onChange, setTimeout: setT = setTimeout, clearTimeout: clearT = clearTimeout }) {
+  const phases = { player: initialPhase(initialLife.player), opponent: initialPhase(initialLife.opponent) };
+  const handles = { player: null, opponent: null };
+  let disposed = false;
+
+  const cancel = (who) => { if (handles[who] != null) { clearT(handles[who]); handles[who] = null; } };
+
+  function apply(who, event) {
+    if (disposed) return;
+    const before = phases[who];
+    const { phase, timer } = ddReduce(before, event);
+    // Quiet and reveal are never pending together for a side: any instruction other
+    // than KEEP clears the previous handle first.
+    if (timer !== KEEP) {
+      cancel(who);
+      if (timer === 'quiet') handles[who] = setT(() => { handles[who] = null; apply(who, { type: 'QUIET_DONE' }); }, DD_ARM_QUIET_MS);
+      else if (timer === 'reveal') handles[who] = setT(() => { handles[who] = null; apply(who, { type: 'REVEAL_DONE' }); }, DD_ARM_REVEAL_MS);
+    }
+    if (phase !== before) { phases[who] = phase; onChange?.(who, phase); }
+  }
+
+  // A side resumed at zero must arm on its own, with no further tap. Phase is already
+  // derived above (so no onChange fires during construction); this only starts its
+  // quiet window. prev=Infinity reads as "it has just crossed", which is the truth
+  // from this controller's point of view - it has never seen this side alive.
+  for (const who of SIDES) if (phases[who] === DD.FALLEN) apply(who, { type: 'SYNC_LIFE', prev: Infinity, next: initialLife[who] });
+
+  return {
+    phase: (who) => phases[who],
+    /** The one entry point for life. prev/next let the reducer see the crossing. */
+    syncLife: (who, prev, next) => apply(who, { type: 'SYNC_LIFE', prev, next }),
+    /** Any tap in a life zone. No-op while ALIVE or SUPPRESSED, so callers need no guard. */
+    tap: (who) => apply(who, { type: 'TAP' }),
+    /** An overlay/menu owning the screen. Applies to both sides. */
+    setSuppressed: (on, lifeOf) => { for (const who of SIDES) apply(who, { type: 'SET_SUPPRESSED', on, life: on ? 0 : lifeOf(who) }); },
+    pending: () => SIDES.filter((w) => handles[w] != null).length,
+    dispose: () => { for (const who of SIDES) cancel(who); disposed = true; },
+  };
+}

@@ -311,9 +311,114 @@ body.roll-active #match-clock { display: none !important; }
 #roll-pill .rp-hint { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
 
 /* Death's Door reminder */
-.dd-pill { position: relative; z-index: 2; margin-top: 32px; display: none; pointer-events: none; }
-.dd-pill.show { display: flex; pointer-events: auto; cursor: pointer; }
+/* ════════════════════════════════════════════════════════════════════════
+   DEATH'S DOOR - "The Toll"
+   Zero is a live game state in Sorcery, not a loss. Everything below says
+   GRAVE and never says OVER: no terminal iconography, and the colour that
+   drains out floods back on the first + (and faster than it left - death is
+   a slow toll, recovery is a gasp).
+   The drama is also the guard. Reaching 0 plays a ~0.9s ceremony while the
+   arming controller waits for the hand to leave the glass, so the wait is
+   spent as theatre rather than as lag. The guard itself is NOT animation -
+   it is explicit state; see src/pillars/ddArming.js.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* The ash twin. Two forms, one behaviour. With art: an <img> carrying a STATIC
+   grayscale filter. Artless: the inline sigil, achromatic. Both crossfade by
+   OPACITY ONLY - the filter is rasterised once and never animated, because
+   animating filter on a full-bleed layer re-rasterises half the screen every
+   frame on Android. That is the entire reason a twin exists rather than a
+   filter transition on the original. */
+.half-bg-dd { opacity: 0; transition: opacity .45s ease; }   /* .45s = the recovery rush */
+img.half-bg-dd { filter: grayscale(1) brightness(.55) contrast(1.06); }
+.counter-half.dd .half-bg-dd { opacity: 1; transition-duration: .9s; }   /* .9s = the fall */
+
+/* The veil: a crimson rim closing into dark. Present in EVERY case - it is what
+   makes an artless half grave, and it never depended on imagery. */
+.half-dd-veil {
+  position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  opacity: 0; transition: opacity .45s ease;
+  background:
+    radial-gradient(80% 60% at 50% 50%, rgba(224,120,106,.12), transparent 62%),
+    radial-gradient(150% 120% at 50% 50%, rgba(8,5,4,0) 28%, rgba(8,5,4,.82) 100%);
+}
+.counter-half.dd .half-dd-veil { opacity: 1; transition-duration: .9s; }
+.half-grain { transition: opacity .9s ease; }
+.counter-half.dd .half-grain { opacity: .22; }   /* grain thickens into ash */
+
+/* The artless half: the app's own mark, enlarged. Deliberate, not broken. */
+.half-sigil {
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(158deg, #241d12, #12100a 66%, #0a0a09);
+  color: var(--gold-leaf);
+}
+.half-sigil svg { width: 62%; max-width: 340px; height: auto; opacity: .5; }
+.half-sigil-dd { background: linear-gradient(158deg, #2b2a28, #131312 66%, #0a0a09); color: #9a9894; }
+
+/* The state's name. Inside the half, so it rotates with it and reads across the
+   table. "AT DEATH'S DOOR" - a place you are AT. Never "Defeated". */
+.dd-eyebrow {
+  margin-top: 10px; font: 700 13px/1 var(--f-display);
+  letter-spacing: .3em; text-transform: uppercase; color: var(--crimson);
+  text-shadow: 0 0 18px rgba(224,120,106,.4), 0 2px 10px rgba(0,0,0,.8);
+  opacity: 0; transform: translateY(4px);
+  transition: opacity .4s ease .5s, transform .4s ease .5s;
+}
+.counter-half.dd .dd-eyebrow { opacity: 1; transform: none; }
+
+/* Shock ring - remounted per fall via a React key. Transform + opacity only. */
+.dd-shock {
+  position: absolute; left: 50%; top: 50%; width: 40vmin; height: 40vmin;
+  margin: -20vmin 0 0 -20vmin; border-radius: 50%; pointer-events: none; z-index: 3;
+  border: 2px solid rgba(224,120,106,.7);
+  box-shadow: 0 0 30px rgba(224,120,106,.35), inset 0 0 20px rgba(224,120,106,.2);
+  animation: dd-shock .6s cubic-bezier(.2,.7,.3,1) forwards;
+}
+@keyframes dd-shock { from { transform: scale(.2); opacity: 1; } to { transform: scale(1.9); opacity: 0; } }
+body.reduce-motion .dd-shock { display: none; }   /* a frozen ring is noise, not meaning */
+
+/* The numeral: slam on the fall, shudder when the door holds, bloom on return. */
+.life-number.dd-slam { animation: dd-slam .45s cubic-bezier(.2,.9,.3,1); }
+@keyframes dd-slam { 0% { transform: scale(1.6); opacity: .2; } 55% { transform: scale(.94); opacity: 1; } 100% { transform: scale(1); } }
+.life-number.dd-refuse { animation: dd-refuse .26s ease-out; }
+@keyframes dd-refuse { 0%{transform:translateX(0)} 22%{transform:translateX(-6px)} 48%{transform:translateX(5px)} 72%{transform:translateX(-3px)} 100%{transform:translateX(0)} }
+
+/* ── The pill ──────────────────────────────────────────────────────────────
+   `.dd-pill.dd-armed` is the ONLY rule in this app that puts pointer-events:
+   auto on this control. If that stops being true, the guard is gone: during
+   FALLEN and REVEALING every tap must pass THROUGH the pill to the .tap-zone
+   beneath, so the controller keeps hearing the hand and keeps postponing.
+   A merely `disabled` button would still occupy the hit-test slot, swallow
+   the tap, and let the quiet window expire under a live finger - which IS the
+   bug this whole mechanism exists to kill. */
+.dd-pill {
+  position: relative; z-index: 2; margin-top: 24px;
+  display: flex; padding: 0; border: 0; background: none; font: inherit; color: inherit;
+  -webkit-appearance: none; appearance: none;
+  opacity: 0; visibility: hidden; transform: translateY(10px) scale(.92);
+  pointer-events: none;
+  transition: opacity .26s ease, transform .26s cubic-bezier(.2,.9,.3,1), visibility 0s linear .26s;
+}
+.dd-pill.dd-reveal, .dd-pill.dd-armed {
+  opacity: 1; visibility: visible; transform: none;
+  transition: opacity .26s ease, transform .26s cubic-bezier(.2,.9,.3,1);
+}
+.dd-pill.dd-armed { pointer-events: auto; cursor: pointer; }
 body.roll-active .dd-pill { display: none !important; }
+
+/* REVEALING = "will be": dashed, dimmed, unlit. ARMED = "is": solid, full ink,
+   bloom. Dashed-vs-solid is the app's existing will-be/is vocabulary (the avatar
+   picker's ghost badges and its empty-vs-lit socket), not a new language.
+   Every difference here is a STATIC property, so the pair still reads when the
+   global reduced-motion neutraliser kills the pulse - the arming states must
+   never be told apart by motion alone. */
+.dd-pill.dd-reveal .dd-pill-body {
+  animation: none;
+  border: 1.5px dashed rgba(224,120,106,.45);
+  color: rgba(224,120,106,.6);
+  box-shadow: 0 4px 16px rgba(0,0,0,.6);
+}
+.dd-pill.dd-armed .dd-pill-body { border: 1px solid rgba(224,120,106,.85); }
 .dd-pill-body {
   display: flex; align-items: center; gap: 10px;
   border-radius: 999px; padding: 14px 30px;

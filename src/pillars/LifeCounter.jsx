@@ -4,7 +4,7 @@
 // rule) and returned to, preserving life totals, log and banked elapsed time.
 // Numerals + roll-off + bump are driven IMPERATIVELY (refs + classList) so React
 // never overwrites the animation mid-flight.
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import '../theme/counter.css';
 import { recentOpponents, setSetting } from '../store/playRepository.js';
@@ -12,8 +12,9 @@ import { buildMatchShare } from '../store/matchShare.js';
 import QRCode from '../components/QRCode.jsx';
 import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
 import { registerBackConsumer } from '../back.js';
+import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
+import { createDdArming, DD } from './ddArming.js';
 
-const BASE = import.meta.env.BASE_URL;
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
 
@@ -100,13 +101,62 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     minimize();
   }
 
+  // ── Death's Door arming ──
+  // Owns ONLY when the centred End Match control becomes pressable. Life stays the
+  // sole source of truth: this learns about it through commitLife -> dd.syncLife and
+  // never remembers "alive". See ddArming.js for why, and for the two defects it
+  // replaced.
+  //
+  // ONE PROPERTY IS NOT UNIT-TESTED, deliberately: that a tap during REVEALING passes
+  // THROUGH the visible-but-inert pill to the .tap-zone beneath. That is DOM
+  // hit-testing - real compositor behaviour - and there is no DOM harness here. It is
+  // load-bearing (a merely `disabled` button would swallow the tap and let the quiet
+  // timer expire under a live finger, which IS the original bug), so it is verified on
+  // device. `.dd-pill.dd-armed` is the only rule in the app that sets pointer-events:
+  // auto; if that ever stops being true, this guard is gone.
+  const [ddPhase, setDdPhase] = useState({ player: DD.ALIVE, enemy: DD.ALIVE });
+  const ddRef = useRef(null);
+  if (ddRef.current === null) {
+    ddRef.current = createDdArming({
+      // Derived from restored life, never assumed: a match resumed with a side already
+      // at Death's Door enters FALLEN at mount and arms with no further tap.
+      initialLife: { player: pRef.current.life, enemy: eRef.current.life },
+      onChange: (who, phase) => setDdPhase((p) => ({ ...p, [who]: phase })),
+    });
+    // Mirror the derived phases into React's first render.
+    if (ddRef.current.phase('player') !== DD.ALIVE || ddRef.current.phase('enemy') !== DD.ALIVE) {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      Object.assign(ddPhase, { player: ddRef.current.phase('player'), enemy: ddRef.current.phase('enemy') });
+    }
+  }
+  const dd = ddRef.current;
+  // Bumped each time a side falls, so the shock ring remounts and replays per fall
+  // rather than only on first mount.
+  const [fallSeq, setFallSeq] = useState({ player: 0, enemy: 0 });
+  const bumpFallSeq = (who) => setFallSeq((s) => ({ ...s, [who]: s[who] + 1 }));
+
   // ── numeral rendering (imperative, mirrors renderLife) ──
   function setNum(el, life) {
     if (!el) return;
-    const dd = life <= 0;
-    el.textContent = dd ? 'DD' : String(life);
-    el.classList.toggle('dd', dd);
-    el.classList.toggle('dd-pulse', dd);
+    const isDd = life <= 0;
+    el.textContent = isDd ? 'DD' : String(life);
+    el.classList.toggle('dd', isDd);
+    el.classList.toggle('dd-pulse', isDd);
+    // The live region must say the state, not the literal glyphs "DD". Cleared on
+    // recovery in the same synchronous call, so the fallen description never lingers.
+    if (isDd) el.setAttribute('aria-label', "At Death's Door"); else el.removeAttribute('aria-label');
+  }
+  // THE one life writer. Every mutation of a side's {life,max} goes through here, so
+  // "no writer bypasses Death's Door sync" is structural rather than a promise -
+  // ordinary taps, setMax, reset, and (via initialLife above) a resumed snapshot.
+  // syncLife runs synchronously right after the ref write and before any logging,
+  // animation or re-render, so recovery can never race a pending timer.
+  function commitLife(who, nextLife, nextMax) {
+    const ref = who === 'player' ? pRef : eRef;
+    const prev = ref.current.life;
+    ref.current = { life: nextLife, max: nextMax };
+    setNum(who === 'player' ? pNumRef.current : eNumRef.current, nextLife);
+    dd.syncLife(who, prev, nextLife);
   }
   function renderLife() { setNum(pNumRef.current, pRef.current.life); setNum(eNumRef.current, eRef.current.life); }
 
@@ -127,9 +177,24 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       if (settings.immersive) setImmersive(true);
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
+    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy); dd.dispose(); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
+
+  // While ANY overlay owns the screen, Death's Door is suppressed: no timers, no
+  // armed residue. Closing it starts a FRESH quiet window rather than handing back a
+  // hot pill. This generalises the old roll-active-only rule and is what makes the
+  // FAB-dismiss concession in change() safe - and it closes a subtler hazard: the
+  // centred Max Life modal at zero could otherwise be dismissed onto an already-armed
+  // pill sitting directly beneath it.
+  // useLayoutEffect, not useEffect: the flush must land BEFORE paint, so no frame
+  // exists in which an armed pill coexists with an open menu.
+  const overlayOpen = rollPhase === 'rolling' || rollPhase === 'result'
+    || endInfo != null || sheet != null || confirm != null || fabP || fabE;
+  useLayoutEffect(() => {
+    dd.setSuppressed(overlayOpen, (who) => (who === 'player' ? pRef : eRef).current.life);
+    // eslint-disable-next-line
+  }, [overlayOpen]);
 
   // Tweaks toggle - persists to the profile's settings AND applies immediately.
   function setTweak(key, on) {
@@ -204,34 +269,62 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     void el.offsetWidth;
     el.classList.add(delta > 0 ? 'bump-up' : 'bump-down');
   }
+  // Imperative one-shots on the numeral, same pattern as bump(): drop the class,
+  // force a reflow so the animation can restart, re-add.
+  function numAnim(who, cls) {
+    const el = who === 'player' ? pNumRef.current : eNumRef.current;
+    if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
+  const refuseAtFloor = (who) => numAnim(who, 'dd-refuse');   // the door holds
   function change(who, delta) {
-    // A tap while a FAB menu is open just dismisses it - never a stray life edit.
+    // A tap whose only job is dismissing an open FAB menu does NOT postpone arming -
+    // it is not a life adjustment. Safe because an open menu SUPPRESSES the pill
+    // entirely (see the overlay effect), so this tap cannot land on an armed control,
+    // and closing the menu starts a fresh quiet window.
     if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
+
+    // EVERY tap in a life zone postpones arming - plus, minus, capped at 20, or
+    // refused at 0. No conditions: dd.tap is inert while alive. This is the safety
+    // invariant, and it is why it is the first act rather than a special case.
+    dd.tap(who);
+
     const cur = who === 'player' ? pRef.current : eRef.current;
-    if (cur.life <= 0 && delta < 0) { triggerEnd(who === 'player' ? 'opponent' : 'player'); return; }
+    // The door holds. This used to call triggerEnd() outright - a second, larger
+    // misfire path than the pill, since the minus zone is half the screen. Death's
+    // Door is a live game state in Sorcery, not a loss: ending a match is now always
+    // an explicit act, never a side effect of tapping.
+    if (cur.life <= 0 && delta < 0) { refuseAtFloor(who); haptic('medium'); return; }
+
     const next = Math.min(cur.max, cur.life + delta);
-    if (next === cur.life) return;
-    const nl = { ...cur, life: next };
-    (who === 'player' ? pRef : eRef).current = nl;
-    setNum(who === 'player' ? pNumRef.current : eNumRef.current, next);
+    if (next === cur.life) return;   // capped at max: no-op, but dd.tap() already counted it
+    commitLife(who, next, cur.max);  // <- syncLife fires in here: falls, and recovers
     appendLog(who, delta, next);
     showDelta(who, delta);
-    bump(who, delta);
-    haptic('light');
+    // The fall gets the slam, not the ordinary bump - and a heavy haptic. bumpFallSeq
+    // remounts the shock ring so it replays on every fall, not just the first.
+    if (next <= 0) { numAnim(who, 'dd-slam'); bumpFallSeq(who); haptic('heavy'); }
+    else { bump(who, delta); haptic('light'); }
     force((n) => n + 1);
     // Once the player has clearly settled into tracking life, retire the centre
     // roll offer (with a fade) so it can never sit in the way of a fast tap.
     if (rollPhase === 'armed' && ++lifeTaps.current >= ROLL_DISMISS_TAPS) fadeOutRoll();
   }
+  // Max is floored at 1 by MaxLifeModal, so this can never drive a living side to
+  // zero (Math.min(life, >=1) >= 1). It routes through commitLife anyway: no writer
+  // gets to bypass Death's Door sync, and it CAN fire while a side is already at 0 -
+  // where syncLife(0 -> 0) correctly leaves the quiet window alone.
   function setMax(who, max) {
     const cur = who === 'player' ? pRef.current : eRef.current;
-    const nl = { life: Math.min(cur.life, max), max };
-    (who === 'player' ? pRef : eRef).current = nl;
-    setNum(who === 'player' ? pNumRef.current : eNumRef.current, nl.life);
+    commitLife(who, Math.min(cur.life, max), max);
     setSheet(null); force((n) => n + 1);
   }
   function reset() {
-    pRef.current = { life: start, max: start }; eRef.current = { life: start, max: start };
+    // The non-tap recovery path: 0 -> 20 on both sides. Routing through commitLife
+    // means it disarms Death's Door and cancels timers for free, with no special case.
+    commitLife('player', start, start); commitLife('enemy', start, start);
     setLog([]); lastLog.current = null; setEndInfo(null);
     setDeltas([]); activeDelta.current = { player: null, enemy: null };
     clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy);
@@ -342,22 +435,69 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     guarded('Exit without recording the match?', () => onExit?.());
   }
 
-  const pImg = players.you ? `${BASE}cards/${players.you.image_slug}` : '';
-  const eImg = players.opp ? `${BASE}cards/${players.opp.image_slug}` : '';
+  // Through the resolver, not by hand. This file used to build `${BASE}cards/${slug}`
+  // itself, which bypassed cardImageUrl and therefore localStorage['cx-no-images']
+  // entirely - the counter was the one screen the zero-image release gate could not
+  // reach, and it rendered <img src=""> with no avatar. cardImageUrl returns null when
+  // suppressed or unknown, and the SVG sigil below carries the half instead.
+  const pImg = cardImageUrl(players.you);
+  const eImg = cardImageUrl(players.opp);
+  const pFall = players.you ? cardFallbackArt(players.you) : null;
+  const eFall = players.opp ? cardFallbackArt(players.opp) : null;
   const p = pRef.current, e = eRef.current;
+
+  // Half art, in one place for both sides. Three layers, and which ones mount depends
+  // only on whether real art resolved:
+  //   art      -> <img> + its DD twin (same URL: one decode, two textures)
+  //   no art   -> an inline SVG sigil + its DD twin. Markup, not a fetched asset, so
+  //               it cannot 404 and it survives cx-no-images - which is exactly why
+  //               this screen stays legible under the zero-image gate.
+  // A real <button>, not a div: `disabled` is announced natively and cannot be
+  // activated by a screen reader, where aria-disabled on a div can. `disabled` and
+  // pointer-events are bound to the SAME predicate - both are required, and for
+  // different reasons. disabled stops activation; pointer-events: none stops the
+  // element occupying the hit-test slot, which is what lets a tap during REVEALING
+  // reach the .tap-zone beneath and postpone arming. A disabled-but-hit-testable
+  // button would swallow that tap and let the guard expire under a live finger.
+  //
+  // Phase is re-derived here from overlayOpen as well, so even a controller bug
+  // cannot paint an armed pill while a menu is open.
+  const ddPill = (who) => {
+    const phase = overlayOpen ? DD.SUPPRESSED : ddPhase[who];
+    const cls = phase === DD.REVEALING ? ' dd-reveal' : phase === DD.ARMED ? ' dd-armed' : '';
+    return (
+      <button type="button" className={`dd-pill${cls}`} disabled={phase !== DD.ARMED}
+        onClick={() => triggerEnd(null)}
+        aria-label={who === 'player' ? 'End match - you are at Death’s Door' : 'End match - opponent at Death’s Door'}>
+        <span className="dd-pill-body">{DDSvg}End Match</span>
+      </button>
+    );
+  };
+  const halfArt = (img, fall, id) => (img ? (
+    <>
+      <img className="half-bg" id={id} src={img} alt="" />
+      <img className="half-bg half-bg-dd" src={img} alt="" aria-hidden="true" />
+      <div className="half-gradient" />
+    </>
+  ) : (
+    <>
+      <div className="half-bg half-sigil" style={fall ? { background: fall } : undefined}>{SigilSvg}</div>
+      <div className="half-bg half-bg-dd half-sigil half-sigil-dd">{SigilSvg}</div>
+    </>
+  ));
 
   return (
     <div id="counter-screen" className={`cx-life-tracker${quick ? ' quick' : ''}`}>
       {/* Enemy half (rotated 180° for across-table reading) */}
-      <div className="counter-half enemy-half" id="enemy-half">
-        <img className="half-bg" id="enemy-bg" src={eImg} alt="" />
-        <div className="half-gradient" />
+      <div className={`counter-half enemy-half${e.life <= 0 ? ' dd' : ''}`} id="enemy-half">
+        {halfArt(eImg, eFall, 'enemy-bg')}
+        <div className="half-dd-veil" />
         <div className="half-grain" />
         <div className="life-display">
           <div className="life-number" id="enemy-life-num" ref={eNumRef} role="status" aria-live="polite" />
-          <div className={`dd-pill${rollPhase == null && e.life <= 0 ? ' show' : ''}`} onClick={() => triggerEnd(null)} role="button" aria-label="End match - opponent at Death's Door">
-            <div className="dd-pill-body">{DDSvg}End Match</div>
-          </div>
+          <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
+          {e.life <= 0 && <div key={fallSeq.opponent} className="dd-shock" aria-hidden="true" />}
+          {ddPill('opponent')}
         </div>
         {e.max < 20 && <div className="status-badges"><div className="status-badge maxlife">{HeartSvg}{e.max}</div></div>}
         <div className="tap-zone tap-plus" onClick={() => change('opponent', +1)} role="button" aria-label="Increase opponent's life" />
@@ -374,15 +514,15 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       <div className="counter-divider" />
 
       {/* Player half */}
-      <div className="counter-half player-half" id="player-half">
-        <img className="half-bg" id="player-bg" src={pImg} alt="" />
-        <div className="half-gradient" />
+      <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}`} id="player-half">
+        {halfArt(pImg, pFall, 'player-bg')}
+        <div className="half-dd-veil" />
         <div className="half-grain" />
         <div className="life-display">
           <div className="life-number" id="player-life-num" ref={pNumRef} role="status" aria-live="polite" />
-          <div className={`dd-pill${rollPhase == null && p.life <= 0 ? ' show' : ''}`} onClick={() => triggerEnd(null)} role="button" aria-label="End match - you are at Death's Door">
-            <div className="dd-pill-body">{DDSvg}End Match</div>
-          </div>
+          <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
+          {p.life <= 0 && <div key={fallSeq.player} className="dd-shock" aria-hidden="true" />}
+          {ddPill('player')}
         </div>
         {p.max < 20 && <div className="status-badges"><div className="status-badge maxlife">{HeartSvg}{p.max}</div></div>}
         <div className="tap-zone tap-plus" onClick={() => change('player', +1)} role="button" aria-label="Increase your life" />
@@ -648,11 +788,11 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
         <div className="end-result">
           <div className="end-life-row">
             <div className="end-life-pill end-player" style={{ borderColor: pBorder }}>
-              <div className="end-life-pill-art">{players.you?.image_slug && <img src={`${BASE}cards/${players.you.image_slug}`} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}</div>
+              <div className="end-life-pill-art">{cardImageUrl(players.you) && <img src={cardImageUrl(players.you)} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}</div>
               <div className="end-life-pill-info"><div className="end-life-label">{quick ? 'You' : (players.you?.name || 'You')}</div><div className={`end-life-val${pLife <= 0 ? ' dd' : ''}`}>{lifeText(pLife, eWin)}</div></div>
             </div>
             <div className="end-life-pill end-enemy" style={{ borderColor: eBorder }}>
-              <div className="end-life-pill-art">{players.opp?.image_slug && <img src={`${BASE}cards/${players.opp.image_slug}`} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}</div>
+              <div className="end-life-pill-art">{cardImageUrl(players.opp) && <img src={cardImageUrl(players.opp)} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}</div>
               <div className="end-life-pill-info"><div className="end-life-label">{quick ? 'Opponent' : (players.opp?.name || 'Opponent')}</div><div className={`end-life-val${eLife <= 0 ? ' dd' : ''}`}>{lifeText(eLife, pWin)}</div></div>
             </div>
           </div>
@@ -734,6 +874,22 @@ const DiceSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const HeartSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" /></svg>;
 const HeartMiniSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" /></svg>;
 const DDSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3.2C7.6 3.2 4.5 6.5 4.5 10.5c0 2.6 1.3 4.6 2.6 5.8.3.3.4.6.4 1v1.4c0 .8.6 1.5 1.5 1.5h1.1c.5 0 .9-.4.9-.9v-1c0-.3.2-.5.5-.5h.9c.3 0 .5.2.5.5v1c0 .5.4.9.9.9h1.1c.8 0 1.5-.7 1.5-1.5v-1.4c0-.4.1-.7.4-1 1.3-1.2 2.6-3.2 2.6-5.8 0-4-3.1-7.3-7.5-7.3z" /><ellipse cx="9" cy="10.6" rx="1.7" ry="2.1" fill="currentColor" stroke="none" /><ellipse cx="15" cy="10.6" rx="1.7" ry="2.1" fill="currentColor" stroke="none" /></svg>;
+
+// The half's stand-in when no card art resolves - Quick Match, an unknown slug, or
+// zero-image mode. INLINE, not an asset: markup cannot 404 and is not suppressed by
+// the image gate, so this screen stays whole exactly when the gate says it must. It
+// is the app's own split-diamond mark, enlarged into a sigil and ringed, so an
+// artless half reads as deliberate rather than broken - and it desaturates for
+// Death's Door like any other layer.
+const SigilSvg = (
+  <svg viewBox="0 0 200 200" fill="none" aria-hidden="true" focusable="false">
+    <circle cx="100" cy="100" r="76" stroke="currentColor" strokeWidth=".8" opacity=".28" />
+    <circle cx="100" cy="100" r="60" stroke="currentColor" strokeWidth=".5" opacity=".18" strokeDasharray="2 7" />
+    <rect x="62" y="62" width="76" height="76" rx="6" transform="rotate(45 100 100)" stroke="currentColor" strokeWidth="1.6" opacity=".5" />
+    <path d="M100 66 100 134 M66 100 134 100" stroke="currentColor" strokeWidth=".6" opacity=".22" />
+    <rect x="82" y="82" width="36" height="36" rx="3" transform="rotate(45 100 100)" stroke="currentColor" strokeWidth="1.1" opacity=".75" />
+  </svg>
+);
 const LogSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>;
 const ResetSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>;
 const FlagSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>;
