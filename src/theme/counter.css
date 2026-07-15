@@ -1013,25 +1013,42 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
    it. Two labels, each upright to its own reader - which is why there is no centred
    pill: a 180deg-rotated pill only reads if you already know which way up you sit. */
 .roll-eyebrow {
-  margin-top: 10px; font: 700 13px/1 var(--f-display);
-  letter-spacing: .3em; text-transform: uppercase;
+  margin-top: 12px; font: 700 21px/1 var(--f-display);
+  letter-spacing: .26em; text-transform: uppercase;
   opacity: 0; transform: translateY(4px); pointer-events: none;
   transition: opacity .4s ease .5s, transform .4s ease .5s;
 }
-.counter-half.roll-win .roll-eyebrow { opacity: 1; transform: none; color: var(--gold-head); text-shadow: 0 0 18px rgba(220,184,111,.45), 0 2px 10px rgba(0,0,0,.8); }
-.counter-half.roll-lose .roll-eyebrow { opacity: 1; transform: none; color: rgba(255,255,255,.3); }
+/* The winner's words sit ON the winner's gold bloom - gold on gold, which is what
+   made them hard to read. Lift them off it: near-parchment rather than mid-gold, and
+   a hard dark shadow UNDER the soft gold glow so the letterforms have an edge against
+   the light they are standing in. */
+.counter-half.roll-win .roll-eyebrow {
+  opacity: 1; transform: none; color: #f6ecd4;
+  text-shadow: 0 0 26px rgba(220,184,111,.7), 0 2px 3px rgba(0,0,0,.95), 0 4px 18px rgba(0,0,0,.9);
+}
+/* The loser is unlit, not illegible: they still have to read their own verdict from
+   across the table. Dimmer than the winner, never faint. */
+.counter-half.roll-lose .roll-eyebrow {
+  opacity: 1; transform: none; color: rgba(240,234,222,.62);
+  text-shadow: 0 2px 3px rgba(0,0,0,.95), 0 4px 18px rgba(0,0,0,.9);
+}
 /* The countdown. Dim and small: the eyebrow is the loud line and the fill is the loud
    event. It exists because under reduced motion the fill is INSTANTANEOUS, and this
    number is then the only thing saying the wait is finite - one design serving both
    modes rather than a special case. A dim 4-3-2-1 under a blooming realm is a clock on
    a wall, not a timer on a conversation. */
+/* Quieter than the verdict above it, but still a line two people read across a table -
+   --faint (#5c554b) was chrome-grey on a dark half and effectively invisible. It keeps
+   the same hard shadow, because it shares the winner's bloom. */
 .roll-sub {
-  margin-top: 8px; font: 600 10px/1 var(--f-display);
-  letter-spacing: .22em; text-transform: uppercase; color: var(--faint);
+  margin-top: 10px; font: 600 14px/1 var(--f-display);
+  letter-spacing: .18em; text-transform: uppercase;
   font-variant-numeric: tabular-nums; pointer-events: none;
+  text-shadow: 0 2px 3px rgba(0,0,0,.95), 0 4px 14px rgba(0,0,0,.85);
   opacity: 0; transition: opacity .4s ease .7s;
 }
-.counter-half.roll-win .roll-sub, .counter-half.roll-lose .roll-sub { opacity: 1; }
+.counter-half.roll-win .roll-sub { opacity: 1; color: rgba(246,236,212,.82); }
+.counter-half.roll-lose .roll-sub { opacity: 1; color: rgba(240,234,222,.45); }
 
 /* .dd-shock's geometry and keyframes, gold rim. Mounts once per verdict. */
 .roll-burst {
