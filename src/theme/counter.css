@@ -1023,7 +1023,13 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
   margin-top: 12px; font: 700 21px/1 var(--f-display);
   letter-spacing: .26em; text-transform: uppercase;
   opacity: 0; transform: translateY(4px); pointer-events: none;
-  transition: opacity .4s ease .5s, transform .4s ease .5s;
+  /* THE EXIT lives here, and it is fast and immediate. A transition declared on the
+     resting state is what runs when the class is REMOVED - so the entrance's .5s delay
+     used to apply on the way out too, and the words were still leaving 900ms later
+     while roll-restore had already turned the die back into a life total in 380ms.
+     They must be gone before the numeral finishes becoming a counter again; a verdict
+     lingering over a live life total reads as part of it. */
+  transition: opacity .18s ease, transform .18s ease;
 }
 /* The winner's words sit ON the winner's gold bloom - gold on gold, which is what
    made them hard to read. Lift them off it: near-parchment rather than mid-gold, and
@@ -1032,6 +1038,7 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
 .counter-half.roll-win .roll-eyebrow {
   opacity: 1; transform: none; color: #f6ecd4;
   text-shadow: 0 0 26px rgba(220,184,111,.7), 0 2px 3px rgba(0,0,0,.95), 0 4px 18px rgba(0,0,0,.9);
+  transition: opacity .4s ease .5s, transform .4s ease .5s;
 }
 /* SAME ink as the winner - the announcement is not a prize, it is information, and it
    is the loser who most needs to read it ("they choose" is the half that tells you to
@@ -1043,6 +1050,7 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
 .counter-half.roll-lose .roll-eyebrow {
   opacity: 1; transform: none; color: #f6ecd4;
   text-shadow: 0 2px 3px rgba(0,0,0,.95), 0 4px 18px rgba(0,0,0,.9);
+  transition: opacity .4s ease .5s, transform .4s ease .5s;
 }
 /* The countdown. Dim and small: the eyebrow is the loud line and the fill is the loud
    event. It exists because under reduced motion the fill is INSTANTANEOUS, and this
@@ -1057,11 +1065,11 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
   letter-spacing: .18em; text-transform: uppercase;
   font-variant-numeric: tabular-nums; pointer-events: none;
   text-shadow: 0 2px 3px rgba(0,0,0,.95), 0 4px 14px rgba(0,0,0,.85);
-  opacity: 0; transition: opacity .4s ease .7s;
+  opacity: 0; transition: opacity .18s ease;   /* exit: immediate, like the eyebrow */
 }
 /* Both sides identical, for the same reason: "match begins in 2" is a fact about the
    table, not about who won it. */
-.counter-half.roll-win .roll-sub, .counter-half.roll-lose .roll-sub { opacity: 1; color: rgba(246,236,212,.82); }
+.counter-half.roll-win .roll-sub, .counter-half.roll-lose .roll-sub { opacity: 1; color: rgba(246,236,212,.82); transition: opacity .4s ease .7s; }
 
 /* .dd-shock's geometry and keyframes, gold rim. Mounts once per verdict. */
 .roll-burst {
