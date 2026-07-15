@@ -170,7 +170,10 @@ export default function RefineSheet({
       )}
 
       {setThByEl && (
-        <div style={{ marginBottom: 22 }}>
+        // content-visibility: below the fold on a phone (THRESHOLD/TOTALS/ARTIST) - skip
+        // their layout+paint on open so the 280ms slide isn't fighting them; intrinsic-
+        // size reserves height so the sheet is full-height from frame one (no jump).
+        <div style={{ marginBottom: 22, contentVisibility: 'auto', containIntrinsicSize: 'auto 290px' }}>
           <SectionLabel label="THRESHOLD" count={cnt(['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el]?.val != null).length)} />
           {['air', 'earth', 'fire', 'water'].map((el) => (
             <CmpRow key={el} icon={el} label={EL_LABEL[el]} state={thByEl[el]} set={(next) => setThByEl({ ...thByEl, [el]: next })} max={5} />
@@ -179,7 +182,7 @@ export default function RefineSheet({
       )}
 
       {(setTotalTh || setCostCmp || setPowerCmp) && (
-        <div style={{ marginBottom: 22 }}>
+        <div style={{ marginBottom: 22, contentVisibility: 'auto', containIntrinsicSize: 'auto 230px' }}>
           <SectionLabel label="TOTALS" count={cnt((totalTh?.val != null ? 1 : 0) + (costCmp?.val != null ? 1 : 0) + (powerCmp?.val != null ? 1 : 0))} />
           {setTotalTh && <CmpRow label="Threshold" state={totalTh} set={setTotalTh} max={20} />}
           {setCostCmp && <CmpRow label="Mana" state={costCmp} set={setCostCmp} max={20} valueTint="#c9a8e8" />}
@@ -188,7 +191,7 @@ export default function RefineSheet({
       )}
 
       {setArtist && artistOpts.length > 0 && (
-        <div style={{ marginBottom: 22 }}>
+        <div style={{ marginBottom: 22, contentVisibility: 'auto', containIntrinsicSize: 'auto 100px' }}>
           <SectionLabel label="ARTIST" count={cnt(artist ? 1 : 0)} />
           <select value={artist} onChange={(e) => setArtist(e.target.value)}
             style={{ width: '100%', height: 44, borderRadius: 12, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', color: '#d8c9a4', font: "400 15px/1 var(--f-read)", padding: '0 14px', WebkitAppearance: 'none', appearance: 'none' }}>
