@@ -4,6 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { listMatches, getMatch, matchLog, updateMatch, deleteMatch, recentOpponents, addManualMatch, listAvatars } from '../store/playRepository.js';
 import { listAvatarCards, listDecks } from '../store/deckRepository.js';
+import { computeMatchStats, normalizeDurationSec, validDurationMinutes, MAX_DURATION_MINUTES, DURATION_RANGE_ERR } from '../store/matchStats.js';
 import { IconButton, Chip, ChipRow, Loading, BlankState, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -44,6 +45,9 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
     let alive = true;
     // Single matches fetch - everything below is derived from it (was a second
     // full scan via historyStats plus JS re-aggregation of the same rows).
+    // NOTE the population difference, which predates this and is deliberate: these
+    // stats describe the last 500 matches, while historyStats() (Home) covers the
+    // whole history. The two therefore CAN disagree, and neither is wrong.
     Promise.all([listMatches(500), listAvatarCards()]).then(([m, avs]) => {
       if (!alive) return;
       setMatches(m);
@@ -63,7 +67,11 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
   const losses = matches.filter((m) => m.winner === 'opponent').length;
   const pct = wins + losses ? Math.round((wins / (wins + losses)) * 100) : 0;
   let streak = 0; for (const m of matches) { if (m.winner === 'player') streak++; else break; }
-  const totalSec = matches.reduce((a, m) => a + (m.duration_sec || 0), 0);
+  // Durations come from matchStats, NOT from a local reduce. This screen used to sum and
+  // average inline - a second implementation of historyStats()'s numbers, and the one
+  // people actually read. It divided by matches.length, so every hand-recorded match
+  // dragged AVG MATCH toward zero. One function now, called from both.
+  const { totalSec, avgSec, timedCount } = computeMatchStats(matches);
 
   const byAv = {};
   matches.forEach((m) => { const k = m.player_avatar; if (!k) return; (byAv[k] ||= { w: 0, l: 0 }); if (m.winner === 'player') byAv[k].w++; else if (m.winner === 'opponent') byAv[k].l++; });
@@ -144,8 +152,12 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
 
           {/* time played / avg match */}
           <div className="rec-minis">
-            <div className="rec-mini"><div className="rec-mini-val">{fmtSpan(totalSec)}</div><div className="rec-mini-label">TIME PLAYED</div></div>
-            <div className="rec-mini"><div className="rec-mini-val">{fmtSpan(matches.length ? totalSec / matches.length : 0)}</div><div className="rec-mini-label">AVG MATCH</div></div>
+            <div className="rec-mini"><div className="rec-mini-val">{timedCount ? fmtSpan(totalSec) : '—'}</div><div className="rec-mini-label">TIME PLAYED</div></div>
+            {/* "AVG MATCH" silently claimed to cover every match. Now that the denominator
+                is the timed ones, the label has to say so - the arithmetic is honest and
+                the old label would have made it a lie. Em dash when nothing is timed:
+                "we don't know" is not "zero seconds". */}
+            <div className="rec-mini"><div className="rec-mini-val">{avgSec == null ? '—' : fmtSpan(avgSec)}</div><div className="rec-mini-label">AVG TIMED MATCH</div></div>
           </div>
 
           {avatarStats.length > 0 && (
@@ -277,8 +289,16 @@ function MatchSheet({ matchId, onClose, onChanged }) {
   const [recent, setRecent] = useState([]);
   const [decks, setDecks] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  // null = UNTOUCHED, and that is the whole mechanism: an untouched duration is submitted
+  // as the exact seconds we loaded, so a tracked 25m30s match keeps its 30 seconds when
+  // you edit only the opponent's name. Any string = the user typed minutes and owns the
+  // value now. Explicit, because the previous version relied on the subtle fact that a
+  // formatted display value does not mutate state - true, but not something the next
+  // reader should have to deduce.
+  const [durMins, setDurMins] = useState(null);
 
   useEffect(() => {
+    setDurMins(null);   // a different match is a different duration: never carry the edit across
     if (!matchId) { setM(null); setF(null); return; }
     getMatch(matchId).then((mm) => { setLoaded(true); setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '', deck_id: mm.deck_id || null } : null); }).catch(() => { setLoaded(true); setM(null); });
     matchLog(matchId).then(setLog);
@@ -287,7 +307,23 @@ function MatchSheet({ matchId, onClose, onChanged }) {
   }, [matchId]);
 
   if (!matchId) return null;
-  async function save() { await updateMatch(matchId, f); onChanged(); onClose(); toast('Match updated'); }
+  // Only a TOUCHED duration is validated. An existing match may legitimately hold more
+  // than MAX_DURATION_MINUTES - a tracked match whose timer ran long - and a rule about
+  // typed input must never block fixing that match's opponent name.
+  const durTouched = durMins != null;
+  const durErr = durTouched && !validDurationMinutes(durMins);
+  const canSave = !durErr;
+
+  async function save() {
+    if (!canSave) return;
+    // Untouched -> the original seconds, exactly. Touched -> whole minutes, or null when
+    // cleared, which is how you say "I didn't time it after all".
+    const duration_sec = durTouched
+      ? (durMins === '' ? null : Number(durMins) * 60)
+      : f.duration_sec;
+    await updateMatch(matchId, { ...f, duration_sec });
+    onChanged(); onClose(); toast('Match updated');
+  }
   async function del() {
     const linked = m?.deck_id && m?.deck_name;
     const body = linked
@@ -313,6 +349,26 @@ function MatchSheet({ matchId, onClose, onChanged }) {
             <ChipRow>
               {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
             </ChipRow>
+          </div>
+          {/* Editable, not add-only: updateMatch() already writes this column, and a
+              duration you cannot correct is a mistyped number kept forever. Clearing the
+              field returns the match to untimed - a real answer, and how a tracked match
+              whose timer ran on overnight gets taken out of the average.
+              SECOND PRECISION SURVIVES AN UNRELATED EDIT: durMins stays null until you
+              touch this field, and an untouched duration submits the exact seconds we
+              loaded. So editing just the opponent's name on a 25m30s tracked match still
+              saves 1530, not 1560. The minutes shown here are a rounded VIEW of those
+              seconds - do not round them into state. */}
+          <div style={{ marginBottom: 22 }}>
+            <Lbl t="DURATION (minutes, optional)" />
+            <input
+              value={durMins != null ? durMins
+                : (f.duration_sec == null || f.duration_sec <= 0 ? '' : String(Math.round(f.duration_sec / 60)))}
+              onChange={(e) => setDurMins(e.target.value)}
+              type="number" inputMode="decimal" min="1" max={MAX_DURATION_MINUTES} step="1"
+              placeholder="Untimed"
+              style={{ ...inp, borderColor: durErr ? 'var(--crimson)' : undefined }} />
+            {durErr && <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--crimson)', margin: '6px 2px 0' }}>{DURATION_RANGE_ERR}</div>}
           </div>
           <div style={{ marginBottom: 22 }}>
             <Lbl t="OPPONENT" />
@@ -346,7 +402,7 @@ function MatchSheet({ matchId, onClose, onChanged }) {
           )}
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button onClick={del} style={{ ...ghost, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.4)' }}>Delete</button>
-            <button onClick={save} style={{ ...gold, flex: 2 }}>Save changes</button>
+            <button onClick={save} disabled={!canSave} style={{ ...gold, flex: 2, opacity: canSave ? 1 : 0.5 }}>Save changes</button>
           </div>
         </div>
       )}
@@ -390,7 +446,15 @@ function DeckPicker({ decks, value, onChange }) {
 }
 // Manual Add Match - Play pillar's Add Match form adapted to the Deckbuilder Sheet.
 function AddMatchSheet({ open, onClose, onSaved }) {
-  const blank = () => { const now = new Date(); return { winner: 'player', pLife: 20, eLife: 0, opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '', deckId: '' }; };
+  // A blank form presumes NO result - and that has to be true of the result, not just of
+  // the score. It used to open on "You won", 20-0: a specific, flattering,
+  // almost-certainly-wrong outcome that someone had to correct every time, and a neutral
+  // 0-0 under a pre-selected winner would have been the same presumption wearing a
+  // quieter coat. `winner: null` means unchosen, and save() refuses until it is chosen -
+  // addManualMatch defaults a missing winner to 'draw', so an ungated form would record
+  // a draw nobody agreed to.
+  // `mins` is optional and empty means untimed - see normalizeDurationSec.
+  const blank = () => { const now = new Date(); return { winner: null, pLife: 0, eLife: 0, mins: '', opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '', deckId: '' }; };
   const [f, setF] = useState(blank);
   const [recent, setRecent] = useState([]);
   const [avatars, setAvatars] = useState([]);
@@ -411,8 +475,13 @@ function AddMatchSheet({ open, onClose, onSaved }) {
     setF((prev) => ({ ...prev, deckId: id, pAvatar: id && d?.avatar?.name ? d.avatar.name : prev.pAvatar }));
   }
 
+  // Same validator and same bound as the edit sheet - shared, so the two sheets cannot
+  // drift into enforcing two different rules about one column.
+  const minsErr = !validDurationMinutes(f.mins);
+  const canSave = f.winner != null && !minsErr;
+
   async function save() {
-    if (busy) return;
+    if (busy || !canSave) return;
     setBusy(true);
     try {
       const playedAt = f.date ? new Date(`${f.date}T${f.time || '00:00'}`).toISOString() : new Date().toISOString();
@@ -421,6 +490,9 @@ function AddMatchSheet({ open, onClose, onSaved }) {
         opponentName: f.opponent.trim() || null, playedAt,
         playerAvatar: f.pAvatar || null, opponentAvatar: f.eAvatar || null,
         deckId: f.deckId || null,
+        // Minutes in the form, seconds in the column. Empty stays empty: an untimed match
+        // is a first-class outcome, not a zero.
+        durationSec: f.mins === '' ? null : Number(f.mins) * 60,
       });
       haptic('medium');
       onSaved();
@@ -437,15 +509,32 @@ function AddMatchSheet({ open, onClose, onSaved }) {
   return (
     <Sheet open title="Add Match Record" onClose={onClose}>
       <div style={{ padding: '0 16px' }}>
-        <Lbl t="RESULT" />
-        <ChipRow style={{ marginBottom: 14 }}>
+        <Lbl t="RESULT (required)" />
+        <ChipRow style={{ marginBottom: f.winner == null ? 6 : 14 }}>
           {[['player', 'You won'], ['opponent', 'Opponent won'], ['draw', 'Draw']].map(([k, l]) => <Chip key={k} label={l} active={f.winner === k} onClick={() => setF({ ...f, winner: k })} />)}
         </ChipRow>
+        {/* The reason the button is dark, said where the choice is made. It is an
+            instruction on an incomplete form, not an error on a wrong one - so it is
+            muted, not crimson: nobody has done anything wrong yet. This exists because a
+            disabled button explains nothing on a touch screen, where there is no hover to
+            reveal a title. */}
+        {f.winner == null && <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--ink-muted)', margin: '0 2px 14px' }}>Choose a result to record this match.</div>}
         <Lbl t="FINAL LIFE" />
         <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
           <LifeStep label="You" v={f.pLife} set={(x) => setF({ ...f, pLife: x })} />
           <LifeStep label="Opp" v={f.eLife} set={(x) => setF({ ...f, eLife: x })} />
         </div>
+        {/* Optional, and it must stay optional: most matches are recorded from memory
+            hours later. Left empty the match is UNTIMED, which no longer drags the
+            average - that is the whole point of the field existing. Minutes, not
+            seconds: nobody recalls a match to the second, and false precision would
+            reinstate the fiction this was built to remove. */}
+        <Lbl t="DURATION (minutes, optional)" />
+        <input value={f.mins} onChange={(e) => setF({ ...f, mins: e.target.value })}
+          type="number" inputMode="decimal" min="1" max={MAX_DURATION_MINUTES} step="1"
+          placeholder="Leave empty if you didn't time it"
+          style={{ ...inp, marginBottom: minsErr ? 6 : 14, borderColor: minsErr ? 'var(--crimson)' : undefined }} />
+        {minsErr && <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--crimson)', margin: '0 2px 14px' }}>{DURATION_RANGE_ERR}</div>}
         {decks.length > 0 && (
           <>
             <Lbl t="DECK PILOTED (optional)" />
@@ -470,7 +559,14 @@ function AddMatchSheet({ open, onClose, onSaved }) {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button onClick={onClose} style={{ ...ghost, flex: 1 }}>Cancel</button>
-          <button onClick={save} disabled={busy} style={{ ...gold, flex: 1, opacity: busy ? 0.6 : 1 }}>{busy ? 'Adding…' : 'Add Match'}</button>
+          {/* Gated on a chosen result, not merely styled as unavailable: `disabled` keeps
+              it out of the tab order and out of the hit test, so the form cannot be
+              submitted without an outcome by any route. save() re-checks canSave anyway -
+              a UI that is the only thing standing between a user and a bad write is not a
+              guard. The REASON lives under RESULT, where the fix is; a `title` would be
+              invisible on the touch device this ships to. */}
+          <button onClick={save} disabled={busy || !canSave}
+            style={{ ...gold, flex: 1, opacity: busy || !canSave ? 0.5 : 1 }}>{busy ? 'Adding…' : 'Add Match'}</button>
         </div>
       </div>
     </Sheet>
@@ -496,7 +592,7 @@ export function ImportMatchSheet({ payload, onClose, onSaved }) {
       opponent_avatar: payload.opponentAvatar || null,
       deck_id: null,
       playedAt: payload.playedAt || null,
-      durationSec: payload.durationSec || 0,
+      durationSec: normalizeDurationSec(payload.durationSec),   // a shared payload may carry anything, or nothing
     });
     setBusy(false);
     listDecks().then(setDecks);

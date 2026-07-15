@@ -4,6 +4,11 @@ import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { trimHistorySql } from './deckRepository.js';
 import { uuid, nowIso } from './ids.js';
+import { computeMatchStats, normalizeDurationSec } from './matchStats.js';
+
+// The closed set of outcomes. A match has one of these three - "not yet chosen" is a
+// state of a FORM, never of a stored match.
+export const MATCH_WINNERS = ['player', 'opponent', 'draw'];
 
 /* ---------------- settings ---------------- */
 
@@ -52,7 +57,7 @@ export async function recordMatch(m) {
        player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id)
      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`,
     [id, pid, nowIso(), m.mode || 'full', m.playerAvatar || null, m.opponentName || null, m.opponentAvatar || null,
-      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, winner, m.durationSec || 0, m.notes || '', deckId],
+      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, winner, normalizeDurationSec(m.durationSec), m.notes || '', deckId],
   ]];
   for (const e of m.log || []) {
     stmts.push([
@@ -79,6 +84,15 @@ export async function recordMatch(m) {
     live. No log; may optionally be pinned to a piloted deck, whose W–L ledger
     then re-syncs (same rule as live-recorded and edited matches). */
 export async function addManualMatch(m) {
+  // A missing winner is a BUG, not a draw. `m.winner || 'draw'` used to invent an outcome
+  // nobody chose - the same defect as `|| 0` inventing a zero-second match: a coercion
+  // that destroys the distinction between "unknown" and a real value, silently, at the
+  // last moment before it becomes permanent. The form gates on this too, but a UI is not
+  // a guard: it is the thing most likely to be refactored by someone who does not know
+  // this rule exists.
+  if (!MATCH_WINNERS.includes(m.winner)) {
+    throw new Error(`addManualMatch: winner must be ${MATCH_WINNERS.join(' | ')}, got ${JSON.stringify(m.winner)}`);
+  }
   const pid = activeProfileId();
   const id = uuid();
   const stmts = [[
@@ -86,7 +100,7 @@ export async function addManualMatch(m) {
        player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id)
      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`,
     [id, pid, m.playedAt || nowIso(), 'full', m.playerAvatar || null, m.opponentName || null, m.opponentAvatar || null,
-      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, m.winner || 'draw', m.durationSec || 0, m.notes || '', m.deckId || null],
+      m.playerFinalLife ?? null, m.opponentFinalLife ?? null, m.winner, normalizeDurationSec(m.durationSec), m.notes || '', m.deckId || null],
   ], syncDeckRecordStmt(m.deckId, pid)].filter(Boolean);   // insert + record recompute, atomic
   await tx(stmts);
   return id;
@@ -175,7 +189,7 @@ export async function updateMatch(matchId, f) {
   const stmts = [[
     `UPDATE matches SET opponent_name=?, winner=?, player_final_life=?, opponent_final_life=?, duration_sec=?, notes=?, deck_id=?
      WHERE id=? AND profile_id=?;`,
-    [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, f.duration_sec ?? 0, f.notes ?? '', newDeck, matchId, pid],
+    [f.opponent_name ?? null, f.winner, f.player_final_life, f.opponent_final_life, normalizeDurationSec(f.duration_sec), f.notes ?? '', newDeck, matchId, pid],
   ]];
   stmts.push(syncDeckRecordStmt(oldDeck, pid));
   if (newDeck && newDeck !== oldDeck) stmts.push(syncDeckRecordStmt(newDeck, pid));
@@ -192,13 +206,16 @@ export async function historyStats() {
   let streak = 0;
   for (const m of ms) { if (m.winner === 'player') streak++; else break; }
   const last8 = ms.slice(0, 8).map((m) => m.winner === 'player' ? 'W' : m.winner === 'opponent' ? 'L' : 'D');
-  const totalSec = ms.reduce((a, m) => a + (m.duration_sec || 0), 0);
+  // Durations come from matchStats - the same function the Play hub calls. These numbers
+  // used to be computed here AND inline in Play.jsx, and the visible one was not this one.
+  const { totalSec, timedCount, avgMin } = computeMatchStats(ms);
   return {
     total, wins, losses,
     winPct: decided ? Math.round((wins / decided) * 100) : null,
     streak, last8,
     totalSec,
+    timedCount,          // callers need it to say WHAT the average is over
     timePlayedMin: Math.round(totalSec / 60),
-    avgMin: total ? Math.round(totalSec / total / 60) : 0,
+    avgMin,              // null - not 0 - when nothing is timed
   };
 }
