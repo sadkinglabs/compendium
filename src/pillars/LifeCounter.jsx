@@ -17,6 +17,11 @@ import { createDdArming, DD } from './ddArming.js';
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
+// Colour arrives in TWO taps, not five. It used to track the dismiss count, which read
+// backwards: the realm came alive as you spent life. Two taps is enough to say "I am
+// tracking, not rolling", so the realm wakes almost at once and the roll offer takes
+// its own time to bow out. They are separate intentions and now have separate counts.
+const BIRTH_TAPS = 2;
 const WINDUP_MS = 420;         // the throw: lights down, numerals pull in, then release
 const HOLD_MS = 4000;          // the verdict hold - two humans decide who goes first
 const BIRTH_REST_MS = 450;     // the ash's resting transition; also Death's Door's recovery rush
@@ -384,7 +389,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // new one.
     if (rollPhase === 'armed') {
       const n = ++lifeTaps.current;
-      setBirth(Math.min(1, n / ROLL_DISMISS_TAPS), 420, 'cubic-bezier(.2,.8,.3,1)');
+      setBirth(Math.min(1, n / BIRTH_TAPS), 420, 'cubic-bezier(.2,.8,.3,1)');
       if (n >= ROLL_DISMISS_TAPS) fadeOutRoll();
     }
   }
@@ -433,11 +438,17 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     const winner = pVal > eVal ? 'player' : 'opponent';
     const total = 10 + Math.floor(Math.random() * 6);   // curve untouched: its deceleration is what makes the last faces readable
     let step = 0;
-    // Dice clatter: a random tilt per tick, so it reads as two dice fighting rather
-    // than a number flickering.
-    const jolt = (el) => {
+    // Each face rolls up into place from below, odometer-style. The travel and the
+    // animation both scale with the tick's own length, so a fast throw smears into
+    // continuous motion and a slow one lands softly enough to read - the deceleration
+    // curve does the work, and the roll just makes it visible.
+    // The tiny random skew is the only irregularity: identical travel every tick reads
+    // as a machine, and dice are not machines.
+    const roll = (el, delay) => {
       if (!el) return;
-      el.style.setProperty('--tk', `${(Math.random() * 7 - 3.5).toFixed(1)}deg`);
+      const t = Math.min(1, delay / 400);                       // 0 = frantic, 1 = settling
+      el.style.setProperty('--tk', `${(0.30 + t * 0.34 + Math.random() * 0.06).toFixed(3)}em`);
+      el.style.setProperty('--tkms', `${Math.round(Math.min(delay * 0.85, 260))}ms`);
       el.classList.remove('roll-tick'); void el.offsetWidth; el.classList.add('roll-tick');
     };
     // THE LEAD: whichever face is currently higher takes gold, so the lead visibly
@@ -452,6 +463,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       if (step >= total) {
         if (pEl) pEl.textContent = pVal; if (eEl) eEl.textContent = eVal;
         lead(pVal, eVal);
+        pEl?.classList.remove('roll-tick'); eEl?.classList.remove('roll-tick');
         numAnim('player', 'roll-land'); numAnim('opponent', 'roll-land');
         haptic('heavy');   // was 'medium', which the tumble's own ticks already spend
         timers.current.push(setTimeout(() => _rollDone(winner), 360));   // the coin in the air
@@ -459,9 +471,13 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       }
       const pf = d20(), ef = d20();
       if (pEl) pEl.textContent = pf; if (eEl) eEl.textContent = ef;
-      lead(pf, ef); jolt(pEl); jolt(eEl);
+      lead(pf, ef);
       step++;
+      // The shipped curve, untouched: its deceleration is what makes the final faces
+      // readable, which is what makes the lead-change visible. The roll is measured
+      // against it rather than fighting it.
       const delay = 45 + Math.pow(step / total, 2.7) * 520;
+      roll(pEl, delay); roll(eEl, delay);
       if (delay > 170) haptic('light');
       timers.current.push(setTimeout(tick, delay));
     };
@@ -485,7 +501,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // and DD un-suppresses in one transition - the match begins for both players in the
   // same frame.
   function finishRollOff() {
-    setRollPhase(null); setRollWin(null);
+    setRollPhase(null);   // rollWin deliberately survives - see rollWords()
     pNumRef.current?.classList.remove('roll-lead'); eNumRef.current?.classList.remove('roll-lead');
     pNumRef.current?.setAttribute('aria-live', 'polite'); eNumRef.current?.setAttribute('aria-live', 'polite');
     renderLife();   // real totals over the tumbled faces; setNum clears the roll aria-label
@@ -603,6 +619,12 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   };
   // The verdict, inside the half so it rotates with it - each player reads their own
   // the right way up, from their own seat. That is why there is no centred pill.
+  //
+  // rollWin is NOT cleared at the unlock, only when a new roll arms. If it were, this
+  // ternary would flip to "They choose" on the winner's half for the length of the
+  // fade-out - the text visibly changing as it leaves. Keeping it costs nothing:
+  // rollPhase is null by then, so rollCls() returns '' and none of the verdict styling
+  // applies anyway.
   const rollWords = (who) => (
     <>
       <div className="roll-eyebrow" aria-hidden="true">{rollWin === who ? 'You choose' : 'They choose'}</div>
@@ -642,11 +664,20 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         <div className="half-roll-light" />
         <div className="half-grain" />
         <div className="life-display">
-          <div className="life-number" id="enemy-life-num" ref={eNumRef} role="status" aria-live="polite" />
-          <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
-          {rollWords('opponent')}
+          {/* The numeral is the ONLY thing that flows, so it sits dead centre of the
+              half and STAYS there. Everything else hangs off its bottom edge,
+              absolutely - otherwise the column re-centres whenever a row appears or
+              collapses (roll-active hiding the pill did exactly that, and the number
+              visibly dropped for the roll and rose again after). */}
+          <div className="life-num-wrap">
+            <div className="life-number" id="enemy-life-num" ref={eNumRef} role="status" aria-live="polite" />
+            <div className="life-below">
+              <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
+              {rollWords('opponent')}
+              {ddPill('opponent')}
+            </div>
+          </div>
           {e.life <= 0 && <div key={fallSeq.opponent} className="dd-shock" aria-hidden="true" />}
-          {ddPill('opponent')}
         </div>
         {e.max < 20 && <div className="status-badges"><div className="status-badge maxlife">{HeartSvg}{e.max}</div></div>}
         <div className="tap-zone tap-plus" onClick={() => change('opponent', +1)} role="button" aria-label="Increase opponent's life" />
@@ -671,11 +702,20 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         <div className="half-roll-light" />
         <div className="half-grain" />
         <div className="life-display">
-          <div className="life-number" id="player-life-num" ref={pNumRef} role="status" aria-live="polite" />
-          <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
-          {rollWords('player')}
+          {/* The numeral is the ONLY thing that flows, so it sits dead centre of the
+              half and STAYS there. Everything else hangs off its bottom edge,
+              absolutely - otherwise the column re-centres whenever a row appears or
+              collapses (roll-active hiding the pill did exactly that, and the number
+              visibly dropped for the roll and rose again after). */}
+          <div className="life-num-wrap">
+            <div className="life-number" id="player-life-num" ref={pNumRef} role="status" aria-live="polite" />
+            <div className="life-below">
+              <div className="dd-eyebrow" aria-hidden="true">At Death&rsquo;s Door</div>
+              {rollWords('player')}
+              {ddPill('player')}
+            </div>
+          </div>
           {p.life <= 0 && <div key={fallSeq.player} className="dd-shock" aria-hidden="true" />}
-          {ddPill('player')}
         </div>
         {p.max < 20 && <div className="status-badges"><div className="status-badge maxlife">{HeartSvg}{p.max}</div></div>}
         <div className="tap-zone tap-plus" onClick={() => change('player', +1)} role="button" aria-label="Increase your life" />

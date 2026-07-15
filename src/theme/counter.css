@@ -115,6 +115,23 @@ body.grain-off .half-grain { display: none; }
   align-items: center; justify-content: center;
   pointer-events: none;
 }
+/* The numeral is the only thing with height here, so it is centred on the half and
+   never moves. Everything that belongs UNDER it - the Death's Door eyebrow, the roll
+   verdict, the countdown, the End Match pill - hangs off its bottom edge absolutely,
+   contributing nothing to the column.
+   This is not tidiness: they used to be siblings of the numeral in a centred column,
+   so every row that appeared or collapsed re-centred the stack and shoved the number
+   around. body.roll-active hiding the pill was the loudest one - the counter visibly
+   dropped for the roll and rose again afterwards. A life total must be the one fixed
+   thing on a table two people are reading. */
+.life-num-wrap { position: relative; display: flex; flex-direction: column; align-items: center; }
+.life-below {
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center;
+  white-space: nowrap; pointer-events: none;
+}
+/* The pill is the one child that must take clicks back. */
+.life-below .dd-pill.dd-armed { pointer-events: auto; }
 .life-number {
   font-family: var(--f-display);
   font-size: min(34vw, 40vh);
@@ -950,8 +967,20 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
   text-shadow: 0 0 34px rgba(220,184,111,.85), 0 0 84px rgba(220,184,111,.4), 0 2px 22px rgba(0,0,0,.85);
   transition: color .12s, text-shadow .12s;
 }
-.life-number.roll-tick { animation: roll-tick .11s ease-out; }
-@keyframes roll-tick { 0% { transform: scale(1.07) rotate(var(--tk, 0deg)); } 100% { transform: none; } }
+/* The tumble. Each face ROLLS UP into place from below and the one before it is
+   already gone - an odometer, not a slideshow. --tk is the distance, scaled to how
+   fast the tick is: early on the throw is long and the faces smear into continuous
+   motion, and as the curve decelerates the travel shortens until the last few land
+   softly enough to read. That is what makes the lead-change legible.
+   Rejected: the per-tick scale+rotate jolt this replaced. A number that rotates reads
+   as a mechanism twitching, not a die rolling - it was the single most artificial
+   thing on the screen. Dice tumble; digits roll. */
+.life-number.roll-tick { animation: roll-tick var(--tkms, .11s) cubic-bezier(.25,.7,.4,1); }
+@keyframes roll-tick {
+  0%   { transform: translateY(var(--tk, .5em)); opacity: .25; }
+  55%  { opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
 /* The strike. Deliberately the INVERSE of dd-slam (1.6 -> .94 -> 1): the toll drops in,
    the verdict rises into place. */
 .life-number.roll-land { animation: roll-land .42s cubic-bezier(.2,.9,.3,1); }
