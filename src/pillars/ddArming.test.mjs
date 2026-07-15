@@ -185,6 +185,18 @@ test('a match resumed alive holds no timers', () => {
   assert.equal(h.pending(), 0);
 });
 
+test('a mis-keyed side is refused at every entry point, not just construction', () => {
+  // reset() shipped calling commitLife('enemy', ...). The life write looked correct
+  // (commitLife picks the ref by testing `who === 'player'`), but syncLife('enemy')
+  // invented phases['enemy'] and left the REAL opponent armed with a live timer -
+  // a reset that did not reset. The constructor caught this class of typo; apply()
+  // did not, so the guard had a hole exactly where it mattered.
+  const h = harness();
+  assert.throws(() => h.dd.syncLife('enemy', 20, 0), /unknown side "enemy"/);
+  assert.throws(() => h.dd.tap('enemy'), /unknown side/);
+  assert.equal(h.pending(), 0, 'and it must not have started a timer on the way out');
+});
+
 test('a mis-keyed side is refused, loudly', () => {
   // This shipped: the caller passed `enemy` where this expects `opponent`, so
   // initialLife.opponent was undefined, `undefined > 0` was false, and the opponent

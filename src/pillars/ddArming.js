@@ -144,6 +144,14 @@ export function createDdArming({ initialLife, onChange, setTimeout: setT = setTi
 
   function apply(who, event) {
     if (disposed) return;
+    // Same refusal as the constructor, for the same reason. Without it an unknown
+    // side is INVENTED: phases['enemy'] springs into being, onChange fires with a key
+    // nothing renders, and - the dangerous half - the real side's phase and pending
+    // timer are silently left running. That shipped in reset(), which called
+    // commitLife('enemy', ...) and therefore never disarmed the opponent. commitLife
+    // resolves the ref by testing `who === 'player'`, so the life write looked right
+    // while the controller call quietly went nowhere.
+    if (!(who in phases)) throw new Error(`ddArming: unknown side "${who}". Sides are ${SIDES.join(' | ')}.`);
     const before = phases[who];
     const { phase, timer } = ddReduce(before, event);
     // Quiet and reveal are never pending together for a side: any instruction other

@@ -332,7 +332,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   function reset() {
     // The non-tap recovery path: 0 -> 20 on both sides. Routing through commitLife
     // means it disarms Death's Door and cancels timers for free, with no special case.
-    commitLife('player', start, start); commitLife('enemy', start, start);
+    commitLife('player', start, start); commitLife('opponent', start, start);
     setLog([]); lastLog.current = null; setEndInfo(null);
     setDeltas([]); activeDelta.current = { player: null, enemy: null };
     clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy);
