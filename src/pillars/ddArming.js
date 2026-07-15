@@ -159,16 +159,26 @@ export function createDdArming({ initialLife, onChange, setTimeout: setT = setTi
 
   const cancel = (who) => { if (handles[who] != null) { clearT(handles[who]); handles[who] = null; } };
 
+  // The ONE side assertion, used by every entry point - public and internal. A closed
+  // set, deliberately: an earlier version tested `who in phases`, and `in` walks the
+  // prototype chain, so `tap('toString')` was ACCEPTED and ddReduce then reduced over
+  // a function. A guard that promises to refuse every unknown side must not have a
+  // dozen inherited ones smuggled in behind it.
+  //
+  // Why any of this exists: without it an unknown side is INVENTED. phases['enemy']
+  // springs into being, onChange fires with a key nothing renders, and - the dangerous
+  // half - the real side keeps its phase and its pending timer. That shipped twice:
+  // through initialLife at mount, and through syncLife in reset(), where
+  // commitLife('enemy', ...) wrote the right ref (it tests `who === 'player'`) while
+  // the controller call quietly went nowhere.
+  const assertSide = (who) => {
+    if (!SIDES.includes(who)) throw new Error(`ddArming: unknown side ${JSON.stringify(who)}. Sides are ${SIDES.join(' | ')}.`);
+    return who;
+  };
+
   function apply(who, event) {
     if (disposed) return;
-    // Same refusal as the constructor, for the same reason. Without it an unknown
-    // side is INVENTED: phases['enemy'] springs into being, onChange fires with a key
-    // nothing renders, and - the dangerous half - the real side's phase and pending
-    // timer are silently left running. That shipped in reset(), which called
-    // commitLife('enemy', ...) and therefore never disarmed the opponent. commitLife
-    // resolves the ref by testing `who === 'player'`, so the life write looked right
-    // while the controller call quietly went nowhere.
-    if (!(who in phases)) throw new Error(`ddArming: unknown side "${who}". Sides are ${SIDES.join(' | ')}.`);
+    assertSide(who);
     const before = phases[who];
     const { phase, timer } = ddReduce(before, event);
     // Quiet and reveal are never pending together for a side: any instruction other
@@ -187,15 +197,11 @@ export function createDdArming({ initialLife, onChange, setTimeout: setT = setTi
   // from this controller's point of view - it has never seen this side alive.
   for (const who of SIDES) if (phases[who] === DD.FALLEN) apply(who, { type: 'SYNC_LIFE', prev: Infinity, next: initialLife[who] });
 
-  const assertSide = (who) => {
-    if (!(who in phases)) throw new Error(`ddArming: unknown side "${who}". Sides are ${SIDES.join(' | ')}.`);
-    return who;
-  };
   return {
-    // Every public entry point refuses an unknown side, not just the constructor.
-    // A controller that guards its initialisation and then silently accepts the very
-    // typo it guards against is not a guard at all - and that is not hypothetical:
-    // the same misspelling reached it through syncLife (reset) and initialLife (mount).
+    // Every public entry point refuses an unknown side, not just the constructor -
+    // a controller that guards its initialisation and then accepts the very typo it
+    // guards against elsewhere is not a guard. syncLife/tap route through apply(),
+    // which asserts; phase() is the one that does not, so it asserts here.
     phase: (who) => phases[assertSide(who)],
     /** The one entry point for life. prev/next let the reducer see the crossing. */
     syncLife: (who, prev, next) => apply(who, { type: 'SYNC_LIFE', prev, next }),

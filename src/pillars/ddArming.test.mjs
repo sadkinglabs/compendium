@@ -216,6 +216,18 @@ test('a match resumed alive holds no timers', () => {
   assert.equal(h.pending(), 0);
 });
 
+test('inherited property names are not sides', () => {
+  // The guard tested `who in phases`, and `in` walks the prototype chain - so
+  // tap('toString') was ACCEPTED and ddReduce went on to reduce over a function.
+  // A closed set is the only honest way to say "these two and nothing else".
+  const h = harness();
+  for (const name of ['toString', 'constructor', 'hasOwnProperty', '__proto__', 'valueOf']) {
+    assert.throws(() => h.dd.tap(name), /unknown side/, `${name} must not be a side`);
+    assert.throws(() => h.dd.phase(name), /unknown side/, `${name} must not be a side`);
+  }
+  assert.equal(h.pending(), 0);
+});
+
 test('a mis-keyed side is refused at every entry point, not just construction', () => {
   // reset() shipped calling commitLife('enemy', ...). The life write looked correct
   // (commitLife picks the ref by testing `who === 'player'`), but syncLife('enemy')
