@@ -625,15 +625,20 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // fade-out - the text visibly changing as it leaves. Keeping it costs nothing:
   // rollPhase is null by then, so rollCls() returns '' and none of the verdict styling
   // applies anyway.
+  // Absolutely positioned as a block, sharing the Death's Door eyebrow's slot: a roll
+  // happens at 20 life and Death's Door at 0, so the two can never be on screen
+  // together. Taking it out of the flow is not tidiness - while it was a flowing
+  // sibling, ~40px of INVISIBLE verdict text sat between the DD eyebrow and the End
+  // Match pill and shoved the pill out to the screen edge, where the opponent's was
+  // clipping off the top.
   const rollWords = (who) => (
-    <>
+    <div className="roll-words">
       <div className="roll-eyebrow" aria-hidden="true">{rollWin === who ? 'You choose' : 'They choose'}</div>
       {/* Dim, small, and it earns its place: under reduced motion the fill is
           instantaneous, and this is the only thing left saying the wait is finite and
           short. One design for both modes rather than a special case. */}
       <div className="roll-sub" aria-hidden="true">Match begins in {resultLeft}</div>
-      {rollWin === who && <div className="roll-burst" aria-hidden="true" />}
-    </>
+    </div>
   );
   const halfArt = (img, id) => (
     <>
@@ -677,7 +682,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
               {ddPill('opponent')}
             </div>
           </div>
+          {/* Both rings centre on the HALF, so they live here and not in .life-below -
+              that box is absolutely positioned, and they would have centred on IT. */}
           {e.life <= 0 && <div key={fallSeq.opponent} className="dd-shock" aria-hidden="true" />}
+          {rollWin === 'opponent' && <div className="roll-burst" aria-hidden="true" />}
         </div>
         {e.max < 20 && <div className="status-badges"><div className="status-badge maxlife">{HeartSvg}{e.max}</div></div>}
         <div className="tap-zone tap-plus" onClick={() => change('opponent', +1)} role="button" aria-label="Increase opponent's life" />
@@ -715,7 +723,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
               {ddPill('player')}
             </div>
           </div>
+          {/* Both rings centre on the HALF, so they live here and not in .life-below -
+              that box is absolutely positioned, and they would have centred on IT. */}
           {p.life <= 0 && <div key={fallSeq.player} className="dd-shock" aria-hidden="true" />}
+          {rollWin === 'player' && <div className="roll-burst" aria-hidden="true" />}
         </div>
         {p.max < 20 && <div className="status-badges"><div className="status-badge maxlife">{HeartSvg}{p.max}</div></div>}
         <div className="tap-zone tap-plus" onClick={() => change('player', +1)} role="button" aria-label="Increase your life" />

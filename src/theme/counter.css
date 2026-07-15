@@ -130,6 +130,15 @@ body.grain-off .half-grain { display: none; }
   display: flex; flex-direction: column; align-items: center;
   white-space: nowrap; pointer-events: none;
 }
+/* The roll verdict shares the Death's Door eyebrow's slot rather than stacking below
+   it: a roll happens at 20 life and Death's Door at 0, so they can never both be on
+   screen. Out of the flow, because while it was a flowing sibling ~40px of INVISIBLE
+   verdict text pushed the End Match pill out to the screen edge - the opponent's was
+   clipping off the top of the display. */
+.roll-words {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; white-space: nowrap;
+}
 /* The pill is the one child that must take clicks back. */
 .life-below .dd-pill.dd-armed { pointer-events: auto; }
 .life-number {
@@ -412,7 +421,10 @@ body.reduce-motion .dd-shock { display: none; }   /* a frozen ring is noise, not
    window, so by the time it has finished arriving it is nearly ready to be pressed,
    and there is no moment where a fully-settled button silently refuses a tap. */
 .dd-pill {
-  position: relative; z-index: 2; margin-top: 24px;
+  /* Close to the numeral it belongs to, not adrift near the device edge. It hangs off
+     the bottom of a very tall numeral on a half that is already half a screen, so
+     every pixel here is spent twice - once per player, in opposite directions. */
+  position: relative; z-index: 2; margin-top: 14px;
   display: flex; padding: 0; border: 0; background: none; font: inherit; color: inherit;
   -webkit-appearance: none; appearance: none;
   opacity: 0; visibility: hidden; transform: translateY(22px) scale(.86);
