@@ -381,12 +381,13 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (next <= 0) { numAnim(who, 'dd-slam'); bumpFallSeq(who); haptic('heavy'); }
     else { bump(who, delta); haptic('light'); }
     force((n) => n + 1);
-    // Once the player has clearly settled into tracking life, retire the centre roll
-    // offer (with a fade) so it can never sit in the way of a fast tap - and bring the
-    // realm to life as they go: a fifth per tap, life breathed in by touch. At the
-    // fifth the realm is whole AND the offer retires, so "fully alive" and "no
-    // ceremony available" arrive together, enforced by the shipped rule rather than a
-    // new one.
+    // Two counts, two intentions - deliberately NOT the same number (see BIRTH_TAPS).
+    // Colour is life breathed in by touch, so it completes fast: whole at the SECOND
+    // tap. The offer bows out on its own schedule, at the FIFTH, once the player has
+    // clearly settled into tracking - late enough that it can never sit in the way of
+    // a fast tap, and never so eager that a stray tap costs someone the ceremony.
+    // So the realm is fully alive for three taps while the roll is still on offer.
+    // That is correct: colour says life has arrived, not that the ceremony is spent.
     if (rollPhase === 'armed') {
       const n = ++lifeTaps.current;
       setBirth(Math.min(1, n / BIRTH_TAPS), 420, 'cubic-bezier(.2,.8,.3,1)');
