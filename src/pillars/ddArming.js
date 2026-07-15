@@ -51,6 +51,17 @@ export const DD = {
   FALLEN: 'fallen',
   REVEALING: 'revealing',
   ARMED: 'armed',
+  // The hand came back after the pill had already armed. It stays visibly settled -
+  // no disappearing act, no replayed 1.8s entrance - but it goes inert instantly and
+  // needs only a quiet interval to become pressable again.
+  //
+  // This replaced a "sticky ARMED" that ignored taps outright. That was wrong, and
+  // the argument for it was incomplete: the first resumed tap can land safely on a
+  // life zone while the HAND KEEPS MOVING, and a second tap drifts onto a pill that
+  // is still hot. The first tap is the evidence; ignoring it abandons the invariant.
+  // REARMING keeps the device-feedback win (the pill does not vanish and crawl back)
+  // without reopening the misfire.
+  REARMING: 'rearming',
   SUPPRESSED: 'suppressed',   // an overlay owns the screen; no timers, no armed residue
 };
 
@@ -79,21 +90,27 @@ export function ddReduce(phase, event) {
     }
 
     // A tap landed in that half's life-adjustment region - plus, minus, capped,
-    // refused, it makes no difference. Any tap means the hand is still on the glass,
-    // so the pill must not arrive under it.
+    // refused, it makes no difference. Any tap is evidence the hand is on the glass,
+    // and the pill must not be pressable under it.
     //
-    // ARMED is deliberately STICKY: once the pill has armed, the hand has already
-    // been off the glass for the full window, and a later stray tap hiding it costs
-    // the user the entire wait again for almost nothing. The protection it would buy
-    // is marginal - if the finger were over the pill, that tap would have pressed it
-    // and ended the match; disarming only guards a *subsequent* tap that drifts onto
-    // it. The guard's real job - never arm beneath an active finger - lives entirely
-    // in FALLEN and REVEALING, and is untouched.
+    // Two answers, because the two situations are not the same:
+    //   before it ever armed  -> FALLEN: restart the whole ceremony. Nothing is lost;
+    //                            the pill was not there yet.
+    //   after it armed        -> REARMING: go inert IMMEDIATELY, but stay visible.
+    //                            The pill already earned its place, so hiding it and
+    //                            replaying the 1.8s entrance punishes a stray tap far
+    //                            out of proportion - that was the device complaint.
+    //                            Only the quiet interval is required to become live
+    //                            again.
     case 'TAP':
-      if (phase === DD.ALIVE || phase === DD.SUPPRESSED || phase === DD.ARMED) return { phase, timer: KEEP };
+      if (phase === DD.ALIVE || phase === DD.SUPPRESSED) return { phase, timer: KEEP };
+      if (phase === DD.ARMED || phase === DD.REARMING) return { phase: DD.REARMING, timer: 'quiet' };
       return { phase: DD.FALLEN, timer: 'quiet' };
 
     case 'QUIET_DONE':
+      // Re-arming skips the entrance: the pill never left, so there is nothing to
+      // reveal. Quiet alone restores it.
+      if (phase === DD.REARMING) return { phase: DD.ARMED, timer: null };
       if (phase !== DD.FALLEN) return { phase, timer: KEEP };
       return { phase: DD.REVEALING, timer: 'reveal' };
 
@@ -170,8 +187,16 @@ export function createDdArming({ initialLife, onChange, setTimeout: setT = setTi
   // from this controller's point of view - it has never seen this side alive.
   for (const who of SIDES) if (phases[who] === DD.FALLEN) apply(who, { type: 'SYNC_LIFE', prev: Infinity, next: initialLife[who] });
 
+  const assertSide = (who) => {
+    if (!(who in phases)) throw new Error(`ddArming: unknown side "${who}". Sides are ${SIDES.join(' | ')}.`);
+    return who;
+  };
   return {
-    phase: (who) => phases[who],
+    // Every public entry point refuses an unknown side, not just the constructor.
+    // A controller that guards its initialisation and then silently accepts the very
+    // typo it guards against is not a guard at all - and that is not hypothetical:
+    // the same misspelling reached it through syncLife (reset) and initialLife (mount).
+    phase: (who) => phases[assertSide(who)],
     /** The one entry point for life. prev/next let the reducer see the crossing. */
     syncLife: (who, prev, next) => apply(who, { type: 'SYNC_LIFE', prev, next }),
     /** Any tap in a life zone. No-op while ALIVE or SUPPRESSED, so callers need no guard. */

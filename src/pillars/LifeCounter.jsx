@@ -65,8 +65,13 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const lastLog = useRef(null);
   const deltaId = useRef(0);
   const lifeTaps = useRef(0);   // successful life taps since the roll offer armed
-  const activeDelta = useRef({ player: null, enemy: null });   // {id,sign} of the live (still-counting) delta bubble per side
-  const deltaTimers = useRef({ player: null, enemy: null });   // per-side "you've stopped tapping" release timers
+  // Side keys are `player` | `opponent` EVERYWHERE in this component's logic - the same
+  // vocabulary change() passes and ddArming.js enforces. `enemy` survives only as a
+  // visual name (.enemy-half, #enemy-bg), never as a key. These were keyed `enemy`
+  // while showDelta() wrote them as `opponent`: JS invented the key, so the cleanup
+  // below cleared a null and the opponent's release timer leaked on every unmount.
+  const activeDelta = useRef({ player: null, opponent: null });   // {id,sign} of the live (still-counting) delta bubble per side
+  const deltaTimers = useRef({ player: null, opponent: null });   // per-side "you've stopped tapping" release timers
   const timers = useRef([]);
   const recordingRef = useRef(false);   // in-flight guard for Record (blocks double-tap)
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
@@ -177,7 +182,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       if (settings.immersive) setImmersive(true);
     };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy); dd.dispose(); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
+    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent); dd.dispose(); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
 
@@ -288,16 +293,20 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   }
   const refuseAtFloor = (who) => numAnim(who, 'dd-refuse');   // the door holds
   function change(who, delta) {
-    // A tap whose only job is dismissing an open FAB menu does NOT postpone arming -
-    // it is not a life adjustment. Safe because an open menu SUPPRESSES the pill
-    // entirely (see the overlay effect), so this tap cannot land on an armed control,
-    // and closing the menu starts a fresh quiet window.
-    if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
-
-    // EVERY tap in a life zone postpones arming - plus, minus, capped at 20, or
-    // refused at 0. No conditions: dd.tap is inert while alive. This is the safety
-    // invariant, and it is why it is the first act rather than a special case.
+    // EVERY tap in a life zone postpones arming - plus, minus, capped at 20, refused
+    // at 0, or one that only dismisses a FAB menu. No conditions: dd.tap is inert
+    // while alive. This is the safety invariant, and it is why it is the first act.
+    //
+    // It runs BEFORE the FAB-dismiss return on purpose. An earlier version returned
+    // first, on the reasoning that a FAB is a corner control whose dismissal cannot
+    // reach the centre. That was simply false: this handler is on the LIFE ZONE, so
+    // the dismissing tap can be dead centre, right where the pill sits - and the pill
+    // is only hidden while the menu is open, so it would come back still hot under a
+    // finger that is already tapping. Now that tap makes the side inert like any
+    // other, and REARMING means it costs a quiet interval rather than the whole
+    // ceremony.
     dd.tap(who);
+    if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
 
     const cur = who === 'player' ? pRef.current : eRef.current;
     // The door holds. This used to call triggerEnd() outright - a second, larger
@@ -334,8 +343,8 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // means it disarms Death's Door and cancels timers for free, with no special case.
     commitLife('player', start, start); commitLife('opponent', start, start);
     setLog([]); lastLog.current = null; setEndInfo(null);
-    setDeltas([]); activeDelta.current = { player: null, enemy: null };
-    clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.enemy);
+    setDeltas([]); activeDelta.current = { player: null, opponent: null };
+    clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent);
     elapsedBase.current = 0; startedAt.current = Date.now();
     recordedRef.current = false;   // a fresh game (Go Again / Reset) can be recorded anew
     renderLife(); setSheet(null); setFabP(false); setFabE(false);
@@ -356,7 +365,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     const d20 = () => 1 + Math.floor(Math.random() * 20);
     let pVal = d20(), eVal = d20();
     while (eVal === pVal) eVal = d20();
-    const winner = pVal > eVal ? 'player' : 'enemy';
+    const winner = pVal > eVal ? 'player' : 'opponent';
     const total = 10 + Math.floor(Math.random() * 6);   // ~1s shorter tumble than Play pillar's 16-23 ticks
     let step = 0;
     const tick = () => {
@@ -376,7 +385,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   }
   function _rollDone(winner) {
     pNumRef.current?.classList.add(winner === 'player' ? 'roll-win' : 'roll-lose');
-    eNumRef.current?.classList.add(winner === 'enemy' ? 'roll-win' : 'roll-lose');
+    eNumRef.current?.classList.add(winner === 'opponent' ? 'roll-win' : 'roll-lose');
     setFlip(winner === 'player' ? 0 : 180);
     // Reveal the result and HOLD it: the rolled dice faces + win/lose highlight
     // stay on the numerals through the whole 4s countdown (locked by roll-active +
@@ -472,7 +481,14 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // cannot paint an armed pill while a menu is open.
   const ddPill = (who) => {
     const phase = overlayOpen ? DD.SUPPRESSED : ddPhase[who];
-    const cls = phase === DD.REVEALING ? ' dd-reveal' : phase === DD.ARMED ? ' dd-armed' : '';
+    // REARMING wears .dd-armed's LOOK (it stays settled - that is the whole point)
+    // but is disabled and non-hit-testable below, so it is inert while it looks live.
+    // That is a deliberate, narrow exception to "appearance follows state": the
+    // alternative is the pill vanishing and crawling back for a stray tap, which is
+    // what the device feedback rejected. The window is one quiet interval.
+    const cls = phase === DD.REVEALING ? ' dd-reveal'
+      : phase === DD.ARMED ? ' dd-armed'
+      : phase === DD.REARMING ? ' dd-armed dd-rearming' : '';
     return (
       <button type="button" className={`dd-pill${cls}`} disabled={phase !== DD.ARMED}
         onClick={() => triggerEnd(null)}

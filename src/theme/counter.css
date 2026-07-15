@@ -411,6 +411,12 @@ body.reduce-motion .dd-shock { display: none; }   /* a frozen ring is noise, not
 /* Recovery must be instant, not a 1.6s fade-out under a finger that is tapping again. */
 .counter-half:not(.dd) .dd-pill { transition: none; }
 .dd-pill.dd-armed { pointer-events: auto; cursor: pointer; }
+/* REARMING: the hand came back after the pill had armed. It keeps .dd-armed's look -
+   it does not vanish and crawl back for a stray tap - but it is inert until quiet
+   returns. This override must come AFTER .dd-armed to win, and it is paired with
+   `disabled` in the markup: pointer-events keeps the tap flowing THROUGH to the tap
+   zone beneath (so the hand keeps postponing), and disabled stops activation. */
+.dd-pill.dd-rearming { pointer-events: none; cursor: default; }
 body.roll-active .dd-pill { display: none !important; }
 
 /* REVEALING = "will be": dashed, dimmed, unlit. ARMED = "is": solid, full ink,

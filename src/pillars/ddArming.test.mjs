@@ -105,18 +105,49 @@ test('a tap during REVEALING knocks it back to FALLEN', () => {
   assert.notEqual(h.dd.phase('player'), DD.ARMED);
 });
 
-test('ARMED is sticky: a stray tap does not hide a pill that already earned its place', () => {
-  // Device feedback: a minus tap near the pill used to sink it and cost the whole
-  // wait again. It bought almost nothing - a finger ON the pill would have pressed
-  // it, so disarming only guarded a later tap drifting onto it. The guard's real job
-  // (never arm beneath an active finger) lives in FALLEN/REVEALING and is untouched.
+test('a tap after arming goes inert immediately - the hand is back on the glass', () => {
+  // The misfire this closes: the first resumed tap lands safely on a life zone while
+  // the hand KEEPS MOVING, and a second tap drifts onto a still-hot pill. The first
+  // tap is the evidence. An earlier "sticky ARMED" ignored it and reopened the bug.
   const h = harness();
   h.dd.syncLife('player', 1, 0);
   h.tick(ARM_MS);
   assert.equal(h.dd.phase('player'), DD.ARMED);
   h.dd.tap('player');
-  assert.equal(h.dd.phase('player'), DD.ARMED, 'must stay armed');
-  assert.equal(h.pending(), 0, 'and must not start a timer it does not need');
+  assert.equal(h.dd.phase('player'), DD.REARMING, 'inert on the very first resumed tap');
+});
+
+test('re-arming needs only quiet - it does not replay the entrance', () => {
+  // The device complaint: a stray tap should not cost the whole 1.8s ceremony again.
+  const h = harness();
+  h.dd.syncLife('player', 1, 0);
+  h.tick(ARM_MS);
+  h.dd.tap('player');
+  h.tick(DD_ARM_QUIET_MS - 1);
+  assert.equal(h.dd.phase('player'), DD.REARMING, 'still inert one tick early');
+  h.tick(1);
+  assert.equal(h.dd.phase('player'), DD.ARMED, 'quiet alone restores it - no REVEALING');
+});
+
+test('continued tapping holds it inert for as long as the hand is there', () => {
+  const h = harness();
+  h.dd.syncLife('player', 1, 0);
+  h.tick(ARM_MS);
+  for (let i = 0; i < 10; i++) { h.dd.tap('player'); h.tick(DD_ARM_QUIET_MS - 100); }
+  assert.equal(h.dd.phase('player'), DD.REARMING, 'never live while tapping continues');
+  h.tick(DD_ARM_QUIET_MS);
+  assert.equal(h.dd.phase('player'), DD.ARMED);
+});
+
+test('recovery from REARMING disarms and cancels, like every other phase', () => {
+  const h = harness();
+  h.dd.syncLife('player', 1, 0);
+  h.tick(ARM_MS);
+  h.dd.tap('player');
+  assert.equal(h.dd.phase('player'), DD.REARMING);
+  h.dd.syncLife('player', 0, 4);
+  assert.equal(h.dd.phase('player'), DD.ALIVE);
+  assert.equal(h.pending(), 0);
 });
 
 test('taps while alive are inert, so the call site needs no guard', () => {
