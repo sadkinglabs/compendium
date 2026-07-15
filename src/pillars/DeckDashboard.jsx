@@ -309,7 +309,7 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   const meta = (c) => { const p = []; if (c.life != null) p.push(`${c.life} HP`); if (c.attack != null) p.push(`${c.attack} ATK`); const s = (c.subTypes || []).join(' · ') || c.rarity || ''; if (s) p.push(s); return p.join(' · '); };
   async function save() { if (!sel) return; await setAvatar(deckId, sel.card_id); onSaved?.(); onClose(); }
   return (
-    <div className="arc ob-overlay" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className="cx-decks ob-overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className="ob-inner" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-handle" />
         <div className="ob-header"><h2>Change Avatar</h2><button className="sheet-close" onClick={onClose} aria-label="Close">{XSvg}</button></div>

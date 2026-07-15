@@ -115,7 +115,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   }, [deckId]);
 
   return (
-    <div className="arc" style={{ padding: '4px 20px 26px', animation: 'cxDeckRise .32s cubic-bezier(.2,.9,.3,1)' }}>
+    <div className="cx-decks" style={{ padding: '4px 20px 26px', animation: 'cxDeckRise .32s cubic-bezier(.2,.9,.3,1)' }}>
       {/* View toggle - the shared gothic segmented pill, centred; cards auto-route by type. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         <SegTabs ariaLabel="Card view" value={view} onChange={setView}

@@ -102,7 +102,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
   };
 
   return (
-    <div className="mh" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
+    <div className="cx-match-history" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
       {ongoing && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
           <button className="cx-return-btn" onClick={onResume}>

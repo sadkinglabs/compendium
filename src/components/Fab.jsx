@@ -11,9 +11,24 @@
 //   onClick : if given (and no items), the FAB is a plain action button
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import '../theme/decks.css';   // the FAB's own shell - see the note on `cx-decks` below
 import { haptic } from '../native.js';
 import { registerBackConsumer } from '../back.js';
 import { GLYPH_ICON } from './icons.jsx';
+
+// The Deckbuilder styling scope. It rides the FAB on EVERY pillar, not just Decks:
+// the shell (.fab-wrap / .fab / .fab-menu / .fab-scrim) is defined in decks.css and
+// the FAB is the app's interaction spine, so Home, Codex, Collection and Play all
+// carry it too. Two rules, both load-bearing:
+//   1. It must sit on the SAME element as fab-wrap, not a parent. decks.css targets
+//      `.cx-decks.fab-wrap .fab` (0,3,0) deliberately, because counter.css leaks a
+//      global `.fab-wrap .fab` (0,2,0) that loads later and would otherwise win.
+//      Hoisting the scope to a wrapper drops it to (0,2,0) and the FAB turns green.
+//   2. It must stay spelled `cx-decks`. The old `.arc` spelling matches nothing
+//      since decks.css was renamed, so getting this wrong fails silently and the
+//      controls fall back to UA defaults - white squares. Guarded by
+//      src/pillars/cssScope.test.mjs.
+const SCOPE = 'cx-decks';
 
 // FAB glyphs - three vertical dots (menus) · magnifying glass (search) ·
 // filter sliders (filters/sort).
@@ -77,7 +92,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   // when `active`, morphs via the variant open-rotation (+ ↦ ×) like the others.
   if (!items) {
     return portal(
-      <div className={`arc fab-wrap fab-enter fab-${variant}${active ? ' open' : ''}${className ? ' ' + className : ''}`}>
+      <div className={`${SCOPE} fab-wrap fab-enter fab-${variant}${active ? ' open' : ''}${className ? ' ' + className : ''}`}>
         <button className="fab" onClick={onClick} aria-label={label} aria-pressed={active}>{icon}</button>
         {badge > 0 && <span className="fab-badge">{badge}</span>}
       </div>
@@ -90,8 +105,8 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
 
   return portal(
     <>
-      <div className={`arc fab-scrim${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden="true" />
-      <div className={`arc fab-wrap fab-enter fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
+      <div className={`${SCOPE} fab-scrim${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden="true" />
+      <div className={`${SCOPE} fab-wrap fab-enter fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
         <div className="fab-menu" role="menu">
           {items.map((it, i) => (
             <button key={i} role="menuitem" className={it.prominent ? 'prominent' : undefined}

@@ -54,7 +54,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
   };
 
   return (
-    <div className="arc ob-overlay" role="dialog" aria-modal="true">
+    <div className="cx-decks ob-overlay" role="dialog" aria-modal="true">
       <div className="ob-inner">
         <div className="sheet-handle" />
         <div className="ob-header">

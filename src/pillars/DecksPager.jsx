@@ -178,8 +178,10 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
     </div>
   );
   return (
-    <div className="arc dpager" {...swipe}>
-      {pillSlot ? createPortal(<div className="arc">{topbar}</div>, pillSlot) : topbar}
+    <div className="cx-decks dpager" {...swipe}>
+      {/* The portal lands outside this subtree, so the scope has to travel with it -
+          the pill's styling is defined under `.cx-decks` like the rest. */}
+      {pillSlot ? createPortal(<div className="cx-decks">{topbar}</div>, pillSlot) : topbar}
 
       {view === 'library' ? (
         <div className="dp-view">
@@ -406,7 +408,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
     ? <button className="es-copy-btn" onClick={doShare} disabled={!share?.link}>Share link</button>
     : <button className="es-copy-btn" onClick={copy}>Copy to clipboard</button>;
   return (
-    <Sheet open={open} title="Export Deck" onClose={onClose} footer={footer} bodyClass="arc">
+    <Sheet open={open} title="Export Deck" onClose={onClose} footer={footer} bodyClass="cx-decks">
       <div className="es-format-row">
         <div className="es-format-wrap">
           <button className={`es-format-btn${fmt === 'markdown' ? ' on' : ''}`} onClick={() => setFmt('markdown')}>Markdown</button>
@@ -486,7 +488,7 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
   const empty = src && (src.spellbook.length + src.atlas.length + src.collection.length === 0);
 
   return (
-    <Sheet open={open} title="Deck Spread" onClose={onClose} bodyClass="arc"
+    <Sheet open={open} title="Deck Spread" onClose={onClose} bodyClass="cx-decks"
       footer={
         <div className="ds-toggle-wrap">
           <button className={`ds-view-btn${!shuf ? ' on' : ''}`} onClick={() => setShuf(null)}>Deck</button>
