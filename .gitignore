@@ -3,6 +3,7 @@ dist/
 .DS_Store
 *.log
 .vite/
+.claude/worktrees/
 
 # Capacitor native projects are tracked (Cap generates their own .gitignore for
 # build artifacts). Remove the lines below if you'd rather regenerate them.

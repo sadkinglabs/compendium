@@ -13,6 +13,18 @@ The browser uses **sql.js + IndexedDB** for storage and web fallbacks for the
 native plugins (haptics → `navigator.vibrate`, share → clipboard, etc.), so the
 full app runs in a plain browser.
 
+## Validate documentation
+
+```bash
+npm run check:docs
+```
+
+This checks that the required governance and source-of-truth documents exist,
+the five-pillar contract is present, deleted/historical artifacts are not
+referenced, local Markdown links resolve, and the documented schema version
+matches `src/store/schema.js`. It supplements semantic documentation review;
+passing the command does not prove that prose and implementation agree.
+
 ## Build the Android app
 
 The native APK is built in **Android Studio** (needs JDK + Android SDK, same as
@@ -39,5 +51,5 @@ project before rebuilding.
   but a plain *web* production host would need its own proxy.
 - **Graceful images**: set `localStorage['cx-no-images'] = '1'` to verify the app
   renders fully from data + fallbacks with zero card art (§5 release gate).
-- Source-of-truth design/feature docs: `COMPENDIUM_MIGRATION_HANDOFF.md`,
+- Source-of-truth design/feature docs: `COMPENDIUM_ARCHITECTURE.md`,
   `COMPENDIUM_FEATURE_MATRIX.md`, `COMPENDIUM_DATA_MODEL.md`.
