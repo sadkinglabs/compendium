@@ -6,6 +6,7 @@ import { query, tx } from './db.js';
 import { activeProfileId, createProfile, switchProfile, renameProfile } from './profileRepository.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
+import { normalizeDurationSec } from './matchStats.js';
 import { saveTextFile } from '../native.js';
 import { safeHref } from '../util.js';
 
@@ -123,7 +124,12 @@ export async function importProfile(bundle, { name } = {}) {
     ins('links', ['id', 'profile_id', 'kind', 'a_type', 'a_id', 'b_type', 'b_id', 'description', 'created_at', 'updated_at'], [uuid(), pid, l.kind, l.a_type, l.a_id, l.b_type, l.b_id, l.description, l.created_at, l.updated_at]);
   for (const m of bundle.matches || [])
     ins('matches', ['id', 'profile_id', 'played_at', 'mode', 'player_avatar', 'opponent_name', 'opponent_avatar', 'player_final_life', 'opponent_final_life', 'winner', 'duration_sec', 'notes', 'deck_id'],
-      [matchMap.get(m.id), pid, m.played_at, m.mode, m.player_avatar, m.opponent_name, m.opponent_avatar, m.player_final_life, m.opponent_final_life, m.winner, m.duration_sec, m.notes,
+      // duration_sec normalises on the way in like every other writer. A bundle can be
+      // hand-edited or come from an older build, and 0 / negative / malformed all already
+      // MEAN untimed - so mapping them to null preserves the semantics rather than
+      // bending them. This is not a fidelity exception: no information is lost, because
+      // there was none to lose.
+      [matchMap.get(m.id), pid, m.played_at, m.mode, m.player_avatar, m.opponent_name, m.opponent_avatar, m.player_final_life, m.opponent_final_life, m.winner, normalizeDurationSec(m.duration_sec), m.notes,
         m.deck_id ? (deckMap.get(m.deck_id) || null) : null]);   // piloted deck follows the re-keyed deck
   for (const e of bundle.match_log_entries || [])
     ins('match_log_entries', ['id', 'match_id', 't', 'who', 'kind', 'delta', 'to_life', 'to_max'], [uuid(), matchMap.get(e.match_id), e.t, e.who, e.kind, e.delta, e.to_life, e.to_max]);

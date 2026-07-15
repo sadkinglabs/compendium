@@ -303,7 +303,7 @@ matches(
   player_final_life INTEGER,
   opponent_final_life INTEGER,
   winner TEXT,                 -- player | opponent | draw
-  duration_sec INTEGER,
+  duration_sec INTEGER,        -- NULL/<=0 = untimed. See "Match duration" below.
   notes TEXT,
   deck_id TEXT                 -- soft link; match survives deck deletion
 )
@@ -323,6 +323,43 @@ match_log_entries(
 Match completion and its log commit together. When a valid active-profile deck is linked, its history and derived record update in the same transaction. `deck_id` is intentionally a soft link so deleting a deck does not delete match history.
 
 Opponents are match attributes, not profiles or cross-profile relationships.
+
+### Match duration
+
+`duration_sec` is nullable and encodes three states, two of which mean the same thing:
+
+| value | meaning |
+|---|---|
+| `> 0` | timed — the live tracker measured it, or a person entered it |
+| `<= 0` | untimed, historical — earlier writers coerced unknown durations to `0` |
+| `NULL` | untimed, current |
+
+**Untimed is not zero-length.** A match of zero seconds cannot occur, so `> 0` reads
+correctly over every row ever written and no migration was required when the distinction
+was introduced.
+
+Every path that persists or serialises a duration normalises it through
+`normalizeDurationSec()` (`src/store/matchStats.js`), which maps absent, empty,
+unparseable, negative, and zero to `NULL` and guarantees its result is `NULL` or `> 0`.
+The earlier `|| 0` idiom destroyed the distinction before it reached a column that had
+always permitted it. The paths are `recordMatch`, `addManualMatch`, `updateMatch`,
+profile-bundle import (`profileTransfer.js`), and the outbound match share
+(`matchShare.js` — a serialisation boundary rather than a writer, normalised for the same
+reason). **Profile restoration is deliberately not a fidelity exception:** `0`, negative,
+and malformed values already *mean* untimed, so mapping them to `NULL` preserves the
+semantics rather than bending them, and loses no information because there was none.
+
+Aggregates come from `computeMatchStats()` in the same module, and it is the **only**
+implementation. It reads through the same normaliser, so a malformed or hostile row
+cannot poison a total. `avgSec`/`avgMin` divide by the timed matches — the ones actually
+summed — and are `NULL`, never `0`, when none are timed: *no timed matches* and *an
+average of zero minutes* are different statements. Dividing by the full match count
+instead is a defect that silently worsens as untimed matches accumulate.
+
+Two surfaces read these aggregates and **describe different populations**: the Play hub
+computes over at most `listMatches(500)`, while `historyStats()` queries the profile's
+entire history. That difference predates the shared calculation and is not corrected by
+it.
 
 ## 10. Home data
 

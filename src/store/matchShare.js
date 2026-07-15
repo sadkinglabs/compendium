@@ -8,6 +8,7 @@
 // own). So the import side is dumb - it just lands the payload in a review form.
 import { getActiveProfile } from './profileRepository.js';
 import { nowIso } from './ids.js';
+import { normalizeDurationSec } from './matchStats.js';
 
 const VERSION = 1;
 
@@ -30,7 +31,7 @@ export async function buildMatchShare({ winner, pLife, eLife, durationSec, playe
     opponentAvatar: youAvatarName || null,      // my avatar is now their opponent
     opponentName: (me && me.name) || 'Opponent',// the person who tracked it
     playedAt: playedAt || nowIso(),
-    durationSec: durationSec || 0,
+    durationSec: normalizeDurationSec(durationSec),   // untimed shares as null, not as a zero-second match
   };
   const link = `compendium://match?d=${b64uEncode(JSON.stringify(payload))}`;
   return { link, payload };
