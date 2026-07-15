@@ -180,7 +180,9 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Profiles | Create, rename, switch, and delete profiles with atomic UI reset and isolation | `profileRepository.js`, `src/App.jsx` | **Implemented** |
 | Profile transfer | Export and import self-describing, versioned profile bundles with validation and identifier re-keying | `profileTransfer.js` | **Partial** — anchored annotations are omitted, bundle-version handling is incomplete, and profile creation is outside the row-import transaction |
 | Universal search | Search supported catalog and active-profile domains with grouped results | `searchRepository.js`, `src/App.jsx` | **Implemented** |
-| Settings | Persist and apply accessibility, appearance, haptic, and supported play preferences per profile | `playRepository.js`, `src/App.jsx` | **Implemented** |
+| Settings | Persist and apply accessibility, appearance, haptic, and supported play preferences per profile | `playRepository.js`, `src/App.jsx` | **Implemented** — reached from the profile sheet, rendered as a modal over it |
+| Release notes | Publish per-build release notes as data, reachable on demand from Credits | `src/content/changelog.js`, `ChangelogModal.jsx`, `src/App.jsx` | **Implemented** |
+| Update gate | Show, once, the notes for every build a user missed, stamped app-globally so it survives profile switch and import | `src/store/changelog.js`, `src/App.jsx` | **Planned** — see `docs/proposals/changelog-screen.md` |
 | Adaptive actions | Present search, FAB, sheets, and contextual actions only where valid | `src/App.jsx`, shared components | **Implemented** |
 | Back behavior | Close the topmost sheet/mode first and preserve Android navigation expectations | `src/App.jsx`, Capacitor App integration | **Implemented** |
 | Native sharing/files | Use Capacitor filesystem/share adapters with browser fallbacks where supported | `src/native.js`, transfer/share modules | **Implemented** |
