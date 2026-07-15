@@ -23,7 +23,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const [rarityOn, setRarityOn] = useState(false);   // colour card names by rarity (Refine toggle)
   const [quickAdd, setQuickAdd] = useState(false);   // inline +/- steppers on list rows (Refine toggle, off by default)
   const [attackOn, setAttackOn] = useState(false);   // show the attack chip on list rows (Refine toggle)
-  const [sort, setSort] = useState([]);   // [{key,dir}] priority list (Arcanum multi-sort)
+  const [sort, setSort] = useState([]);   // [{key,dir}] priority list (Deckbuilder multi-sort)
   const [els, setEls] = useState([]);
   const [types, setTypes] = useState([]);
   const [rarities, setRarities] = useState([]);
@@ -115,7 +115,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   }, [deckId]);
 
   return (
-    <div className="arc" style={{ padding: '4px 20px 26px', animation: 'arcRise .32s cubic-bezier(.2,.9,.3,1)' }}>
+    <div className="arc" style={{ padding: '4px 20px 26px', animation: 'cxDeckRise .32s cubic-bezier(.2,.9,.3,1)' }}>
       {/* View toggle - the shared gothic segmented pill, centred; cards auto-route by type. */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
         <SegTabs ariaLabel="Card view" value={view} onChange={setView}

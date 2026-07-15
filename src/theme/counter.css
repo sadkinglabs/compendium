@@ -1,13 +1,13 @@
-/* Vitarum life-counter + avatar-picker - VERBATIM VISUAL/MOTION PORT.
+/* Play life-counter + avatar-picker - VISUAL/MOTION PORT.
    CSS rule blocks, @keyframes, sizes, easings, opacities and transforms are copied
-   unchanged from Vitarum's index.html. The only adaptations: (a) the counter
-   tokens live on a scoped `.vc-root` wrapper (not global :root) so they don't collide
+   unchanged from Play pillar's index.html. The only adaptations: (a) the counter
+   tokens live on a scoped `.cx-life-tracker` wrapper (not global :root) so they don't collide
    with Compendium's palette; (b) `#counter-screen` gets a z-index so it overlays the app;
    (c) body.roll-active / body.grain-off are toggled from React. */
 
-/* ── scoped tokens (verbatim values) ── */
-.vc-root {
-  /* Manuscript black+gold (was Vitarum green). Fonts inherit the global
+/* ── scoped tokens (values) ── */
+.cx-life-tracker {
+  /* Manuscript black+gold (was Play green). Fonts inherit the global
      var(--f-display/read/ui) - no local overrides. --crimson stays: it is a
      semantic game-state accent (damage / defeat), allowed as chrome. */
   --bg: #0e0b08;
@@ -225,7 +225,7 @@ body.roll-active .opponent-fab-wrap,
 body.roll-active #match-clock { display: none !important; }
 
 /* Match clock - vertical strip on the left edge, readable by both players.
-   Verbatim from Vitarum (www/index.html #match-clock). Mounted only when on. */
+   in the Play pillar (www/index.html #match-clock). Mounted only when on. */
 #match-clock {
   position: fixed;
   left: calc(30px + var(--safe-left));
@@ -249,7 +249,7 @@ body.roll-active #match-clock { display: none !important; }
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   transform: translateX(-50%) translateY(-50%) rotate(-90deg);
 }
-.vc-root .fab-menu .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
+.cx-life-tracker .fab-menu .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
 
 /* Full-screen tap catcher during the roll-off (spin + result countdown): above
    the tap-zones/FABs, below the roll pill (z60), so nothing underneath can be
@@ -331,10 +331,10 @@ body.roll-active .dd-pill { display: none !important; }
   50%      { box-shadow: 0 0 44px rgba(224,120,106,.65), 0 4px 16px rgba(0,0,0,.6); }
 }
 
-/* ── Player FAB (fixed, bottom-right) ── scoped to .vc-root so these rules never
+/* ── Player FAB (fixed, bottom-right) ── scoped to .cx-life-tracker so these rules never
    leak onto the app-wide Compendium FAB (.fab-wrap/.fab-menu live globally). ── */
-.vc-root .fab-wrap { position: fixed; bottom: calc(20px + var(--fab-inset) + var(--fab-lift)); right: calc(16px + var(--safe-right)); z-index: 50; }
-.vc-root .fab-wrap .fab {
+.cx-life-tracker .fab-wrap { position: fixed; bottom: calc(20px + var(--fab-inset) + var(--fab-lift)); right: calc(16px + var(--safe-right)); z-index: 50; }
+.cx-life-tracker .fab-wrap .fab {
   width: 52px; height: 52px; border-radius: 50%;
   background: rgba(42,33,20,.55); color: rgb(var(--sk));
   border: 1px solid rgba(var(--sk),.5); font-size: 22px; font-weight: 800;
@@ -343,8 +343,8 @@ body.roll-active .dd-pill { display: none !important; }
   backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
   transition: opacity .18s, transform .25s cubic-bezier(.34,1.3,.64,1);
 }
-.vc-root .fab-wrap.open .fab { opacity: 0; transform: scale(.5) rotate(90deg); pointer-events: none; }
-.vc-root .fab-menu {
+.cx-life-tracker .fab-wrap.open .fab { opacity: 0; transform: scale(.5) rotate(90deg); pointer-events: none; }
+.cx-life-tracker .fab-menu {
   position: absolute; bottom: 0; right: 0; min-width: 210px; overflow: hidden;
   background: rgba(7,15,10,.55); border: 1px solid var(--border);
   box-shadow: 0 4px 24px rgba(0,0,0,.65);
@@ -353,18 +353,18 @@ body.roll-active .dd-pill { display: none !important; }
   transform: scale(.18); border-radius: 26px; pointer-events: none;
   transition: transform .25s cubic-bezier(.34,1.3,.64,1), opacity .18s, border-radius .25s;
 }
-.vc-root .fab-wrap.open .fab-menu { opacity: 1; transform: scale(1); border-radius: 12px; pointer-events: auto; }
-.vc-root .fab-menu button {
+.cx-life-tracker .fab-wrap.open .fab-menu { opacity: 1; transform: scale(1); border-radius: 12px; pointer-events: auto; }
+.cx-life-tracker .fab-menu button {
   display: flex; align-items: center; gap: 10px;
   width: 100%; padding: 13px 16px;
   text-align: left; font-size: 14px; font-weight: 600;
   color: var(--text); background: none; border: none;
   border-bottom: 1px solid var(--border); white-space: nowrap;
 }
-.vc-root .fab-menu button:last-child { border-bottom: none; }
-.vc-root .fab-menu button:active { background: var(--surface2); }
-.vc-root .fab-menu button svg { width: 17px; height: 17px; flex-shrink: 0; opacity: .8; }
-.vc-root .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
+.cx-life-tracker .fab-menu button:last-child { border-bottom: none; }
+.cx-life-tracker .fab-menu button:active { background: var(--surface2); }
+.cx-life-tracker .fab-menu button svg { width: 17px; height: 17px; flex-shrink: 0; opacity: .8; }
+.cx-life-tracker .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
 
 /* ── Opponent FAB (inside enemy-half, absolute - rotates with the half) ── */
 .opponent-fab-wrap {
@@ -512,15 +512,15 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-confirm-btn.ready:active { border-color: rgba(220,184,111,.75); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   VITARUM MODALS - centered overlay + modal-box (NOT bottom sheets). Used for
+   Play MODALS - centered overlay + modal-box (NOT bottom sheets). Used for
    the End-Match screen and the counter's Dice / Max Life / Match Log popups.
-   Verbatim port of Vitarum's .overlay/.modal-box system, scoped to .vc-root.
+   implements Play pillar's .overlay/.modal-box system, scoped to .cx-life-tracker.
    ═══════════════════════════════════════════════════════════════════════════ */
-.vc-root { --modal: #0e0b08; --sheet: linear-gradient(180deg,#151109,#0b0806); --well: rgba(42,33,20,.5);
+.cx-life-tracker { --modal: #0e0b08; --sheet: linear-gradient(180deg,#151109,#0b0806); --well: rgba(42,33,20,.5);
   --gold-dim: rgba(220,184,111,.16); --jade: #4db38a; --win: #4db38a; --win-2: #7fd3ad; }
 
 /* Counter modals re-skinned onto the app's centered black+gold card chassis
-   (Credits/SearchHelp), dropping the Vitarum green plate - one modal language
+   (Credits/SearchHelp), dropping the Play green plate - one modal language
    across the app. Scrim/card tokens match the app; the z-ladder (120/130/140)
    and every bespoke body stay put. */
 /* padding-bottom carries --kb so a modal with a bottom input (end-screen opponent
@@ -539,104 +539,104 @@ body.roll-active .dd-pill { display: none !important; }
 @keyframes vc-modal-in { from { opacity: 0; transform: translateY(28px) scale(.96); } to { opacity: 1; transform: none; } }
 /* Opponent-launched modals (dice roll / change max life) face the opponent's
    180deg-rotated half. Rotation holds after its own entry animation. */
-.vc-root .modal-box.rotated { transform: rotate(180deg); animation: vc-modal-in-rot .28s cubic-bezier(.22,1,.36,1); }
+.cx-life-tracker .modal-box.rotated { transform: rotate(180deg); animation: vc-modal-in-rot .28s cubic-bezier(.22,1,.36,1); }
 @keyframes vc-modal-in-rot { from { opacity: 0; transform: rotate(180deg) scale(.96); } to { opacity: 1; transform: rotate(180deg) scale(1); } }
-.vc-root .modal-box { background: linear-gradient(180deg,#151109,#0b0806); border-radius: 20px; width: 100%; max-width: 360px; border: 1px solid rgba(220,184,111,.24); overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,.7); max-height: 90vh; overflow-y: auto; }
-.vc-root .modal-top { background: none; padding: 28px 24px 20px; text-align: center; position: relative; }
-.vc-root .modal-top::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%,var(--gold-dim) 0%,transparent 70%); pointer-events: none; }
-.vc-root .modal-title { font: 600 22px/1.2 var(--f-display); color: var(--gold); margin-bottom: 4px; }
-.vc-root .modal-subtitle { font: 400 12.5px/1.5 var(--f-read); color: rgba(255,255,255,.5); }
-.vc-root .modal-close-btn { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(220,184,111,.22); background: rgba(0,0,0,.3); color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 1; }
-.vc-root .modal-close-btn svg { width: 13px; height: 13px; }
-.vc-root .modal-actions { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 22px; }
-.vc-root .modal-btn { width: 100%; padding: 13px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(18,16,13,.72); color: var(--text); font: 600 14px/1.2 var(--f-ui); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
-.vc-root .modal-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
-.vc-root .modal-btn:active { background: rgba(28,24,18,.85); }
+.cx-life-tracker .modal-box { background: linear-gradient(180deg,#151109,#0b0806); border-radius: 20px; width: 100%; max-width: 360px; border: 1px solid rgba(220,184,111,.24); overflow: hidden; box-shadow: 0 24px 64px rgba(0,0,0,.7); max-height: 90vh; overflow-y: auto; }
+.cx-life-tracker .modal-top { background: none; padding: 28px 24px 20px; text-align: center; position: relative; }
+.cx-life-tracker .modal-top::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 0%,var(--gold-dim) 0%,transparent 70%); pointer-events: none; }
+.cx-life-tracker .modal-title { font: 600 22px/1.2 var(--f-display); color: var(--gold); margin-bottom: 4px; }
+.cx-life-tracker .modal-subtitle { font: 400 12.5px/1.5 var(--f-read); color: rgba(255,255,255,.5); }
+.cx-life-tracker .modal-close-btn { position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(220,184,111,.22); background: rgba(0,0,0,.3); color: var(--muted); display: flex; align-items: center; justify-content: center; cursor: pointer; z-index: 1; }
+.cx-life-tracker .modal-close-btn svg { width: 13px; height: 13px; }
+.cx-life-tracker .modal-actions { display: flex; flex-direction: column; gap: 8px; padding: 16px 20px 22px; }
+.cx-life-tracker .modal-btn { width: 100%; padding: 13px; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); background: rgba(18,16,13,.72); color: var(--text); font: 600 14px/1.2 var(--f-ui); cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.cx-life-tracker .modal-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+.cx-life-tracker .modal-btn:active { background: rgba(28,24,18,.85); }
 /* Primary = the app's black-glass gold-hairline (BTN_GOLD), NOT a gold fill. */
-.vc-root .modal-btn.primary { background: rgba(18,16,13,.85); color: var(--gold); border-color: rgba(220,184,111,.45); font-weight: 700; }
-.vc-root .modal-btn.danger { border-color: rgba(224,120,106,.3); color: var(--crimson); }
-.vc-root .modal-btn.recorded { background: rgba(77,179,138,.15); color: #4db38a; border-color: rgba(77,179,138,.35); font-weight: 700; cursor: default; }
+.cx-life-tracker .modal-btn.primary { background: rgba(18,16,13,.85); color: var(--gold); border-color: rgba(220,184,111,.45); font-weight: 700; }
+.cx-life-tracker .modal-btn.danger { border-color: rgba(224,120,106,.3); color: var(--crimson); }
+.cx-life-tracker .modal-btn.recorded { background: rgba(77,179,138,.15); color: #4db38a; border-color: rgba(77,179,138,.35); font-weight: 700; cursor: default; }
 
 /* ── End-Match screen ── */
-.vc-root #end-overlay .modal-top { padding-bottom: 72px; }
-.vc-root #end-overlay .modal-top::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 32px; pointer-events: none; background: linear-gradient(to bottom, transparent, #0f0b07); }
-.vc-root .end-result-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 6px; }
-.vc-root .end-winner { font-family: var(--f-display); font-size: 28px; font-weight: 800; color: var(--gold); }
-.vc-root .end-result { padding: 0 16px 8px; text-align: center; }
-.vc-root .end-life-row { display: flex; gap: 12px; margin-top: -56px; padding: 0 4px; position: relative; z-index: 5; }
-.vc-root .end-life-pill { flex: 1; background: var(--bg); border-radius: 12px; text-align: center; overflow: hidden; border: 2px solid transparent; transition: border-color .2s; box-shadow: 0 4px 20px rgba(0,0,0,.5); }
-.vc-root .end-life-pill-art { width: 100%; aspect-ratio: 3/2; overflow: hidden; display: block; }
-.vc-root .end-life-pill-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 28%; transform: scale(1.5); transform-origin: center 35%; display: block; }
-.vc-root #end-overlay.quick .end-life-pill-art img { display: none; }
-.vc-root #end-overlay.quick .end-player .end-life-pill-art { background: radial-gradient(ellipse at 50% 40%, #8a6e2a, #2a210c); }
-.vc-root #end-overlay.quick .end-enemy .end-life-pill-art { background: radial-gradient(ellipse at 50% 40%, #5a4a96, #1e1830); }
-.vc-root .end-life-pill-info { padding: 8px 6px 10px; }
-.vc-root .end-life-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
-.vc-root .end-life-val { font-size: 26px; font-weight: 800; font-family: var(--f-display); color: var(--text); margin-top: 2px; }
-.vc-root .end-life-val.dd { color: var(--crimson); }
-.vc-root .end-duration-row { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); font-size: 12px; letter-spacing: .3px; }
-.vc-root .end-duration-row svg { width: 13px; height: 13px; opacity: .6; }
-.vc-root .end-opp-field { padding: 12px 20px 0; text-align: left; }
-.vc-root .end-opp-label { font: 600 10px/1 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-.vc-root .end-opp-input { width: 100%; height: 42px; background: var(--well); border: 1px solid var(--border); border-radius: 12px; padding: 0 14px; color: var(--text); font: 400 15px/1 var(--f-read); box-sizing: border-box; outline: none; }
-.vc-root .end-opp-input:focus { border-color: rgba(220,184,111,.5); }
-.vc-root .end-opp-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.vc-root .end-opp-chip { padding: 5px 11px; border-radius: 16px; border: 1px solid var(--border); font: 500 12px/1 var(--f-read); color: var(--muted); cursor: pointer; background: none; }
+.cx-life-tracker #end-overlay .modal-top { padding-bottom: 72px; }
+.cx-life-tracker #end-overlay .modal-top::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 32px; pointer-events: none; background: linear-gradient(to bottom, transparent, #0f0b07); }
+.cx-life-tracker .end-result-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 6px; }
+.cx-life-tracker .end-winner { font-family: var(--f-display); font-size: 28px; font-weight: 800; color: var(--gold); }
+.cx-life-tracker .end-result { padding: 0 16px 8px; text-align: center; }
+.cx-life-tracker .end-life-row { display: flex; gap: 12px; margin-top: -56px; padding: 0 4px; position: relative; z-index: 5; }
+.cx-life-tracker .end-life-pill { flex: 1; background: var(--bg); border-radius: 12px; text-align: center; overflow: hidden; border: 2px solid transparent; transition: border-color .2s; box-shadow: 0 4px 20px rgba(0,0,0,.5); }
+.cx-life-tracker .end-life-pill-art { width: 100%; aspect-ratio: 3/2; overflow: hidden; display: block; }
+.cx-life-tracker .end-life-pill-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 28%; transform: scale(1.5); transform-origin: center 35%; display: block; }
+.cx-life-tracker #end-overlay.quick .end-life-pill-art img { display: none; }
+.cx-life-tracker #end-overlay.quick .end-player .end-life-pill-art { background: radial-gradient(ellipse at 50% 40%, #8a6e2a, #2a210c); }
+.cx-life-tracker #end-overlay.quick .end-enemy .end-life-pill-art { background: radial-gradient(ellipse at 50% 40%, #5a4a96, #1e1830); }
+.cx-life-tracker .end-life-pill-info { padding: 8px 6px 10px; }
+.cx-life-tracker .end-life-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+.cx-life-tracker .end-life-val { font-size: 26px; font-weight: 800; font-family: var(--f-display); color: var(--text); margin-top: 2px; }
+.cx-life-tracker .end-life-val.dd { color: var(--crimson); }
+.cx-life-tracker .end-duration-row { margin-top: 14px; display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--muted); font-size: 12px; letter-spacing: .3px; }
+.cx-life-tracker .end-duration-row svg { width: 13px; height: 13px; opacity: .6; }
+.cx-life-tracker .end-opp-field { padding: 12px 20px 0; text-align: left; }
+.cx-life-tracker .end-opp-label { font: 600 10px/1 var(--f-ui); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+.cx-life-tracker .end-opp-input { width: 100%; height: 42px; background: var(--well); border: 1px solid var(--border); border-radius: 12px; padding: 0 14px; color: var(--text); font: 400 15px/1 var(--f-read); box-sizing: border-box; outline: none; }
+.cx-life-tracker .end-opp-input:focus { border-color: rgba(220,184,111,.5); }
+.cx-life-tracker .end-opp-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.cx-life-tracker .end-opp-chip { padding: 5px 11px; border-radius: 16px; border: 1px solid var(--border); font: 500 12px/1 var(--f-read); color: var(--muted); cursor: pointer; background: none; }
 
 /* ── Dice modal ── */
-.vc-root .dice-type-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 16px 20px 4px; }
-.vc-root .die-btn { padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 800; cursor: pointer; transition: all .15s; }
-.vc-root .die-btn.active { background: var(--gold); color: #1a1410; border-color: transparent; }
-.vc-root .dice-result-area { text-align: center; padding: 16px 20px 8px; }
-.vc-root .dice-number { font-family: var(--f-display); font-size: 80px; font-weight: 800; color: var(--gold); line-height: 1; min-height: 90px; display: flex; align-items: center; justify-content: center; }
-.vc-root .dice-number.landed { animation: dice-land .35s cubic-bezier(.34,1.5,.64,1) forwards; }
+.cx-life-tracker .dice-type-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 16px 20px 4px; }
+.cx-life-tracker .die-btn { padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 800; cursor: pointer; transition: all .15s; }
+.cx-life-tracker .die-btn.active { background: var(--gold); color: #1a1410; border-color: transparent; }
+.cx-life-tracker .dice-result-area { text-align: center; padding: 16px 20px 8px; }
+.cx-life-tracker .dice-number { font-family: var(--f-display); font-size: 80px; font-weight: 800; color: var(--gold); line-height: 1; min-height: 90px; display: flex; align-items: center; justify-content: center; }
+.cx-life-tracker .dice-number.landed { animation: dice-land .35s cubic-bezier(.34,1.5,.64,1) forwards; }
 @keyframes dice-land { from { transform: scale(1.5); opacity: .5; } to { transform: scale(1); opacity: 1; } }
-.vc-root .dice-number.rolling { animation: dice-roll .08s infinite alternate; }
+.cx-life-tracker .dice-number.rolling { animation: dice-roll .08s infinite alternate; }
 @keyframes dice-roll { from { transform: rotate(-4deg) scale(1.03); } to { transform: rotate(4deg) scale(.97); } }
-body.reduce-motion .vc-root .dice-number.rolling { animation: none; }
-.vc-root .dice-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
+.cx-life-tracker .dice-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
 /* ── Max Life modal ── */
-.vc-root .maxlife-stepper { display: flex; align-items: center; justify-content: center; gap: 26px; padding: 24px 20px 6px; }
-.vc-root .maxlife-btn { width: 58px; height: 58px; border-radius: 50%; flex-shrink: 0; border: 1px solid var(--border); background: var(--bg); color: var(--gold); font-size: 30px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; }
-.vc-root .maxlife-btn:active { background: var(--surface2); }
-.vc-root .maxlife-value { font-family: var(--f-display); font-size: 64px; font-weight: 800; color: var(--text); min-width: 110px; text-align: center; line-height: 1; }
-.vc-root .maxlife-hint { padding: 6px 26px 4px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
+.cx-life-tracker .maxlife-stepper { display: flex; align-items: center; justify-content: center; gap: 26px; padding: 24px 20px 6px; }
+.cx-life-tracker .maxlife-btn { width: 58px; height: 58px; border-radius: 50%; flex-shrink: 0; border: 1px solid var(--border); background: var(--bg); color: var(--gold); font-size: 30px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.cx-life-tracker .maxlife-btn:active { background: var(--surface2); }
+.cx-life-tracker .maxlife-value { font-family: var(--f-display); font-size: 64px; font-weight: 800; color: var(--text); min-width: 110px; text-align: center; line-height: 1; }
+.cx-life-tracker .maxlife-hint { padding: 6px 26px 4px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 
 /* ── Tweaks modal - the counter's own comforts (keep awake / immersive / grain) ── */
-.vc-root .tw-list { padding: 14px 22px 6px; display: flex; flex-direction: column; gap: 4px; }
-.vc-root .tw-row { display: flex; align-items: center; gap: 14px; padding: 11px 2px; cursor: pointer; -webkit-tap-highlight-color: transparent; border-bottom: 1px solid rgba(220,184,111,.1); }
-.vc-root .tw-row:last-child { border-bottom: none; }
-.vc-root .tw-copy { flex: 1; min-width: 0; }
-.vc-root .tw-label { font: 600 14px/1.2 var(--f-ui); color: var(--text); }
-.vc-root .tw-hint { font: 400 11.5px/1.4 var(--f-read); color: var(--muted); margin-top: 3px; }
-.vc-root .tw-switch { width: 44px; height: 25px; border-radius: 13px; border: 1px solid var(--border); background: rgba(255,255,255,.05); position: relative; flex-shrink: 0; transition: background .18s, border-color .18s; }
-.vc-root .tw-switch .tw-knob { position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%; background: var(--muted); transition: left .18s cubic-bezier(.34,1.3,.6,1), background .18s; }
-.vc-root .tw-switch.on { background: rgba(220,184,111,.28); border-color: rgba(220,184,111,.6); }
-.vc-root .tw-switch.on .tw-knob { left: 21px; background: var(--gold); }
+.cx-life-tracker .tw-list { padding: 14px 22px 6px; display: flex; flex-direction: column; gap: 4px; }
+.cx-life-tracker .tw-row { display: flex; align-items: center; gap: 14px; padding: 11px 2px; cursor: pointer; -webkit-tap-highlight-color: transparent; border-bottom: 1px solid rgba(220,184,111,.1); }
+.cx-life-tracker .tw-row:last-child { border-bottom: none; }
+.cx-life-tracker .tw-copy { flex: 1; min-width: 0; }
+.cx-life-tracker .tw-label { font: 600 14px/1.2 var(--f-ui); color: var(--text); }
+.cx-life-tracker .tw-hint { font: 400 11.5px/1.4 var(--f-read); color: var(--muted); margin-top: 3px; }
+.cx-life-tracker .tw-switch { width: 44px; height: 25px; border-radius: 13px; border: 1px solid var(--border); background: rgba(255,255,255,.05); position: relative; flex-shrink: 0; transition: background .18s, border-color .18s; }
+.cx-life-tracker .tw-switch .tw-knob { position: absolute; top: 2px; left: 2px; width: 19px; height: 19px; border-radius: 50%; background: var(--muted); transition: left .18s cubic-bezier(.34,1.3,.6,1), background .18s; }
+.cx-life-tracker .tw-switch.on { background: rgba(220,184,111,.28); border-color: rgba(220,184,111,.6); }
+.cx-life-tracker .tw-switch.on .tw-knob { left: 21px; background: var(--gold); }
 
 /* ── Match Log modal ── */
-.vc-root .log-divider { display: flex; align-items: center; gap: 12px; margin: 9px 22px 2px; }
-.vc-root .log-divider::before, .vc-root .log-divider::after { content: ''; flex: 1; height: 1px; }
-.vc-root .log-divider::before { background: linear-gradient(90deg, transparent, rgba(220,184,111,.35)); }
-.vc-root .log-divider::after { background: linear-gradient(90deg, rgba(220,184,111,.35), transparent); }
-.vc-root .log-divider span { color: var(--gold); font-size: 11px; opacity: .75; }
-.vc-root .log-list { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin: 0; padding: 0 20px; }
-.vc-root .log-row { position: relative; display: flex; align-items: center; gap: 13px; padding: 13px 4px 13px 16px; border-bottom: 1px solid rgba(255,255,255,.055); }
-.vc-root .log-row:last-child { border-bottom: none; }
-.vc-root .log-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; }
-.vc-root .log-row.you::before { background: var(--gold); box-shadow: 0 0 9px rgba(220,184,111,.45); }
-.vc-root .log-row.opp::before { background: #a08fd6; box-shadow: 0 0 9px rgba(160,143,214,.45); }
-.vc-root .log-time { font-family: var(--f-mono, 'IBM Plex Mono', monospace); font-size: 12px; letter-spacing: .4px; color: var(--muted); min-width: 66px; }
-.vc-root .log-text { flex: 1; font-family: var(--f-ui); font-size: 15px; font-weight: 500; }
-.vc-root .log-row.you .log-text { color: var(--gold); }
-.vc-root .log-row.opp .log-text { color: #b9abe8; }
-.vc-root .log-who { font-weight: 700; }
-.vc-root .log-row.you .log-who { color: var(--gold-head); }
-.vc-root .log-row.opp .log-who { color: #cabef2; }
-.vc-root .log-amt { font-weight: 700; }
-.vc-root .log-amt.loss { color: var(--crimson); }
-.vc-root .log-amt.gain { color: var(--win-2); }
-.vc-root .log-life { display: flex; align-items: center; gap: 5px; min-width: 46px; justify-content: flex-end; font-family: var(--f-mono, 'IBM Plex Mono', monospace); font-size: 14px; color: var(--text); }
-.vc-root .log-life svg { width: 13px; height: 13px; color: var(--win); }
-.vc-root .log-empty { text-align: center; color: var(--muted); font-family: var(--f-read); font-size: 14px; line-height: 1.6; padding: 30px 10px; }
+.cx-life-tracker .log-divider { display: flex; align-items: center; gap: 12px; margin: 9px 22px 2px; }
+.cx-life-tracker .log-divider::before, .cx-life-tracker .log-divider::after { content: ''; flex: 1; height: 1px; }
+.cx-life-tracker .log-divider::before { background: linear-gradient(90deg, transparent, rgba(220,184,111,.35)); }
+.cx-life-tracker .log-divider::after { background: linear-gradient(90deg, rgba(220,184,111,.35), transparent); }
+.cx-life-tracker .log-divider span { color: var(--gold); font-size: 11px; opacity: .75; }
+.cx-life-tracker .log-list { max-height: 50vh; overflow-y: auto; -webkit-overflow-scrolling: touch; margin: 0; padding: 0 20px; }
+.cx-life-tracker .log-row { position: relative; display: flex; align-items: center; gap: 13px; padding: 13px 4px 13px 16px; border-bottom: 1px solid rgba(255,255,255,.055); }
+.cx-life-tracker .log-row:last-child { border-bottom: none; }
+.cx-life-tracker .log-row::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; }
+.cx-life-tracker .log-row.you::before { background: var(--gold); box-shadow: 0 0 9px rgba(220,184,111,.45); }
+.cx-life-tracker .log-row.opp::before { background: #a08fd6; box-shadow: 0 0 9px rgba(160,143,214,.45); }
+.cx-life-tracker .log-time { font-family: var(--f-mono, 'IBM Plex Mono', monospace); font-size: 12px; letter-spacing: .4px; color: var(--muted); min-width: 66px; }
+.cx-life-tracker .log-text { flex: 1; font-family: var(--f-ui); font-size: 15px; font-weight: 500; }
+.cx-life-tracker .log-row.you .log-text { color: var(--gold); }
+.cx-life-tracker .log-row.opp .log-text { color: #b9abe8; }
+.cx-life-tracker .log-who { font-weight: 700; }
+.cx-life-tracker .log-row.you .log-who { color: var(--gold-head); }
+.cx-life-tracker .log-row.opp .log-who { color: #cabef2; }
+.cx-life-tracker .log-amt { font-weight: 700; }
+.cx-life-tracker .log-amt.loss { color: var(--crimson); }
+.cx-life-tracker .log-amt.gain { color: var(--win-2); }
+.cx-life-tracker .log-life { display: flex; align-items: center; gap: 5px; min-width: 46px; justify-content: flex-end; font-family: var(--f-mono, 'IBM Plex Mono', monospace); font-size: 14px; color: var(--text); }
+.cx-life-tracker .log-life svg { width: 13px; height: 13px; color: var(--win); }
+.cx-life-tracker .log-empty { text-align: center; color: var(--muted); font-family: var(--f-read); font-size: 14px; line-height: 1.6; padding: 30px 10px; }

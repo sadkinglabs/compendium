@@ -1,4 +1,4 @@
-// Deck "Illuminated Codex" poster - ported VERBATIM from Arcanum
+// Deck "Illuminated Codex" poster - implemented for the Deckbuilder
 // (www/index.html _buildDeckPosterCanvas). Only the data source (Compendium's
 // getDeck/getDeckCards → a deck shim with _cost/_elements/_type/_thresholds) and
 // asset paths (/static → public/ via BASE) are adapted; the drawing is unchanged.
@@ -12,7 +12,7 @@ function _loadImg(src) {
   return new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
 }
 
-// Greedy word-wrap for the share-image title (verbatim).
+// Greedy word-wrap for the share-image title.
 function wrapTitleLines(ctx, text, maxW, font, maxLines) {
   ctx.font = font;
   const ell = (s) => { let r = s; while (r.length > 1 && ctx.measureText(r + '…').width > maxW) r = r.slice(0, -1); return r + '…'; };
@@ -33,7 +33,7 @@ function wrapTitleLines(ctx, text, maxW, font, maxLines) {
   return lines;
 }
 
-// Build the Arcanum-shaped `deck` object from Compendium's store.
+// Build the Deckbuilder-shaped `deck` object from Compendium's store.
 async function deckShim(deckId) {
   const d = await getDeck(deckId);
   const zones = await getDeckCards(deckId);
@@ -48,7 +48,7 @@ async function deckShim(deckId) {
   };
 }
 
-// ── Verbatim Arcanum poster ──
+// ── Deckbuilder poster ──
 async function _buildDeckPosterCanvas(deck) {
   const SCALE = 2, W = 990, pad = 44;
   const INK = '#0b0806', GOLD = '#dcb86f';
@@ -121,7 +121,7 @@ async function _buildDeckPosterCanvas(deck) {
   const x = cv.getContext('2d');
   x.scale(SCALE, SCALE);
   x.textBaseline = 'alphabetic';
-  const rrect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph / 2); x.beginPath(); x.moveTo(px + r, py); x.arcTo(px + pw, py, px + pw, py + ph, r); x.arcTo(px + pw, py + ph, px, py + ph, r); x.arcTo(px, py + ph, px, py, r); x.arcTo(px, py, px + pw, py, r); x.closePath(); };
+  const rrect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph / 2); x.beginPath(); x.moveTo(px + r, py); x.cx-decksTo(px + pw, py, px + pw, py + ph, r); x.cx-decksTo(px + pw, py + ph, px, py + ph, r); x.cx-decksTo(px, py + ph, px, py, r); x.cx-decksTo(px, py, px + pw, py, r); x.closePath(); };
   const topRect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph); x.beginPath(); x.moveTo(px, py + ph); x.lineTo(px, py + r); x.quadraticCurveTo(px, py, px + r, py); x.lineTo(px + pw - r, py); x.quadraticCurveTo(px + pw, py, px + pw, py + r); x.lineTo(px + pw, py + ph); x.closePath(); };
   const fit = (t, maxw) => { if (x.measureText(t).width <= maxw) return t; let s = t; while (s.length > 1 && x.measureText(s + '…').width > maxw) s = s.slice(0, -1); return s + '…'; };
   const setLS = (v) => { try { x.letterSpacing = v; } catch (e) { /* noop */ } };
@@ -226,11 +226,11 @@ async function _buildDeckPosterCanvas(deck) {
     const bodyTop = py + 26, rowH = (STATS_H - 26 - 26) / 2, Ro = 46, Ri = 30;
     const drawDonut = (ccx, ccy, slices, total, label) => {
       x.lineWidth = Ro - Ri; const r = (Ro + Ri) / 2;
-      if (total) { let ang = -Math.PI / 2; for (const s of slices) { if (!s.value) continue; const a = s.value / total * 2 * Math.PI; x.strokeStyle = s.color; x.beginPath(); x.arc(ccx, ccy, r, ang, ang + a); x.stroke(); ang += a; } }
-      else { x.strokeStyle = 'rgba(74,60,34,.5)'; x.beginPath(); x.arc(ccx, ccy, r, 0, 7); x.stroke(); }
-      x.strokeStyle = 'rgba(220,184,111,.3)'; x.lineWidth = 1; x.beginPath(); x.arc(ccx, ccy, Ro, 0, 7); x.stroke();
+      if (total) { let ang = -Math.PI / 2; for (const s of slices) { if (!s.value) continue; const a = s.value / total * 2 * Math.PI; x.strokeStyle = s.color; x.beginPath(); x.cx-decks(ccx, ccy, r, ang, ang + a); x.stroke(); ang += a; } }
+      else { x.strokeStyle = 'rgba(74,60,34,.5)'; x.beginPath(); x.cx-decks(ccx, ccy, r, 0, 7); x.stroke(); }
+      x.strokeStyle = 'rgba(220,184,111,.3)'; x.lineWidth = 1; x.beginPath(); x.cx-decks(ccx, ccy, Ro, 0, 7); x.stroke();
       const ig = x.createRadialGradient(ccx, ccy - Ri * 0.4, 1, ccx, ccy, Ri); ig.addColorStop(0, '#1a1206'); ig.addColorStop(1, '#0b0806');
-      x.fillStyle = ig; x.beginPath(); x.arc(ccx, ccy, Ri, 0, 7); x.fill();
+      x.fillStyle = ig; x.beginPath(); x.cx-decks(ccx, ccy, Ri, 0, 7); x.fill();
       x.fillStyle = '#f0e9d8'; x.font = "700 22px 'Cinzel', Georgia, serif"; x.textAlign = 'center'; x.fillText(total, ccx, ccy + 1);
       x.fillStyle = '#8a8175'; x.font = "600 7.5px 'Hanken Grotesk', sans-serif"; setLS('0.05em'); x.fillText(label, ccx, ccy + 14); setLS('0px'); x.textAlign = 'left';
     };

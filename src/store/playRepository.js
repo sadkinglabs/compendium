@@ -75,7 +75,7 @@ export async function recordMatch(m) {
   return id;
 }
 
-/** Manual history entry (Vitarum's Add Match) - a match that wasn't tracked
+/** Manual history entry (Play pillar's Add Match) - a match that wasn't tracked
     live. No log; may optionally be pinned to a piloted deck, whose W–L ledger
     then re-syncs (same rule as live-recorded and edited matches). */
 export async function addManualMatch(m) {

@@ -115,7 +115,7 @@ function Tile({ label, value, sub, onClick }) {
 }
 
 // Bulk add via pasted text - the deck "Import from text" format ("4 Card Name"
-// lines; headers ignored), imported into the OWNERSHIP ledger (adds copies on
+// lines; headers ignored), imintegrated into the OWNERSHIP ledger (adds copies on
 // top of what's recorded, never overwrites).
 function ImportTextSheet({ open, onClose }) {
   const [text, setText] = useState('');

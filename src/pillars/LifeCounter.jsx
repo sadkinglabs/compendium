@@ -1,4 +1,4 @@
-// Life counter - VERBATIM visual/motion port of Vitarum's counter screen, plus
+// Life counter - implements the visual and motion design of Play pillar's counter screen, plus
 // its full-screen end-match modal and centered secondary modals (Dice / Max Life
 // / Match Log). Supports RESUME: a match can be minimized (leave to check a Codex
 // rule) and returned to, preserving life totals, log and banked elapsed time.
@@ -24,7 +24,7 @@ function fmtDur(secs) {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
-// Digital clock face for the match strip - "12:05" / "1:23:45" (Vitarum _tickClock).
+// Digital clock face for the match strip - "12:05" / "1:23:45" (Play _tickClock).
 function fmtClock(secs) {
   secs = Math.max(0, Math.floor(secs || 0));
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
@@ -47,7 +47,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const [fabP, setFabP] = useState(false);
   const [fabE, setFabE] = useState(false);
   const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
-  // Tweaks - Vitarum's counter-local comforts (keep awake / hide status bar /
+  // Tweaks - Play pillar's counter-local comforts (keep awake / hide status bar /
   // film grain). Persisted per profile, applied live to the running match.
   const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0 });
   const [dice, setDice] = useState({ type: settings.die_type || 6, value: null });
@@ -158,7 +158,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     return () => clearInterval(id);
   }, [clockOn, endInfo]);
 
-  // ── life change (verbatim changeLife) ──
+  // ── life change (changeLife) ──
   function appendLog(who, delta, toLife) {
     const now = Date.now();
     setLog((prev) => {
@@ -241,7 +241,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     armRollOff(); force((n) => n + 1);
   }
 
-  // ── turn-order roll-off (verbatim constants) ──
+  // ── turn-order roll-off (constants) ──
   function _clearRoll() {
     clearTimers();
     pNumRef.current?.classList.remove('roll-win', 'roll-lose');
@@ -256,7 +256,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     let pVal = d20(), eVal = d20();
     while (eVal === pVal) eVal = d20();
     const winner = pVal > eVal ? 'player' : 'enemy';
-    const total = 10 + Math.floor(Math.random() * 6);   // ~1s shorter tumble than Vitarum's 16-23 ticks
+    const total = 10 + Math.floor(Math.random() * 6);   // ~1s shorter tumble than Play pillar's 16-23 ticks
     let step = 0;
     const tick = () => {
       if (step >= total) {
@@ -304,7 +304,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // Waving the roll away without rolling - it's an offer, not a gate.
   function dismissRollOff() { haptic('light'); fadeOutRoll(); }
 
-  // ── end match → full-screen decision modal (Vitarum) ──
+  // ── end match → full-screen decision modal (Play) ──
   function triggerEnd(winner) {
     const p = pRef.current, e = eRef.current;
     const w = winner || (p.life <= 0 ? 'opponent' : e.life <= 0 ? 'player' : p.life === e.life ? 'draw' : p.life > e.life ? 'player' : 'opponent');
@@ -325,7 +325,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     finally { recordingRef.current = false; }
   }
   const needConfirm = () => !quick && endInfo && !endInfo.recorded;
-  // In-world confirm (Vitarum centered modal) instead of a native dialog -
+  // In-world confirm (Play centered modal) instead of a native dialog -
   // gated behind needConfirm so a recorded match skips straight through.
   function guarded(label, action) {
     if (needConfirm()) setConfirm({ label, action });
@@ -347,7 +347,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const p = pRef.current, e = eRef.current;
 
   return (
-    <div id="counter-screen" className={`vc-root${quick ? ' quick' : ''}`}>
+    <div id="counter-screen" className={`cx-life-tracker${quick ? ' quick' : ''}`}>
       {/* Enemy half (rotated 180° for across-table reading) */}
       <div className="counter-half enemy-half" id="enemy-half">
         <img className="half-bg" id="enemy-bg" src={eImg} alt="" />
@@ -446,7 +446,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
         )}
       </div>
 
-      {/* secondary modals (Vitarum centered .modal-box) */}
+      {/* secondary modals (Play centered .modal-box) */}
       <MatchLogModal open={sheet === 'log'} log={log} onClose={() => setSheet(null)} />
       <MaxLifeModal open={sheet === 'maxP'} who="player" value={p.max} onClose={() => setSheet(null)} onSet={(v) => setMax('player', v)} />
       <MaxLifeModal open={sheet === 'maxE'} who="opponent" rotated value={e.max} onClose={() => setSheet(null)} onSet={(v) => setMax('opponent', v)} />
@@ -476,7 +476,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   );
 }
 
-/* ── Vitarum centered modal shell ── */
+/* ── Play centered modal shell ── */
 function VModal({ id, title, subtitle, onClose, children, actions, rotated }) {
   return (
     <div className="vc-modal-overlay" id={id} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -493,7 +493,7 @@ function VModal({ id, title, subtitle, onClose, children, actions, rotated }) {
   );
 }
 
-// Tweaks - the counter's own comforts, back where Vitarum kept them.
+// Tweaks - the counter's own comforts, back where Play kept them.
 function TweaksModal({ open, tw, onToggle, onClose }) {
   if (!open) return null;
   const rows = [
@@ -566,7 +566,7 @@ function DiceModal({ open, dice, setDice, onClose, rotated }) {
   useEffect(() => stop, []);                        // clear on unmount
   useEffect(() => { if (!open) { stop(); setRolling(false); } }, [open]);
   if (!open) return null;
-  // Vitarum's rollDie, tightened: ~7-11 ticks at 60ms, cycling faces, then land.
+  // Play pillar's rollDie, tightened: ~7-11 ticks at 60ms, cycling faces, then land.
   // Honour reduced motion by settling immediately.
   function roll() {
     if (rolling) return;
@@ -579,7 +579,7 @@ function DiceModal({ open, dice, setDice, onClose, rotated }) {
     }
     setRolling(true); setDice((x) => ({ ...x, value: null }));
     let ticks = 0;
-    const total = 7 + Math.floor(Math.random() * 5);   // ~1s shorter than Vitarum's 18-25 ticks
+    const total = 7 + Math.floor(Math.random() * 5);   // ~1s shorter than Play pillar's 18-25 ticks
     iv.current = setInterval(() => {
       setDisplay(Math.ceil(Math.random() * dice.type));
       if (++ticks >= total) {

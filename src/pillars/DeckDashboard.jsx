@@ -1,4 +1,4 @@
-// Current Deck dashboard (My Deck panel) - VERBATIM port of Arcanum's
+// Current Deck dashboard (My Deck panel) - implements Deckbuilder's
 // _heroHtml + spellbook/atlas/collection zone lists (templates/index.html
 // L2164-2364). Avatar hero + stat bar, then three collapsible zone cards with
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
@@ -78,7 +78,7 @@ function Zone({ title, count, need, needLabel, groups, collapsed, onToggle, rari
   );
 }
 
-// Random Hand ("Dealt") - draws an opening hand from the deck pools (Arcanum's
+// Random Hand ("Dealt") - draws an opening hand from the deck pools (Deckbuilder's
 // drawHand: 3 spells / 3 sites, ±1 for Spellslinger / Pathfinder avatars), then
 // keeps the rest so you can "Draw spell" / "Draw site" one at a time until the
 // whole deck is in hand. Cards are laid out as an overlapping held-hand fan that
@@ -221,7 +221,7 @@ function HandCard({ zones, avatar, onCardTap }) {
   );
 }
 
-// Curiosa URL - autopopulated on import, always editable (Arcanum curiosaCard).
+// Curiosa URL - autopopulated on import, always editable (Deckbuilder curiosaCard).
 function CuriosaUrlCard({ deckId, initial }) {
   const [url, setUrl] = useState(initial || '');
   const [editing, setEditing] = useState(false);
@@ -258,7 +258,7 @@ function CuriosaUrlCard({ deckId, initial }) {
   );
 }
 
-// Deck Log - collapsible activity history (Arcanum historyCard).
+// Deck Log - collapsible activity history (Deckbuilder historyCard).
 function DeckLogCard({ deckId, rev }) {
   const [rows, setRows] = useState(null);
   const [openLog, setOpenLog] = useState(false);
@@ -299,7 +299,7 @@ function NotesCard({ deckId, initial }) {
   );
 }
 
-// Change Avatar - reuses the create-wizard's avatar grid (Arcanum #onboard step 2)
+// Change Avatar - reuses the create-wizard's avatar grid (Deckbuilder #onboard step 2)
 // as a modal; on Save it rewrites the deck's avatar so the hero + library art update.
 function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   const [avatars, setAvatars] = useState([]);

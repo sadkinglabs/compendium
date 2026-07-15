@@ -1,5 +1,5 @@
-// Deck statistics - ported faithfully from Arcanum (www/index.html). The
-// algorithms are verbatim; only the palette is mapped to Compendium's element
+// Deck statistics - Deck analysis algorithms for mana, power, composition, thresholds, and draw odds. The
+// The algorithms share Compendium's element palette and catalogue shapes.
 // tokens. Pure functions over the {spellbook, atlas, collection} shape from
 // deckRepository.getDeckCards (entries carry cost/attack/type/rarity/elements/thresholds).
 
@@ -16,7 +16,7 @@ export const RAR_CHART = { Ordinary: '#c8c8c8', Exceptional: '#4fc3f7', Elite: '
 export const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
 const RAR_ORDER = ['Ordinary', 'Exceptional', 'Elite', 'Unique'];
 
-// one bucket per card: 0 elements → Neutral, >1 → Multi, else the element (verbatim)
+// One bucket per card: 0 elements → Neutral, >1 → Multi, otherwise the element.
 export function elemKey(e) {
   const els = (e.elements || []).filter((x) => x && x.toLowerCase() !== 'none');
   return els.length === 0 ? 'Neutral' : els.length > 1 ? 'Multi' : els[0];
@@ -130,7 +130,7 @@ export function avgCost(spellbook) {
   return cn ? (cs / cn).toFixed(1) : '0.0';
 }
 
-// Verbatim Monte-Carlo: P(control ≥ peak threshold of each element after drawing
+// Monte-Carlo: P(control ≥ peak threshold of each element after drawing
 // the first `byTurn` sites). Partial Fisher-Yates over quantity-expanded atlas.
 export function atlasOdds(spellbook, atlas, byTurn, sims = 10000, base = 0) {
   const peak = peakThresholds(spellbook);

@@ -1,14 +1,14 @@
 // Titled bottom sheet - a thin adapter over the canonical GothicSheet chassis
 // (portal, drag-to-dismiss, gold top hairline, grab handle, focus trap,
 // hardware-back). Renders an optional centered Cinzel title and a footer row.
-// (Was the legacy Arcanum .a-sheet with a left title + ✕-glyph close; the chassis
+// (Was the legacy Deckbuilder .a-sheet with a left title + ✕-glyph close; the chassis
 // now dismisses via scrim / drag / back, so no close button is needed.)
 import React from 'react';
 import GothicSheet from './GothicSheet.jsx';
 
-// `bodyClass` scopes the sheet's content under a class (used to restore `.arc`
-// for sheets whose styles are Arcanum-scoped: GothicSheet portals into `.cx-app`,
-// which has no `.arc` ancestor, so `.arc .es-*`/`.ds-*` rules would otherwise
+// `bodyClass` scopes the sheet's content under a class (used to restore `.cx-decks`
+// for sheets whose styles are Deckbuilder-scoped: GothicSheet portals into `.cx-app`,
+// which has no `.cx-decks` ancestor, so `.cx-decks .es-*`/`.ds-*` rules would otherwise
 // not match and the content paints unstyled).
 export default function Sheet({ open, title, onClose, footer, children, bodyClass }) {
   const inner = (

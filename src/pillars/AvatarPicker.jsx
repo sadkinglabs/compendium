@@ -1,4 +1,4 @@
-// Avatar picker - VERBATIM visual port of Vitarum's #picker-screen (see counter.css).
+// Avatar picker - implements the visual design of Play pillar's #picker-screen (see counter.css).
 // Uses Compendium's catalogue avatar cards for the grid data, plus a Compendium
 // addition: pilot one of YOUR DECKS (sets your avatar and links the match to
 // the deck - its W–L ledger updates on record).
@@ -44,7 +44,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
   const ready = you && opp;
 
   return (
-    <div id="picker-screen" className="vc-root">
+    <div id="picker-screen" className="cx-life-tracker">
       <div className="picker-header">
         <h2>Choose Avatars</h2>
         <button className="picker-back" onClick={onCancel} aria-label="Close">

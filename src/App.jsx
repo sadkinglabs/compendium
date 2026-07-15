@@ -296,8 +296,7 @@ export default function App() {
   };
 
   // Per-pillar top-down colour wash (over pure black). Home is pure black (no
-  // wash) to signal active engagement; Codex=warm gold · Decks=Arcanum amethyst ·
-  // Play=Vitarum green.
+  // wash) to signal active engagement; Codex=warm gold · Decks=amethyst · Play=jade.
   const WASH = { home: '#000', codex: '#33260e', collect: '#2a1220', decks: '#2a1c44', play: '#18301f' };
   // Canonical list-row accent, morphing per pillar (grimoire gold default;
   // amethyst in Decks, jade in Play) - consumed by ListRow via --list-accent.
@@ -309,7 +308,7 @@ export default function App() {
     play:    { a: 'var(--accent-jade)',   g: 'rgba(143,211,168,.5)' },
   };
   const list = LIST[tab] || LIST.home;
-  // The Decks pillar is now Arcanum's single-page pager, which owns its own
+  // The Decks pillar uses a single-page deckbuilder that owns its own
   // panels, search bars and FAB. App chrome (bottom search, FAB) steps aside for it.
   const deckPagerActive = tab === 'decks' && !viewDetail && !hasQuery && !addActive;
   // Search bar only on Codex browse (and add-cards); Decks/Home/Play have none
@@ -453,8 +452,7 @@ export default function App() {
       {/* Home owns no app-level FAB - the wordmark opens Settings, and the
           Dashboard renders its own "+" FAB. Play owns its Add-Match FAB. */}
 
-      {/* BOTTOM NAV - verbatim Arcanum shell, bigger icons: house / book /
-          stacked squares / crossed swords. */}
+      {/* Bottom navigation: Home, Codex, Collection, Decks, and Play. */}
       <nav className="cx-nav">
         {PILLARS.map((p) => {
           const active = !viewDetail && !hasQuery && !addActive && !preMatch && p.key === tab;
@@ -528,8 +526,7 @@ export default function App() {
   );
 }
 
-// Bottom-nav icons - house · book · stacked squares (Arcanum's deck icon) ·
-// crossed swords (Lucide).
+// Bottom-nav icons: house, book, stacked cards, and crossed swords.
 function NavIcon({ icon }) {
   const p = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
   if (icon === 'home') return <svg viewBox="0 0 24 24" {...p}><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></svg>;
@@ -860,8 +857,7 @@ function SettingsSheet({ open, onClose, onCredits }) {
   );
 }
 
-// Credits / About - a centered modal (not a bottom sheet), ported from Arcanum
-// and tailored to Compendium. Black chassis, gold wordmark, IP disclaimer.
+// Credits / About uses a centered modal rather than a bottom sheet.
 function CreditsModal({ open, onClose }) {
   return (
     <CenteredModal open={open} label="Credits" maxWidth={350} onClose={onClose} boxStyle={{ overflow: 'hidden' }}>

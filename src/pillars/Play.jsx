@@ -13,7 +13,7 @@ import '../theme/playhistory.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-// "1h 25m" / "5m 21s" / "12s" - Vitarum's _fmtSpan (seconds precision under an hour).
+// "1h 25m" / "5m 21s" / "12s" - Play pillar's _fmtSpan (seconds precision under an hour).
 function fmtSpan(secs) {
   secs = Math.max(0, Math.round(secs || 0));
   const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
@@ -57,7 +57,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
   const refresh = () => { setTick((t) => t + 1); onChanged?.(); };
   useEffect(() => { setPage(1); }, [oppFilter]);   // restart paging when drilling in/out
 
-  // Derived stats (client-side, mirroring Vitarum's renderHistory()). matches is
+  // Derived stats (client-side, mirroring Play pillar's renderHistory()). matches is
   // ordered newest-first, so the win streak is the leading run of player wins.
   const wins = matches.filter((m) => m.winner === 'player').length;
   const losses = matches.filter((m) => m.winner === 'opponent').length;
@@ -202,7 +202,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
   );
 }
 
-// One match card - Vitarum's _matchCardHTML, reordered: matchup line, then the
+// One match card - Play pillar's _matchCardHTML, reordered: matchup line, then the
 // opponent/deck pills on their own row, then the life/date meta. Actions are
 // compact icon buttons (details · delete - details opens the sheet where the
 // result, note and edit live; sharing was pruned).
@@ -388,7 +388,7 @@ function DeckPicker({ decks, value, onChange }) {
     </div>
   );
 }
-// Manual Add Match - Vitarum's Add Match form ported to the Arcanum Sheet.
+// Manual Add Match - Play pillar's Add Match form adapted to the Deckbuilder Sheet.
 function AddMatchSheet({ open, onClose, onSaved }) {
   const blank = () => { const now = new Date(); return { winner: 'player', pLife: 20, eLife: 0, opponent: '', date: localDay(now), time: localTime(now), pAvatar: '', eAvatar: '', deckId: '' }; };
   const [f, setF] = useState(blank);

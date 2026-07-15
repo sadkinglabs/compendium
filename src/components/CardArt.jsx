@@ -1,6 +1,6 @@
 // Card art: the deterministic fallback is always painted; the bundled image
 // layers on top and removes itself if missing/broken. No layout shift, no broken
-// <img>, fully legible with zero photography (handoff §5).
+// <img>, fully legible with zero photography (architecture §5).
 import React, { useState } from 'react';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 

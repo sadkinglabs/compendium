@@ -1,4 +1,4 @@
-// Card-art resolution with deterministic, data-derived fallback (handoff §5).
+// Card-art resolution with deterministic, data-derived fallback (architecture §5).
 // Images are progressive enhancement: every card renders from data alone.
 const BASE = import.meta.env.BASE_URL;
 

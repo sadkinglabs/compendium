@@ -1,6 +1,6 @@
-/* deckdash.css - Current Deck dashboard (My Deck panel). VERBATIM port of
-   Arcanum's avatar hero + zone list cards (templates/index.html L137-148,
-   258-347). Scoped `.arc`; carries Arcanum's amethyst tokens. */
+/* deckdash.css - Current Deck dashboard (My Deck panel). implements
+   Deckbuilder's avatar hero + zone list cards (templates/index.html L137-148,
+   258-347). Scoped `.cx-decks`; carries Deckbuilder's amethyst tokens. */
 
 /* ─── Manuscript reskin (My Deck view) ───────────────────────────────────────
    A framed hero plate, gold section heads, purple type sub-heads, and a dense
@@ -10,88 +10,88 @@
    are deliberate literals from the deck-polish spec (no token equivalents). */
 
 /* Hero plate */
-.arc .mf-hero { padding: 4px 20px 14px; }
-.arc .mf-hero-inner { border-radius: 19px; padding: 1px; background: linear-gradient(160deg, rgba(203,167,95,.5), rgba(203,167,95,.1) 45%, rgba(203,167,95,.35)); }
-.arc .mf-hero-card { border-radius: 18px; background: #0e0b08; overflow: hidden; }
-.arc .mf-hero-art { position: relative; height: 150px; }
-.arc .mf-hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 26%; display: block; }
-.arc .mf-hero-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, rgba(14,11,8,.95) 92%); }
+.cx-decks .mf-hero { padding: 4px 20px 14px; }
+.cx-decks .mf-hero-inner { border-radius: 19px; padding: 1px; background: linear-gradient(160deg, rgba(203,167,95,.5), rgba(203,167,95,.1) 45%, rgba(203,167,95,.35)); }
+.cx-decks .mf-hero-card { border-radius: 18px; background: #0e0b08; overflow: hidden; }
+.cx-decks .mf-hero-art { position: relative; height: 150px; }
+.cx-decks .mf-hero-art img { width: 100%; height: 100%; object-fit: cover; object-position: center 26%; display: block; }
+.cx-decks .mf-hero-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, transparent 30%, rgba(14,11,8,.95) 92%); }
 /* overflow-wrap:normal (not anywhere) so long deck names wrap at spaces, never
    mid-word (fixes the "TheDoorInTheBulo/keTree" break). */
-.arc .mf-hero-name { position: absolute; left: 16px; right: 16px; bottom: 12px; font: 700 23px/1.15 var(--f-display); color: #f4ecdc; overflow-wrap: normal; word-break: normal; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
-.arc .mf-hero-body { padding: 13px 16px 15px; }
-.arc .mf-hero-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.arc .mf-hero-arch { font: 600 11.5px/1 var(--f-display); letter-spacing: .2em; color: #c76d85; text-transform: uppercase; cursor: pointer; background: none; border: none; padding: 0; }
-.arc .mf-hero-sep { width: 1px; height: 13px; background: rgba(107,90,46,.6); flex-shrink: 0; }
-.arc .mf-hero-el { width: 14px; height: 14px; flex-shrink: 0; }
-.arc .mf-hero-tally { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; }
-.arc .mf-tally-item { font: 400 14px/1 var(--f-read); color: #8a8175; }
-.arc .mf-tally-val { font-weight: 600; }
-.arc .mf-tally-val.ok { color: #63c9a3; }
-.arc .mf-tally-val.short { color: #e0899e; }
+.cx-decks .mf-hero-name { position: absolute; left: 16px; right: 16px; bottom: 12px; font: 700 23px/1.15 var(--f-display); color: #f4ecdc; overflow-wrap: normal; word-break: normal; text-shadow: 0 2px 8px rgba(0,0,0,.8); }
+.cx-decks .mf-hero-body { padding: 13px 16px 15px; }
+.cx-decks .mf-hero-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cx-decks .mf-hero-arch { font: 600 11.5px/1 var(--f-display); letter-spacing: .2em; color: #c76d85; text-transform: uppercase; cursor: pointer; background: none; border: none; padding: 0; }
+.cx-decks .mf-hero-sep { width: 1px; height: 13px; background: rgba(107,90,46,.6); flex-shrink: 0; }
+.cx-decks .mf-hero-el { width: 14px; height: 14px; flex-shrink: 0; }
+.cx-decks .mf-hero-tally { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 16px; margin-top: 12px; }
+.cx-decks .mf-tally-item { font: 400 14px/1 var(--f-read); color: #8a8175; }
+.cx-decks .mf-tally-val { font-weight: 600; }
+.cx-decks .mf-tally-val.ok { color: #63c9a3; }
+.cx-decks .mf-tally-val.short { color: #e0899e; }
 
 /* Section header (Spellbook / Atlas / Collection) + type sub-header */
-.arc .mf-sec { padding: 0 20px; }
-.arc .mf-sec-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.arc .mf-sec-name { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; text-transform: uppercase; flex-shrink: 0; }
-.arc .mf-sec-tally { font: 600 12px/1 var(--f-mono); flex-shrink: 0; }
-.arc .mf-sec-tally.ok { color: #63c9a3; }
-.arc .mf-sec-tally.short { color: #e0899e; }
-.arc .mf-sec-rule { flex: 1; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
-.arc .mf-sec-chev { color: #8a7a55; font-size: 11px; flex-shrink: 0; font-family: var(--f-ui); }
-.arc .mf-grp { display: flex; align-items: center; gap: 8px; padding: 12px 0 4px; }
-.arc .mf-grp-name { font: 500 11px/1 var(--f-display); letter-spacing: .18em; color: #a08cc0; text-transform: uppercase; flex-shrink: 0; }
-.arc .mf-grp-count { font: 400 12px/1 var(--f-mono); color: #6b6254; flex-shrink: 0; }
-.arc .mf-grp-rule { flex: 1; height: 1px; background: rgba(160,140,192,.15); }
+.cx-decks .mf-sec { padding: 0 20px; }
+.cx-decks .mf-sec-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-decks .mf-sec-name { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; text-transform: uppercase; flex-shrink: 0; }
+.cx-decks .mf-sec-tally { font: 600 12px/1 var(--f-mono); flex-shrink: 0; }
+.cx-decks .mf-sec-tally.ok { color: #63c9a3; }
+.cx-decks .mf-sec-tally.short { color: #e0899e; }
+.cx-decks .mf-sec-rule { flex: 1; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
+.cx-decks .mf-sec-chev { color: #8a7a55; font-size: 11px; flex-shrink: 0; font-family: var(--f-ui); }
+.cx-decks .mf-grp { display: flex; align-items: center; gap: 8px; padding: 12px 0 4px; }
+.cx-decks .mf-grp-name { font: 500 11px/1 var(--f-display); letter-spacing: .18em; color: #a08cc0; text-transform: uppercase; flex-shrink: 0; }
+.cx-decks .mf-grp-count { font: 400 12px/1 var(--f-mono); color: #6b6254; flex-shrink: 0; }
+.cx-decks .mf-grp-rule { flex: 1; height: 1px; background: rgba(160,140,192,.15); }
 
 /* Card rows - dense text ledger, no thumbs, no row borders */
-.arc .mf-row { display: flex; align-items: center; gap: 11px; padding: 11px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.arc .mf-row-qty { font: 600 16px/1 var(--f-display); color: #cba75f; min-width: 30px; flex-shrink: 0; }
-.arc .mf-row-name { font: 600 17px/1.25 var(--f-read); color: #efe7d8; flex: 1; min-width: 0; }
-.arc .mf-thresh { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
-.arc .mf-thresh img { width: 13px; height: 13px; flex-shrink: 0; }
+.cx-decks .mf-row { display: flex; align-items: center; gap: 11px; padding: 11px 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cx-decks .mf-row-qty { font: 600 16px/1 var(--f-display); color: #cba75f; min-width: 30px; flex-shrink: 0; }
+.cx-decks .mf-row-name { font: 600 17px/1.25 var(--f-read); color: #efe7d8; flex: 1; min-width: 0; }
+.cx-decks .mf-thresh { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
+.cx-decks .mf-thresh img { width: 13px; height: 13px; flex-shrink: 0; }
 /* Mana cost coin, sat right beside the threshold pips. */
-.arc .mf-cost { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 var(--f-mono); color: #cbb890; border: 1px solid rgba(203,167,95,.3); background: rgba(20,16,10,.55); }
-.arc .mf-empty { font: italic 14px var(--f-read); color: #6b6254; padding: 8px 0 12px; }
+.cx-decks .mf-cost { min-width: 22px; height: 22px; padding: 0 5px; border-radius: 11px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; font: 600 12px/1 var(--f-mono); color: #cbb890; border: 1px solid rgba(203,167,95,.3); background: rgba(20,16,10,.55); }
+.cx-decks .mf-empty { font: italic 14px var(--f-read); color: #6b6254; padding: 8px 0 12px; }
 /* Edit-mode quick steppers (edit the deck quantity), cascaded onto each row. */
-.arc .mf-step { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; animation: mfStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
+.cx-decks .mf-step { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; animation: mfStepIn .32s cubic-bezier(.34,1.45,.6,1) backwards; }
 @keyframes mfStepIn { from { opacity: 0; transform: translateX(-8px) scale(.75); } }
 /* Never let the entrance animation be what makes a stepper visible. */
-@media (prefers-reduced-motion: reduce) { .arc .mf-step { animation: none; } }
-.arc .mf-step-qty { font: 600 16px/1 var(--f-display); color: #cba75f; min-width: 20px; text-align: center; }
-.arc .mf-step-btn { width: 27px; height: 27px; border-radius: 50%; border: 1px solid rgba(203,167,95,.32); background: rgba(20,16,10,.75); color: #cba75f; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
-.arc .mf-step-btn:active { background: rgba(203,167,95,.28); border-color: #cba75f; }
+@media (prefers-reduced-motion: reduce) { .cx-decks .mf-step { animation: none; } }
+.cx-decks .mf-step-qty { font: 600 16px/1 var(--f-display); color: #cba75f; min-width: 20px; text-align: center; }
+.cx-decks .mf-step-btn { width: 27px; height: 27px; border-radius: 50%; border: 1px solid rgba(203,167,95,.32); background: rgba(20,16,10,.75); color: #cba75f; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
+.cx-decks .mf-step-btn:active { background: rgba(203,167,95,.28); border-color: #cba75f; }
 
 /* ─── Random Hand ("Dealt") ─────────────────────────────────────────────────
    A held-hand fan that wraps to more rows as the hand grows to the whole deck.
    Flat throughout - the only gradients are the newest card's gilt frame + the
    DRAWN tab. Everything animated is transform/opacity only (60fps). */
-.arc .dealt { padding: 0 20px; }
-.arc .dealt-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 6px; }
-.arc .dealt-empty { font: italic 400 14px/1.5 var(--f-read); color: #6b6254; padding: 12px 0; }
+.cx-decks .dealt { padding: 0 20px; }
+.cx-decks .dealt-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 6px; }
+.cx-decks .dealt-empty { font: italic 400 14px/1.5 var(--f-read); color: #6b6254; padding: 12px 0; }
 
 /* Frosted rose pill - Redraw / Draw spell / Draw site / aux actions. */
-.arc .dealt-pill { font: 500 13px/1 var(--f-display); letter-spacing: .04em; color: #d3a8af; background: rgba(224,169,177,.07); border: 1px solid rgba(224,169,177,.22); border-radius: 18px; padding: 9px 16px; cursor: pointer; flex-shrink: 0; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: background .15s; -webkit-tap-highlight-color: transparent; }
-.arc .dealt-pill:hover { background: rgba(224,169,177,.14); }
-.arc .dealt-pill.wide { flex: 1; text-align: center; padding: 12px 0; }
-.arc .dealt-pill.empty { opacity: .4; }
+.cx-decks .dealt-pill { font: 500 13px/1 var(--f-display); letter-spacing: .04em; color: #d3a8af; background: rgba(224,169,177,.07); border: 1px solid rgba(224,169,177,.22); border-radius: 18px; padding: 9px 16px; cursor: pointer; flex-shrink: 0; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: background .15s; -webkit-tap-highlight-color: transparent; }
+.cx-decks .dealt-pill:hover { background: rgba(224,169,177,.14); }
+.cx-decks .dealt-pill.wide { flex: 1; text-align: center; padding: 12px 0; }
+.cx-decks .dealt-pill.empty { opacity: .4; }
 
 /* Per-pile sub-header - carries the Draw button (kept above the fan so it never
    drifts under the finger) + the remaining count. */
-.arc .dealt-group { margin-top: 4px; }
-.arc .dealt-sub { display: flex; align-items: center; gap: 10px; padding: 16px 0 2px; }
-.arc .dealt-sub-name { font: 500 11px/1 var(--f-display); letter-spacing: .18em; color: #a08cc0; text-transform: uppercase; flex-shrink: 0; }
-.arc .dealt-sub-rule { flex: 1; min-width: 8px; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
-.arc .dealt-sub-left { font: 400 12.5px/1 var(--f-read); color: #8a8175; flex-shrink: 0; }
-.arc .dealt-none { font: italic 400 13px/1.4 var(--f-read); color: #6b6254; padding: 8px 2px 4px; }
-.arc .dealt-pill.sm { padding: 7px 13px; font-size: 12px; }
+.cx-decks .dealt-group { margin-top: 4px; }
+.cx-decks .dealt-sub { display: flex; align-items: center; gap: 10px; padding: 16px 0 2px; }
+.cx-decks .dealt-sub-name { font: 500 11px/1 var(--f-display); letter-spacing: .18em; color: #a08cc0; text-transform: uppercase; flex-shrink: 0; }
+.cx-decks .dealt-sub-rule { flex: 1; min-width: 8px; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
+.cx-decks .dealt-sub-left { font: 400 12.5px/1 var(--f-read); color: #8a8175; flex-shrink: 0; }
+.cx-decks .dealt-none { font: italic 400 13px/1.4 var(--f-read); color: #6b6254; padding: 8px 2px 4px; }
+.cx-decks .dealt-pill.sm { padding: 7px 13px; font-size: 12px; }
 
 /* ONE row, never wraps: the JS reveal shrinks so the whole pile always fits.
    Cards stack left-to-right; the lead card is pinned to the left edge (no
    overlap) so it never slides off, and the newest sits rightmost, on top, fully
    visible. Bottom-aligned so the tilts fan from a shared baseline. */
-.arc .dealt-fan { display: flex; flex-wrap: nowrap; justify-content: flex-start; align-items: flex-end; padding: 22px 14px 26px; }
-.arc .dealt-fan > .dealt-card:first-child { margin-left: 0; }
+.cx-decks .dealt-fan { display: flex; flex-wrap: nowrap; justify-content: flex-start; align-items: flex-end; padding: 22px 14px 26px; }
+.cx-decks .dealt-fan > .dealt-card:first-child { margin-left: 0; }
 
 /* A dealt card - width set inline (spell 5:7 / site 7:5), stable seeded tilt via
    --rot, overlap via --ov, and a quick deal-in that draws in from the right so
@@ -100,24 +100,24 @@
    layout property reflowed the whole fan row every frame as the hand tightened.
    The overlap now settles instantly; the deal-in (transform/opacity) + rotate
    still animate at 60fps off the layout path. */
-.arc .dealt-card { position: relative; aspect-ratio: 5 / 7; flex-shrink: 0; border-radius: 9px; border: 1px solid rgba(255,255,255,.12); background: #0e0b08; box-shadow: 0 10px 24px rgba(0,0,0,.6); transform-origin: 50% 100%; transform: rotate(var(--rot, 0deg)); cursor: pointer; margin-left: var(--ov, 0); animation: dealtIn .38s cubic-bezier(.2,.8,.2,1) backwards; transition: box-shadow .3s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
-.arc .dealt-card > img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
-.arc .dealt-card.site { aspect-ratio: 7 / 5; overflow: hidden; }
-.arc .dealt-card.site > img { position: absolute; top: 50%; left: 50%; width: calc(100% * 5 / 7); height: calc(100% * 7 / 5); border-radius: 0; transform: translate(-50%,-50%) rotate(90deg); }
+.cx-decks .dealt-card { position: relative; aspect-ratio: 5 / 7; flex-shrink: 0; border-radius: 9px; border: 1px solid rgba(255,255,255,.12); background: #0e0b08; box-shadow: 0 10px 24px rgba(0,0,0,.6); transform-origin: 50% 100%; transform: rotate(var(--rot, 0deg)); cursor: pointer; margin-left: var(--ov, 0); animation: dealtIn .38s cubic-bezier(.2,.8,.2,1) backwards; transition: box-shadow .3s ease, transform .3s cubic-bezier(.2,.8,.2,1); }
+.cx-decks .dealt-card > img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.cx-decks .dealt-card.site { aspect-ratio: 7 / 5; overflow: hidden; }
+.cx-decks .dealt-card.site > img { position: absolute; top: 50%; left: 50%; width: calc(100% * 5 / 7); height: calc(100% * 7 / 5); border-radius: 0; transform: translate(-50%,-50%) rotate(90deg); }
 /* Newest single-drawn card - a masked gilt gradient ring (fades in ~200ms after
    landing, out when superseded) + gold glow, and a DRAWN tab for spells. The ring
    and tab live on every card so both the fade-in and the previous card's fade-out
    ride pure opacity. */
-.arc .dealt-frame { position: absolute; inset: 0; border-radius: 9px; pointer-events: none; border: 1px solid transparent; opacity: 0; transition: opacity .3s ease; background: linear-gradient(160deg, #e8cd92, rgba(203,167,95,.35) 45%, #c2a05a) border-box; -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
-.arc .dealt-card.newest { box-shadow: 0 0 18px rgba(203,167,95,.3), 0 10px 24px rgba(0,0,0,.55); }
-.arc .dealt-card.newest .dealt-frame { opacity: 1; animation: dealtGlint .3s ease .2s backwards; }
-.arc .dealt-tab { position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); font: 700 9px/1 var(--f-display); letter-spacing: .1em; color: #1a1206; background: linear-gradient(180deg, #d8b872, #b8954f); border-radius: 10px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .3s ease; }
-.arc .dealt-card.newest .dealt-tab { opacity: 1; animation: dealtTab .3s ease .2s backwards; }
+.cx-decks .dealt-frame { position: absolute; inset: 0; border-radius: 9px; pointer-events: none; border: 1px solid transparent; opacity: 0; transition: opacity .3s ease; background: linear-gradient(160deg, #e8cd92, rgba(203,167,95,.35) 45%, #c2a05a) border-box; -webkit-mask: linear-gradient(#fff 0 0) padding-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.cx-decks .dealt-card.newest { box-shadow: 0 0 18px rgba(203,167,95,.3), 0 10px 24px rgba(0,0,0,.55); }
+.cx-decks .dealt-card.newest .dealt-frame { opacity: 1; animation: dealtGlint .3s ease .2s backwards; }
+.cx-decks .dealt-tab { position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); font: 700 9px/1 var(--f-display); letter-spacing: .1em; color: #1a1206; background: linear-gradient(180deg, #d8b872, #b8954f); border-radius: 10px; padding: 3px 8px; box-shadow: 0 2px 6px rgba(0,0,0,.5); opacity: 0; transition: opacity .3s ease; }
+.cx-decks .dealt-card.newest .dealt-tab { opacity: 1; animation: dealtTab .3s ease .2s backwards; }
 /* Redraw sweep-out - old cards fall away (per-card stagger via inline delay). */
-.arc .dealt-card.leaving { animation-name: dealtOut; animation-duration: .25s; animation-timing-function: cubic-bezier(.4,0,1,1); animation-fill-mode: forwards; }
+.cx-decks .dealt-card.leaving { animation-name: dealtOut; animation-duration: .25s; animation-timing-function: cubic-bezier(.4,0,1,1); animation-fill-mode: forwards; }
 
 /* Remaining-count number (rolls on change). */
-.arc .dealt-num { display: inline-block; font: 600 16px/1 var(--f-display); color: #c9b487; animation: dealtRoll .25s ease; }
+.cx-decks .dealt-num { display: inline-block; font: 600 16px/1 var(--f-display); color: #c9b487; animation: dealtRoll .25s ease; }
 
 @keyframes dealtIn { from { opacity: 0; transform: translateX(34px) rotate(calc(var(--rot, 0deg) + 8deg)) scale(.94); } }
 @keyframes dealtOut { to { opacity: 0; transform: translateY(60px) rotate(calc(var(--rot, 0deg) + 8deg)) scale(.92); } }
@@ -125,101 +125,101 @@
 @keyframes dealtTab { from { opacity: 0; transform: translate(-50%, -4px); } }
 @keyframes dealtRoll { from { opacity: 0; transform: translateY(8px); } }
 @keyframes dealtShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
-.arc .dealt-pill.shake { animation: dealtShake .38s ease; }
+.cx-decks .dealt-pill.shake { animation: dealtShake .38s ease; }
 /* Fall back to plain fades; never let an entrance animation be what makes a card
    (or its frame) visible. */
 @media (prefers-reduced-motion: reduce) {
-  .arc .dealt-card { animation: dealtFade .2s ease both !important; animation-delay: 0s !important; transition: none !important; }
-  .arc .dealt-card.leaving { animation: dealtFade .18s ease reverse both !important; }
-  .arc .dealt-frame, .arc .dealt-card.newest .dealt-frame, .arc .dealt-tab, .arc .dealt-card.newest .dealt-tab, .arc .dealt-num { animation: none !important; transition: none !important; }
+  .cx-decks .dealt-card { animation: dealtFade .2s ease both !important; animation-delay: 0s !important; transition: none !important; }
+  .cx-decks .dealt-card.leaving { animation: dealtFade .18s ease reverse both !important; }
+  .cx-decks .dealt-frame, .cx-decks .dealt-card.newest .dealt-frame, .cx-decks .dealt-tab, .cx-decks .dealt-card.newest .dealt-tab, .cx-decks .dealt-num { animation: none !important; transition: none !important; }
 }
 @keyframes dealtFade { from { opacity: 0; } }
 
 /* ─── Aux sections (Notes / Curiosa URL / Deck Log) - flat, gold-headed to sit
    with the Manuscript ledger. ── */
-.arc .mx-sec { padding: 0 20px; }
-.arc .mx-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 10px; }
-.arc .mx-count { font: 500 11px/1 var(--f-mono); color: #6b6254; flex-shrink: 0; }
-.arc .mx-notes { width: 100%; box-sizing: border-box; min-height: 96px; background: rgba(20,16,10,.4); border: 1px solid rgba(203,167,95,.22); border-radius: 12px; padding: 12px; color: #e9dcc0; font: 400 15px/1.5 var(--f-read); resize: vertical; outline: none; transition: border-color .15s; }
-.arc .mx-notes:focus { border-color: rgba(203,167,95,.45); }
-.arc .mx-input { width: 100%; box-sizing: border-box; background: rgba(20,16,10,.4); border: 1px solid rgba(203,167,95,.22); border-radius: 12px; padding: 11px 12px; color: #e9dcc0; font: 400 13.5px/1.4 var(--f-mono); outline: none; }
-.arc .mx-input:focus { border-color: rgba(203,167,95,.45); }
-.arc .mx-link { display: flex; align-items: center; gap: 8px; color: #cbb890; text-decoration: none; font: 500 13.5px/1.35 var(--f-read); word-break: break-all; }
-.arc .mx-link svg { width: 15px; height: 15px; flex-shrink: 0; color: #cba75f; }
-.arc .mx-empty { font: italic 400 13.5px/1.45 var(--f-read); color: #6b6254; }
-.arc .mx-log { max-height: 260px; overflow-y: auto; }
-.arc .mx-log-row { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(74,60,34,.3); font: 400 13px/1.45 var(--f-read); color: #cbbfa2; }
-.arc .mx-log-row:last-child { border-bottom: none; }
-.arc .mx-log-ts { color: #6b6254; white-space: nowrap; flex-shrink: 0; font: 500 11.5px/1.5 var(--f-mono); }
+.cx-decks .mx-sec { padding: 0 20px; }
+.cx-decks .mx-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 10px; }
+.cx-decks .mx-count { font: 500 11px/1 var(--f-mono); color: #6b6254; flex-shrink: 0; }
+.cx-decks .mx-notes { width: 100%; box-sizing: border-box; min-height: 96px; background: rgba(20,16,10,.4); border: 1px solid rgba(203,167,95,.22); border-radius: 12px; padding: 12px; color: #e9dcc0; font: 400 15px/1.5 var(--f-read); resize: vertical; outline: none; transition: border-color .15s; }
+.cx-decks .mx-notes:focus { border-color: rgba(203,167,95,.45); }
+.cx-decks .mx-input { width: 100%; box-sizing: border-box; background: rgba(20,16,10,.4); border: 1px solid rgba(203,167,95,.22); border-radius: 12px; padding: 11px 12px; color: #e9dcc0; font: 400 13.5px/1.4 var(--f-mono); outline: none; }
+.cx-decks .mx-input:focus { border-color: rgba(203,167,95,.45); }
+.cx-decks .mx-link { display: flex; align-items: center; gap: 8px; color: #cbb890; text-decoration: none; font: 500 13.5px/1.35 var(--f-read); word-break: break-all; }
+.cx-decks .mx-link svg { width: 15px; height: 15px; flex-shrink: 0; color: #cba75f; }
+.cx-decks .mx-empty { font: italic 400 13.5px/1.45 var(--f-read); color: #6b6254; }
+.cx-decks .mx-log { max-height: 260px; overflow-y: auto; }
+.cx-decks .mx-log-row { display: flex; gap: 10px; padding: 9px 0; border-bottom: 1px solid rgba(74,60,34,.3); font: 400 13px/1.45 var(--f-read); color: #cbbfa2; }
+.cx-decks .mx-log-row:last-child { border-bottom: none; }
+.cx-decks .mx-log-ts { color: #6b6254; white-space: nowrap; flex-shrink: 0; font: 500 11.5px/1.5 var(--f-mono); }
 
 /* ─── Deck Stats ("Manuscript" reskin) - flat gold-headed sections on the page
    background; chart key colours (elements/rarity/odds-purple/donut) untouched. ── */
-.arc .ds-sec { padding: 0 20px; margin-bottom: 30px; }
-.arc .ds-hdr { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; }
-.arc .ds-hdr-name { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; text-transform: uppercase; flex-shrink: 0; }
-.arc .ds-hdr-rule { flex: 1; min-width: 8px; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
-.arc .ds-hdr-stat { font: italic 400 13px/1 var(--f-read); color: #8a8175; flex-shrink: 0; }
-.arc .ds-empty { font: italic 400 14px/1.5 var(--f-read); color: #6b6254; text-align: center; padding: 10px 0; }
+.cx-decks .ds-sec { padding: 0 20px; margin-bottom: 30px; }
+.cx-decks .ds-hdr { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; }
+.cx-decks .ds-hdr-name { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; text-transform: uppercase; flex-shrink: 0; }
+.cx-decks .ds-hdr-rule { flex: 1; min-width: 8px; height: 1px; background: linear-gradient(90deg, #4a3c22, transparent); }
+.cx-decks .ds-hdr-stat { font: italic 400 13px/1 var(--f-read); color: #8a8175; flex-shrink: 0; }
+.cx-decks .ds-empty { font: italic 400 14px/1.5 var(--f-read); color: #6b6254; text-align: center; padding: 10px 0; }
 
 /* Element/Rarity + Supply/Odds toggles retired - now the shared SegTabs (ui.jsx). */
 
 /* Mana / Power curve - element-stacked bars on a hairline baseline. */
-.arc .ds-curve-plot { display: flex; align-items: flex-end; gap: 6px; min-height: 142px; padding: 0 2px; border-bottom: 1px solid rgba(74,60,34,.5); }
-.arc .ds-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
-.arc .ds-col-count { font: 600 14px/1 var(--f-display); color: #d8cebb; margin-bottom: 5px; }
-.arc .ds-bar { width: 100%; max-width: 42px; display: flex; flex-direction: column-reverse; }
-.arc .ds-curve-x { display: flex; gap: 6px; padding: 8px 2px 0; }
-.arc .ds-x-lbl { flex: 1; text-align: center; font: 400 13px/1 var(--f-display); color: #a08cc0; }
-.arc .ds-curve-cap { text-align: center; font: italic 400 12.5px/1 var(--f-read); color: #6b6254; margin-top: 7px; }
+.cx-decks .ds-curve-plot { display: flex; align-items: flex-end; gap: 6px; min-height: 142px; padding: 0 2px; border-bottom: 1px solid rgba(74,60,34,.5); }
+.cx-decks .ds-col { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+.cx-decks .ds-col-count { font: 600 14px/1 var(--f-display); color: #d8cebb; margin-bottom: 5px; }
+.cx-decks .ds-bar { width: 100%; max-width: 42px; display: flex; flex-direction: column-reverse; }
+.cx-decks .ds-curve-x { display: flex; gap: 6px; padding: 8px 2px 0; }
+.cx-decks .ds-x-lbl { flex: 1; text-align: center; font: 400 13px/1 var(--f-display); color: #a08cc0; }
+.cx-decks .ds-curve-cap { text-align: center; font: italic 400 12.5px/1 var(--f-read); color: #6b6254; margin-top: 7px; }
 
 /* Legend - round dots + labels, centred. */
-.arc .ds-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin-top: 14px; }
-.arc .ds-legend-item { display: flex; align-items: center; gap: 7px; font: 400 14.5px/1 var(--f-read); color: #a99a80; }
-.arc .ds-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.cx-decks .ds-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 16px; margin-top: 14px; }
+.cx-decks .ds-legend-item { display: flex; align-items: center; gap: 7px; font: 400 14.5px/1 var(--f-read); color: #a99a80; }
+.cx-decks .ds-legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
 
 /* Composition / Atlas - donut + rows. Donut hole = page background. */
-.arc .ds-comp { display: flex; align-items: flex-start; gap: 18px; }
-.arc .ds-donut { position: relative; width: 116px; height: 116px; flex-shrink: 0; border-radius: 50%; }
-.arc .ds-donut-hole { position: absolute; inset: 15px; border-radius: 50%; background: #0a0908; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.arc .ds-donut-num { font: 700 30px/1 var(--f-display); color: #efe7d8; }
-.arc .ds-donut-lbl { font: 500 9px/1 var(--f-display); letter-spacing: .22em; color: #8a8175; margin-top: 4px; }
-.arc .ds-typebars { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 11px; }
-.arc .ds-typebar-hd { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
-.arc .ds-typebar-name { font: 400 16px/1 var(--f-read); color: #d8cebb; flex: 1; }
-.arc .ds-typebar-count { font: 600 15px/1 var(--f-display); color: #c9b487; }
-.arc .ds-typebar-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; display: flex; }
+.cx-decks .ds-comp { display: flex; align-items: flex-start; gap: 18px; }
+.cx-decks .ds-donut { position: relative; width: 116px; height: 116px; flex-shrink: 0; border-radius: 50%; }
+.cx-decks .ds-donut-hole { position: absolute; inset: 15px; border-radius: 50%; background: #0a0908; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.cx-decks .ds-donut-num { font: 700 30px/1 var(--f-display); color: #efe7d8; }
+.cx-decks .ds-donut-lbl { font: 500 9px/1 var(--f-display); letter-spacing: .22em; color: #8a8175; margin-top: 4px; }
+.cx-decks .ds-typebars { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 11px; }
+.cx-decks .ds-typebar-hd { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
+.cx-decks .ds-typebar-name { font: 400 16px/1 var(--f-read); color: #d8cebb; flex: 1; }
+.cx-decks .ds-typebar-count { font: 600 15px/1 var(--f-display); color: #c9b487; }
+.cx-decks .ds-typebar-track { height: 5px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; display: flex; }
 
 /* Spellbook odds - purple fill is canonical. */
-.arc .ds-odds-intro { font: italic 400 15px/1.4 var(--f-read); color: #8a8175; margin-bottom: 12px; }
-.arc .ds-odds-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-.arc .ds-odds-lbl { width: 86px; flex-shrink: 0; font: 400 15px/1 var(--f-read); color: #d8cebb; }
-.arc .ds-odds-cnt { font: 400 13.5px/1 var(--f-read); color: #6b6254; margin-left: 6px; }
-.arc .ds-oddsbar-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; }
-.arc .ds-oddsbar-fill { height: 100%; background: linear-gradient(90deg,#a08cc0,#c9a8e8); border-radius: 3px; }
-.arc .ds-odds-pct { width: 44px; text-align: right; font: 600 15px/1 var(--f-display); color: #c9a8e8; }
+.cx-decks .ds-odds-intro { font: italic 400 15px/1.4 var(--f-read); color: #8a8175; margin-bottom: 12px; }
+.cx-decks .ds-odds-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.cx-decks .ds-odds-lbl { width: 86px; flex-shrink: 0; font: 400 15px/1 var(--f-read); color: #d8cebb; }
+.cx-decks .ds-odds-cnt { font: 400 13.5px/1 var(--f-read); color: #6b6254; margin-left: 6px; }
+.cx-decks .ds-oddsbar-track { flex: 1; height: 6px; border-radius: 3px; background: rgba(255,255,255,.06); overflow: hidden; }
+.cx-decks .ds-oddsbar-fill { height: 100%; background: linear-gradient(90deg,#a08cc0,#c9a8e8); border-radius: 3px; }
+.cx-decks .ds-odds-pct { width: 44px; text-align: right; font: 600 15px/1 var(--f-display); color: #c9a8e8; }
 
 /* Atlas threshold rows + status. */
-.arc .ds-thresh-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-.arc .ds-thresh-text { flex: 1; min-width: 0; font: 400 15.5px/1 var(--f-read); color: #a99a80; }
-.arc .ds-thresh-status { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.arc .ds-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.arc .ds-odds-head { text-align: center; margin-bottom: 12px; }
-.arc .ds-odds-caption { font: italic 400 13px/1 var(--f-read); color: #8a8175; margin-bottom: 8px; }
-.arc .ds-note { font: italic 400 12px/1.4 var(--f-read); color: #8a8175; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(74,60,34,.4); }
+.cx-decks .ds-thresh-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.cx-decks .ds-thresh-text { flex: 1; min-width: 0; font: 400 15.5px/1 var(--f-read); color: #a99a80; }
+.cx-decks .ds-thresh-status { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.cx-decks .ds-status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.cx-decks .ds-odds-head { text-align: center; margin-bottom: 12px; }
+.cx-decks .ds-odds-caption { font: italic 400 13px/1 var(--f-read); color: #8a8175; margin-bottom: 8px; }
+.cx-decks .ds-note { font: italic 400 12px/1.4 var(--f-read); color: #8a8175; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(74,60,34,.4); }
 
 /* Atlas odds turn stepper (kept cc-turn-* class names for the token hit-area). */
-.arc .cc-turn-line { display: flex; align-items: center; justify-content: center; gap: 10px; }
-.arc .cc-turn-btn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(203,167,95,.28); background: rgba(20,16,10,.7); color: #cba75f; font: 400 18px/1 var(--f-ui); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-.arc .cc-turn-btn:active { background: rgba(203,167,95,.22); }
-.arc .cc-turn-btn:disabled { opacity: .4; cursor: default; }
-.arc .cc-turn-pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 18px; border-radius: 13px; background: rgba(20,16,10,.7); border: 1px solid rgba(203,167,95,.4); }
-.arc .cc-turn-cap { font: 700 8px/1 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; color: #b99b5e; }
-.arc .cc-turn-num { font: 700 24px/1 var(--f-display); color: #cba75f; }
+.cx-decks .cc-turn-line { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.cx-decks .cc-turn-btn { width: 30px; height: 30px; border-radius: 10px; border: 1px solid rgba(203,167,95,.28); background: rgba(20,16,10,.7); color: #cba75f; font: 400 18px/1 var(--f-ui); cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.cx-decks .cc-turn-btn:active { background: rgba(203,167,95,.22); }
+.cx-decks .cc-turn-btn:disabled { opacity: .4; cursor: default; }
+.cx-decks .cc-turn-pill { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 4px 18px; border-radius: 13px; background: rgba(20,16,10,.7); border: 1px solid rgba(203,167,95,.4); }
+.cx-decks .cc-turn-cap { font: 700 8px/1 var(--f-ui); letter-spacing: .16em; text-transform: uppercase; color: #b99b5e; }
+.cx-decks .cc-turn-num { font: 700 24px/1 var(--f-display); color: #cba75f; }
 
 /* Match record. */
-.arc .ds-record { display: flex; align-items: baseline; justify-content: center; gap: 14px; font: 700 44px/1 var(--f-display); margin: 6px 0 10px; }
-.arc .ds-wl-w { color: #63c9a3; text-shadow: 0 2px 16px rgba(99,201,163,.35); }
-.arc .ds-wl-l { color: #e0899e; text-shadow: 0 2px 16px rgba(224,137,158,.3); }
-.arc .ds-wl-sep { width: 16px; height: 1px; background: rgba(107,90,46,.6); align-self: center; flex-shrink: 0; }
-.arc .ds-record-line { text-align: center; font: italic 400 15.5px/1.4 var(--f-read); color: #8a8175; margin-bottom: 8px; }
-.arc .ds-record-help { max-width: 320px; margin: 0 auto; text-align: center; font: 400 14.5px/1.5 var(--f-read); color: #6b6254; }
+.cx-decks .ds-record { display: flex; align-items: baseline; justify-content: center; gap: 14px; font: 700 44px/1 var(--f-display); margin: 6px 0 10px; }
+.cx-decks .ds-wl-w { color: #63c9a3; text-shadow: 0 2px 16px rgba(99,201,163,.35); }
+.cx-decks .ds-wl-l { color: #e0899e; text-shadow: 0 2px 16px rgba(224,137,158,.3); }
+.cx-decks .ds-wl-sep { width: 16px; height: 1px; background: rgba(107,90,46,.6); align-self: center; flex-shrink: 0; }
+.cx-decks .ds-record-line { text-align: center; font: italic 400 15.5px/1.4 var(--f-read); color: #8a8175; margin-bottom: 8px; }
+.cx-decks .ds-record-help { max-width: 320px; margin: 0 auto; text-align: center; font: 400 14.5px/1.5 var(--f-read); color: #6b6254; }

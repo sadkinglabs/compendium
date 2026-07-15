@@ -4,7 +4,7 @@
 //
 // Source of truth: Curiosa's card.search `category === 'Token'` - which lists the
 // seven canonical tokens Bruin, Foot Soldier, Frog, Lance, Rubble, Skeleton,
-// Tawny. Our local catalog (from Lexicum) carries per-art variants Curiosa folds
+// Tawny. Our local catalog (in Codex) carries per-art variants Curiosa folds
 // into one name (Frog (Blue/Green/Red), Foot Soldier 1/2/3, …), so we match the
 // explicit set below plus a prefix guard for the two families with many variants.
 // Update this list if a future set prints new tokens.

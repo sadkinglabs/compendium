@@ -447,7 +447,7 @@ export async function deleteLink(id) {
   await run('DELETE FROM links WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
 }
 
-/** Search the active profile's own notes + highlights text (Lexicum's
+/** Search the active profile's own notes + highlights text (Codex's
  *  highlight/note search filters), returning the entries they're attached to. */
 export async function searchPersonal(q) {
   const pid = activeProfileId();

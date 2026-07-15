@@ -1,4 +1,4 @@
-// Home / Dashboard data - customisable widget blocks (the Lexicum dashboard,
+// Home / Dashboard data - customisable widget blocks (the Codex dashboard,
 // re-homed) + cross-pillar data providers (Saved, Notes, Highlights, Collections,
 // Stats, Resume, Errata, Random, and the new Decks/Duels widgets). Profile-scoped.
 import { query, run, tx } from './db.js';
@@ -43,7 +43,7 @@ export const isStructural = (k) => !!widgetMeta(k).structural;
 export const isRollable = (k) => !!widgetMeta(k).rollable;
 export const pillarOf = (k) => widgetMeta(k).pillar || null;
 
-// Old Lexicum-era kinds → their nearest new widget, so dashboards saved before
+// Old Codex-era kinds → their nearest new widget, so dashboards saved before
 // this rewrite keep rendering (remapped at read time, DB left untouched).
 const ALIAS = {
   saved: 'pinned', duels: 'recentMatches', decks: 'yourDecks', random: 'featuredCard',

@@ -2,13 +2,13 @@
    One palette for the whole app; per-pillar identity is a single accent dot only. */
 :root {
   /* surfaces - pure black canvas; per-pillar identity is a top-down colour wash
-     (see .cx-app::before + --wash), transitioning Codex→Lexicum, Decks→Arcanum,
-     Play→Vitarum. */
+     (see .cx-app::before + --wash), transitioning Codex→Codex, Decks→Deckbuilder,
+     Play→Play. */
   --bg: #000;
   --bg-base: #000;
   --wash: #000;   /* default (Home) - pure black, no wash */
 
-  /* ONE app-wide colour language for card data (was only defined under .arc, so
+  /* ONE app-wide colour language for card data (was only defined under .cx-decks, so
      Collection/Codex couldn't resolve it). Elements: Air grey, Earth brown, Fire
      red, Water blue, Multi gold. Rarity: Ordinary silver, Exceptional blue, Elite
      purple, Unique gold - the same hues the "Show Rarity Colours" toggle uses. */
@@ -52,7 +52,7 @@
   --ink-muted: #9a8b6a;
   --ink-faint: #8f8168;   /* lifted to clear ~4.5:1 on the black canvas */
   --ink-status: #cbbfa8;
-  --ink-body-rgb: 233, 220, 192;   /* = --ink-body #e9dcc0, for the .arc muted-body tints */
+  --ink-body-rgb: 233, 220, 192;   /* = --ink-body #e9dcc0, for the .cx-decks muted-body tints */
 
   /* reserved semantic accents (functional only). Each pillar accent carries one rgb
      base for its border/glow/wash alphas (collapses the near-duplicate hue sprawl). */
@@ -190,7 +190,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   transition: color .55s ease;
 }
 
-/* ── Bottom nav - VERBATIM from Arcanum (#nav/.nav-btn), re-tinted black+gold,
+/* ── Bottom nav - in the Deckbuilder (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
 .cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
@@ -302,8 +302,8 @@ mark.cx-hl-violet { background: rgba(199,154,208,.22); color: var(--ink-body); b
 /* Tap-target floor - small icon buttons keep their visual size but gain a 44px
    invisible hit area (WCAG 2.5.5 / Android 48dp), so dense controls stop being
    fat-finger traps. Applied to the sub-40px buttons across the app. */
-.mh .match-mini-btn, .arc .cc-turn-btn { position: relative; }
-.mh .match-mini-btn::after, .arc .cc-turn-btn::after, .cx-iconbtn::after {
+.cx-match-history .match-mini-btn, .cx-decks .cc-turn-btn { position: relative; }
+.cx-match-history .match-mini-btn::after, .cx-decks .cc-turn-btn::after, .cx-iconbtn::after {
   content: ''; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   min-width: 44px; min-height: 44px; width: 100%; height: 100%;
 }

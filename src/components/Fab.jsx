@@ -1,6 +1,6 @@
-// Global context FAB - the app's interaction spine, ported from Arcanum.
-// Lives on every page; its icon + menu mutate by context. Verbatim visual
-// shell (.fab-wrap / .fab / .fab-menu / .fab-scrim in arcanum.css); the open
+// Global context FAB - the app's interaction spine, implemented for Deckbuilder.
+// Lives on every page; its icon + menu mutate by context. visual
+// shell (.fab-wrap / .fab / .fab-menu / .fab-scrim in decks.css); the open
 // morph is driven by the `variant` class (lib → +↦×, deck → ⋮ tilts 90°).
 //
 // Props:
@@ -52,7 +52,7 @@ export function FabGlyph({ kind }) {
 export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', items = null, onClick = null, active = false, badge = 0, className = '' }) {
   const [open, setOpen] = useState(false);
 
-  // Back/Escape closes an open menu first (matches Arcanum's closeFabs routing).
+  // Back/Escape closes an open menu first (matches Deckbuilder's closeFabs routing).
   useEffect(() => {
     if (!open) return;
     const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
@@ -65,7 +65,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   // Rendered through a portal into the unified BottomDock's FAB slot (#cx-dock-fab),
   // so the FAB shares ONE keyboard-aware container with the search pill and the two
   // never diverge. The wrapper is position:relative inside that slot (see
-  // arcanum.css). Retry after mount if the dock committed after us; render nothing
+  // decks.css). Retry after mount if the dock committed after us; render nothing
   // until the slot exists (the dock is always mounted by the app shell). NOT
   // .cx-app - a relative wrapper there would land at the top of the page.
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-fab') : null));
@@ -85,7 +85,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
   }
 
   // Most items close the menu on tap; toggles (keepOpen) leave it open so their
-  // live state (✓/✕, ★/☆) stays visible - matches Arcanum's rarity/star toggles.
+  // live state (✓/✕, ★/☆) stays visible - matches Deckbuilder's rarity/star toggles.
   const run = (it) => { haptic('light'); if (!it.keepOpen) setOpen(false); it.onClick?.(); };
 
   return portal(

@@ -12,7 +12,7 @@ import { RARITY_LIMITS, isUnlimited } from '../store/deckRepository.js';
 import { haptic } from '../native.js';
 
 // Reference palette (from the design spec; kept literal - these are deliberate).
-// Exported so the wanted-list detail reuses the exact same gilt frame + glow.
+// exported so the wanted-list detail reuses the exact same gilt frame + glow.
 export const GILT = 'linear-gradient(160deg, rgba(227,197,137,.85), rgba(203,167,95,.2) 45%, rgba(184,149,79,.7))';
 export const GILT_BRIGHT = 'linear-gradient(160deg, #e8cd92, #c2a05a)';
 export const GLOW = '0 0 12px rgba(203,167,95,.14)';

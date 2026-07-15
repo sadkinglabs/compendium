@@ -1,6 +1,6 @@
 // The collection picker - add/remove an entry to named collections, or create a
 // new one. Its own component (matching the app's per-component file layout);
-// opened from CodexDetail's "Collect" FAB.
+// opened in CodexDetail's "Collect" FAB.
 import React, { useState, useEffect } from 'react';
 import { collectionsForTarget, toggleCollectionItem, createCollection } from '../store/codexRepository.js';
 import { BottomSheet, BTN_GOLD } from './ui.jsx';

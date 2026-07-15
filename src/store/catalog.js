@@ -1,5 +1,5 @@
 // Catalog seeding - loads the shared, read-only reference data (cards, rules,
-// FAQs, link graph) from Lexicum's dataset into the catalog tables on first run.
+// FAQs, link graph) in Codex's dataset into the catalog tables on first run.
 // Idempotent: keyed by CATALOG_VERSION in catalog_meta; re-seed clears + reloads.
 import { query, tx, persist } from './db.js';
 import { invalidateCatalog } from './catalogCache.js';

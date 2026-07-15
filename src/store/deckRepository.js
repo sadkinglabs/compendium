@@ -1,4 +1,4 @@
-// Decks data - Arcanum's model rebuilt on the unified store: three zones
+// Deckbuilder data on the unified store: three zones
 // (spellbook/atlas/collection), deck avatar, rarity copy-limits, stats, and the
 // Curiosa/Markdown import-export remapped. All profile-scoped via activeProfileId().
 import { query, run, tx } from './db.js';
@@ -30,8 +30,7 @@ export function elementPips(thresholdsJson) {
 }
 
 /** Avatar catalogue for the create-deck wizard - full fields for the preview
- *  panel (life/attack/type/rules). Optional name filter. Mirrors Arcanum's
- *  fetchAvatars(). */
+ *  panel (life/attack/type/rules), with an optional name filter. */
 export async function listAvatarCards(q = '') {
   const rows = await query(
     'SELECT card_id, name, image_slug, elements, thresholds, life, attack, cost, type, sub_types, rarity, rules_text FROM cards WHERE is_avatar=1 ORDER BY name;'
@@ -309,7 +308,7 @@ async function deckElementPips(deckId) {
   return Object.entries(need).filter(([, v]) => v > 0).map(([el]) => ({ el, c: EL_COLOR[el] }));
 }
 
-/** Full per-zone entries joined with catalog data - the shape Arcanum's stats
+/** Full per-zone entries joined with catalog data - the shape deck analysis
  *  functions expect (cost, attack, type, rarity, elements[], thresholds{}). */
 export async function getDeckCards(deckId) {
   const rows = await query(
@@ -354,7 +353,7 @@ export async function getArtists() {
    th:/set:/rarity + the Codex-only has:/is: scope channel). */
 export { parseQuery, parseCardQuery, cardMatchesQuery } from './cardQuery.js';
 
-// Full card-pool query mirroring Arcanum's Refine filters: element (+multi),
+// Full card-pool query for deckbuilder filters: element (+multi),
 // type, rarity, set, per-element & total threshold comparators, mana comparator,
 // artist, and name/mana/element sort.
 // Power = a card's attack points; when it also has a defence, the two are averaged
@@ -394,7 +393,7 @@ export async function getPool({
     return true;
   });
 
-  // Multi-key sort in priority order (Arcanum: tap to add, ↑/↓ per key). Keys are
+  // Multi-key sort in priority order (tap to add, ↑/↓ per key). Keys are
   // precomputed on the cached row, so the comparator does no parsing/allocation.
   const KEY = {
     name: (c) => c._nameLc,
@@ -442,7 +441,7 @@ export async function exportCuriosa(deckId) {
   return out.join('\n');
 }
 
-/** Parse Arcanum/Curiosa-style text into {avatar, zones:{zone:[{name,qty}]}}. */
+/** Parse Compendium/Curiosa deck text into {avatar, zones:{zone:[{name,qty}]}}. */
 export function parseDeckText(text) {
   const zoneFor = (h) => /atlas/i.test(h) ? 'atlas' : /side|collection/i.test(h) ? 'collection' : /avatar/i.test(h) ? 'avatar' : /spell/i.test(h) ? 'spellbook' : null;
   let zone = 'spellbook', avatar = null;
@@ -525,7 +524,7 @@ export async function addScannedToDeck(deckId, cardId, qty = 1) {
   return changeQty(deckId, card.is_site ? 'atlas' : 'spellbook', card, Math.max(1, qty | 0));
 }
 
-/* ---- Curiosa-URL import (ported from Arcanum) ---- */
+/* ---- Curiosa URL import ---- */
 
 // Only a real device build can bypass CORS with CapacitorHttp. On web (incl. the
 // dev preview), Capacitor's web shim would do a CORS-blocked direct fetch, so we
@@ -558,7 +557,7 @@ const resolveCardId = async (name) =>
   (await query('SELECT card_id FROM cards WHERE lower(name)=? LIMIT 1;', [String(name || '').toLowerCase()]))[0]?.card_id || null;
 
 /** Import a Curiosa deck URL into a NEW deck. Maps Spell→spellbook, Site→atlas,
- *  sideboard→collection (verbatim Arcanum). Unresolved cards → warnings (kept as
+ *  sideboard→collection. Unresolved cards → warnings (kept as
  *  placeholders so nothing is lost). Returns { id, name, warnings }. */
 export async function importCuriosaUrl(rawUrl) {
   const m = /\/decks\/([a-z0-9]+)/i.exec(rawUrl || '');

@@ -1,4 +1,4 @@
-// Capacitor-native bridges with web-safe fallbacks (handoff §6: prefer native
+// Capacitor-native bridges with web-safe fallbacks (architecture §6: prefer native
 // plugins over web shims). Every call is a no-op or graceful web equivalent in
 // the browser, so the dev preview keeps working.
 import { Capacitor } from '@capacitor/core';

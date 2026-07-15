@@ -1,13 +1,13 @@
-// Create-deck wizard - VERBATIM port of Arcanum's #onboard flow (openOnboarding
+// Create-deck wizard - implements Deckbuilder's #onboard flow (openOnboarding
 // / obNext, templates/index.html L1984-2085). Two mandatory steps:
 //   1. Name the deck.
 //   2. Pick an avatar - you CANNOT create a deck without one (obNext refuses).
-// Visual shell is arcanum.css (.ob-* / .btn / .sheet-*). Avatar data comes from
+// Visual shell is decks.css (.ob-* / .btn / .sheet-*). Avatar data comes from
 // the unified catalogue via listAvatarCards().
 import React, { useEffect, useRef, useState } from 'react';
 import { listAvatarCards, createDeck } from '../store/deckRepository.js';
 import { toast } from '../feedback.js';
-import '../theme/arcanum.css';
+import '../theme/decks.css';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -21,7 +21,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
   const nameRef = useRef(null);
 
   useEffect(() => { const t = setTimeout(() => nameRef.current?.focus(), 100); return () => clearTimeout(t); }, []);
-  // Debounced avatar search (Arcanum: 250ms).
+  // Debounced avatar search (Deckbuilder: 250ms).
   useEffect(() => {
     if (step !== 2) return;
     const t = setTimeout(() => { listAvatarCards(q).then(setAvatars); }, q ? 250 : 0);

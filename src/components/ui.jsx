@@ -1,4 +1,4 @@
-// Shared UI vocabulary - one definition each, reused across pillars (handoff §3/§6).
+// Shared UI vocabulary - one definition each, reused across pillars (architecture §3/§6).
 import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
 import { GLYPH_ICON } from './icons.jsx';
@@ -318,7 +318,7 @@ const markClass = (ann) => (ann && ann.color === 'violet' ? 'cx-hl-violet' : 'cx
 // Render canon[span] (default: whole string) as flat runs: in-text links (all gold;
 // the link's target drives navigation, not colour) plus highlight marks from
 // resolved annotation canon RANGES. A run under both a link and an annotation nests
-// the <mark> inside the link span. Exported so FAQ text renders links the same way.
+// the <mark> inside the link span. exported so FAQ text renders links the same way.
 export function InlineText({ canon, links = [], span, annRanges = [], onOpenLink }) {
   const [s, e] = span || [0, canon.length];
   const runs = runsFor(canon, s, e, links, annRanges);

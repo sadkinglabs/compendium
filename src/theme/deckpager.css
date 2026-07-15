@@ -1,22 +1,22 @@
-/* deckpager.css - Arcanum's single-page deckbuilder, ported into the Decks
+/* deckpager.css - Deckbuilder's single-page deckbuilder, integrated into the Decks
    pillar: a horizontal scroll-snap pager of three panels (Library / My Deck /
    Search) with a top segmented control + swipe. Class names are Compendium-
    scoped (.dpager*) to avoid colliding with the app shell; CSS values are from
-   Arcanum (#content L54, .page L89, pill/pip/toggle L122-184), re-tinted where
-   needed. Everything sits under `.arc` so it carries Arcanum's amethyst tokens. */
+   Deckbuilder (#content L54, .page L89, pill/pip/toggle L122-184), re-tinted where
+   needed. Everything sits under `.cx-decks` so it carries Deckbuilder's amethyst tokens. */
 
-.arc.dpager { --nav-h: 62px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.cx-decks.dpager { --nav-h: 62px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* Top bar: the app-style Library / My Deck toggle (left) + contextual action
    pill like "Add cards to deck" (right). Matches Home/Codex chip conventions. */
-.arc .dp-topbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 6px 20px 12px; }
-.arc .dp-topbar-spacer { flex: 1; }
+.cx-decks .dp-topbar { flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 6px 20px 12px; }
+.cx-decks .dp-topbar-spacer { flex: 1; }
 /* Edit Deck toggle retired - now the shared gilt Chip (ui.jsx). */
 
 /* A single active view fills the pillar (no horizontal swipe - plain toggle). */
-.arc .dp-view { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.cx-decks .dp-view { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
 /* Inside the env()-padded .cx-app shell already, so no extra env() here (nav overlap + FAB/pill clearance only). */
-.arc .dpage-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding-bottom: calc(var(--nav-h) + 90px + var(--kb, 0px) / var(--ui-scale, 1)); }
+.cx-decks .dpage-scroll { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding-bottom: calc(var(--nav-h) + 90px + var(--kb, 0px) / var(--ui-scale, 1)); }
 
 /* (Retired: the Decks library search is now the shared <SearchPill> in the unified
    .cx-dock - the old .pill-bar-outer / .bottom-pill-bar clone is gone.) */
@@ -28,7 +28,7 @@
    SCREEN-centred: absolutely centred on the dock (which spans left:16/right:16,
    so its 50% is the viewport centre) rather than centred in the left slot, which
    the FAB would push off-centre. Out of flow, so the FAB still sits flush right.
-   No `.arc` ancestor needed - it's portaled into the dock. */
+   No `.cx-decks` ancestor needed - it's portaled into the dock. */
 /* Positioning + step-aside-while-editing wrapper for the docked List/Stats
    SegTabs (the pill visual is the shared SegTabs component). */
 .deck-pip-bar { position: absolute; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 50; width: fit-content; transition: opacity .25s ease, transform .25s cubic-bezier(.4,0,.6,1); }

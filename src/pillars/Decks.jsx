@@ -6,7 +6,7 @@ import { BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import { ChevronIcon } from '../components/icons.jsx';
 import { planImportText, commitImportText } from '../store/deckRepository.js';
 import { toast } from '../feedback.js';
-import '../theme/arcanum.css';
+import '../theme/decks.css';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -56,7 +56,7 @@ export function DeckCard({ deck, build, onClick }) {
   );
 }
 
-// Import from a Curiosa URL - Arcanum's "Paste Curiosa Deck URL" flow.
+// Import from a Curiosa URL - Deckbuilder's "Paste Curiosa Deck URL" flow.
 export function ImportUrlSheet({ open, onClose, onImportUrl }) {
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);
@@ -82,7 +82,7 @@ export function ImportUrlSheet({ open, onClose, onImportUrl }) {
   );
 }
 
-// Import from a pasted list - Arcanum's "Bulk Import" flow (Arcanum Format).
+// Import from a pasted list - Deckbuilder's "Bulk Import" flow (Deckbuilder Format).
 const BULK_EXAMPLE = `# My Deck
 
 ## Avatar

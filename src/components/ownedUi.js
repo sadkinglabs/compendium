@@ -3,7 +3,7 @@
 // OwnedControl detail block) and the serialized-write pattern has one home.
 
 // Ruby-tinted stepper button (accent is chrome-only - it lives on the button,
-// never on the card content). Lifted verbatim from the Collection Cards tab.
+// never on the card content). Lifted from the Collection Cards tab.
 export const stepBtn = {
   width: 30, height: 30, flex: 'none', borderRadius: 8, cursor: 'pointer',
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',

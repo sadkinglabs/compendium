@@ -1,93 +1,93 @@
 /* playhistory.css - Play's Match-History screen (.rec-* hero/donut/minis/bars +
    .match-* cards), reskinned to the app-wide "Manuscript" black+gold language
-   (was a verbatim Vitarum green port). Scoped under `.mh` so it can't collide. */
+   (was a Play green port). Scoped under `.cx-match-history` so it can't collide. */
 
 /* Hero - the one deliberate gilt frame on Play (sibling of Home's jump-back-in
    tile). The gilt border is a 1px gradient pad wrapper over a near-black inner. */
-.mh .rec-hero-frame { padding:1px; border-radius:15px; background:linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5)); box-shadow:0 16px 40px -18px rgba(0,0,0,.6); margin-bottom:14px; }
-.mh .rec-hero { position:relative; overflow:hidden; display:flex; align-items:center; gap:18px; padding:18px; border-radius:14px; background:#0e0b08; }
-.mh .rec-hero-bg { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 18%; opacity:.13; filter:saturate(.55); pointer-events:none; }
-.mh .rec-ring { position:relative; z-index:1; width:98px; height:98px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex:none; }
-.mh .rec-ring-inner { width:76px; height:76px; border-radius:50%; background:#0e0b08; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-.mh .rec-ring-pct { font-family:var(--f-display); font-size:23px; font-weight:700; color:#efe7d8; line-height:1; }
-.mh .rec-ring-label { font-family:var(--f-ui); font-size:9px; font-weight:500; color:#8a8175; letter-spacing:.16em; margin-top:3px; }
-.mh .rec-hero-right { position:relative; z-index:1; flex:1; min-width:0; }
-.mh .rec-wl { font-family:var(--f-display); font-size:34px; font-weight:700; color:#efe7d8; line-height:1; }
-.mh .rec-wl .sep { color:#5c554b; }
-.mh .rec-total { font-family:var(--f-ui); font-size:11px; font-weight:500; color:#8a8175; letter-spacing:.08em; margin:6px 0 12px; }
-.mh .rec-streak { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:8px; font-family:var(--f-ui); font-size:11px; font-weight:600; background:rgba(143,211,168,.1); border:1px solid rgba(143,211,168,.28); color:var(--accent-jade); }
-.mh .rec-streak.none { background:transparent; border-color:rgba(74,60,34,.5); color:#8a8175; }
-.mh .rec-streak svg { width:11px; height:11px; flex:none; }
+.cx-match-history .rec-hero-frame { padding:1px; border-radius:15px; background:linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5)); box-shadow:0 16px 40px -18px rgba(0,0,0,.6); margin-bottom:14px; }
+.cx-match-history .rec-hero { position:relative; overflow:hidden; display:flex; align-items:center; gap:18px; padding:18px; border-radius:14px; background:#0e0b08; }
+.cx-match-history .rec-hero-bg { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 18%; opacity:.13; filter:saturate(.55); pointer-events:none; }
+.cx-match-history .rec-ring { position:relative; z-index:1; width:98px; height:98px; border-radius:50%; display:flex; align-items:center; justify-content:center; flex:none; }
+.cx-match-history .rec-ring-inner { width:76px; height:76px; border-radius:50%; background:#0e0b08; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.cx-match-history .rec-ring-pct { font-family:var(--f-display); font-size:23px; font-weight:700; color:#efe7d8; line-height:1; }
+.cx-match-history .rec-ring-label { font-family:var(--f-ui); font-size:9px; font-weight:500; color:#8a8175; letter-spacing:.16em; margin-top:3px; }
+.cx-match-history .rec-hero-right { position:relative; z-index:1; flex:1; min-width:0; }
+.cx-match-history .rec-wl { font-family:var(--f-display); font-size:34px; font-weight:700; color:#efe7d8; line-height:1; }
+.cx-match-history .rec-wl .sep { color:#5c554b; }
+.cx-match-history .rec-total { font-family:var(--f-ui); font-size:11px; font-weight:500; color:#8a8175; letter-spacing:.08em; margin:6px 0 12px; }
+.cx-match-history .rec-streak { display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:8px; font-family:var(--f-ui); font-size:11px; font-weight:600; background:rgba(143,211,168,.1); border:1px solid rgba(143,211,168,.28); color:var(--accent-jade); }
+.cx-match-history .rec-streak.none { background:transparent; border-color:rgba(74,60,34,.5); color:#8a8175; }
+.cx-match-history .rec-streak svg { width:11px; height:11px; flex:none; }
 
 /* Minis - the shared flat STAT STRIP (identical recipe to Home's glance). */
-.mh .rec-minis { display:flex; margin-bottom:6px; border-bottom:1px solid rgba(74,60,34,.3); }
-.mh .rec-mini { flex:1; padding:12px 0 14px; text-align:center; position:relative; }
-.mh .rec-mini + .rec-mini::before { content:''; position:absolute; left:0; top:50%; transform:translateY(-50%); width:1px; height:26px; background:rgba(74,60,34,.5); }
-.mh .rec-mini-val { font-family:var(--f-display); font-size:19px; font-weight:600; color:#e3c589; line-height:1; }
-.mh .rec-mini-label { font-family:var(--f-ui); font-size:9px; font-weight:600; color:#8a8175; letter-spacing:.14em; text-transform:uppercase; margin-top:7px; }
+.cx-match-history .rec-minis { display:flex; margin-bottom:6px; border-bottom:1px solid rgba(74,60,34,.3); }
+.cx-match-history .rec-mini { flex:1; padding:12px 0 14px; text-align:center; position:relative; }
+.cx-match-history .rec-mini + .rec-mini::before { content:''; position:absolute; left:0; top:50%; transform:translateY(-50%); width:1px; height:26px; background:rgba(74,60,34,.5); }
+.cx-match-history .rec-mini-val { font-family:var(--f-display); font-size:19px; font-weight:600; color:#e3c589; line-height:1; }
+.cx-match-history .rec-mini-label { font-family:var(--f-ui); font-size:9px; font-weight:600; color:#8a8175; letter-spacing:.14em; text-transform:uppercase; margin-top:7px; }
 
 /* Section rubric - gold Cinzel caps + fade hairline + optional count (shared with
    Home and the rest of the app). The collapsible variant adds a trailing chevron. */
-.mh .rec-section { display:flex; align-items:center; gap:10px; padding:18px 0 8px; margin:0 0 4px; font-family:var(--f-display); font-size:13px; font-weight:600; color:#cba75f; letter-spacing:.22em; text-transform:uppercase; }
-.mh .rec-section-toggle { width:100%; background:none; border:none; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent; }
-.mh .rec-hair { flex:1; height:1px; background:linear-gradient(90deg,#4a3c22,transparent); }
-.mh .rec-count { flex:none; font-family:var(--f-display); font-size:15px; font-weight:600; letter-spacing:normal; color:#c9b487; }
-.mh .rec-chevron { flex:none; color:#5c554b; display:inline-flex; transition:transform .2s; }
-.mh .rec-collapse.collapsed .rec-chevron { transform:rotate(-90deg); }
-.mh .rec-collapse.collapsed .rec-bars { display:none; }
+.cx-match-history .rec-section { display:flex; align-items:center; gap:10px; padding:18px 0 8px; margin:0 0 4px; font-family:var(--f-display); font-size:13px; font-weight:600; color:#cba75f; letter-spacing:.22em; text-transform:uppercase; }
+.cx-match-history .rec-section-toggle { width:100%; background:none; border:none; text-align:left; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+.cx-match-history .rec-hair { flex:1; height:1px; background:linear-gradient(90deg,#4a3c22,transparent); }
+.cx-match-history .rec-count { flex:none; font-family:var(--f-display); font-size:15px; font-weight:600; letter-spacing:normal; color:#c9b487; }
+.cx-match-history .rec-chevron { flex:none; color:#5c554b; display:inline-flex; transition:transform .2s; }
+.cx-match-history .rec-collapse.collapsed .rec-chevron { transform:rotate(-90deg); }
+.cx-match-history .rec-collapse.collapsed .rec-bars { display:none; }
 
-.mh .rec-bars { display:flex; flex-direction:column; gap:10px; margin-bottom:8px; }
-.mh .rec-bar { display:flex; align-items:center; gap:9px; }
-.mh .rec-bar-art { width:24px; height:24px; border-radius:6px; flex:none; overflow:hidden; background:#0e0b08; border:1px solid rgba(255,255,255,.12); }
-.mh .rec-bar-art img { width:100%; height:100%; object-fit:cover; object-position:center 28%; transform:scale(1.5); transform-origin:center 35%; }
-.mh .rec-bar-name { font-family:var(--f-read); font-size:13px; color:#d8cebb; width:96px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.mh .rec-bar-track { flex:1; height:6px; border-radius:3px; background:rgba(74,60,34,.45); overflow:hidden; }
-.mh .rec-bar-fill { height:100%; background:linear-gradient(90deg,#4db38a,var(--accent-jade)); }
-.mh .rec-bar-rec { font-family:var(--f-mono); font-size:11px; color:#8a8175; width:42px; text-align:right; flex:none; }
-.mh .rec-bar-tap { cursor:pointer; border-radius:8px; padding:3px; margin:-3px; min-height:30px; -webkit-tap-highlight-color:transparent; }
-.mh .rec-bar-tap:active { background:rgba(220,184,111,.07); }
-.mh .rec-opp-badge { width:24px; height:24px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; background:rgba(18,16,13,.85); border:1px solid var(--hair-22); color:#cba75f; font:700 11px/1 var(--f-display); }
+.cx-match-history .rec-bars { display:flex; flex-direction:column; gap:10px; margin-bottom:8px; }
+.cx-match-history .rec-bar { display:flex; align-items:center; gap:9px; }
+.cx-match-history .rec-bar-art { width:24px; height:24px; border-radius:6px; flex:none; overflow:hidden; background:#0e0b08; border:1px solid rgba(255,255,255,.12); }
+.cx-match-history .rec-bar-art img { width:100%; height:100%; object-fit:cover; object-position:center 28%; transform:scale(1.5); transform-origin:center 35%; }
+.cx-match-history .rec-bar-name { font-family:var(--f-read); font-size:13px; color:#d8cebb; width:96px; flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cx-match-history .rec-bar-track { flex:1; height:6px; border-radius:3px; background:rgba(74,60,34,.45); overflow:hidden; }
+.cx-match-history .rec-bar-fill { height:100%; background:linear-gradient(90deg,#4db38a,var(--accent-jade)); }
+.cx-match-history .rec-bar-rec { font-family:var(--f-mono); font-size:11px; color:#8a8175; width:42px; text-align:right; flex:none; }
+.cx-match-history .rec-bar-tap { cursor:pointer; border-radius:8px; padding:3px; margin:-3px; min-height:30px; -webkit-tap-highlight-color:transparent; }
+.cx-match-history .rec-bar-tap:active { background:rgba(220,184,111,.07); }
+.cx-match-history .rec-opp-badge { width:24px; height:24px; border-radius:50%; flex:none; display:flex; align-items:center; justify-content:center; background:rgba(18,16,13,.85); border:1px solid var(--hair-22); color:#cba75f; font:700 11px/1 var(--f-display); }
 
 /* Match entries - flat, hairline-separated ledger rows (sibling of Home's duel
    rows). No box; the result letter and gold final-life carry the reading. */
-.mh .match-entry { padding:14px 0; background:transparent; border:none; border-bottom:1px solid rgba(74,60,34,.3); }
-.mh .match-entry-top { display:flex; align-items:center; gap:11px; margin-bottom:8px; }
-.mh .match-matchup { flex:1; min-width:0; display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
-.mh .match-you { display:inline-flex; align-items:baseline; gap:6px; font-family:var(--f-read); font-size:16px; font-weight:600; color:#efe7d8; }
-.mh .match-vs  { font-family:var(--f-read); font-size:12px; font-weight:400; color:#5c554b; }
-.mh .match-opp { display:inline-flex; align-items:baseline; gap:6px; font-family:var(--f-read); font-size:16px; font-weight:500; color:#d8cebb; }
+.cx-match-history .match-entry { padding:14px 0; background:transparent; border:none; border-bottom:1px solid rgba(74,60,34,.3); }
+.cx-match-history .match-entry-top { display:flex; align-items:center; gap:11px; margin-bottom:8px; }
+.cx-match-history .match-matchup { flex:1; min-width:0; display:flex; align-items:baseline; gap:7px; flex-wrap:wrap; }
+.cx-match-history .match-you { display:inline-flex; align-items:baseline; gap:6px; font-family:var(--f-read); font-size:16px; font-weight:600; color:#efe7d8; }
+.cx-match-history .match-vs  { font-family:var(--f-read); font-size:12px; font-weight:400; color:#5c554b; }
+.cx-match-history .match-opp { display:inline-flex; align-items:baseline; gap:6px; font-family:var(--f-read); font-size:16px; font-weight:500; color:#d8cebb; }
 /* final life inline with each combatant - a gold ledger numeral (rose when dead). */
-.mh .match-life { font-family:var(--f-mono); font-size:14px; font-weight:600; color:#e3c589; }
-.mh .match-life.dd { color:#c98f8f; }
-.mh .match-when { font-family:var(--f-ui); font-size:10px; font-weight:500; color:#8a8175; flex:none; }
+.cx-match-history .match-life { font-family:var(--f-mono); font-size:14px; font-weight:600; color:#e3c589; }
+.cx-match-history .match-life.dd { color:#c98f8f; }
+.cx-match-history .match-when { font-family:var(--f-ui); font-size:10px; font-weight:500; color:#8a8175; flex:none; }
 /* result letter - bare Cinzel initial, no chassis. */
-.mh .match-badge { flex-shrink:0; width:22px; display:flex; align-items:center; justify-content:center; font-family:var(--f-display); font-size:13px; font-weight:700; }
-.mh .match-badge.win  { color:var(--accent-jade); }
-.mh .match-badge.loss { color:#c98f8f; }
-.mh .match-badge.draw { color:#8a8175; }
-.mh .match-meta { display:flex; align-items:center; gap:7px; font-family:var(--f-ui); font-size:11px; color:#8a8175; flex-wrap:wrap; }
-.mh .match-dot { opacity:.4; }
-.mh .match-notes-text { font-family:var(--f-read); font-size:14px; color:#8a8175; font-style:italic; margin-top:8px; line-height:1.5; }
-.mh .match-opp-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:4px 10px 4px 8px; border-radius:11px; background:rgba(42,33,20,.5); border:1px solid #4a3c22; font:600 11px/1 var(--f-ui); color:var(--gold-leaf); -webkit-tap-highlight-color:transparent; max-width:52%; }
-.mh .match-opp-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
-.mh .match-opp-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mh .match-opp-tag:active { opacity:.75; }
+.cx-match-history .match-badge { flex-shrink:0; width:22px; display:flex; align-items:center; justify-content:center; font-family:var(--f-display); font-size:13px; font-weight:700; }
+.cx-match-history .match-badge.win  { color:var(--accent-jade); }
+.cx-match-history .match-badge.loss { color:#c98f8f; }
+.cx-match-history .match-badge.draw { color:#8a8175; }
+.cx-match-history .match-meta { display:flex; align-items:center; gap:7px; font-family:var(--f-ui); font-size:11px; color:#8a8175; flex-wrap:wrap; }
+.cx-match-history .match-dot { opacity:.4; }
+.cx-match-history .match-notes-text { font-family:var(--f-read); font-size:14px; color:#8a8175; font-style:italic; margin-top:8px; line-height:1.5; }
+.cx-match-history .match-opp-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:4px 10px 4px 8px; border-radius:11px; background:rgba(42,33,20,.5); border:1px solid #4a3c22; font:600 11px/1 var(--f-ui); color:var(--gold-leaf); -webkit-tap-highlight-color:transparent; max-width:52%; }
+.cx-match-history .match-opp-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
+.cx-match-history .match-opp-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cx-match-history .match-opp-tag:active { opacity:.75; }
 /* Piloted-deck tag - violet (Decks accent) so the destination reads at a glance. */
-.mh .match-deck-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:4px 10px 4px 8px; border-radius:11px; background:rgba(42,33,20,.5); border:1px solid #4a3c22; font:600 11px/1 var(--f-ui); color:var(--accent-violet); max-width:46%; -webkit-tap-highlight-color:transparent; }
-.mh .match-deck-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
-.mh .match-deck-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mh .match-deck-tag:active { opacity:.75; }
+.cx-match-history .match-deck-tag { display:inline-flex; align-items:center; gap:5px; cursor:pointer; padding:4px 10px 4px 8px; border-radius:11px; background:rgba(42,33,20,.5); border:1px solid #4a3c22; font:600 11px/1 var(--f-ui); color:var(--accent-violet); max-width:46%; -webkit-tap-highlight-color:transparent; }
+.cx-match-history .match-deck-tag svg { width:11px; height:11px; opacity:.85; flex:none; }
+.cx-match-history .match-deck-tag span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.cx-match-history .match-deck-tag:active { opacity:.75; }
 /* "Add deck" - the unattributed variant: quiet, dashed, no violet fill, so it
    reads as an offer to attribute rather than a live deck link. */
-.mh .match-deck-tag.add { background:transparent; border:1px dashed rgba(74,60,34,.7); color:#8a8175; }
-.mh .match-deck-tag.add svg { opacity:.6; }
+.cx-match-history .match-deck-tag.add { background:transparent; border:1px dashed rgba(74,60,34,.7); color:#8a8175; }
+.cx-match-history .match-deck-tag.add svg { opacity:.6; }
 /* Pills row - opponent + piloted deck, straight under the matchup line. */
-.mh .match-pills { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+.cx-match-history .match-pills { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
 /* Compact icon actions, tucked into the meta line (note · edit · delete). */
-.mh .match-meta-spring { flex:1; }
-.mh .match-mini-group { display:flex; gap:5px; flex:none; margin-left:auto; }
-.mh .match-mini-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; background:none; border:1px solid rgba(74,60,34,.6); color:#8a8175; border-radius:7px; transition:border-color .15s, color .15s; cursor:pointer; flex:none; padding:0; }
-.mh .match-mini-btn:active { border-color:#cba75f; color:#cba75f; }
-.mh .match-mini-btn.danger { border-color:rgba(168,88,74,.35); color:rgba(168,88,74,.8); }
-.mh .match-mini-btn.danger:active { border-color:rgba(168,88,74,.6); color:var(--destructive); }
-.mh .match-mini-btn svg { width:11px; height:11px; flex-shrink:0; }
+.cx-match-history .match-meta-spring { flex:1; }
+.cx-match-history .match-mini-group { display:flex; gap:5px; flex:none; margin-left:auto; }
+.cx-match-history .match-mini-btn { display:flex; align-items:center; justify-content:center; width:28px; height:28px; background:none; border:1px solid rgba(74,60,34,.6); color:#8a8175; border-radius:7px; transition:border-color .15s, color .15s; cursor:pointer; flex:none; padding:0; }
+.cx-match-history .match-mini-btn:active { border-color:#cba75f; color:#cba75f; }
+.cx-match-history .match-mini-btn.danger { border-color:rgba(168,88,74,.35); color:rgba(168,88,74,.8); }
+.cx-match-history .match-mini-btn.danger:active { border-color:rgba(168,88,74,.6); color:var(--destructive); }
+.cx-match-history .match-mini-btn svg { width:11px; height:11px; flex-shrink:0; }

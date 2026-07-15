@@ -43,7 +43,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   const [decks, setDecks] = useState(null);
   const [buildMap, setBuildMap] = useState(new Map());   // deck_id -> buildability report (library badges)
   const [libQ, setLibQ] = useState('');
-  // Deck-actions FAB state (Arcanum's #deck-fab menu).
+  // Deck-actions FAB state (Deckbuilder's #deck-fab menu).
   const [meta, setMeta] = useState(null);            // loaded deck (for star state)
   const [rarityOn, setRarityOn] = useState(false);   // Rarity-colours toggle
   const [exportOpen, setExportOpen] = useState(false);
@@ -85,7 +85,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
 
   function openDeck(d) { onOpenDeck({ id: d.id, name: d.name }); setView('mydeck'); }
 
-  /* ── Deck-actions FAB handlers (verbatim Arcanum #deck-fab behaviour) ── */
+  /* ── Deck-actions FAB handlers (Deckbuilder #deck-fab behaviour) ── */
   async function actFavourite() {
     await toggleStar(deckOpen.id);
     const d = await getDeck(deckOpen.id); setMeta(d);
@@ -162,7 +162,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
     }
   );
 
-  // Top segmented control -> shared header slot (App.pillSlot), wrapped in .arc so
+  // Top segmented control -> shared header slot (App.pillSlot), wrapped in .cx-decks so
   // its scoped styles (dp-topbar/dp-add-pill) still apply outside the pager. Padding
   // is overridden to match the other pillars' hoisted pill rows.
   const topbar = (
@@ -374,7 +374,7 @@ function DeckTextAddSheet({ open, deckId, onClose, onChanged }) {
   );
 }
 
-// Export - Arcanum's #export-sheet: Markdown (readable) / Curiosa (flat) toggle
+// Export - Deckbuilder's #export-sheet: Markdown (readable) / Curiosa (flat) toggle
 // with a copy-to-clipboard action.
 function ExportSheet({ open, deckId, onClose, flash }) {
   const [fmt, setFmt] = useState('markdown');   // markdown | curiosa | compendium
@@ -436,7 +436,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
   );
 }
 
-// Deck Spread - Arcanum's #deckcards-sheet: one tile per distinct card (×N badge
+// Deck Spread - Deckbuilder's #deckcards-sheet: one tile per distinct card (×N badge
 // for extra copies), grouped by zone. Deck = ordered; Shuffle = shuffled WITHIN
 // each zone (Spellbook & Atlas stay separate sections).
 function DeckSpreadSheet({ open, deckId, onClose }) {

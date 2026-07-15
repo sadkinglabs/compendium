@@ -1,0 +1,215 @@
+/* ============================================================================
+   decks.css - implements the visual design of the Deckbuilder deckbuilder UI.
+   Source of truth: Deckbuilder/templates/index.html (CSS block ~L11–690).
+   ONE RULE: replicate, do not redesign. CSS values below are copied EXACTLY
+   in the Deckbuilder - no reinterpretation, no palette shifts, no corner/blur/shadow
+   changes.
+
+   SCOPING: every rule is scoped under `.cx-decks` so Deckbuilder's amethyst world does
+   not collide with Compendium's grimoire :root, and so its `.fab`/component
+   classes never clash with counter.css. The Decks pillar renders inside a
+   `.cx-decks` wrapper; everything here is Deckbuilder-native and intentionally diverges
+   from the rest of the app.
+   ============================================================================ */
+
+/* Deckbuilder palette, scoped to `.cx-decks` so it
+   overrides Compendium tokens only inside the Decks pillar. */
+.cx-decks {
+  /* Brand metal - now inherits :root (--gold-leaf var(--gold-leaf), --gold #cf9a4a, --gold-deep
+     #c9a35a). The old override made bare --gold a different metal in Decks than
+     elsewhere; Decks consumers now use var(--gold-leaf) directly. */
+  /* Surfaces */
+  --bg:#0b0714; --surface:rgba(24,16,40,.88); --surface2:rgba(36,24,54,.88);
+  --bg-grad:radial-gradient(130% 70% at 50% -6%, #2a1c44 0%, #0b0714 52%, #06040d 100%);
+  --border:rgba(160,110,220,.18); --border2:rgba(160,110,220,.26);
+  /* Text */
+  --text:#f0e9d8; --body:#c9bfdc; --muted:#9a8cae; --faint:#897ca8;
+  /* Element (card data only) */
+  --air:#c4cdd6; --earth:#b35c33; --fire:#e0623f; --water:#4aa3d4; --multi:#d4a83a;
+  /* Rarity */
+  --ordinary:#c8c8c8; --exceptional:#4fc3f7; --elite:#ab47bc; --unique:#ffd54f;
+  /* Semantic */
+  --success:#8fd3a8; --danger:#e0907c; --warn:#d4a83a;
+
+  color:var(--body);
+  font-family:var(--f-ui);
+  font-size:15px;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ── Library deck card (renderLibrary → .dli) ── Manuscript: black card, warm
+   hairline, Cinzel name over the avatar art, rose archetype eyebrow (a compact
+   echo of the My-Deck gilt hero). ── */
+.cx-decks .dli { position:relative; border-radius:16px; margin:12px 12px 0; overflow:hidden; border:1px solid rgba(74,60,34,.5); background:#0e0b08; min-height:92px; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, border-color .15s; }
+.cx-decks .dli:active { transform:scale(.99); }
+.cx-decks .dli.dragging { z-index:20; transform:scale(1.03); box-shadow:0 12px 32px rgba(0,0,0,.65); border-color:rgba(203,167,95,.5); opacity:.97; }
+.cx-decks .dli-hero { position:absolute; top:0; right:0; height:100%; width:64%; object-fit:cover; object-position:center 25%;
+  -webkit-mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
+  -webkit-mask-composite:source-in;
+  mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
+  mask-composite:intersect; }
+.cx-decks .dli-hero-grad { position:absolute; inset:0; background:linear-gradient(to right, rgba(14,11,8,.98) 30%, rgba(14,11,8,.55) 58%, transparent 82%); }
+.cx-decks .dli-content { position:relative; z-index:1; }
+.cx-decks .dli-name-row { display:flex; align-items:center; padding:14px 14px 9px; gap:8px; cursor:pointer; }
+.cx-decks .dli-name { font:700 18px/1.15 var(--f-display); letter-spacing:.04em; color:#efe7d8; text-shadow:0 1px 6px rgba(0,0,0,.7); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cx-decks .dli-fav { position:absolute; bottom:10px; right:12px; width:26px; height:26px; display:flex; align-items:center; justify-content:center; border-radius:50%; background:rgba(11,7,20,.5); border:1px solid rgba(203,167,95,.4); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); box-shadow:0 2px 8px rgba(0,0,0,.45); color:#e3c589; line-height:1; pointer-events:none; }
+
+/* Avatar/archetype eyebrow in the library card meta row - rose caps, matching
+   the My-Deck hero's .mf-hero-arch (no pill chassis). */
+.cx-decks .dash-avatar-chip { display:inline-flex; align-items:center; font:600 11px/1 var(--f-display); letter-spacing:.2em; text-transform:uppercase; color:#c76d85; background:none; border:none; padding:0; box-shadow:none; }
+
+/* The old Deckbuilder add-cards rows + tiles (card-row / card-img-tile / cr-step /
+   tile-step / in-deck-badge) are gone - the deck editor now renders its own
+   Manuscript EditorRow / EditorTile with inline styles. */
+
+/* ════════════════════════════════════════════════════════════════════════
+   Deckbuilder bottom sheet (the standard sheet across the app; grimoire is kept
+   only for article pages). Pixel-implemented for Deckbuilder #card-sheet / canonical
+   .sheet (templates/index.html L499-583) + .sheet-* card layout + .zone-stepper
+   + #toast.
+   ════════════════════════════════════════════════════════════════════════ */
+/* Sheet chassis is BLACK + gold app-wide: the pillar wash flows top→bottom
+   and the bottom of every column is black/gold, so sheets rising from the
+   bottom stay black everywhere. Per-pillar accents live in sheet CONTENT. */
+/* The legacy .a-sheet chassis was retired: Sheet.jsx is now a thin adapter over
+   GothicSheet, like BottomSheet. (Rules kept in git history if ever needed.) */
+
+/* Export sheet (#export-sheet) - Markdown/Curiosa toggle + copy */
+.cx-decks .es-format-row { display:flex; justify-content:center; padding:4px 12px 6px; }
+.cx-decks .es-format-wrap { display:inline-flex; background:rgba(42,33,20,.5); border:1px solid #4a3c22; border-radius:999px; padding:3px; gap:2px; box-shadow:0 2px 12px rgba(0,0,0,.4); }
+.cx-decks .es-format-btn { background:transparent; border:1px solid transparent; color:#8a8175; border-radius:999px; padding:8px 28px; font:600 13px/1 var(--f-ui); cursor:pointer; transition:color .18s; }
+.cx-decks .es-format-btn.on { background:rgba(220,184,111,.14); color:var(--gold-leaf); border:1px solid rgba(220,184,111,.5); box-shadow:0 0 12px rgba(220,184,111,.14); }
+.cx-decks .es-hint { text-align:center; font:italic 400 11px/1.4 var(--f-read); color:#8a8175; padding:2px 16px 8px; }
+.cx-decks .es-area { display:block; width:calc(100% - 24px); margin:0 12px 4px; min-height:60vh; background:rgba(42,33,20,.4); border:1px solid rgba(74,60,34,.5); border-radius:12px; color:#d8cebb; font:400 13px/1.6 var(--f-mono); padding:12px; resize:none; outline:none; box-sizing:border-box; }
+.cx-decks .es-copy-btn { flex:1; padding:13px; border-radius:14px; border:1px solid rgba(220,184,111,.45); background:rgba(18,16,13,.85); color:var(--gold-leaf); font:700 15px/1 var(--f-ui); cursor:pointer; }
+.cx-decks .es-copy-btn:active { background:rgba(220,184,111,.14); }
+
+/* Deck Spread sheet (#deckcards-sheet) - full-art grid, Deck/Shuffle toggle */
+.cx-decks .ds-lbl { font:600 10px/1 var(--f-display); letter-spacing:.14em; text-transform:uppercase; color:#cba75f; padding:10px 14px 7px; position:sticky; top:0; z-index:2; background:linear-gradient(180deg,#0e0b08 70%,rgba(14,11,8,0)); }
+.cx-decks .ds-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:0 12px 12px; }
+.cx-decks .ds-tile { position:relative; border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background:rgba(14,11,8,.7); }
+.cx-decks .ds-tile img { width:100%; height:100%; object-fit:cover; display:block; }
+.cx-decks .ds-qty { position:absolute; bottom:6px; right:6px; min-width:22px; height:22px; padding:0 6px; border-radius:999px; background:rgba(10,9,8,.85); border:1px solid rgba(203,167,95,.5); color:#efe7d8; font:700 12px/22px var(--f-display); text-align:center; box-shadow:0 2px 8px rgba(0,0,0,.55); z-index:2; }
+.cx-decks .ds-toggle-wrap { display:inline-flex; margin:0 auto; background:rgba(42,33,20,.5); border:1px solid #4a3c22; border-radius:999px; padding:3px; gap:2px; }
+.cx-decks .ds-view-btn { background:transparent; border:none; color:#8a8175; border-radius:999px; padding:9px 28px; font:600 13px/1 var(--f-ui); cursor:pointer; transition:color .18s; }
+.cx-decks .ds-view-btn.on { background:rgba(42,33,20,.9); color:#d8c9a4; }
+/* Sites are landscape - the portrait image is rotated 90° clockwise to read right. */
+.cx-decks .sheet-site-wrap { position:relative; width:min(320px,84vw); aspect-ratio:531/380; margin:4px auto 16px; border-radius:14px; overflow:hidden; box-shadow:0 12px 32px rgba(0,0,0,.7), 0 3px 8px rgba(0,0,0,.4); }
+.cx-decks .sheet-site-wrap img { position:absolute; top:50%; left:50%; width:calc(100% * 380 / 531); height:calc(100% * 531 / 380); object-fit:cover; transform:translate(-50%,-50%) rotate(90deg); display:block; }
+/* (Legacy Refine-sheet innards - fsheet/pill/el-toggle/sort/rarity/cmp/
+   zone-stepper/stat-chip/a-toast - were swept in the cohesion pass; RefineSheet
+   now renders its own chips + active states with inline styles.) */
+
+/* ════════════════════════════════════════════════════════════════════════
+   GLOBAL FAB - in the Deckbuilder (.fab / .fab-wrap / .fab-menu /
+   .fab-scrim, L113,635-651). The FAB is the app's interaction spine: it lives
+   on every page and its menu mutates by context. Rendered inside a `.cx-decks`
+   wrapper at the app root so it carries Deckbuilder's tokens and fixed-positions to
+   the viewport. Variant classes .fab-lib / .fab-deck drive the open morph.
+   ════════════════════════════════════════════════════════════════════════ */
+/* FAB - SOLID GOLD with a bright gold OUTLINE. NOTE: the selector is
+   `.cx-decks.fab-wrap .fab` (0,3,0) on purpose - counter.css leaks a global
+   `.fab-wrap .fab` (0,2,0, dark green) that loads later and would otherwise win
+   at equal specificity. This bump guarantees the gold FAB always applies. */
+/* The shared FAB now lives INSIDE the unified .cx-dock (tokens.css) - the dock
+   positions it (keyboard-aware, bottom-right), so the wrapper is just a relative
+   anchor for its badge + upward menu. (The life-counter's own FABs are separate
+   markup under .cx-life-tracker and keep their own fixed positioning.) */
+.cx-decks.fab-wrap { position:relative; z-index:50; }
+/* Context morph - applied by Fab on EVERY mount (all pages): arriving
+   somewhere new, or the FAB changing role (deck menu ⇄ card search), the
+   incarnation spins in, so the change of power is felt, not just seen. */
+.cx-decks.fab-wrap.fab-enter .fab { animation: fabSwapIn .34s cubic-bezier(.34,1.45,.6,1); }
+@keyframes fabSwapIn { from { transform: scale(.35) rotate(-120deg); opacity: 0; } to { transform: scale(1) rotate(0deg); opacity: 1; } }
+/* Entering the full card search - the page rises to meet you. */
+@keyframes cxDeckRise { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
+.cx-decks.fab-wrap.open { z-index:111; }
+/* Stacked add FAB (My Collection edit mode): the filter FAB keeps the docked
+   spot; this one is lifted one FAB-height + gap above it and RISES in from behind
+   it when edit mode opens. The wrapper carries the entrance, so its child skips
+   the usual spin (they'd fight). */
+.cx-decks.fab-wrap.fab-stacked { position:absolute; right:0; bottom:calc(100% + 12px); animation:fabRiseIn .4s cubic-bezier(.34,1.3,.64,1); }
+.cx-decks.fab-wrap.fab-stacked.fab-enter .fab { animation:none; }
+@keyframes fabRiseIn { from { transform:translateY(64px) scale(.4); opacity:0; } to { transform:translateY(0) scale(1); opacity:1; } }
+/* Reduced motion: skip the rise so the FAB simply rests in its correct spot. */
+@media (prefers-reduced-motion: reduce) { .cx-decks.fab-wrap.fab-stacked { animation:none; } }
+.cx-decks.fab-wrap .fab { position:static; width:52px; height:52px; border-radius:50%; background:rgba(12,12,15,.55); border:1px solid rgba(220,184,111,.5); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); color:var(--gold-leaf); font-size:22px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(220,184,111,.1); transition:transform .25s cubic-bezier(.34,1.3,.64,1), background .2s ease, border-color .2s ease; padding:0; }
+.cx-decks.fab-wrap.open .fab { background:rgba(24,20,12,.7); border-color:rgba(220,184,111,.85); }
+/* Active-count badge (Deckbuilder #search-fab-badge) */
+.cx-decks .fab-badge { position:absolute; top:-5px; right:-5px; background:linear-gradient(90deg,var(--gold-leaf) 0%,#f0d480 50%,var(--gold-leaf) 100%); background-size:200% 100%; animation:badgeShimmer 1.6s linear infinite; color:#1a1206; border-radius:999px; font:800 10px/1.4 var(--f-ui); padding:1px 6px; z-index:52; box-shadow:0 0 8px rgba(220,184,111,.55); pointer-events:none; }
+@keyframes badgeShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+.cx-decks.fab-wrap.fab-lib.open .fab  { transform:rotate(135deg); }   /* + morphs into x */
+.cx-decks.fab-wrap.fab-deck.open .fab { transform:rotate(90deg); }    /* the vertical dots tilt */
+.cx-decks.fab-scrim { position:fixed; inset:0; z-index:110; background:rgba(6,5,4,.5); opacity:0; pointer-events:none; transition:opacity .2s ease; }
+.cx-decks.fab-scrim.show { opacity:1; pointer-events:auto; }
+/* FAB menu - BLACK glassy (app rule): near-black frosted panel, gold only in
+   text and hairlines, matching the counter's Play menus. */
+.cx-decks .fab-menu { position:absolute; bottom:calc(100% + 10px); right:0; min-width:170px; background:rgba(10,9,8,.72); border:1px solid rgba(220,184,111,.25); backdrop-filter:blur(16px) saturate(1.15); -webkit-backdrop-filter:blur(16px) saturate(1.15); box-shadow:0 8px 32px rgba(0,0,0,.6); overflow:hidden; transform-origin:bottom right; opacity:0; transform:scale(.18); border-radius:26px; pointer-events:none; transition:transform .25s cubic-bezier(.34,1.3,.64,1), opacity .18s ease, border-radius .25s ease; }
+.cx-decks.fab-wrap.open .fab-menu { opacity:1; transform:scale(1); border-radius:18px; pointer-events:auto; }
+.cx-decks .fab-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:12px 16px; text-align:left; font-size:14px; font-weight:600; color:#e9dcc0; background:none; border:none; cursor:pointer; border-bottom:1px solid rgba(220,184,111,.14); white-space:nowrap; font-family:var(--f-ui); }
+.cx-decks .fab-menu button.prominent { color:#f4e6bf; font-weight:700; background:rgba(220,184,111,.08); }
+.cx-decks .fab-menu button:last-child { border-bottom:none; }
+.cx-decks .fab-menu button:active { background:rgba(220,184,111,.12); }
+.cx-decks .fab-menu button svg { width:17px; height:17px; flex-shrink:0; opacity:.75; }
+.cx-decks .fab-menu button .fab-state { margin-left:auto; font-size:13px; opacity:.6; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   CREATE-DECK WIZARD (onboarding) - in the Deckbuilder (#onboard / .ob-*,
+   L208-250, .btn L104-107, sheet handle/close L578/583). Mandatory 2 steps:
+   (1) name → (2) pick an avatar (cannot finish without one). IDs became
+   classes for React; every value is copied exactly.
+   ════════════════════════════════════════════════════════════════════════ */
+/* Create-deck wizard + Change Avatar sheet - re-homed onto the app-standard
+   black+gold sheet chassis (.a-sheet family): black grimoire ground, gold
+   hairlines, no amethyst. */
+.cx-decks.ob-overlay { position:fixed; inset:0; background:rgba(5,4,3,.7); z-index:400; display:flex; flex-direction:column; animation:cxfade .2s ease; }
+.cx-decks .ob-inner { background:linear-gradient(180deg,#151310,#0a0908); margin-top:auto; margin-bottom:calc(var(--kb,0px) / var(--ui-scale,1)); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); max-height:92vh; max-height:min(92dvh, calc(100dvh - env(safe-area-inset-top,0px) - 10px - var(--kb,0px) / var(--ui-scale,1))); display:flex; flex-direction:column; position:relative; padding-top:10px; padding-bottom:env(safe-area-inset-bottom,0px); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); }
+.cx-decks .sheet-handle { width:36px; height:4px; border-radius:2px; background:rgba(220,184,111,.28); margin:2px auto 16px; flex-shrink:0; }
+.cx-decks .ob-header { padding:0 22px; display:flex; align-items:center; gap:10px; }
+.cx-decks .ob-header h2 { flex:1; font-size:24px; font-weight:700; font-family:var(--f-display); color:var(--gold-leaf); margin:0; }
+.cx-decks .sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+.cx-decks .ob-steps { display:flex; gap:0; padding:14px 16px 16px; align-items:center; justify-content:center; }
+.cx-decks .ob-step { width:28px; height:28px; border-radius:50%; border:1px solid rgba(255,255,255,.14); background:rgba(18,16,13,.6); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:rgba(233,220,192,.4); transition:all .2s; flex-shrink:0; font-family:var(--f-display); }
+.cx-decks .ob-step.done, .cx-decks .ob-step.active { background:rgba(18,16,13,.85); border-color:rgba(220,184,111,.75); color:var(--gold-leaf); box-shadow:0 0 14px rgba(220,184,111,.28); }
+.cx-decks .ob-step-line { width:56px; height:1px; background:rgba(255,255,255,.1); transition:background .2s; flex-shrink:0; }
+.cx-decks .ob-step-line.done { background:rgba(220,184,111,.5); }
+.cx-decks .ob-step1, .cx-decks .ob-step2 { flex:1; overflow-y:auto; padding:14px 16px; }
+.cx-decks .ob-step2 { display:flex; flex-direction:column; overflow:hidden; }
+.cx-decks .ob-step1 input { width:100%; background:rgba(10,9,8,.8); border:1px solid rgba(220,184,111,.22); border-radius:12px; padding:14px 16px; color:#efe7d8; font-size:17px; outline:none; box-shadow:inset 0 1px 6px rgba(0,0,0,.4); transition:border-color .18s, box-shadow .18s; }
+.cx-decks .ob-step1 input:focus { border-color:rgba(220,184,111,.55); box-shadow:inset 0 1px 6px rgba(0,0,0,.4), 0 0 14px rgba(220,184,111,.14); }
+/* .ob-inner already pads env(safe-area-inset-bottom); footer pads only the gap. */
+.cx-decks .ob-footer { padding:12px 16px; border-top:1px solid rgba(220,184,111,.12); display:flex; gap:8px; }
+/* Footer buttons inside the wizard: neutral black-glass ghost + gold-hairline
+   primary (the app's sheet-button pair), never amethyst. */
+.cx-decks .ob-footer .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:transparent; color:rgba(233,220,192,.75); }
+.cx-decks .ob-footer .btn.primary { background:rgba(18,16,13,.85); border:1px solid rgba(220,184,111,.45); color:var(--gold-leaf); }
+.cx-decks .ob-footer .btn.primary:disabled, .cx-decks .ob-footer .btn.primary.disabled { background:rgba(255,255,255,.03); border-color:rgba(255,255,255,.1); color:rgba(233,220,192,.3); opacity:1; }
+.cx-decks .ob-footer .btn svg { width:15px; height:15px; flex:none; }
+.cx-decks .btn { padding:11px 18px; border-radius:14px; border:1px solid #4a3c22; background:rgba(42,33,20,.5); color:#d8c9a4; font-size:14px; font-weight:600; cursor:pointer; font-family:var(--f-ui); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
+.cx-decks .btn.primary { background:rgba(18,16,13,.85); border:1px solid rgba(220,184,111,.45); color:var(--gold-leaf); font-weight:700; font-size:15px; }
+.cx-decks .btn.primary:disabled, .cx-decks .btn.primary.disabled { background:rgba(42,33,20,.5); color:#5c554b; opacity:.7; cursor:default; }
+.cx-decks .btn.danger { background:rgba(24,16,40,.4); border:1px solid rgba(224,144,124,.4); color:#e0907c; }
+.cx-decks .ob-avatar-list { flex:1; overflow-y:auto; }
+.cx-decks .ob-avatar-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding-bottom:4px; }
+.cx-decks .ob-av-card { position:relative; border:1.5px solid rgba(255,255,255,.09); border-radius:14px; overflow:hidden; cursor:pointer; min-height:140px; display:flex; flex-direction:column; justify-content:flex-end; background:rgba(12,10,8,.8); transition:border-color .18s,box-shadow .18s,transform .12s; user-select:none; }
+.cx-decks .ob-av-card:active { transform:scale(.97); }
+.cx-decks .ob-av-card.selected { border-color:rgba(220,184,111,.8); box-shadow:0 0 16px rgba(220,184,111,.3); }
+.cx-decks .ob-av-card img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center 18%; }
+.cx-decks .ob-av-card-grad { position:absolute; inset:0; background:linear-gradient(to bottom, transparent 25%, rgba(8,7,5,.95) 100%); }
+.cx-decks .ob-av-card-info { position:relative; z-index:1; padding:8px 10px 9px; }
+.cx-decks .ob-av-card-name { font-size:13px; font-weight:700; color:#fff; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cx-decks .ob-av-card-meta { font-size:11px; color:rgba(220,184,111,.85); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cx-decks .ob-preview { display:flex; flex-direction:column; gap:8px; border-radius:14px; overflow:hidden; background:linear-gradient(135deg,rgba(26,22,16,.9) 0%,rgba(12,10,8,.94) 70%); border:1px solid rgba(220,184,111,.28); box-shadow:inset 0 1px 0 rgba(255,255,255,.04); padding:14px 16px; margin-bottom:10px; flex-shrink:0; }
+.cx-decks .ob-preview-name { font-size:16px; font-weight:800; color:#efe7d8; line-height:1.2; font-family:var(--f-read); }
+.cx-decks .ob-preview-stats { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.cx-decks .ob-preview-stat { display:inline-flex; align-items:center; gap:4px; font-size:12px; font-weight:700; background:rgba(0,0,0,.35); border:1px solid rgba(255,255,255,.12); border-radius:6px; padding:3px 8px; color:#efe7d8; }
+.cx-decks .ob-preview-stat .label { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:rgba(233,220,192,.5); }
+.cx-decks .ob-preview-type { font-size:11px; color:var(--gold-leaf); font-weight:600; letter-spacing:.3px; }
+.cx-decks .ob-preview-rules { font-size:12px; color:rgba(233,220,192,.62); line-height:1.6; }
+.cx-decks .ob-search-pill-wrap { margin-bottom:10px; flex-shrink:0; }
+.cx-decks .ob-search-pill { display:flex; align-items:center; gap:8px; background:rgba(10,9,8,.85); border:1px solid rgba(220,184,111,.22); border-radius:999px; padding:0 16px; height:50px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:0 2px 14px rgba(0,0,0,.4); }
+.cx-decks .ob-search-pill svg { width:15px; height:15px; color:rgba(233,220,192,.45); flex-shrink:0; }
+.cx-decks .ob-search-pill input { flex:1; background:transparent; border:none; color:#efe7d8; font-size:15px; outline:none; }
+.cx-decks .ob-search-pill input::placeholder { color:rgba(233,220,192,.4); }
+.cx-decks .ob-search-pill input[type="search"]::-webkit-search-cancel-button { display:none; }
+.cx-decks .search-clear-btn { flex-shrink:0; width:26px; height:26px; border-radius:50%; border:1px solid #4a3c22; background:rgba(42,33,20,.5); color:#8a8175; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; }

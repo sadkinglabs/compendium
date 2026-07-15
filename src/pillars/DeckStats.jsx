@@ -1,4 +1,4 @@
-// Deck Stats tab - Arcanum's full analysis suite (mana/power curves, composition,
+// Deck Stats tab - Deckbuilder's full analysis suite (mana/power curves, composition,
 // atlas supply/odds with 10k Monte-Carlo + turn stepper, spellbook odds), same
 // data + calculations, reskinned to the flat "Manuscript" treatment: gold-headed
 // sections on the page background, no panel cards. Chart key colours (elements,
