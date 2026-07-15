@@ -85,6 +85,30 @@ Compendium is maintained as one product and one architecture.
 3. **One data layer.** A single schema with a profile partition powers search, Dashboard, Home, and every pillar repository.
 4. **Graceful everywhere.** Compendium must render fully with **zero images** (§5).
 5. **Expandable by data, not code.** New card sets / elements / even a second game system should be additive data, not a refactor (§6).
+6. **One CSS namespace: `cx-`.** Compendium-owned classes carry it; generic names do not (§3.1).
+
+### 3.1 The `cx-` namespace
+
+**`cx` stands for *Compendium experience*** — Compendium's UX and component styling. It is a namespace prefix, and its only job is to distinguish classes this app owns from generic names like `.fab`, `.sheet`, `.card`, or `.chip`, which collide easily and come from everywhere.
+
+```
+cx-app             the application shell
+cx-dock            the dock (search pill + FAB)
+cx-nav             navigation
+cx-decks           the Decks / deckbuilder styling scope   (decks.css)
+cx-match-history   the Play hub                            (playhistory.css)
+cx-life-tracker    the life counter                        (counter.css)
+```
+
+**This is written down because it is not self-evident.** "CX" reads as *customer experience* to most engineers, and nothing else in the repository defines it. With hindsight `cmp-` or `compendium-` would have been plainer. **We are not renaming it** — see the rules below; the cost of a broad selector rename is now measured, not theoretical.
+
+Rules, each one paid for:
+
+- **A scope class is load-bearing, not decoration.** The scope is what a stylesheet's rules descend from, so JSX emitting the wrong one is not a typo — it silently deletes every rule under it. Because a `className` is only a string, nothing catches this: the build, the types, and the tests all pass while the screen renders as unstyled UA defaults.
+- **Do not rename a scope broadly.** Commit `3ee4a35` renamed `.arc` → `.cx-decks`, `.mh` → `.cx-match-history`, `.vc-root` → `.cx-life-tracker` in the CSS and missed twelve JSX call sites. The FAB and its menu became white system squares on every pillar, and the whole Play hub rendered as raw text, for two days. If a rename is genuinely required, change the CSS and every call site in one commit and verify on a device.
+- **`src/pillars/cssScope.test.mjs` guards this**, under the `test:ui` gate. It rejects the three superseded spellings anywhere a class attribute is emitted, while leaving ordinary prose alone — "arc" is also an English word. Extend it when a scope is added.
+- **Scope sits on the element it scopes, not a parent, where specificity depends on it.** `decks.css` targets `.cx-decks.fab-wrap .fab` (0,3,0) deliberately, because `counter.css` defines a global `.fab-wrap .fab` (0,2,0) that loads later and would otherwise win. Hoisting the scope to a wrapper drops the compound to a descendant and the FAB silently changes colour.
+- **A component that depends on a stylesheet imports it.** `Fab.jsx` renders on every pillar and carries `cx-decks`, so it imports `decks.css` itself rather than relying on some other module happening to pull it into the bundle.
 
 ---
 
