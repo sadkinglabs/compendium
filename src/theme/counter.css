@@ -421,23 +421,36 @@ body.roll-active .dd-pill { display: none !important; }
    never be told apart by motion alone. */
 .dd-pill.dd-reveal .dd-pill-body {
   animation: none;
-  border: 1.5px dashed rgba(224,120,106,.45);
-  color: rgba(224,120,106,.6);
-  box-shadow: 0 4px 16px rgba(0,0,0,.6);
+  background: rgba(30,9,12,.22);
+  border-style: dashed; border-color: rgba(224,120,106,.3);
+  color: rgba(224,120,106,.5);
+  box-shadow: 0 4px 16px rgba(0,0,0,.45);
 }
-.dd-pill.dd-armed .dd-pill-body { border: 1px solid rgba(224,120,106,.85); }
+.dd-pill.dd-armed .dd-pill-body {
+  background: rgba(40,10,14,.55);
+  border-style: solid; border-color: rgba(224,120,106,.85);
+  color: var(--crimson);
+  box-shadow: 0 0 30px rgba(224,120,106,.4), 0 4px 16px rgba(0,0,0,.6);
+  /* Delayed by the length of the fade above. An animation seizes box-shadow the
+     instant it is applied, which would snap the glow on and defeat the transition
+     entirely; waiting for the fade to land means the ember lights only once the
+     button has finished becoming real. */
+  animation: dd-pill-pulse 1.4s ease-in-out .8s infinite;
+}
+/* The body only ever holds what is COMMON to both arming states. Everything that
+   differs - fill, ink, rim, glow - lives on .dd-reveal / .dd-armed below and is
+   transitioned, so locking in is a fade rather than a cut. */
 .dd-pill-body {
   display: flex; align-items: center; gap: 10px;
-  border-radius: 999px; padding: 14px 30px;
-  background: rgba(40,10,14,.55); border: 1px solid rgba(224,120,106,.65);
-  box-shadow: 0 0 30px rgba(224,120,106,.4), 0 4px 16px rgba(0,0,0,.6);
+  border-radius: 999px; padding: 14px 30px; min-height: 48px; box-sizing: border-box;
+  border: 1.5px solid transparent;   /* width fixed across states so only style/colour move */
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
-  color: var(--crimson); font-size: 15px; font-weight: 800;
+  font-size: 15px; font-weight: 800;
   text-transform: uppercase; letter-spacing: 1.5px;
-  animation: dd-pill-pulse 1.4s ease-in-out infinite;
+  transition: background .8s ease, border-color .8s ease, color .8s ease, box-shadow .8s ease;
 }
 .dd-pill-body svg { width: 23px; height: 23px; }
-.dd-pill.show:active .dd-pill-body { transform: scale(.96); }
+.dd-pill.dd-armed:active .dd-pill-body { transform: scale(.96); }
 @keyframes dd-pill-pulse {
   0%, 100% { box-shadow: 0 0 30px rgba(224,120,106,.4), 0 4px 16px rgba(0,0,0,.6); }
   50%      { box-shadow: 0 0 44px rgba(224,120,106,.65), 0 4px 16px rgba(0,0,0,.6); }
