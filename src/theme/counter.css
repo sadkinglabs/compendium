@@ -84,7 +84,10 @@
 body.grain-off .half-grain { display: none; }
 
 /* ── Quick Match: no avatars, the app's You=gold / Opponent=violet identity ── */
-#counter-screen.quick .half-bg,
+/* :not(.half-bg-dd) - the ash layer is a .half-bg too, and it is what drains the
+   colour out of a Quick Match half at Death's Door. Hiding it here would leave the
+   artless halves stubbornly gold and violet while a player lies at zero. */
+#counter-screen.quick .half-bg:not(.half-bg-dd),
 #counter-screen.quick .half-gradient { display: none; }
 #counter-screen.quick .player-half {
   background:
@@ -346,14 +349,11 @@ img.half-bg-dd { filter: grayscale(1) brightness(.55) contrast(1.06); }
 .half-grain { transition: opacity .9s ease; }
 .counter-half.dd .half-grain { opacity: .22; }   /* grain thickens into ash */
 
-/* The artless half: the app's own mark, enlarged. Deliberate, not broken. */
-.half-sigil {
-  display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(158deg, #241d12, #12100a 66%, #0a0a09);
-  color: var(--gold-leaf);
-}
-.half-sigil svg { width: 62%; max-width: 340px; height: auto; opacity: .5; }
-.half-sigil-dd { background: linear-gradient(158deg, #2b2a28, #131312 66%, #0a0a09); color: #9a9894; }
+/* The artless ash: a flat achromatic wash that crossfades OVER whatever colours the
+   half - Quick Match's gold/violet identity, or a card's element gradient. No mark,
+   no glyph. The tracker lies on a table between two players and should recede into
+   it; iconography here would pull attention to the app instead of the game. */
+.half-bg-ash { background: linear-gradient(158deg, #2b2a28, #131312 66%, #0a0a09); }
 
 /* The state's name. Inside the half, so it rotates with it and reads across the
    table. "AT DEATH'S DOOR" - a place you are AT. Never "Defeated". */
@@ -391,18 +391,25 @@ body.reduce-motion .dd-shock { display: none; }   /* a frozen ring is noise, not
    A merely `disabled` button would still occupy the hit-test slot, swallow
    the tap, and let the quiet window expire under a live finger - which IS the
    bug this whole mechanism exists to kill. */
+/* It surfaces slowly - 1.6s, no bounce, no overshoot. This is the app telling you a
+   player is dying; it should rise like something coming up out of water, not pop in
+   like a toast. The slowness is also honest: it takes about as long as the inert
+   window, so by the time it has finished arriving it is nearly ready to be pressed,
+   and there is no moment where a fully-settled button silently refuses a tap. */
 .dd-pill {
   position: relative; z-index: 2; margin-top: 24px;
   display: flex; padding: 0; border: 0; background: none; font: inherit; color: inherit;
   -webkit-appearance: none; appearance: none;
-  opacity: 0; visibility: hidden; transform: translateY(10px) scale(.92);
+  opacity: 0; visibility: hidden; transform: translateY(22px) scale(.86);
   pointer-events: none;
-  transition: opacity .26s ease, transform .26s cubic-bezier(.2,.9,.3,1), visibility 0s linear .26s;
+  transition: opacity 1.6s ease, transform 1.6s cubic-bezier(.16,.7,.2,1), visibility 0s linear 1.6s;
 }
 .dd-pill.dd-reveal, .dd-pill.dd-armed {
   opacity: 1; visibility: visible; transform: none;
-  transition: opacity .26s ease, transform .26s cubic-bezier(.2,.9,.3,1);
+  transition: opacity 1.6s ease, transform 1.6s cubic-bezier(.16,.7,.2,1);
 }
+/* Recovery must be instant, not a 1.6s fade-out under a finger that is tapping again. */
+.counter-half:not(.dd) .dd-pill { transition: none; }
 .dd-pill.dd-armed { pointer-events: auto; cursor: pointer; }
 body.roll-active .dd-pill { display: none !important; }
 

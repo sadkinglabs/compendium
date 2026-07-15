@@ -114,25 +114,25 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // timer expire under a live finger, which IS the original bug), so it is verified on
   // device. `.dd-pill.dd-armed` is the only rule in the app that sets pointer-events:
   // auto; if that ever stops being true, this guard is gone.
-  const [ddPhase, setDdPhase] = useState({ player: DD.ALIVE, enemy: DD.ALIVE });
+  const [ddPhase, setDdPhase] = useState({ player: DD.ALIVE, opponent: DD.ALIVE });
   const ddRef = useRef(null);
   if (ddRef.current === null) {
     ddRef.current = createDdArming({
       // Derived from restored life, never assumed: a match resumed with a side already
       // at Death's Door enters FALLEN at mount and arms with no further tap.
-      initialLife: { player: pRef.current.life, enemy: eRef.current.life },
+      initialLife: { player: pRef.current.life, opponent: eRef.current.life },
       onChange: (who, phase) => setDdPhase((p) => ({ ...p, [who]: phase })),
     });
     // Mirror the derived phases into React's first render.
-    if (ddRef.current.phase('player') !== DD.ALIVE || ddRef.current.phase('enemy') !== DD.ALIVE) {
+    if (ddRef.current.phase('player') !== DD.ALIVE || ddRef.current.phase('opponent') !== DD.ALIVE) {
       // eslint-disable-next-line react-hooks/rules-of-hooks
-      Object.assign(ddPhase, { player: ddRef.current.phase('player'), enemy: ddRef.current.phase('enemy') });
+      Object.assign(ddPhase, { player: ddRef.current.phase('player'), opponent: ddRef.current.phase('opponent') });
     }
   }
   const dd = ddRef.current;
   // Bumped each time a side falls, so the shock ring remounts and replays per fall
   // rather than only on first mount.
-  const [fallSeq, setFallSeq] = useState({ player: 0, enemy: 0 });
+  const [fallSeq, setFallSeq] = useState({ player: 0, opponent: 0 });
   const bumpFallSeq = (who) => setFallSeq((s) => ({ ...s, [who]: s[who] + 1 }));
 
   // ── numeral rendering (imperative, mirrors renderLife) ──
@@ -473,24 +473,28 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       </button>
     );
   };
-  const halfArt = (img, fall, id) => (img ? (
+  const halfArt = (img, id) => (
     <>
-      <img className="half-bg" id={id} src={img} alt="" />
-      <img className="half-bg half-bg-dd" src={img} alt="" aria-hidden="true" />
-      <div className="half-gradient" />
+      {img && <img className="half-bg" id={id} src={img} alt="" />}
+      {img && <div className="half-gradient" />}
+      {/* The ash layer. With art it is a grayscale twin of the same <img>; artless it
+          is a flat achromatic wash that crossfades OVER whatever colours the half -
+          Quick Match's gold/violet identity, or a card's element gradient. Either way
+          the colour visibly leaves. No mark, no glyph: the tracker sits on a table
+          between two players and should recede into it, so iconography would be
+          exactly the wrong instinct here. */}
+      {img
+        ? <img className="half-bg half-bg-dd" src={img} alt="" aria-hidden="true" />
+        : <div className="half-bg half-bg-dd half-bg-ash" aria-hidden="true" />}
     </>
-  ) : (
-    <>
-      <div className="half-bg half-sigil" style={fall ? { background: fall } : undefined}>{SigilSvg}</div>
-      <div className="half-bg half-bg-dd half-sigil half-sigil-dd">{SigilSvg}</div>
-    </>
-  ));
+  );
 
   return (
     <div id="counter-screen" className={`cx-life-tracker${quick ? ' quick' : ''}`}>
       {/* Enemy half (rotated 180° for across-table reading) */}
-      <div className={`counter-half enemy-half${e.life <= 0 ? ' dd' : ''}`} id="enemy-half">
-        {halfArt(eImg, eFall, 'enemy-bg')}
+      <div className={`counter-half enemy-half${e.life <= 0 ? ' dd' : ''}`} id="enemy-half"
+           style={!eImg && eFall ? { background: eFall } : undefined}>
+        {halfArt(eImg, 'enemy-bg')}
         <div className="half-dd-veil" />
         <div className="half-grain" />
         <div className="life-display">
@@ -514,8 +518,9 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       <div className="counter-divider" />
 
       {/* Player half */}
-      <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}`} id="player-half">
-        {halfArt(pImg, pFall, 'player-bg')}
+      <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}`} id="player-half"
+           style={!pImg && pFall ? { background: pFall } : undefined}>
+        {halfArt(pImg, 'player-bg')}
         <div className="half-dd-veil" />
         <div className="half-grain" />
         <div className="life-display">
@@ -875,21 +880,6 @@ const HeartSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const HeartMiniSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 1 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z" /></svg>;
 const DDSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3.2C7.6 3.2 4.5 6.5 4.5 10.5c0 2.6 1.3 4.6 2.6 5.8.3.3.4.6.4 1v1.4c0 .8.6 1.5 1.5 1.5h1.1c.5 0 .9-.4.9-.9v-1c0-.3.2-.5.5-.5h.9c.3 0 .5.2.5.5v1c0 .5.4.9.9.9h1.1c.8 0 1.5-.7 1.5-1.5v-1.4c0-.4.1-.7.4-1 1.3-1.2 2.6-3.2 2.6-5.8 0-4-3.1-7.3-7.5-7.3z" /><ellipse cx="9" cy="10.6" rx="1.7" ry="2.1" fill="currentColor" stroke="none" /><ellipse cx="15" cy="10.6" rx="1.7" ry="2.1" fill="currentColor" stroke="none" /></svg>;
 
-// The half's stand-in when no card art resolves - Quick Match, an unknown slug, or
-// zero-image mode. INLINE, not an asset: markup cannot 404 and is not suppressed by
-// the image gate, so this screen stays whole exactly when the gate says it must. It
-// is the app's own split-diamond mark, enlarged into a sigil and ringed, so an
-// artless half reads as deliberate rather than broken - and it desaturates for
-// Death's Door like any other layer.
-const SigilSvg = (
-  <svg viewBox="0 0 200 200" fill="none" aria-hidden="true" focusable="false">
-    <circle cx="100" cy="100" r="76" stroke="currentColor" strokeWidth=".8" opacity=".28" />
-    <circle cx="100" cy="100" r="60" stroke="currentColor" strokeWidth=".5" opacity=".18" strokeDasharray="2 7" />
-    <rect x="62" y="62" width="76" height="76" rx="6" transform="rotate(45 100 100)" stroke="currentColor" strokeWidth="1.6" opacity=".5" />
-    <path d="M100 66 100 134 M66 100 134 100" stroke="currentColor" strokeWidth=".6" opacity=".22" />
-    <rect x="82" y="82" width="36" height="36" rx="3" transform="rotate(45 100 100)" stroke="currentColor" strokeWidth="1.1" opacity=".75" />
-  </svg>
-);
 const LogSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>;
 const ResetSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" /></svg>;
 const FlagSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={s}><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><line x1="4" y1="22" x2="4" y2="15" /></svg>;

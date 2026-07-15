@@ -37,7 +37,13 @@
 export const DD_ARM_QUIET_MS = 1200;   // verified-quiet window. Deliberately NOT LOG_GAP_MS:
                                        // log coalescing and destructive-action arming are
                                        // separate product knobs that merely start equal.
-export const DD_ARM_REVEAL_MS = 300;   // materialised-but-inert stage
+// The materialised-but-inert stage. Set to 3000 on device evidence, not by theory:
+// 300ms was the safety minimum, but at 3s the arrival reads as dread rather than as
+// a control appearing, and the project owner confirmed it in real play. The pill's
+// 1.6s rise fits inside it, so the button is never sitting fully-formed and silently
+// refusing taps. It is not decoration - a tap anywhere in this window still passes
+// through to the tap zone and resets the whole sequence.
+export const DD_ARM_REVEAL_MS = 3000;
 
 export const DD = {
   ALIVE: 'alive',
@@ -110,6 +116,16 @@ const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites
  * with a side already at zero enters FALLEN at mount and arms without a further tap.
  */
 export function createDdArming({ initialLife, onChange, setTimeout: setT = setTimeout, clearTimeout: clearT = clearTimeout }) {
+  // Refuse a missing side outright. `undefined > 0` is false, so a mis-keyed
+  // initialLife would silently read as FALLEN - the worst possible default: the
+  // opponent's pill arms itself seconds into a fresh match, with no one at zero.
+  // That shipped once (the caller passed `enemy` where this expects `opponent`) and
+  // the unit tests could not see it, because they pass their own keys. Fail loudly.
+  for (const who of SIDES) {
+    if (typeof initialLife?.[who] !== 'number') {
+      throw new Error(`ddArming: initialLife.${who} must be a number, got ${JSON.stringify(initialLife?.[who])}. Sides are ${SIDES.join(' | ')}.`);
+    }
+  }
   const phases = { player: initialPhase(initialLife.player), opponent: initialPhase(initialLife.opponent) };
   const handles = { player: null, opponent: null };
   let disposed = false;

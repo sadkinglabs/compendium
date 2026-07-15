@@ -179,20 +179,35 @@ test('a match resumed alive holds no timers', () => {
   assert.equal(h.pending(), 0);
 });
 
+test('a mis-keyed side is refused, loudly', () => {
+  // This shipped: the caller passed `enemy` where this expects `opponent`, so
+  // initialLife.opponent was undefined, `undefined > 0` was false, and the opponent
+  // silently started FALLEN - their End Match pill armed itself a few seconds into a
+  // brand new match with nobody at zero. Only a human on a device caught it, because
+  // these fixtures pass their own keys and could not see the caller's typo.
+  assert.throws(() => createDdArming({ initialLife: { player: 20, enemy: 20 } }), /initialLife\.opponent must be a number/);
+  assert.throws(() => createDdArming({ initialLife: { player: 20 } }), /opponent/);
+  assert.throws(() => createDdArming({ initialLife: {} }), /player/);
+});
+
 // --- independence --------------------------------------------------------------
+
+// Derived from the constants, never hardcoded: the reveal window moved 300 -> 3000 on
+// device evidence, and literals here would have failed for the wrong reason.
+const LEAD = 600;   // how far ahead of the opponent the player falls
 
 test('the two sides arm on independent clocks', () => {
   const h = harness();
   h.dd.syncLife('player', 1, 0);
-  h.tick(600);
+  h.tick(LEAD);
   h.dd.syncLife('opponent', 1, 0);
-  h.tick(600);                                   // player at 1200, opponent at 600
+  h.tick(DD_ARM_QUIET_MS - LEAD);                      // player's quiet is up; opponent's is not
   assert.equal(h.dd.phase('player'), DD.REVEALING);
   assert.equal(h.dd.phase('opponent'), DD.FALLEN);
-  h.tick(300);                                   // player at 1500
+  h.tick(DD_ARM_REVEAL_MS);                            // player armed; opponent still behind
   assert.equal(h.dd.phase('player'), DD.ARMED);
-  assert.equal(h.dd.phase('opponent'), DD.FALLEN);
-  h.tick(600);                                   // opponent at 1500
+  assert.notEqual(h.dd.phase('opponent'), DD.ARMED);
+  h.tick(LEAD);                                        // opponent's full window elapses
   assert.equal(h.dd.phase('opponent'), DD.ARMED);
 });
 
@@ -200,11 +215,11 @@ test('tapping one side never postpones the other', () => {
   const h = harness();
   h.dd.syncLife('player', 1, 0);
   h.dd.syncLife('opponent', 1, 0);
-  h.tick(1000);
-  h.dd.tap('player');
-  h.tick(500);
-  assert.equal(h.dd.phase('opponent'), DD.ARMED);
-  assert.equal(h.dd.phase('player'), DD.FALLEN);
+  h.tick(ARM_MS - 200);
+  h.dd.tap('player');                                  // only the player's hand is on the glass
+  h.tick(200);
+  assert.equal(h.dd.phase('opponent'), DD.ARMED, 'the quiet side must arm on schedule');
+  assert.equal(h.dd.phase('player'), DD.FALLEN, 'the tapping side must not');
 });
 
 // --- suppression ---------------------------------------------------------------
