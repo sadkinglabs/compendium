@@ -2,34 +2,58 @@
 // Uses Compendium's catalogue avatar cards for the grid data, plus a Compendium
 // addition: pilot one of YOUR DECKS (sets your avatar and links the match to
 // the deck - its W–L ledger updates on record).
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useReducer, useState } from 'react';
 import '../theme/counter.css';
 import { listAvatars } from '../store/playRepository.js';
 import { listDecks } from '../store/deckRepository.js';
+import { selectionReducer, initialSelection, rolesOf, isReady, armedRole } from './avatarPickerState.js';
 
 const BASE = import.meta.env.BASE_URL;
+// The reducer's role keys are the state keys ('you' | 'opponent'); the CSS uses the
+// short forms that match the hue system's naming (.role-opp, .targeting-opp).
+const ROLE_SUFFIX = { you: 'you', opponent: 'opp' };
+
+// What a card tap will do, spoken aloud. The role badges are CSS ::after content,
+// which is not a dependable accessible-state mechanism, so the button label - not
+// the frame - is what actually carries the state to a screen reader.
+function cardLabel(name, role, armed) {
+  const held = role.you && role.opponent ? ', selected as both players'
+    : role.you ? ', selected as your avatar'
+    : role.opponent ? ', selected as opponent' : '';
+  if (!armed) return `${name}${held}. Both sides are chosen; clear one from the matchup above first`;
+  return `${name}${held}. Activate to set as ${armed === 'you' ? 'your avatar' : 'the opponent'}`;
+}
 
 export default function AvatarPicker({ onConfirm, onCancel }) {
   const [avatars, setAvatars] = useState([]);
   const [decks, setDecks] = useState([]);
-  const [deck, setDeck] = useState(null);
   const [q, setQ] = useState('');
-  const [you, setYou] = useState(null);
-  const [opp, setOpp] = useState(null);
+  // One atomic selection value. Search and the loaded lists stay out of it - they
+  // are not selection. See avatarPickerState.js for why this is a reducer.
+  const [sel, dispatch] = useReducer(selectionReducer, initialSelection);
+  const { you, opponent: opp, deck } = sel;
+  // Derived, never stored: the glow and the next tap read the same value, so they
+  // cannot disagree. YOU is lit on open; filling it lights OPPONENT on its own.
+  const armed = armedRole(sel);
 
   useEffect(() => { listAvatars().then(setAvatars); listDecks().then(setDecks); }, []);
 
-  function pick(a) {
-    if (you?.card_id === a.card_id) { setYou(null); return; }
-    if (opp?.card_id === a.card_id) { setOpp(null); return; }
-    if (!you) setYou(a); else if (!opp) setOpp(a);
-  }
-  function pickDeck(d) {
-    if (deck?.id === d.id) { setDeck(null); return; }   // tap again to unlink
-    setDeck({ id: d.id, name: d.name });
-    if (d.avatar) setYou({ card_id: d.avatar.card_id, name: d.avatar.name, image_slug: d.avatar.image_slug });
-  }
-  const roleClass = (a) => you?.card_id === a.card_id ? ' is-you' : opp?.card_id === a.card_id ? ' is-opp' : '';
+  const pick = (a) => dispatch({ type: 'tapAvatar', card: a });
+  const tapSlot = (role) => dispatch({ type: 'tapSlot', role });
+  const pickDeck = (d) => dispatch({ type: 'pickDeck', deck: d });
+
+  // Both roles, not the first that matches: a mirrored pick is is-you AND is-opp,
+  // and an earlier ternary short-circuited so the opponent half went invisible.
+  const roleClass = (a) => {
+    const r = rolesOf(sel, a);
+    return `${r.you ? ' is-you' : ''}${r.opponent ? ' is-opp' : ''}`;
+  };
+  const mirrored = (a) => { const r = rolesOf(sel, a); return r.you && r.opponent; };
+  const slotLabel = (role, filled, name) => {
+    if (filled) return `Clear ${role === 'you' ? 'your avatar' : 'the opponent'}, ${name}`;
+    if (armed === role) return `${role === 'you' ? 'Your avatar' : 'Opponent'} slot, ready. Choose an avatar below`;
+    return `${role === 'you' ? 'Your avatar' : 'Opponent'} slot, empty. Activate to choose this side next`;
+  };
   // One search, both lists: the query narrows the avatar grid AND the deck rail
   // (a 50-deck stable is unusable as a blind horizontal scroll). A deck matches
   // on its own name OR its avatar's name, so typing "Battlemage" surfaces every
@@ -41,10 +65,13 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
     || d.name.toLowerCase().includes(needle)
     || d.avatar?.name?.toLowerCase().includes(needle)
     || d.id === deck?.id);
-  const ready = you && opp;
+  const ready = isReady(sel);
 
   return (
-    <div id="picker-screen" className="cx-life-tracker">
+    // `targeting-*` on the root is what lets the grid preview in pure CSS: the card
+    // already holding the other role grows a dashed ghost badge in the slot this tap
+    // would fill. No per-card JSX, no state threaded into 100+ cards.
+    <div id="picker-screen" className={`cx-life-tracker${armed ? ` targeting-${ROLE_SUFFIX[armed]}` : ' both-chosen'}`}>
       <div className="picker-header">
         <h2>Choose Avatars</h2>
         <button className="picker-back" onClick={onCancel} aria-label="Close">
@@ -52,19 +79,36 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         </button>
       </div>
 
-      {/* Match preview - tap a slot to clear that pick */}
+      {/* Match preview. A filled slot clears that role; an empty one targets it, so
+          the next card tap lands there - which is how the same avatar reaches both
+          sides. Targeting is visible state, never history. */}
       <div className="picker-matchup">
-        <div className={`pm-slot${you ? ' filled' : ''}`} onClick={() => setYou(null)} role="button" aria-label="Your avatar">
-          <div className="pm-thumb">{you ? <img src={`${BASE}cards/${you.image_slug}`} alt="" /> : '?'}</div>
-          <div className="pm-role">YOU</div>
-          <div className="pm-name">{you ? you.name : 'Tap an avatar'}</div>
-        </div>
-        <div className="pm-vs">VS</div>
-        <div className={`pm-slot${opp ? ' filled' : ''}`} onClick={() => setOpp(null)} role="button" aria-label="Opponent avatar">
-          <div className="pm-thumb">{opp ? <img src={`${BASE}cards/${opp.image_slug}`} alt="" /> : '?'}</div>
-          <div className="pm-role">OPPONENT</div>
-          <div className="pm-name">{opp ? opp.name : 'Tap an avatar'}</div>
-        </div>
+        {[['you', you, 'YOU'], ['opponent', opp, 'OPPONENT']].map(([role, val, caption], i) => (
+          <React.Fragment key={role}>
+            {i === 1 && <div className="pm-vs">VS</div>}
+            <button type="button"
+              className={`pm-slot role-${ROLE_SUFFIX[role]}${val ? ' filled' : ''}${armed === role ? ' armed' : ''}`}
+              onClick={() => tapSlot(role)}
+              aria-label={slotLabel(role, !!val, val?.name)}>
+              {/* The role title heads its frame, so each side reads top-down:
+                  who -> which avatar -> what a tap does. */}
+              <div className="pm-role">{caption}</div>
+              <div className="pm-thumb">
+                {val ? <img src={`${BASE}cards/${val.image_slug}`} alt="" />
+                     : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>}
+              </div>
+              {/* Name and hint always render so the two slots stay the same height and
+                  VS never drifts; CSS reserves the rows.
+                  The empty state says nothing on purpose - the glow already does. The
+                  hint appears only once a slot is filled, because that is the one thing
+                  the visuals cannot state: that this slot, not the card, is where
+                  deselection lives. Project owner: "After picking, show 'Tap to
+                  deselect' under the picked avatar." */}
+              <div className="pm-name">{val ? val.name : ''}</div>
+              <div className="pm-hint">{val ? 'Tap to deselect' : ''}</div>
+            </button>
+          </React.Fragment>
+        ))}
       </div>
       {/* Pilot one of your decks - Compendium cross-pillar link */}
       {deckList.length > 0 && (
@@ -84,10 +128,16 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
       <div className="picker-grid-wrap">
         <div className="avatar-grid">
           {list.map((a) => (
-            <div key={a.card_id} className={`avatar-card${roleClass(a)}`} onClick={() => pick(a)}>
-              <img src={`${BASE}cards/${a.image_slug}`} alt={a.name} loading="lazy" />
-              <div className="avatar-card-name">{a.name}</div>
-            </div>
+            <button type="button" key={a.card_id}
+              className={`avatar-card${roleClass(a)}`}
+              onClick={() => pick(a)}
+              disabled={!armed}
+              aria-pressed={rolesOf(sel, a).you || rolesOf(sel, a).opponent}
+              aria-label={cardLabel(a.name, rolesOf(sel, a), armed)}>
+              <img src={`${BASE}cards/${a.image_slug}`} alt="" loading="lazy" />
+              {mirrored(a) && <span className="avatar-split" aria-hidden="true" />}
+              <div className="avatar-card-name" aria-hidden="true">{a.name}</div>
+            </button>
           ))}
         </div>
       </div>

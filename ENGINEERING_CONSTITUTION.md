@@ -274,7 +274,7 @@ A change is complete only when all applicable gates pass:
 - acceptance criteria are met and the implementation matches the approved proposal;
 - the diff contains no unexplained scope, debug artifacts, dead code, or accidental generated output;
 - applicable automated tests pass, including new regression tests for changed behavior;
-- `npm run test:codex`, `npm run test:query`, and `npm run build` pass when their surfaces are affected; narrower checks may supplement but not misrepresent coverage;
+- `npm run test:codex`, `npm run test:query`, `npm run test:ui`, and `npm run build` pass when their surfaces are affected; narrower checks may supplement but not misrepresent coverage;
 - browser and Android/Capacitor behavior are verified when runtime-specific behavior changes;
 - migrations are tested from representative prior versions, for retry/partial failure, and with data-integrity checks;
 - profile isolation is explicitly tested when profile-owned data paths change;

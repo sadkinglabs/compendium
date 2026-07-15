@@ -206,10 +206,13 @@ Claude supplies exact commands and outcomes, including failures and skipped chec
 ```powershell
 npm run test:codex
 npm run test:query
+npm run test:ui
 npm run build
 ```
 
-UI work also exercises relevant interactions and the zero-image mode documented in `BUILD.md`. Native/plugin behavior requires Capacitor/Android evidence; browser fallback is not equivalent. Data work requires representative prior-state, retry, isolation, and integrity cases.
+`test:ui` covers pure UI state under `src/pillars/**` — reducers, interaction state, and pillar logic extracted from components so it can be tested without a DOM. Run it for any change to those, and prefer extracting such logic over leaving an invariant untestable inside a component.
+
+UI work also exercises relevant interactions and the zero-image mode documented in `BUILD.md`. Native/plugin behavior requires Capacitor/Android evidence; browser fallback is not equivalent — **a browser on the device is not the shipping runtime either**, since the app ships in the Capacitor WebView (Chromium) and a phone browser may be another engine entirely. Engine-sensitive CSS and any plugin path must be observed in the installed app, and the report must name the device, OS version, WebView version, and build type. Data work requires representative prior-state, retry, isolation, and integrity cases.
 
 Codex then reviews the actual diff for correctness, proposal alignment, hidden scope, test strength, documentation, and quality gates. New implementation facts may reopen an approved design decision.
 

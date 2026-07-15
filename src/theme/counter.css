@@ -401,19 +401,81 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-header h2 { font-family: var(--f-display); font-size: 23px; font-weight: 600; color: var(--gold-head); }
 
 /* Match preview - You (pick) VS Opponent (pick), under the title. */
-.picker-matchup { display: flex; align-items: center; gap: 12px; padding: 14px 20px 4px; }
-.pm-slot { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-.pm-thumb { width: 58px; height: 58px; border-radius: 15px; overflow: hidden; background: var(--surface); border: 1.5px solid var(--gold-line); display: flex; align-items: center; justify-content: center; color: rgba(220,184,111,.4); font: 400 24px/1 var(--f-display); }
-.pm-slot.filled .pm-thumb { border-color: rgba(220,184,111,.75); box-shadow: 0 0 16px rgba(220,184,111,.22); }
+/* The matchup row's geometry is declared once here and every child derives from it,
+   so resizing the frames cannot drift VS off-centre or starve the pulse of room. */
+.picker-matchup {
+  display: flex; align-items: flex-start; gap: 12px; padding: 12px 20px 6px;
+  --thumb: 104px;      /* the avatar frame */
+  --halo: 12px;        /* reserved around it: the armed pulse's ring + blur live here */
+  --role-h: 10px;      /* the YOU / OPPONENT title heading each frame */
+  --stack-gap: 6px;
+}
+/* A real <button>: the slot is an action (clear this role / target this role), so
+   it needs button semantics and keyboard reach, not a click handler on a div. The
+   reset keeps the UA's chrome out of the grimoire skin. */
+.pm-slot {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: var(--stack-gap);
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+  background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit;
+  -webkit-appearance: none; appearance: none;
+}
+/* The halo margin is layout, not decoration: box-shadow does not reserve space, so
+   without it the armed pulse would crowd the title above and the grid below. */
+.pm-thumb { width: var(--thumb); height: var(--thumb); margin: var(--halo) 0; border-radius: 22px; overflow: hidden; background: var(--surface); border: 2px solid var(--gold-line); display: flex; align-items: center; justify-content: center; color: rgba(220,184,111,.4); }
 .pm-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: center 18%; }
-.pm-role { font: 600 9px/1 var(--f-ui); letter-spacing: .16em; color: var(--faint); }
-.pm-name { font: 600 12px/1.25 var(--f-read); color: var(--muted); text-align: center; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-thumb svg { width: 34px; height: 34px; }
+.pm-role { font: 600 10px/1 var(--f-ui); letter-spacing: .16em; color: var(--faint); }
+.pm-name { font: 600 15px/1.25 var(--f-read); color: var(--muted); text-align: center; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-slot.filled .pm-name { color: var(--gold-head); }
+/* Both rows always render, empty or not, so the two slots stay the same height and
+   VS never drifts as picks come and go. */
+.pm-name { min-height: 19px; }
+.pm-hint { min-height: 13px; font: 500 11px/1.2 var(--f-ui); letter-spacing: .04em; color: var(--faint); }
+
+/* Role hue system. Role = hue + side, and that one grammar carries this whole
+   screen: YOU is gold and lives left, OPPONENT is violet and lives right - in the
+   slots, in the grid badges, and in the two halves of the mirror ring. Declaring
+   the hue once per role means every state below is written once. */
+.pm-slot.role-you { --role: var(--gold); --role-rgb: 220,184,111; }
+.pm-slot.role-opp { --role: #a08fd6;     --role-rgb: 160,143,214; }
+
+/* Empty = an open socket, not a dead placeholder. A dashed role-hued ring and a
+   plus read as "something goes here"; the old '?' glyph invited nothing. */
+.pm-slot:not(.filled) .pm-thumb {
+  border: 1.5px dashed rgba(var(--role-rgb), .55);
+  background: rgba(var(--role-rgb), .06);
+  color: rgba(var(--role-rgb), .8);
+}
+.pm-slot.filled .pm-thumb { border-color: rgba(var(--role-rgb), .75); box-shadow: 0 0 16px rgba(var(--role-rgb), .22); }
+.pm-slot.role-opp.filled .pm-name { color: #cfc2f0; }
+
+/* Armed = the socket lit: this slot takes the next tap from the grid. It is derived
+   (YOU on open, OPPONENT the moment YOU fills), so the glow and the tap always agree.
+   The glow carries the instruction alone - the empty slot deliberately says nothing.
+   Project owner: "the glow is enough", and "we don't need to read 'Even the same
+   avatar' - that is implicit from correct behaviour and proper UI design." Earlier
+   drafts captioned this state ("Now pick below", "Even the same avatar"); both were
+   cut as copy restating what the light already says. Do not reintroduce them. */
+.pm-slot.armed .pm-thumb {
+  border: 2px solid var(--role);
+  background: rgba(var(--role-rgb), .14);
+  color: var(--role);
+  box-shadow: 0 0 0 3px rgba(var(--role-rgb), .2), 0 0 26px rgba(var(--role-rgb), .45);
+  animation: pmTarget 1.5s ease-in-out infinite;
+}
+.pm-slot.armed .pm-role { color: var(--role); }
+@keyframes pmTarget {
+  50% { box-shadow: 0 0 0 7px rgba(var(--role-rgb), .32), 0 0 34px rgba(var(--role-rgb), .6); }
+}
 .pm-vs {
   flex: none; font: 700 34px/1 var(--f-display); letter-spacing: .06em;
   color: rgba(220,184,111,.85); text-shadow: 0 0 18px rgba(220,184,111,.28);
-  /* sits level with the thumbs, not the caption rows beneath them */
-  align-self: flex-start; margin-top: 12px;
+  /* Centred on the frames themselves, not on the column: the title above and the
+     name/hint rows below are not symmetrical, so centring the whole slot would sit
+     VS visibly low. Walk down to the frame's midpoint and lift VS by half its own
+     line, all from the row's declared geometry. */
+  align-self: flex-start;
+  margin-top: calc(var(--role-h) + var(--stack-gap) + var(--halo) + (var(--thumb) - 34px) / 2);
 }
 .picker-back {
   position: absolute; top: 6px; right: 6px;
@@ -471,18 +533,79 @@ body.roll-active .dd-pill { display: none !important; }
   background: var(--surface); border: 2px solid transparent;
   cursor: pointer; position: relative;
   transition: border-color 0.15s, box-shadow 0.2s, transform 0.1s;
+  /* <button> reset - the card is an action with real state, so it carries button
+     semantics and keyboard reach; the UA's padding/font/appearance must not leak in. */
+  display: block; width: 100%; padding: 0; margin: 0; font: inherit; color: inherit;
+  text-align: left; -webkit-appearance: none; appearance: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .avatar-card:active { transform: scale(.96); }
 .avatar-card.is-you { border-color: var(--gold); box-shadow: 0 0 18px rgba(220,184,111,.45); }
 .avatar-card.is-opp { border-color: #a08fd6; box-shadow: 0 0 18px rgba(160,143,214,.42); }
-.avatar-card.is-you::after, .avatar-card.is-opp::after {
-  position: absolute; top: 8px; right: 8px;
+/* Role badges. POSITION encodes role, matching the slots above: YOU top-left,
+   OPP top-right. That is why YOU is ::before and OPP is ::after - the side is the
+   information, so a mirrored card can wear both without them colliding. */
+.avatar-card.is-you::before,
+.avatar-card.is-opp::after,
+.targeting-opp .avatar-card.is-you:not(.is-opp)::after,
+.targeting-you .avatar-card.is-opp:not(.is-you)::before {
+  position: absolute; top: 8px; z-index: 3;
   padding: 3px 7px; border-radius: 7px;
   font-family: var(--f-ui); font-size: 10px; font-weight: 700; letter-spacing: .06em;
-  color: #1a1410;
 }
-.avatar-card.is-you::after { content: 'YOU'; background: var(--gold); box-shadow: 0 0 12px rgba(220,184,111,.6); }
-.avatar-card.is-opp::after { content: 'OPP'; background: #a08fd6; box-shadow: 0 0 12px rgba(160,143,214,.55); }
+.avatar-card.is-you::before { content: 'YOU'; left: 8px; color: #1a1410; background: var(--gold); box-shadow: 0 0 12px rgba(220,184,111,.6); }
+.avatar-card.is-opp::after { content: 'OPP'; right: 8px; color: #1a1410; background: #a08fd6; box-shadow: 0 0 12px rgba(160,143,214,.55); }
+
+/* The mirror preview, and the whole reason mirroring needs no tutorial: the moment
+   the opponent slot is targeted, the card already holding YOU grows a dashed violet
+   OPP ghost exactly where a solid one would land. The affordance IS the explanation.
+   Dashed = "will be", solid = "is" - the same vocabulary as the empty vs lit socket.
+   Dark glass under the text so it clears contrast over any art, or none. */
+.targeting-opp .avatar-card.is-you:not(.is-opp)::after,
+.targeting-you .avatar-card.is-opp:not(.is-you)::before {
+  padding: 2px 6px;   /* the 1.5px border eats the difference, so ghost and solid align */
+  animation: pmGhostIn .22s ease;
+}
+.targeting-opp .avatar-card.is-you:not(.is-opp)::after {
+  content: 'OPP'; right: 8px; color: #cfc2f0;
+  background: rgba(12,10,16,.68); border: 1.5px dashed rgba(160,143,214,.8);
+}
+.targeting-you .avatar-card.is-opp:not(.is-you)::before {
+  content: 'YOU'; left: 8px; color: var(--gold-head);
+  background: rgba(16,13,8,.68); border: 1.5px dashed rgba(220,184,111,.7);
+}
+@keyframes pmGhostIn { from { opacity: 0; transform: translateY(-3px); } }
+
+/* Mirror - one avatar, both roles. One border-color cannot carry two roles, so the
+   frame splits vertically on the same grammar as everything else: gold YOU left,
+   violet OPP right. The ring is a masked gradient rather than border-image, which
+   ignores border-radius. It lives INSIDE the padding box because overflow:hidden
+   clips the border area, so the card drops its own border here and the ring takes
+   that outer 2px - the card is a stretched grid item, so dropping the border does
+   not change its outer size.
+   The YOU and OPP badges both stay, on their own sides. They are NOT merged into a
+   single label. A two-tone "MIRROR" clasp on the seam was built and rejected -
+   project owner: "Mirror is not really a term in this game. YOU already shows on the
+   left, OPP shows on the right." The two badges over the two halves already say
+   "this avatar is on both sides" in the grammar the rest of the screen uses, and
+   inventing vocabulary the game does not have was the worse trade. */
+.avatar-card.is-you.is-opp {
+  border-width: 0;
+  box-shadow: 0 0 16px rgba(220,184,111,.26), 0 0 16px rgba(160,143,214,.26);
+}
+.avatar-card .avatar-split {
+  position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: inherit; padding: 2px;
+  background: linear-gradient(90deg, var(--gold) 0 50%, #a08fd6 50% 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
+}
+/* Nothing to add: .is-you::before (gold, left) and .is-opp::after (violet, right)
+   already render on a card holding both roles, each over the half of the ring it
+   owns. Anything parented to .avatar-split would be invisible anyway - its mask
+   passes only the 2px ring band, and a mask clips pseudo-element children too. */
 .avatar-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: cover; object-position: center 30%; transform: scale(1.5); transform-origin: center 35%; }
 .avatar-card-name {
   position: absolute; bottom: 0; left: 0; right: 0;
