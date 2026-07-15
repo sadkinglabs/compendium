@@ -37,13 +37,14 @@
 export const DD_ARM_QUIET_MS = 1200;   // verified-quiet window. Deliberately NOT LOG_GAP_MS:
                                        // log coalescing and destructive-action arming are
                                        // separate product knobs that merely start equal.
-// The materialised-but-inert stage. Set to 3000 on device evidence, not by theory:
-// 300ms was the safety minimum, but at 3s the arrival reads as dread rather than as
-// a control appearing, and the project owner confirmed it in real play. The pill's
-// 1.6s rise fits inside it, so the button is never sitting fully-formed and silently
-// refusing taps. It is not decoration - a tap anywhere in this window still passes
-// through to the tap zone and resets the whole sequence.
-export const DD_ARM_REVEAL_MS = 3000;
+// The materialised-but-inert stage, tuned on device rather than by theory. 300ms was
+// the safety minimum and read as a control popping in; 3000ms read as dread but left
+// the button sitting fully-formed and silently refusing taps for over a second.
+// 1800 is the honest number: it is the pill's 1.6s rise plus a beat, so the control
+// becomes pressable at almost exactly the moment it finishes arriving. Nothing is
+// ever both settled and dead. It is not decoration - a tap anywhere in this window
+// still passes through to the tap zone and resets the whole sequence.
+export const DD_ARM_REVEAL_MS = 1800;
 
 export const DD = {
   ALIVE: 'alive',
@@ -78,9 +79,18 @@ export function ddReduce(phase, event) {
     }
 
     // A tap landed in that half's life-adjustment region - plus, minus, capped,
-    // refused, it makes no difference. Any tap means the hand is still on the glass.
+    // refused, it makes no difference. Any tap means the hand is still on the glass,
+    // so the pill must not arrive under it.
+    //
+    // ARMED is deliberately STICKY: once the pill has armed, the hand has already
+    // been off the glass for the full window, and a later stray tap hiding it costs
+    // the user the entire wait again for almost nothing. The protection it would buy
+    // is marginal - if the finger were over the pill, that tap would have pressed it
+    // and ended the match; disarming only guards a *subsequent* tap that drifts onto
+    // it. The guard's real job - never arm beneath an active finger - lives entirely
+    // in FALLEN and REVEALING, and is untouched.
     case 'TAP':
-      if (phase === DD.ALIVE || phase === DD.SUPPRESSED) return { phase, timer: KEEP };
+      if (phase === DD.ALIVE || phase === DD.SUPPRESSED || phase === DD.ARMED) return { phase, timer: KEEP };
       return { phase: DD.FALLEN, timer: 'quiet' };
 
     case 'QUIET_DONE':

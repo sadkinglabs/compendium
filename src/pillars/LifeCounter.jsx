@@ -181,20 +181,28 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // eslint-disable-next-line
   }, []);
 
-  // While ANY overlay owns the screen, Death's Door is suppressed: no timers, no
-  // armed residue. Closing it starts a FRESH quiet window rather than handing back a
-  // hot pill. This generalises the old roll-active-only rule and is what makes the
-  // FAB-dismiss concession in change() safe - and it closes a subtler hazard: the
-  // centred Max Life modal at zero could otherwise be dismissed onto an already-armed
-  // pill sitting directly beneath it.
+  // Two different things, deliberately not the same set.
+  //
+  // overlayOpen HIDES the pill while anything owns the screen - purely visual, and it
+  // includes the FABs.
+  //
+  // centredOverlay RESETS the guard, and only a CENTRED overlay does: its dismissing
+  // tap lands right where the pill sits, so handing back an armed pill underneath it
+  // would be the original bug in a party hat. The Max Life modal at zero is the sharp
+  // case. A FAB menu is a corner control - its dismiss tap cannot physically reach the
+  // centre - so it hides the pill without costing the user the whole wait again. That
+  // distinction is the fix for "opening any FAB re-triggers the reveal".
+  //
   // useLayoutEffect, not useEffect: the flush must land BEFORE paint, so no frame
-  // exists in which an armed pill coexists with an open menu.
+  // exists in which an armed pill coexists with an open overlay.
   const overlayOpen = rollPhase === 'rolling' || rollPhase === 'result'
     || endInfo != null || sheet != null || confirm != null || fabP || fabE;
+  const centredOverlay = rollPhase === 'rolling' || rollPhase === 'result'
+    || endInfo != null || sheet != null || confirm != null;
   useLayoutEffect(() => {
-    dd.setSuppressed(overlayOpen, (who) => (who === 'player' ? pRef : eRef).current.life);
+    dd.setSuppressed(centredOverlay, (who) => (who === 'player' ? pRef : eRef).current.life);
     // eslint-disable-next-line
-  }, [overlayOpen]);
+  }, [centredOverlay]);
 
   // Tweaks toggle - persists to the profile's settings AND applies immediately.
   function setTweak(key, on) {

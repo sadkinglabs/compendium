@@ -105,12 +105,18 @@ test('a tap during REVEALING knocks it back to FALLEN', () => {
   assert.notEqual(h.dd.phase('player'), DD.ARMED);
 });
 
-test('a tap while ARMED disarms - a resumed drain must not leave it hot', () => {
+test('ARMED is sticky: a stray tap does not hide a pill that already earned its place', () => {
+  // Device feedback: a minus tap near the pill used to sink it and cost the whole
+  // wait again. It bought almost nothing - a finger ON the pill would have pressed
+  // it, so disarming only guarded a later tap drifting onto it. The guard's real job
+  // (never arm beneath an active finger) lives in FALLEN/REVEALING and is untouched.
   const h = harness();
   h.dd.syncLife('player', 1, 0);
   h.tick(ARM_MS);
+  assert.equal(h.dd.phase('player'), DD.ARMED);
   h.dd.tap('player');
-  assert.equal(h.dd.phase('player'), DD.FALLEN);
+  assert.equal(h.dd.phase('player'), DD.ARMED, 'must stay armed');
+  assert.equal(h.pending(), 0, 'and must not start a timer it does not need');
 });
 
 test('taps while alive are inert, so the call site needs no guard', () => {
@@ -220,6 +226,19 @@ test('tapping one side never postpones the other', () => {
   h.tick(200);
   assert.equal(h.dd.phase('opponent'), DD.ARMED, 'the quiet side must arm on schedule');
   assert.equal(h.dd.phase('player'), DD.FALLEN, 'the tapping side must not');
+});
+
+test('the spam that started all this still cannot arm the pill', () => {
+  // The whole feature in one fixture: taps faster than the quiet window, forever.
+  // ARMED being sticky must not weaken this - the pill has to never get there.
+  const h = harness();
+  h.dd.syncLife('player', 1, 0);
+  for (let i = 0; i < 40; i++) {
+    h.tick(DD_ARM_QUIET_MS - 100);                     // just inside the window, 40 times
+    assert.notEqual(h.dd.phase('player'), DD.ARMED, `armed mid-spam at tap ${i}`);
+    h.dd.tap('player');
+  }
+  assert.equal(h.dd.phase('player'), DD.FALLEN);
 });
 
 // --- suppression ---------------------------------------------------------------
