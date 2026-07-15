@@ -1,6 +1,14 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { viteStaticCopy } from 'vite-plugin-static-copy';
+
+// package.json is the ONE source of version + build. Baked in here, and read by
+// android/app/build.gradle for versionName/versionCode, so the number on the
+// Credits screen and the number Android reports are the same number by
+// construction - they cannot drift, because there is nothing to keep in sync.
+// `build` increments on every APK installed to a device (see BUILD.md).
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
 // The @capacitor-community/sqlite web layer (jeep-sqlite) needs the sql.js wasm
 // and the jeep-sqlite assets served from /assets. Copy them into the build.
@@ -14,6 +22,10 @@ export default defineConfig({
       ],
     }),
   ],
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_BUILD__: JSON.stringify(String(pkg.build)),
+  },
   // Capacitor serves the built web assets from a file:// or localhost origin.
   base: './',
   build: { outDir: 'dist', target: 'es2020' },

@@ -866,7 +866,13 @@ function CreditsModal({ open, onClose }) {
             <span style={{ position: 'absolute', top: '50%', left: '50%', width: 18, height: 18, transform: 'translate(-50%,-50%) rotate(45deg)', border: '2px solid var(--gold-leaf)', borderRadius: 3 }} />
           </span>
           <div style={{ font: "600 27px/1.1 var(--f-display)", color: 'var(--gold-leaf)', letterSpacing: '.01em' }}>Compendium</div>
-          <div style={{ font: "500 11px/1 var(--f-mono)", letterSpacing: '.05em', color: '#b08d4e', margin: '8px 0 14px' }}>v1.0.1 alpha</div>
+          {/* Baked in from package.json by vite.config.js - the same two values
+              android/app/build.gradle reads for versionName/versionCode. This line
+              used to be a hardcoded literal, so it could quietly disagree with the
+              build it was printed on. Build is the number to quote in a bug report:
+              version moves rarely, build moves on every install. */}
+          <div style={{ font: "500 11px/1 var(--f-mono)", letterSpacing: '.05em', color: '#b08d4e', marginTop: 8 }}>v{__APP_VERSION__}</div>
+          <div style={{ font: "500 10px/1 var(--f-mono)", letterSpacing: '.08em', color: 'var(--ink-faint)', margin: '5px 0 14px' }}>BUILD {__APP_BUILD__}</div>
           <div style={{ font: "400 13.5px/1.6 var(--f-read)", color: 'var(--ink-muted)' }}>
             Compendium is an unofficial, fan-made companion app for <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>Sorcery: Contested Realm</strong> - unifying your codex, decks and life tracker in one place.
             <br /><br />

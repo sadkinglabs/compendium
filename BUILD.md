@@ -41,6 +41,27 @@ referenced, local Markdown links resolve, and the documented schema version
 matches `src/store/schema.js`. It supplements semantic documentation review;
 passing the command does not prove that prose and implementation agree.
 
+## Version and build number
+
+`package.json` is the **single source** for both:
+
+```json
+{ "version": "1.0.1-alpha", "build": 15 }
+```
+
+Everything else reads it, so there is nothing to keep in sync:
+
+| Consumer | Reads | Becomes |
+|---|---|---|
+| `vite.config.js` (`define`) | `version`, `build` | `__APP_VERSION__`, `__APP_BUILD__` → the Credits screen |
+| `android/app/build.gradle` | `version`, `build` | `versionName`, `versionCode` |
+
+**Bump `build` by 1 every time an APK is installed on a device.** `build` is the
+Android `versionCode`, so it must be an integer and must never go backwards — a
+lower `versionCode` refuses to install over a higher one. `version` moves only on
+a real release. Credits prints both, and **build is the number to quote in a bug
+report**: it identifies the exact APK, where the version alone cannot.
+
 ## Build the Android app
 
 The native APK is built in **Android Studio** (needs JDK + Android SDK, same as
