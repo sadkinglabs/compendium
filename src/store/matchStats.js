@@ -46,6 +46,32 @@ export function normalizeDurationSec(value) {
   return Math.max(1, Math.round(seconds));
 }
 
+// The form-side contract, next to the writer-side one so the two cannot drift. Minutes
+// are what a person types; seconds are what the column stores.
+export const MAX_DURATION_MINUTES = 600;
+
+// One error string for both sheets. Two copies of this sentence is how two sheets end up
+// enforcing two different rules.
+export const DURATION_RANGE_ERR = `Enter 1 to ${MAX_DURATION_MINUTES} minutes, or leave it empty.`;
+
+/**
+ * Is a typed minutes value acceptable? Empty is VALID - it means untimed, which is a real
+ * answer and always allowed.
+ *
+ * This exists because `max` on a number input is advisory: it styles :invalid and stops
+ * the steppers, and does nothing whatsoever about a typed 999. A limit the code does not
+ * enforce is decoration.
+ *
+ * It validates what was TYPED, never what was stored. An existing match may legitimately
+ * hold a duration beyond this bound - a tracked match whose timer ran long - and editing
+ * that match's opponent name must not be blocked by a rule about form input.
+ */
+export function validDurationMinutes(value) {
+  if (value === '' || value == null) return true;
+  const mins = Number(value);
+  return Number.isFinite(mins) && mins > 0 && mins <= MAX_DURATION_MINUTES;
+}
+
 /**
  * Aggregate durations over a match list. Pure; takes rows, returns numbers.
  *

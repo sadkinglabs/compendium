@@ -4,7 +4,7 @@
 import React, { useEffect, useState } from 'react';
 import { listMatches, getMatch, matchLog, updateMatch, deleteMatch, recentOpponents, addManualMatch, listAvatars } from '../store/playRepository.js';
 import { listAvatarCards, listDecks } from '../store/deckRepository.js';
-import { computeMatchStats, normalizeDurationSec } from '../store/matchStats.js';
+import { computeMatchStats, normalizeDurationSec, validDurationMinutes, MAX_DURATION_MINUTES, DURATION_RANGE_ERR } from '../store/matchStats.js';
 import { IconButton, Chip, ChipRow, Loading, BlankState, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -289,8 +289,16 @@ function MatchSheet({ matchId, onClose, onChanged }) {
   const [recent, setRecent] = useState([]);
   const [decks, setDecks] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  // null = UNTOUCHED, and that is the whole mechanism: an untouched duration is submitted
+  // as the exact seconds we loaded, so a tracked 25m30s match keeps its 30 seconds when
+  // you edit only the opponent's name. Any string = the user typed minutes and owns the
+  // value now. Explicit, because the previous version relied on the subtle fact that a
+  // formatted display value does not mutate state - true, but not something the next
+  // reader should have to deduce.
+  const [durMins, setDurMins] = useState(null);
 
   useEffect(() => {
+    setDurMins(null);   // a different match is a different duration: never carry the edit across
     if (!matchId) { setM(null); setF(null); return; }
     getMatch(matchId).then((mm) => { setLoaded(true); setM(mm); setF(mm ? { opponent_name: mm.opponent_name || '', winner: mm.winner, player_final_life: mm.player_final_life, opponent_final_life: mm.opponent_final_life, duration_sec: mm.duration_sec, notes: mm.notes || '', deck_id: mm.deck_id || null } : null); }).catch(() => { setLoaded(true); setM(null); });
     matchLog(matchId).then(setLog);
@@ -299,7 +307,23 @@ function MatchSheet({ matchId, onClose, onChanged }) {
   }, [matchId]);
 
   if (!matchId) return null;
-  async function save() { await updateMatch(matchId, f); onChanged(); onClose(); toast('Match updated'); }
+  // Only a TOUCHED duration is validated. An existing match may legitimately hold more
+  // than MAX_DURATION_MINUTES - a tracked match whose timer ran long - and a rule about
+  // typed input must never block fixing that match's opponent name.
+  const durTouched = durMins != null;
+  const durErr = durTouched && !validDurationMinutes(durMins);
+  const canSave = !durErr;
+
+  async function save() {
+    if (!canSave) return;
+    // Untouched -> the original seconds, exactly. Touched -> whole minutes, or null when
+    // cleared, which is how you say "I didn't time it after all".
+    const duration_sec = durTouched
+      ? (durMins === '' ? null : Number(durMins) * 60)
+      : f.duration_sec;
+    await updateMatch(matchId, { ...f, duration_sec });
+    onChanged(); onClose(); toast('Match updated');
+  }
   async function del() {
     const linked = m?.deck_id && m?.deck_name;
     const body = linked
@@ -328,21 +352,23 @@ function MatchSheet({ matchId, onClose, onChanged }) {
           </div>
           {/* Editable, not add-only: updateMatch() already writes this column, and a
               duration you cannot correct is a mistyped number kept forever. Clearing the
-              field returns the match to untimed, which is a real answer - so a tracked
-              match whose timer ran on overnight can be taken out of the average.
-              SECOND PRECISION SURVIVES AN UNRELATED EDIT, and the mechanism is subtle
-              enough to be worth stating: the round-to-minutes below is DISPLAY only, and
-              f.duration_sec keeps its original seconds until onChange fires. So editing
-              just the opponent's name on a 25m30s tracked match still saves 1530, not
-              1560. Touch the field and you replace it with whole minutes, which is what
-              typing a number means. Do not "simplify" this by rounding into state. */}
+              field returns the match to untimed - a real answer, and how a tracked match
+              whose timer ran on overnight gets taken out of the average.
+              SECOND PRECISION SURVIVES AN UNRELATED EDIT: durMins stays null until you
+              touch this field, and an untouched duration submits the exact seconds we
+              loaded. So editing just the opponent's name on a 25m30s tracked match still
+              saves 1530, not 1560. The minutes shown here are a rounded VIEW of those
+              seconds - do not round them into state. */}
           <div style={{ marginBottom: 22 }}>
             <Lbl t="DURATION (minutes, optional)" />
             <input
-              value={f.duration_sec == null || f.duration_sec <= 0 ? '' : String(Math.round(f.duration_sec / 60))}
-              onChange={(e) => setF({ ...f, duration_sec: e.target.value === '' ? null : Number(e.target.value) * 60 })}
-              type="number" inputMode="decimal" min="0" max="600" step="1"
-              placeholder="Untimed" style={inp} />
+              value={durMins != null ? durMins
+                : (f.duration_sec == null || f.duration_sec <= 0 ? '' : String(Math.round(f.duration_sec / 60)))}
+              onChange={(e) => setDurMins(e.target.value)}
+              type="number" inputMode="decimal" min="1" max={MAX_DURATION_MINUTES} step="1"
+              placeholder="Untimed"
+              style={{ ...inp, borderColor: durErr ? 'var(--crimson)' : undefined }} />
+            {durErr && <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--crimson)', margin: '6px 2px 0' }}>{DURATION_RANGE_ERR}</div>}
           </div>
           <div style={{ marginBottom: 22 }}>
             <Lbl t="OPPONENT" />
@@ -376,7 +402,7 @@ function MatchSheet({ matchId, onClose, onChanged }) {
           )}
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button onClick={del} style={{ ...ghost, flex: 1, color: 'var(--destructive)', borderColor: 'rgba(168,88,74,.4)' }}>Delete</button>
-            <button onClick={save} style={{ ...gold, flex: 2 }}>Save changes</button>
+            <button onClick={save} disabled={!canSave} style={{ ...gold, flex: 2, opacity: canSave ? 1 : 0.5 }}>Save changes</button>
           </div>
         </div>
       )}
@@ -449,12 +475,9 @@ function AddMatchSheet({ open, onClose, onSaved }) {
     setF((prev) => ({ ...prev, deckId: id, pAvatar: id && d?.avatar?.name ? d.avatar.name : prev.pAvatar }));
   }
 
-  // Minutes typed by a human, seconds in the column. The upper bound is enforced HERE
-  // because `max` on a number input is advisory - it styles :invalid and stops the
-  // steppers, and does nothing at all about a typed 999. A limit the persistence layer
-  // does not enforce is decoration.
-  const MAX_MINS = 600;
-  const minsErr = f.mins !== '' && !(Number(f.mins) > 0 && Number(f.mins) <= MAX_MINS);
+  // Same validator and same bound as the edit sheet - shared, so the two sheets cannot
+  // drift into enforcing two different rules about one column.
+  const minsErr = !validDurationMinutes(f.mins);
   const canSave = f.winner != null && !minsErr;
 
   async function save() {
@@ -508,10 +531,10 @@ function AddMatchSheet({ open, onClose, onSaved }) {
             reinstate the fiction this was built to remove. */}
         <Lbl t="DURATION (minutes, optional)" />
         <input value={f.mins} onChange={(e) => setF({ ...f, mins: e.target.value })}
-          type="number" inputMode="decimal" min="1" max={MAX_MINS} step="1"
+          type="number" inputMode="decimal" min="1" max={MAX_DURATION_MINUTES} step="1"
           placeholder="Leave empty if you didn't time it"
           style={{ ...inp, marginBottom: minsErr ? 6 : 14, borderColor: minsErr ? 'var(--crimson)' : undefined }} />
-        {minsErr && <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--crimson)', margin: '0 2px 14px' }}>Enter 1 to {MAX_MINS} minutes, or leave it empty.</div>}
+        {minsErr && <div style={{ font: "500 11px/1.4 var(--f-ui)", color: 'var(--crimson)', margin: '0 2px 14px' }}>{DURATION_RANGE_ERR}</div>}
         {decks.length > 0 && (
           <>
             <Lbl t="DECK PILOTED (optional)" />

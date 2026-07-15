@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { computeMatchStats, normalizeDurationSec } from './matchStats.js';
+import { computeMatchStats, normalizeDurationSec, validDurationMinutes, MAX_DURATION_MINUTES } from './matchStats.js';
 
 // The fixtures the defect demanded: all-timed, all-untimed, and MIXED. The mixed case is
 // the whole point - it is the one that was wrong, it is the one users actually have, and
@@ -80,6 +80,27 @@ test('malformed rows cannot poison the totals', () => {
   assert.equal(s.timedCount, 2);
   assert.equal(s.totalSec, 3600);
   assert.equal(s.avgMin, 30);
+});
+
+test('validDurationMinutes: empty is valid - untimed is a real answer', () => {
+  assert.equal(validDurationMinutes(''), true);
+  assert.equal(validDurationMinutes(null), true);
+  assert.equal(validDurationMinutes(undefined), true);
+});
+
+test('validDurationMinutes: the bound is enforced at both edges', () => {
+  assert.equal(validDurationMinutes(String(MAX_DURATION_MINUTES)), true, '600 is allowed');
+  assert.equal(validDurationMinutes(String(MAX_DURATION_MINUTES + 1)), false, '601 is not');
+  assert.equal(validDurationMinutes('999'), false);
+  assert.equal(validDurationMinutes('1'), true);
+});
+
+test('validDurationMinutes: zero, negative, and non-numeric are refused', () => {
+  // Zero is refused rather than silently treated as untimed: a person who TYPED 0 meant
+  // something, and it was not "I didn't time it" - clearing the field is how you say that.
+  for (const v of ['0', '-1', '-600', 'abc', '12abc', ' ', '1e400']) {
+    assert.equal(validDurationMinutes(v), false, `${JSON.stringify(v)} must be refused`);
+  }
 });
 
 test('normalizeDurationSec: everything unknown becomes null', () => {
