@@ -114,6 +114,13 @@ body.grain-off .half-grain { display: none; }
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
   pointer-events: none;
+  /* ABOVE the veils and blooms (z-index: 1), which is where words belong: light is
+     something you read text ON, not through. Without this the loser's own darkening
+     veil painted over their announcement and greyed it out no matter what ink it was
+     given - it looked like a colour bug and was a stacking bug.
+     The numerals are unaffected in substance: each side's numeral is dimmed or lit by
+     its OWN colour (.roll-win / .roll-lose), which is the honest way to say it. */
+  z-index: 2;
 }
 /* The numeral is the only thing with height here, so it is centred on the half and
    never moves. Everything that belongs UNDER it - the Death's Door eyebrow, the roll
@@ -1026,10 +1033,15 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
   opacity: 1; transform: none; color: #f6ecd4;
   text-shadow: 0 0 26px rgba(220,184,111,.7), 0 2px 3px rgba(0,0,0,.95), 0 4px 18px rgba(0,0,0,.9);
 }
-/* The loser is unlit, not illegible: they still have to read their own verdict from
-   across the table. Dimmer than the winner, never faint. */
+/* SAME ink as the winner - the announcement is not a prize, it is information, and it
+   is the loser who most needs to read it ("they choose" is the half that tells you to
+   wait). The verdict is already unmistakable from the faded numeral, the unlit half,
+   and the word itself; making the text dimmer too would tax the one line they have to
+   read while telling them nothing the rest of the screen has not already said.
+   The only thing withheld is the gold bloom, because that is the light, and light is
+   what says who chooses. */
 .counter-half.roll-lose .roll-eyebrow {
-  opacity: 1; transform: none; color: rgba(240,234,222,.62);
+  opacity: 1; transform: none; color: #f6ecd4;
   text-shadow: 0 2px 3px rgba(0,0,0,.95), 0 4px 18px rgba(0,0,0,.9);
 }
 /* The countdown. Dim and small: the eyebrow is the loud line and the fill is the loud
@@ -1047,8 +1059,9 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
   text-shadow: 0 2px 3px rgba(0,0,0,.95), 0 4px 14px rgba(0,0,0,.85);
   opacity: 0; transition: opacity .4s ease .7s;
 }
-.counter-half.roll-win .roll-sub { opacity: 1; color: rgba(246,236,212,.82); }
-.counter-half.roll-lose .roll-sub { opacity: 1; color: rgba(240,234,222,.45); }
+/* Both sides identical, for the same reason: "match begins in 2" is a fact about the
+   table, not about who won it. */
+.counter-half.roll-win .roll-sub, .counter-half.roll-lose .roll-sub { opacity: 1; color: rgba(246,236,212,.82); }
 
 /* .dd-shock's geometry and keyframes, gold rim. Mounts once per verdict. */
 .roll-burst {
