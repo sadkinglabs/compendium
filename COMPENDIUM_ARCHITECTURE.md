@@ -148,6 +148,7 @@ device
 
 **C. Capacitor-native persistence (prefer native over web shims):**
 - Use **`@capacitor/preferences`** for small singletons (`app.json`, `activeProfileId`, per-profile `settings.json`) — it's native `UserDefaults`/`SharedPreferences`, survives reinstall-safe backup rules better than `localStorage`.
+- **Telemetry consent** (`unset | granted | denied`) is an app-global singleton of the same tier as `activeProfileId` and the changelog seen-stamp, but it is owned **natively** (`TelemetryPlugin.kt`, its own `SharedPreferences`, written with `commit()`) because it must be readable and enforceable before a WebView exists. It is deliberately **not** a per-profile `settings` row and deliberately **not** exportable: a profile imported from another device must never carry that device's consent decision here. `src/store/telemetry.js` is a client over that authority, not the authority.
 - Store list-shaped and relational data in **SQLite** through the repository layer. It provides indexed search and transactional writes for decks, ownership, lists, matches, annotations, and imports.
 - **Never** keep authoritative data only in transient React state or `localStorage`. Browser persistence uses the documented sql.js/IndexedDB adapter; device persistence uses SQLite. Repository contracts, ownership rules, and transaction semantics remain consistent across both runtimes.
 

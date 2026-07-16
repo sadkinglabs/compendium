@@ -111,14 +111,91 @@ dependencies {
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion"
 
     // --- Firebase (Analytics + Crashlytics) ---
-    // Guarded on google-services.json so a clone without it (the file is
-    // gitignored) still builds. BoM pins one compatible set of versions.
-    if (file('google-services.json').exists()) {
-        implementation platform("com.google.firebase:firebase-bom:33.7.0")
-        implementation "com.google.firebase:firebase-analytics"
-        implementation "com.google.firebase:firebase-crashlytics"
+    // UNCONDITIONAL, unlike the google-services plugin below. telemetry/TelemetryPlugin.kt
+    // imports these classes, so guarding them on google-services.json would stop a clone
+    // without that (gitignored) file from COMPILING - the opposite of the guard's intent.
+    // A clone still builds and runs: the classes are present, the plugin below is not
+    // applied, so there is no google_app_id, so FirebaseApp never initialises and every
+    // getInstance() in TelemetryPlugin throws into its own catch. That degrades to "no
+    // telemetry", which is the correct posture for a config-less clone anyway.
+    // BoM pins one compatible set of versions.
+    implementation platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation "com.google.firebase:firebase-analytics"
+    implementation "com.google.firebase:firebase-crashlytics"
+}
+
+// ===================== FORBIDDEN PERMISSION GATE =====================
+// Fails assembleRelease if an advertising/attribution permission survives into the
+// release variant's MERGED MANIFEST. Not a lint, not a warning - the build goes red.
+//
+// SCOPE, STATED HONESTLY: this reads AGP's MERGED_MANIFEST artifact, which is the input
+// to packaging, not the packaged APK itself. That covers the actual risk here - these
+// permissions arrive via manifest MERGING from play-services-measurement* - but it is
+// not the same claim as "inspects the final artifact", and an earlier version of this
+// comment said exactly that. Anything that could add a permission AFTER the merge would
+// not be caught. Verify the shipped APK independently before a Play release:
+//   aapt2 dump badging <apk> | grep uses-permission
+//
+// WHY THIS EXISTS: build 37 shipped `AD_ID` for 37 builds and nobody noticed, because
+// the source manifest declares 3 permissions and the merged one declares 12. The
+// tools:node="remove" entries that strip them must survive every Firebase BoM bump,
+// and "remember to check the merged manifest after upgrading" is not a control - this
+// whole change exists because nobody read it. So the machine reads it.
+//
+// The path comes from AGP's artifact API, never a hardcoded intermediates/ path: an
+// AGP upgrade that moves the file must break the build LOUDLY. A gate that cannot find
+// its input and passes is worse than no gate, so every ambiguity below fails closed.
+def FORBIDDEN_PERMISSIONS = [
+    'com.google.android.gms.permission.AD_ID',
+    'android.permission.ACCESS_ADSERVICES_AD_ID',
+    'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
+    'com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE',
+]
+
+androidComponents {
+    onVariants(selector().withBuildType('release')) { variant ->
+        def checkTask = tasks.register("check${variant.name.capitalize()}ForbiddenPermissions") {
+            // .INSTANCE: SingleArtifact.MERGED_MANIFEST is a Kotlin object, and Groovy
+            // needs the instance, not the class.
+            def manifestFile = variant.artifacts.get(com.android.build.api.artifact.SingleArtifact.MERGED_MANIFEST.INSTANCE)
+            inputs.file(manifestFile)
+            doLast {
+                def f = manifestFile.get().asFile
+                // Fail closed: absent or unreadable input is a FAILURE, never a pass.
+                if (!f.exists()) {
+                    throw new GradleException("Forbidden-permission gate: merged manifest not found at ${f}. Refusing to pass a check that could not run.")
+                }
+                def xml
+                try {
+                    xml = new XmlSlurper().parse(f)
+                } catch (Exception e) {
+                    throw new GradleException("Forbidden-permission gate: could not parse ${f} (${e.message}). Refusing to pass a check that could not run.")
+                }
+                def declared = xml.'uses-permission'.collect { it.@'android:name'.text() }
+                if (declared.isEmpty()) {
+                    throw new GradleException("Forbidden-permission gate: parsed ${f} but found no <uses-permission> at all. The app declares INTERNET/CAMERA/VIBRATE, so this means the parser is looking at the wrong thing.")
+                }
+                def found = FORBIDDEN_PERMISSIONS.findAll { declared.contains(it) }
+                if (found) {
+                    throw new GradleException(
+                        "Forbidden permission(s) in the release artifact:\n" +
+                        found.collect { "  - ${it}" }.join('\n') +
+                        "\n\nThese are merged in by play-services-measurement* (= firebase-analytics).\n" +
+                        "Restore the matching tools:node=\"remove\" entry in AndroidManifest.xml.\n" +
+                        "See docs/proposals/telemetry-consent.md."
+                    )
+                }
+                logger.lifecycle("Forbidden-permission gate: clean (${declared.size()} permissions in the release merged manifest).")
+            }
+        }
+        // Bind to the artifact's producing task so assembleRelease cannot succeed
+        // without it, and so `gradlew checkReleaseForbiddenPermissions` also works alone.
+        tasks.matching { it.name == "assemble${variant.name.capitalize()}" }.configureEach {
+            it.dependsOn(checkTask)
+        }
     }
 }
+// =====================================================================
 
 apply from: 'capacitor.build.gradle'
 

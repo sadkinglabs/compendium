@@ -15,6 +15,17 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 38,
+    version: '1.0.1-alpha',
+    date: '2026-07-16',
+    notes: 'Compendium now asks before sending the developer anything, and it never asked before.',
+    changes: [
+      { kind: 'added', text: 'Diagnostics: crash reports and how often the app is opened are now yours to allow or refuse. Compendium asks once, and Settings can change it any time.' },
+      { kind: 'fixed', text: 'Removed an advertising ID permission that Firebase had been adding to every build without anyone choosing it. Compendium has never used it, and now it cannot ask for it.' },
+      { kind: 'fixed', text: 'Nothing at all is sent until you answer that question, including from earlier builds. Anything already waiting to send is deleted rather than held.' },
+    ],
+  },
+  {
     build: 37,
     version: '1.0.1-alpha',
     date: '2026-07-16',
