@@ -26,6 +26,7 @@ import { parseMatchShare } from './store/matchShare.js';
 import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
 import { CHANGELOG } from './content/changelog.js';
+import { getSeenBuild, setSeenBuild, pendingEntries } from './store/changelog.js';
 import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
@@ -83,9 +84,10 @@ export default function App() {
   const counterApi = useRef(null);                   // {minimize} - set by the live counter
   const homeApi = useRef(null);                       // {back} - Home edit mode / Overview<->Dashboard subtab
   const lastBackAt = useRef(0);                       // double-back-to-exit timestamp (Home root)
-  const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs) - a modal over the profile sheet
+  const [settingsOpen, setSettingsOpen] = useState(false);   // app Settings (accessibility + prefs) - a modal over the profile sheet
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal - the Home wordmark's tap target
-  const [changelogOpen, setChangelogOpen] = useState(false);   // release notes, opened on demand from Credits
+  const [changelogOpen, setChangelogOpen] = useState(false);   // release notes, opened on demand from Credits (never stamps)
+  const [changelogPending, setChangelogPending] = useState(null);   // unseen entries from the update gate (stamps on dismiss)
   const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
   const [matchImport, setMatchImport] = useState(null);        // parsed mirrored-match payload (from a shared QR / deep link)
   const [resultPaste, setResultPaste] = useState(false);       // manual "paste a result link" fallback
@@ -136,6 +138,20 @@ export default function App() {
         // set row (e.g. older scanner adds). Idempotent; never blocks boot.
         try { await backfillSingleSetOwned(); } catch (e) { console.error('single-set backfill failed', e); }
         try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
+        // The update gate: show, once, the notes for every build this install
+        // skipped. The stamp is app-global (Preferences), NOT a profile setting,
+        // so it neither replays on a profile switch nor rides a profile import
+        // in from another device. Number() is load-bearing: __APP_BUILD__ is a
+        // string, and '9' > '35' lexicographically. Like the backfills above it,
+        // a failure here logs and is forgotten - the gate must never cost a boot.
+        try {
+          const seen = await getSeenBuild();
+          const pending = pendingEntries(CHANGELOG, seen, Number(__APP_BUILD__));
+          if (pending.length) setChangelogPending(pending);
+          // A fresh install with no notes to show still gets stamped, or it would
+          // "catch up" on its own first release the next time one lands.
+          else if (seen === null) await setSeenBuild(Number(__APP_BUILD__));
+        } catch (e) { console.error('changelog gate failed', e); }
         if (import.meta.env.DEV) {
           window.__cx = {
             transfer: await import('./store/profileTransfer.js'),
@@ -263,6 +279,18 @@ export default function App() {
     setTab('home'); bump();
   }
 
+  // The update gate's ONE dismissal path. CenteredModal owns scrim, close button,
+  // Escape and hardware back, and routes them all to onClose - so there is no
+  // second route to keep in sync, and no backStack row (runBackConsumers() runs
+  // before the declarative stack, so a row here would be unreachable anyway).
+  // Stamping on dismiss rather than on display means a kill mid-read re-shows the
+  // notes: the benign failure. Stamping on display would swallow them for good.
+  const dismissChangelog = async () => {
+    setChangelogPending(null);
+    try { await setSeenBuild(Number(__APP_BUILD__)); }
+    catch (e) { console.error('changelog stamp failed', e); }   // benign: re-shows next launch
+  };
+
   const initial = (profile?.name || '?').charAt(0).toUpperCase();
   const searchable = true;   // universal search on every pillar
   const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', collect: 'Search your collection…', decks: 'Search decks…', play: 'Search matches…' };
@@ -279,7 +307,7 @@ export default function App() {
     [resultPaste, () => setResultPaste(false)],
     [searchHelpOpen, () => setSearchHelpOpen(false)],
     [creditsOpen, () => setCreditsOpen(false)],
-    [settingsSheet, () => setSettingsSheet(false)],
+    [settingsOpen, () => setSettingsOpen(false)],
     [profileSheet, () => setProfileSheet(false)],
     [addActive, exitAdd],
     [hasQuery, () => setQuery('')],
@@ -471,7 +499,7 @@ export default function App() {
         })}
       </nav>
       <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
-        onSwitch={onSwitchProfile} onChanged={reloadProfile} onSettings={() => setSettingsSheet(true)}
+        onSwitch={onSwitchProfile} onChanged={reloadProfile} onSettings={() => setSettingsOpen(true)}
         onExport={async () => { try { const { exportToFile } = await import('./store/profileTransfer.js'); await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } }}
         onImport={async () => { try { const { pickAndImport } = await import('./store/profileTransfer.js'); const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } }} />
 
@@ -517,7 +545,7 @@ export default function App() {
       )}
       {/* Settings paints over the profile sheet, which stays mounted underneath so
           closing this returns the user to where they opened it from. */}
-      <SettingsModal open={settingsSheet} onClose={() => setSettingsSheet(false)} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} onChangelog={() => setChangelogOpen(true)} />
       {/* Opened from Credits, so it shows the WHOLE history on demand. Nothing is
           recorded when it closes: reading the notes because you went looking is not
@@ -525,6 +553,13 @@ export default function App() {
       {changelogOpen && (
         <Suspense fallback={null}>
           <ChangelogModal open entries={CHANGELOG} onClose={() => setChangelogOpen(false)} />
+        </Suspense>
+      )}
+      {/* The update gate. Same component, different two things: only the entries
+          this install hasn't seen, and a close that RECORDS having seen them. */}
+      {changelogPending && (
+        <Suspense fallback={null}>
+          <ChangelogModal open entries={changelogPending} onClose={dismissChangelog} />
         </Suspense>
       )}
       <SearchHelpModal open={searchHelpOpen} kind={addActive ? 'deck' : 'codex'} onClose={() => setSearchHelpOpen(false)} />

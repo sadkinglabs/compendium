@@ -486,5 +486,26 @@ The wordmark still goes Home from all four non-Home pillars, and from a Codex de
 | Author (Claude Code) | Revision 2: all 5 accepted and verified; chassis conversion declined | 2026-07-16 |
 | Approver (human) | **Approved.** Settings chassis settled in the reviewer's favour: modal over the open Profiles sheet. Delivery in two commits, navigation and surfaces first. | 2026-07-16 |
 | Author (Claude Code) | Revision 3: decision recorded, author's objection withdrawn, Implementation plan added (contract gap in revisions 1-2) | 2026-07-16 |
+| Reviewer (Codex) | Commit 1 **approved**, non-blocking follow-ups; runtime evidence held as a mandatory gate | 2026-07-16 |
+| Author (Claude Code) | Device evidence captured on a Pixel 9 Pro XL, builds 36 and 37 (release APKs). See below. | 2026-07-16 |
+
+### Device evidence (Pixel 9 Pro XL, release APK)
+
+Every interaction the reviewer held as a mandatory gate, exercised on hardware:
+
+| Behaviour | Result |
+|---|---|
+| Profiles → Settings paints correctly | **Pass** (build 36). Settings modal over a visibly blurred, still-mounted Profiles sheet. |
+| Closing Settings returns to Profiles | **Pass.** Hardware back peeled Settings and landed on Profiles, not the app root. |
+| Credits → What's New closes in order | **Pass.** Back from Changelog returned to Credits. |
+| Settings usable at max font scale | **Pass**, and the author's objection was wrong: at 140% the entire body still fits the modal with no scrolling and the slider is fully reachable. The one surviving argument for the sheet chassis does not survive contact with the device. |
+| Wordmark opens Credits only at Home root | **Pass.** Credits from Home; plain navigation from Codex. |
+| Data survives `install -r` | **Pass.** 441 cards, 2 decks, 6 matches intact across both installs. |
+| **Gate fires on update** | **Pass** (build 37). No stamp present → notes shown unprompted at boot. |
+| **Dismiss stamps durably** | **Pass.** CONTINUE → force-stop → relaunch → silent. Native Preferences persisted. |
+
+**Not exercised on device, and why:** catch-up across a real APK upgrade (`seen < entry.build <= current` with a live stamp) would cost a permanent `versionCode` burn per attempt, since `versionCode` cannot go backwards. The filter is covered by 9 unit cases including the lexicographic boundary; stamp durability across process death is proven above; and SharedPreferences survival across app update is a platform guarantee. Judged an acceptable residual.
+
+**One risk retired by observation, not argument:** the Self-Critique named "Credits stamps when it should not" as the next thing to attack. It is a near-nil risk in practice, and the reason is structural rather than lucky: the gate resolves at boot, before Credits is reachable, so by the time the on-demand path can run, the stamp is already at the current build and a redundant write would be a no-op. The two `onClose` handlers are still distinct by construction. The concern was overrated.
 
 **Scope note:** approval covers the two commits in the Implementation plan. Anything implementation reveals as wrong stops for re-approval rather than being redesigned in flight (`CLAUDE.md`, the gate).
