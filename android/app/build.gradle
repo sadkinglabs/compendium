@@ -68,6 +68,23 @@ android {
             if (keystorePropsFile.exists()) {
                 signingConfig signingConfigs.release
             }
+            // Ship only ABIs a phone can actually execute. x86/x86_64 exist for
+            // emulators, and no device that can install this APK can run them - they
+            // were 16.5 MB of an 82.7 MB APK, ~20%, carried since the scanner's first
+            // build. The scanner is what makes this expensive: ML Kit's OCR and barcode
+            // .so files plus SQLCipher are per-ABI, so every extra ABI is a full copy.
+            //
+            // RELEASE ONLY, deliberately. Debug keeps all four so the emulator still
+            // works on an x86_64 host - putting this in defaultConfig would strip them
+            // everywhere and quietly break emulator testing.
+            //
+            // armeabi-v7a stays: minSdkVersion 22 admits 32-bit devices, and dropping
+            // the ABI without raising minSdk would let such a phone install the app and
+            // then crash in the scanner rather than being cleanly excluded from the
+            // store listing. Those two decisions move together or not at all.
+            ndk {
+                abiFilters 'arm64-v8a', 'armeabi-v7a'
+            }
         }
     }
 }
