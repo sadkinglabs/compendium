@@ -162,11 +162,21 @@ dependencies {
 // The path comes from AGP's artifact API, never a hardcoded intermediates/ path: an
 // AGP upgrade that moves the file must break the build LOUDLY. A gate that cannot find
 // its input and passes is worse than no gate, so every ambiguity below fails closed.
+// Permissions the app does not use and must not declare. Every one of these is merged
+// in by a transitive dependency, which is why the list needs a machine watching it: none
+// of them appear in AndroidManifest.xml, so reading the source tells you nothing.
 def FORBIDDEN_PERMISSIONS = [
+    // Advertising / attribution, via play-services-measurement* (= firebase-analytics).
     'com.google.android.gms.permission.AD_ID',
     'android.permission.ACCESS_ADSERVICES_AD_ID',
     'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
     'com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE',
+    // Biometrics, via androidx.biometric (@capacitor-community/sqlite pulls it in for
+    // biometric unlock of an encrypted DB). Compendium never encrypts, so the plugin's
+    // biometric branch is unreachable - see the manifest for the full argument.
+    // USE_FINGERPRINT is also deprecated (API 28 -> USE_BIOMETRIC).
+    'android.permission.USE_BIOMETRIC',
+    'android.permission.USE_FINGERPRINT',
 ]
 
 androidComponents {
@@ -195,7 +205,7 @@ androidComponents {
                 def found = FORBIDDEN_PERMISSIONS.findAll { declared.contains(it) }
                 if (found) {
                     throw new GradleException(
-                        "Forbidden permission(s) in the release artifact:\n" +
+                        "Forbidden permission(s) in the release merged manifest:\n" +
                         found.collect { "  - ${it}" }.join('\n') +
                         "\n\nThese are merged in by play-services-measurement* (= firebase-analytics).\n" +
                         "Restore the matching tools:node=\"remove\" entry in AndroidManifest.xml.\n" +

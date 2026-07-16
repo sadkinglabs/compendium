@@ -164,7 +164,7 @@ aapt2 dump badging android/app/build/outputs/apk/release/app-release.apk | grep 
 grep -B1 AD_ID android/app/build/outputs/logs/manifest-merger-release-report.txt
 ```
 
-`assembleRelease` **fails** if one of the four forbidden permissions returns â€”
+`assembleRelease` **fails** if one of the six forbidden permissions returns -
 `checkReleaseForbiddenPermissions` in `android/app/build.gradle` reads the merged
 manifest via AGP's artifact API and fails closed on anything it cannot verify. It is
 not a lint; you cannot ship past it. Prove it still bites by deleting a
@@ -186,6 +186,32 @@ Disabling stops *transmission*, not *capture* â€” Crashlytics still writes crash
 disk. That is why granting deletes unsent reports **before** enabling, and why boot
 deletes them on every `unset`/`denied` launch. Between them, a crash captured before
 consent can never be submitted.
+
+### The permission list, and why it needs a machine
+
+The APK went from **12 declared permissions to 6**. Not one of the six removed was ever
+in `AndroidManifest.xml` - every one arrived through manifest merging from a transitive
+dependency, which is exactly why reading the source manifest tells you nothing:
+
+| Removed | Came from | Why it goes |
+|---|---|---|
+| `AD_ID`, `ACCESS_ADSERVICES_AD_ID`, `ACCESS_ADSERVICES_ATTRIBUTION`, `BIND_GET_INSTALL_REFERRER_SERVICE` | `play-services-measurement*` (firebase-analytics) | Advertising and attribution. Compendium serves no ads and runs no campaigns. |
+| `USE_BIOMETRIC`, `USE_FINGERPRINT` | `androidx.biometric`, via `@capacitor-community/sqlite` | Biometric unlock of an **encrypted** database. Compendium never encrypts, so the code cannot run. `USE_FINGERPRINT` is deprecated as well: API 28 superseded it with `USE_BIOMETRIC`. |
+
+What remains is either declared by us or functionally required: `INTERNET`, `CAMERA`,
+`VIBRATE`, `ACCESS_NETWORK_STATE`, `WAKE_LOCK`, and the AndroidX dynamic-receiver
+permission.
+
+**Biometrics are unreachable, not merely unused.** `capacitor.config.json` sets
+`"androidIsEncryption": false`, `db.js` opens every connection with `'no-encryption'`,
+and in the plugin's `CapacitorSQLite` constructor the biometric branch is nested inside
+`if (isEncryption)`. The permissions go but `androidx.biometric` stays: the plugin's own
+Java imports `BiometricPrompt`, so excluding the library stops it compiling. Dead classes
+are cheap; a sensitive permission on a store listing is not.
+
+**If encryption is ever enabled, the two `tools:node="remove"` entries and the gate's
+list must change in the same commit** - otherwise the feature fails at runtime with a
+`SecurityException` while the source manifest still looks innocent.
 
 ### Verifying telemetry on a device
 
@@ -209,7 +235,7 @@ Release builds ship **arm64-v8a + armeabi-v7a only**. That took the APK from **8
 to 66.2 MB** (-20%): `x86`/`x86_64` are emulator architectures and no phone that can
 install this APK can execute them, so they were pure carry.
 
-The scanner is what makes ABIs expensive — ML Kit's OCR and barcode `.so` files plus
+The scanner is what makes ABIs expensive ï¿½ ML Kit's OCR and barcode `.so` files plus
 SQLCipher are per-architecture, so each extra ABI is a full duplicate set.
 
 **Debug keeps all four**, so the emulator still works on an x86_64 host. The filter is
@@ -227,7 +253,7 @@ aapt2 dump badging <apk> | grep native-code
 ```
 
 **Size is dominated by card art, not code.** `assets/public/cards` is ~44 MB of the 66 MB
-— 1,103 WebP files averaging 41 KB, already compressed, bundled deliberately for the
+ï¿½ 1,103 WebP files averaging 41 KB, already compressed, bundled deliberately for the
 offline-first constraint. Native libs are ~14 MB. Anyone chasing further size reduction
 should start there and treat it as a product decision (resolution or coverage), not a
 build fix.

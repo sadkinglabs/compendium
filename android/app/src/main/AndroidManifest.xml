@@ -105,4 +105,24 @@
     <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" tools:node="remove" />
     <uses-permission android:name="com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
                      tools:node="remove" />
+
+    <!-- Merged in by androidx.biometric, which @capacitor-community/sqlite declares
+         (node_modules/@capacitor-community/sqlite/android/build.gradle) for biometric
+         unlock of an ENCRYPTED database. Compendium has no encrypted database:
+         capacitor.config.json sets "androidIsEncryption": false, and db.js opens every
+         connection with 'no-encryption'. In the plugin's CapacitorSQLite constructor the
+         biometric block is nested inside `if (isEncryption)`, so the code is unreachable
+         and these two permissions are asking for a sensitive capability the app cannot
+         use. Play flags exactly that.
+
+         USE_FINGERPRINT is additionally deprecated (API 28 superseded it with
+         USE_BIOMETRIC), so this removes a deprecated permission AND an unused one.
+
+         The permissions go, the library stays: the plugin's own Java imports
+         BiometricPrompt (UtilsBiometric.java, BiometricListener.java), so excluding
+         androidx.biometric would stop it compiling. Dead classes are cheap; a sensitive
+         permission on the store listing is not. If encryption is ever switched on, these
+         two removes must come out and the gate below must be updated in the same change. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" tools:node="remove" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" tools:node="remove" />
 </manifest>
