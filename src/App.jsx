@@ -27,6 +27,8 @@ import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
 import { CHANGELOG } from './content/changelog.js';
 import { getSeenBuild, setSeenBuild, pendingEntries } from './store/changelog.js';
+import { reconcile as reconcileTelemetry, grantConsent, denyConsent, getConsent, isOn as telemetryOn, needsDisclosure, UNSET } from './store/telemetry.js';
+import { TELEMETRY_SETTING } from './content/telemetry.js';
 import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
@@ -48,6 +50,7 @@ const LifeCounter = lazy(() => import('./pillars/LifeCounter.jsx'));
 const AvatarPicker = lazy(() => import('./pillars/AvatarPicker.jsx'));
 const CreateDeckWizard = lazy(() => import('./components/CreateDeckWizard.jsx'));
 const ChangelogModal = lazy(() => import('./components/ChangelogModal.jsx'));
+const TelemetryDisclosure = lazy(() => import('./components/TelemetryDisclosure.jsx'));
 
 // Bottom-nav pillars. Icons come from <NavIcon icon={key} /> (inline SVG); only
 // key + label are read (glyph/eyebrow/accent fields were retired in the sweep).
@@ -88,6 +91,7 @@ export default function App() {
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal - the Home wordmark's tap target
   const [changelogOpen, setChangelogOpen] = useState(false);   // release notes, opened on demand from Credits (never stamps)
   const [changelogPending, setChangelogPending] = useState(null);   // unseen entries from the update gate (stamps on dismiss)
+  const [telemetryAsk, setTelemetryAsk] = useState(false);          // consent is `unset` - show the disclosure, once
   const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
   const [matchImport, setMatchImport] = useState(null);        // parsed mirrored-match payload (from a shared QR / deep link)
   const [resultPaste, setResultPaste] = useState(false);       // manual "paste a result link" fallback
@@ -152,6 +156,26 @@ export default function App() {
           // "catch up" on its own first release the next time one lands.
           else if (seen === null) await setSeenBuild(Number(__APP_BUILD__));
         } catch (e) { console.error('changelog gate failed', e); }
+        // Telemetry reconciliation. ASSERTS the SDKs against the recorded consent on
+        // every boot - it must not assume, because the manifest's collection flags are
+        // only the INITIAL default and a persisted runtime override outlives them. A
+        // granted-then-denied install whose disable call was interrupted would
+        // otherwise boot collecting while Settings said off. `unset` and `denied` both
+        // also delete unsent reports, which is what stops a crash captured before
+        // consent from ever being submitted, and what clears what build 37 left behind
+        // when an existing tester upgrades.
+        //
+        // Like the gates above: never blocks boot, a failure logs and is forgotten.
+        // Fail-safe is the OFF direction - telemetry.js reports `unset` on a native
+        // error, which asks again rather than collecting. On web it reports null
+        // (not applicable, no Firebase to consent to) and we ask nothing: `unset`
+        // there would strand the modal, because grantConsent no-ops on web too.
+        // needsDisclosure, not `=== UNSET`: `granting` means the user HAS answered and
+        // the cleanup is still settling. Re-asking them would be a bug, and treating it
+        // as granted would claim a guarantee reconcile has not yet earned.
+        try {
+          if (needsDisclosure(await reconcileTelemetry())) setTelemetryAsk(true);
+        } catch (e) { console.error('telemetry reconcile failed', e); }
         if (import.meta.env.DEV) {
           window.__cx = {
             transfer: await import('./store/profileTransfer.js'),
@@ -555,9 +579,30 @@ export default function App() {
           <ChangelogModal open entries={CHANGELOG} onClose={() => setChangelogOpen(false)} />
         </Suspense>
       )}
+      {/* The diagnostics disclosure - one of exactly TWO surfaces that may grant
+          consent (the other is the Settings PRIVACY row); both show the disclosure
+          text. See THE ONE RULE in src/telemetry.js before adding a third.
+
+          It takes the screen ahead of the update gate below: the two can only ever
+          collide on the single build that ships this (the disclosure fires once,
+          ever), and a decision should not be read underneath a list of news. The
+          buttons record what was ACTUALLY stored - a failed write leaves `unset`,
+          which keeps the modal up rather than closing on a choice that did not land.
+
+          It cannot be dismissed: no backdrop tap, no back, no close button. Tapping
+          the scrim used to answer it, which left `unset` and so collected nothing -
+          the fail-safe held, but a stray tap on the background is not consent, and
+          off-by-accident should not look like off-by-choice. */}
+      {telemetryAsk && (
+        <Suspense fallback={null}>
+          <TelemetryDisclosure open
+            onAccept={async () => { if (await grantConsent() !== UNSET) setTelemetryAsk(false); }}
+            onDecline={async () => { if (await denyConsent() !== UNSET) setTelemetryAsk(false); }} />
+        </Suspense>
+      )}
       {/* The update gate. Same component, different two things: only the entries
           this install hasn't seen, and a close that RECORDS having seen them. */}
-      {changelogPending && (
+      {changelogPending && !telemetryAsk && (
         <Suspense fallback={null}>
           <ChangelogModal open entries={changelogPending} onClose={dismissChangelog} />
         </Suspense>
@@ -869,10 +914,33 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
 // in the tracker's Tweaks. Settings stays a single, focused surface.
 function SettingsModal({ open, onClose }) {
   const [s, setS] = useState(null);
-  useEffect(() => { if (open) getSettings().then(setS); }, [open]);
+  // Telemetry consent is NOT a `settings` row and deliberately not per-profile: it
+  // belongs to this install on this device, so it lives in native SharedPreferences
+  // (see TelemetryPlugin.kt for why - a profile imported from another device must not
+  // carry that device's consent decision here). It therefore has its own state and its
+  // own writer; `put` below is for profile settings only.
+  const [consent, setConsent] = useState(null);
+  const [consentBusy, setConsentBusy] = useState(false);
+  useEffect(() => { if (open) { getSettings().then(setS); getConsent().then(setConsent); } }, [open]);
   async function put(key, value) {
     setS((p) => { const n = { ...p, [key]: value }; applyAppearance(n); return n; });
     await setSetting(key, value);
+  }
+  // Renders the state that was ACTUALLY stored, never an optimistic flip. If the native
+  // transition fails, grantConsent/denyConsent return the previous value and the switch
+  // stays where it was: the change visibly failed, which is honest. Showing "off" while
+  // collection persisted would be the one lie this feature exists to stop.
+  //
+  // `consentBusy` locks the control for the duration. Not a spinner-for-politeness: a
+  // double-tap used to fire grant() and deny() concurrently, and they could interleave
+  // into `denied` persisted while Analytics got switched on - stored consent and SDK
+  // state disagreeing permanently. The native side serialises too (one executor, a
+  // @Synchronized machine); this stops the queue forming in the first place.
+  async function putConsent(on) {
+    if (consentBusy) return;
+    setConsentBusy(true);
+    try { setConsent(await (on ? grantConsent() : denyConsent())); }
+    finally { setConsentBusy(false); }
   }
   if (!open) return null;
   const label = (t) => <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '18px 0 10px' }}>{t}</div>;
@@ -912,6 +980,29 @@ function SettingsModal({ open, onClose }) {
           <Toggle label="High contrast" k="high_contrast" hint="Brighter text and stronger outlines." />
           <Toggle label="Reduce motion" k="reduced_motion" hint="Minimise animations and transitions." />
           <Toggle label="Haptics" k="haptics" hint="Subtle vibration on key taps." />
+
+          {/* PRIVACY. Note the scope change: every toggle above is per-profile
+              (`settings` table), this one is app-global. They look identical, so the
+              section header and the "On this device" in the hint are what tell them
+              apart - flagged in the proposal as deliberately subtle rather than solved.
+
+              The hint carries the disclosure summary, and that is not decoration: it
+              is what makes this row one of the two surfaces allowed to grant consent
+              (the other is the first-run disclosure). A bare switch here would be a
+              third granting surface with nothing to read. */}
+          {label('PRIVACY')}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 2px', borderBottom: '1px solid var(--hair-12)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)' }}>{TELEMETRY_SETTING.label}</div>
+              <div style={{ font: "400 11.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', marginTop: 3 }}>{TELEMETRY_SETTING.hint}</div>
+            </div>
+            <button onClick={() => putConsent(!telemetryOn(consent))} aria-label={TELEMETRY_SETTING.label}
+              aria-pressed={telemetryOn(consent)} aria-busy={consentBusy} disabled={consent == null || consentBusy}
+              style={{ width: 46, height: 28, minWidth: 46, borderRadius: 14, border: '1px solid var(--hair-30)', background: telemetryOn(consent) ? 'var(--gold-leaf)' : 'transparent', position: 'relative', cursor: consentBusy ? 'default' : 'pointer', opacity: consentBusy ? .55 : 1, flex: 'none' }}>
+              <span style={{ position: 'absolute', top: 2, left: telemetryOn(consent) ? 20 : 2, width: 22, height: 22, borderRadius: '50%', background: telemetryOn(consent) ? '#1a1410' : 'var(--ink-faint)', transition: 'left .15s' }} />
+            </button>
+          </div>
+
           {/* ABOUT/Credits used to live here. Credits is now the Home wordmark's
               tap target, so it's one tap from the landing screen instead of three
               taps deep behind the accessibility toggles. */}

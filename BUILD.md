@@ -144,6 +144,66 @@ things worth verifying: vendor-prefixed CSS, mask compositing, plugin behaviour.
 Anything engine-sensitive must be seen in the installed app, or at minimum in a
 Chromium browser on the device; say which one was used when reporting it.
 
+## Telemetry, and the manifest that actually ships
+
+Compendium sends the developer crash reports and open-counts **only** after the user
+answers the diagnostics disclosure. Until then Firebase starts but transmits nothing —
+measured at **0 bytes over 3 minutes on a virgin install**, against **13,666** for
+build 37, which collected without ever asking.
+
+**Read the release artifact, never the source manifest.** `AndroidManifest.xml`
+declares 3 permissions; the merged manifest declared **12** — including
+`com.google.android.gms.permission.AD_ID`, a cross-app advertising identifier that
+`firebase-analytics` adds silently. It shipped for 37 builds because the file everyone
+read is not the file that ships.
+
+```bash
+# what the app ACTUALLY asks for
+aapt2 dump badging android/app/build/outputs/apk/release/app-release.apk | grep uses-permission
+# who added a given permission
+grep -B1 AD_ID android/app/build/outputs/logs/manifest-merger-release-report.txt
+```
+
+`assembleRelease` **fails** if one of the four forbidden permissions returns —
+`checkReleaseForbiddenPermissions` in `android/app/build.gradle` reads the merged
+manifest via AGP's artifact API and fails closed on anything it cannot verify. It is
+not a lint; you cannot ship past it. Prove it still bites by deleting a
+`tools:node="remove"` line and running `assembleRelease`: it must go red.
+
+**The collection flags are the initial default, not a floor.** Once
+`setXCollectionEnabled` runs, that override persists and beats the manifest forever
+after. Boot reconciliation (`src/store/telemetry.js` → `TelemetryPlugin.kt`) is what
+keeps a denied user off, and it asserts on every launch rather than assuming.
+
+**Consent semantics are not symmetric**, and the copy must not pretend otherwise:
+
+| | Effect of turning it off |
+|---|---|
+| Analytics | persists; overrides the manifest |
+| Crashlytics | **does not apply until the next run** |
+
+Disabling stops *transmission*, not *capture* — Crashlytics still writes crashes to
+disk. That is why granting deletes unsent reports **before** enabling, and why boot
+deletes them on every `unset`/`denied` launch. Between them, a crash captured before
+consent can never be submitted.
+
+### Verifying telemetry on a device
+
+Web tests prove nothing here: node and the browser have no Firebase, so
+`src/store/telemetry.js` no-ops in every automated gate. The real surface is native.
+
+```bash
+adb shell setprop log.tag.FA VERBOSE          # Analytics
+adb logcat -d | grep -E "App measurement (collection )?(enabled|disabled)|FirebaseApp"
+# bytes actually sent - re-resolve the uid, it CHANGES on uninstall/reinstall
+adb shell pm list packages -U | grep sadkinglabs
+adb shell dumpsys netstats detail | grep -A3 "uid=<uid>"
+```
+
+`App measurement disabled via the manifest` is the pre-consent state. A byte counter
+that never moves is not proof of silence — Analytics batches uploads ~58 minutes out,
+so a short window sees nothing either way. Establish a positive control first.
+
 ## Notes
 
 - **Curiosa import** uses CapacitorHttp on device; in the browser it routes

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -7,6 +8,30 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+
+        <!-- ============================ TELEMETRY ============================
+             Both SDKs collect NOTHING until the user answers the disclosure.
+             These four flags are what make that true, and it is measured, not
+             assumed: a virgin install with them set transmits 0 bytes over 3
+             minutes, where build 37 transmitted 13,666. Firebase still starts -
+             initialization is not transmission.
+
+             READ THIS BEFORE CHANGING ANY OF THEM: these are the INITIAL DEFAULT,
+             not a standing floor. Once TelemetryPlugin calls setXCollectionEnabled,
+             that runtime override persists and beats the manifest forever after.
+             Boot reconciliation, not these flags, is what keeps a denied user off.
+             See docs/proposals/telemetry-consent.md. -->
+        <meta-data android:name="firebase_analytics_collection_enabled"   android:value="false" />
+        <meta-data android:name="firebase_crashlytics_collection_enabled" android:value="false" />
+
+        <!-- No advertising identifier, ever. This stops the SDK READING one; the
+             tools:node="remove" entries below stop the manifest DECLARING one.
+             Both are required - the flags alone remove no permission (measured:
+             a flags-only build still declared all 12, AD_ID included). -->
+        <meta-data android:name="google_analytics_adid_collection_enabled" android:value="false" />
+        <meta-data android:name="google_analytics_default_allow_ad_personalization_signals"
+                   android:value="false" />
+        <!-- ================================================================== -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:name=".MainActivity"
@@ -55,4 +80,29 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+    <!-- Merged in by play-services-measurement* (= firebase-analytics), which the
+         manifest merger adds silently. Build 37 shipped an app that asked for a
+         cross-app ADVERTISING ID; nobody decided that, it arrived with a BoM.
+
+         FOUR entries, not one, because they come from THREE different artifacts:
+         removing AD_ID alone leaves ACCESS_ADSERVICES_AD_ID, the Privacy Sandbox
+         path to the same identifier - the half-fix that looks complete.
+             AD_ID                        <- play-services-measurement-impl
+             ACCESS_ADSERVICES_AD_ID      <- play-services-measurement-api
+             ACCESS_ADSERVICES_ATTRIBUTION<- play-services-measurement-api
+             BIND_GET_INSTALL_REFERRER_*  <- play-services-measurement  (unused install attribution)
+
+         ACCESS_NETWORK_STATE and WAKE_LOCK come from the same tree and are KEPT:
+         Analytics needs them to batch uploads. Removing them to shorten the list
+         would break the thing this is preserving.
+
+         The `checkForbiddenPermissions` Gradle task fails assembleRelease if any
+         of these reappear. Verify with the RELEASE ARTIFACT, never the source
+         manifest - reading the wrong one is why this went unnoticed for 37 builds. -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_AD_ID" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_ADSERVICES_ATTRIBUTION" tools:node="remove" />
+    <uses-permission android:name="com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
+                     tools:node="remove" />
 </manifest>
