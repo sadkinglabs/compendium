@@ -59,10 +59,13 @@ A child-table query is profile-safe only when it joins or first resolves through
 |---|---|---|---|
 | Relational data | sql.js in memory, persisted as a database image in IndexedDB | `@capacitor-community/sqlite` | Same schema and repository API |
 | Active profile | Capacitor Preferences web adapter | Native Preferences | One `activeProfileId` key |
+| App-global install state | Capacitor Preferences web adapter | Native Preferences | Small, non-profile singletons. Currently one key: `changelogSeenBuild`, the last build whose release notes were dismissed |
 | Files and sharing | Browser download, file picker, clipboard/share fallbacks | Filesystem and Share plugins | Same validated domain payloads |
 | Catalog assets | Bundled application data and configured art sources | Bundled application data and configured art sources | Images are optional; catalog text remains usable |
 
 `localStorage` may hold non-authoritative UI or diagnostic preferences, but it must not become a profile data store. Browser persistence is a supported runtime, not merely an in-memory preview.
+
+**App-global Preferences keys are not user data and are never exported.** `changelogSeenBuild` describes *this install on this device*, not the person using it: it is deliberately outside the profile boundary and outside `profileTransfer`. A profile-owned equivalent would replay the release notes on every profile switch, and a profile imported from another device would carry a foreign stamp that either suppresses unread notes or replays read ones. Anything with that shape — install-local, not owned by whoever is signed in — belongs in this tier rather than in `settings`. Losing a key here costs at most one redundant modal, which is why it may live outside the durable-write guarantee that governs user data.
 
 ## 4. Shared catalog schema
 

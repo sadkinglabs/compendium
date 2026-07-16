@@ -25,6 +25,8 @@ import { runBackConsumers } from './back.js';
 import { parseMatchShare } from './store/matchShare.js';
 import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
+import { CHANGELOG } from './content/changelog.js';
+import { getSeenBuild, setSeenBuild, pendingEntries } from './store/changelog.js';
 import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
@@ -45,6 +47,7 @@ const ImportMatchSheet = lazy(() => import('./pillars/Play.jsx').then((m) => ({ 
 const LifeCounter = lazy(() => import('./pillars/LifeCounter.jsx'));
 const AvatarPicker = lazy(() => import('./pillars/AvatarPicker.jsx'));
 const CreateDeckWizard = lazy(() => import('./components/CreateDeckWizard.jsx'));
+const ChangelogModal = lazy(() => import('./components/ChangelogModal.jsx'));
 
 // Bottom-nav pillars. Icons come from <NavIcon icon={key} /> (inline SVG); only
 // key + label are read (glyph/eyebrow/accent fields were retired in the sweep).
@@ -81,8 +84,10 @@ export default function App() {
   const counterApi = useRef(null);                   // {minimize} - set by the live counter
   const homeApi = useRef(null);                       // {back} - Home edit mode / Overview<->Dashboard subtab
   const lastBackAt = useRef(0);                       // double-back-to-exit timestamp (Home root)
-  const [settingsSheet, setSettingsSheet] = useState(false);   // app Settings (accessibility + prefs)
-  const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal
+  const [settingsOpen, setSettingsOpen] = useState(false);   // app Settings (accessibility + prefs) - a modal over the profile sheet
+  const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal - the Home wordmark's tap target
+  const [changelogOpen, setChangelogOpen] = useState(false);   // release notes, opened on demand from Credits (never stamps)
+  const [changelogPending, setChangelogPending] = useState(null);   // unseen entries from the update gate (stamps on dismiss)
   const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
   const [matchImport, setMatchImport] = useState(null);        // parsed mirrored-match payload (from a shared QR / deep link)
   const [resultPaste, setResultPaste] = useState(false);       // manual "paste a result link" fallback
@@ -133,6 +138,20 @@ export default function App() {
         // set row (e.g. older scanner adds). Idempotent; never blocks boot.
         try { await backfillSingleSetOwned(); } catch (e) { console.error('single-set backfill failed', e); }
         try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
+        // The update gate: show, once, the notes for every build this install
+        // skipped. The stamp is app-global (Preferences), NOT a profile setting,
+        // so it neither replays on a profile switch nor rides a profile import
+        // in from another device. Number() is load-bearing: __APP_BUILD__ is a
+        // string, and '9' > '35' lexicographically. Like the backfills above it,
+        // a failure here logs and is forgotten - the gate must never cost a boot.
+        try {
+          const seen = await getSeenBuild();
+          const pending = pendingEntries(CHANGELOG, seen, Number(__APP_BUILD__));
+          if (pending.length) setChangelogPending(pending);
+          // A fresh install with no notes to show still gets stamped, or it would
+          // "catch up" on its own first release the next time one lands.
+          else if (seen === null) await setSeenBuild(Number(__APP_BUILD__));
+        } catch (e) { console.error('changelog gate failed', e); }
         if (import.meta.env.DEV) {
           window.__cx = {
             transfer: await import('./store/profileTransfer.js'),
@@ -260,6 +279,18 @@ export default function App() {
     setTab('home'); bump();
   }
 
+  // The update gate's ONE dismissal path. CenteredModal owns scrim, close button,
+  // Escape and hardware back, and routes them all to onClose - so there is no
+  // second route to keep in sync, and no backStack row (runBackConsumers() runs
+  // before the declarative stack, so a row here would be unreachable anyway).
+  // Stamping on dismiss rather than on display means a kill mid-read re-shows the
+  // notes: the benign failure. Stamping on display would swallow them for good.
+  const dismissChangelog = async () => {
+    setChangelogPending(null);
+    try { await setSeenBuild(Number(__APP_BUILD__)); }
+    catch (e) { console.error('changelog stamp failed', e); }   // benign: re-shows next launch
+  };
+
   const initial = (profile?.name || '?').charAt(0).toUpperCase();
   const searchable = true;   // universal search on every pillar
   const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', collect: 'Search your collection…', decks: 'Search decks…', play: 'Search matches…' };
@@ -276,7 +307,7 @@ export default function App() {
     [resultPaste, () => setResultPaste(false)],
     [searchHelpOpen, () => setSearchHelpOpen(false)],
     [creditsOpen, () => setCreditsOpen(false)],
-    [settingsSheet, () => setSettingsSheet(false)],
+    [settingsOpen, () => setSettingsOpen(false)],
     [profileSheet, () => setProfileSheet(false)],
     [addActive, exitAdd],
     [hasQuery, () => setQuery('')],
@@ -323,11 +354,14 @@ export default function App() {
       {/* BRAND BAR */}
       <div style={S.brandBar}>
         {/* Wordmark = the app's home button (platform convention). Only when
-            already sitting on Home does it open Settings. */}
+            already sitting on Home does it open Credits - the app's "about
+            itself" surface, including the release notes. Settings moved to the
+            profile sheet, where it has a visible row instead of a binding nothing
+            advertises. */}
         <button onClick={() => {
           const atHome = tab === 'home' && !viewDetail && !hasQuery && !addActive && !preMatch;
-          if (atHome) setSettingsSheet(true); else goTab('home');
-        }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Home / Settings">
+          if (atHome) setCreditsOpen(true); else goTab('home');
+        }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Home / Credits">
           <span style={S.diamond} />
           <span style={S.wordmark}>Compendium</span>
         </button>
@@ -449,7 +483,7 @@ export default function App() {
         <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters & sort"
           onClick={() => setAddFilterOpen(true)} badge={addFilterCount} />
       )}
-      {/* Home owns no app-level FAB - the wordmark opens Settings, and the
+      {/* Home owns no app-level FAB - the wordmark opens Credits, and the
           Dashboard renders its own "+" FAB. Play owns its Add-Match FAB. */}
 
       {/* Bottom navigation: Home, Codex, Collection, Decks, and Play. */}
@@ -465,7 +499,7 @@ export default function App() {
         })}
       </nav>
       <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
-        onSwitch={onSwitchProfile} onChanged={reloadProfile}
+        onSwitch={onSwitchProfile} onChanged={reloadProfile} onSettings={() => setSettingsOpen(true)}
         onExport={async () => { try { const { exportToFile } = await import('./store/profileTransfer.js'); await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } }}
         onImport={async () => { try { const { pickAndImport } = await import('./store/profileTransfer.js'); const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } }} />
 
@@ -509,8 +543,25 @@ export default function App() {
             onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
         </Suspense>
       )}
-      <SettingsSheet open={settingsSheet} onClose={() => setSettingsSheet(false)} onCredits={() => setCreditsOpen(true)} />
-      <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} />
+      {/* Settings paints over the profile sheet, which stays mounted underneath so
+          closing this returns the user to where they opened it from. */}
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} onChangelog={() => setChangelogOpen(true)} />
+      {/* Opened from Credits, so it shows the WHOLE history on demand. Nothing is
+          recorded when it closes: reading the notes because you went looking is not
+          the same event as being shown them after an update. */}
+      {changelogOpen && (
+        <Suspense fallback={null}>
+          <ChangelogModal open entries={CHANGELOG} onClose={() => setChangelogOpen(false)} />
+        </Suspense>
+      )}
+      {/* The update gate. Same component, different two things: only the entries
+          this install hasn't seen, and a close that RECORDS having seen them. */}
+      {changelogPending && (
+        <Suspense fallback={null}>
+          <ChangelogModal open entries={changelogPending} onClose={dismissChangelog} />
+        </Suspense>
+      )}
       <SearchHelpModal open={searchHelpOpen} kind={addActive ? 'deck' : 'codex'} onClose={() => setSearchHelpOpen(false)} />
       <ImportPasteModal open={resultPaste} onClose={() => setResultPaste(false)}
         onParsed={(p) => { setResultPaste(false); setMatchImport(p); }} />
@@ -698,7 +749,7 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
 // The default (oldest) profile is load-bearing and cannot be deleted; any
 // profile can be renamed (data keys off the id - names are just labels),
 // duplicated (full re-keyed copy) or exported.
-function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, onImport }) {
+function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, onImport, onSettings }) {
   const [list, setList] = useState([]);
   const [stats, setStats] = useState({});
   const [adding, setAdding] = useState(false);
@@ -792,17 +843,31 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
         <button onClick={onExport} style={{ ...S.btnGhost, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcDownload size={14} />Export</button>
         <button onClick={onImport} style={{ ...S.btnGhost, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcUpload size={14} />Import</button>
       </div>
+      {/* Settings lives here because the profile chip is the app's account
+          surface, and because a visible row beats the old binding: Settings used
+          to open from a tap on the wordmark, which nothing advertised. This sheet
+          stays open behind it - see SettingsModal. */}
+      <div style={{ font: "600 10px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-muted)', margin: '22px 0 4px' }}>APP</div>
+      <ChevronRow label="Settings" onClick={onSettings} />
       </div>
     </Sheet>
   );
 }
 
-// App Settings - reached from the Home FAB. Accessibility only: font scale,
-// high contrast, reduced motion, haptics - all applied live via applyAppearance.
-// Match config (starting life, die) lives in the life tracker; rarity colours
-// is an add-cards filter; counter comforts live in the tracker's Tweaks.
-// Settings stays a single, focused surface.
-function SettingsSheet({ open, onClose, onCredits }) {
+// App Settings - reached from the profile sheet, and rendered as a centered
+// modal OVER it rather than as a second bottom sheet. Two sheets would put two
+// scrims at the same z-index with only DOM order to separate them; a modal at
+// z:700 over the sheet at z:200 is an unambiguous hierarchy, and it's the stack
+// the app already runs elsewhere. Because the profile sheet underneath is never
+// unmounted, closing this returns to it - which is where the user came from.
+// Both chassis register a back consumer and back.js is LIFO, so hardware back
+// peels this first and lands on Profiles without any extra wiring.
+//
+// Accessibility only: font scale, high contrast, reduced motion, haptics - all
+// applied live via applyAppearance. Match config (starting life, die) lives in
+// the life tracker; rarity colours is an add-cards filter; counter comforts live
+// in the tracker's Tweaks. Settings stays a single, focused surface.
+function SettingsModal({ open, onClose }) {
   const [s, setS] = useState(null);
   useEffect(() => { if (open) getSettings().then(setS); }, [open]);
   async function put(key, value) {
@@ -825,9 +890,10 @@ function SettingsSheet({ open, onClose, onCredits }) {
   );
   const scale = clampFontScale(s?.font_scale);
   return (
-    <Sheet open={open} title="Settings" onClose={onClose}>
+    <CenteredModal open={open} label="Settings" maxWidth={380} onClose={onClose} boxStyle={{ overflow: 'hidden' }}>
+      <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', padding: '22px 44px 4px' }}>SETTINGS</div>
       {s == null ? <Loading /> : (
-        <div style={{ padding: '0 16px' }}>
+        <div className="cx-scroll" style={{ maxHeight: 'min(64dvh, 480px)', overflowY: 'auto', padding: '0 20px calc(20px + env(safe-area-inset-bottom,0px))', WebkitOverflowScrolling: 'touch' }}>
           {label('ACCESSIBILITY')}
           <div style={{ padding: '4px 2px 12px', borderBottom: '1px solid var(--hair-12)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
@@ -846,22 +912,31 @@ function SettingsSheet({ open, onClose, onCredits }) {
           <Toggle label="High contrast" k="high_contrast" hint="Brighter text and stronger outlines." />
           <Toggle label="Reduce motion" k="reduced_motion" hint="Minimise animations and transitions." />
           <Toggle label="Haptics" k="haptics" hint="Subtle vibration on key taps." />
-          {label('ABOUT')}
-          <button onClick={onCredits} style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '13px 2px', background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', textAlign: 'left' }}>
-            <span style={{ flex: 1, font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)' }}>Credits</span>
-            <span style={{ color: 'var(--ink-faint)', display: 'flex' }}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></span>
-          </button>
+          {/* ABOUT/Credits used to live here. Credits is now the Home wordmark's
+              tap target, so it's one tap from the landing screen instead of three
+              taps deep behind the accessibility toggles. */}
         </div>
       )}
-    </Sheet>
+    </CenteredModal>
+  );
+}
+
+// A label + chevron row: the "tap through to another surface" idiom. Defined once
+// (Profiles -> Settings, Credits -> What's New) rather than inlined per caller.
+function ChevronRow({ label, onClick }) {
+  return (
+    <button onClick={onClick} style={{ display: 'flex', alignItems: 'center', width: '100%', minHeight: 48, gap: 12, padding: '13px 2px', background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer', textAlign: 'left' }}>
+      <span style={{ flex: 1, font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)' }}>{label}</span>
+      <span style={{ color: 'var(--ink-faint)', display: 'flex' }}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></span>
+    </button>
   );
 }
 
 // Credits / About uses a centered modal rather than a bottom sheet.
-function CreditsModal({ open, onClose }) {
+function CreditsModal({ open, onClose, onChangelog }) {
   return (
     <CenteredModal open={open} label="Credits" maxWidth={350} onClose={onClose} boxStyle={{ overflow: 'hidden' }}>
-        <div style={{ position: 'relative', textAlign: 'center', padding: '34px 26px 26px', background: 'radial-gradient(ellipse at 50% 0%, rgba(220,184,111,.14) 0%, transparent 70%)' }}>
+        <div style={{ position: 'relative', textAlign: 'center', padding: '34px 26px 22px', background: 'radial-gradient(ellipse at 50% 0%, rgba(220,184,111,.14) 0%, transparent 70%)' }}>
           <span style={{ display: 'block', width: 54, height: 54, margin: '0 auto 14px', borderRadius: 14, background: 'linear-gradient(160deg,#2a2113,#12100a)', border: '1px solid rgba(220,184,111,.4)', boxShadow: 'inset 0 1px 0 rgba(255,255,255,.08)', position: 'relative' }}>
             <span style={{ position: 'absolute', top: '50%', left: '50%', width: 18, height: 18, transform: 'translate(-50%,-50%) rotate(45deg)', border: '2px solid var(--gold-leaf)', borderRadius: 3 }} />
           </span>
@@ -879,6 +954,12 @@ function CreditsModal({ open, onClose }) {
             Sorcery: Contested Realm and all related trademarks, artwork, characters, and intellectual property are owned by Erik&rsquo;s Curiosa. This app is not affiliated with, endorsed, sponsored, or approved by Erik&rsquo;s Curiosa.
             <br /><br />
             <em style={{ color: 'var(--gold-leaf)', fontStyle: 'italic' }}>Created by fans, for the community.</em>
+          </div>
+          {/* The release notes' permanent home. The update gate shows them once and
+              is gone; this is how you read them again, and how anyone can check
+              what a build contains without waiting for the next update. */}
+          <div style={{ textAlign: 'left', marginTop: 18, borderTop: '1px solid var(--hair-12)' }}>
+            <ChevronRow label="What’s New" onClick={onChangelog} />
           </div>
         </div>
     </CenteredModal>

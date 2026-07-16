@@ -158,7 +158,8 @@ device
 - Older supported bundle versions are upgraded through ordered, forward-only schema transformations. Partial failure leaves existing profiles unchanged.
 
 **E. Profile UX:**
-- Brand-bar profile chip → bottom sheet: list profiles, switch (instant, swaps the active partition), **Export** (writes a single portable file of that profile via `@capacitor/filesystem` + share sheet), **Import** (reads such a file into a new/merged profile).
+- Brand-bar profile chip → bottom sheet: list profiles, switch (instant, swaps the active partition), **Export** (writes a single portable file of that profile via `@capacitor/filesystem` + share sheet), **Import** (reads such a file into a new/merged profile), and **Settings** (accessibility and app preferences).
+- **Settings opens as a centered modal over the profile sheet, which stays mounted beneath it.** The modal is the layer that acts; the sheet is the context it acts on. Because the sheet is never unmounted, closing Settings returns the user to it rather than to the app root. Do not make this a second bottom sheet: two sheets share one z-index and separate only by DOM order.
 - Switching profile must be **atomic**: never show profile A's decks with profile B's matches mid-swap. Load the new partition fully, then render.
 - Export format: a single JSON (or zip if images are bundled) that is **self-describing** (`schemaVersion`, `exportedAt`, `app:"compendium"`). Imports validate the version and apply supported schema upgrades before committing data.
 
@@ -236,9 +237,14 @@ These screen contracts define responsibility and interaction intent. Detailed ca
 - **Why:** two different time-scales (this game vs. your season) don't belong on one screen — separating them is what made the hub feel clean. The crest/buttons are still under review; keep the action compact.
 
 ### 7.8 Profiles & data
-- **What:** profile chip → bottom sheet: switch profile, Export, Import (per §4).
-- **How:** atomic profile swap; export = one self-describing portable file via native share; import validates and upgrades supported schema versions before committing.
-- **Why:** on-device multi-profile isolation is a core safety boundary — see §4. This sheet is the entire surface of user management, so it must be trustworthy and boring.
+- **What:** profile chip → bottom sheet: switch profile, Export, Import (per §4), and Settings.
+- **How:** atomic profile swap; export = one self-describing portable file via native share; import validates and upgrades supported schema versions before committing. Settings opens as a modal over the sheet (per §E).
+- **Why:** on-device multi-profile isolation is a core safety boundary — see §4. This sheet is the entire surface of user management, so it must be trustworthy and boring. Settings lives here because the chip is the account surface, and because a visible row is discoverable in a way the wordmark binding it replaced was not.
+
+### 7.9 About & release notes
+- **What:** the Compendium wordmark is the app's home button everywhere; **on Home**, where "go home" is a no-op, it opens Credits instead. Credits carries version, build, attribution, and **What's New** (the release notes).
+- **How:** notes are data (`src/content/changelog.js`), rendered by one modal with no per-version conditionals. On update, the same modal is shown once with every entry the user has not seen; the seen-build stamp is app-global (§4), never profile-owned, so it neither follows a profile export to another device nor re-fires on a profile switch.
+- **Why:** the app already knows the build it last ran, and alpha testers need to know what changed. Credits is the notes' permanent home so dismissing the update gate does not put them out of reach.
 
 ---
 

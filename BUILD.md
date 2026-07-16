@@ -62,6 +62,24 @@ lower `versionCode` refuses to install over a higher one. `version` moves only o
 a real release. Credits prints both, and **build is the number to quote in a bug
 report**: it identifies the exact APK, where the version alone cannot.
 
+### Write the release note with the bump
+
+Beside the `build` bump, add or update that build's entry in
+[`src/content/changelog.js`](./src/content/changelog.js). On first launch of a
+new build, testers are shown the notes for every build they skipped; the entry's
+`build` field is what they are matched against, so an entry keyed to a build that
+never ships is never seen.
+
+> **This step fails quietly.** Bumping `build` with no matching entry is benign by
+> design — nothing is shown, nothing is recorded, and the next release that *does*
+> carry notes sweeps the skipped build up with it. So nothing breaks, no test goes
+> red, and the only symptom is a release whose changes are never announced. The
+> note is only written if you remember to write it.
+
+Notes may be authored ahead of the bump: an entry whose `build` is above the
+running one stays invisible until that build actually ships. `version` is display
+only — several builds sharing one `version` is the normal case in alpha.
+
 ## Build the Android app
 
 The native APK is built in **Android Studio** (needs JDK + Android SDK, same as
