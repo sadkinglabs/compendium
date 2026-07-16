@@ -7,6 +7,7 @@ import { activeProfileId, createProfile, switchProfile, renameProfile } from './
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
+import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
 import { saveTextFile } from '../native.js';
 import { safeHref } from '../util.js';
 
@@ -45,7 +46,6 @@ export async function exportProfile(profileId = activeProfileId()) {
     deck_history: await query(`SELECT * FROM deck_history WHERE deck_id IN ${inClause(deckIds)};`, deckIds),
     saved: await query('SELECT * FROM saved WHERE profile_id=?;', [profileId]),
     notes: await query('SELECT * FROM notes WHERE profile_id=?;', [profileId]),
-    highlights: await query('SELECT * FROM highlights WHERE profile_id=?;', [profileId]),
     collections,
     collection_items: await query(`SELECT * FROM collection_items WHERE collection_id IN ${inClause(colIds)};`, colIds),
     // Collection pillar (v8): the ownership ledger + card/wanted lists.
@@ -105,8 +105,6 @@ export async function importProfile(bundle, { name } = {}) {
     ins('saved', ['id', 'profile_id', 'target_type', 'target_id', 'created_at'], [uuid(), pid, r.target_type, r.target_id, r.created_at]);
   for (const n of bundle.notes || [])
     ins('notes', ['id', 'profile_id', 'target_type', 'target_id', 'body', 'created_at', 'updated_at'], [uuid(), pid, n.target_type, n.target_id, n.body, n.created_at, n.updated_at]);
-  for (const h of bundle.highlights || [])
-    ins('highlights', ['id', 'profile_id', 'target_type', 'target_id', 'text', 'comment', 'created_at'], [uuid(), pid, h.target_type, h.target_id, h.text, h.comment, h.created_at]);
   for (const c of bundle.collections || [])
     ins('collections', ['id', 'profile_id', 'name', 'created_at'], [colMap.get(c.id), pid, c.name, c.created_at]);
   for (const ci of bundle.collection_items || [])
@@ -133,10 +131,13 @@ export async function importProfile(bundle, { name } = {}) {
         m.deck_id ? (deckMap.get(m.deck_id) || null) : null]);   // piloted deck follows the re-keyed deck
   for (const e of bundle.match_log_entries || [])
     ins('match_log_entries', ['id', 'match_id', 't', 'who', 'kind', 'delta', 'to_life', 'to_max'], [uuid(), matchMap.get(e.match_id), e.t, e.who, e.kind, e.delta, e.to_life, e.to_max]);
-  for (const b of bundle.dashboard_blocks || [])
+  // Drop any widget type this build no longer supports (e.g. a retired 'highlights'
+  // widget in an older bundle) so an import can't strand an unrenderable block.
+  const importedBlocks = filterImportedBlocks(bundle.dashboard_blocks);
+  for (const b of importedBlocks)
     ins('dashboard_blocks', ['id', 'profile_id', 'type', 'width', 'config', 'sort_order', 'created_at'], [uuid(), pid, b.type, b.width, sanitizeBlockConfig(b.type, b.config), b.sort_order, b.created_at]);
   for (const l of bundle.dashboard_layouts || [])
-    ins('dashboard_layouts', ['id', 'profile_id', 'name', 'blocks', 'saved_at'], [uuid(), pid, l.name, l.blocks, l.saved_at]);
+    ins('dashboard_layouts', ['id', 'profile_id', 'name', 'blocks', 'saved_at'], [uuid(), pid, l.name, filterLayoutBlocks(l.blocks), l.saved_at]);
   if (bundle.resume)
     stmts.push(['INSERT OR REPLACE INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);', [pid, bundle.resume.target_type, bundle.resume.target_id, bundle.resume.title, bundle.resume.at]]);
   if (bundle.settings) {
@@ -162,10 +163,12 @@ export async function importProfile(bundle, { name } = {}) {
        WHERE id=? AND profile_id=?;`,
       [newDeckId, pid, newDeckId, pid, newDeckId, pid]]);
 
-  // Mark the imported profile's dashboard as already seeded (key convention from
-  // homeRepository) so its restored layout - even a deliberately empty one - is
-  // never repopulated with the starter widgets on first load.
-  stmts.push(["INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?, '1');", [`dash_seeded:${pid}`]]);
+  // Mark the imported dashboard as already seeded so a faithfully-restored layout -
+  // even a deliberately empty one - is not repopulated with starter widgets; but an
+  // old highlights-only dashboard (every block dropped) is left unseeded so first load
+  // lays down the starter set rather than showing blank. See shouldMarkDashboardSeeded.
+  if (shouldMarkDashboardSeeded(bundle.dashboard_blocks, importedBlocks))
+    stmts.push(["INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?, '1');", [`dash_seeded:${pid}`]]);
 
   if (stmts.length) await tx(stmts);
   return pid;

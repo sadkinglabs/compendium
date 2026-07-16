@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export const MIGRATIONS = [
   {
@@ -96,8 +96,8 @@ export const MIGRATIONS = [
 
     -- The saved table = doc-level BOOKMARKS (the corner ribbon toggle). Named
     -- "saved" for history; it is a plain PIN on any entry (rule/card/deck), no
-    -- anchor. Kept separate from annotations (offset-anchored highlights/notes) on
-    -- purpose: decks have no document to anchor into, and bookmarks never re-anchor.
+    -- offset anchor: decks have no document to anchor into, and a bookmark never
+    -- moves with the text.
     CREATE TABLE IF NOT EXISTS saved (
       id TEXT PRIMARY KEY,
       profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -248,9 +248,9 @@ export const MIGRATIONS = [
     // CANONICAL character offsets in its compiled document (canon_start/end), plus a
     // W3C-style TextQuoteSelector fallback (prefix/exact/suffix over canon) so it can
     // be re-anchored or honestly orphaned when the catalog updates. block_hint is a
-    // non-durable render/scroll handle. The legacy `highlights` table is backfilled
-    // into this by a one-time JS pass (see migrateAnnotationsIfNeeded), not here -
-    // the doc canon it needs isn't available to a static SQL migration.
+    // non-durable render/scroll handle.
+    // SUPERSEDED by v10: anchored highlights were removed as a feature and these two
+    // tables are dropped there. Kept here because migrations are append-only.
     version: 7,
     sql: `
     CREATE TABLE IF NOT EXISTS annotations (
@@ -336,6 +336,22 @@ export const MIGRATIONS = [
     sql: `
     CREATE INDEX IF NOT EXISTS idx_linkgraph_source ON link_graph(source_id);
     CREATE INDEX IF NOT EXISTS idx_linkgraph_target ON link_graph(target_type, target_id);
+    `,
+  },
+  {
+    // v10 - anchored highlights removed (feature pruned; offset anchors were
+    // unmaintainable against an evolving catalog). Notes, links and bookmarks stay.
+    // Hard delete by owner decision, tester-confirmed. Forward-only and retry-safe:
+    // anchors (child) drops before annotations (parent); every statement tolerates a
+    // re-run after a partial apply. Only highlight rows and the Highlights dashboard
+    // widget go - all other tables and rows are untouched.
+    version: 10,
+    sql: `
+    DROP TABLE IF EXISTS anchors;
+    DROP TABLE IF EXISTS annotations;
+    DROP TABLE IF EXISTS highlights;
+    DELETE FROM dashboard_blocks WHERE type='highlights';
+    DELETE FROM catalog_meta WHERE key='highlights_migrated';
     `,
   },
 ];

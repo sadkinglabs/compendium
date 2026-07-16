@@ -1,14 +1,12 @@
 // Codex detail - rule (drop-cap reading + related + sub-entries) or card
 // (art hero, stat boxes, rules, FAQs), plus the per-profile personal layer:
-// save/star, marginalia notes, highlights, collections.
+// save/star, marginalia notes, collections.
 import React, { useEffect, useState, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   getCard, getRule, relatedFor, mentions, faqsForCard,
   notesFor, addNote, deleteNote,
   linksFor, addLink, deleteLink, searchCodex,
 } from '../store/codexRepository.js';
-import { annotationsForDoc, addAnnotation, deleteAnnotation, anchorFromSelection, resolveAnnotation } from '../store/annotations.js';
 import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepository.js';
 import { qtyFor } from '../store/ownedRepository.js';
 import { query } from '../store/db.js';
@@ -21,15 +19,6 @@ import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
-// After acting on pointerdown, a touch still emits ONE synthetic click - swallow it
-// (capture phase) so it never lands on the content that was under the pill/scrim.
-function armClickGuard() {
-  if (typeof window === 'undefined') return;
-  const block = (e) => { e.stopPropagation(); e.preventDefault(); done(); };
-  const done = () => { window.removeEventListener('click', block, true); clearTimeout(t); };
-  const t = setTimeout(done, 600);
-  window.addEventListener('click', block, true);
-}
 // Never render an em dash, even from reference data - swap for a spaced hyphen.
 const noEm = (s) => String(s || '').replace(/\s*—\s*/g, ' - ');
 
@@ -81,29 +70,26 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   const [picker, setPicker] = useState(false);
   const [deckAdd, setDeckAdd] = useState(false);
   const [sheetCard, setSheetCard] = useState(null);    // the card's Collection ownership sheet
-  const bodyRef = useRef(null);
   const scrolledRef = useRef(null);                    // deep-link: scroll to a target block once per navigation
-  const [selection, setSelection] = useState('');
 
   async function load() {
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [doc, appearsIn, faqs, notes, ann, links, inDecks, qty] = await Promise.all([
-        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), annotationsForDoc('card', id), linksFor(id), decksWithCard(id), qtyFor(id),
+      const [doc, appearsIn, faqs, notes, links, inDecks, qty] = await Promise.all([
+        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), linksFor(id), decksWithCard(id), qtyFor(id),
       ]);
       const faqDocs = await getFaqs(faqs.map((f) => f.faq_id));
-      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, ann, links, inDecks, qty });
+      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, links, inDecks, qty });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
-      const [doc, ment, subs, notes, ann, links] = await Promise.all([
+      const [doc, ment, subs, notes, links] = await Promise.all([
         getDoc('rule', id), mentions(id), query('SELECT rule_id id, title FROM rules WHERE parent_id=?;', [id]),
-        notesFor(id), annotationsForDoc('rule', id), linksFor(id),
+        notesFor(id), linksFor(id),
       ]);
       const subDocs = await getDocs(subs.map((s) => ['rule', s.id]));
-      const subAnns = await Promise.all(subs.map((s) => annotationsForDoc('rule', s.id)));
-      setData({ kind, rule: r, doc, mentions: ment, subs, subDocs, notes, ann, subAnns, links });
+      setData({ kind, rule: r, doc, mentions: ment, subs, subDocs, notes, links });
     }
   }
   useEffect(() => { setData(null); load(); /* eslint-disable-next-line */ }, [kind, id]);
@@ -111,7 +97,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   // Every article opens at the TOP - a related-article tap from a scrolled position
   // must not land you mid-page (you'd have to scroll up to see the header). A
   // deep-link target (below) scrolls itself, so skip when one is present. Keyed on
-  // [kind,id] only, so re-renders from note/highlight edits never yank the scroll.
+  // [kind,id] only, so re-renders from note edits never yank the scroll.
   useEffect(() => {
     if (target) return;
     const sc = document.querySelector('.cx-scroll');
@@ -135,60 +121,6 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
     return () => clearTimeout(t);
   }, [kind, id, target, data]);
 
-  // Text-selection -> "Highlight" affordance. Driven by the global selectionchange
-  // event so the button appears the instant a selection commits (mobile long-press
-  // included, no scroll/tap needed), rAF-debounced so drag-select doesn't thrash
-  // state. The cleanup GUARANTEES teardown on unmount/navigation - it kills the
-  // listener, the React state, AND the browser's own selection, so nothing lingers
-  // over the next screen. Empty deps: it must persist across [kind,id] data reloads.
-  useEffect(() => {
-    let raf = 0, down = false;
-    // Only surface the pill once a selection is SETTLED. The pill lives in a
-    // full-screen fixed layer; if it mounts mid-drag it covers the text, the
-    // browser's selection hit-test then lands on the layer instead of a caret, and
-    // the selection balloons to the whole body. So while a pointer is down we keep
-    // it hidden and re-evaluate on release. A selection must sit WHOLLY inside the
-    // rule/card body (both ends) - we never highlight anything else on the page.
-    const currentSelection = () => {
-      const s = window.getSelection?.();
-      if (!s || s.isCollapsed || !bodyRef.current) return '';
-      if (!s.anchorNode || !s.focusNode || !bodyRef.current.contains(s.anchorNode) || !bodyRef.current.contains(s.focusNode)) return '';
-      let t = s.toString();
-      // Re-attach the lead paragraph's floated drop-cap, routinely dropped when the
-      // drag starts at the very top, so a saved quote keeps its first letter.
-      try {
-        const r = s.getRangeAt(0);
-        const startEl = r.startContainer.nodeType === 3 ? r.startContainer.parentElement : r.startContainer;
-        const lead = startEl?.closest?.('.cx-article-p.lead');
-        if (lead && r.startOffset <= 1) {
-          const first = (lead.textContent || '').replace(/^\s+/, '')[0];
-          if (first && t && t[0] !== first) t = first + t;
-        }
-      } catch { /* noop */ }
-      return t;
-    };
-    const settle = () => setSelection(currentSelection());
-    const onSelectionChange = () => {
-      if (down) { setSelection(''); return; }               // mid-drag: never show the pill
-      cancelAnimationFrame(raf); raf = requestAnimationFrame(settle);
-    };
-    const onDown = () => { down = true; setSelection(''); };  // hide while selecting
-    const onUp = () => { down = false; cancelAnimationFrame(raf); raf = requestAnimationFrame(settle); };
-    document.addEventListener('selectionchange', onSelectionChange);
-    document.addEventListener('pointerdown', onDown);
-    document.addEventListener('pointerup', onUp);
-    document.addEventListener('pointercancel', onUp);
-    return () => {
-      document.removeEventListener('selectionchange', onSelectionChange);
-      document.removeEventListener('pointerdown', onDown);
-      document.removeEventListener('pointerup', onUp);
-      document.removeEventListener('pointercancel', onUp);
-      cancelAnimationFrame(raf);
-      setSelection('');
-      window.getSelection?.()?.removeAllRanges();
-    };
-  }, []);
-
   if (!data) return <Loading />;
   if (data.missing) return <div style={{ padding: 24, color: 'var(--ink-faint)', fontStyle: 'italic' }}>This entry isn’t in the catalog.</div>;
 
@@ -211,35 +143,6 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   }
   async function delLink(lid) { await deleteLink(lid); await load(); onChanged?.(); }
 
-  // The rendered docs, keyed docType:docId, so selection capture can map a DOM
-  // point in any of them (article body + its subentries) back to a document.
-  const docMap = {};
-  if (data.doc) docMap[`${data.doc.docType}:${data.doc.docId}`] = data.doc;
-  for (const sd of data.subDocs || []) if (sd) docMap[`${sd.docType}:${sd.docId}`] = sd;
-  const docFor = (t, i) => docMap[`${t}:${i}`] || null;
-
-  async function captureHighlight() {
-    const anchor = anchorFromSelection(window.getSelection?.(), docFor);
-    setSelection(''); window.getSelection?.()?.removeAllRanges();
-    if (!anchor) return;
-    await addAnnotation({ kind: 'highlight', color: k === 'card' ? 'violet' : 'gold', anchor });
-    await load();
-  }
-  async function delAnn(aid) { await deleteAnnotation(aid); await load(); onChanged?.(); }
-
-  // Resolve each annotation against its doc's current canon: anchored/reanchored
-  // render inline; orphaned (text gone after a catalog update) drop to a recovery
-  // tray so user data is never silently lost.
-  const resolveDoc = (anns, doc) => {
-    const inline = [], orphans = [];
-    for (const a of anns || []) { const r = doc ? resolveAnnotation(a, doc) : { start: null }; r.start != null ? inline.push({ id: a.id, color: a.color, start: r.start, end: r.end }) : orphans.push(a); }
-    return { inline, orphans };
-  };
-  const mainRes = resolveDoc(data.ann, data.doc);
-  const subRes = (data.subDocs || []).map((sd, i) => resolveDoc(data.subAnns?.[i], sd));
-  const allAnn = [...(data.ann || []), ...((data.subAnns || []).flat())];
-  const orphans = [mainRes, ...subRes].flatMap((r) => r.orphans);
-
   const appearsIn = k === 'card' ? (data.appearsIn || []).filter((r) => r.type !== 'unresolved_article') : [];
   const ment = data.mentions || { cards: [], articles: [] };
 
@@ -260,8 +163,8 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
 
   return (
     <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
-      {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} bodyRef={bodyRef} annotations={mainRes.inline} />
-                    : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} mainAnn={mainRes.inline} subAnns={subRes.map((r) => r.inline)} onOpenLink={openLink} bodyRef={bodyRef} />}
+      {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} />
+                    : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} onOpenLink={openLink} />}
 
       {/* Cards Mentioned - carousel of card art referenced by this article. Opens
           by (kind, id) directly - no fragile name resolution. */}
@@ -298,26 +201,6 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {appearsIn.map((r, i) => <span key={i} onClick={() => onOpenName(r.name)} className="cx-relpill">{r.name}</span>)}
           </div>
-        </div>
-      )}
-
-      {/* highlights - the personal layer, styled as margin notes (a coloured
-          vertical rule + italic quote), hued per annotation (card = violet, rule =
-          gold). Orphaned ones (text gone after a catalog update) stay dimmed +
-          labelled, so user data is never silently lost. */}
-      {allAnn.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <SectionLabel label="HIGHLIGHTS" count={allAnn.length} />
-          {allAnn.map((a) => {
-            const violet = a.color === 'violet';
-            const detached = orphans.some((o) => o.id === a.id);
-            return (
-              <div key={a.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: '2px 0 2px 13px', borderLeft: `2px solid ${violet ? '#a08cc0' : '#cba75f'}`, marginBottom: 14, opacity: detached ? 0.6 : 1 }}>
-                <div style={{ flex: 1, minWidth: 0, font: "400 16px/1.5 var(--f-read)", color: '#d8cebb', fontStyle: 'italic' }}>“{a.quote.exact}”{detached && <span style={{ fontStyle: 'normal', color: '#5c554b', font: "500 11px/1 var(--f-ui)", marginLeft: 8 }}>· detached</span>}{a.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: '#8a8175', fontSize: 13.5, marginTop: 4 }}>{a.comment}</span> : null}</div>
-                <MargRemove onClick={() => delAnn(a.id)} />
-              </div>
-            );
-          })}
         </div>
       )}
 
@@ -374,23 +257,6 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
         </div>
       )}
 
-      {/* selection -> highlight. A full-screen invisible layer is "highlight mode":
-          tapping the pill saves, tapping ANYWHERE else rejects the selection and
-          removes the pill - and nothing underneath ever fires (the layer catches the
-          press, and armClickGuard eats the trailing synthetic click). Portaled into
-          .cx-app; acts on pointerDown from the `selection` STATE so a collapse can't
-          race it. */}
-      {selection && createPortal(
-        <div className="cx-hl-layer"
-          onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); armClickGuard(); setSelection(''); window.getSelection?.()?.removeAllRanges(); }}>
-          <button className="cx-hl-pill"
-            onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); armClickGuard(); captureHighlight(); }}>
-            <IcoPlus size={14} />Highlight selection
-          </button>
-        </div>,
-        document.querySelector('.cx-app') || document.body
-      )}
-
       <MarginaliaComposer open={composer} onClose={() => setComposer(false)}
         noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={entryId} />
       <CollectionPicker open={picker} targetType={targetType} targetId={entryId} onClose={() => { setPicker(false); load(); }} />
@@ -411,27 +277,27 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   );
 }
 
-function RuleBody({ doc, subs, subDocs, mainAnn, subAnns, onOpenLink, bodyRef }) {
+function RuleBody({ doc, subs, subDocs, onOpenLink }) {
   return (
-    <div ref={bodyRef} className="cx-selectable">
+    <div className="cx-selectable">
       {/* Codex eyebrow - violet caps trailed by a fade hairline, marking the
           article as a codex entry (the header above is shared with card detail). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 16px' }}>
         <span style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.2em', color: '#a08cc0', whiteSpace: 'nowrap' }}>CODEX ARTICLE</span>
         <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,rgba(160,140,192,.45),transparent)' }} />
       </div>
-      <RuleArticle doc={doc} annotations={mainAnn} onOpenLink={onOpenLink} />
+      <RuleArticle doc={doc} onOpenLink={onOpenLink} />
       {subs.map((s, i) => (
         <div key={s.id}>
           <div className="cx-article-h">{s.title.toUpperCase()}</div>
-          <RuleArticle doc={subDocs[i]} annotations={subAnns[i] || []} onOpenLink={onOpenLink} />
+          <RuleArticle doc={subDocs[i]} onOpenLink={onOpenLink} />
         </div>
       ))}
     </div>
   );
 }
 
-function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, annotations }) {
+function CardBody({ card, doc, faqs, faqDocs, onOpenLink }) {
   const sets = jp(card.sets, []);
   const variants = jp(card.variants, []);
   const flavour = noEm((variants.find((v) => v && v.flavorText)?.flavorText) || '');
@@ -490,8 +356,8 @@ function CardBody({ card, doc, faqs, faqDocs, onOpenLink, bodyRef, annotations }
 
       {card.rules_text && (
         <div style={{ maxWidth: 340, margin: '0 auto 18px', padding: 1, borderRadius: 15, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.14) 45%, rgba(203,167,95,.5))', boxShadow: '0 10px 26px -14px rgba(0,0,0,.6)' }}>
-          <div ref={bodyRef} className="cx-cardrule cx-selectable" style={{ borderRadius: 14, background: '#0e0b08', padding: '18px 20px' }}>
-            <RuleArticle doc={doc} annotations={annotations} onOpenLink={onOpenLink} />
+          <div className="cx-cardrule cx-selectable" style={{ borderRadius: 14, background: '#0e0b08', padding: '18px 20px' }}>
+            <RuleArticle doc={doc} onOpenLink={onOpenLink} />
           </div>
         </div>
       )}

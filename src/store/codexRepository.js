@@ -1,5 +1,5 @@
 // Codex data - catalog reads (shared) + the profile-scoped personal layer
-// (saved, marginalia notes, highlights, collections). Every profile-scoped read
+// (saved, marginalia notes, collections). Every profile-scoped read
 // and write passes through activeProfileId(), so isolation is structural.
 import { query, run } from './db.js';
 import { getCatalog, getFaqs } from './catalogCache.js';
@@ -25,12 +25,11 @@ async function faqCardSet() {
   return set;
 }
 
-/** Every target carrying any marginalia (a note, a highlight, or a user link). */
+/** Every target carrying any marginalia (a note or a user link). */
 async function margSet() {
   const pid = activeProfileId();
   const ids = new Set();
   for (const r of await query('SELECT DISTINCT target_id FROM notes WHERE profile_id=?;', [pid])) ids.add(r.target_id);
-  for (const r of await query('SELECT DISTINCT doc_id FROM annotations WHERE profile_id=?;', [pid])) ids.add(r.doc_id);
   for (const r of await query('SELECT a_id, b_id FROM links WHERE profile_id=?;', [pid])) { ids.add(r.a_id); ids.add(r.b_id); }
   return ids;
 }
@@ -81,7 +80,7 @@ export async function getCodexEntries(scope, filters = {}) {
   }
   let out = items;
   if (filters.fav) out = out.filter((i) => i.saved);
-  // marg: any marginalia at all (notes + highlights + links). `notes` kept as a
+  // marg: any marginalia at all (notes + links). `notes` kept as a
   // legacy alias - old presets (Home "All notes") still work.
   if (filters.marg || filters.notes) {
     const ms = await margSet();
@@ -384,23 +383,6 @@ export async function deleteNote(id) {
   await run('DELETE FROM notes WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
 }
 
-export async function highlightsFor(targetId) {
-  return query('SELECT * FROM highlights WHERE profile_id=? AND target_id=? ORDER BY created_at DESC;', [
-    activeProfileId(), targetId,
-  ]);
-}
-
-export async function addHighlight(targetType, targetId, text, comment) {
-  await run(
-    'INSERT INTO highlights(id,profile_id,target_type,target_id,text,comment,created_at) VALUES(?,?,?,?,?,?,?);',
-    [uuid(), activeProfileId(), targetType, targetId, text, comment || '', nowIso()]
-  );
-}
-
-export async function deleteHighlight(id) {
-  await run('DELETE FROM highlights WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
-}
-
 /* user-authored cross-links (the "Link" half of marginalia).
    Batch name resolver: instead of one query per row (the old per-row nameOf),
    resolve many {type,id} targets in a single IN query per table, chunked for
@@ -447,44 +429,39 @@ export async function deleteLink(id) {
   await run('DELETE FROM links WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
 }
 
-/** Search the active profile's own notes + highlights text (Codex's
- *  highlight/note search filters), returning the entries they're attached to. */
+/** Search the active profile's own note text (the Codex note search filter),
+ *  returning the entries they're attached to. */
 export async function searchPersonal(q) {
   const pid = activeProfileId();
   const like = `%${q.toLowerCase()}%`;
   const notes = await query('SELECT target_type, target_id, body FROM notes WHERE profile_id=? AND lower(body) LIKE ? ORDER BY updated_at DESC LIMIT 20;', [pid, like]);
-  const hls = await query("SELECT a.doc_type target_type, a.doc_id target_id, n.quote_exact text, a.comment FROM annotations a JOIN anchors n ON n.annotation_id=a.id WHERE a.profile_id=? AND a.kind='highlight' AND (lower(n.quote_exact) LIKE ? OR lower(a.comment) LIKE ?) ORDER BY a.created_at DESC LIMIT 20;", [pid, like, like]);
-  const names = await namesFor([...notes, ...hls].map((r) => ({ type: r.target_type, id: r.target_id })));
+  const names = await namesFor(notes.map((r) => ({ type: r.target_type, id: r.target_id })));
   const out = [];
   for (const n of notes) out.push({ kind: n.target_type, id: n.target_id, name: nameFrom(names, n.target_type, n.target_id), meta: 'Note', glyph: '⚜' });
-  for (const h of hls) out.push({ kind: h.target_type, id: h.target_id, name: nameFrom(names, h.target_type, h.target_id), meta: 'Highlight', glyph: '✦' });
   return out;
 }
 
 /** Everything in the personal layer at once - the Codex Marginalia section.
- *  Notes, highlights and links profile-wide, each resolved to the entry it
- *  annotates so rows can tap through. */
+ *  Notes and links profile-wide, each resolved to the entry it annotates so rows
+ *  can tap through. */
 export async function marginaliaAll() {
   const pid = activeProfileId();
   const saved = await query('SELECT id, target_type, target_id, created_at FROM saved WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
   const notes = await query('SELECT id, target_type, target_id, body, updated_at FROM notes WHERE profile_id=? ORDER BY updated_at DESC;', [pid]);
-  const highlights = await query("SELECT a.id, a.doc_type target_type, a.doc_id target_id, n.quote_exact text, a.comment, a.created_at FROM annotations a JOIN anchors n ON n.annotation_id=a.id WHERE a.profile_id=? AND a.kind='highlight' ORDER BY a.created_at DESC;", [pid]);
   const links = await query('SELECT * FROM links WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
   const names = await namesFor([
     ...saved.map((r) => ({ type: r.target_type, id: r.target_id })),
     ...notes.map((r) => ({ type: r.target_type, id: r.target_id })),
-    ...highlights.map((r) => ({ type: r.target_type, id: r.target_id })),
     ...links.flatMap((l) => [{ type: l.a_type, id: l.a_id }, { type: l.b_type, id: l.b_id }]),
   ]);
   for (const s of saved) s.on = nameFrom(names, s.target_type, s.target_id);
   for (const n of notes) n.on = nameFrom(names, n.target_type, n.target_id);
-  for (const h of highlights) h.on = nameFrom(names, h.target_type, h.target_id);
   const linkRows = links.map((l) => ({
     id: l.id, description: l.description,
     aType: l.a_type, aId: l.a_id, aName: nameFrom(names, l.a_type, l.a_id),
     bType: l.b_type, bId: l.b_id, bName: nameFrom(names, l.b_type, l.b_id),
   }));
-  return { saved, notes, highlights, links: linkRows };
+  return { saved, notes, links: linkRows };
 }
 
 /* collections */

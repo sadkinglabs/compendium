@@ -1,7 +1,9 @@
-// Canonicalizer - the FROZEN coordinate system for the whole document/annotation
-// architecture. Annotations anchor to character offsets in `canon`, so this
-// function's output must be stable forever for a given (raw, CANON_VERSION):
-// bumping CANON_VERSION is a release event that re-anchors every annotation.
+// Canonicalizer - the coordinate system for the whole document render pipeline.
+// Inline links and block spans are recorded as character offsets INTO `canon`, so
+// this function's output must stay internally consistent for a given (raw,
+// CANON_VERSION). (Offset-anchored highlights, the original durable consumer of
+// these offsets, were removed in schema v10; link and block spans are recomputed
+// each build, so an offset is no longer persisted across builds.)
 //
 // Two modes, because the two source shapes differ:
 //   - articles: `content` is a reflowed prose blob with ~100-col HARD-WRAP noise
@@ -13,7 +15,7 @@
 //
 // Inline [[Name]] wiki-links are stripped to their display text in canon, with
 // their spans recorded as offsets INTO canon (brackets excluded) - so the renderer
-// and every anchor work in the exact coordinate space the reader sees and selects.
+// works in the exact coordinate space the reader sees.
 
 export const CANON_VERSION = 1;
 
@@ -27,8 +29,8 @@ const EMDASH = /\s*—\s*/g;   // em dash -> spaced hyphen (app law: never rende
 // A third form, reversed parens ))Name((, is a data-entry MISTAKE (24 occurrences).
 // It is paren-family, so we recover it as a RULE link and flag it (`mistake: true`)
 // for later source cleanup, rather than dropping the reference or silently hiding
-// the error. `name` slices exactly out of canon so anchors and the renderer share
-// the coordinate space.
+// the error. `name` slices exactly out of canon so the link span and the renderer
+// share the coordinate space.
 function extractLinks(text) {
   let canon = '';
   const links = [];

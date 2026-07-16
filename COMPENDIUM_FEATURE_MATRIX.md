@@ -32,7 +32,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Pillar | Owns | Primary implementation |
 |---|---|---|
 | **Home** | Resume, Overview, Dashboard, saved layouts, and cross-pillar summaries | `src/pillars/Home.jsx`, `src/store/homeRepository.js` |
-| **Codex** | Rules, cards, FAQs, search/browse, reference reading, saved items, annotations, highlights, links, and named reference collections | `src/pillars/Codex*.jsx`, `src/store/codexRepository.js` |
+| **Codex** | Rules, cards, FAQs, search/browse, reference reading, saved items, marginalia notes, links, and named reference collections | `src/pillars/Codex*.jsx`, `src/store/codexRepository.js` |
 | **Collection** | Owned and wanted cards, printing-aware quantities, custom/wanted lists, bulk and camera entry, and buildability | `src/pillars/Collection.jsx`, `src/store/ownedRepository.js` |
 | **Decks** | Deck library, three-zone construction, validation, analysis, sharing, imports, and exports | `src/pillars/Deck*.jsx`, `src/store/deckRepository.js` |
 | **Play** | Match setup, life tracking, in-match log, completed-match journal, history, and match sharing | `src/pillars/Play.jsx`, `src/pillars/LifeCounter.jsx`, `src/store/playRepository.js` |
@@ -47,12 +47,11 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Capability | Required behavior | Persistence | Status |
 |---|---|---|---|
 | Browse reference content | Browse Rules, Cards, and All scopes with stable list and grid presentation | Shared `rules`, `cards`, `faqs`, `link_graph` | **Implemented** |
-| Search and refine | Debounced search, clear, structured filters, and deterministic results | Shared catalog plus active-profile annotation state | **Implemented** |
+| Search and refine | Debounced search, clear, structured filters, and deterministic results | Shared catalog plus active-profile marginalia state | **Implemented** |
 | Rule/article reading | Structured article and sub-entry content, related references, and navigable internal links | Shared catalog | **Implemented** |
 | Card detail | Art or deterministic fallback, rules text, stats, thresholds, rarity, subtype, set/printing data, and FAQs | Shared catalog | **Implemented** |
 | Saved references | Save and remove cards, rules, and supported targets for the active profile | `saved` | **Implemented** |
-| Marginalia | Create, edit, and delete profile-owned notes on supported reference targets | `notes`, `annotations`, `anchors` | **Implemented** |
-| Highlights | Persist selected passages and optional comments against stable targets | `highlights`, `annotations`, `anchors` | **Implemented** |
+| Marginalia | Create, edit, and delete profile-owned notes and links on supported reference targets | `notes`, `links` | **Implemented** |
 | Reference links | Create and manage supported relationships between cards and articles | `links` | **Implemented** |
 | Named Codex collections | Organize saved reference targets into profile-owned named groups | `collections`, `collection_items` | **Implemented** |
 | Cross-pillar handoff | Open a catalog card from Collection, Decks, Home, or search without duplicating card-detail logic | Shared catalog identifiers | **Implemented** |
@@ -60,7 +59,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 ### 2.2 Invariants
 
 - Catalog rows never acquire `profile_id`.
-- User annotations always resolve through the active-profile repository boundary.
+- User notes and links always resolve through the active-profile repository boundary.
 - Catalog identifiers, not display names, are the durable reference keys.
 - Codex named collections never represent physical card ownership.
 
@@ -155,7 +154,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 
 | Capability | Required behavior | Persistence | Status |
 |---|---|---|---|
-| Overview | Present resume context, active match, Collection summary, decks, and recent annotations/activity | Derived from active-profile repositories | **Implemented** |
+| Overview | Present resume context, active match, Collection summary, decks, and recent notes/activity | Derived from active-profile repositories | **Implemented** |
 | Resume | Return to the last supported cross-pillar target without crossing profile boundaries | `resume` | **Implemented** |
 | Dashboard | Render a configurable grid of cross-pillar and freeform widgets | `dashboard_blocks` | **Implemented** |
 | Widget editing | Add, remove, resize, rename/configure, and reorder widgets | `dashboard_blocks` | **Implemented** |
@@ -178,7 +177,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 |---|---|---|---|
 | Five-pillar shell | Stable navigation across Home, Codex, Collection, Decks, and Play | `src/App.jsx` | **Implemented** |
 | Profiles | Create, rename, switch, and delete profiles with atomic UI reset and isolation | `profileRepository.js`, `src/App.jsx` | **Implemented** |
-| Profile transfer | Export and import self-describing, versioned profile bundles with validation and identifier re-keying | `profileTransfer.js` | **Partial** — anchored annotations are omitted, bundle-version handling is incomplete, and profile creation is outside the row-import transaction |
+| Profile transfer | Export and import self-describing, versioned profile bundles with validation and identifier re-keying | `profileTransfer.js` | **Partial** — bundle-version handling is incomplete, and profile creation is outside the row-import transaction |
 | Universal search | Search supported catalog and active-profile domains with grouped results | `searchRepository.js`, `src/App.jsx` | **Implemented** |
 | Settings | Persist and apply accessibility, appearance, haptic, and supported play preferences per profile | `playRepository.js`, `src/App.jsx` | **Implemented** — reached from the profile sheet, rendered as a modal over it |
 | Release notes | Publish per-build release notes as data, reachable on demand from Credits | `src/content/changelog.js`, `ChangelogModal.jsx`, `src/App.jsx` | **Implemented** |
@@ -206,7 +205,7 @@ The two **Partial** capabilities require continuing release-level verification a
 | Collection ownership | `owned_cards` | Collection |
 | Collection lists | `card_lists`, `card_list_entries` | Collection |
 | Decks | `decks`, `deck_entries`, `deck_history` | Decks |
-| Codex personal data | `saved`, `notes`, `highlights`, `collections`, `collection_items`, `links`, `annotations`, `anchors` | Codex |
+| Codex personal data | `saved`, `notes`, `collections`, `collection_items`, `links` | Codex |
 | Matches | `matches`, `match_log_entries` | Play |
 | Home | `dashboard_blocks`, `dashboard_layouts`, `resume` | Home |
 | Settings | `settings` | Application shell and consuming pillars |

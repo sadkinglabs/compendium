@@ -3,8 +3,8 @@
 // paragraphs unless there is an explicit, unambiguous signal. Real readable
 // structure that the source doesn't signal (unmarked enumerations, in-article
 // headings, most callouts) is authored later by the reviewed enrichment overlay -
-// NOT invented here. Bumping PARSER_VERSION only churns block ids (render handles),
-// never annotation anchors (those live in canon offsets).
+// NOT invented here. Bumping PARSER_VERSION only churns block ids (render handles)
+// and never affects canon offsets, which the renderer and inline links use.
 
 export const PARSER_VERSION = 1;
 

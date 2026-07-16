@@ -1,5 +1,5 @@
 // Home / Dashboard data - customisable widget blocks (the Codex dashboard,
-// re-homed) + cross-pillar data providers (Saved, Notes, Highlights, Collections,
+// re-homed) + cross-pillar data providers (Saved, Notes, Collections,
 // Stats, Resume, Errata, Random, and the new Decks/Duels widgets). Profile-scoped.
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
@@ -7,52 +7,15 @@ import { uuid, nowIso } from './ids.js';
 import { listDecks } from './deckRepository.js';
 import { listMatches, historyStats } from './playRepository.js';
 import { collectionStats, deckBuildabilityBulk } from './ownedRepository.js';
+import {
+  WIDGETS, widgetMeta, isStructural, isRollable, pillarOf,
+  normalizeKind, isSupportedWidget, filterImportedBlocks,
+} from './widgetRegistry.js';
 
-// The widget catalogue - 16 data-rich cards + two structural blocks (Title,
-// Separator). `pillar` earns a faint hue on Home (codex gold · decks violet ·
-// play jade); `configurable` widgets carry their own settings; `structural`
-// blocks are chrome-less layout furniture. Every widget is renamable (the frame
-// prefers block.config.name over this default title).
-export const WIDGETS = [
-  // Play
-  { kind: 'winRate', title: 'Win Rate', pillar: 'play', blurb: 'Your record at a glance' },
-  { kind: 'recentMatches', title: 'Recent Matches', pillar: 'play', blurb: 'Last games played' },
-  { kind: 'nemesis', title: 'Nemeses', pillar: 'play', blurb: 'Head-to-head by opponent' },
-  // Decks
-  { kind: 'deckSpotlight', title: 'Deck Spotlight', pillar: 'decks', blurb: 'A featured deck, in full art' },
-  { kind: 'yourDecks', title: 'Your Decks', pillar: 'decks', blurb: 'A rail of your decks' },
-  // Codex
-  { kind: 'featuredCard', title: 'Random Card', pillar: 'codex', rollable: true, blurb: 'A card to discover - roll for more' },
-  { kind: 'cardOfDay', title: 'Card of the Day', pillar: 'codex', blurb: 'A daily card pick' },
-  { kind: 'notes', title: 'Notes & Rulings', pillar: 'codex', blurb: 'Your latest marginalia' },
-  { kind: 'highlights', title: 'Highlights', pillar: 'codex', blurb: 'Passages you flagged' },
-  { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
-  { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit - roll for more' },
-  // Collection
-  { kind: 'collectionStats', title: 'Card Collection', pillar: 'collect', blurb: 'Owned, unique, wishlist & buildable decks' },
-  // Neutral
-  { kind: 'pinned', title: 'Bookmarks', pillar: null, blurb: 'Everything you bookmarked' },
-  { kind: 'note', title: 'Note', pillar: null, configurable: true, blurb: 'A free-text note' },
-  { kind: 'links', title: 'Links', pillar: null, configurable: true, blurb: 'External bookmarks' },
-  // Structural
-  { kind: 'title', title: 'Title', pillar: null, structural: true, configurable: true, blurb: 'A heading for a section' },
-  { kind: 'separator', title: 'Separator', pillar: null, structural: true, blurb: 'A dividing line' },
-];
-export const widgetMeta = (k) => WIDGETS.find((w) => w.kind === k) || { kind: k, title: k };
-export const isStructural = (k) => !!widgetMeta(k).structural;
-export const isRollable = (k) => !!widgetMeta(k).rollable;
-export const pillarOf = (k) => widgetMeta(k).pillar || null;
-
-// Old Codex-era kinds → their nearest new widget, so dashboards saved before
-// this rewrite keep rendering (remapped at read time, DB left untouched).
-const ALIAS = {
-  saved: 'pinned', duels: 'recentMatches', decks: 'yourDecks', random: 'featuredCard',
-  randomArticle: 'randomRule', text: 'note', urls: 'links', stats: 'winRate',
-  resume: 'recentMatches', collection: 'collections',
-  // removed widgets fold into a nearby survivor so old dashboards keep rendering
-  errata: 'notes', elementAffinity: 'yourDecks',
-};
-const normalizeKind = (k) => ALIAS[k] || k;
+// The widget catalogue and its pure helpers live in ./widgetRegistry.js (persistence-
+// free, so they import cleanly into tests and profileTransfer). Re-exported here
+// because the rest of the app imports them from homeRepository.
+export { WIDGETS, widgetMeta, isStructural, isRollable, pillarOf, isSupportedWidget };
 
 const DEFAULTS = [
   ['winRate', 'half'], ['deckSpotlight', 'half'],
@@ -94,7 +57,9 @@ export async function listBlocks() {
     rows = await query('SELECT * FROM dashboard_blocks WHERE profile_id=? ORDER BY sort_order ASC;', [pid]);
   }
   if (!seeded) await markSeeded(pid);   // flag on first load (covers pre-existing dashboards too)
-  return rows.map((r) => ({ ...r, type: normalizeKind(r.type), config: safeParse(r.config) }));
+  // Defence in depth: never hand the renderer a retired widget type, even if a row
+  // slipped past the v10 migration.
+  return filterImportedBlocks(rows.map((r) => ({ ...r, type: normalizeKind(r.type), config: safeParse(r.config) })));
 }
 
 export async function addBlock(kind) {
@@ -120,7 +85,9 @@ export async function loadLayout(id) {
   const pid = activeProfileId();
   const row = (await query('SELECT blocks FROM dashboard_layouts WHERE id=? AND profile_id=?;', [id, pid]))[0];
   if (!row) return;
-  const blocks = safeParse(row.blocks) || [];
+  // Filter retired widget types out of the snapshot before applying it, so an old
+  // saved layout can't re-create a block the app no longer renders.
+  const blocks = filterImportedBlocks(safeParse(row.blocks) || []);
   const stmts = [['DELETE FROM dashboard_blocks WHERE profile_id=?;', [pid]]];
   blocks.forEach((b, i) => stmts.push([
     'INSERT INTO dashboard_blocks(id,profile_id,type,width,config,sort_order,created_at) VALUES(?,?,?,?,?,?,?);',
@@ -239,11 +206,6 @@ export async function widgetData(block, ctx = {}) {
     const items = rows.map((r) => { const t = resolved.get(r.target_type + ':' + r.target_id); return { body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }; });
     return { count, items, quotes: true, empty: 'No marginalia yet.' };
   }
-  if (k === 'highlights') {
-    const rows = await query('SELECT text, comment, target_type, target_id FROM highlights WHERE profile_id=? ORDER BY created_at DESC LIMIT 6;', [pid]);
-    const count = (await query('SELECT COUNT(*) c FROM highlights WHERE profile_id=?;', [pid]))[0].c;
-    return { count, items: rows.map((r) => ({ body: r.text, on: r.comment, type: r.target_type, id: r.target_id })), quotes: true, empty: 'No highlights yet.' };
-  }
   if (k === 'collections') {
     const cols = await query('SELECT id,name FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
     if (cols.length) {
@@ -274,7 +236,6 @@ export function sampleData(kind) {
     case 'featuredCard': return { card: { name: 'Avatar of Fire', type: 'Avatar', cost: 0, image: null, rarity: 'Elite' } };
     case 'cardOfDay': return { card: { name: 'Wildfire', type: 'Magic', cost: 3, image: null } };
     case 'notes': return { quotes: true, items: [{ body: 'Rush lets a minion attack the turn it enters play.', on: 'Rush' }, { body: 'Genesis triggers when the card enters.', on: 'Genesis' }] };
-    case 'highlights': return { quotes: true, items: [{ body: '“…may bear any number of items.”', on: 'ruling' }, { body: '“Tap to resolve before combat.”', on: 'timing' }] };
     case 'collections': return { items: [{ name: 'Fire staples', meta: '12 items', iconType: 'collection' }, { name: 'Want list', meta: '5 items', iconType: 'collection' }] };
     case 'collectionStats': return { owned: 342, unique: 168, wishlist: 12, buildable: 3, decks: 5 };
     case 'randomRule': return { rule: { name: 'Deathrite' } };
@@ -319,7 +280,6 @@ export async function overview() {
   }));
   const cnt = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
   const [savedN, notesN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('links')]);
-  const hlN = (await query("SELECT COUNT(*) c FROM annotations WHERE profile_id=? AND kind='highlight';", [pid]))[0].c;
   // Total copies owned (not distinct cards) - the "Cards collected" glance figure.
   const cardsCollected = (await query('SELECT COALESCE(SUM(qty_owned),0) n FROM owned_cards WHERE profile_id=?;', [pid]))[0].n;
   const noteRows = await query('SELECT body,target_type,target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT ?;', [pid, OV_NOTES]);
@@ -338,7 +298,7 @@ export async function overview() {
       duels: stats.total,
       winPct: stats.winPct,           // null until a game is decided
       saved: savedN,
-      marginalia: notesN + hlN + linksN,
+      marginalia: notesN + linksN,
       cardsCollected,
     },
     decks: { total: allDecks.length, items: allDecks.slice(0, OV_DECKS) },
