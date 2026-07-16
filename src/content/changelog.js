@@ -15,6 +15,15 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 39,
+    version: '1.0.1-alpha',
+    date: '2026-07-16',
+    notes: 'A fifth of the download was code for processors no phone has.',
+    changes: [
+      { kind: 'changed', text: 'Compendium is 16 MB smaller to download. It was shipping the card scanner’s engine four times over, including twice for chips that only exist in emulators.' },
+    ],
+  },
+  {
     build: 38,
     version: '1.0.1-alpha',
     date: '2026-07-16',

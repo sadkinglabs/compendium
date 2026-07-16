@@ -203,6 +203,34 @@ adb shell dumpsys netstats detail | grep -A3 "uid=<uid>"
 `App measurement disabled via the manifest` is the pre-consent state. A byte counter
 that never moves is not proof of silence â€” Analytics batches uploads ~58 minutes out,
 so a short window sees nothing either way. Establish a positive control first.
+## APK size and ABIs
+
+Release builds ship **arm64-v8a + armeabi-v7a only**. That took the APK from **82.7 MB
+to 66.2 MB** (-20%): `x86`/`x86_64` are emulator architectures and no phone that can
+install this APK can execute them, so they were pure carry.
+
+The scanner is what makes ABIs expensive — ML Kit's OCR and barcode `.so` files plus
+SQLCipher are per-architecture, so each extra ABI is a full duplicate set.
+
+**Debug keeps all four**, so the emulator still works on an x86_64 host. The filter is
+scoped to `buildTypes.release` in `android/app/build.gradle`; moving it to
+`defaultConfig` would strip them everywhere and quietly break emulator testing.
+
+**`armeabi-v7a` and `minSdkVersion` move together.** minSdk 22 admits 32-bit devices, so
+dropping that ABI without raising minSdk would let such a phone install the app and then
+crash in the scanner, rather than being cleanly excluded from the store listing. Do not
+drop one without the other.
+
+```bash
+# what the APK actually ships
+aapt2 dump badging <apk> | grep native-code
+```
+
+**Size is dominated by card art, not code.** `assets/public/cards` is ~44 MB of the 66 MB
+— 1,103 WebP files averaging 41 KB, already compressed, bundled deliberately for the
+offline-first constraint. Native libs are ~14 MB. Anyone chasing further size reduction
+should start there and treat it as a product decision (resolution or coverage), not a
+build fix.
 
 ## Notes
 
