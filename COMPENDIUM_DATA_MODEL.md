@@ -6,7 +6,7 @@
 
 ## 1. Current schema baseline
 
-- **Schema version:** 9
+- **Schema version:** 10
 - **Database:** `compendium.db` on Capacitor/SQLite; an exported SQLite image persisted in IndexedDB for the browser sql.js runtime
 - **Schema version record:** `_meta.schema_version`
 - **Active profile singleton:** Capacitor Preferences key `activeProfileId`
@@ -30,7 +30,7 @@ Everything a user creates, records, arranges, or marks belongs to exactly one pr
 - owned and wanted cards;
 - custom and wanted card lists;
 - decks and deck history;
-- saved references, notes, highlights, anchored annotations, links, and named Codex collections;
+- saved references, notes, links, and named Codex collections;
 - matches and match-log entries;
 - Dashboard blocks, layouts, and resume state;
 - settings.
@@ -45,8 +45,7 @@ profiles
 │                deck_history
 ├─ collections ─ collection_items
 ├─ matches ───── match_log_entries
-├─ annotations ─ anchors
-├─ saved / notes / highlights / links
+├─ saved / notes / links
 ├─ dashboard_blocks / dashboard_layouts / resume
 └─ settings
 ```
@@ -245,42 +244,18 @@ Deck legality, copy limits, special-avatar rules, and zone constraints are domai
 ```sql
 saved(id, profile_id, target_type, target_id, created_at)
 notes(id, profile_id, target_type, target_id, body, created_at, updated_at)
-highlights(id, profile_id, target_type, target_id, text, comment, created_at)
 links(id, profile_id, kind, a_type, a_id, b_type, b_id, description, created_at, updated_at)
 ```
 
-`saved` represents whole-target bookmarks. `notes` and `highlights` remain supported persisted records.
+`saved` represents whole-target bookmarks. `notes` and `links` remain supported persisted records.
 
-### Anchored annotations
+### Anchored annotations (removed in schema v10)
 
-```sql
-annotations(
-  id TEXT PRIMARY KEY,
-  profile_id REFERENCES profiles(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,
-  group_id TEXT,
-  doc_type TEXT NOT NULL,
-  doc_id TEXT NOT NULL,
-  build_hash TEXT,
-  color TEXT,
-  comment TEXT,
-  state TEXT NOT NULL DEFAULT 'anchored',
-  created_at TEXT,
-  updated_at TEXT
-)
-
-anchors(
-  annotation_id PRIMARY KEY REFERENCES annotations(id) ON DELETE CASCADE,
-  canon_start INTEGER,
-  canon_end INTEGER,
-  quote_exact TEXT NOT NULL DEFAULT '',
-  quote_prefix TEXT NOT NULL DEFAULT '',
-  quote_suffix TEXT NOT NULL DEFAULT '',
-  block_hint TEXT
-)
-```
-
-Anchors use canonical offsets plus quote context so catalog changes can re-anchor honestly or mark an annotation orphaned. `block_hint` is a rendering aid, not durable identity.
+Earlier builds stored offset-anchored highlights in `annotations` and `anchors`. The
+feature was pruned and both tables were dropped by migration v10: an anchor pinned to a
+canonical character offset could not be kept correct as the catalog was rephrased, so a
+content update orphaned highlights wholesale. Notes, links, and bookmarks - which attach
+to a whole reference target rather than a text offset - are unaffected and remain.
 
 ### Named Codex collections
 
@@ -413,9 +388,8 @@ Import creates a new profile and re-keys profile-owned entity identifiers. Catal
 
 The current `profileTransfer.js` implementation does not yet satisfy the complete data contract:
 
-1. `annotations` and `anchors` are not included in profile export/import.
-2. `schemaVersion` is written but is not currently used to reject unsupported future bundles or run explicit bundle transformations.
-3. The destination profile is created before the row-import transaction; a failed import can therefore leave an empty profile requiring cleanup.
+1. `schemaVersion` is written but is not currently used to reject unsupported future bundles or run explicit bundle transformations.
+2. The destination profile is created before the row-import transaction; a failed import can therefore leave an empty profile requiring cleanup.
 
 These are known data-integrity gaps. They require a reviewed proposal and focused transfer tests before profile export can be considered a complete backup of all profile-owned data.
 

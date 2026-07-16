@@ -1,14 +1,13 @@
 // Codex browse - an A–Z divided list with note-indicator dots. The scope
 // (Rules / Cards / Marginalia) is chosen by the shared control in the app
 // contextHeader (App.CodexScopeBar) and passed in as `scope`; the Marginalia
-// scope gathers the whole personal layer (notes, highlights, links, collections).
+// scope gathers the whole personal layer (notes, links, collections).
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   getCodexEntries, getCodexCards, marginaliaAll, deleteNote, deleteLink, toggleSaved,
   listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
 } from '../store/codexRepository.js';
 import { getSets, getArtists } from '../store/deckRepository.js';
-import { deleteAnnotation } from '../store/annotations.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, IconButton, Loading } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
@@ -229,7 +228,7 @@ function MarginaliaView({ onOpen, rev }) {
   }
 
   if (!d || !cols) return <Loading />;
-  const empty = d.saved.length + d.notes.length + d.highlights.length + d.links.length + cols.length === 0;
+  const empty = d.saved.length + d.notes.length + d.links.length + cols.length === 0;
   const on = (t) => <span style={{ display: 'block', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {t}</span>;
   const openS = (id) => !closed.has(id);
   // A collapsible category header (label + count + Material chevron). Kept as a
@@ -255,7 +254,7 @@ function MarginaliaView({ onOpen, rev }) {
       </div>
       {empty && !edit && (
         <div style={{ padding: '40px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          Your marginalia lives here - notes, highlights, links and collections you add across the Codex. Tap <span style={{ fontStyle: 'normal', color: 'var(--gold-leaf)' }}>Edit</span> to start a collection.
+          Your marginalia lives here - notes, links and collections you add across the Codex. Tap <span style={{ fontStyle: 'normal', color: 'var(--gold-leaf)' }}>Edit</span> to start a collection.
         </div>
       )}
 
@@ -285,10 +284,9 @@ function MarginaliaView({ onOpen, rev }) {
       {d.notes.length > 0 && (
         <div style={{ marginBottom: 22 }}>
           {secHead('notes', 'NOTES')}
-          {/* Notes read as CARDS - full frame, plain upright text - so they never
-              blur into the highlights (left-edge strips, italic quoted text).
-              The PLACE leads: which entry the note lives on (name + type, hued
-              card-violet / article-gold), then the note itself beneath. */}
+          {/* Notes read as CARDS - full frame, plain upright text. The PLACE leads:
+              which entry the note lives on (name + type, hued card-violet /
+              article-gold), then the note itself beneath. */}
           {openS('notes') && d.notes.map((n) => {
             const isCard = n.target_type === 'card';
             const hue = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
@@ -303,33 +301,6 @@ function MarginaliaView({ onOpen, rev }) {
                   <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2)' }}>{n.body}</div>
                 </div>
                 {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteNote(n.id); load(); }} title="Delete note" />}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {d.highlights.length > 0 && (
-        <div style={{ marginBottom: 22 }}>
-          {secHead('highlights', 'HIGHLIGHTS')}
-          {openS('highlights') && d.highlights.map((h) => {
-            // Hue by source: card highlights are violet (deck-builder link), rule/
-            // article highlights are gold - the whole point of a mixed list.
-            const isCard = h.target_type === 'card';
-            const line = isCard ? 'var(--link-violet)' : 'var(--gold-leaf)';
-            const bg = isCard ? 'rgba(199,154,208,.09)' : 'rgba(220,184,111,.09)';
-            return (
-              <div key={h.id} style={{ borderLeft: `3px solid ${line}`, background: bg, borderRadius: '0 10px 10px 0', padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 8 }}>
-                <div onClick={() => onOpen(h.target_type, h.target_id, h.on)} className="cx-row" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-                  <div style={{ font: "400 14px/1.45 var(--f-read)", color: 'var(--ink-body-2)', fontStyle: 'italic' }}>
-                    <mark className={isCard ? 'cx-hl-violet' : 'cx-hl-gold'}>{h.text}</mark>{h.comment ? <span style={{ display: 'block', fontStyle: 'normal', color: 'var(--ink-muted)', fontSize: 12, marginTop: 4 }}>{h.comment}</span> : null}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 6 }}>
-                    <span style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.1em', color: line }}>{isCard ? 'CARD' : 'ARTICLE'}</span>
-                    {h.on && <span style={{ font: "500 10px/1.2 var(--f-ui)", color: 'var(--ink-muted)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>· on {h.on}</span>}
-                  </div>
-                </div>
-                {edit && <IconButton glyph="✕" tone="danger" size={22} onClick={async () => { await deleteAnnotation(h.id); load(); }} title="Delete highlight" />}
               </div>
             );
           })}

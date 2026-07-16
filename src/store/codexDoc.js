@@ -3,8 +3,8 @@
 // ONCE and caches it in-module. This is a read-only BUNDLED asset shipped in the
 // APK; it is deliberately NOT stored in the mutable SQLite DB, so a user write
 // never re-serialises the whole document corpus. Documents are keyed docType:docId
-// ('rule:power', 'card:apprentice_wizard'), matching how annotations reference
-// their target (target_type, target_id).
+// ('rule:power', 'card:apprentice_wizard'), matching how profile marginalia
+// reference their target (target_type, target_id).
 const BASE = import.meta.env.BASE_URL;
 let bundlePromise = null;
 

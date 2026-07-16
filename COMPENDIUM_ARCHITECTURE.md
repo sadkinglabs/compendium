@@ -17,7 +17,7 @@ Read this document with `COMPENDIUM_DATA_MODEL.md`, `COMPENDIUM_FEATURE_MATRIX.m
 | Pillar | Owns |
 |---|---|
 | **Home** | Cross-pillar workspace: resume, customisable Dashboard, saved items, and recent activity. |
-| **Codex** | Rules and card catalogues, search, detail reading, saved references, and annotations. |
+| **Codex** | Rules and card catalogues, search, detail reading, saved references, and marginalia (notes and links). |
 | **Collection** | Card ownership ledger, printing-aware quantities, wanted cards, card lists, scanner-assisted entry, and deck buildability. |
 | **Decks** | Deck library, deckbuilder, deck analysis, collection comparison, sharing, and import. |
 | **Play** | Match setup, life tracker, match journal, completed-match history, and play settings. |
@@ -121,7 +121,7 @@ All user data is **on-device** and partitioned by profile. Getting this wrong ca
 **A. Profile as the top-level partition.**
 - One device holds **N profiles**. A profile is the unit of identity, export, and isolation — *not* a cloud account (there is no server).
 - Every domain record (owned/wanted card entry, card list, deck, note/marginalia, saved item, match, dashboard layout, settings) is owned by exactly one `profileId`.
-- The **reference data** (rules glossary, card catalogue) is **shared and read-only across profiles** — it is content, not user data. Card ownership, wanted quantities, card lists, Codex annotations/collections, decks, and matches are per-profile.
+- The **reference data** (rules glossary, card catalogue) is **shared and read-only across profiles** — it is content, not user data. Card ownership, wanted quantities, card lists, Codex marginalia/collections, decks, and matches are per-profile.
 
 **B. Storage shape.**
 ```
@@ -149,7 +149,7 @@ device
 **C. Capacitor-native persistence (prefer native over web shims):**
 - Use **`@capacitor/preferences`** for small singletons (`app.json`, `activeProfileId`, per-profile `settings.json`) — it's native `UserDefaults`/`SharedPreferences`, survives reinstall-safe backup rules better than `localStorage`.
 - **Telemetry consent** (`unset | granted | denied`) is an app-global singleton of the same tier as `activeProfileId` and the changelog seen-stamp, but it is owned **natively** (`TelemetryPlugin.kt`, its own `SharedPreferences`, written with `commit()`) because it must be readable and enforceable before a WebView exists. It is deliberately **not** a per-profile `settings` row and deliberately **not** exportable: a profile imported from another device must never carry that device's consent decision here. `src/store/telemetry.js` is a client over that authority, not the authority.
-- Store list-shaped and relational data in **SQLite** through the repository layer. It provides indexed search and transactional writes for decks, ownership, lists, matches, annotations, and imports.
+- Store list-shaped and relational data in **SQLite** through the repository layer. It provides indexed search and transactional writes for decks, ownership, lists, matches, marginalia, and imports.
 - **Never** keep authoritative data only in transient React state or `localStorage`. Browser persistence uses the documented sql.js/IndexedDB adapter; device persistence uses SQLite. Repository contracts, ownership rules, and transaction semantics remain consistent across both runtimes.
 
 **D. Import and recovery:**

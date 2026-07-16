@@ -1,6 +1,7 @@
 // Shared UI vocabulary - one definition each, reused across pillars (architecture §3/§6).
 import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
+import { linkRuns } from '../store/inlineRuns.js';
 import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
 import GothicSheet from './GothicSheet.jsx';   // the one bottom-sheet chassis (BottomSheet is a thin titled adapter over it)
@@ -288,52 +289,24 @@ export function EmptyCta({ text, cta, onClick, size = 13, pad = '4px 0' }) {
 /* RuleArticle - renders a compiled Codex Document (canon + typed link spans +
    blocks) produced by the build-time compiler. The renderer is a PURE projection:
    it holds no source of truth, invents no structure, and works entirely in canon
-   character offsets. Inline content is decomposed into flat runs at link and
-   highlight boundaries (an interval sweep, never nested <mark>s), so overlapping
-   decorations are a set on a run. Highlight ranges come from RESOLVED annotation
-   canon offsets (annotations.js), never from matching text - so duplicate words
-   can't cross-mark and overlaps are exact. */
+   character offsets. Inline content is decomposed into flat runs at link boundaries
+   (see linkRuns), so a run is either plain text or a single in-text link span. */
 
-// canon[s,e] -> flat runs at link + annotation boundaries; each run carries its
-// covering link (or null) and the SET of annotations covering it (interval sweep;
-// arbitrary overlap is a set on a run, never nested <mark>s).
-function runsFor(canon, s, e, links, annRanges) {
-  const clip = (x) => Math.max(s, Math.min(e, x));
-  const L = links.filter((l) => l.end > s && l.start < e).map((l) => ({ ...l, start: clip(l.start), end: clip(l.end) }));
-  const H = annRanges.filter((r) => r.end > s && r.start < e).map((r) => ({ ...r, start: clip(r.start), end: clip(r.end) }));
-  const bounds = new Set([s, e]);
-  for (const x of [...L, ...H]) { bounds.add(x.start); bounds.add(x.end); }
-  const pts = [...bounds].sort((a, b) => a - b);
-  const runs = [];
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1];
-    if (b <= a) continue;
-    runs.push({ start: a, end: b, link: L.find((l) => l.start <= a && l.end >= b) || null, anns: H.filter((r) => r.start <= a && r.end >= b) });
-  }
-  return runs;
-}
-
-const markClass = (ann) => (ann && ann.color === 'violet' ? 'cx-hl-violet' : 'cx-hl-gold');
-
-// Render canon[span] (default: whole string) as flat runs: in-text links (all gold;
-// the link's target drives navigation, not colour) plus highlight marks from
-// resolved annotation canon RANGES. A run under both a link and an annotation nests
-// the <mark> inside the link span. exported so FAQ text renders links the same way.
-export function InlineText({ canon, links = [], span, annRanges = [], onOpenLink }) {
+// Render canon[span] (default: whole string) as flat runs: plain text and in-text
+// links (all gold; the link's target drives navigation, not colour). Exported so FAQ
+// text renders links the same way.
+export function InlineText({ canon, links = [], span, onOpenLink }) {
   const [s, e] = span || [0, canon.length];
-  const runs = runsFor(canon, s, e, links, annRanges);
+  const runs = linkRuns(canon, s, e, links);
   return runs.map((r) => {
     const text = canon.slice(r.start, r.end);
-    const ann = r.anns[0];
-    const ids = r.anns.length ? r.anns.map((x) => x.id).join(' ') : undefined;
-    if (r.link) return <span key={r.start} className="cx-inlink cx-inlink-gold" data-off={r.start} onClick={() => onOpenLink?.(r.link.name, r.link.target)}>{ann ? <mark className={markClass(ann)} data-ann={ids}>{text}</mark> : text}</span>;
-    if (ann) return <mark key={r.start} className={markClass(ann)} data-off={r.start} data-ann={ids}>{text}</mark>;
+    if (r.link) return <span key={r.start} className="cx-inlink cx-inlink-gold" data-off={r.start} onClick={() => onOpenLink?.(r.link.name, r.link.target)}>{text}</span>;
     return <React.Fragment key={r.start}>{text}</React.Fragment>;   // bare text keeps ::first-letter drop-cap intact
   });
 }
 
-function DocBlock({ canon, block, links, annRanges, onOpenLink }) {
-  const inline = (span) => <InlineText canon={canon} links={links} span={span} annRanges={annRanges} onOpenLink={onOpenLink} />;
+function DocBlock({ canon, block, links, onOpenLink }) {
+  const inline = (span) => <InlineText canon={canon} links={links} span={span} onOpenLink={onOpenLink} />;
   switch (block.type) {
     case 'ol':
     case 'ul': {
@@ -351,14 +324,13 @@ function DocBlock({ canon, block, links, annRanges, onOpenLink }) {
   }
 }
 
-// `annotations` = RESOLVED ranges for THIS doc: [{ id, color, start, end }] (canon
-// offsets). data-doc-* lets selection capture map a DOM point back to this doc.
-export function RuleArticle({ doc, annotations = [], onOpenLink }) {
+// Blocks carry data-block-id so a deep-link or cross-ref can scroll to one.
+export function RuleArticle({ doc, onOpenLink }) {
   if (!doc) return null;
   return (
     <div className="cx-article" data-doc-type={doc.docType} data-doc-id={doc.docId}>
       {doc.blocks.map((b) => (
-        <DocBlock key={b.id} canon={doc.canon} block={b} links={doc.links} annRanges={annotations} onOpenLink={onOpenLink} />
+        <DocBlock key={b.id} canon={doc.canon} block={b} links={doc.links} onOpenLink={onOpenLink} />
       ))}
     </div>
   );

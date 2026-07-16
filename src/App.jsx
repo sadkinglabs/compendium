@@ -5,7 +5,6 @@ import {
   createProfile, switchProfile, renameProfile, deleteProfile,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
-import { migrateAnnotationsIfNeeded } from './store/annotations.js';
 import { backfillSingleSetOwned } from './store/ownedRepository.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
@@ -132,10 +131,6 @@ export default function App() {
       try {
         await openDatabase();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
-        // One-time backfill of legacy highlights into the annotation model (runs
-        // after migrations create the tables + the catalog is seeded; gated so it's
-        // idempotent). Never blocks boot - a failure just retries next launch.
-        try { await migrateAnnotationsIfNeeded(); } catch (e) { console.error('annotation migration failed', e); }
         const p = await initProfiles();
         setProfile(p);
         // Move any single-set card owned in the Unspecified bucket onto its real
@@ -1076,7 +1071,7 @@ const QUERY_HELP = [
 ];
 const SCOPE_HELP = [
   ['has:faq', 'Cards with an official FAQ'],
-  ['has:marginalia', 'Entries carrying your notes, highlights or links'],
+  ['has:marginalia', 'Entries carrying your notes or links'],
   ['is:errata', 'Cards with updated rules text'],
   ['is:saved', 'Your bookmarked entries'],
   ['is:article', 'Articles only'],

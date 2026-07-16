@@ -15,6 +15,15 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 42,
+    version: '1.0.1-alpha',
+    date: '2026-07-16',
+    notes: 'Codex highlighting is gone; your notes, links, and bookmarks stay.',
+    changes: [
+      { kind: 'changed', text: 'Removed passage highlighting in the Codex. Highlights anchored to exact wording, so a rules rewrite left them stranded - not worth keeping. Your marginalia notes, links, and bookmarks are untouched.' },
+    ],
+  },
+  {
     build: 39,
     version: '1.0.1-alpha',
     date: '2026-07-16',

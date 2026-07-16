@@ -7,7 +7,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   listBlocks, addBlock, removeBlock, resizeBlock, reorderBlocks, setConfig,
-  widgetData, widgetMeta, isStructural, isRollable, pillarOf,
+  widgetData, widgetMeta, isStructural, isRollable, pillarOf, isSupportedWidget,
   sampleData, overview, WIDGETS,
   saveLayout, listLayouts, loadLayout, deleteLayout,
 } from '../store/homeRepository.js';
@@ -366,7 +366,7 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
         <div className="dw-edithint">Hold a card to pick it up, then drag to reorder.</div>
       )}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'stretch' }}>
-        {blocks.map((b) => {
+        {blocks.filter((b) => isSupportedWidget(b.type)).map((b) => {
           const full = b.width === 'full' || isStructural(b.type);
           const common = {
             block: b, edit,
@@ -560,7 +560,7 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
     : empty('No links - open Edit to add.');
 
   if (data.quotes) return data.items?.length
-    ? data.items.slice(0, 3).map((n, i) => <div key={i} className="dw-quote" onClick={() => open(n.type, n.id, n.on)}>“{n.body}”{n.on && <span className="on">{k === 'highlights' ? n.on : `on ${n.on}`}</span>}</div>)
+    ? data.items.slice(0, 3).map((n, i) => <div key={i} className="dw-quote" onClick={() => open(n.type, n.id, n.on)}>“{n.body}”{n.on && <span className="on">on {n.on}</span>}</div>)
     : empty(data.empty);
 
   if (k === 'collectionStats') {
