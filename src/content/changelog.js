@@ -15,6 +15,17 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 43,
+    version: '1.0.2-alpha',
+    date: '2026-07-16',
+    notes: 'Version 1.0.2. The duelling table got most of the attention this time.',
+    changes: [
+      { kind: 'added', text: 'Matches now open with First Light: the table wakes, you roll to see who goes first, and the life totals settle before play begins.' },
+      { kind: 'changed', text: 'Finishing a match is calmer and harder to trigger by accident. End Match only becomes available once the game has gone quiet, and the winner gets its own moment on screen before the counter returns.' },
+      { kind: 'added', text: 'You can record a match by hand after it happened: choose the avatar for each side, the final life, and who won. Timed games feed your stats; untimed ones are counted honestly, without inventing a length they never had.' },
+    ],
+  },
+  {
     build: 42,
     version: '1.0.1-alpha',
     date: '2026-07-16',
