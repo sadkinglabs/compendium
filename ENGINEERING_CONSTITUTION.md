@@ -111,11 +111,16 @@ Decisions that are costly to reverse, affect multiple pillars, alter persisted d
 Classify work before selecting process depth.
 
 - **Trivial:** documentation, formatting, or a tightly local mechanical change with no behavior, interface, dependency, build, or data impact.
+- **Contained ("Trivial+"):** a self-contained behavior or logic change that is provably low-risk. Eligible **only when every one** of the following holds: it touches no §3 invariant, schema, persisted data, export/import format, profile or authorization boundary, native/plugin/build configuration, or dependency; it introduces no public or cross-pillar contract and establishes no new pattern others are expected to adopt; all changed behavior, boundary cases, and failure paths are exercised by deterministic, fast, co-located automated tests, with no runtime-specific behavior that needs device or browser proof; and it is reversible in a single commit. A pure-logic extraction or a local pure-function change, covered by characterization tests and with no behavior change on any reachable input, is the archetype. **If any criterion is uncertain, the change is Standard, not Contained.**
 - **Standard:** bounded behavior change within established architecture, with no migration or broad compatibility risk.
 - **High-risk:** persisted-data/schema/import/export changes; profile or authorization boundaries; destructive operations; native plugin/build changes; security/privacy work; broad refactors; new dependencies; cross-pillar architecture; or changes difficult to roll back.
 - **Emergency:** an urgent production correction. Emergency status shortens approval latency, not verification or follow-up accountability.
 
-When uncertain, use the higher class. Trivial work may use a compact plan instead of a formal proposal. Every standard or high-risk change requires a reviewable proposal and approval before implementation. Emergency work requires a written incident statement, the smallest safe patch, targeted verification, and retrospective documentation.
+When uncertain, use the higher class. Trivial work may use a compact plan instead of a formal proposal.
+
+**Contained work** may proceed on a compact problem/plan/risk note with a one-paragraph Self-Critique and a green automated gate, **provided the Contained classification is stated and justified up front**. Independent review is at the author's or owner's discretion rather than mandatory, and no device gate applies unless runtime-specific behavior changed. The classification claim is itself reviewable: the human owner or the reviewer may reject it and require the Standard lane. **If discovery or implementation reveals the change touches any Standard or High-risk surface — an invariant, persisted data, a boundary, native/build, a dependency, or a new shared pattern — it stops and escalates to that class before proceeding.** The Contained lane lowers ceremony, never the quality gates that apply: applicable tests still pass and the change stays reversible.
+
+Every standard or high-risk change requires a reviewable proposal and approval before implementation. Emergency work requires a written incident statement, the smallest safe patch, targeted verification, and retrospective documentation.
 
 ## 7. Standard development lifecycle
 
