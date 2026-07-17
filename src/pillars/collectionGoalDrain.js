@@ -24,7 +24,10 @@ export function createGoalDrain({ read, apply, isAlive = () => true }) {
     track(p) {
       version++;
       pending++;
-      Promise.resolve(p).catch(() => {}).finally(() => { pending -= 1; if (pending === 0) drain(version); });
+      // `drain` is detached here and awaits read(); recover it so a reconcile read failure
+      // (wishlistCards/listCards rejecting) can't escape as an unhandled rejection. A failed
+      // reconcile simply doesn't apply; the next tracked write retries.
+      Promise.resolve(p).catch(() => {}).finally(() => { pending -= 1; if (pending === 0) void drain(version).catch(() => {}); });
     },
     /** Test/introspection: in-flight write count. */
     pending: () => pending,
