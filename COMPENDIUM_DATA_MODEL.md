@@ -327,6 +327,25 @@ Match completion and its log commit together. When a valid active-profile deck i
 
 Opponents are match attributes, not profiles or cross-profile relationships.
 
+### Ongoing match (resumable snapshot)
+
+An in-progress match is **not** a `matches` row. It is a transient, resumable snapshot held
+in `localStorage` under a profile-scoped key (`cx-ongoing-match:<profile_id>`,
+`src/store/ongoingMatch.js`) carrying life/max, the in-match log, banked elapsed time,
+avatars, and a `recorded` flag. It is authoritative only for *resuming*; completed history
+lives in `matches` above, written on record. This is the §"localStorage is non-authoritative
+UI state" rule in practice: losing the snapshot costs at most an in-progress game's
+resumability, never recorded history.
+
+Lifecycle: it is written when the live counter is minimized **and** whenever the app is
+backgrounded or torn down (`visibilitychange → hidden` / `pagehide`), so a live match
+survives process death. It is cleared on exit, record-then-exit, new-match, and when a resume
+consumes it. On load it is validated (finite fields, `SNAP_VERSION`) and its life/max are
+clamped to `1..20` / `0..max` by `matchLife.js` on restore, so a stale or malformed snapshot
+cannot resume into an impossible total. Because the key is resolved from the active profile at
+write time it is profile-isolated; on boot it is reconciled **after** `initProfiles()` has
+resolved the active profile (a first-render read has no profile to scope to and is discarded).
+
 ### Match duration
 
 `duration_sec` is nullable and encodes three states, two of which mean the same thing:

@@ -132,7 +132,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 |---|---|---|---|
 | Play hub | Start full or quick matches, resume an ongoing match, and browse match history | `matches`; ongoing snapshot adapter | **Implemented** |
 | Match setup | Select player/opponent identities and an optional deck for a full match | Profile, catalog, and deck references | **Implemented** |
-| Life counter | Track both players' life with touch controls, haptics, max-life controls, and clear low-life states | Ongoing snapshot until completion | **Implemented** |
+| Life counter | Track both players' life with touch controls, haptics, max-life controls, and clear low-life states | Ongoing snapshot (autosaved on background/teardown) until completion | **Implemented** |
 | Roll for start | Resolve a roll-off, including ties, without affecting match totals | Transient match state | **Implemented** |
 | Dice roller | Support the configured die choices from the counter | Profile settings + transient result | **Implemented** |
 | In-match log | Record timestamped life and maximum-life changes with running totals | Ongoing snapshot; `match_log_entries` on completion | **Implemented** |
@@ -145,7 +145,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 
 - Each completed match belongs to exactly one profile.
 - Opponents are recorded as match data; they do not create cross-profile ownership.
-- Minimizing a match preserves enough state to resume without fabricating a completed match.
+- Minimizing or backgrounding a match preserves enough state to resume - including across process death (the snapshot is autosaved on background/teardown and reconciled at boot after the active profile resolves) - without fabricating a completed match.
 - Recording completion persists the in-match log with the match.
 - Quick and full modes share result integrity even when setup depth differs.
 

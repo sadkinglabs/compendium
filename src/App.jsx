@@ -82,7 +82,7 @@ export default function App() {
   const [addFilterCount, setAddFilterCount] = useState(0);
   const [match, setMatch] = useState(null);          // {mode, settings, you, opp, resume?}
   const [preMatch, setPreMatch] = useState(null);    // {mode, settings} - avatar picker step
-  const [ongoing, setOngoing] = useState(() => loadOngoing());  // minimized, resumable match snapshot
+  const [ongoing, setOngoing] = useState(null);  // resumable match snapshot; reconciled after initProfiles() in the boot effect (loadOngoing needs the active profile)
   const counterApi = useRef(null);                   // {minimize} - set by the live counter
   const homeApi = useRef(null);                       // {back} - Home edit mode / Overview<->Dashboard subtab
   const lastBackAt = useRef(0);                       // double-back-to-exit timestamp (Home root)
@@ -133,6 +133,13 @@ export default function App() {
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
         const p = await initProfiles();
         setProfile(p);
+        // Reconcile a live match that survived a process death. loadOngoing() in the
+        // useState initializer above ran during first render - BEFORE this - so
+        // activeProfileId() threw and it returned null. initProfiles() has now resolved
+        // the active profile id, so the profile-scoped key is finally correct. Splash is
+        // still up and nothing reads `ongoing` until Home paints, so this is the point
+        // that makes "Return to Match" appear after an OS kill.
+        setOngoing(loadOngoing());
         // Move any single-set card owned in the Unspecified bucket onto its real
         // set row (e.g. older scanner adds). Idempotent; never blocks boot.
         try { await backfillSingleSetOwned(); } catch (e) { console.error('single-set backfill failed', e); }
@@ -559,7 +566,7 @@ export default function App() {
         <Suspense fallback={<Loading />}>
           <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
             deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
-            onMinimize={minimizeMatch} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
+            onMinimize={minimizeMatch} onPersist={saveOngoing} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
         </Suspense>
       )}
       {/* Settings paints over the profile sheet, which stays mounted underneath so
