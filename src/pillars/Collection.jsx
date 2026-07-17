@@ -28,6 +28,7 @@ import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 import { enqueueWrite } from '../store/collectionWrites.js';
 import { activeProfileId } from '../store/profileRepository.js';
+import { createGoalDrain } from './collectionGoalDrain.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
@@ -1176,28 +1177,40 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
   const cardIndex = useRef(new Map());             // card_id -> full card row
   const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
-  const pendingWrites = useRef(0);                 // in-flight goal writes; on drain we reconcile from the repo (self-heal)
-  const alive = useRef(true);
+  const drainRef = useRef(null);                   // per-open-list goal drain: reconciles from the repo after writes settle
 
+  // Install an authoritative goal snapshot into the synchronous mirror + visible state
+  // (used by the initial load AND the drain reconcile).
+  const installGoals = (rows) => {
+    for (const c of rows) cardIndex.current.set(c.card_id, c);
+    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
+    qtyRef.current = m; setQty(m);
+  };
   const load = async () => {
     setLoaded(false);
     // Wishlist rows come from the qty_wanted ledger (quantity aliased to wanted);
     // regular lists from card_list_entries. Both carry `quantity` = the goal.
     const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
-    for (const c of rows) cardIndex.current.set(c.card_id, c);
-    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
-    qtyRef.current = m; setQty(m);
+    installGoals(rows);
     setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
     setLoaded(true);
   };
   useEffect(() => {
-    alive.current = true;
+    let cancelled = false;
+    // Per-open-list drain: when goal writes settle, reconcile from the repo - but ONLY if
+    // no newer tap has begun (version guard, in collectionGoalDrain) and this list is still
+    // open (the cancel guard), so a slow reconcile can't regress a fresh optimistic edit.
+    drainRef.current = createGoalDrain({
+      read: () => (isWishlist ? wishlistCards() : listCards(list.id)),
+      apply: installGoals,
+      isAlive: () => !cancelled,
+    });
     load();
     // Arriving via a "View missing ›" tap on the index opens straight to the list.
     if (list.openMissing) listProgress(list.id).then(setMissing);
     // Owned counts are read-only here: they redraw live as the collection grows.
     const off = subscribeCollection(() => ownedMap().then(setOwnQty));
-    return () => { alive.current = false; off(); };
+    return () => { cancelled = true; off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.id]);
 
@@ -1229,21 +1242,10 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       : enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
   };
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
-  // accumulate off qtyRef instead of a stale render closure.
+  // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
+  // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
   const applyGoal = (mutate) => { const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
-  // When all in-flight goal writes drain, re-read the authoritative goals from the repo
-  // so a failed or raced write self-heals (mirrors useOwnedLedger's drain reconciliation).
-  const reconcile = async () => {
-    const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
-    if (!alive.current) return;
-    for (const c of rows) cardIndex.current.set(c.card_id, c);
-    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
-    qtyRef.current = m; setQty(m);
-  };
-  const track = (p) => {
-    pendingWrites.current++;
-    p.catch(() => {}).finally(() => { pendingWrites.current--; if (pendingWrites.current === 0) reconcile(); });
-  };
+  const track = (p) => drainRef.current?.track(p);
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
   // no confirm, since you're actively curating.
