@@ -419,7 +419,12 @@ export async function listThumbsBulk(listIds, perList = 3) {
   return m;
 }
 // Set a card's quantity in a list (0 deletes). variant_slug='' in v1.
-export async function setListEntry(listId, cardId, qty) {
+export async function setListEntry(listId, cardId, qty, pid = activeProfileId()) {
+  // card_list_entries has no profile_id of its own - it is owned via card_lists. Verify
+  // the list belongs to the supplied profile, so a stale/foreign listId (e.g. a write
+  // scheduled under one profile after a switch) can never mutate another profile's list.
+  const list = (await query('SELECT id FROM card_lists WHERE id=? AND profile_id=?;', [listId, pid]))[0];
+  if (!list) return;   // not this profile's list -> refuse (the queue key claimed this profile; the boundary enforces it)
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM card_list_entries WHERE list_id=? AND card_id=? AND variant_slug=?;', [listId, cardId, '']))[0];
   if (q === 0) { if (cur) await run('DELETE FROM card_list_entries WHERE id=?;', [cur.id]); }
@@ -427,9 +432,13 @@ export async function setListEntry(listId, cardId, qty) {
   else await run('INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);', [uuid(), listId, cardId, q, '', nowIso()]);
   bump();
 }
-export async function stepListEntry(listId, cardId, delta) {
-  const cur = (await query('SELECT quantity FROM card_list_entries WHERE list_id=? AND card_id=? AND variant_slug=?;', [listId, cardId, '']))[0];
-  return setListEntry(listId, cardId, (cur?.quantity || 0) + delta);
+export async function stepListEntry(listId, cardId, delta, pid = activeProfileId()) {
+  // Read scoped to the profile's list too, so both the read and the write of this
+  // step trust the same captured profile (a foreign list reads 0 and then refuses).
+  const cur = (await query(
+    'SELECT e.quantity q FROM card_list_entries e JOIN card_lists l ON l.id=e.list_id WHERE e.list_id=? AND e.card_id=? AND e.variant_slug=? AND l.profile_id=?;',
+    [listId, cardId, '', pid]))[0];
+  return setListEntry(listId, cardId, (cur?.q || 0) + delta, pid);
 }
 
 // Card-level requirement of a list (mirrors deckRequirements shape).

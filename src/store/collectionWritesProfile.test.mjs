@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests, query } from './db.js';
 import { __setActiveIdForTests, activeProfileId, switchProfile } from './profileRepository.js';
-import { stepWanted, ownedRowKey } from './ownedRepository.js';
+import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey } from './ownedRepository.js';
 import { enqueueWrite, __resetCollectionWritesForTests } from './collectionWrites.js';
 
 const require = createRequire(import.meta.url);
@@ -18,6 +18,10 @@ function defer() { let resolve, reject; const p = new Promise((res, rej) => { re
 const tick = () => new Promise((r) => setTimeout(r, 0));
 const wantedOf = async (pid, cardId) =>
   (await query('SELECT qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, '']))[0]?.qty_wanted ?? 0;
+const ownedInRow = async (pid, cardId, slug) =>
+  (await query('SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0]?.qty_owned ?? 0;
+const listQty = async (listId, cardId) =>
+  (await query('SELECT quantity FROM card_list_entries WHERE list_id=? AND card_id=? AND variant_slug=?;', [listId, cardId, '']))[0]?.quantity ?? 0;
 
 before(async () => {
   // switchProfile persists via @capacitor/preferences, whose web impl reads window.localStorage.
@@ -45,9 +49,11 @@ before(async () => {
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);
   for (const id of ['A', 'B']) sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
+  sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LA','A','custom','ListA','2026-01-01');");
+  sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LB','B','custom','ListB','2026-01-01');");
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
+beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
 
 test('a write bound to A commits under A even if the active profile flips to B mid-flight', async () => {
   __setActiveIdForTests('A');
@@ -60,6 +66,41 @@ test('a write bound to A commits under A even if the active profile flips to B m
   await p;
   assert.equal(await wantedOf('A', 'cardX'), 1, 'the edit landed in the ORIGIN profile A');
   assert.equal(await wantedOf('B', 'cardX'), 0, 'nothing leaked into B');
+});
+
+// Every interactive owned-row writer must honour an explicit profileId even when the
+// ACTIVE profile is someone else - i.e. none of them silently re-resolves activeProfileId().
+const OWNED_CASES = [
+  { name: 'stepWanted',      run: () => stepWanted('c', 1, 'A'),           read: (p) => wantedOf(p, 'c'),          expect: 1 },
+  { name: 'stepOwnedBucket', run: () => stepOwnedBucket('c', 1, 'A'),      read: (p) => ownedInRow(p, 'c', ''),    expect: 1 },
+  { name: 'setFoil',         run: () => setFoil('c', 3, 'A'),              read: (p) => ownedInRow(p, 'c', 'foil'),expect: 3 },
+  { name: 'setOwnedInSet',   run: () => setOwnedInSet('c', '001', 2, 'A'), read: (p) => ownedInRow(p, 'c', '001'), expect: 2 },
+  { name: 'setFoilInSet',    run: () => setFoilInSet('c', '001', 2, 'A'),  read: (p) => ownedInRow(p, 'c', '001:f'),expect: 2 },
+];
+for (const tc of OWNED_CASES) {
+  test(`${tc.name}(…, 'A') writes profile A's row, not B, while the ACTIVE profile is B`, async () => {
+    __setActiveIdForTests('B');
+    await tc.run();
+    assert.equal(await tc.read('A'), tc.expect, 'wrote A (the explicit profile)');
+    assert.equal(await tc.read('B'), 0, 'nothing leaked into B (the active profile)');
+  });
+}
+
+test('list-entry writes are profile-scoped: an A-bound write cannot touch a B-owned list', async () => {
+  await setListEntry('LB', 'c', 4, 'B');    // B's own list, seeded legitimately
+  __setActiveIdForTests('B');               // active profile is B
+  await setListEntry('LA', 'c', 2, 'A');    // A-bound, A's list -> writes despite active B
+  await setListEntry('LB', 'c', 99, 'A');   // A-bound, B's list -> REFUSED at the boundary
+  await stepListEntry('LB', 'c', 9, 'A');   // A-bound step on B's list -> reads 0 (scoped) then refuses
+  assert.equal(await listQty('LA', 'c'), 2, 'A wrote its own list');
+  assert.equal(await listQty('LB', 'c'), 4, "B-owned list untouched by A-bound writes");
+});
+
+test('stepListEntry bound to A steps its own list correctly while the active profile is B', async () => {
+  await setListEntry('LA', 'c', 3, 'A');
+  __setActiveIdForTests('B');
+  await stepListEntry('LA', 'c', 2, 'A');   // 3 -> 5 on A's list
+  assert.equal(await listQty('LA', 'c'), 5);
 });
 
 test('switchProfile drains the queue before flipping the active profile (barrier preserves the edit)', async () => {
