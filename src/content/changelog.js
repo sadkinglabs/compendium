@@ -15,6 +15,15 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 62,
+    version: '1.0.2-alpha',
+    date: '2026-07-17',
+    notes: 'A match in progress now survives you leaving the app.',
+    changes: [
+      { kind: 'fixed', text: 'A game in progress is saved the moment you switch away, so if the phone closes the app in the background you can pick the match back up exactly where you left off.' },
+    ],
+  },
+  {
     build: 61,
     version: '1.0.2-alpha',
     date: '2026-07-17',

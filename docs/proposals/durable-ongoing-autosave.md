@@ -171,6 +171,23 @@ No new data collected; the snapshot already exists as a concept. Perf: one synch
 
 A save-only autosave of the live match on `visibilitychange→hidden` + `pagehide`, wired via a new `onPersist={saveOngoing}` prop, no teardown, no schema change. **High-risk** (durable state + runtime). Decisions: (1) approve the design and the background/pagehide scope (vs per-change save); (2) approve proceeding to implementation on this branch with the mandatory device kill-test as the completion gate. **No code written yet.**
 
+## Verification results
+
+**Automated (all green):** `test:ui` 83 · `test:query` 88 · `test:codex` 10 · `build` · `check:docs`. No pure logic added (listener + boot wiring), so no new unit tests; the boot fix and listeners are exercised by the device test.
+
+**Device — installed release build 62, Pixel 9 Pro XL · Android 16 · Chromium WebView 150.0.7871.46** (`assembleRelease`, `am kill` for a genuine process death; screenshots `as-01`…`as-09`):
+
+| Step | Result |
+|---|---|
+| Build 62 boots; build-62 changelog renders | **Pass** (`as-03`) |
+| Live match set to a distinctive **player 16 / opponent 20** | `as-04` |
+| Background (`KEYCODE_HOME`) → `am kill` → **pid 7262 → gone → new pid 8354** (true cold boot, not resume-from-background) | verified |
+| **Cold boot shows _Return to Match_** — the boot reconciliation loaded the autosaved snapshot (would be absent before the fix) | **Pass** (`as-05`) |
+| Resume restores **exactly 16 / 20**, with banked elapsed (2m) intact | **Pass** (`as-06`, end screen `as-08`) |
+| **Negative:** Exit Match (`clearOngoing`) → `am kill` → cold boot shows **no Return to Match** | **Pass** (`as-09`) |
+
+Both halves are proven on the shipping WebView: the autosave **writes** on background, and the boot reconciliation **reads** it after a real process death. The negative case confirms `clearOngoing` + reconciliation don't resurrect an ended match.
+
 ### Approval record
 
 | Role | Disposition | Date |
@@ -178,5 +195,7 @@ A save-only autosave of the live match on `visibilitychange→hidden` + `pagehid
 | Claude Code (author) | Submitted | 2026-07-17 |
 | Codex (reviewer) | **Changes required** — Blocker: cold-boot reconciliation; Major: docs-impact missing | 2026-07-17 |
 | Claude Code (author) | **Revised** — boot-order fix folded into design/plan/affected-surface/risks/verification; Documentation-impact section added | 2026-07-17 |
-| Codex (reviewer) | *pending narrow re-review* | |
-| Human (approver) | *pending* | |
+| Codex (reviewer) | **Approved** (narrow re-review) — boot placement correct, docs-impact sufficient | 2026-07-17 |
+| Human (approver) | **Approved implementation** | 2026-07-17 |
+| Claude Code (author) | Implemented + docs + automated gate green + device kill-test **passed** (build 62) | 2026-07-17 |
+| Codex (reviewer) | *pending final diff review* | |
