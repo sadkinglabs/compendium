@@ -81,13 +81,14 @@ stepListEntry(listId, cardId, delta, pid = activeProfileId())// passes pid to it
 ```
 Default-param keeps every existing caller unchanged; the queue passes the captured `pid`. A queued `stepWanted(cardId, delta, pidA)` now reads *and* writes under `pidA` even if `activeId` becomes B mid-flight. **This removes the highest-consequence assumption** — profile safety no longer depends on modal exclusivity.
 
-**2. Store-layer per-row queue — `src/store/collectionWrites.js`:**
+**2. Store-layer per-row queue — `src/store/collectionWrites.js` (a *leaf*: imports nothing from the repo/profile layer, because `profileRepository` imports *it* — Codex Stage-A note).** The queue is keyed by an opaque string built by the caller, which also supplies the captured profile; the canonical key helpers live beside `vslug` in `ownedRepository.js`:
 ```js
-import { activeProfileId } from './profileRepository.js';
-const vslug = (set, foil) => (foil ? (set ? set + ':f' : 'foil') : set);   // shared with repo (exported there)
+// ownedRepository.js (owns vslug): key equality ≡ persisted-row equality
 export const ownedRowKey = (pid, cardId, set = '', foil = false) => `o:${pid}:${cardId}:${vslug(set, foil)}`;
 export const listRowKey  = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
 
+// collectionWrites.js (pure leaf — NO activeProfileId / vslug import; avoids the
+// profileRepository -> collectionWrites -> ownedRepository -> profileRepository cycle):
 const chains = {}; let pending = 0; let idle = [];
 function finalize() { if (--pending === 0) { const r = idle; idle = []; r.forEach((f) => f()); } }
 export function enqueueWrite(rowKey, fn) {           // fn: () => Promise (already profile-bound by its caller)
