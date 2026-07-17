@@ -38,6 +38,25 @@ acceptance criterion** (proposal §2).
 | Resume-cap behavior on device | **To be captured at Stage B verification** as the before/after comparison (theoretical prediction: uncapped, matching metric #9) | Seeding a tampered ongoing snapshot into the installed WebView requires the fix in hand to show the contrast; measured then |
 | Life-counter tap → render feel | Expected **neutral** — a pure arithmetic extraction changes no render or effect path | Spot-checked on device at final verification; not expected to move |
 
+## Results after the increment (measured, both stages on branch `refactor/matchlife-safety-boundary`)
+
+| # | Metric | Baseline | After | Verdict |
+|---|---|---|---|---|
+| 1 | `LifeCounter.jsx` lines | 1097 | **1100** (+3) | Component LOC barely moved - as intended; the win is *logic relocated to a tested module* (`matchLife.js`, 90 lines), not a shorter component. LOC was never the target (§2). |
+| 2 | ≤20 cap enforced at N of 5 life entrances | 2 of 5 | **5 of 5** via one module (`initSide`, `restoreSide`, `applyStep`, `applyMax`, reset→`initSide`) | **Met** |
+| 3 | Authoritative cap owner | 4 scattered sites | **1 module** (`matchLife.LIFE_CAP`). Two legacy component clamps remain (L47 fresh-seed, L902 stepper-widget bound) - now redundant/harmless defense-in-depth, not the authority | **Met** (noted for reviewer) |
+| 4 | Pure life-arithmetic tests | 0 | **20** | **Met** |
+| 5 | `npm run test:ui` total | 61 | **81** pass, 0 fail | **Met**, still green |
+| 6 | `LifeCounter` JS chunk | 35.08 kB (gzip 10.55) | **35.95 kB (gzip 10.87)** | +0.32 kB gzip — within the ±<1 kB target; no dependency added |
+| 7 | `index` / other chunks | 412.89 kB | unchanged (not touched) | Neutral |
+| 8 | `dist/` total | 77 MB | unchanged | Neutral |
+| 9 | **Resume cap correctness** (`pMax:999`) | Bypassed → life to 999 | **Clamped to 20** — unit-proven (`restoreSide` test); **device confirmation pending** (installed release) | **Met in logic**, device pending |
+| 10 | Tap-event domain | Open integer | **Closed `-1 \| +1`**, fail-loud | **Met** |
+| 11 | Non-finite handling | Undefined (NaN could propagate) | **Fail-loud throw at every entrance** | **Met** |
+| — | Full automated gate | — | test:codex 10 · test:query 88 · test:ui 81 · build ✓ · check:docs ✓ | **All green** |
+
+**Interpretation:** the safety/testability gains (metrics 2, 4, 9, 10, 11) landed at **no** bundle or dependency cost (6, 7, 8) and with the full suite green. The one remaining evidence item is the on-device confirmation of #9 on the shipping WebView.
+
 ## What "beneficial" will mean at review
 
 The increment is **beneficial** if, at final verification: metric #9 flips to clamped-at-20 (device-confirmed), #2 reaches 5/5 through one module, #4 rises from 0 to a real suite, and #5/#6/#7/#8 show the safety/testability gains cost **no** measurable bundle or runtime regression. If #6 grew materially, or #5 could not be raised without DOM, or the device showed any observed behavioral/visual difference on reachable inputs, the redesign did **not** prove beneficial and we revert (owner's standing instruction).
