@@ -96,7 +96,7 @@ Codex reviews actual diff and verification
 Human retains final authority
 ```
 
-Required gates:
+Required gates (**Standard and High-risk work**):
 
 | Gate | Entry artifact | Exit condition | Owner |
 |---|---|---|---|
@@ -107,6 +107,8 @@ Required gates:
 | Verification | Implemented diff | Applicable quality gates have evidence | Claude |
 | Final review | Diff, ledger, verification report | Explicit review disposition | Codex |
 | Completion | Approved implementation | Human receives handoff and residual risk | Claude |
+
+**Contained ("Trivial+") work (Constitution §6)** replaces the proposal-review, architecture-approval, and independent-final-review gates above with a **single author-owned verification gate**: the author records the Contained classification and its eligibility justification, runs the applicable automated gates plus `npm run check:docs`, and delivers the completion handoff (§11). No Codex round or human approval is required — **unless** the change is selected for review, or is found to touch a Standard or High-risk surface, at which point it escalates into the Standard lane. A Contained change needs no formal change ledger or intermediate checkpoint unless implementation diverges from its compact note.
 
 Agents may not infer approval from silence. Approval of a proposal does not approve later scope changes. Review approval does not override human authority.
 
@@ -126,6 +128,8 @@ Do not cite a filename generically when a symbol, schema statement, or test supp
 ### Phase B — propose
 
 For standard and high-risk tasks, Claude presents the full proposal defined in `ENGINEERING_CONSTITUTION.md`. The proposal must be implementation-ready but must not contain unreviewed production edits disguised as a prototype.
+
+For **Contained ("Trivial+")** tasks (Constitution §6), Claude may substitute a compact problem/plan/risk note with a one-paragraph Self-Critique for the full proposal, and proceed on a green automated gate without a mandatory Codex round — but only after **stating the Contained classification and justifying each eligibility criterion up front**, so the lighter lane is a deliberate, defensible call rather than a shortcut. The owner or Codex may reclassify it upward. A change that begins Contained but is found to touch a §3 invariant, persisted data, a profile/authorization boundary, native/build config, a dependency, or a new shared pattern **stops and re-enters the Standard lane** — the same stop conditions in §6 apply. Do not decompose a Standard/High-risk change into "Contained" slices to avoid review; classify the change as a whole.
 
 Every Self-Critique answers at least:
 
@@ -188,6 +192,8 @@ Claude maintains:
   - Status/divergence
 ```
 
+A **Contained** change (Constitution §6) needs no formal ledger or intermediate checkpoint unless implementation diverges from its compact note.
+
 Implementation rules:
 
 - Preserve existing local changes and inspect the diff before editing.
@@ -214,7 +220,7 @@ npm run build
 
 UI work also exercises relevant interactions and the zero-image mode documented in `BUILD.md`. Native/plugin behavior requires Capacitor/Android evidence; browser fallback is not equivalent — **a browser on the device is not the shipping runtime either**, since the app ships in the Capacitor WebView (Chromium) and a phone browser may be another engine entirely. Engine-sensitive CSS and any plugin path must be observed in the installed app, and the report must name the device, OS version, WebView version, and build type. Data work requires representative prior-state, retry, isolation, and integrity cases.
 
-Codex then reviews the actual diff for correctness, proposal alignment, hidden scope, test strength, documentation, and quality gates. New implementation facts may reopen an approved design decision.
+For Standard and High-risk changes — and any Contained change selected for review — Codex then reviews the actual diff for correctness, proposal alignment, hidden scope, test strength, documentation, and quality gates. New implementation facts may reopen an approved design decision. A Contained change not selected for review is verified by its author-owned gate (§4) instead.
 
 ### Documentation impact gate
 
@@ -367,7 +373,7 @@ Adversarial review is directed at the design, never the author. A reviewer who i
 <Accepted risks, confidence, owners; or none known>
 
 ## Review disposition
-<Codex disposition and unresolved findings, if any>
+<Either — Codex: Approved / Approved-with-follow-ups / Changes-required, and unresolved findings; or — Contained: independent review not required — Contained eligibility justification and automated evidence recorded>
 ```
 
-Work is not complete until the applicable Engineering Constitution quality gates pass and the review disposition is explicit.
+Work is not complete until the applicable Engineering Constitution quality gates pass and the review disposition is explicit — a Codex disposition for Standard/High-risk work, or the recorded Contained verification (§4) for Contained work.
