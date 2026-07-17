@@ -2,7 +2,22 @@
 
 ## Status and classification
 
-**Status: Draft — awaiting review** · Risk: **High** (mutates live profile-owned write paths across two surfaces and two tables)
+**Status: Changes required (Codex) — all 5 Majors accepted; scope/path decision pending owner** · Risk: **High** (mutates live profile-owned write paths across two surfaces and two tables)
+
+> **Rev-2 note — the review changed the stakes and the scope.** Codex showed (1) the rapid-tap
+> clobber is still *visible* without a synchronous `qtyRef`; (2) the profile-isolation claim is
+> **false** — `stepWanted`/`stepListEntry` resolve the mutable `activeProfileId()` on both their
+> read and their write, so a write queued under profile A can mutate B after a switch, and a
+> correct fix needs a **profile-bound write coordinator** (capture the profile at schedule time
+> and keep every read+write in the operation bound to it, or abort before mutating), not just
+> shared promise chains; (3) the wrong-chain Wishlist race can restore a **stale `qty_owned`** —
+> corrupting *recorded ownership*, so the stakes are higher than stated; (4) remove semantics must
+> be explicit intent (`{op:'step',delta}` / `{op:'clear'}`, clear = serialized absolute-0); (5)
+> verification must be **coordinator-level** (deferred promises / fake repos), not pure-model
+> tests. `listTotals` should be dropped from this increment (unrelated to write safety; moving it
+> doesn't single-source completeness while the index still uses `compareEngine`). Because the full
+> fix now necessarily includes profile-bound writes — overlapping roadmap #4 — the path is a
+> genuine fork for the owner (see below); the proposal will be rewritten to the chosen path.
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-17 · Roadmap item §16 #3 from [`ui-state-optimisation.md`](./ui-state-optimisation.md). **No implementation has begun.**
 
@@ -159,5 +174,6 @@ Route the goal/wishlist ledger onto delta-based, serialized, re-reading writes (
 | Role | Disposition | Date |
 |---|---|---|
 | Claude Code (author) | Submitted | 2026-07-17 |
-| Codex (reviewer) | *pending* | |
-| Human (approver) | *pending* | |
+| Codex (reviewer) | **Changes required** — 5 Majors (visible clobber; false profile-isolation claim → needs profile-bound coordinator; owned-data-corruption stakes; contradictory remove semantics; model-only tests) | 2026-07-17 |
+| Claude Code (author) | **All 5 accepted**; path is a fork (see Rev-2 note) — awaiting owner decision before rewrite | 2026-07-17 |
+| Human (approver) | *pending path decision* | |
