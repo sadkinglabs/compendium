@@ -2,9 +2,9 @@
 
 ## Status and classification
 
-**Status: Draft — awaiting review** · Risk: **High** (durable persisted state + runtime-specific behavior requiring device evidence)
+**Status: Implemented · device-verified · Codex-approved — awaiting human merge go-ahead** · Risk: **High** (durable persisted state + runtime-specific behavior requiring device evidence)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
-Date: 2026-07-17 · Roadmap item §16 #1 from [`ui-state-optimisation.md`](./ui-state-optimisation.md). **No implementation has begun.**
+Date: 2026-07-17 · Roadmap item §16 #1 from [`ui-state-optimisation.md`](./ui-state-optimisation.md). Implemented on `feat/durable-autosave`; see the Verification results section below.
 
 ## Problem and success criteria
 

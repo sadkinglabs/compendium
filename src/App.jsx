@@ -133,12 +133,13 @@ export default function App() {
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
         const p = await initProfiles();
         setProfile(p);
-        // Reconcile a live match that survived a process death. loadOngoing() in the
-        // useState initializer above ran during first render - BEFORE this - so
-        // activeProfileId() threw and it returned null. initProfiles() has now resolved
-        // the active profile id, so the profile-scoped key is finally correct. Splash is
-        // still up and nothing reads `ongoing` until Home paints, so this is the point
-        // that makes "Return to Match" appear after an OS kill.
+        // Reconcile a live match that survived a process death. The former initializer
+        // (`useState(() => loadOngoing())`) ran during first render - before profile
+        // initialization - so activeProfileId() threw and it returned null; that is why
+        // `ongoing` now starts null and is loaded HERE instead. initProfiles() has
+        // resolved the active profile id, so the profile-scoped key is finally correct.
+        // Splash is still up and nothing reads `ongoing` until Home paints, so this is the
+        // point that makes "Return to Match" appear after an OS kill.
         setOngoing(loadOngoing());
         // Move any single-set card owned in the Unspecified bucket onto its real
         // set row (e.g. older scanner adds). Idempotent; never blocks boot.
