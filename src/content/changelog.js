@@ -15,12 +15,13 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
-    build: 63,
+    build: 64,
     version: '1.0.2-alpha',
     date: '2026-07-17',
-    notes: 'Steadier quantity edits in your Collection.',
+    notes: 'Steadier, safer quantity edits in your Collection.',
     changes: [
       { kind: 'fixed', text: 'Tapping a wishlist or list quantity quickly now lands on the right number, and editing the same card from more than one place no longer trips over itself.' },
+      { kind: 'fixed', text: 'Emptying a card’s Unspecified owned copies no longer clears a wishlist entry for that same card.' },
     ],
   },
   {
