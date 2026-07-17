@@ -185,6 +185,14 @@ No new data/telemetry/dependency. The barrier adds a bounded drain to a profile 
 
 Make interactive Collection writes **profile-bound at the repository** (explicit `profileId` threaded through their reads+writes), serialize them through a **store-layer per-row queue** (`vslug`-exact keys; owned+wanted share the `''` row), keep a **bounded drain-before-switch barrier** to preserve in-flight edits, and give `ListDetail` a synchronous `qtyRef` with explicit step/clear + drain self-heal — closing a §3.2 profile-isolation violation and a recorded-ownership corruption race across every *interactive* ledger writer. Batch/atomic writers stay outside by a documented, tested exclusion. **High-risk.** Decisions: (1) approve the hybrid (profile-bound writes primary + barrier UX); (2) approve the inventory classification and the "interactive writers" contract; (3) approve the three-stage plan. Deferred-promise coordinator tests (incl. profile-bound + key-equality) are the proof; a device switch-mid-edit pass is the completion gate. **No code written yet.**
 
+## Verification results
+
+**Automated (all green):** `test:query` 108 · `test:ui` 83 · `test:codex` 10 · `build` · `check:docs` · `diff --check`. Coordinator + profile-binding tests prove: per-row serialization, cross-row concurrency, reject-to-caller with no unhandled rejection, bounded settle, key-equality ≡ row-equality (incl. `foil`/`:f`), a write bound to A committing under A after a mid-flight switch to B, the `switchProfile` drain barrier, list-entry profile scoping/refusal, the two shared-chain properties (wishlist+owned `''`; both list surfaces), and the device-found shared-`''` -row wishlist-preservation fix.
+
+**Device (installed release, Pixel 9 / WebView 150):** build 63 surfaced a data-loss bug — dropping a card's Unspecified owned to 0 wiped a wishlist entry on the same `''` row (`writeSetRow` deleted the shared row without checking `qty_wanted`). Reproduced in an automated test, fixed by routing the `''` row through `writeQty`, re-verified on **build 64**: the wishlist survives, rapid-tap quantities land correctly, owned/per-set stepping and profile isolation behave. Owner confirmed "the work sticks."
+
+> **Follow-up (owner, not part of this increment):** the Collection edit *UX* reads as strange now (read/edit split, confirm-remove, the Unspecified bucket) and merits a dedicated UX pass. The write path is correct; the interaction design is the open item.
+
 ### Approval record
 
 | Role | Disposition | Date |
