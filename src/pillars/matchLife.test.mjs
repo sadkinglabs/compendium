@@ -58,6 +58,13 @@ test('applyStep throws on a non-finite side field', () => {
   assert.throws(() => applyStep({ life: 10, max: Infinity }, -1), TypeError);
 });
 
+test('applyStep rejects a finite-but-out-of-range side (the boundary guards its INPUT too)', () => {
+  assert.throws(() => applyStep({ life: 10, max: 999 }, -1), RangeError);   // max above cap
+  assert.throws(() => applyStep({ life: 10, max: 0 }, -1), RangeError);     // max below MIN_MAX
+  assert.throws(() => applyStep({ life: 25, max: 20 }, -1), RangeError);    // life above max
+  assert.throws(() => applyStep({ life: -1, max: 20 }, +1), RangeError);    // life below zero
+});
+
 // --- initSide: the seed entrance, now capped ------------------------------------
 
 test('initSide seeds life = max from an in-range seed', () => {
@@ -118,6 +125,13 @@ test('applyMax raising max leaves life alone, and clamps max to 20 (Stage A did 
 test('applyMax throws on non-finite input', () => {
   assert.throws(() => applyMax({ life: 5, max: 20 }, NaN), TypeError);
   assert.throws(() => applyMax({ life: NaN, max: 20 }, 10), TypeError);
+});
+
+test('applyMax validates the whole input side, incl. side.max (not just side.life)', () => {
+  assert.throws(() => applyMax({ life: 5, max: NaN }, 10), TypeError);      // non-finite max
+  assert.throws(() => applyMax({ life: 5, max: Infinity }, 10), TypeError); // non-finite max
+  assert.throws(() => applyMax({ life: -5, max: 10 }, 10), RangeError);     // life below zero
+  assert.throws(() => applyMax({ life: 5, max: 999 }, 10), RangeError);     // max above cap
 });
 
 // --- the invariant holds across every entrance, over a deterministic sweep -------

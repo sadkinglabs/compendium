@@ -14,7 +14,7 @@ import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
 import { registerBackConsumer } from '../back.js';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { createDdArming, DD } from './ddArming.js';
-import { initSide, restoreSide, applyStep, applyMax } from './matchLife.js';
+import { initSide, restoreSide, applyStep, applyMax, LIFE_CAP, MIN_MAX } from './matchLife.js';
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
@@ -45,7 +45,7 @@ function fmtClock(secs) {
 }
 
 export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onRecord, onExit, onNewMatch, registerApi }) {
-  const start = Math.min(20, settings.default_max_life || 20); // Sorcery: life ≤ 20
+  const start = settings.default_max_life || 20; // clamped to <=20 by initSide - matchLife owns the cap
   const quick = mode === 'quick';
 
   const pRef = useRef(resume ? restoreSide({ life: resume.pLife, max: resume.pMax }) : initSide(start));
@@ -900,9 +900,9 @@ function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
     <VModal title="Max Life" rotated={rotated} subtitle={who === 'player' ? 'Your life cap' : "Opponent's life cap"} onClose={onClose}
       actions={<button className="modal-btn primary" onClick={() => onSet(v)}>Set Max Life</button>}>
       <div className="maxlife-stepper">
-        <button className="maxlife-btn" onClick={() => setV((x) => Math.max(1, x - 1))} aria-label="Decrease">−</button>
+        <button className="maxlife-btn" onClick={() => setV((x) => Math.max(MIN_MAX, x - 1))} aria-label="Decrease">−</button>
         <div className="maxlife-value">{v}</div>
-        <button className="maxlife-btn" onClick={() => setV((x) => Math.min(20, x + 1))} aria-label="Increase">+</button>
+        <button className="maxlife-btn" onClick={() => setV((x) => Math.min(LIFE_CAP, x + 1))} aria-label="Increase">+</button>
       </div>
       <div className="maxlife-hint">20 is the highest. Lower it when an effect stops you healing to full.</div>
     </VModal>
