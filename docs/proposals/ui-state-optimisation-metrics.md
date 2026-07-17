@@ -29,14 +29,23 @@ acceptance criterion** (proposal §2).
 | 10 | Tap-event domain | **Open integer** (`change(who, delta)`; `Math.min(max, life+delta)` would compute negative for an unreachable delta < −life) | source inspection | Closed `-1 \| +1`, fail-loud (Stage B) |
 | 11 | Non-finite input handling at the life boundary | **Undefined** — bare `Math.min/max` would propagate `NaN` | source inspection | Fail-loud throw at every entrance (Stage B) |
 
-## On-device baseline (before)
+## On-device verification (installed release, build 61)
 
-| Aspect | Baseline | Note |
+Runtime: Pixel 9 Pro XL · Android 16 · Chromium WebView 150.0.7871.46 · `assembleRelease` (signed, minified, ProGuard) installed over build 60 with data preserved. Driven via `adb input` + screencap; screenshots in the session scratchpad (`dev-02`…`dev-09`).
+
+| Check | Result | Evidence |
 |---|---|---|
-| Runtime | Pixel 9 Pro XL · Android 16 · WebView 150.0.7871.46 | The shipping Chromium engine, not a phone browser |
-| Installed build | 60 (current) | `adb … dumpsys package com.sadkinglabs.compendium` |
-| Resume-cap behavior on device | **To be captured at Stage B verification** as the before/after comparison (theoretical prediction: uncapped, matching metric #9) | Seeding a tampered ongoing snapshot into the installed WebView requires the fix in hand to show the contrast; measured then |
-| Life-counter tap → render feel | Expected **neutral** — a pure arithmetic extraction changes no render or effect path | Spot-checked on device at final verification; not expected to move |
+| Build 61 boots on the real WebView | **Pass** — Home renders with live data (452 cards, 6 matches, 67% winrate); no runtime error from `matchLife.js` | `dev-03` |
+| Changelog renders for build 61 | **Pass** — "What's New" shows the build-61 note verbatim | `dev-02` |
+| Fresh match seeds both sides at 20 (`initSide` cap) | **Pass** | `dev-04` |
+| Minus decrements | **Pass** — 20 → 17 (−3 delta shown) | `dev-05` |
+| **Plus caps at 20** (`applyStep` cap on device) | **Pass** — from 17, five +1 taps landed at **20**, not 22 (+3 delta, last two capped no-ops) | `dev-06` |
+| Minimize saves the ongoing snapshot | **Pass** — Home shows "Return to Match" with the active indicator | `dev-08` |
+| **Resume preserves state** (`restoreSide` on device) | **Pass** — resumed at player 18 / opponent 20 exactly as left; roll already dismissed, colours intact | `dev-09` |
+| Animations / deltas / colour / roll dismissal | **Pass** — "First Light" colour, delta pills, and the 5-tap roll retire all intact | `dev-05`, `dev-06` |
+| Life-counter tap → render feel | **Neutral** — no observed change; the extraction touches no render/effect path | observation |
+
+**The one scenario NOT reproducible on a release device — stated honestly:** injecting a *tampered* `pMax:999` ongoing snapshot to watch it clamp to 20 in the installed app. A release WebView is not remote-debuggable, the app itself never writes an out-of-range snapshot, and a non-rooted device cannot edit WebView `localStorage`. That specific behaviour change is instead proven by: the **unit test** `restoreSide({life:20,max:999}) → {life:20,max:20}` (passing), the **baseline repro** showing the pre-fix arithmetic climbs uncapped (metric #9), and the **verified diff** that routes resume through `restoreSide`. On device, the resume *path* itself was exercised end-to-end and preserves a normal in-range snapshot identically (`dev-09`), which is the behaviour-preservation half of the same change.
 
 ## Results after the increment (measured, both stages on branch `refactor/matchlife-safety-boundary`)
 
@@ -50,7 +59,7 @@ acceptance criterion** (proposal §2).
 | 6 | `LifeCounter` JS chunk | 35.08 kB (gzip 10.55) | **35.95 kB (gzip 10.87)** | +0.32 kB gzip — within the ±<1 kB target; no dependency added |
 | 7 | `index` / other chunks | 412.89 kB | unchanged (not touched) | Neutral |
 | 8 | `dist/` total | 77 MB | unchanged | Neutral |
-| 9 | **Resume cap correctness** (`pMax:999`) | Bypassed → life to 999 | **Clamped to 20** — unit-proven (`restoreSide` test); **device confirmation pending** (installed release) | **Met in logic**, device pending |
+| 9 | **Resume cap correctness** (`pMax:999`) | Bypassed → life to 999 | **Clamped to 20** — unit-proven (`restoreSide` test) + baseline repro; resume *path* verified on installed build 61 (normal snapshot preserved, cap holds in play). Tampered-999 not injectable on a non-debuggable release WebView — see device section | **Met** (logic + device path; tampered case unit-proven) |
 | 10 | Tap-event domain | Open integer | **Closed `-1 \| +1`**, fail-loud | **Met** |
 | 11 | Non-finite handling | Undefined (NaN could propagate) | **Fail-loud throw at every entrance** | **Met** |
 | — | Full automated gate | — | test:codex 10 · test:query 88 · test:ui 81 · build ✓ · check:docs ✓ | **All green** |

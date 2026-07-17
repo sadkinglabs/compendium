@@ -15,6 +15,15 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 61,
+    version: '1.0.2-alpha',
+    date: '2026-07-17',
+    notes: 'A quiet safety net under the life counter.',
+    changes: [
+      { kind: 'fixed', text: 'The 20-life cap is now enforced everywhere the counter sets a total, including when you resume a saved match - so a game can never return with an impossible life total.' },
+    ],
+  },
+  {
     build: 60,
     version: '1.0.2-alpha',
     date: '2026-07-17',
