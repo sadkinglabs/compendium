@@ -120,6 +120,17 @@ test('wishlist + unspecified-owned share the "" row chain and do not clobber eac
   assert.equal(await ownedInRow('A', 'c', ''), 6, 'owned 5 -> 6; the wanted write did not restore stale owned');
 });
 
+test('dropping Unspecified owned to 0 preserves a wishlist on the SAME "" row (no data loss)', async () => {
+  // Device-found: a card in the Wishlist (qty_wanted on the '' row) that also has
+  // Unspecified owned (bulk multi-set add lands here). Stepping owned to 0 via My
+  // Collection must NOT delete the shared row and wipe the wishlist.
+  await stepOwnedBucket('c', 2, 'A');   // '' row owned=2
+  await stepWanted('c', 3, 'A');        // '' row wanted=3 (SAME row)
+  await setOwnedInSet('c', '', 0, 'A'); // the My Collection Unspecified stepper path
+  assert.equal(await ownedInRow('A', 'c', ''), 0, 'owned went to 0');
+  assert.equal(await wantedOf('A', 'c'), 3, 'the wishlist on the same row survived');
+});
+
 test('both list-entry surfaces share one (list,card) chain: concurrent +1s do not lose an update', async () => {
   const key = listRowKey('A', 'LA', 'c');
   const d = defer();

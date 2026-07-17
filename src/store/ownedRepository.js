@@ -183,8 +183,13 @@ export async function qtyForInSet(cardId, set, pid = activeProfileId()) {
 }
 
 async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
-  const now = nowIso();
   const slug = vslug(set, foil);
+  // The unspecified regular row ('') is SHARED with the wishlist (qty_wanted lives on it).
+  // Route it through writeQty, which preserves qty_wanted, instead of deleting the whole
+  // row when owned hits 0 - that would wipe a wishlist entry for the same card. Per-set and
+  // foil rows are owned-only, so their delete-at-0 below is safe.
+  if (slug === '') return writeQty(cardId, { owned: qty }, pid);
+  const now = nowIso();
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
   if (q === 0) { if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]); }
