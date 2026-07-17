@@ -14,7 +14,7 @@ import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
 import { registerBackConsumer } from '../back.js';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { createDdArming, DD } from './ddArming.js';
-import { initSide, restoreSide, stepLife, maxSide } from './matchLife.js';
+import { initSide, restoreSide, applyStep, applyMax } from './matchLife.js';
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
@@ -366,7 +366,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
 
     const cur = who === 'player' ? pRef.current : eRef.current;
-    const step = stepLife(cur, delta);   // pure life arithmetic - see matchLife.js
+    const step = applyStep(cur, delta);   // pure life arithmetic (dir is -1|+1) - see matchLife.js
     // The door holds. This used to call triggerEnd() outright - a second, larger
     // misfire path than the pill, since the minus zone is half the screen. Death's
     // Door is a live game state in Sorcery, not a loss: ending a match is now always
@@ -401,7 +401,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // where syncLife(0 -> 0) correctly leaves the quiet window alone.
   function setMax(who, max) {
     const cur = who === 'player' ? pRef.current : eRef.current;
-    const m = maxSide(cur, max);   // life follows max down - see matchLife.js
+    const m = applyMax(cur, max);   // life follows max down, max clamped to [1,20] - see matchLife.js
     commitLife(who, m.life, m.max);
     setSheet(null); force((n) => n + 1);
   }

@@ -1,65 +1,90 @@
 // The match's life/max model - pure arithmetic for a two-player life total, kept out of
 // LifeCounter.jsx so the rules are provable without a DOM. Run: npm run test:ui
 //
-// STAGE A (this commit): a VERBATIM extraction. Every function reproduces exactly what
-// LifeCounter.jsx did inline - no behavior change for any input the UI can produce. The
-// <=20 hard cap is therefore still only as strong as each caller today (the fresh seed and
-// the MaxLifeModal stepper clamp to 20 upstream; the RESUME path does not). Stage B closes
-// that gap: it will bound max to [1,20] and life to [0,max] at EVERY entrance including
-// resume, close the tap domain to -1|+1, and fail loud on non-finite input.
-// See docs/proposals/ui-state-optimisation.md.
+// THIS IS THE SAFETY BOUNDARY. Every life entrance - fresh (initSide), resume (restoreSide),
+// tap (applyStep), max change (applyMax) - flows through here, and here is the ONE place the
+// hard cap lives: 1 <= max <= 20 and 0 <= life <= max, enforced at EVERY entrance. A caller
+// cannot construct an out-of-range life through this module, and cannot forget the cap,
+// because there is no entrance that skips it.
 //
-// A "side" is { life, max }. The component holds the value in a ref (pRef/eRef) and routes
-// every write through commitLife; this module owns the rules those writes apply. Every life
-// entrance - fresh, resume, tap, setMax, reset - goes through one of the functions here.
+// WHY IT EXISTS (the bug it closes): the <=20 cap used to be re-derived at four scattered
+// sites in the component, and the RESUME path had none - a snapshot with max:999 (corrupt,
+// legacy, or tampered) restored uncapped and taps climbed past 20. See metric #9 in
+// docs/proposals/ui-state-optimisation-metrics.md and the proposal for the full history.
+//
+// CLOSED DOMAIN + FAIL LOUD (the ddArming.assertSide precedent, applied to values):
+//   - applyStep takes a direction of exactly -1 | 1. Anything else throws - the UI only ever
+//     sends +/-1, so a different value is a bug, and "never below zero" is TRUE precisely
+//     because the domain is closed (an arbitrary negative delta can no longer be computed).
+//   - every entrance rejects non-finite input (NaN / Infinity / non-number) BEFORE clamping,
+//     because a bare Math.min/max would propagate NaN and silently defeat the boundary.
+//
+// A "side" is { life, max }. The component holds the value in a ref and routes every write
+// through commitLife -> dd.syncLife, which stays the SOLE authority on Death's Door crossings
+// (this module deliberately does not report fell/recovered - one source of truth).
 
 /** @typedef {{ life: number, max: number }} Side */
+/** @typedef {-1 | 1} Dir */
 
-/**
- * Fresh-match seed.
- * STAGE A: passthrough - the caller passes `start`, already clamped to <=20 at the call
- * site (LifeCounter.jsx:47). Stage B moves that clamp in here so it cannot be forgotten.
- */
+export const LIFE_CAP = 20;   // Sorcery: life never exceeds 20 (hard cap)
+export const MIN_MAX  = 1;    // a max below 1 could strand a side dead on reset
+
+/** Reject non-finite input at the boundary, loudly, before any arithmetic. */
+function finite(n, label) {
+  if (typeof n !== 'number' || !Number.isFinite(n)) {
+    throw new TypeError(`matchLife: ${label} must be a finite number, got ${JSON.stringify(n)}`);
+  }
+  return n;
+}
+
+const clampMax  = (m) => Math.min(LIFE_CAP, Math.max(MIN_MAX, m));
+const clampLife = (l, max) => Math.min(max, Math.max(0, l));
+
+/** Fresh-match seed. Enforces MIN_MAX..LIFE_CAP once, here - life starts at max. */
 export function initSide(seedMax) {
-  return { life: seedMax, max: seedMax };
+  const max = clampMax(finite(seedMax, 'seedMax'));
+  return { life: max, max };
 }
 
 /**
- * The RESUME entrance - reconstruct a side from a persisted snapshot's fields.
- * STAGE A: verbatim passthrough of `{ life, max }`, matching LifeCounter.jsx:50-51, which
- * seeds pRef/eRef straight from resume.pLife/pMax with no bound. This is the unguarded path
- * today (ongoingMatch.isValidSnapshot checks only Number.isFinite). Stage B clamps it here.
+ * The RESUME entrance - reconstruct a side from a persisted snapshot's fields, normalized to
+ * the same invariant every other entrance enforces: max -> [1,20], life -> [0, max]. This is
+ * the entrance that was unguarded (the metric #9 bug); routing resume through it is what makes
+ * "the one place" literally true. Non-finite fields throw (they should never arrive - the
+ * ongoingMatch validator already discards non-finite snapshots - so a throw here is a
+ * defensive assertion, not an expected path).
  */
-export function restoreSide({ life, max }) {
-  return { life, max };
+export function restoreSide({ life, max } = {}) {
+  const m = clampMax(finite(max, 'restore.max'));
+  const l = clampLife(finite(life, 'restore.life'), m);
+  return { life: l, max: m };
 }
 
 /**
- * One tap of `delta`. Reproduces LifeCounter.jsx's `change` arithmetic verbatim:
- *   - refused : side.life <= 0 && delta < 0     (the "door holds", L372) - side unchanged
- *   - else    : next = Math.min(side.max, side.life + delta)   (L374)
- *               changed = next !== side.life                   (L375 capped no-op check)
- * The component maps the result to effects: refused -> refuseAtFloor + heavy haptic; not
- * changed -> nothing; changed -> commitLife + log + animation. Crossings (fell/recovered)
- * are deliberately NOT returned here - they stay owned by commitLife -> dd.syncLife, so
- * there is one source of truth for Death's Door.
- * STAGE A keeps the OPEN integer delta the UI passes (only -1/+1 today); Stage B closes the
- * domain to -1|+1 with a runtime guard, which is what makes "never below zero" true.
+ * One tap. CLOSED DOMAIN: `dir` must be -1 | 1; anything else throws.
+ *   - refused : side.life <= 0 && dir < 0    (the "door holds") - side returned unchanged
+ *   - else    : next = min(side.max, side.life + dir); changed = next !== side.life
+ * The component maps the result to effects (refused -> refuseAtFloor + heavy haptic; not
+ * changed -> nothing; changed -> commitLife + log + animation). Crossings stay with
+ * commitLife -> dd.syncLife.
  * @param {Side} side
+ * @param {Dir} dir
  * @returns {{ side: Side, changed: boolean, refused: boolean }}
  */
-export function stepLife(side, delta) {
-  if (side.life <= 0 && delta < 0) return { side, changed: false, refused: true };
-  const next = Math.min(side.max, side.life + delta);
+export function applyStep(side, dir) {
+  if (dir !== 1 && dir !== -1) {
+    throw new RangeError(`matchLife.applyStep: dir must be -1 | 1, got ${JSON.stringify(dir)}`);
+  }
+  finite(side?.life, 'side.life');
+  finite(side?.max, 'side.max');
+  if (side.life <= 0 && dir < 0) return { side, changed: false, refused: true };
+  const next = Math.min(side.max, side.life + dir);
   return { side: { life: next, max: side.max }, changed: next !== side.life, refused: false };
 }
 
-/**
- * Change the max; life follows down to fit.
- * STAGE A: verbatim of setMax's `Math.min(cur.life, max), max` (LifeCounter.jsx:403) - note
- * it does NOT bound max to 20 here; the MaxLifeModal stepper does that upstream. Stage B
- * moves the [1,20] bound in.
- */
-export function maxSide(side, nextMax) {
-  return { life: Math.min(side.life, nextMax), max: nextMax };
+/** Change the max; life follows down to fit. Max clamped to [1,20]. */
+export function applyMax(side, nextMax) {
+  finite(side?.life, 'side.life');
+  const max = clampMax(finite(nextMax, 'nextMax'));
+  return { life: Math.min(side.life, max), max };
 }
