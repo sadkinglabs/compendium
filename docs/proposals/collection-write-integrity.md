@@ -2,7 +2,7 @@
 
 ## Status and classification
 
-**Status: Rev 2 — revised after review; awaiting narrow re-review** · Risk: **High** (fixes a profile-isolation invariant violation and a recorded-ownership corruption race across the interactive Collection ledger)
+**Status: Rev 3 — narrow-review fixes applied; awaiting Stage-A approval** · Risk: **High** (fixes a profile-isolation invariant violation and a recorded-ownership corruption race across the interactive Collection ledger)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-17 · Supersedes [`collection-goal-ledger.md`](./collection-goal-ledger.md). **No implementation has begun.**
 
@@ -14,6 +14,13 @@ Date: 2026-07-17 · Supersedes [`collection-goal-ledger.md`](./collection-goal-l
 > canonical `vslug()` so key equality matches DB-row equality, incl. set-foil `:f` rows (Major 3).
 > The queue's **error contract** is specified (Minor). `switchProfile` keeps its existence check
 > *before* the drain, with no await between drain and flip.
+>
+> **Rev 3 (narrow-review fixes):** `setFoil` (the name-level `'foil'` row, written by
+> `useOwnedLedger`) is added to the inventory, the profile-bound signatures, the migration, and the
+> profile-switch test matrix — it had the same redirect defect (Major). The queue pseudocode is
+> corrected so pending-state finalizes on an **already-handled** internal promise (no unhandled
+> rejection from `.finally`), and `settleCollectionWrites` **removes timed-out waiters** from the
+> idle set (Minor). An unhandled-rejection monitor is added to the test matrix.
 
 ## Problem and success criteria
 
@@ -44,6 +51,7 @@ Every writer of `owned_cards` / `card_list_entries`, classified:
 | `writeQty` → `setOwned`/`setWanted` | `ownedRepository.js:74-91` | `''` (RMW both cols) | **Queue** — interactive stepper; profile-bound variant |
 | `stepOwnedBucket` | `:93+` | `''` owned (delta) | **Queue** — interactive |
 | `writeSetRow` → `setOwnedInSet`/`setFoilInSet` | `:181-193` | `<set>` / `<set>:f` (RMW) | **Queue** — interactive (Cards tab) |
+| `setFoil` (name-level foil) | `:107-119` | `'foil'` (RMW) | **Queue** — interactive (`useOwnedLedger` name-level foil, `OwnedControl.jsx:81`) |
 | `stepWanted`, `stepListEntry`, `setListEntry` | `:103,419-429` | `''` / list entry | **Queue** — interactive (delta, re-read) |
 | `addOwnedCopies`/`addWantedCopies` | `:198-213` | `''` (atomic `+N` upsert) | **Outside — provably safe:** single synchronous `pid` capture; atomic `ON CONFLICT DO UPDATE col=col+excluded` (commutes); scanner-only, lifecycle-exclusive from list/sheet steppers |
 | `addOwnedCopiesInSet` | `:218-230` | `<set>` (atomic `+N`) | **Outside — provably safe** (as above, per-set) |
@@ -65,6 +73,7 @@ qtyFor(cardId, pid = activeProfileId())
 qtyForInSet(cardId, set, pid = activeProfileId())
 writeQty(cardId, { owned, wanted }, pid = activeProfileId())
 writeSetRow(cardId, set, foil, qty, pid = activeProfileId())
+setFoil(cardId, qty, pid = activeProfileId())               // the name-level 'foil' row
 stepOwnedBucket(cardId, delta, pid = activeProfileId())
 stepWanted(cardId, delta, pid = activeProfileId())          // passes pid to qtyFor + writeQty
 setListEntry(listId, cardId, qty, pid = activeProfileId())
@@ -80,16 +89,24 @@ export const ownedRowKey = (pid, cardId, set = '', foil = false) => `o:${pid}:${
 export const listRowKey  = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
 
 const chains = {}; let pending = 0; let idle = [];
+function finalize() { if (--pending === 0) { const r = idle; idle = []; r.forEach((f) => f()); } }
 export function enqueueWrite(rowKey, fn) {           // fn: () => Promise (already profile-bound by its caller)
   pending++;
   const result = (chains[rowKey] || Promise.resolve()).then(() => fn());   // caller-facing: reflects success/failure
-  chains[rowKey] = result.catch(() => {});                                  // internal tail: recovered so next write proceeds
-  result.finally(() => { if (--pending === 0) { const r = idle; idle = []; r.forEach((f) => f()); } });
-  return result;                                                            // caller may .catch to reconcile immediately
+  // Recover the row tail so a rejection can't wedge the next write AND so `result` is handled even
+  // if the caller ignores it (no unhandled rejection). finalize() runs on the recovered tail, so the
+  // `.finally` promise itself never rejects either.
+  chains[rowKey] = result.catch(() => {}).finally(finalize);
+  return result;                                    // caller MAY .catch to reconcile; already handled by the tail otherwise
 }
 export function settleCollectionWrites(timeoutMs = 4000) {   // bounded so a hung write can't freeze a profile switch
   if (pending === 0) return Promise.resolve();
-  return Promise.race([ new Promise((res) => idle.push(res)), new Promise((res) => setTimeout(res, timeoutMs)) ]);
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (done) return; done = true; const i = idle.indexOf(finish); if (i >= 0) idle.splice(i, 1); resolve(); };
+    idle.push(finish);                              // drain calls this when pending hits 0…
+    setTimeout(finish, timeoutMs);                  // …or the timeout fires first and removes it from idle
+  });
 }
 ```
 `vslug` is exported from `ownedRepository.js` and imported here (one canonical slug function → key equality ≡ row equality; Major 3).
@@ -106,14 +123,14 @@ export async function switchProfile(id) {
 ```
 Because writes are now explicitly profile-bound (mechanism 1), even a write that somehow slips past the drain writes to *its* captured profile, not B. The barrier just preserves the user's in-flight edits; the tripwire (`if (activeProfileId() !== captured) log/throw`) is retained as a diagnostic that should never fire.
 
-**Error contract (Minor):** `enqueueWrite` returns a promise that **rejects to its caller** on `fn` failure (so a writer can react), while the **internal chain tail is `.catch`-recovered** so a rejection never wedges the row's chain. Primary UI reconciliation is the **drain re-read** (self-heal): on settle, each migrated surface re-reads its rows from the repo and reconciles `qtyRef`+state, correcting any failed/raced write. **Residual, stated:** a storage op that *never settles* keeps `pending>0`; the bounded `settleCollectionWrites(timeout)` prevents it from freezing a profile switch, but a permanently hung write remains an unhandled durability risk (as it is today).
+**Error contract (Minor):** `enqueueWrite` returns a promise that **rejects to its caller** on `fn` failure (so a writer can react), while the **internal chain tail is `.catch`-recovered** so a rejection never wedges the row's chain — and, because that recovered tail is what `result` is chained through, `result` is handled even if the caller ignores it (no unhandled rejection). `finalize()` runs on the recovered tail, so the pending counter is settled on an already-handled promise. Primary UI reconciliation is the **drain re-read** (self-heal): on settle, each migrated surface re-reads its rows from the repo and reconciles `qtyRef`+state, correcting any failed/raced write. **Residual, stated:** a storage op that *never settles* keeps `pending>0`; the bounded `settleCollectionWrites(timeout)` prevents it from freezing a profile switch, but a permanently hung write remains an unhandled durability risk (as it is today).
 
 **Writer migration (the five interactive):** replace `serialChain(ownedChains, …)` and the `ListDetail` local chain with:
 ```js
 const pid = activeProfileId();
 enqueueWrite(ownedRowKey(pid, cardId, set, foil), () => stepWanted(cardId, delta, pid));   // etc.
 ```
-- `useOwnedLedger` / `Cards.stepSet` → `ownedRowKey(pid, cardId, set, foil)` (wanted & unspecified-owned collapse to the `''` key).
+- `useOwnedLedger` / `Cards.stepSet` → `ownedRowKey(pid, cardId, set, foil)` (wanted & unspecified-owned collapse to the `''` key; name-level foil → `ownedRowKey(pid, cardId, '', true)` = `'foil'` + `setFoil(cardId, qty, pid)`).
 - Wishlist `ListDetail` → `ownedRowKey(pid, cardId, '', false)` + `stepWanted(cardId, delta, pid)`.
 - Regular-list `ListDetail` + `CollectionCardSheet` picker → `listRowKey(pid, listId, cardId)` + `stepListEntry(listId, cardId, delta, pid)`.
 - Retire `ownedChains` from `ownedUi.js` (store queue replaces it).
@@ -137,7 +154,7 @@ Each stage reverts independently; the profile-bound params are backward-compatib
 
 ## Verification plan
 
-- **Automated (load-bearing) — deferred-promise coordinator tests** proving the six properties: (1) two rapid steps commit twice, in order; (2) wishlist + sheet ops on the `''` row share one queue; (3) both list-entry surfaces share one queue; (4) a failed write rejects to caller, recovers the tail, and drain reconciles; (5) `clear` wins by queue order under optimistic-vs-authoritative drift; (6) **a profile switch cannot redirect queued work** — a write scheduled under A executes under A even though `activeId` became B (proves mechanism 1, independent of the barrier). Plus the **key-equality table test** (Major 3) and a test that the atomic "outside" upserts commute. `test:query`/`test:ui`/`test:codex`/`build`/`check:docs`.
+- **Automated (load-bearing) — deferred-promise coordinator tests** proving the six properties: (1) two rapid steps commit twice, in order; (2) wishlist + sheet ops on the `''` row share one queue; (3) both list-entry surfaces share one queue; (4) a failed write rejects to caller, recovers the tail, and drain reconciles — **with an unhandled-rejection monitor asserting no unhandled promise escapes** (Rev 3 Minor), including when the caller ignores the returned promise; (5) `clear` wins by queue order under optimistic-vs-authoritative drift; (6) **a profile switch cannot redirect queued work** — a write scheduled under A executes under A even though `activeId` became B (proves mechanism 1, independent of the barrier), covering **each interactive write incl. the name-level `'foil'` row via `setFoil`** (Rev 3 Major); a timed-out `settleCollectionWrites` leaves no retained waiter in `idle`. Plus the **key-equality table test** (Major 3) and a test that the atomic "outside" upserts commute. `test:query`/`test:ui`/`test:codex`/`build`/`check:docs`.
 - **Device (regression + the real switch case):** step owned/wishlist/list goals (incl. floor→confirm-remove, rapid taps); edit one card's wanted from the sheet and the Wishlist and confirm owned is never disturbed; **switch profiles while a write is pending and confirm the edit lands in the origin profile**; owned counts redraw live; zero-image spot-check.
 - **Negative:** floor step opens remove-confirm without writing; cleared entry stays cleared after drain.
 
@@ -174,5 +191,7 @@ Make interactive Collection writes **profile-bound at the repository** (explicit
 | Claude Code (author) | Submitted Rev 1 (supersedes goal-ledger) | 2026-07-17 |
 | Codex (reviewer) | **Changes required** — 3 Major (barrier not atomic → profile-bind; incomplete inventory; row-key/variant mismatch) + 1 Minor (error contract) | 2026-07-17 |
 | Claude Code (author) | **Rev 2** — all accepted: profile-bound writes primary + barrier UX; full inventory; `vslug` keys; error contract | 2026-07-17 |
-| Codex (reviewer) | *pending narrow re-review* | |
+| Codex (reviewer) | Narrow re-review: **Changes required** — 1 Major (`setFoil` still mutable-profile-bound) + 1 Minor (`.finally` unhandled rejection; retained timed-out waiter). Hybrid architecture approved. | 2026-07-17 |
+| Claude Code (author) | **Rev 3** — `setFoil` added to inventory/signatures/migration/tests; queue finalizes on a handled tail; timed-out waiters removed from `idle`; unhandled-rejection monitor added | 2026-07-17 |
+| Codex (reviewer) | *pending — expected approvable for Stage A* | |
 | Human (approver) | *pending* | |
