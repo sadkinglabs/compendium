@@ -14,7 +14,8 @@ import {
   ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
-  setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
+  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey,
+  listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
@@ -25,7 +26,8 @@ import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } fr
 import CardArt from '../components/CardArt.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
-import { serialChain, ownedChains } from '../components/ownedUi.js';
+import { enqueueWrite } from '../store/collectionWrites.js';
+import { activeProfileId } from '../store/profileRepository.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
@@ -516,16 +518,19 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
   // inside the app-wide per-(card,set) chain so overlapping steps can't clobber.
   const stepSet = useCallback((cardId, set, delta) => {
-    const key = cardId + '|' + set;
+    const mapKey = cardId + '|' + set;
     setOwBySet((prev) => {
-      const cur = prev.get(key) || { owned: 0, foil: 0 };
+      const cur = prev.get(mapKey) || { owned: 0, foil: 0 };
       const next = { ...cur, owned: Math.max(0, cur.owned + delta) };
-      const m = new Map(prev); m.set(key, next);
+      const m = new Map(prev); m.set(mapKey, next);
       return m;
     });
-    serialChain(ownedChains, key, async () => {
-      const cur = await qtyForInSet(cardId, set);
-      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta));
+    // Per-set owned row, on the store-layer queue, bound to the captured profile and
+    // re-reading inside its turn so overlapping steps (and the card sheet) can't clobber.
+    const pid = activeProfileId();
+    enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
+      const cur = await qtyForInSet(cardId, set, pid);
+      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
     });
   }, []);
 
@@ -1169,7 +1174,6 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [rename, setRename] = useState(false);
   const [missing, setMissing] = useState(null);    // report for MissingSheet
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
-  const chains = useRef({});
   const cardIndex = useRef(new Map());             // card_id -> full card row
 
   const load = async () => {
@@ -1201,10 +1205,21 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
-  // Wishlist writes the ownership ledger's qty_wanted; a real list writes its entry.
-  const write = (cardId, next) => {
-    chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
-      .then(() => (isWishlist ? setWanted(cardId, next) : setListEntry(list.id, cardId, next))).catch(() => {});
+  // Persist a goal DELTA on the store-layer queue, bound to the captured profile and
+  // keyed per persisted row: the Wishlist shares the '' owned_cards row (so it commutes
+  // with the card sheet's owned/wanted edits) and a real list writes its card_list_entries
+  // row. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
+  // under optimistic-vs-authoritative drift.
+  const persist = (cardId, delta) => {
+    if (!delta) return;
+    const pid = activeProfileId();
+    if (isWishlist) enqueueWrite(ownedRowKey(pid, cardId, '', false), () => stepWanted(cardId, delta, pid));
+    else enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
+  };
+  const clearEntry = (cardId) => {
+    const pid = activeProfileId();
+    if (isWishlist) enqueueWrite(ownedRowKey(pid, cardId, '', false), () => setWanted(cardId, 0, pid));
+    else enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
   };
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
@@ -1215,7 +1230,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     const next = Math.max(0, (qty.get(id) || 0) + delta);
     haptic('light');
     setQty((prev) => { const m = new Map(prev); if (next <= 0) m.delete(id); else m.set(id, next); return m; });
-    write(id, next);
+    persist(id, delta);
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
@@ -1229,13 +1244,13 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     haptic('light');
     const next = Math.max(1, cur + delta);
     setQty((prev) => { const m = new Map(prev); m.set(cardId, next); return m; });
-    write(cardId, next);
+    persist(cardId, delta);
   }
   function removeEntry(cardId) {
     setRemoveCard(null);
     haptic('light');
     setQty((prev) => { const m = new Map(prev); m.delete(cardId); return m; });
-    write(cardId, 0);
+    clearEntry(cardId);
   }
 
   const totals = useMemo(() => {
@@ -1372,11 +1387,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
       <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
         onApply={(adds) => {
-          // ADD each resolved qty onto the list in one state write; `write` routes
-          // to the wishlist ledger or the list entry per the existing path.
+          // ADD each resolved qty onto the list in one state write; persist each as a
+          // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
           haptic('light');
           const m = new Map(qty);
-          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); const next = (m.get(a.card.card_id) || 0) + a.qty; m.set(a.card.card_id, next); write(a.card.card_id, next); }
+          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); const next = (m.get(a.card.card_id) || 0) + a.qty; m.set(a.card.card_id, next); persist(a.card.card_id, a.qty); }
           setQty(m);
           const copies = adds.reduce((s, a) => s + a.qty, 0);
           toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);

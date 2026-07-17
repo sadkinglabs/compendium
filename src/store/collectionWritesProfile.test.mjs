@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests, query } from './db.js';
 import { __setActiveIdForTests, activeProfileId, switchProfile } from './profileRepository.js';
-import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey } from './ownedRepository.js';
+import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey } from './ownedRepository.js';
 import { enqueueWrite, __resetCollectionWritesForTests } from './collectionWrites.js';
 
 const require = createRequire(import.meta.url);
@@ -101,6 +101,33 @@ test('stepListEntry bound to A steps its own list correctly while the active pro
   __setActiveIdForTests('B');
   await stepListEntry('LA', 'c', 2, 'A');   // 3 -> 5 on A's list
   assert.equal(await listQty('LA', 'c'), 5);
+});
+
+// Stage B shared-chain properties: the migrated callers key wishlist + unspecified-owned
+// on the SAME '' owned_cards row, and both list-entry surfaces on the same (list,card)
+// row - so serialized re-reads mean neither can clobber the other (races #1 and #3).
+test('wishlist + unspecified-owned share the "" row chain and do not clobber each other', async () => {
+  await stepOwnedBucket('c', 5, 'A');   // '' row owned=5
+  await stepWanted('c', 2, 'A');        // '' row wanted=2 (same row)
+  __resetCollectionWritesForTests();
+  const key = ownedRowKey('A', 'c', '', false);   // wishlist AND name-level owned land here
+  const d = defer();
+  const pWanted = enqueueWrite(key, async () => { await d.p; return stepWanted('c', 1, 'A'); });
+  const pOwned = enqueueWrite(key, () => stepOwnedBucket('c', 1, 'A'));
+  d.resolve();
+  await Promise.all([pWanted, pOwned]);
+  assert.equal(await wantedOf('A', 'c'), 3, 'wanted 2 -> 3; the owned write did not restore stale wanted');
+  assert.equal(await ownedInRow('A', 'c', ''), 6, 'owned 5 -> 6; the wanted write did not restore stale owned');
+});
+
+test('both list-entry surfaces share one (list,card) chain: concurrent +1s do not lose an update', async () => {
+  const key = listRowKey('A', 'LA', 'c');
+  const d = defer();
+  const p1 = enqueueWrite(key, async () => { await d.p; return stepListEntry('LA', 'c', 1, 'A'); });
+  const p2 = enqueueWrite(key, () => stepListEntry('LA', 'c', 1, 'A'));
+  d.resolve();
+  await Promise.all([p1, p2]);
+  assert.equal(await listQty('LA', 'c'), 2, 'both +1s committed via serialized re-read; none lost');
 });
 
 test('switchProfile drains the queue before flipping the active profile (barrier preserves the edit)', async () => {
