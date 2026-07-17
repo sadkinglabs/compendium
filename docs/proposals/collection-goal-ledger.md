@@ -1,5 +1,12 @@
 # Proposal: unify the Collection goal ledger onto the serialized re-read write path
 
+> **SUPERSEDED (2026-07-17) by [`collection-write-integrity.md`](./collection-write-integrity.md).**
+> Codex's review + the owner's redirect reframed this from a goal-ledger refactor into one focused
+> **Collection write-integrity** fix: a profile-safe, store-layer mutation queue (one key per
+> persisted row) with a drain-before-switch write barrier, migrating every owned/wanted/list-entry
+> writer onto it, plus the `qtyRef`/explicit-clear/self-heal goal behavior. This document is kept as
+> the decision trail (5 Majors, the owned-data-corruption finding). Do not implement from it.
+
 ## Status and classification
 
 **Status: Changes required (Codex) — all 5 Majors accepted; scope/path decision pending owner** · Risk: **High** (mutates live profile-owned write paths across two surfaces and two tables)
