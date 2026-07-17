@@ -108,10 +108,13 @@ No other code changes. The counter keeps rendering; the user stays in the match;
 **`App.jsx` boot-order fix (required — the autosave is inert without it):** stop seeding `ongoing` in the `useState` initializer (which throws pre-`initProfiles`), and reconcile once profiles exist:
 ```js
 const [ongoing, setOngoing] = useState(null);       // was: useState(() => loadOngoing())
-// …in the boot effect, immediately after initProfiles() succeeds (App.jsx:134-135):
+// boot effect, right after `const p = await initProfiles()` (App.jsx:134). initProfiles
+// resolves the module-global activeId (profileRepository.js:32/36, persisted :44) before it
+// returns, so activeProfileId() - and therefore loadOngoing() - is now valid. Place it
+// after setProfile(p) (:135) and before the splash-ready flip so first Home paint sees it:
 setOngoing(loadOngoing());
 ```
-The existing profile-switch reload (`:292`) stays. This is the step that makes *Return to Match* appear after a process death, and it also fixes the pre-existing cold-boot bug for the *ordinary* minimize→kill case (not just autosave).
+The existing profile-switch reload (`:292`) stays. This is the step that makes *Return to Match* appear after a process death, and it also fixes the pre-existing cold-boot bug for the *ordinary* minimize→kill case (not just autosave). It runs once (the boot effect is `booted.current`-guarded against StrictMode double-invoke, `:127`).
 
 **Ownership:** `LifeCounter` owns the trigger (it owns `snapRef`); `App`/`ongoingMatch` own persistence (the callback boundary is unchanged in spirit — `LifeCounter` stays persistence-agnostic, calling a prop rather than importing `saveOngoing`).
 
