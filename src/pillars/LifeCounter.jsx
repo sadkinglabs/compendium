@@ -14,6 +14,7 @@ import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
 import { registerBackConsumer } from '../back.js';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { createDdArming, DD } from './ddArming.js';
+import { initSide, restoreSide, stepLife, maxSide } from './matchLife.js';
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
@@ -47,8 +48,8 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const start = Math.min(20, settings.default_max_life || 20); // Sorcery: life ≤ 20
   const quick = mode === 'quick';
 
-  const pRef = useRef(resume ? { life: resume.pLife, max: resume.pMax } : { life: start, max: start });
-  const eRef = useRef(resume ? { life: resume.eLife, max: resume.eMax } : { life: start, max: start });
+  const pRef = useRef(resume ? restoreSide({ life: resume.pLife, max: resume.pMax }) : initSide(start));
+  const eRef = useRef(resume ? restoreSide({ life: resume.eLife, max: resume.eMax }) : initSide(start));
   const [, force] = useState(0);            // re-render for dd-pill / status badge / max
   const [deltas, setDeltas] = useState([]);
   const [rollPhase, setRollPhase] = useState(resume ? null : 'armed');   // 'armed'|'windup'|'rolling'|'result'|null
@@ -365,15 +366,15 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     if (fabP || fabE) { setFabP(false); setFabE(false); haptic('light'); return; }
 
     const cur = who === 'player' ? pRef.current : eRef.current;
+    const step = stepLife(cur, delta);   // pure life arithmetic - see matchLife.js
     // The door holds. This used to call triggerEnd() outright - a second, larger
     // misfire path than the pill, since the minus zone is half the screen. Death's
     // Door is a live game state in Sorcery, not a loss: ending a match is now always
     // an explicit act, never a side effect of tapping.
-    if (cur.life <= 0 && delta < 0) { refuseAtFloor(who); haptic('medium'); return; }
-
-    const next = Math.min(cur.max, cur.life + delta);
-    if (next === cur.life) return;   // capped at max: no-op, but dd.tap() already counted it
-    commitLife(who, next, cur.max);  // <- syncLife fires in here: falls, and recovers
+    if (step.refused) { refuseAtFloor(who); haptic('medium'); return; }
+    if (!step.changed) return;   // capped at max: no-op, but dd.tap() already counted it
+    const next = step.side.life;
+    commitLife(who, next, step.side.max);  // <- syncLife fires in here: falls, and recovers
     appendLog(who, delta, next);
     showDelta(who, delta);
     // The fall gets the slam, not the ordinary bump - and a heavy haptic. bumpFallSeq
@@ -400,13 +401,15 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // where syncLife(0 -> 0) correctly leaves the quiet window alone.
   function setMax(who, max) {
     const cur = who === 'player' ? pRef.current : eRef.current;
-    commitLife(who, Math.min(cur.life, max), max);
+    const m = maxSide(cur, max);   // life follows max down - see matchLife.js
+    commitLife(who, m.life, m.max);
     setSheet(null); force((n) => n + 1);
   }
   function reset() {
     // The non-tap recovery path: 0 -> 20 on both sides. Routing through commitLife
     // means it disarms Death's Door and cancels timers for free, with no special case.
-    commitLife('player', start, start); commitLife('opponent', start, start);
+    const seed = initSide(start);   // one seed helper for every fresh side - see matchLife.js
+    commitLife('player', seed.life, seed.max); commitLife('opponent', seed.life, seed.max);
     setLog([]); lastLog.current = null; setEndInfo(null);
     setDeltas([]); activeDelta.current = { player: null, opponent: null };
     clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent);
