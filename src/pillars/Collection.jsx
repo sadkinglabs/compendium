@@ -14,7 +14,8 @@ import {
   ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
-  setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
+  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey,
+  listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
@@ -25,7 +26,9 @@ import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } fr
 import CardArt from '../components/CardArt.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
-import { serialChain, ownedChains } from '../components/ownedUi.js';
+import { enqueueWrite } from '../store/collectionWrites.js';
+import { activeProfileId } from '../store/profileRepository.js';
+import { createGoalDrain } from './collectionGoalDrain.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
@@ -516,16 +519,19 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
   // inside the app-wide per-(card,set) chain so overlapping steps can't clobber.
   const stepSet = useCallback((cardId, set, delta) => {
-    const key = cardId + '|' + set;
+    const mapKey = cardId + '|' + set;
     setOwBySet((prev) => {
-      const cur = prev.get(key) || { owned: 0, foil: 0 };
+      const cur = prev.get(mapKey) || { owned: 0, foil: 0 };
       const next = { ...cur, owned: Math.max(0, cur.owned + delta) };
-      const m = new Map(prev); m.set(key, next);
+      const m = new Map(prev); m.set(mapKey, next);
       return m;
     });
-    serialChain(ownedChains, key, async () => {
-      const cur = await qtyForInSet(cardId, set);
-      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta));
+    // Per-set owned row, on the store-layer queue, bound to the captured profile and
+    // re-reading inside its turn so overlapping steps (and the card sheet) can't clobber.
+    const pid = activeProfileId();
+    enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
+      const cur = await qtyForInSet(cardId, set, pid);
+      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
     });
   }, []);
 
@@ -1169,26 +1175,42 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [rename, setRename] = useState(false);
   const [missing, setMissing] = useState(null);    // report for MissingSheet
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
-  const chains = useRef({});
   const cardIndex = useRef(new Map());             // card_id -> full card row
+  const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
+  const drainRef = useRef(null);                   // per-open-list goal drain: reconciles from the repo after writes settle
 
+  // Install an authoritative goal snapshot into the synchronous mirror + visible state
+  // (used by the initial load AND the drain reconcile).
+  const installGoals = (rows) => {
+    for (const c of rows) cardIndex.current.set(c.card_id, c);
+    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
+    qtyRef.current = m; setQty(m);
+  };
   const load = async () => {
     setLoaded(false);
     // Wishlist rows come from the qty_wanted ledger (quantity aliased to wanted);
     // regular lists from card_list_entries. Both carry `quantity` = the goal.
     const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
-    for (const c of rows) cardIndex.current.set(c.card_id, c);
-    setQty(new Map(rows.map((r) => [r.card_id, r.quantity])));
+    installGoals(rows);
     setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
     setLoaded(true);
   };
   useEffect(() => {
+    let cancelled = false;
+    // Per-open-list drain: when goal writes settle, reconcile from the repo - but ONLY if
+    // no newer tap has begun (version guard, in collectionGoalDrain) and this list is still
+    // open (the cancel guard), so a slow reconcile can't regress a fresh optimistic edit.
+    drainRef.current = createGoalDrain({
+      read: () => (isWishlist ? wishlistCards() : listCards(list.id)),
+      apply: installGoals,
+      isAlive: () => !cancelled,
+    });
     load();
     // Arriving via a "View missing ›" tap on the index opens straight to the list.
     if (list.openMissing) listProgress(list.id).then(setMissing);
     // Owned counts are read-only here: they redraw live as the collection grows.
     const off = subscribeCollection(() => ownedMap().then(setOwnQty));
-    return off;
+    return () => { cancelled = true; off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.id]);
 
@@ -1201,26 +1223,44 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
-  // Wishlist writes the ownership ledger's qty_wanted; a real list writes its entry.
-  const write = (cardId, next) => {
-    chains.current[cardId] = (chains.current[cardId] || Promise.resolve())
-      .then(() => (isWishlist ? setWanted(cardId, next) : setListEntry(list.id, cardId, next))).catch(() => {});
+  // Persist a goal DELTA on the store-layer queue, bound to the captured profile and
+  // keyed per persisted row: the Wishlist shares the '' owned_cards row (so it commutes
+  // with the card sheet's owned/wanted edits) and a real list writes its card_list_entries
+  // row. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
+  // under optimistic-vs-authoritative drift.
+  const persist = (cardId, delta) => {
+    if (!delta) return Promise.resolve();
+    const pid = activeProfileId();
+    return isWishlist
+      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => stepWanted(cardId, delta, pid))
+      : enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
   };
+  const clearEntry = (cardId) => {
+    const pid = activeProfileId();
+    return isWishlist
+      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => setWanted(cardId, 0, pid))
+      : enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
+  };
+  // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
+  // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
+  // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
+  const applyGoal = (mutate) => { const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
+  const track = (p) => drainRef.current?.track(p);
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
   // no confirm, since you're actively curating.
   const addStep = (card, delta) => {
     const id = card.card_id;
     cardIndex.current.set(id, card);
-    const next = Math.max(0, (qty.get(id) || 0) + delta);
+    const next = Math.max(0, (qtyRef.current.get(id) || 0) + delta);
     haptic('light');
-    setQty((prev) => { const m = new Map(prev); if (next <= 0) m.delete(id); else m.set(id, next); return m; });
-    write(id, next);
+    applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
+    track(persist(id, delta));
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
   function step(cardId, delta) {
-    const cur = qty.get(cardId) || 0;
+    const cur = qtyRef.current.get(cardId) || 0;
     if (delta < 0 && cur <= 1) {
       const c = cardIndex.current.get(cardId);
       setRemoveCard({ card_id: cardId, name: c?.name || 'this card' });
@@ -1228,14 +1268,14 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     }
     haptic('light');
     const next = Math.max(1, cur + delta);
-    setQty((prev) => { const m = new Map(prev); m.set(cardId, next); return m; });
-    write(cardId, next);
+    applyGoal((m) => m.set(cardId, next));
+    track(persist(cardId, delta));
   }
   function removeEntry(cardId) {
     setRemoveCard(null);
     haptic('light');
-    setQty((prev) => { const m = new Map(prev); m.delete(cardId); return m; });
-    write(cardId, 0);
+    applyGoal((m) => m.delete(cardId));
+    track(clearEntry(cardId));
   }
 
   const totals = useMemo(() => {
@@ -1372,12 +1412,12 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
       <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
         onApply={(adds) => {
-          // ADD each resolved qty onto the list in one state write; `write` routes
-          // to the wishlist ledger or the list entry per the existing path.
+          // ADD each resolved qty onto the list in one state write; persist each as a
+          // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
           haptic('light');
-          const m = new Map(qty);
-          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); const next = (m.get(a.card.card_id) || 0) + a.qty; m.set(a.card.card_id, next); write(a.card.card_id, next); }
-          setQty(m);
+          const m = new Map(qtyRef.current);
+          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
+          qtyRef.current = m; setQty(m);
           const copies = adds.reduce((s, a) => s + a.qty, 0);
           toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
         }} />

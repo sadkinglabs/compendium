@@ -6,8 +6,10 @@
 // chrome-only - it rides the stepper buttons; the count stays gold/ink.
 import React, { useEffect, useRef, useState } from 'react';
 import { SectionLabel } from './ui.jsx';
-import { qtyFor, setWanted, setFoil, stepOwnedBucket, qtyForInSet, setOwnedInSet, setFoilInSet, subscribeCollection } from '../store/ownedRepository.js';
-import { stepBtn, serialChain, ownedChains } from './ownedUi.js';
+import { qtyFor, setWanted, setFoil, stepOwnedBucket, qtyForInSet, setOwnedInSet, setFoilInSet, subscribeCollection, ownedRowKey } from '../store/ownedRepository.js';
+import { enqueueWrite } from '../store/collectionWrites.js';
+import { activeProfileId } from '../store/profileRepository.js';
+import { stepBtn } from './ownedUi.js';
 import { haptic } from '../native.js';
 
 // The optimistic ledger for one card's owned/foil/wanted counts: reads qtyFor,
@@ -62,24 +64,26 @@ export function useOwnedLedger(cardId, set = null) {
     qtyRef.current = next;
     setQty(next);                                   // optimistic, synchronous (pre-await)
     pending.current++;
-    // Owned/foil for a printing serialize on the per-(card,set) chain - the SAME
-    // key My Collection's row steppers use - so the sheet and the row commute.
-    // Wishlist (card-level) rides the card chain. Each write re-reads the committed
-    // count inside its turn so an absolute write can't clobber a concurrent edit.
+    // Serialize on the PERSISTED-ROW key via the store-layer queue, and bind the write
+    // to the profile captured now - so a switch mid-flight can't redirect it, and the
+    // wishlist (which shares the '' row with unspecified owned) commutes with the row
+    // steppers because they land on the same chain. Each write re-reads inside its turn.
+    const pid = activeProfileId();
     const perSet = set != null && field !== 'wanted';   // '' (Unspecified) is a real bucket too
-    const key = perSet ? `${cardId}|${set}` : cardId;
-    serialChain(ownedChains, key, async () => {
-      if (field === 'wanted') { const cur = await qtyFor(cardId); return setWanted(cardId, Math.max(0, (cur.wanted || 0) + delta)); }
+    const key = ownedRowKey(pid, cardId, perSet ? set : '', field === 'foil');
+    enqueueWrite(key, async () => {
+      if (field === 'wanted') { const cur = await qtyFor(cardId, pid); return setWanted(cardId, Math.max(0, (cur.wanted || 0) + delta), pid); }
       if (perSet) {
-        const cur = await qtyForInSet(cardId, set);
+        const cur = await qtyForInSet(cardId, set, pid);
         const v = Math.max(0, (field === 'owned' ? cur.owned : cur.foil) + delta);
-        return field === 'owned' ? setOwnedInSet(cardId, set, v) : setFoilInSet(cardId, set, v);
+        return field === 'owned' ? setOwnedInSet(cardId, set, v, pid) : setFoilInSet(cardId, set, v, pid);
       }
       // Name-level (no printing): owned edits the '' bucket by delta; foil its own row.
-      if (field === 'owned') return stepOwnedBucket(cardId, delta);
-      const cur = await qtyFor(cardId);
-      return setFoil(cardId, Math.max(0, (cur.foil || 0) + delta));
+      if (field === 'owned') return stepOwnedBucket(cardId, delta, pid);
+      const cur = await qtyFor(cardId, pid);
+      return setFoil(cardId, Math.max(0, (cur.foil || 0) + delta), pid);
     })
+      .catch(() => {})   // failures reconcile via the drain re-read below (and don't leak an unhandled rejection)
       .finally(() => {
         pending.current--;
         if (pending.current === 0) read().then(applyIfCurrent);

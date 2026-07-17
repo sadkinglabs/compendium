@@ -12,7 +12,9 @@ import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
-import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection } from '../store/ownedRepository.js';
+import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey } from '../store/ownedRepository.js';
+import { enqueueWrite } from '../store/collectionWrites.js';
+import { activeProfileId } from '../store/profileRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
@@ -110,7 +112,10 @@ function ListPicker({ cardId, onBack }) {
   const add = async (list) => {
     haptic('light');
     setInLists((prev) => { const m = new Map(prev); m.set(list.id, (m.get(list.id) || 0) + 1); return m; });
-    try { await stepListEntry(list.id, cardId, +1); } catch { /* refresh on next open */ }
+    // Same list-entry chain the list detail uses, bound to the captured profile - so
+    // the two surfaces that write card_list_entries can't race each other.
+    const pid = activeProfileId();
+    try { await enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, +1, pid)); } catch { /* refresh on next open */ }
   };
   const section = (title, items, hint) => (
     <div style={{ marginBottom: 14 }}>

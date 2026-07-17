@@ -395,7 +395,9 @@ Dashboard blocks store type-specific JSON configuration and ordering. Named layo
 
 ## 11. Repository and transaction boundaries
 
-- Repositories inject the active profile rather than accepting an arbitrary profile from UI code.
+- Repositories resolve the active profile rather than accepting an arbitrary profile from UI code; the interactive Collection ledger writers additionally accept an explicit `profileId` (defaulting to the active one) so a queued edit stays bound to the profile it was scheduled under.
+- **Interactive Collection ledger writes** (the `owned_cards` / `card_list_entries` steppers) serialize through a store-layer per-row queue (`src/store/collectionWrites.js`), keyed per persisted row. `qty_wanted` and unspecified `qty_owned` share the `variant_slug=''` row, so they commit on **one** chain and a re-read inside each turn stops either from restoring the other's stale column. Every queued write is bound to the `profileId` captured at schedule time, so a mid-edit profile switch cannot redirect it, and `switchProfile` **drains the queue before** changing the active profile (preserving the in-flight edit).
+- **Batch/atomic ledger writers** (scanner add, resolved import, single-set backfill, add-missing-to-wishlist) stay *outside* that queue by design: each captures the profile once and writes atomically or in a single `tx`, and is lifecycle-exclusive from the interactive steppers.
 - Mutations that affect multiple rows use `tx()` where atomicity is required.
 - Imported collection quantities and lists are planned/validated before batch writes.
 - Deck imports preserve unresolved cards visibly rather than silently discarding them.

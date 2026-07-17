@@ -59,8 +59,7 @@ export async function ownWantMap() {
 
 // One card's ledger breakdown. `owned` = regular copies, `foil` = foil copies,
 // `wanted` = wishlist (variant-agnostic). Same field names the write path takes.
-export async function qtyFor(cardId) {
-  const pid = activeProfileId();
+export async function qtyFor(cardId, pid = activeProfileId()) {
   const r = (await query(
     `SELECT SUM(CASE WHEN ${isFoil()} THEN 0 ELSE qty_owned END) o,
             SUM(CASE WHEN ${isFoil()} THEN qty_owned ELSE 0 END) f,
@@ -71,8 +70,7 @@ export async function qtyFor(cardId) {
 
 /* ---------------- ownership writes (upsert the '' row, delete at 0/0) ---------------- */
 
-async function writeQty(cardId, { owned, wanted }) {
-  const pid = activeProfileId();
+async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
   const now = nowIso();
   const cur = (await query('SELECT id, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, '']))[0];
   const o = Math.max(0, owned != null ? owned : (cur?.qty_owned || 0));
@@ -87,25 +85,24 @@ async function writeQty(cardId, { owned, wanted }) {
   }
   bump();
 }
-export async function setOwned(cardId, qty) { return writeQty(cardId, { owned: qty }); }
-export async function setWanted(cardId, qty) { return writeQty(cardId, { wanted: qty }); }
+export async function setOwned(cardId, qty, pid = activeProfileId()) { return writeQty(cardId, { owned: qty }, pid); }
+export async function setWanted(cardId, qty, pid = activeProfileId()) { return writeQty(cardId, { wanted: qty }, pid); }
 
 // Card-level owned edit as a DELTA on the '' ("Unspecified") bucket. qtyFor sums
 // owned across EVERY row (incl. the per-set '001'… rows My Collection writes), so
 // reading that total and writing it back to '' (setOwned) double-counts the set
 // rows - the +2-on-plus / dead-minus bug. Stepping the '' bucket directly composes
 // correctly with the set rows the card sheet doesn't manage.
-export async function stepOwnedBucket(cardId, delta) {
-  const cur = (await query("SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [activeProfileId(), cardId]))[0];
-  return writeQty(cardId, { owned: Math.max(0, (cur?.qty_owned || 0) + delta) });
+export async function stepOwnedBucket(cardId, delta, pid = activeProfileId()) {
+  const cur = (await query("SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [pid, cardId]))[0];
+  return writeQty(cardId, { owned: Math.max(0, (cur?.qty_owned || 0) + delta) }, pid);
 }
-export async function stepOwned(cardId, delta) { const { owned } = await qtyFor(cardId); return setOwned(cardId, owned + delta); }
-export async function stepWanted(cardId, delta) { const { wanted } = await qtyFor(cardId); return setWanted(cardId, wanted + delta); }
+export async function stepOwned(cardId, delta, pid = activeProfileId()) { const { owned } = await qtyFor(cardId, pid); return setOwned(cardId, owned + delta, pid); }
+export async function stepWanted(cardId, delta, pid = activeProfileId()) { const { wanted } = await qtyFor(cardId, pid); return setWanted(cardId, wanted + delta, pid); }
 
 // Foil copies: the variant_slug='foil' row's qty_owned (wishlist never lives here).
 // Same upsert/delete-at-0 shape as writeQty, on its own row.
-export async function setFoil(cardId, qty) {
-  const pid = activeProfileId();
+export async function setFoil(cardId, qty, pid = activeProfileId()) {
   const now = nowIso();
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, 'foil']))[0];
@@ -139,6 +136,14 @@ function parseVslug(slug) {
 // read), NOT ":f" - so an Unspecified foil reads and writes the same row everywhere.
 const vslug = (set, foil) => (foil ? (set ? set + ':f' : 'foil') : set);
 
+// Write-queue keys: ONE per persisted row, so key equality === owned_cards /
+// card_list_entries row equality. Built with the canonical vslug so the 'foil' and
+// '<set>:f' rows land on their own chains. The Collection write coordinator
+// (src/store/collectionWrites.js) is keyed by these opaque strings and imports
+// nothing from here (it stays a leaf); the CALLER supplies the captured profile id.
+export const ownedRowKey = (pid, cardId, set = '', foil = false) => `o:${pid}:${cardId}:${vslug(set, foil)}`;
+export const listRowKey = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
+
 // Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.
 export async function ownedBySet() {
   const pid = activeProfileId();
@@ -170,18 +175,21 @@ export async function ownedSetsForCard(cardId) {
 }
 
 // One (card, set) breakdown, for the optimistic-step re-read.
-export async function qtyForInSet(cardId, set) {
-  const pid = activeProfileId();
+export async function qtyForInSet(cardId, set, pid = activeProfileId()) {
   const rows = await query('SELECT variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (?,?);', [pid, cardId, vslug(set, false), vslug(set, true)]);
   let owned = 0, foil = 0;
   for (const r of rows) { if (parseVslug(r.variant_slug).foil) foil += r.qty_owned; else owned += r.qty_owned; }
   return { owned, foil };
 }
 
-async function writeSetRow(cardId, set, foil, qty) {
-  const pid = activeProfileId();
-  const now = nowIso();
+async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
   const slug = vslug(set, foil);
+  // The unspecified regular row ('') is SHARED with the wishlist (qty_wanted lives on it).
+  // Route it through writeQty, which preserves qty_wanted, instead of deleting the whole
+  // row when owned hits 0 - that would wipe a wishlist entry for the same card. Per-set and
+  // foil rows are owned-only, so their delete-at-0 below is safe.
+  if (slug === '') return writeQty(cardId, { owned: qty }, pid);
+  const now = nowIso();
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
   if (q === 0) { if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]); }
@@ -189,8 +197,8 @@ async function writeSetRow(cardId, set, foil, qty) {
   else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
   bump();
 }
-export async function setOwnedInSet(cardId, set, qty) { return writeSetRow(cardId, set, false, qty); }
-export async function setFoilInSet(cardId, set, qty) { return writeSetRow(cardId, set, true, qty); }
+export async function setOwnedInSet(cardId, set, qty, pid = activeProfileId()) { return writeSetRow(cardId, set, false, qty, pid); }
+export async function setFoilInSet(cardId, set, qty, pid = activeProfileId()) { return writeSetRow(cardId, set, true, qty, pid); }
 
 // Atomic +N to owned/wanted via a single upsert (no read-modify-write). For callers
 // that can't serialize their writes - notably the scanner's rapid, independent
@@ -416,7 +424,12 @@ export async function listThumbsBulk(listIds, perList = 3) {
   return m;
 }
 // Set a card's quantity in a list (0 deletes). variant_slug='' in v1.
-export async function setListEntry(listId, cardId, qty) {
+export async function setListEntry(listId, cardId, qty, pid = activeProfileId()) {
+  // card_list_entries has no profile_id of its own - it is owned via card_lists. Verify
+  // the list belongs to the supplied profile, so a stale/foreign listId (e.g. a write
+  // scheduled under one profile after a switch) can never mutate another profile's list.
+  const list = (await query('SELECT id FROM card_lists WHERE id=? AND profile_id=?;', [listId, pid]))[0];
+  if (!list) return;   // not this profile's list -> refuse (the queue key claimed this profile; the boundary enforces it)
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM card_list_entries WHERE list_id=? AND card_id=? AND variant_slug=?;', [listId, cardId, '']))[0];
   if (q === 0) { if (cur) await run('DELETE FROM card_list_entries WHERE id=?;', [cur.id]); }
@@ -424,9 +437,13 @@ export async function setListEntry(listId, cardId, qty) {
   else await run('INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);', [uuid(), listId, cardId, q, '', nowIso()]);
   bump();
 }
-export async function stepListEntry(listId, cardId, delta) {
-  const cur = (await query('SELECT quantity FROM card_list_entries WHERE list_id=? AND card_id=? AND variant_slug=?;', [listId, cardId, '']))[0];
-  return setListEntry(listId, cardId, (cur?.quantity || 0) + delta);
+export async function stepListEntry(listId, cardId, delta, pid = activeProfileId()) {
+  // Read scoped to the profile's list too, so both the read and the write of this
+  // step trust the same captured profile (a foreign list reads 0 and then refuses).
+  const cur = (await query(
+    'SELECT e.quantity q FROM card_list_entries e JOIN card_lists l ON l.id=e.list_id WHERE e.list_id=? AND e.card_id=? AND e.variant_slug=? AND l.profile_id=?;',
+    [listId, cardId, '', pid]))[0];
+  return setListEntry(listId, cardId, (cur?.q || 0) + delta, pid);
 }
 
 // Card-level requirement of a list (mirrors deckRequirements shape).
