@@ -438,4 +438,10 @@ Recommended sequence once approved (per Codex): human approves the complete incr
 | Claude Code (author) | **Resubmitted Rev 2** (all findings accepted) | 2026-07-17 |
 | Codex (reviewer) | **Approved with non-blocking follow-ups** (non-finite fail-loud; gate stages together) | 2026-07-17 |
 | Claude Code (author) | Folded both follow-ups into the artifact (§8–§10, §17, §19, §20) | 2026-07-17 |
-| Human (approver) | *pending explicit High-risk approval — required before any implementation* | |
+| Human (approver) | **Approved** — implement on branch; establish baseline + record metrics theoretically and on device | 2026-07-17 |
+| Claude Code (author) | Implemented Stage A → Stage B → build 61 device verification; Stage A checkpoint reviewed by Codex | 2026-07-17 |
+| Codex (reviewer) | Stage A **Approved to proceed**; complete-diff **Changes required** (3 Major) | 2026-07-17 |
+| Claude Code (author) | Resolved all 3 Major (`validateSide` input guard; cap single-sourced; metrics corrected + deviation framed) | 2026-07-17 |
+| Codex (reviewer) | **Approved** — contingent only on the owner accepting the metric-#9 verification deviation | 2026-07-17 |
+| Human (approver) | **Accepted the verification deviation and approved merge** (threat model negligible for an offline single-user counter; value is the pattern + structural invariant) | 2026-07-17 |
+| — | **Merged to `main`** (both stages together, per the gate-together decision) | 2026-07-17 |

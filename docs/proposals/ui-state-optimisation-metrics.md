@@ -58,6 +58,8 @@ Runtime: Pixel 9 Pro XL · Android 16 · Chromium WebView 150.0.7871.46 · `asse
 
 This chain is a reasonable substitute, but it is a **deviation from the direct-device criterion and must be accepted as such by the owner** — it is not direct device confirmation of the tampered case.
 
+**Owner disposition (2026-07-17): deviation ACCEPTED.** Rationale: the tampered-snapshot threat model is negligible for an offline single-user life counter (no adversary; the realistic trigger for an out-of-range snapshot is a bug or a legacy snapshot, not injection), and a release WebView cannot inject a snapshot the app never writes. The value banked is the testable pure-module pattern and the structural single-sourcing of the cap against ordinary future bugs — not a security control. A build-62 re-verify was declined as effort-for-its-own-sake (it could not make the tampered case injectable regardless). Codex concurred.
+
 ## Results after the increment (measured, both stages on branch `refactor/matchlife-safety-boundary`)
 
 | # | Metric | Baseline | After | Verdict |
