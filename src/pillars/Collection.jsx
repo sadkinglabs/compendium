@@ -1175,6 +1175,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [missing, setMissing] = useState(null);    // report for MissingSheet
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
   const cardIndex = useRef(new Map());             // card_id -> full card row
+  const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
+  const pendingWrites = useRef(0);                 // in-flight goal writes; on drain we reconcile from the repo (self-heal)
+  const alive = useRef(true);
 
   const load = async () => {
     setLoaded(false);
@@ -1182,17 +1185,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // regular lists from card_list_entries. Both carry `quantity` = the goal.
     const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
     for (const c of rows) cardIndex.current.set(c.card_id, c);
-    setQty(new Map(rows.map((r) => [r.card_id, r.quantity])));
+    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
+    qtyRef.current = m; setQty(m);
     setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
     setLoaded(true);
   };
   useEffect(() => {
+    alive.current = true;
     load();
     // Arriving via a "View missing ›" tap on the index opens straight to the list.
     if (list.openMissing) listProgress(list.id).then(setMissing);
     // Owned counts are read-only here: they redraw live as the collection grows.
     const off = subscribeCollection(() => ownedMap().then(setOwnQty));
-    return off;
+    return () => { alive.current = false; off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.id]);
 
@@ -1211,15 +1216,33 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // row. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
   // under optimistic-vs-authoritative drift.
   const persist = (cardId, delta) => {
-    if (!delta) return;
+    if (!delta) return Promise.resolve();
     const pid = activeProfileId();
-    if (isWishlist) enqueueWrite(ownedRowKey(pid, cardId, '', false), () => stepWanted(cardId, delta, pid));
-    else enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
+    return isWishlist
+      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => stepWanted(cardId, delta, pid))
+      : enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
   };
   const clearEntry = (cardId) => {
     const pid = activeProfileId();
-    if (isWishlist) enqueueWrite(ownedRowKey(pid, cardId, '', false), () => setWanted(cardId, 0, pid));
-    else enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
+    return isWishlist
+      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => setWanted(cardId, 0, pid))
+      : enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
+  };
+  // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
+  // accumulate off qtyRef instead of a stale render closure.
+  const applyGoal = (mutate) => { const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
+  // When all in-flight goal writes drain, re-read the authoritative goals from the repo
+  // so a failed or raced write self-heals (mirrors useOwnedLedger's drain reconciliation).
+  const reconcile = async () => {
+    const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
+    if (!alive.current) return;
+    for (const c of rows) cardIndex.current.set(c.card_id, c);
+    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
+    qtyRef.current = m; setQty(m);
+  };
+  const track = (p) => {
+    pendingWrites.current++;
+    p.catch(() => {}).finally(() => { pendingWrites.current--; if (pendingWrites.current === 0) reconcile(); });
   };
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
@@ -1227,15 +1250,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const addStep = (card, delta) => {
     const id = card.card_id;
     cardIndex.current.set(id, card);
-    const next = Math.max(0, (qty.get(id) || 0) + delta);
+    const next = Math.max(0, (qtyRef.current.get(id) || 0) + delta);
     haptic('light');
-    setQty((prev) => { const m = new Map(prev); if (next <= 0) m.delete(id); else m.set(id, next); return m; });
-    persist(id, delta);
+    applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
+    track(persist(id, delta));
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
   function step(cardId, delta) {
-    const cur = qty.get(cardId) || 0;
+    const cur = qtyRef.current.get(cardId) || 0;
     if (delta < 0 && cur <= 1) {
       const c = cardIndex.current.get(cardId);
       setRemoveCard({ card_id: cardId, name: c?.name || 'this card' });
@@ -1243,14 +1266,14 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     }
     haptic('light');
     const next = Math.max(1, cur + delta);
-    setQty((prev) => { const m = new Map(prev); m.set(cardId, next); return m; });
-    persist(cardId, delta);
+    applyGoal((m) => m.set(cardId, next));
+    track(persist(cardId, delta));
   }
   function removeEntry(cardId) {
     setRemoveCard(null);
     haptic('light');
-    setQty((prev) => { const m = new Map(prev); m.delete(cardId); return m; });
-    clearEntry(cardId);
+    applyGoal((m) => m.delete(cardId));
+    track(clearEntry(cardId));
   }
 
   const totals = useMemo(() => {
@@ -1390,9 +1413,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           // ADD each resolved qty onto the list in one state write; persist each as a
           // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
           haptic('light');
-          const m = new Map(qty);
-          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); const next = (m.get(a.card.card_id) || 0) + a.qty; m.set(a.card.card_id, next); persist(a.card.card_id, a.qty); }
-          setQty(m);
+          const m = new Map(qtyRef.current);
+          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
+          qtyRef.current = m; setQty(m);
           const copies = adds.reduce((s, a) => s + a.qty, 0);
           toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
         }} />
