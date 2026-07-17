@@ -44,7 +44,7 @@ function fmtClock(secs) {
     : `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onRecord, onExit, onNewMatch, registerApi }) {
+export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onPersist, onRecord, onExit, onNewMatch, registerApi }) {
   const start = settings.default_max_life || 20; // clamped to <=20 by initSide - matchLife owns the cap
   const quick = mode === 'quick';
 
@@ -230,13 +230,23 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // The Web Wake Lock auto-releases when the app is backgrounded and does NOT
     // re-acquire on return - and the OS restores the status bar. Re-assert both
     // when the match returns to the foreground (the resume flow makes this common).
-    const onVisible = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (settings.keep_awake) setKeepAwake(true);
-      if (settings.immersive) setImmersive(true);
+    // Durably capture the live match the instant the app is backgrounded or torn down,
+    // so an OS kill from the background no longer loses an in-progress game. saveOngoing
+    // (via onPersist) is a synchronous localStorage write, so it completes inside the
+    // hidden/pagehide window with no async flush. Save-only: the match stays open on
+    // screen; App reconciles the snapshot at boot after a real process death.
+    const persist = () => onPersist?.(snapRef.current());
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (settings.keep_awake) setKeepAwake(true);
+        if (settings.immersive) setImmersive(true);
+      } else {
+        persist();
+      }
     };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent); dd.dispose(); document.removeEventListener('visibilitychange', onVisible); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', persist);
+    return () => { clearTimers(); clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent); dd.dispose(); document.removeEventListener('visibilitychange', onVisibility); window.removeEventListener('pagehide', persist); document.body.classList.remove('roll-active', 'grain-off'); setKeepAwake(false); setImmersive(false); registerApi?.(null); };
     // eslint-disable-next-line
   }, []);
 
