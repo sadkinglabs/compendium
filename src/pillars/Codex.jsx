@@ -403,7 +403,10 @@ function AzList({ entries, onOpen }) {
     let cur = '';
     const out = [];
     entries.forEach((it, i) => {
-      const L = it.name.charAt(0).toUpperCase();
+      // Fold diacritics for the section letter so accented initials group under
+      // their base letter (e.g. "Älvalinne" belongs in A, not a lone "Ä" header
+      // that splits the A run - the sort already orders it among the A's).
+      const L = (it.name.charAt(0).normalize('NFD').replace(/[̀-ͯ]/g, '') || it.name.charAt(0)).toUpperCase();
       if (L !== cur) {
         cur = L;
         out.push(

@@ -41,6 +41,42 @@ referenced, local Markdown links resolve, and the documented schema version
 matches `src/store/schema.js`. It supplements semantic documentation review;
 passing the command does not prove that prose and implementation agree.
 
+## Update the catalog
+
+The bundled catalog - cards, rules, FAQs, and card art - is regenerated from a drop
+folder by **one command**. A routine content update needs no code edit.
+
+```bash
+npm run update:catalog              # fetch, build, validate, promote from CATALOG_DROP/
+npm run update:catalog -- --dry-run # build + validate + report, write NOTHING
+npm run update:catalog -- --recover # finish an interrupted promotion from staging
+```
+
+Drop the Curiosa exports into `CATALOG_DROP/` first: the high-res card PNGs, the Codex
+rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header
+`card name,question,answer`). `CATALOG_DROP/README.md` is the non-engineer how-to, and
+nothing in that folder is committed except the README. The command fetches card stats
+from the Curiosa tRPC API and merges them, compiles the two CSVs, converts each
+per-printing PNG to WebP with `sharp`, regenerates `link_graph.json` and the compiled
+Codex documents, and writes `public/catalog/*.json`, the art in `public/cards/`, and the
+seed token `src/store/catalogVersion.json`.
+
+**It is idempotent.** Every stage builds into a staging tree; nothing under `public/` or
+`src/` is touched until the whole generation validates and a journaled promote runs. The
+seed token carries a content hash, so a re-run with unchanged inputs writes nothing and
+does not bump the version - only a real content change re-seeds installed devices. When it
+prints **RESULT: OK**, review `git diff`, then bump the build and add a changelog entry as
+you would for any install (see below).
+
+> **A mid-promotion working tree must never be built or shipped.** If a promote is
+> interrupted it leaves a journal at `.catalog-build/PROMOTE.json`, and every path to a
+> shippable artifact fails closed until it is resolved: `prebuild`, `preandroid`,
+> `precompile:codex`, and `precheck:docs` all run `scripts/assert-no-pending-catalog-promote.mjs`.
+> Recover with one of: **A)** finish it - `npm run update:catalog -- --recover`; or **B)**
+> restore the previous catalog AND clear the journal (both, or the build stays blocked) -
+> `git checkout -- public/catalog public/cards src/store/catalogVersion.json src/store/setCatalog.json`
+> then delete the `.catalog-build` directory (removes `PROMOTE.json` and the staging tree).
+
 ## Version and build number
 
 `package.json` is the **single source** for both:
@@ -252,8 +288,9 @@ drop one without the other.
 aapt2 dump badging <apk> | grep native-code
 ```
 
-**Size is dominated by card art, not code.** `assets/public/cards` is ~44 MB of the 66 MB
-� 1,103 WebP files averaging 41 KB, already compressed, bundled deliberately for the
+**Size is dominated by card art, not code.** `assets/public/cards` is ~72 MB of the ~90 MB
+release APK: ~1,600 WebP files (one per printing) averaging ~46 KB, already compressed,
+bundled deliberately for the
 offline-first constraint. Native libs are ~14 MB. Anyone chasing further size reduction
 should start there and treat it as a product decision (resolution or coverage), not a
 build fix.

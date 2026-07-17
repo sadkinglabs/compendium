@@ -33,7 +33,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 |---|---|---|
 | **Home** | Resume, Overview, Dashboard, saved layouts, and cross-pillar summaries | `src/pillars/Home.jsx`, `src/store/homeRepository.js` |
 | **Codex** | Rules, cards, FAQs, search/browse, reference reading, saved items, marginalia notes, links, and named reference collections | `src/pillars/Codex*.jsx`, `src/store/codexRepository.js` |
-| **Collection** | Owned and wanted cards, printing-aware quantities, custom/wanted lists, bulk and camera entry, and buildability | `src/pillars/Collection.jsx`, `src/store/ownedRepository.js` |
+| **Collection** | Owned and wanted cards, per-set quantities, custom/wanted lists, bulk and camera entry, and buildability | `src/pillars/Collection.jsx`, `src/store/ownedRepository.js` |
 | **Decks** | Deck library, three-zone construction, validation, analysis, sharing, imports, and exports | `src/pillars/Deck*.jsx`, `src/store/deckRepository.js` |
 | **Play** | Match setup, life tracking, in-match log, completed-match journal, history, and match sharing | `src/pillars/Play.jsx`, `src/pillars/LifeCounter.jsx`, `src/store/playRepository.js` |
 | **Application shell** | Profiles, universal search, settings, navigation, transfer, runtime adapters, and cross-pillar coordination | `src/App.jsx`, `src/store/profile*.js`, `src/store/searchRepository.js` |
@@ -50,6 +50,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Search and refine | Debounced search, clear, structured filters, and deterministic results | Shared catalog plus active-profile marginalia state | **Implemented** |
 | Rule/article reading | Structured article and sub-entry content, related references, and navigable internal links | Shared catalog | **Implemented** |
 | Card detail | Art or deterministic fallback, rules text, stats, thresholds, rarity, subtype, set/printing data, and FAQs | Shared catalog | **Implemented** |
+| Per-printing art | On a card with more than one printing, switch the detail hero art and artist credit between its printings; single-printing cards show no switcher | Shared catalog `variants` | **Implemented** |
 | Saved references | Save and remove cards, rules, and supported targets for the active profile | `saved` | **Implemented** |
 | Marginalia | Create, edit, and delete profile-owned notes and links on supported reference targets | `notes`, `links` | **Implemented** |
 | Reference links | Create and manage supported relationships between cards and articles | `links` | **Implemented** |
@@ -73,13 +74,15 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 |---|---|---|---|
 | Overview | Show owned copies, unique cards, wanted quantities, recent activity, and deck buildability | Derived from `owned_cards`, `card_lists`, decks | **Implemented** |
 | My Collection | Browse owned or catalog cards in list and binder views with search and refinement | `owned_cards` + shared `cards` | **Implemented** |
-| Printing-aware ownership | Record owned and wanted quantities for a card printing/variant | `owned_cards` | **Implemented** |
+| Per-set ownership | Record owned copies per set (Alpha and Beta tracked separately) through the card sheet's set picker; the wishlist stays card-level | `owned_cards` | **Implemented** - per-set (v1); see the granularity note below |
 | Read and edit modes | Keep browsing actions distinct from quantity-changing actions | `owned_cards` | **Implemented** |
-| Bulk entry | Parse supported card text, report unresolved cards, and apply valid quantities | `owned_cards` | **Implemented** |
+| Bulk entry | Paste card text, then review a resolved preview before committing: single-set cards auto-file to their set, multi-set (reprinted) cards get a set toggle defaulting to Unspecified, and unrecognised names are listed and skipped | `owned_cards` | **Implemented** |
 | Camera-assisted entry | Scan cards, resolve candidates, and require a deliberate ownership update | `owned_cards` | **Implemented** |
 | Custom lists | Create, rename, duplicate, populate, export, and delete named card lists | `card_lists`, `card_list_entries` | **Implemented** |
 | Wanted lists | Track target quantities and acquisition progress against owned quantities | `card_lists`, `card_list_entries`, `owned_cards` | **Implemented** |
 | Deck buildability | Report completeness and per-card shortfalls without reserving inventory | Derived from `owned_cards`, `deck_entries` | **Implemented** |
+
+> **Ownership granularity is per set (v1), not per exact printing.** Copies are tracked against a set bucket, so Alpha and Beta of a card are distinct, but two printings that share one set are not. 22 cards have multiple distinct printings within a single set (for example, Avatar of Fire has two Alpha printings; Sorcerer has three Promotional printings); the set picker cannot distinguish these and shows one representative art per set. This is a known, documented limitation for 1.0.2. Deck-building and play are unaffected, since they compare by card rather than printing. Exact-printing ownership is a planned future increment.
 
 ### 3.2 Invariants
 

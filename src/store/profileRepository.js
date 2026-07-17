@@ -17,6 +17,9 @@ export function activeProfileId() {
   return activeId;
 }
 
+// Test-only: pin the active profile id without initProfiles()/Preferences.
+export function __setActiveIdForTests(id) { activeId = id; }
+
 /** Resolve (or create) the active profile on boot. Guarantees >=1 profile and
  *  EXACTLY one default (the is_default flag is the deletion shield - asserted
  *  every boot so it can never be lost to migrations or imports). */

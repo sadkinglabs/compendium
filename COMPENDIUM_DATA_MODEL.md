@@ -95,6 +95,8 @@ cards(
 
 `card_id` is the durable identity used by profile data. Display names are searchable and import-friendly but are not durable foreign keys.
 
+`variants` holds one entry per physical printing: `{ slug, set, setName, finish, product, artist, flavorText, image }`. `image` is the bundled per-printing WebP (the finish-stripped base name), or `null` for a printing with no bundled art. No external image URL is stored - art is bundled for the offline-first constraint. `sets` is the card-level distinct-set list, each `{ name, code }`. Set codes: `001` Alpha, `002` Beta, `004` Arthurian Legends, `005` Dragonlord, `006` Gothic, `999` Promotional (there is no `003`). **Set metadata is data-derived, not hardcoded:** the pipeline writes the code-to-name map to `src/store/setCatalog.json`, and `src/store/sets.js` reads those names while deriving display order from the numeric code (sequential by design). A new set therefore needs no source edit - its name arrives with its cards and its order slots in by code.
+
 ### Rules and relationships
 
 ```sql
@@ -105,6 +107,14 @@ catalog_meta(key PRIMARY KEY, value)
 ```
 
 `rules.parent_id` distinguishes top-level articles from sub-entries. `link_graph` supports indexed source and target lookups. `catalog_meta` stores catalog and application seed metadata; callers must namespace keys to avoid collisions.
+
+### Catalog versioning and reseed
+
+The shared catalog is bundled reference data that is reseeded whole when its content changes. `src/store/catalogVersion.json` is a generated `{ version, hash }` token: `version` is a human-facing integer (currently **5**), and `hash` is a SHA-256 over the exact serialised generation (cards, articles, FAQs, link graph, the sorted image manifest, and the compiled Codex build hash). `src/store/catalog.js` imports it as `CATALOG_VERSION`.
+
+On boot, the seeder compares `catalog_meta.version` against `CATALOG_VERSION` by **string equality**, not ordering. On a mismatch it clears and reloads `cards`, `rules`, `faqs`, and `link_graph` in one atomic `tx()`, then writes the new token; a matching token is a warm boot that does nothing. No profile-owned table is touched by a reseed, and `card_id` stays `cardSlug(name)` across generations, so `owned_cards.card_id`, `deck_entries.card_id`, and marginalia targets keep resolving with no migration when the catalog is replaced.
+
+The token is written by the catalog-update pipeline (`npm run update:catalog`, see `BUILD.md`), never by hand, and the pipeline only bumps `version` when the content hash actually changes. A routine content update therefore edits no source, and an unchanged catalog never re-seeds. This is a content-generation mechanism, not schema evolution: `SCHEMA_VERSION` is unaffected by a catalog update.
 
 ## 5. Profiles and settings
 
@@ -188,6 +198,21 @@ card_list_entries(
   UNIQUE(list_id, card_id, variant_slug)
 )
 ```
+
+### The `owned_cards.variant_slug` vocabulary
+
+`variant_slug` records *which set* a copy belongs to. Ownership is per set (v1), so a card's copies are spread across one row per bucket it is owned in; the `UNIQUE(profile_id, card_id, variant_slug)` key and every `ON CONFLICT` upsert key on that triple.
+
+| `variant_slug` | Meaning |
+|---|---|
+| `''` | Unspecified - owned without a recorded set. The wishlist (`qty_wanted`) lives only on this row |
+| `'foil'` | legacy card-level foil, no recorded set |
+| `'<code>'`, e.g. `'001'` | owned in that set (Alpha) |
+| `'<code>:f'`, e.g. `'001:f'` | that set's foil |
+
+**Foil classification recognises both forms.** A copy is foil when `variant_slug = 'foil'` OR `variant_slug LIKE '%:f'`. Foil-sensitive card-level aggregates (`ownWantMap`, `qtyFor`, `recentlyAdded`) must honour both, or a per-set foil reads as a regular copy and the card view disagrees with the set view. `ownedMap` and buildability sum `qty_owned` across every row regardless of set or finish, so the per-set key never affects ownership totals or deck comparison.
+
+**Single-set boot backfill.** `backfillSingleSetOwned()` (run once per boot from `App.jsx`) moves owned copies out of the `''` bucket onto their set row for any card that exists in exactly one set, where the printing is then unambiguous. It runs in one transaction that adds the exact quantity to the set row and subtracts that same quantity from `''` (subtract-exact, not blind-delete), so a copy added to `''` concurrently - a scanner scan mid-boot - is not lost; any leftover stays in `''` for the next pass, and the `''` row is deleted only once it fully drains (preserving a wishlist that lives on it). Multi-set cards (Alpha/Beta reprints) stay Unspecified because the printing is not knowable from the name. The backfill is idempotent and forward-only: an app-level data canonicalisation, not schema evolution - it makes no `SCHEMA_VERSION` bump and adds no `MIGRATIONS` entry.
 
 Collection invariants:
 

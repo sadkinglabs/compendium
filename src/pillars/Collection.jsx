@@ -12,10 +12,12 @@ import { isTokenCard } from '../store/tokens.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   ownedBySet, qtyForInSet, setOwnedInSet,
-  deckBuildabilityBulk, subscribeCollection, importCollectionText, exportListText,
+  deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
+import { SET_LABEL, SET_RANK } from '../store/sets.js';
+import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
@@ -117,37 +119,123 @@ function Tile({ label, value, sub, onClick }) {
 // Bulk add via pasted text - the deck "Import from text" format ("4 Card Name"
 // lines; headers ignored), imintegrated into the OWNERSHIP ledger (adds copies on
 // top of what's recorded, never overwrites).
+// Two steps: PASTE a "qty name" list, then REVIEW - single-set cards file to their
+// one set automatically; reprinted (multi-set) cards get a set toggle (default
+// Unspecified, so nothing is mis-filed); unrecognised names are listed and skipped.
+// Confirm writes each line into its chosen set in one transaction.
 function ImportTextSheet({ open, onClose }) {
+  const [step, setStep] = useState('paste');     // 'paste' | 'review'
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setText(''); setBusy(false); } }, [open]);
-  const go = async () => {
+  const [preview, setPreview] = useState(null);  // { single, multi, unresolved }
+  const [choice, setChoice] = useState({});      // card_id -> setCode ('' = Unspecified)
+  useEffect(() => { if (open) { setStep('paste'); setText(''); setBusy(false); setPreview(null); setChoice({}); } }, [open]);
+
+  const review = async () => {
     if (!text.trim() || busy) return;
     setBusy(true);
     try {
-      const r = await importCollectionText(text);
-      toast(r.names
-        ? `Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}${r.unresolved ? ` · ${r.unresolved} unrecognised` : ''}`
-        : 'No cards recognised in that text.', r.names ? undefined : { tone: 'danger' });
-      if (r.names) onClose();
-      else setBusy(false);
-    } catch { toast("Couldn't import that text.", { tone: 'danger' }); setBusy(false); }
+      const { items, unresolved } = await previewCollectionText(text);
+      if (!items.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
+      const single = items.filter((i) => i.sets.length === 1);
+      const multi = items.filter((i) => i.sets.length !== 1);   // 0 or 2+ sets need a choice
+      const ch = {}; for (const i of multi) ch[i.card_id] = '';  // default Unspecified
+      setChoice(ch); setPreview({ single, multi, unresolved }); setStep('review'); setBusy(false);
+    } catch { toast("Couldn't read that text.", { tone: 'danger' }); setBusy(false); }
   };
+
+  const confirm = async () => {
+    if (busy || !preview) return;
+    setBusy(true);
+    try {
+      const items = [
+        ...preview.single.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: i.sets[0].code })),
+        ...preview.multi.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: choice[i.card_id] || '' })),
+      ];
+      const r = await importCollectionResolved(items);
+      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}`);
+      onClose();
+    } catch { toast("Couldn't import.", { tone: 'danger' }); setBusy(false); }
+  };
+
+  const nSingle = preview?.single.length || 0;
+  const nMulti = preview?.multi.length || 0;
+  const nBad = preview?.unresolved.length || 0;
+  const totalCopies = preview ? [...preview.single, ...preview.multi].reduce((s, i) => s + i.qty, 0) : 0;
+  const sectionHead = (color, label) => <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color, margin: '2px 0 8px' }}>{label}</div>;
+
   return (
     <BottomSheet open={open} title="IMPORT TO COLLECTION" onClose={onClose}>
-      <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
-        Paste a list of cards - one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>.
-        Deck exports work too. Copies are ADDED to what you already own.
-      </div>
-      <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
-        placeholder={'4 Wild Boars\n2 Abundance\n1 Grim Reaper…'}
-        style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
-      <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-        <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
-        <button onClick={go} disabled={!text.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text.trim() && !busy ? 1 : 0.5 }}>
-          {busy ? 'Importing…' : 'Import'}
-        </button>
-      </div>
+      {step === 'paste' ? (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            Paste a list of cards - one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>4 Wild Boars</span>.
+            Deck exports work too. Copies are ADDED to what you already own.
+          </div>
+          <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
+            placeholder={'4 Wild Boars\n2 Abundance\n1 Grim Reaper…'}
+            style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+            <button onClick={review} disabled={!text.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text.trim() && !busy ? 1 : 0.5 }}>
+              {busy ? 'Reading…' : 'Review'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            {totalCopies} cop{totalCopies === 1 ? 'y' : 'ies'} across {nSingle + nMulti} card{nSingle + nMulti === 1 ? '' : 's'}.{nMulti > 0 ? ' Pick a set for the reprinted cards.' : ''}
+          </div>
+          <div style={{ maxHeight: '46vh', overflowY: 'auto' }} className="cx-scroll">
+            {nMulti > 0 && (
+              <div style={{ marginBottom: nSingle || nBad ? 16 : 0 }}>
+                {sectionHead('var(--gold-leaf)', 'CHOOSE A SET')}
+                {preview.multi.map((i) => (
+                  <div key={i.card_id} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                      <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
+                      <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{i.qty}</span>
+                    </div>
+                    <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+                      <SegTabs ariaLabel={`Set for ${i.name}`}
+                        value={choice[i.card_id] === '' ? '__unspec__' : choice[i.card_id]}
+                        onChange={(k) => setChoice((m) => ({ ...m, [i.card_id]: k === '__unspec__' ? '' : k }))}
+                        options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: 'Unspecified' }]} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {nSingle > 0 && (
+              <div style={{ marginBottom: nBad ? 16 : 0 }}>
+                {sectionHead('var(--ink-muted)', `FILES AUTOMATICALLY · ${nSingle}`)}
+                {preview.single.map((i) => (
+                  <div key={i.card_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair-12)' }}>
+                    <span style={{ flex: 1, minWidth: 0, font: "500 13px/1.2 var(--f-read)", color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
+                    <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: '#c9b487' }}>{i.sets[0].name}</span>
+                    <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>×{i.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {nBad > 0 && (
+              <div>
+                {sectionHead('var(--destructive)', `SKIPPED · NOT RECOGNISED · ${nBad}`)}
+                {preview.unresolved.map((name, idx) => (
+                  <div key={idx} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '3px 0' }}>{name}</div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>‹ Back</button>
+            <button onClick={confirm} disabled={busy} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy ? 0.5 : 1 }}>
+              {busy ? 'Importing…' : `Import ${totalCopies}`}
+            </button>
+          </div>
+        </>
+      )}
     </BottomSheet>
   );
 }
@@ -309,8 +397,6 @@ const wishlistRef = () => ({ id: WISHLIST_ID, kind: 'wishlist', name: 'Wishlist'
 
 // Curiosa's numeric set model (catalog v2). Labels + a fixed display order; the
 // trailing '' bucket is legacy / set-unspecified owned rows (variant_slug ''|'foil').
-const SET_LABEL = { '001': 'Alpha', '002': 'Beta', '004': 'Arthurian Legends', '005': 'Dragonlord', '006': 'Gothic', '999': 'Promotional', '': 'Unspecified' };
-const SET_RANK = { '001': 0, '002': 1, '004': 2, '005': 3, '006': 4, '999': 5, '': 6 };
 const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 
 // My Collection ownership filter (multi-select). Empty = the mode default
@@ -405,7 +491,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
   async function loadPool() {
     const parsed = parseQuery(q);
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
+    // 'Unspecified' is an ownership bucket, not a printed set - keep it out of the
+    // catalog pool query (it would match no card and empty the pool); grouping applies it.
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: poolSetFilter(sets), multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
     const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
@@ -462,67 +550,17 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     return m;
   }, [owBySet]);
 
-  const groups = useMemo(() => {
-    const g = new Map();   // code -> { code, name, rows:[{card,set,owned,foil}] }
-    const push = (code, name, row) => {
-      let x = g.get(code);
-      if (!x) { x = { code, name: name || SET_LABEL[code] || code, rows: [] }; g.set(code, x); }
-      x.rows.push(row);
-    };
-    // Ownership filter: when set it decides what shows (owned / not-owned / wishlisted
-    // union); when empty, fall back to the mode default (read = owned only, add = all).
-    const chip = (isOwned, isWish) => (ownScope.includes('owned') && isOwned)
-      || (ownScope.includes('unowned') && !isOwned)
-      || (ownScope.includes('wishlist') && isWish);
-    const matches = (isOwned, isWish) => {
-      // +Add shows the WHOLE catalogue (owned + unowned) so anything is addable; the
-      // Refine ownership chips can still narrow it. The read-view lens has no say here.
-      if (editMode) return ownActive ? chip(isOwned, isWish) : true;
-      // Read view: the lens decides (Owned default / All / Not owned); within 'all',
-      // the Refine chips refine further.
-      if (viewMode === 'owned') return isOwned;
-      if (viewMode === 'unowned') return !isOwned;
-      return ownActive ? chip(isOwned, isWish) : true;   // 'all'
-    };
-    for (const c of (pool || [])) {
-      const isWish = wishSet.has(c.card_id);
-      for (const s of (c._sets || [])) {
-        if (!s.code) continue;
-        // The SET filter is per-PRINTING here: a card printed in both Alpha and Beta,
-        // filtered to Beta, shows only its Beta row (not the Alpha one too).
-        if (sets.length && !sets.includes(s.name)) continue;
-        const oc = owBySet.get(c.card_id + '|' + s.code);
-        const owned = oc?.owned || 0, foil = oc?.foil || 0;
-        if (!matches(owned + foil > 0, isWish)) continue;
-        push(s.code, s.name, { card: c, set: s.code, owned, foil });
-      }
-    }
-    // Legacy / set-unspecified owned rows (variant_slug ''|'foil' -> empty set). These
-    // are always owned, so they surface in the default read view or an owned/wishlist
-    // filter - but never when the user has narrowed to specific SET(s), since '' is none.
-    // Legacy '' owned rows are always owned: they belong wherever owned cards show
-    // (+Add "all", read Owned, read All), never under the read "Not owned" lens.
-    const wantLegacy = sets.length === 0 && (
-      editMode ? true
-        : viewMode === 'unowned' ? false
-          : viewMode === 'owned' ? true
-            : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : true));   // read 'all'
-    if (wantLegacy) {
-      const byId = new Map((pool || []).map((c) => [c.card_id, c]));
-      for (const [k, v] of owBySet) {
-        const i = k.lastIndexOf('|');
-        if (k.slice(i + 1) !== '') continue;
-        if ((v.owned || 0) + (v.foil || 0) === 0) continue;
-        const card = byId.get(k.slice(0, i));
-        if (!card) continue;
-        // Read 'all' with active Refine chips still narrows; +Add and the owned lens
-        // already decided inclusion above.
-        if (!editMode && viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
-        push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
-      }
-    }
-    return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
-  }, [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
+  // Offer an "Unspecified" chip in the Sets filter ONLY when you own set-less cards -
+  // it isolates them for filing. Read view only: in +Add the Sets filter is a catalog
+  // dimension (printed sets), where an ownership bucket does not belong; entering +Add
+  // also strips a stale "Unspecified" selection so it can never get stuck on.
+  const hasUnspecOwned = (ownedPerSet.get('') || 0) > 0;
+  const setFilterOpts = (!editMode && hasUnspecOwned) ? [...setOpts, 'Unspecified'] : setOpts;
+  useEffect(() => { if (editMode) setSets((s) => (s.includes('Unspecified') ? s.filter((x) => x !== 'Unspecified') : s)); }, [editMode]);
+
+  const groups = useMemo(() => groupCollection({
+    pool, owBySet, wishSet, sets, editMode, viewMode, ownScope, ownActive, setLabel: SET_LABEL, setRank,
+  }), [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
 
   const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
 
@@ -572,16 +610,20 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
                     // inflated the tracks to 240px (tiles overflowed + resized between
                     // lenses). Pinning the min to 0 keeps every tile at a true 50%.
                     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
-                      {grp.rows.map((r) => (
-                        <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
-                          onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                      {grp.rows.map((r, i) => (
+                        <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
+                          <BinderTile card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
+                            onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                        </div>
                       ))}
                     </div>
                   ) : (
-                    grp.rows.map((r) => (
-                      <LedgerRow key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={grp.name}
-                        owned={r.owned} foil={r.foil} value={r.owned + r.foil}
-                        onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                    grp.rows.map((r, i) => (
+                      <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
+                        <LedgerRow card={r.card} set={r.set} setLabel={grp.name}
+                          owned={r.owned} foil={r.foil} value={r.owned + r.foil}
+                          onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                      </div>
                     ))
                   ))}
                 </div>
@@ -627,7 +669,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
         )}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
-        sets={sets} setSets={setSets} setOpts={setOpts}
+        sets={sets} setSets={setSets} setOpts={setFilterOpts}
         thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         sort={sort} setSort={setSort} />

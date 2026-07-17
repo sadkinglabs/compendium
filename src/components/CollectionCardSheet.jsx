@@ -6,13 +6,14 @@
 // pair of actions (add-to-list · open in Codex). No rule text; no decorative
 // glyphs but the Foil ✦. Behaviour (open/close, hardware-back, drag-to-dismiss,
 // the ledger writes) is unchanged - this is a presentational restructure.
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import GothicSheet from './GothicSheet.jsx';
-import { Loading, ThresholdPips } from './ui.jsx';
+import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
-import { listCardLists, listsWithCard, stepListEntry } from '../store/ownedRepository.js';
+import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection } from '../store/ownedRepository.js';
+import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
 
@@ -186,11 +187,68 @@ export function SheetArt({ c }) {
 // `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
 // distinct cards in the collection, so tapping the Alpha row edits only Alpha.
 function CardBody({ c, onOpenCodex, onPick, editable, set }) {
-  const { qty, step } = useOwnedLedger(c.card_id, set || null);
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
+  const variants = jp(c.variants, []) || [];
   const runs = thresholdRuns(c);
-  const setName = (set && sets.find((s) => s.code === set)?.name) || sets[0]?.name;
+
+  // Per-set ownership (incl '' Unspecified) for the picker's counts + smart default.
+  const [ownedSets, setOwnedSets] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => ownedSetsForCard(c.card_id).then((m) => { if (alive) setOwnedSets(m); });
+    load();
+    const unsub = subscribeCollection(load);
+    return () => { alive = false; unsub(); };
+  }, [c.card_id]);
+
+  // Options: the card's real sets (rank order) + an "Unspecified" segment ONLY when
+  // set-less copies exist (legacy adds / multi-set bulk imports the backfill leaves).
+  const ranked = [...sets].sort((a, b) => (SET_RANK[a.code] ?? 4.5) - (SET_RANK[b.code] ?? 4.5));
+
+  // Whether the Unspecified segment shows is decided ONCE, the first time this sheet
+  // sees the card's ownership, and stays fixed until the sheet closes: filing its
+  // copies down to 0 must not yank the segment out from under the thumb mid-edit
+  // (that snapped the selection to another set and caused misfires). Reopening the
+  // sheet re-decides, so a bucket emptied to 0 is gone next time.
+  const [showUnspec, setShowUnspec] = useState(false);
+  useEffect(() => {
+    if (!showUnspec && ownedSets) {
+      const u = ownedSets.get('');
+      if (((u?.owned || 0) + (u?.foil || 0)) > 0) setShowUnspec(true);
+    }
+  }, [ownedSets, showUnspec]);
+  const options = [...ranked.map((s) => ({ code: s.code, name: s.name })), ...(showUnspec ? [{ code: '', name: 'Unspecified' }] : [])];
+
+  // The SELECTED set is user state, fixed once - NEVER re-derived from ownership
+  // counts. (Deriving it from "the set you own the most of" made reducing one set's
+  // count flip the selection to whatever set now had the most copies - a snap
+  // mid-edit.) Start from the set the sheet opened on; if it opened without one
+  // (Codex/search), pick a smart default ONCE when ownership first loads.
+  const [sel, setSel] = useState(set ?? null);
+  const inited = useRef(sel != null);
+  useEffect(() => {
+    if (inited.current || ownedSets == null) return;
+    inited.current = true;
+    let best = null, n = 0;
+    for (const [code, v] of ownedSets) { const t = (v.owned || 0) + (v.foil || 0); if (t > n) { n = t; best = code; } }
+    setSel(best ?? ranked[0]?.code ?? '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownedSets]);
+  const effSet = sel ?? ranked[0]?.code ?? '';
+  const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Unspecified) is a real bucket - do NOT `|| null`
+
+  // Art follows the active printing (Unspecified -> the card's default art).
+  const imageForSet = (code) => {
+    if (!code) return c.image_slug;
+    const vs = variants.filter((v) => v.set === code && v.image);
+    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.image ?? c.image_slug;
+  };
+  const artCard = { ...c, image_slug: imageForSet(effSet) };
+
+  // SegTabs keys avoid an empty-string key for the Unspecified option.
+  const KEY = (code) => (code === '' ? '__unspec__' : code);
+  const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === '' ? 'Unspecified' : ranked[0]?.name);
   const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
   const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
   // Meta row: rarity + type sit together (the type moved down off the header),
@@ -204,10 +262,24 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
 
   return (
     <>
-      {/* Header slot: the set pill (was the type eyebrow; the type moved to meta). */}
-      {setName && <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>}
+      {/* Set picker - drives the art AND which set the Owned/Foil steppers edit.
+          Single-set cards show a plain set pill instead. Wishlist stays card-level. */}
+      {options.length > 1 ? (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+            <SegTabs ariaLabel="Printing"
+              value={KEY(effSet)} onChange={(k) => setSel(k === '__unspec__' ? '' : k)}
+              options={options.map((o) => {
+                const t = (ownedSets?.get(o.code)?.owned || 0) + (ownedSets?.get(o.code)?.foil || 0);
+                return { key: KEY(o.code), label: t > 0 ? `${o.name} ·${t}` : o.name };
+              })} />
+          </div>
+        </div>
+      ) : setName ? (
+        <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>
+      ) : null}
 
-      <SheetArt c={c} />
+      <SheetArt c={artCard} />
 
       <div style={{ font: "700 27px/1.1 var(--f-display)", color: '#efe7d8', textAlign: 'center', marginTop: 20 }}>{c.name}</div>
 

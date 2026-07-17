@@ -25,6 +25,12 @@ function bump() { _rev++; for (const cb of [..._subs]) { try { cb(_rev); } catch
 
 /* ---------------- ownership reads ---------------- */
 
+// A foil copy lives on either the legacy card-level 'foil' row OR a per-set
+// '<code>:f' row (e.g. '001:f', written by the set picker). Foil-sensitive
+// aggregates MUST recognise both; matching only 'foil' miscounts a set foil as a
+// regular copy at the card level (the card view and the set view then disagree).
+const isFoil = (col = 'variant_slug') => `(${col}='foil' OR ${col} LIKE '%:f')`;
+
 // Map<card_id, totalOwned> - THE aggregation across printings, one indexed GROUP
 // BY. Optionally narrowed to a set of card_ids. This is the only ownership read
 // the engine ever needs; no caller aggregates itself.
@@ -44,8 +50,8 @@ export async function ownWantMap() {
   const pid = activeProfileId();
   const rows = await query(
     `SELECT card_id,
-            SUM(CASE WHEN variant_slug='foil' THEN 0 ELSE qty_owned END) o,
-            SUM(CASE WHEN variant_slug='foil' THEN qty_owned ELSE 0 END) f,
+            SUM(CASE WHEN ${isFoil()} THEN 0 ELSE qty_owned END) o,
+            SUM(CASE WHEN ${isFoil()} THEN qty_owned ELSE 0 END) f,
             SUM(qty_wanted) w
      FROM owned_cards WHERE profile_id=? GROUP BY card_id;`, [pid]);
   return new Map(rows.map((r) => [r.card_id, { owned: r.o || 0, foil: r.f || 0, wanted: r.w || 0 }]));
@@ -56,8 +62,8 @@ export async function ownWantMap() {
 export async function qtyFor(cardId) {
   const pid = activeProfileId();
   const r = (await query(
-    `SELECT SUM(CASE WHEN variant_slug='foil' THEN 0 ELSE qty_owned END) o,
-            SUM(CASE WHEN variant_slug='foil' THEN qty_owned ELSE 0 END) f,
+    `SELECT SUM(CASE WHEN ${isFoil()} THEN 0 ELSE qty_owned END) o,
+            SUM(CASE WHEN ${isFoil()} THEN qty_owned ELSE 0 END) f,
             SUM(qty_wanted) w
      FROM owned_cards WHERE profile_id=? AND card_id=?;`, [pid, cardId]))[0];
   return { owned: r?.o || 0, foil: r?.f || 0, wanted: r?.w || 0 };
@@ -128,7 +134,10 @@ function parseVslug(slug) {
   const foil = slug.endsWith(':f');
   return { set: foil ? slug.slice(0, -2) : slug, foil };          // '' stays unspecified
 }
-const vslug = (set, foil) => (foil ? set + ':f' : set);
+// Foil slug: a named set's foil is "<code>:f" (e.g. "001:f"); the Unspecified
+// bucket's foil is the legacy card-level "foil" row (what setFoil/qtyFor/ownWantMap
+// read), NOT ":f" - so an Unspecified foil reads and writes the same row everywhere.
+const vslug = (set, foil) => (foil ? (set ? set + ':f' : 'foil') : set);
 
 // Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.
 export async function ownedBySet() {
@@ -141,6 +150,21 @@ export async function ownedBySet() {
     const cur = m.get(key) || { owned: 0, foil: 0 };
     cur[foil ? 'foil' : 'owned'] += r.qty_owned;
     m.set(key, cur);
+  }
+  return m;
+}
+
+// Every set bucket a card is owned in (incl '' Unspecified), for the card sheet's
+// set picker: Map<setCode, { owned, foil }>. Same parse as ownedBySet, one card.
+export async function ownedSetsForCard(cardId) {
+  const pid = activeProfileId();
+  const rows = await query('SELECT variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND qty_owned>0;', [pid, cardId]);
+  const m = new Map();
+  for (const r of rows) {
+    const { set, foil } = parseVslug(r.variant_slug);
+    const cur = m.get(set) || { owned: 0, foil: 0 };
+    cur[foil ? 'foil' : 'owned'] += r.qty_owned;
+    m.set(set, cur);
   }
   return m;
 }
@@ -216,49 +240,85 @@ export async function backfillSingleSetOwned() {
   const catRows = await query('SELECT card_id, sets FROM cards;');
   const setsById = new Map();
   for (const r of catRows) { try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ } }
+  const now = nowIso();
+  const stmts = [];
   let moved = 0;
   for (const r of rows) {
     const sets = setsById.get(r.card_id) || [];
     if (sets.length !== 1 || !sets[0]?.code) continue;   // multi-set / unknown -> leave in Unspecified
-    await addOwnedCopiesInSet(r.card_id, sets[0].code, r.qty_owned);
-    // Clear the '' owned, preserving any wishlist (qty_wanted) that also lives there.
-    if ((r.qty_wanted || 0) > 0) await run("UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE profile_id=? AND card_id=? AND variant_slug='';", [nowIso(), pid, r.card_id]);
-    else await run("DELETE FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [pid, r.card_id]);
+    // Fold the legacy '' owned onto the single set row AND remove exactly that many
+    // from '' in the SAME transaction, so an interruption can never re-add on the
+    // next boot (all-or-nothing). Subtract the EXACT moved amount (not a blind
+    // zero/delete) so a copy added to '' concurrently - a scanner scan mid-boot - is
+    // not lost; the leftover stays in '' and is handled next pass. Delete the '' row
+    // only once fully drained, preserving any wishlist that lives on it.
+    stmts.push([
+      `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+       VALUES(?,?,?,?,?,0,'',?,?)
+       ON CONFLICT(profile_id,card_id,variant_slug)
+       DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+      [uuid(), pid, r.card_id, sets[0].code, r.qty_owned, now, now],
+    ]);
+    stmts.push([
+      "UPDATE owned_cards SET qty_owned=MAX(0, qty_owned-?), updated_at=? WHERE profile_id=? AND card_id=? AND variant_slug='';",
+      [r.qty_owned, now, pid, r.card_id],
+    ]);
+    stmts.push([
+      "DELETE FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='' AND qty_owned=0 AND qty_wanted=0;",
+      [pid, r.card_id],
+    ]);
     moved++;
   }
-  if (moved) bump();
+  if (stmts.length) { await tx(stmts); bump(); }
   return moved;
 }
 
-// Bulk text import: any "qty name" text (a deck export, a Curiosa list, a typed
-// inventory) ADDS regular copies to the ledger. Reuses the deck text parser -
-// zone headers are ignored (everything flattens into one add-list, the avatar
-// line included; an avatar you own is a card you own). One tx, one bump.
-// Returns { copies, names, unresolved }.
-export async function importCollectionText(text) {
+// PREVIEW a bulk import without writing: resolve each "qty name" line to a card and
+// its sets, merging duplicate names. The import review sheet uses this to let the
+// user pick a printing for multi-set cards before committing. Returns
+// { items: [{ card_id, name, qty, sets:[{code,name}] }], unresolved: [name] }.
+export async function previewCollectionText(text) {
   const { avatar, zones } = parseDeckText(text);
   const lines = [...zones.spellbook, ...zones.atlas, ...zones.collection];
   if (avatar) lines.push({ name: avatar, qty: 1 });
+  const byName = new Map();   // lower(name) -> { name, qty }
+  for (const { name, qty } of lines) {
+    const key = String(name).toLowerCase();
+    byName.set(key, { name, qty: (byName.get(key)?.qty || 0) + Math.max(1, qty | 0) });
+  }
+  const items = [];
+  const unresolved = [];
+  for (const { name, qty } of byName.values()) {
+    const c = (await query('SELECT card_id, name, sets FROM cards WHERE lower(name)=? LIMIT 1;', [name.toLowerCase()]))[0];
+    if (!c) { unresolved.push(name); continue; }
+    let sets = []; try { sets = JSON.parse(c.sets || '[]'); } catch { /* leave empty */ }
+    items.push({ card_id: c.card_id, name: c.name, qty, sets: Array.isArray(sets) ? sets : [] });
+  }
+  return { items, unresolved };
+}
+
+// Commit a reviewed import: each item files its copies into a chosen bucket. setCode
+// '' (or falsy) = the Unspecified bucket; a set code files that printing. One tx.
+export async function importCollectionResolved(items) {
   const pid = activeProfileId();
   const now = nowIso();
   const stmts = [];
-  let unresolved = 0, copies = 0, names = 0;
-  for (const { name, qty } of lines) {
-    const n = Math.max(1, qty | 0);
-    const c = (await query('SELECT card_id FROM cards WHERE lower(name)=? LIMIT 1;', [name.toLowerCase()]))[0];
-    if (!c) { unresolved++; continue; }
+  let copies = 0, names = 0;
+  for (const { card_id, qty, setCode } of items || []) {
+    const n = Math.max(0, qty | 0);
+    if (!card_id || n <= 0) continue;
     names++; copies += n;
     stmts.push([
       `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
        VALUES(?,?,?,?,?,0,'',?,?)
        ON CONFLICT(profile_id,card_id,variant_slug)
        DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-      [uuid(), pid, c.card_id, '', n, now, now],
+      [uuid(), pid, card_id, setCode || '', n, now, now],
     ]);
   }
   if (stmts.length) await tx(stmts);
   bump();
-  return { copies, names, unresolved };
+  return { copies, names };
 }
 
 // Add a shortfall to the general Wishlist. MAX (not +=) so re-running a deck's
@@ -488,8 +548,8 @@ export async function recentlyAdded(limit = 8) {
   const pid = activeProfileId();
   return query(
     `SELECT o.card_id,
-            SUM(CASE WHEN o.variant_slug='foil' THEN 0 ELSE o.qty_owned END) qty_owned,
-            SUM(CASE WHEN o.variant_slug='foil' THEN o.qty_owned ELSE 0 END) qty_foil,
+            SUM(CASE WHEN ${isFoil('o.variant_slug')} THEN 0 ELSE o.qty_owned END) qty_owned,
+            SUM(CASE WHEN ${isFoil('o.variant_slug')} THEN o.qty_owned ELSE 0 END) qty_foil,
             SUM(o.qty_wanted) qty_wanted,
             (SELECT o2.variant_slug FROM owned_cards o2
              WHERE o2.profile_id=o.profile_id AND o2.card_id=o.card_id AND o2.qty_owned>0

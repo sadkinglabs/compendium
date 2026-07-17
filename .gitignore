@@ -15,3 +15,31 @@ dist-apk/
 
 # Firebase project config (client keys; keep out of history)
 android/app/google-services.json
+
+# Catalog drop folder: gigabytes of source PNGs/CSVs, never in history.
+# Only the README (the drop how-to) is tracked.
+CATALOG_DROP/*
+!CATALOG_DROP/README.md
+
+# Catalog pipeline staging + promotion journal (build-time scratch).
+.catalog-build/
+
+# Distribution screenshots (generated, not tracked)
+dist-shots/
+
+# Android SIGNING SECRETS - never commit. build.gradle reads keystore.properties
+# for the release keystore path + passwords; leaking it lets anyone sign as this app.
+android/keystore.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Machine-specific - a collaborator generates their own (SDK path, IDE metadata).
+local.properties
+android/local.properties
+.idea/
+*.iml
+.gradle/
+
+# Transient review scaffolds
+CODEX-*.md

@@ -5,7 +5,7 @@
 import { Capacitor } from '@capacitor/core';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 
-const BASE = import.meta.env.BASE_URL;
+const BASE = import.meta.env?.BASE_URL;   // optional: undefined under node --test (BASE only used by the web backend, which tests never open)
 const isWeb = Capacitor.getPlatform() === 'web';
 
 let backend = null;
@@ -50,6 +50,10 @@ export const run = (sql, params = []) => backend.run(sql, params);
 export const exec = (sql) => backend.exec(sql);
 export const tx = (statements) => backend.tx(statements);
 export const persist = () => backend.persist();
+
+// Test-only: inject a backend (a bare sql.js wrapper) so the store layer can run in
+// `node --test` without Capacitor/Vite. NEVER called by app code.
+export function __setBackendForTests(b) { backend = b; }
 
 /* ------------------------------------------------------------------ */
 /* web backend: sql.js + IndexedDB                                     */

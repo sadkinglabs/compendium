@@ -26,6 +26,19 @@ function firstSetName(card) {
   try { const s = JSON.parse(card?.sets || '[]'); return (Array.isArray(s) && s[0]?.name) || null; } catch { return null; }
 }
 
+// The art for a specific printing (set code): a card shown in its Promo / Beta tile
+// wears THAT printing's illustration, not the default (lowest-set) art. Unspecified
+// ('' / null) keeps the default. Standard finish preferred; falls back to any scan.
+function artForSet(card, set) {
+  if (!set) return card;
+  const vs = Array.isArray(card?._variants)
+    ? card._variants
+    : (() => { try { return JSON.parse(card?.variants || '[]'); } catch { return []; } })();
+  const inSet = vs.filter((v) => v && v.set === set && v.image);
+  const img = (inSet.find((v) => /-s$/.test(v.slug)) || inSet[0])?.image;
+  return img ? { ...card, image_slug: img } : card;
+}
+
 // A card's playset state: the legal limit for its rarity (4/3/2/1), whether the
 // total owned reaches it, and whether the card is exempt ("any number of").
 function playsetOf(card, total) {
@@ -99,6 +112,7 @@ export const LedgerRow = React.memo(function LedgerRow({ card, set, setLabel, ow
   const { limit, complete } = playsetOf(card, total);
   const missing = total === 0;
   const setName = setLabel || firstSetName(card);
+  const artCard = artForSet(card, set);
   const nameColor = complete ? '#f4ecdc' : missing ? '#8a8175' : '#efe7d8';
   const stop = (e) => e.stopPropagation();
   return (
@@ -109,14 +123,14 @@ export const LedgerRow = React.memo(function LedgerRow({ card, set, setLabel, ow
       <span style={{ width: 64, flex: 'none', position: 'relative' }}>
         {missing ? (
           <span style={{ display: 'block', position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
-            <CardArt card={card} radius={8} aspect="5/7" />
+            <CardArt card={artCard} radius={8} aspect="5/7" />
             <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.62)' }} />
           </span>
         ) : (
           <span style={{ display: 'block', position: 'relative', padding: 1, borderRadius: 9, background: complete ? GILT_BRIGHT : GILT, boxShadow: complete ? GLOW_BRIGHT : GLOW }}>
-            <CardArt card={card} radius={8} aspect="5/7" />
+            <CardArt card={artCard} radius={8} aspect="5/7" />
             {/* Always show the copies-owned count (not just at playset). */}
-            <span title={`${total} cop${total === 1 ? 'y' : 'ies'} owned${foil > 0 ? ` (${foil} foil)` : ''}`} style={{ position: 'absolute', bottom: -5, right: -5, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: "700 11px/1 var(--f-mono)", color: '#1a1206', background: '#e3c589', border: '1px solid rgba(16,5,8,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)' }}>×{total}</span>
+            <span title={`${owned} owned${foil > 0 ? `, ${foil} foil` : ''}`} style={{ position: 'absolute', bottom: -5, right: -5, minWidth: 20, height: 20, padding: '0 5px', borderRadius: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', font: "700 11px/1 var(--f-mono)", color: '#1a1206', background: '#e3c589', border: '1px solid rgba(16,5,8,.55)', boxShadow: '0 1px 4px rgba(0,0,0,.5)' }}>{owned > 0 ? `×${owned}` : `✦${foil}`}</span>
           </span>
         )}
       </span>
@@ -166,6 +180,7 @@ const chipDark = {
 
 export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
   const total = owned + foil;
+  const artCard = artForSet(card, set);
   const { complete } = playsetOf(card, total);
   const missing = total === 0;
   const setName = setLabel || firstSetName(card);
@@ -179,7 +194,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           : { padding: 1, background: complete ? GILT_BRIGHT : GILT, boxShadow: complete ? GLOW_BRIGHT : GLOW }),
       }}>
         <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden' }}>
-          <CardArt card={card} radius={12} aspect="5/7" />
+          <CardArt card={artCard} radius={12} aspect="5/7" />
           {missing && <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.68)' }} />}
           {/* Bottom caption on a scrim: name + set. */}
           <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '18px 9px 8px', background: 'linear-gradient(transparent, rgba(6,5,5,.92))' }}>
@@ -192,7 +207,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
       {/* Owned corners: count + foil top-left, playset seal top-right. */}
       {!missing && (
         <span style={{ position: 'absolute', top: 7, left: 7, display: 'inline-flex', gap: 5 }}>
-          <span style={chipDark}>×{total}</span>
+          {owned > 0 && <span style={chipDark}>×{owned}</span>}
           {foil > 0 && <span style={chipDark}>✦{foil}</span>}
         </span>
       )}

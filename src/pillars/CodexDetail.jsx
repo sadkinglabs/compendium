@@ -11,8 +11,9 @@ import { decksWithCard, listDecks, deckQty, changeQty } from '../store/deckRepos
 import { qtyFor } from '../store/ownedRepository.js';
 import { query } from '../store/db.js';
 import { thresholdRuns } from '../store/cardArt.js';
+import { SET_RANK } from '../store/sets.js';
 import { getDoc, getDocs, getFaqs } from '../store/codexDoc.js';
-import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RuleArticle, InlineText, Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RuleArticle, InlineText, Loading, SegTabs, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import CollectionPicker from '../components/CollectionPicker.jsx';
@@ -163,7 +164,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
 
   return (
     <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
-      {k === 'card' ? <CardBody card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} />
+      {k === 'card' ? <CardBody key={data.card.card_id} card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} />
                     : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} onOpenLink={openLink} />}
 
       {/* Cards Mentioned - carousel of card art referenced by this article. Opens
@@ -297,10 +298,49 @@ function RuleBody({ doc, subs, subDocs, onOpenLink }) {
   );
 }
 
+// A printing base is a variant slug minus its finish token (-s/-f/-rf); each base
+// is one distinct art. Set display order (SET_RANK) is the shared catalog table.
+const printingBase = (slug) => String(slug).replace(/-(s|f|rf)$/, '');
+
+// The card's distinct PRINTINGS (one per art), each with its own image, set and
+// artist. Cards reprinted across sets (40% of the catalog) get an art switcher;
+// single-printing cards get none. Duplicate set labels (token cards with several
+// printings in one set) are numbered so every segment is distinct.
+function cardPrintings(variants) {
+  const seen = new Set();
+  const out = [];
+  for (const v of variants) {
+    const base = printingBase(v.slug);
+    if (seen.has(base)) continue;
+    seen.add(base);
+    out.push({ base, setName: v.setName || '', setCode: v.set || '', image: v.image ?? null, artist: v.artist || null });
+  }
+  out.sort((a, b) => (SET_RANK[a.setCode] ?? 4.5) - (SET_RANK[b.setCode] ?? 4.5) || a.base.localeCompare(b.base));
+  const counts = {};
+  for (const p of out) counts[p.setName] = (counts[p.setName] || 0) + 1;
+  const nth = {};
+  for (const p of out) {
+    if (counts[p.setName] > 1) { nth[p.setName] = (nth[p.setName] || 0) + 1; p.label = `${p.setName} ${nth[p.setName]}`; }
+    else p.label = p.setName || 'Printing';
+  }
+  return out;
+}
+
 function CardBody({ card, doc, faqs, faqDocs, onOpenLink }) {
   const sets = jp(card.sets, []);
   const variants = jp(card.variants, []);
-  const flavour = noEm((variants.find((v) => v && v.flavorText)?.flavorText) || '');
+  const printings = cardPrintings(variants);
+  // Default to the card's own default art (planImages picks the lowest-set standard).
+  const defIdx = Math.max(0, printings.findIndex((p) => p.image && p.image === card.image_slug));
+  const [sel, setSel] = useState(defIdx);
+  const cur = printings[sel] || printings[0] || null;
+  // Drive the hero art from the selected printing. A no-scan printing (image null)
+  // resolves to the deterministic fallback, exactly like any imageless card.
+  const artCard = cur && cur.image !== card.image_slug ? { ...card, image_slug: cur.image } : card;
+  const selBase = cur?.base;
+  const flavour = noEm(
+    (variants.find((v) => selBase && printingBase(v.slug) === selBase && v.flavorText)?.flavorText)
+    || (variants.find((v) => v && v.flavorText)?.flavorText) || '');
   const pips = thresholdRuns(card);
   const isMinion = /minion/i.test(card.type || '');
   const typeText = card.is_site ? 'Site' : card.is_avatar ? 'Avatar' : (card.type || 'Card');
@@ -320,24 +360,44 @@ function CardBody({ card, doc, faqs, faqDocs, onOpenLink }) {
   if (card.cost != null) stats.push(['MANA', card.cost]);
   if (pips.length) stats.push(['THRESHOLD', <ThresholdPips runs={pips} size={20} />]);
   if (isMinion && card.attack != null) stats.push(['POWER', card.attack === card.defence || card.defence == null ? card.attack : `${card.attack}/${card.defence}`]);
-  if (card.life != null) stats.push(['LIFE', card.life]);
+  if (card.is_avatar && card.life != null) stats.push(['LIFE', card.life]);   // life is avatar-only
 
   return (
     <div>
-      {/* Card image - centered, no gilding (reference context). Sites play sideways. */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+      {/* Card image - centered, no gilding (reference context). Sites play sideways.
+          Art is the SELECTED printing; keyed on `sel` so a switch crossfades in. */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: printings.length > 1 ? 14 : (cur?.artist ? 12 : 20) }}>
         {card.is_site ? (
           <div style={{ position: 'relative', width: 300, aspectRatio: '7 / 5' }}>
-            <div style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(300px * 5 / 7)', transform: 'translate(-50%,-50%) rotate(90deg)', borderRadius: 13, overflow: 'hidden', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 40px rgba(0,0,0,.6)' }}>
-              <CardArt card={card} radius={13} />
+            <div key={sel} style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(300px * 5 / 7)', transform: 'translate(-50%,-50%) rotate(90deg)', borderRadius: 13, overflow: 'hidden', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 40px rgba(0,0,0,.6)', animation: 'cxfade .25s ease' }}>
+              <CardArt card={artCard} radius={13} />
             </div>
           </div>
         ) : (
-          <div style={{ width: 248, borderRadius: 13, overflow: 'hidden', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 40px rgba(0,0,0,.6)' }}>
-            <CardArt card={card} radius={13} aspect="5/7" />
+          <div key={sel} style={{ width: 248, borderRadius: 13, overflow: 'hidden', border: '1px solid rgba(255,255,255,.12)', boxShadow: '0 16px 40px rgba(0,0,0,.6)', animation: 'cxfade .25s ease' }}>
+            <CardArt card={artCard} radius={13} aspect="5/7" />
           </div>
         )}
       </div>
+
+      {/* Printing switcher - one segment per printing; tapping flips the hero art
+          and the artist credit. Scrolls sideways for cards with many printings. */}
+      {printings.length > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 10 }}>
+          <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+            <SegTabs ariaLabel="Card printing"
+              options={printings.map((p, i) => ({ key: String(i), label: p.label }))}
+              value={String(sel)} onChange={(key) => setSel(Number(key))} />
+          </div>
+        </div>
+      )}
+
+      {/* Artist credit - shown for every card; follows the selected printing. */}
+      {cur?.artist && (
+        <div style={{ textAlign: 'center', marginBottom: 18, font: "italic 400 13px/1.4 var(--f-read)", color: '#8a8175' }}>
+          Illustrated by {noEm(cur.artist)}
+        </div>
+      )}
 
       {metaRow.length > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 22 }}>{metaRow}</div>

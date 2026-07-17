@@ -911,6 +911,11 @@
     "target": "Chains of Prometheus"
   },
   {
+    "source": "draw",
+    "target_type": "card",
+    "target": "Morgana le Fay"
+  },
+  {
     "source": "drop",
     "target_type": "card",
     "target": "War Horse"
@@ -2063,6 +2068,71 @@
     "target": "Megamoeba"
   },
   {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Whirling Blades"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "Drought"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "card",
+    "target": "The Rack"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "unresolved_article",
+    "target": "an"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "unresolved_article",
+    "target": "enters"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "unresolved_article",
+    "target": "When attacking, oversized units must target a single enemy unit or site surface that shares a location with it. For example, a Mountain Giant occupying sites in the squares marked with 'M' is attacking. It must choose an enemy unit or site surface in one of those locations. The attack is then happening at that location, and defenders must reach that specific location to defend."
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "unresolved_article",
+    "target": "and"
+  },
+  {
+    "source": "oversized-units",
+    "target_type": "unresolved_article",
+    "target": "When determining if a card is near or adjacent to an oversized unit, you check to see if it is near or adjacent to any location the oversized unit occupies. For instance, the following locations marked 'a' are adjacent to the Mountain Giant, marked 'M': As a further example, the locations marked 'n' are nearby an oversized avatar, marked 'A,' that has been stretched into an L-shape by [[The Rack]]: In the"
+  },
+  {
+    "source": "oversized-units__burrowing-or-submerging-oversized-units",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "oversized-units__burrowing-or-submerging-oversized-units",
+    "target_type": "card",
+    "target": "Drown"
+  },
+  {
+    "source": "oversized-units__burrowing-or-submerging-oversized-units",
+    "target_type": "card",
+    "target": "Bury"
+  },
+  {
+    "source": "oversized-units__burrowing-or-submerging-oversized-units",
+    "target_type": "card",
+    "target": "Mountain Giant"
+  },
+  {
+    "source": "oversized-units__traversing-borders",
+    "target_type": "card",
+    "target": "Perilous Bridge"
+  },
+  {
     "source": "oversized-units__teleporting-oversized-units",
     "target_type": "card",
     "target": "Mountain Giant"
@@ -2073,17 +2143,27 @@
     "target": "Blink"
   },
   {
-    "source": "oversized-units__cards-that-assume-units-occupy-only-one-location",
+    "source": "oversized-units__teleporting-oversized-units",
+    "target_type": "card",
+    "target": "The Rack"
+  },
+  {
+    "source": "oversized-units__teleporting-oversized-units",
+    "target_type": "card",
+    "target": "Blink"
+  },
+  {
+    "source": "oversized-units__cards-that-refer-to-a-units-site-or-location",
     "target_type": "card",
     "target": "Spin Attack"
   },
   {
-    "source": "oversized-units__cards-that-assume-units-occupy-only-one-location",
+    "source": "oversized-units__cards-that-refer-to-a-units-site-or-location",
     "target_type": "card",
     "target": "Leap Attack"
   },
   {
-    "source": "oversized-units__cards-that-assume-units-occupy-only-one-location",
+    "source": "oversized-units__cards-that-refer-to-a-units-site-or-location",
     "target_type": "card",
     "target": "Recall"
   },
@@ -2469,6 +2549,17 @@
     "target_type": "article",
     "target": "nearby",
     "target_title": "nearby"
+  },
+  {
+    "source": "site",
+    "target_type": "unresolved_article",
+    "target": "to another square. When this happens, everything of normal size is carried along with the site. Anything that is carried along with the site does not count as ((moving"
+  },
+  {
+    "source": "site",
+    "target_type": "article",
+    "target": "enter",
+    "target_title": "enter"
   },
   {
     "source": "skeleton-token",
@@ -3185,6 +3276,16 @@
     "target": "Scourge Zombies"
   },
   {
+    "source": "triggered-ability",
+    "target_type": "card",
+    "target": "Fields of Phyxis"
+  },
+  {
+    "source": "triggered-ability",
+    "target_type": "card",
+    "target": "Vindictive Nation"
+  },
+  {
     "source": "unburrow",
     "target_type": "card",
     "target": "Mudflow"
@@ -3203,6 +3304,11 @@
     "source": "updated-cards",
     "target_type": "card",
     "target": "Infiltrate"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Lord of Lies"
   },
   {
     "source": "updated-cards",
@@ -3248,6 +3354,21 @@
     "source": "updated-cards",
     "target_type": "card",
     "target": "Bottomless Pit"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Mirage"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Desecrate"
+  },
+  {
+    "source": "updated-cards",
+    "target_type": "card",
+    "target": "Heirloom Lost"
   },
   {
     "source": "updated-cards",

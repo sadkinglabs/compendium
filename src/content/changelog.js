@@ -15,6 +15,18 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 60,
+    version: '1.0.2-alpha',
+    date: '2026-07-17',
+    notes: 'The latest Sorcery release is in, and your collection now knows its sets.',
+    changes: [
+      { kind: 'added', text: 'The newest cards, rules, and rulings are here, with updated card art throughout. Five new cards join the catalogue, and the Codex, decks, and collection all know them.' },
+      { kind: 'added', text: 'Cards printed in more than one set now show a printing switcher in the Codex: tap a set to flip the art to that printing and see who illustrated it. Every card also credits its artist.' },
+      { kind: 'added', text: 'Your collection tracks which set your copies are from. Own your Alpha and Beta copies separately, each with its own art. Copies whose set you have not recorded sit in an Unspecified bucket you can file at your leisure.' },
+      { kind: 'changed', text: 'Importing a card list now opens a review first: reprinted cards let you choose which set they belong to before adding, single-set cards file themselves, and anything unrecognised is listed rather than quietly dropped.' },
+    ],
+  },
+  {
     build: 43,
     version: '1.0.2-alpha',
     date: '2026-07-16',

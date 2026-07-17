@@ -23,8 +23,11 @@ export function useOwnedLedger(cardId, set = null) {
 
   // Scoped to a PRINTING when `set` is given: owned/foil are that (card, set)'s -
   // so Alpha and Beta are edited independently. Wishlist stays card-level (the
-  // wishlist isn't per-printing). set null = name-level totals (Codex/Overview).
-  const read = () => (set
+  // wishlist isn't per-printing). `set` null/undefined = name-level totals across
+  // every printing (Codex/Overview); a set CODE or '' (the Unspecified bucket) scopes
+  // to that one bucket. NOTE: '' is a real bucket, so test `!= null`, never truthiness
+  // - `set ?` would fold '' into name-level and show the card's grand total.
+  const read = () => (set != null
     ? Promise.all([qtyForInSet(cardId, set), qtyFor(cardId)]).then(([o, c]) => ({ owned: o.owned, foil: o.foil, wanted: c.wanted }))
     : qtyFor(cardId));
 
@@ -63,7 +66,7 @@ export function useOwnedLedger(cardId, set = null) {
     // key My Collection's row steppers use - so the sheet and the row commute.
     // Wishlist (card-level) rides the card chain. Each write re-reads the committed
     // count inside its turn so an absolute write can't clobber a concurrent edit.
-    const perSet = !!set && field !== 'wanted';
+    const perSet = set != null && field !== 'wanted';   // '' (Unspecified) is a real bucket too
     const key = perSet ? `${cardId}|${set}` : cardId;
     serialChain(ownedChains, key, async () => {
       if (field === 'wanted') { const cur = await qtyFor(cardId); return setWanted(cardId, Math.max(0, (cur.wanted || 0) + delta)); }
