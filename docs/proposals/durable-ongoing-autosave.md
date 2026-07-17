@@ -30,7 +30,8 @@ By contrast, [`db.js`](../../src/store/db.js) already flushes the SQLite store o
 
 - `ongoingMatch.js` — `saveOngoing(snap)` is a single **synchronous** `localStorage.setItem` inside try/catch; key is profile-scoped (`cx-ongoing-match:${activeProfileId()}`). `loadOngoing()` validates + `restoreSide`-style clamping happens downstream in `matchLife` on resume.
 - `App.jsx:243` — `minimizeMatch = (snap) => { setOngoing(snap); saveOngoing(snap); setMatch(null); }`. The `setMatch(null)` is what tears down the live counter and returns Home. **Autosave must reuse only the `saveOngoing` half — no teardown.**
-- `App.jsx:85` boot `loadOngoing()`; `:236/:247/:250/:251` `clearOngoing()` on start-new / resume / exit / new-from-end. `recordMatchResult` (`:249`) deliberately does **not** clear (the counter stays open, `recorded` flag set).
+- `App.jsx:85` seeds `ongoing` in a `useState` initializer via `loadOngoing()`; `:236/:247/:250/:251` `clearOngoing()` on start-new / resume / exit / new-from-end. `recordMatchResult` (`:249`) deliberately does **not** clear (the counter stays open, `recorded` flag set).
+- **Cold-boot reconciliation bug — must be fixed for this proposal to work (Codex review, author-confirmed).** `loadOngoing()` at `:85` runs during *first render*, before `initProfiles()` in the boot effect (`:134`). `loadOngoing → KEY() → activeProfileId()` throws when `activeId` is null (`profileRepository.js:16`); `loadOngoing`'s try/catch swallows it and returns `null` (`ongoingMatch.js:31`). Boot never re-reads it afterward, so **after a real process death the ongoing snapshot is never loaded and _Return to Match_ never appears.** Same-process minimize→resume works today only because `minimizeMatch` sets App `ongoing` in memory (`:243`); the cold-boot read path is broken. Autosave writes a snapshot that, without this fix, nothing reads — so the fix is in-scope, not optional.
 - `LifeCounter.jsx:137-145` — `buildSnapshot()` is synchronous and computes `elapsedSec()` to *now* (`:136`); `snapRef.current` always points at it. So a snapshot taken at background time has correct elapsed.
 - `LifeCounter.jsx:222-241` — the mount effect already registers a `visibilitychange` listener (`onVisible`, re-asserts wake-lock/immersive on return) with clean teardown. The autosave hooks the same effect.
 - `LifeCounter` unmounts on minimize (`setMatch(null)`), so its listeners exist **only while a match is live** — the autosave cannot fire for a minimized or ended match.
@@ -40,7 +41,7 @@ By contrast, [`db.js`](../../src/store/db.js) already flushes the SQLite store o
 1. **`visibilitychange → hidden` fires before Android kills a backgrounded WebView.** Confidence: **high** (standard web/WebView behavior; it's the same signal `db.js` relies on). Validated by the device test.
 2. **`localStorage.setItem` completes synchronously during the `hidden`/`pagehide` window.** Confidence: **high** (synchronous API; this is *why* the match path is simpler than `db.js`'s async IndexedDB flush).
 3. **`buildSnapshot()` is safe to call at background time and yields correct elapsed.** Confidence: **high** (pure ref reads + `elapsedSec()` to now).
-4. **Writing `localStorage` without setting App's `ongoing` state causes no divergence bug.** Confidence: **medium-high** — nothing reads App `ongoing` while a match is live (the counter overlay is up); boot/profile-switch read `localStorage`. Validated in the plan.
+4. **Writing `localStorage` without setting App's `ongoing` state is correct — *given the boot-order fix*.** Confidence: **high** with the fix. Nothing reads App `ongoing` while a match is live (the counter overlay is up), and the fix makes boot reconcile from `localStorage` after `initProfiles()`. **Without** the fix the feature is inert on cold boot (the reconciliation bug above), so the fix is a required part of this proposal.
 
 ## Affected systems and invariants
 
@@ -49,7 +50,23 @@ By contrast, [`db.js`](../../src/store/db.js) already flushes the SQLite store o
 - **Transactional user-data ops (§3.5):** a single synchronous `setItem`; atomic. On quota/security failure it silently no-ops (pre-existing `saveOngoing` behavior) — no partial write.
 - **Cross-runtime integrity (§3.8):** the trigger (`visibilitychange`/`pagehide`) is runtime-sensitive — hence the mandatory device test.
 - **No double-record (Feature Matrix §5.2):** the `recorded` flag is in the snapshot and survives autosave→resume, so a recorded match can't be recorded again.
+- **App boot orchestration:** the `ongoing` initializer moves out of first render into a post-`initProfiles()` reconciliation — a change to boot ordering that also fixes a pre-existing cold-boot bug the autosave depends on (see Risks).
 - **Schema/format:** unchanged (`SNAP_VERSION` = 1, same shape).
+
+## Documentation impact
+
+Per Constitution §13, every source-of-truth document is classified:
+
+| Document | Disposition |
+|---|---|
+| [`COMPENDIUM_FEATURE_MATRIX.md`](../../COMPENDIUM_FEATURE_MATRIX.md) | **Update.** The Play / life-counter capability (§5.1) should state that an active match is snapshotted when the app backgrounds and survives process death; the §5.2 invariant "minimizing preserves enough state to resume" broadens from *minimize* to *background/kill*. |
+| [`COMPENDIUM_DATA_MODEL.md`](../../COMPENDIUM_DATA_MODEL.md) | **Update.** The ongoing-match snapshot's persistence *lifecycle* changes (written on background/`pagehide`, not only minimize) and its cold-boot, profile-scoped reconciliation should be stated where the snapshot is described. No table/schema change; `SNAP_VERSION` unchanged. |
+| [`COMPENDIUM_ARCHITECTURE.md`](../../COMPENDIUM_ARCHITECTURE.md) | **Assess → likely a one-line runtime-lifecycle note** on the LifeCounter-trigger / App-persistence boundary and the boot reconciliation order; if the doc does not describe the Play runtime at that depth, **reviewed, no change**. Confirm at implementation. |
+| [`BUILD.md`](../../BUILD.md) | **Reviewed — no change.** Commands unchanged; its installed-app `adb`/release-build verification procedure is *used* by this proposal's device gate. |
+| [`ENGINEERING_CONSTITUTION.md`](../../ENGINEERING_CONSTITUTION.md) | **Reviewed — no change.** No process change. |
+| [`AGENTS.md`](../../AGENTS.md) | **Reviewed — no change.** No agent-workflow change. |
+
+`npm run check:docs` is mechanical only; these are semantic assessments to reconcile at completion.
 
 ## Options considered
 
@@ -88,14 +105,23 @@ window.addEventListener('pagehide', persist);
 ```
 No other code changes. The counter keeps rendering; the user stays in the match; the snapshot is simply on disk now in case the app dies.
 
+**`App.jsx` boot-order fix (required — the autosave is inert without it):** stop seeding `ongoing` in the `useState` initializer (which throws pre-`initProfiles`), and reconcile once profiles exist:
+```js
+const [ongoing, setOngoing] = useState(null);       // was: useState(() => loadOngoing())
+// …in the boot effect, immediately after initProfiles() succeeds (App.jsx:134-135):
+setOngoing(loadOngoing());
+```
+The existing profile-switch reload (`:292`) stays. This is the step that makes *Return to Match* appear after a process death, and it also fixes the pre-existing cold-boot bug for the *ordinary* minimize→kill case (not just autosave).
+
 **Ownership:** `LifeCounter` owns the trigger (it owns `snapRef`); `App`/`ongoingMatch` own persistence (the callback boundary is unchanged in spirit — `LifeCounter` stays persistence-agnostic, calling a prop rather than importing `saveOngoing`).
 
 ## Implementation plan
 
-1. Add the `onPersist` prop + the two listeners + teardown (one file, ~6 lines) and wire `onPersist={saveOngoing}` in `App`.
-2. Automated: `npm run test:ui` (existing LifeCounter-adjacent suites stay green — this adds no pure logic to test; the change is listener wiring), `npm run build`, `npm run check:docs`.
-3. **Device (the load-bearing evidence):** installed release build — start a match, change life to a distinctive value, **background** the app (Home), **kill** it (`adb shell am kill com.sadkinglabs.compendium` or force-stop), relaunch, confirm **Return to Match** resumes the exact life/log/elapsed. Repeat for a quick match. Confirm a *normal* minimize→resume and exit→(no resume) still behave correctly (no regression).
-4. Zero-image + normal interaction spot-check (surface is touched).
+1. **Boot-order fix (required, first):** `App.jsx:85` → `useState(null)`; add `setOngoing(loadOngoing())` immediately after `initProfiles()` succeeds in the boot effect (`:134-135`). Keep the profile-switch reload (`:292`).
+2. Add the `onPersist` prop + the two listeners + teardown in `LifeCounter` (~6 lines) and wire `onPersist={saveOngoing}` in `App`.
+3. Automated: `npm run test:ui`, `npm run build`, `npm run check:docs` (this is listener + boot wiring; it adds no pure logic to unit-test).
+4. **Device (the load-bearing evidence — proves both the write AND the boot read path):** installed release build — start a match, change life to a distinctive value, **background** the app (Home), **kill** the process (`adb shell am kill com.sadkinglabs.compendium` / force-stop), **cold-launch**, confirm **Return to Match** appears and resumes the exact life/log/elapsed. Repeat for a quick match. Negative case: **cold boot with no live match** must show *no* Return to Match. Regression: normal minimize→resume, exit→(no resume), start-new-discards-ongoing all unchanged.
+5. Zero-image + normal interaction spot-check (surface is touched).
 
 ## Data migration and compatibility
 
@@ -120,6 +146,7 @@ No new data collected; the snapshot already exists as a concept. Perf: one synch
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
+| The boot-order fix regresses normal boot (double-load, or races the profile-switch reload) | Low | Medium | `loadOngoing` is idempotent + profile-scoped; the fix mirrors the existing `:292` switch reload; device test covers cold boot **with** a saved match and **with none** |
 | `visibilitychange→hidden` doesn't fire before an Android kill in some OEM path | Low | High (no save) | Device test is the proof; `pagehide` is a second trigger |
 | Foreground low-memory kill between background events loses the delta since last background | Low | Medium | Documented residual; periodic autosave is a later option (§Non-goals) |
 | Autosave writes while a match is recorded-but-open → resume shows a recorded match | Low | Low | `recorded` flag blocks double-record; pre-existing minimize behavior is identical |
@@ -129,6 +156,7 @@ No new data collected; the snapshot already exists as a concept. Perf: one synch
 
 ## Self-Critique
 
+- **The miss this review caught (Blocker):** I designed the *write* path and never checked the *read* path on cold boot. Autosave would have written a correct snapshot that boot never loads after a process death — the feature would look finished and be inert. My own discovery pass had flagged this exact `loadOngoing`-before-`initProfiles` bug (App §5.7) and I failed to carry it into the design. The boot-order fix is now implementation step 1, and the device kill-test is precisely the case that would have exposed it — which is also why same-process minimize→resume "passing" earlier was not evidence for this scenario.
 - **Strongest reason it's wrong:** the whole value rests on assumption 1 (`hidden` fires before the kill). If an OEM kills a backgrounded WebView without delivering `visibilitychange`, autosave never runs and the fix is inert. That's exactly why the device kill-test is mandatory and why `pagehide` is added as a second net — but I can't prove *every* OEM path, only the tested one.
 - **Highest-consequence assumption:** that `buildSnapshot()` at background time yields a resumable snapshot. If any ref it reads isn't settled at background (e.g., mid-animation), a resume could be slightly off. Mitigation: it reads committed life refs + banked elapsed, not animation state; the device test exercises it.
 - **Simplest rejected alternative:** save on every life change. Rejected as chattier, but it's strictly more durable; if the device test shows `hidden` is unreliable, that becomes the answer.
@@ -145,5 +173,7 @@ A save-only autosave of the live match on `visibilitychange→hidden` + `pagehid
 | Role | Disposition | Date |
 |---|---|---|
 | Claude Code (author) | Submitted | 2026-07-17 |
-| Codex (reviewer) | *pending* | |
+| Codex (reviewer) | **Changes required** — Blocker: cold-boot reconciliation; Major: docs-impact missing | 2026-07-17 |
+| Claude Code (author) | **Revised** — boot-order fix folded into design/plan/affected-surface/risks/verification; Documentation-impact section added | 2026-07-17 |
+| Codex (reviewer) | *pending narrow re-review* | |
 | Human (approver) | *pending* | |
