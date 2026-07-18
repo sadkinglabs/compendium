@@ -279,7 +279,7 @@ No historical application or mockup defines Compendium. Authority is divided by 
 - `COMPENDIUM_FEATURE_MATRIX.md` — required user-facing capabilities and pillar-level behavior.
 - `ENGINEERING_CONSTITUTION.md` and `AGENTS.md` — engineering governance and AI participation.
 - `BUILD.md` and `package.json` — supported development, validation, and build commands.
-- `src/App.jsx` — application shell, pillar registration, and top-level navigation.
+- `src/App.jsx` — application shell, pillar registration, and top-level navigation. **Hardware back is two-phase:** `src/back.js` is a LIFO registry that self-registering ephemeral UI (FAB menus, the `GothicSheet`/`Sheet` and `CenteredModal` chassis) peels *first*; only when every consumer declines does App consult the pure fallback precedence in `src/navBack.js` (`resolveAppBackFallback` over `APP_BACK_ORDER`, then `LifeCounter.closeTopmost` via `resolveCounterBackFallback`), then Home-edit / double-back-to-exit. Seven `APP_BACK_ORDER` rows are normally shadowed by a self-registering chassis and are kept, labelled, as declared fallbacks. The precedence is table-tested under `npm run test:app`.
 - `src/pillars/` — present pillar implementations.
 - `src/store/` — persistence, repositories, catalog access, import/export, and cross-pillar data services.
 - `src/components/` and `src/theme/` — shared component and visual language.

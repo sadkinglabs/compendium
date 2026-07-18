@@ -22,6 +22,7 @@ import { readMatchSnapshot } from './store/matchSnapshot.js';
 import { setResume } from './store/homeRepository.js';
 import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
 import { runBackConsumers } from './back.js';
+import { resolveAppBackFallback } from './navBack.js';
 import { parseMatchShare } from './store/matchShare.js';
 import { importDeckShare } from './store/deckRepository.js';
 import { applyAppearance, clampFontScale, FONT_MIN, FONT_MAX, FONT_STEP } from './appearance.js';
@@ -324,31 +325,42 @@ export default function App() {
   const searchable = true;   // universal search on every pillar
   const placeholders = { home: 'Search rules, cards, decks…', codex: 'Search the codex…', collect: 'Search your collection…', decks: 'Search decks…', play: 'Search matches…' };
 
-  // Hardware back peels one layer at a time - the precedence is declared ONCE
-  // here (top of stack first), instead of a hand-maintained if-ladder. Falls
-  // through to "go home", then exit.
-  const backStack = [
-    [match, () => counterApi.current?.closeTopmost?.()],   // peel counter modals, else minimize (preserves the match)
-    [preMatch, () => setPreMatch(null)],
-    [deckWizard, () => setDeckWizard(false)],
-    [importMode, () => setImportMode(null)],
-    [matchImport, () => setMatchImport(null)],
-    [resultPaste, () => setResultPaste(false)],
-    [searchHelpOpen, () => setSearchHelpOpen(false)],
-    [creditsOpen, () => setCreditsOpen(false)],
-    [settingsOpen, () => setSettingsOpen(false)],
-    [profileSheet, () => setProfileSheet(false)],
-    [addActive, exitAdd],
-    [hasQuery, () => setQuery('')],
-    [viewDetail, back],
-    [tab === 'decks' && deckOpen && deckEditMode, () => setDeckEditMode(false)],
-    [tab === 'decks' && deckOpen, () => setDeckOpen(null)],   // back to Library, not straight Home
-    [tab !== 'home', () => goTab('home')],
-  ];
+  // Hardware back peels one layer at a time. The PRECEDENCE is declared ONCE in
+  // navBack.js (APP_BACK_ORDER, top first) and resolved against this live state; the
+  // ACTIONS stay here. `.find` used truthiness, so the two object-valued predicates
+  // (detail, deckOpen) are coerced with `!!` - behaviour-identical. Consumers (FAB
+  // menus, sheet/modal chassis) peel FIRST via runBackConsumers(); then this fallback
+  // order; then Home edit / double-back to exit. Keys MUST match APP_BACK_ORDER.
+  const backState = {
+    match, preMatch, deckWizard, importMode, matchImport, resultPaste,
+    searchHelp: searchHelpOpen, credits: creditsOpen, settings: settingsOpen, profileSheet,
+    add: addActive, query: hasQuery, detail: !!viewDetail,
+    deckEdit: tab === 'decks' && !!deckOpen && deckEditMode,
+    deckOpen: tab === 'decks' && !!deckOpen,   // back to Library, not straight Home
+    tabHome: tab !== 'home',
+  };
+  const BACK_ACTIONS = {
+    match: () => counterApi.current?.closeTopmost?.(),   // peel counter modals, else minimize (preserves the match)
+    preMatch: () => setPreMatch(null),
+    deckWizard: () => setDeckWizard(false),
+    importMode: () => setImportMode(null),
+    matchImport: () => setMatchImport(null),
+    resultPaste: () => setResultPaste(false),
+    searchHelp: () => setSearchHelpOpen(false),
+    credits: () => setCreditsOpen(false),
+    settings: () => setSettingsOpen(false),
+    profileSheet: () => setProfileSheet(false),
+    add: exitAdd,
+    query: () => setQuery(''),
+    detail: back,
+    deckEdit: () => setDeckEditMode(false),
+    deckOpen: () => setDeckOpen(null),
+    tabHome: () => goTab('home'),
+  };
   backRef.current = () => {
     if (runBackConsumers()) return;                            // an open FAB menu or sheet - close it first
-    const entry = backStack.find(([active]) => active);
-    if (entry) { entry[1](); return; }
+    const key = resolveAppBackFallback(backState);
+    if (key) { BACK_ACTIONS[key](); return; }
     if (tab === 'home' && homeApi.current?.back?.()) return;   // Home edit mode / Overview<->Dashboard subtab
     if (Date.now() - lastBackAt.current < 2000) { exitApp(); return; }   // double-back to exit
     lastBackAt.current = Date.now();
