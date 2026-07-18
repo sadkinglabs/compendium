@@ -18,6 +18,7 @@ import { importCuriosaUrl } from './store/deckRepository.js';
 import Home from './pillars/Home.jsx';
 import { getSettings, setSetting, recordMatch } from './store/playRepository.js';
 import { loadOngoing, saveOngoing, clearOngoing } from './store/ongoingMatch.js';
+import { readMatchSnapshot } from './store/matchSnapshot.js';
 import { setResume } from './store/homeRepository.js';
 import { onBackButton, onAppUrlOpen, exitApp, haptic } from './native.js';
 import { runBackConsumers } from './back.js';
@@ -251,7 +252,8 @@ export default function App() {
   const minimizeMatch = (snap) => { setOngoing(snap); saveOngoing(snap); setMatch(null); };
   const resumeMatch = () => {
     if (!ongoing) return;
-    setMatch({ mode: ongoing.mode, settings: ongoing.settings, you: ongoing.you, opp: ongoing.opp, deck: ongoing.deck || null, resume: ongoing });
+    const r = readMatchSnapshot(ongoing);   // identity fields via the single-sourced contract
+    setMatch({ mode: r.mode, settings: r.settings, you: r.you, opp: r.opp, deck: r.deck, resume: ongoing });
     setOngoing(null); clearOngoing();
   };
   const recordMatchResult = async (result) => { await recordMatch(result); bump(); };
