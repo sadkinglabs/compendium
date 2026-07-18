@@ -19,6 +19,8 @@ import {
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
+import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
+import { goalTotals, goalRowState } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
@@ -140,10 +142,8 @@ function ImportTextSheet({ open, onClose }) {
     try {
       const { items, unresolved } = await previewCollectionText(text);
       if (!items.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
-      const single = items.filter((i) => i.sets.length === 1);
-      const multi = items.filter((i) => i.sets.length !== 1);   // 0 or 2+ sets need a choice
-      const ch = {}; for (const i of multi) ch[i.card_id] = '';  // default Unspecified
-      setChoice(ch); setPreview({ single, multi, unresolved }); setStep('review'); setBusy(false);
+      const { single, multi, unresolved: bad, choiceDefaults } = planCollectionImport({ items, unresolved });
+      setChoice(choiceDefaults); setPreview({ single, multi, unresolved: bad }); setStep('review'); setBusy(false);
     } catch { toast("Couldn't read that text.", { tone: 'danger' }); setBusy(false); }
   };
 
@@ -151,20 +151,14 @@ function ImportTextSheet({ open, onClose }) {
     if (busy || !preview) return;
     setBusy(true);
     try {
-      const items = [
-        ...preview.single.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: i.sets[0].code })),
-        ...preview.multi.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: choice[i.card_id] || '' })),
-      ];
+      const items = buildImportItems(preview, choice);
       const r = await importCollectionResolved(items);
       toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}`);
       onClose();
     } catch { toast("Couldn't import.", { tone: 'danger' }); setBusy(false); }
   };
 
-  const nSingle = preview?.single.length || 0;
-  const nMulti = preview?.multi.length || 0;
-  const nBad = preview?.unresolved.length || 0;
-  const totalCopies = preview ? [...preview.single, ...preview.multi].reduce((s, i) => s + i.qty, 0) : 0;
+  const { nSingle, nMulti, nBad, totalCopies } = preview ? importTallies(preview) : { nSingle: 0, nMulti: 0, nBad: 0, totalCopies: 0 };
   const sectionHead = (color, label) => <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color, margin: '2px 0 8px' }}>{label}</div>;
 
   return (
@@ -1075,8 +1069,7 @@ function listSetName(card) {
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
 function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }) {
-  const goalMet = isWanted && target > 0 && owned >= target;
-  const ownedAny = owned >= 1;
+  const { goalMet, ownedAny } = goalRowState({ owned, target, isWanted });
   const setName = listSetName(card);
   return (
     <div
@@ -1278,16 +1271,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     track(clearEntry(cardId));
   }
 
-  const totals = useMemo(() => {
-    let req = 0, have = 0, names = 0, done = 0;
-    for (const [id, t] of qty) {
-      if (t <= 0) continue;
-      names++; req += t;
-      const h = Math.min(ownQty.get(id) || 0, t);
-      have += h; if (h >= t) done++;
-    }
-    return { req, have, names, done, missing: req - have, percent: req ? Math.round((have / req) * 100) : 0, complete: req > 0 && have >= req };
-  }, [qty, ownQty]);
+  const totals = useMemo(() => goalTotals(qty, ownQty), [qty, ownQty]);
 
   const openMissing = async () => setMissing(await listProgress(list.id));
   const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
