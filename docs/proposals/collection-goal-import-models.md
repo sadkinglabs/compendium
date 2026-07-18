@@ -2,9 +2,11 @@
 
 ## Status and classification
 
-**Status: Rev 1 — awaiting review** · Risk: **Standard** (stages 1-2 behavior-preserving pure extractions; stage 3 is a *contained* behavior change on the optimistic-display path only — the durable write path is untouched — with a device smoke)
+**Status: Rev 1 — Stages 1-2 APPROVED; Stage 3 DEFERRED (Codex + human)** · Risk: **Standard**, reduced to **Contained** for the approved scope (stages 1-2 are behavior-preserving pure extractions with no device gate beyond a proportionate import/progress smoke)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
-Date: 2026-07-18 · Roadmap §16 #3, **scoped down after discovery**. **No implementation has begun.**
+Date: 2026-07-18 · Roadmap §16 #3, **scoped down after discovery**. **Implementing Stages 1-2 only.**
+
+> **Disposition (2026-07-18):** Codex approved Stages 1-2 and the scope decision (decline the unification); **Stage 3 is deferred**. Stage 3's `pending()===0` idle check does not close the race it names — a subscription can observe idle, start `ownedBySet()`, a tap lands (optimistic update + tracked write), then the stale read resolves and stomps the display (TOCTOU). Closing it correctly requires a version guard on *every* `ownedBySet → setOwBySet` path (initial + subscription + settle), i.e. extending `createGoalDrain` with a guarded `refresh()` — larger than the proposed reuse-only change, and not justified by a cosmetic, self-healing flicker. If a real device-visible flicker later justifies it, it returns as its own proposal: a generic reconcile controller with a guarded `refresh()` and deterministic "refresh starts → tap begins → stale refresh resolves" coverage. **Minor accepted:** `importTallies` models the Collection printing import only; `ListBulkAddSheet` keeps its local `totalQ` reduce (it has `{adds, unresolved}`, no single/multi partition).
 
 > **Scope decision (evidence-driven).** Roadmap #3's headline was a *three-way reducer unification onto `useOwnedLedger`*, justified by three concurrency hazards: a goal-ledger stale-closure clobber race, a cross-profile `ownedChains` drain hazard, and a wishlist/owned shared-row race. **A read-only discovery pass confirmed all three are already fixed** by the merged collection-write-integrity work (delta writes re-read in a serialized turn; `ownedChains` retired and profile captured at schedule time; wishlist/owned share one row-key → one chain; `writeSetRow` routes the `''` row through `writeQty`). The unification's remaining value is therefore **de-duplication only, not correctness** — and it is a behavior-changing rewrite on the app's most data-loss-prone surface. **This proposal declines the unification** and instead delivers the parts that still pay off: two pure extractions of genuinely testable inline logic, plus giving the one under-hardened optimistic machine (`stepSet`) the same barrier its two siblings already have — by *adopting the existing* `createGoalDrain`, not inventing a new abstraction.
 
@@ -18,7 +20,7 @@ Date: 2026-07-18 · Roadmap §16 #3, **scoped down after discovery**. **No imple
 
 **Success criteria**
 
-1. `src/store/importPlan.js` single-sources the import partition + choice-defaulting + confirm-item assembly + tallies, consumed by `ImportTextSheet` (and the bulk tally by `ListBulkAddSheet`), proven by test.
+1. `src/store/importPlan.js` single-sources the Collection-import partition + choice-defaulting + confirm-item assembly + tallies, consumed by `ImportTextSheet`, proven by test. (`ListBulkAddSheet` keeps its own local `totalQ` reduce — it has no single/multi partition, so routing it here would need fake categories; Codex Minor accepted.)
 2. `src/store/listGoalModel.js` single-sources `goalTotals` and `goalRowState`, consumed by `ListDetail` and `ListCardRow`, proven by test.
 3. `stepSet`'s optimistic `owBySet` reconcile is guarded by the **existing** `createGoalDrain` (versioned, `pending`-barriered), so an in-flight step can't be transiently stomped. `wishSet` (not stepped in this grid) keeps refreshing eagerly.
 4. Stages 1-2 are **zero behavior change**. Stage 3 changes only *when* the optimistic owned display reconciles (never the DB, never a durable write, never a persisted value).
@@ -186,5 +188,5 @@ Deliver roadmap #3's **real** value and **decline its declined-in-evidence unifi
 | Role | Disposition | Date |
 |---|---|---|
 | Claude Code (author) | Submitted Rev 1 | 2026-07-18 |
-| Codex (reviewer) | *pending review* | |
-| Human (approver) | *pending* | |
+| Codex (reviewer) | **Approved Stages 1-2 + scope decision; Stage 3 deferred** (1 Major: idle-check TOCTOU doesn't guard async refresh) + 1 Minor (importTallies scoped to Collection import; ListBulkAddSheet keeps local reduce) | 2026-07-18 |
+| Human (approver) | **Approved Stages 1-2; defer Stage 3; ratify declining the unification** | 2026-07-18 |
