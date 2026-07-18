@@ -2,9 +2,17 @@
 
 ## Status and classification
 
-**Status: Draft — awaiting review** · Risk: **Standard** (behavior-preserving extraction, but on the durable resume path — needs a device resume check)
+**Status: Rev 2 — revised after review; awaiting re-review** · Risk: **Standard** (behavior-preserving extraction, but on the durable resume path — needs a device resume check)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-18 · Roadmap §16 #2, **first of two slices** (the roll-off phase machine is deferred — §7). **No implementation has begun.**
+
+> **Rev 2 (all findings accepted):** the module moves to **`src/store/matchSnapshot.js`** — the
+> snapshot is a durable serialized contract, so store ownership keeps the dependency direction
+> right (`ongoingMatch` imports it locally; `LifeCounter`/`App` import *upward* from the store;
+> tests under `test:query`). A **Documentation impact** section is added. The "one-module change"
+> claim and the round-trip property are corrected: the extraction single-sources the serialized
+> *mapping/defaults/validation/version* — not all producer/consumer behavior — and the honest
+> round-trip is over a normalized resumable-state object, plus raw-v1 compatibility fixtures.
 
 ## Problem and success criteria
 
@@ -14,10 +22,10 @@ Consequence: adding, renaming, or removing a snapshot field means updating every
 
 **Success criteria**
 
-1. One pure module (`src/pillars/matchSnapshot.js`) is the single source of the snapshot's shape: `buildMatchSnapshot`, `readMatchSnapshot`, `isValidMatchSnapshot`, and `SNAP_VERSION`.
-2. Every consumer routes through it: `LifeCounter.buildSnapshot` + its resume initializers, `App.resumeMatch`, and `ongoingMatch` validation.
-3. Adding a snapshot field is a **one-module** change; a round-trip test proves `read(build(x))` recovers `x`, so build/restore cannot drift undetected.
-4. **Zero behavior change** — same fields, same defaults, same `SNAP_VERSION` (1), same on-disk format. Minimize→resume and cold-boot (autosave) resume behave identically.
+1. One pure **store-layer** module (`src/store/matchSnapshot.js`) single-sources the snapshot's serialized **mapping, defaults, validation, and version**: `buildMatchSnapshot`, `readMatchSnapshot`, `isValidMatchSnapshot`, `SNAP_VERSION`.
+2. Every consumer routes through it: `LifeCounter.buildSnapshot` + its resume initializers, `App.resumeMatch`, and `ongoingMatch` validation (`ongoingMatch` imports it locally, store→store; `LifeCounter`/`App` import upward, ui→store).
+3. The serialized mapping/defaults/version live in **one** module, so adding a field touches that module's `build`+`read` plus the producer/consumer that supply and use the value — never a fourth scattered validation or default site. A round-trip test over the normalized resumable state proves build/restore can't drift undetected: `readMatchSnapshot(buildMatchSnapshot(normalizedState))` deep-equals `normalizedState`.
+4. **Zero behavior change** — same fields, same defaults, same `SNAP_VERSION` (1), same on-disk format. Minimize→resume and cold-boot (autosave) resume behave identically, incl. raw v1 snapshots from the current implementation.
 
 **Non-goals**
 
@@ -31,7 +39,7 @@ Consequence: adding, renaming, or removing a snapshot field means updating every
 - `LifeCounter.jsx:137-142` — `buildSnapshot()` → `{ v:1, mode, settings, you, opp, deck, pLife, pMax, eLife, eMax, log, elapsedSec, oppName, recorded, clockOn }`. Reads refs (`pRef`/`eRef`/`recordedRef`), state (`log`/`oppName`/`clockOn`), and computes `elapsedSec()`.
 - Restore-side seeds: `:51-52` (`pRef`/`eRef` via `restoreSide`), `:109` (`oppName`), `:111` (`log`), `:114` (`clockOn`), `:118` (`elapsedBase` ← `elapsedSec`), `recordedRef` (← `recorded`). Identity fields consumed by `App.jsx:254` (`resumeMatch` destructures `ongoing.mode/settings/you/opp/deck`).
 - `ongoingMatch.js:18-22` — `isValidSnapshot`: `v === SNAP_VERSION` + `Number.isFinite` on the four life/max fields. `restoreSide` (matchLife) already clamps those on read.
-- Precedent pure modules beside the pillar: `matchLife.js`, `ddArming.js`, `avatarPickerState.js` (tested under `npm run test:ui`).
+- Precedent pure **store** modules (the right layer for a serialized contract): `collectionGroups.js`, `compareEngine.js`, `matchStats.js`, `collectionWrites.js` — node-tested under `npm run test:query`. `ongoingMatch.js` already lives in `src/store` and is the localStorage adapter this module supplies the contract to.
 
 ## Assumptions and confidence
 
@@ -57,7 +65,7 @@ Consequence: adding, renaming, or removing a snapshot field means updating every
 
 ## Proposed design
 
-**`src/pillars/matchSnapshot.js` (pure):**
+**`src/store/matchSnapshot.js` (pure):**
 ```js
 export const SNAP_VERSION = 1;
 
@@ -98,13 +106,25 @@ Optional JSDoc `@typedef MatchSnapshot` in the module (free, documents the shape
 
 ## Implementation plan
 
-1. Add `matchSnapshot.js` + `matchSnapshot.test.mjs` (round-trip, field-completeness, defaults, validity). **Checkpoint:** `test:ui` green.
-2. Route the four consumers through it; `ongoingMatch` delegates validation. **Checkpoint:** `test:ui`/`test:query`/`build`/`check:docs` green; diff is a wiring swap.
+1. Add `src/store/matchSnapshot.js` + `matchSnapshot.test.mjs` (round-trip, field-completeness, defaults, validity, raw-v1 compat). **Checkpoint:** `test:query` green.
+2. Route the four consumers through it; `ongoingMatch` imports its validation/version locally (store→store). **Checkpoint:** `test:query`/`test:ui`/`build`/`check:docs` green; diff is a wiring swap.
 3. Device: minimize→resume and background→kill→cold-boot→resume (the autosave path) both restore life/log/elapsed/clock/recorded identically on the installed build.
 
 ## Data migration and compatibility
 
 **Not applicable** — no format/version change. Snapshots written by prior builds read identically (same field names/defaults). `SNAP_VERSION` stays 1.
+
+## Documentation impact
+
+Per Constitution §13, every source-of-truth document is classified:
+
+| Document | Disposition |
+|---|---|
+| [`COMPENDIUM_DATA_MODEL.md`](../../COMPENDIUM_DATA_MODEL.md) | **Update.** In §9 "Ongoing match (resumable snapshot)", name `src/store/matchSnapshot.js` as the owner of the serialized shape, defaults, and `SNAP_VERSION`; `ongoingMatch.js` remains the profile-scoped `localStorage` adapter (it imports the contract). No schema/format change. |
+| [`COMPENDIUM_ARCHITECTURE.md`](../../COMPENDIUM_ARCHITECTURE.md) | **Update — short note.** Record the pure snapshot contract as a store-layer module and the dependency direction (adapter and UI both depend on the store-owned shape; the shape depends on neither). |
+| [`COMPENDIUM_FEATURE_MATRIX.md`](../../COMPENDIUM_FEATURE_MATRIX.md) | **Reviewed — no change.** Resume behavior is unchanged; the Play §5 capabilities/invariants are preserved. |
+| [`BUILD.md`](../../BUILD.md) | **Reviewed — no change.** The existing installed-app resume workflow supplies the device verification. |
+| [`ENGINEERING_CONSTITUTION.md`](../../ENGINEERING_CONSTITUTION.md) / [`AGENTS.md`](../../AGENTS.md) | **Reviewed — no change.** No process change. |
 
 ## Rollback and recovery
 
@@ -112,7 +132,7 @@ One-commit revert per checkpoint; no persisted-format change, nothing to migrate
 
 ## Verification plan
 
-- **Automated (load-bearing for drift):** `matchSnapshot.test.mjs` — `readMatchSnapshot(buildMatchSnapshot(x))` recovers `x`; every field present; defaults applied (missing `log`/`elapsedSec`/`clockOn`); `isValidMatchSnapshot` accepts a good snapshot and rejects wrong-version / non-finite. `test:ui`/`test:query`/`test:codex`/`build`/`check:docs`.
+- **Automated (load-bearing for drift):** `matchSnapshot.test.mjs` under `test:query` — the round-trip `readMatchSnapshot(buildMatchSnapshot(normalizedState))` deep-equals `normalizedState`; every field present; `isValidMatchSnapshot` accepts a good snapshot and rejects wrong-version / non-finite. **Plus raw-v1 compatibility fixtures** (a snapshot as the current implementation writes it), covering: omitted optional fields (default in), **explicit `false` for `clockOn` and `recorded`** (preserved, not defaulted away — `clockOn` via `??`), empty `log`, `deck: null`, real identity/`settings` objects passed through unchanged, and finite-but-out-of-range life values left **raw** (unclamped — `restoreSide` clamps later). `test:ui`/`test:codex`/`build`/`check:docs` for the wiring.
 - **Device (resume path):** installed release — minimize a match mid-game and resume (life, log, clock, elapsed intact); background→kill→cold-boot→**Return to Match** resumes identically; a recorded-then-resumed match cannot be re-recorded.
 - **Regression:** a fresh (non-resumed) match still seeds correctly (initSide, rollPhase armed, birth 0).
 
@@ -128,7 +148,7 @@ No new data, dependency, or telemetry. Pure functions; negligible cost. `docs/pr
 | A default subtly changes on read (e.g. `clockOn ?? false` vs `|| false`) | Low | Medium | `clockOn` uses `??` to preserve an explicit `false`; tests pin each default |
 | The identity fields (`mode`/`settings`) carry structure the read flattens | Low | Low | `readMatchSnapshot` passes them through unchanged |
 
-**Open:** should `SNAP_VERSION`/`isValidMatchSnapshot` live in `matchSnapshot.js` (proposed) or stay in `ongoingMatch.js`? Recommendation: in `matchSnapshot` (shape + validity belong together); `ongoingMatch` imports it and remains the storage adapter.
+**Resolved (Rev 2, Codex):** `SNAP_VERSION`/`isValidMatchSnapshot` live in `src/store/matchSnapshot.js`; `ongoingMatch.js` imports them **locally within the store layer** (store→store) and remains the profile-scoped localStorage adapter. This keeps the dependency direction right and puts shape + validity + version in one place.
 
 ## Self-Critique
 
@@ -147,6 +167,8 @@ Extract a pure `matchSnapshot.js` that single-sources the ongoing-match snapshot
 
 | Role | Disposition | Date |
 |---|---|---|
-| Claude Code (author) | Submitted | 2026-07-18 |
-| Codex (reviewer) | *pending* | |
+| Claude Code (author) | Submitted Rev 1 | 2026-07-18 |
+| Codex (reviewer) | **Changes required** — 2 Major (module location reverses dep direction; missing docs-impact) + 1 Minor (one-module/round-trip wording) | 2026-07-18 |
+| Claude Code (author) | **Rev 2** — module → `src/store`; docs-impact added; success-criterion + round-trip corrected; raw-v1 compat fixtures | 2026-07-18 |
+| Codex (reviewer) | *pending re-review* | |
 | Human (approver) | *pending* | |
