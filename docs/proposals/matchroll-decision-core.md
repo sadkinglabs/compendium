@@ -2,9 +2,11 @@
 
 ## Status and classification
 
-**Status: Rev 1 — awaiting review** · Risk: **Standard** (behavior-preserving extraction on the LifeCounter opening-ceremony path; device smoke check, lighter than the durable-resume gate)
+**Status: Rev 2 — revised after review; awaiting re-review** · Risk: **Standard** (behavior-preserving extraction on the LifeCounter opening-ceremony path; device smoke check, lighter than the durable-resume gate)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-18 · Roadmap §16 #2, **second of two slices** (slice 1, the snapshot build/restore pair, merged as `d17d5ca`). **No implementation has begun.**
+
+> **Rev 2 (all findings accepted):** the RNG test fixtures are corrected — a constant RNG (`() => 0`) deadlocks `rollOutcome` by design, so the bounds and tie tests now use **scripted multi-value sequences** that reach a distinct result, and the tie test uses **two consecutive tie re-rolls** so it actually falsifies a `while`→`if` regression. The injected-RNG **precondition** (values in `[0,1)`, must eventually yield a roll distinct from `pRoll`; no production retry cap) is documented on `rollOutcome`. The "phase vocabulary in one place" claim is **narrowed** to "three named phase decisions" — `LifeCounter` keeps its own phase literals in `rollCls`, the pill JSX, and the timer transitions. All four exports approved to ride along.
 
 ## Problem and success criteria
 
@@ -15,8 +17,8 @@ Consequence: the contest is one careless edit from a subtle unfairness (a `while
 **Success criteria**
 
 1. One pure **pillar-layer** module, `src/pillars/matchRoll.js` (DOM/timer/haptic-free, mirrors `matchLife.js`), owns the roll-off **decisions**: the contest outcome and the phase predicates.
-2. `rollOutcome(rng)` is the single definition of the contest, with the fairness invariant **proven by test**: two distinct d20 rolls, both in `[1,20]`, and the winner's roll is `max(pRoll, eRoll)`. `rng` is injectable so the tie path and the bounds are deterministic in tests.
-3. The phase vocabulary is named in one place: `initialRollPhase(isResume)` encodes the resume-skip invariant; `isRollLocked(phase)` and `canStartRoll(phase)` name the two guards. `LifeCounter` routes through them.
+2. `rollOutcome(rng)` is the single definition of the contest, with the fairness invariant **proven by test**: two distinct d20 rolls, both in `[1,20]`, and the winner's roll is `max(pRoll, eRoll)`. `rng` is injectable so the tie path and the bounds are deterministic in tests — via **scripted multi-value sequences**, since a constant RNG cannot produce a no-tie outcome (see the precondition below).
+3. **Three phase decisions** are named and centralized — **not** the complete phase vocabulary: `LifeCounter` keeps its own phase literals in `rollCls` (`:634-638`), the pill JSX (`:807-812`), `finishRollOff`, and the timer transitions. What moves is the three *decisions/guards*: `initialRollPhase(isResume)` (the resume-skip invariant), `isRollLocked(phase)` (the DD-suppression guard), and `canStartRoll(phase)` (the start guard). `LifeCounter` routes those three through the module.
 4. **Zero behavior change** — same die, same tie handling, same winner rule, same phases, same timing/animation. The ceremony (odometer tumble, timers, haptics, aria, birth/colour) is untouched and stays in the component.
 
 **Non-goals**
@@ -92,7 +94,13 @@ export const ROLL_DIE = 20;   // turn order is a d20 roll-off
  * the winner is the side that rolled strictly higher. Pure given `rng`; inject a deterministic
  * rng in tests. Provable invariant: pRoll !== eRoll, both in [1, ROLL_DIE], and the winner's
  * roll === max(pRoll, eRoll).
- * @param {() => number} rng  0 <= rng() < 1, defaults to Math.random
+ *
+ * PRECONDITION: `rng` returns values in [0, 1) and must EVENTUALLY yield a roll distinct from
+ * pRoll. A permanently constant rng (e.g. `() => 0`) makes every roll equal and the tie re-roll
+ * loops forever - that is by design: a fair contest has no valid tied outcome, and a production
+ * retry cap would change behavior (a capped tie would have to invent a winner). Math.random
+ * satisfies the precondition with probability 1.
+ * @param {() => number} rng  0 <= rng() < 1, eventually distinct from pRoll; defaults to Math.random
  * @returns {{ pRoll: number, eRoll: number, winner: Side }}
  */
 export function rollOutcome(rng = Math.random) {
@@ -165,14 +173,23 @@ One-commit revert per checkpoint; no persisted-format change, nothing to migrate
 
 ## Verification plan
 
-- **Automated (load-bearing):** `matchRoll.test.mjs` under `test:ui`:
-  - **Contest invariant** over a seeded/deterministic rng across many draws: `pRoll !== eRoll`, both in `[1,20]`, `winner`'s roll `=== max(pRoll,eRoll)`, `winner ∈ {player,opponent}`.
-  - **Tie path:** an rng scripted to yield equal first draws then a distinct one loops until distinct and picks the right winner (proves the `while` re-roll).
-  - **Bounds:** `rng()→0` gives `1`; `rng()→(1-ε)` gives `20` (the `1 + floor(rng*20)` mapping).
+- **Automated (load-bearing):** `matchRoll.test.mjs` under `test:ui`. A `scripted([...])` rng helper returns the next value per call and exposes `.calls()`; **every fixture ends on a value distinct from `pRoll`** so `rollOutcome` terminates (a constant rng deadlocks by design — the precondition above).
+  - **Contest invariant** across many draws from a seeded (LCG) rng: `pRoll !== eRoll`, both in `[1,20]`, `winner`'s roll `=== max(pRoll,eRoll)`, `winner ∈ {player,opponent}`.
+  - **Tie path — falsifies `while`→`if`:** an rng with **two consecutive tie re-rolls** before a distinct value:
+    ```js
+    // p=10, e=10 (tie), e=10 (tie again), e=11 (distinct)
+    const rng = scripted([0.45, 0.45, 0.45, 0.50]);
+    assert.deepEqual(rollOutcome(rng), { pRoll: 10, eRoll: 11, winner: 'opponent' });
+    assert.equal(rng.calls(), 4);
+    ```
+    A one-tie fixture passes under both `while` and a broken `if`; two consecutive ties fail under `if`.
+  - **Bounds** (scripted so the two rolls differ — never a constant rng):
+    - lower: `scripted([0, 0.1])` → `pRoll 1`, `eRoll 3` (`1 + floor(0*20)=1`, `1 + floor(0.1*20)=3`).
+    - upper: `scripted([1 - 1e-9, 0])` → `pRoll 20`, `eRoll 1` (`1 + floor(0.9999…*20)=20`).
   - `initialRollPhase(true) === null`, `initialRollPhase(false) === 'armed'`.
   - `isRollLocked`: true for `windup`/`rolling`/`result`; false for `armed`/`null`.
   - `canStartRoll`: true only for `armed`.
-  - Default-rng smoke: `rollOutcome()` returns a valid shape.
+  - Default-rng smoke: `rollOutcome()` returns a valid shape (uses real `Math.random`; asserts shape/invariant, not a fixed value).
 - **Device (ceremony smoke):** installed release — fresh full match and quick match both run the full roll ceremony to unlock; a resumed match shows no ceremony. (Timing/animation unchanged, so this is a smoke check, not the durable-resume gate.)
 - **Regression:** the wiring diff is inspected line-for-line against `:455-458/:61/:277/:444` to confirm each swap is expression-identical.
 
@@ -188,10 +205,11 @@ No new data, dependency, or telemetry. Pure functions; negligible cost. No runti
 | `isRollLocked` import shadows the `:277` local `rollLocked` | Low | Low | Export is named `isRollLocked`; the local keeps its name — no shadow. Called out in design. |
 | Reviewer judges the predicates (`isRollLocked`/`canStartRoll`/`initialRollPhase`) ceremony-over-value | Low–Medium | Low | `rollOutcome` is the load-bearing extraction; the predicates are a bounded consolidation of the phase vocabulary next to it. If rejected, ship `rollOutcome` alone (see Self-Critique). |
 | The die's nondeterminism makes a test flaky | Low | Low | Tests inject a deterministic `rng`; only one smoke assertion uses the real `Math.random` and checks shape, not value |
+| A test uses a constant rng and deadlocks `rollOutcome` | Low | Medium | Precondition documented on `rollOutcome`; every fixture ends on a value distinct from `pRoll`; no production retry cap (a cap would change behavior by inventing a winner for a tie) |
 
 ## Self-Critique
 
-- **Strongest reason it's marginal:** three of the four exports are one-liners, and the contest has not *shipped* a bug — a skeptic calls this tidying. Fair on the predicates; not on `rollOutcome`. The fairness invariant is real, currently untested, and one edit from wrong; a die-roll that silently favours a side is precisely the kind of bug that never surfaces in manual play. The predicates ride along cheaply because they name the phase vocabulary next to the contest that uses it.
+- **Strongest reason it's marginal:** three of the four exports are one-liners, and the contest has not *shipped* a bug — a skeptic calls this tidying. Fair on the predicates; not on `rollOutcome`. The fairness invariant is real, currently untested, and one edit from wrong; a die-roll that silently favours a side is precisely the kind of bug that never surfaces in manual play. The predicates ride along cheaply because they name three specific phase *decisions* (entry, resume-skip, lock) next to the contest — not the whole phase vocabulary, which stays in the component's `rollCls`/JSX/timers.
 - **The fallback if the predicates are judged over-built:** ship `rollOutcome` alone (the invariant-bearing core), inline the three predicates. I'd rather land all four for a single named phase vocabulary, but the contest is the part that must be extracted.
 - **Highest-consequence assumption:** that the four swaps are behavior-identical. A mis-coerced `resume` or a flipped predicate is a real (if low-odds) regression — caught by the line-for-line diff and the device smoke, which is why both are gates.
 - **Coupling I might miss:** `birth`'s resume seed and `armRollOff`'s call at mount (`:234`) are adjacent to the phase logic but are NOT part of it; pulling them in would over-reach (the matchLife Rev 1 mistake). They stay put, named explicitly as out of scope.
@@ -200,12 +218,14 @@ No new data, dependency, or telemetry. Pure functions; negligible cost. No runti
 
 ## Approval requested
 
-Extract a pure `src/pillars/matchRoll.js` owning the roll-off **decisions** — `rollOutcome` (the fairness invariant, proven by test) plus `initialRollPhase`/`isRollLocked`/`canStartRoll` (the named phase guards) — and route `LifeCounter`'s four inline decision points through it, behavior-preserving. The ceremony (timers/DOM/haptics/birth) stays in the component. **Standard** risk (opening-ceremony path → device smoke is the completion gate). This is the second and final slice of roadmap #2. Decisions: (1) approve the extraction + four-point wiring; (2) confirm the predicates ride along vs. `rollOutcome`-only. **No code written yet.**
+Extract a pure `src/pillars/matchRoll.js` owning the roll-off **decisions** — `rollOutcome` (the fairness invariant, proven by test) plus `initialRollPhase`/`isRollLocked`/`canStartRoll` (the named phase guards) — and route `LifeCounter`'s four inline decision points through it, behavior-preserving. The ceremony (timers/DOM/haptics/birth) stays in the component. **Standard** risk (opening-ceremony path → device smoke is the completion gate). This is the second and final slice of roadmap #2. **All four exports approved by Codex (Rev 2)**; the reducer/timer-harness work stays out of scope. Remaining decision: human approval of the extraction + four-point wiring to proceed to implementation. **No code written yet.**
 
 ### Approval record
 
 | Role | Disposition | Date |
 |---|---|---|
 | Claude Code (author) | Submitted Rev 1 | 2026-07-18 |
-| Codex (reviewer) | *pending review* | |
+| Codex (reviewer) | **Changes required** — 1 Major (constant-rng bounds test deadlocks; one-tie fixture can't detect `while`→`if`; document the rng precondition) + 1 Minor ("phase vocabulary" too broad) | 2026-07-18 |
+| Claude Code (author) | **Rev 2** — scripted multi-value rng fixtures (two consecutive ties in the tie test; scripted bounds); rng precondition + no-retry-cap documented on `rollOutcome`; "three named phase decisions" narrowed. All four exports approved. | 2026-07-18 |
+| Codex (reviewer) | *pending re-review* | |
 | Human (approver) | *pending* | |
