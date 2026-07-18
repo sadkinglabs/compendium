@@ -16,6 +16,7 @@ import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { createDdArming, DD } from './ddArming.js';
 import { initSide, restoreSide, applyStep, applyMax, LIFE_CAP, MIN_MAX } from './matchLife.js';
 import { rollOutcome, initialRollPhase, isRollLocked, canStartRoll } from './matchRoll.js';
+import { resolveCounterBackFallback } from '../navBack.js';
 import { buildMatchSnapshot, readMatchSnapshot } from '../store/matchSnapshot.js';
 
 const LOG_GAP_MS = 1200;
@@ -160,11 +161,15 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const fabRef = useRef(false); fabRef.current = fabP || fabE;
   const confirmRef = useRef(null); confirmRef.current = confirm;
   function closeTopmost() {
-    if (confirmRef.current) { setConfirm(null); return; }
-    if (endRef.current) { setEndInfo(null); return; }
-    if (sheetRef.current) { setSheet(null); return; }
-    if (fabRef.current) { setFabP(false); setFabE(false); return; }
-    minimize();
+    // The counter's internal back precedence (confirm > end > sheet > fab, else minimize) is
+    // single-sourced + tested in navBack.js so it can't drift untested; the ACTIONS stay here.
+    switch (resolveCounterBackFallback({ confirm: confirmRef.current, end: endRef.current, sheet: sheetRef.current, fab: fabRef.current })) {
+      case 'confirm': return setConfirm(null);
+      case 'end': return setEndInfo(null);
+      case 'sheet': return setSheet(null);
+      case 'fab': return void (setFabP(false), setFabE(false));
+      default: return minimize();
+    }
   }
 
   // ── Death's Door arming ──

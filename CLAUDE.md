@@ -44,6 +44,7 @@ Run what the changed surface affects, and report exact results. Never convert "n
 ```powershell
 npm run test:codex
 npm run test:query
+npm run test:app
 npm run build
 npm run check:docs
 ```
