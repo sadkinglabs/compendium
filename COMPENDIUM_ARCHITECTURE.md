@@ -154,6 +154,7 @@ device
 - Store list-shaped and relational data in **SQLite** through the repository layer. It provides indexed search and transactional writes for decks, ownership, lists, matches, marginalia, and imports.
 - **Never** keep authoritative data only in transient React state or `localStorage`. Browser persistence uses the documented sql.js/IndexedDB adapter; device persistence uses SQLite. Repository contracts, ownership rules, and transaction semantics remain consistent across both runtimes.
 - The **ongoing-match snapshot** is the sanctioned `localStorage` case (non-authoritative, resumable UI state — not history). Its serialized shape, defaults, and version are a **store-layer contract** in `src/store/matchSnapshot.js`; `src/store/ongoingMatch.js` is the profile-scoped adapter. The producing pillar (`LifeCounter`) and `App` depend on that store-owned contract — dependency flows ui→store, never store→pillar.
+- The life counter's **decision logic** is factored into pure, DOM/timer-free pillar modules tested under `test:ui`: `src/pillars/matchLife.js` (the life/max ≤20 safety boundary) and `src/pillars/matchRoll.js` (the turn-order roll-off — the fair d20 contest plus the resume-skip and lock phase guards). They hold no DOM, timers, or haptics, so their invariants are provable without a running counter; `LifeCounter` keeps the ceremony (animation, timers, aria).
 
 **D. Import and recovery:**
 - Profile bundles and deck lists are untrusted input: validate shape, version, ownership, identifiers, quantities, and URLs before writing.

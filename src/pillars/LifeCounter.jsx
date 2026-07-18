@@ -15,6 +15,7 @@ import { registerBackConsumer } from '../back.js';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { createDdArming, DD } from './ddArming.js';
 import { initSide, restoreSide, applyStep, applyMax, LIFE_CAP, MIN_MAX } from './matchLife.js';
+import { rollOutcome, initialRollPhase, isRollLocked, canStartRoll } from './matchRoll.js';
 import { buildMatchSnapshot, readMatchSnapshot } from '../store/matchSnapshot.js';
 
 const LOG_GAP_MS = 1200;
@@ -58,7 +59,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const eRef = useRef(r ? restoreSide(r.e) : initSide(start));
   const [, force] = useState(0);            // re-render for dd-pill / status badge / max
   const [deltas, setDeltas] = useState([]);
-  const [rollPhase, setRollPhase] = useState(resume ? null : 'armed');   // 'armed'|'windup'|'rolling'|'result'|null
+  const [rollPhase, setRollPhase] = useState(initialRollPhase(!!resume));   // 'armed'|'windup'|'rolling'|'result'|null - matchRoll owns the resume-skip rule
   const [resultLeft, setResultLeft] = useState(4);   // seconds left on "Match begins in"
   const [rollWin, setRollWin] = useState(null);      // 'player' | 'opponent' | null
   const [openSeq, setOpenSeq] = useState(0);         // bumped at the unlock; remounts the curtain
@@ -274,7 +275,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // centredOverlay cannot dip between windup -> rolling -> result and momentarily
   // hand back a live pill. It goes false exactly once, at finishRollOff, where life is
   // 20 on both sides and the un-suppress is a no-op anyway.
-  const rollLocked = rollPhase === 'windup' || rollPhase === 'rolling' || rollPhase === 'result';
+  const rollLocked = isRollLocked(rollPhase);
   const overlayOpen = rollLocked || endInfo != null || sheet != null || confirm != null || fabP || fabE;
   const centredOverlay = rollLocked || endInfo != null || sheet != null || confirm != null;
   useLayoutEffect(() => {
@@ -441,7 +442,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   function armRollOff() { _clearRoll(); lifeTaps.current = 0; unbirth(); setRollPhase('armed'); }
 
   function startRollOff() {
-    if (rollPhase !== 'armed') return;
+    if (!canStartRoll(rollPhase)) return;
     _clearRoll(); setRollPhase('windup');
     haptic('medium');   // the one committing act on this screen was silent
     timers.current.push(setTimeout(_tumble, WINDUP_MS));
@@ -452,10 +453,10 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
     // The numerals are borrowed as dice. 12-15 announcements out of a polite live
     // region is a screen-reader firehose; say the verdict once instead.
     pEl?.setAttribute('aria-live', 'off'); eEl?.setAttribute('aria-live', 'off');
-    const d20 = () => 1 + Math.floor(Math.random() * 20);
-    let pVal = d20(), eVal = d20();
-    while (eVal === pVal) eVal = d20();
-    const winner = pVal > eVal ? 'player' : 'opponent';
+    // The contest (fair d20 roll-off, winner is the strictly-higher roll) lives in matchRoll;
+    // the tumble below just animates the numerals up to the decided faces.
+    const { pRoll: pVal, eRoll: eVal, winner } = rollOutcome();
+    const d20 = () => 1 + Math.floor(Math.random() * 20);   // intermediate tumble faces only (presentation, not the outcome)
     const total = 10 + Math.floor(Math.random() * 6);   // curve untouched: its deceleration is what makes the last faces readable
     let step = 0;
     // Each face rolls up into place from below, odometer-style. The travel and the
