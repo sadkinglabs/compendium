@@ -145,7 +145,7 @@ The pure resolver tests assert abstract keys; **this table is the proof that App
 | 15 | `tab === 'decks' && deckOpen` | `deckOpen: tab === 'decks' && !!deckOpen` | `() => setDeckOpen(null)` | live |
 | 16 | `tab !== 'home'` | `tabHome: tab !== 'home'` | `() => goTab('home')` | live |
 
-Order in `state`/`BACK_ACTIONS` is irrelevant — precedence is `APP_BACK_ORDER` alone. The keys must match `APP_BACK_ORDER` exactly (a missing/misspelled key is a build-visible reference and is caught by the resolver test that iterates `APP_BACK_ORDER`).
+Order in `state`/`BACK_ACTIONS` is irrelevant — precedence is `APP_BACK_ORDER` alone. The keys must match `APP_BACK_ORDER` exactly, but note a mismatch is **NOT** caught automatically: a misspelled key in App's `state` object or `BACK_ACTIONS` is legal plain JavaScript (no build error), and the pure resolver tests exercise abstract keys, not App's real object — so they would still pass. The actual safeguards against a transcription slip are this **equivalence-table review against the diff** and the **device checks**, not the compiler or the unit tests.
 
 ## Implementation plan
 
@@ -183,7 +183,7 @@ One-commit revert per stage; no persisted-format change. Reverting stage 2 resto
   - `navBack.test.mjs` (`test:app`) — **(b)** `resolveAppBackFallback` returns `match` when `match` and any lower flag are both set; each row wins over all lower rows; **(d)** returns `null` for the empty state; **(3)** each shadowed row (`settings`, `credits`, …) resolves to itself when it is the only/highest set flag (documents the fallback path). **(c)** `resolveCounterBackFallback`: `confirm`→`end`→`sheet`→`fab` precedence, and `'minimize'` when no layer is open.
   - `test:query`/`test:ui`/`test:codex`/`build`/`check:docs` for the wiring.
 - **Real-mapping proof (primary, for the transcription risk):** the **predicate/action equivalence table** above, checked line-for-line against the Stage 2 diff. This — not the device smoke — is what proves every one of the 16 rows (predicate + action) relocated identically, because the pure resolver tests assert abstract keys, not App's real wiring (Codex Major 2).
-- **Device (mandatory — the Capacitor event path; representative, NOT per-row):** installed release — a representative slice across live rows, a shadowed/consumer row, the counter half, and the exit tail:
+- **Device (mandatory — the Capacitor event path): complete live-row coverage + representative shadowed-row coverage.** Installed release — all nine live rows, one of the seven shadowed rows (representative of the consumer path they share), the counter half, and the exit tail:
   1. In a live **match**, open a sheet (e.g. Match Log) → BACK closes the sheet, match stays; BACK again → minimizes to Home with "Return to Match" (item c, `match` row).
   2. Open **Settings** (shadowed) → BACK closes Settings only (consumer path, item a).
   3. **Start Match → avatar picker** (`preMatch`) → BACK closes the picker; **create-deck wizard** (`deckWizard`) → BACK closes it.
@@ -227,5 +227,6 @@ Extract a small pure `src/navBack.js` (`resolveAppBackFallback` + `resolveCounte
 | Claude Code (author) | Submitted Rev 1 | 2026-07-18 |
 | Codex (reviewer) | **Changes required** — 2 Major (1: `test:app` claimed a standing gate but governing docs unaffected; 2: verification over-claimed per-row device coverage) + architecture approved in principle | 2026-07-18 |
 | Claude Code (author) | **Rev 2** — `test:app` added to the baseline in Constitution/AGENTS/CLAUDE.md/BUILD.md; predicate/action equivalence table added as the real-mapping proof; device claim corrected to representative + expanded to all live rows | 2026-07-18 |
-| Codex (reviewer) | *pending re-review* | |
-| Human (approver) | *pending* | |
+| Codex (reviewer) | **Approved** with 2 non-blocking wording corrections (the "build-visible" claim; "representative" mislabel) — no further Codex review unless implementation diverges | 2026-07-18 |
+| Claude Code (author) | Rev 2 wording corrections applied | 2026-07-18 |
+| Human (approver) | *pending — two owner decisions* | |
