@@ -332,7 +332,10 @@ Opponents are match attributes, not profiles or cross-profile relationships.
 An in-progress match is **not** a `matches` row. It is a transient, resumable snapshot held
 in `localStorage` under a profile-scoped key (`cx-ongoing-match:<profile_id>`,
 `src/store/ongoingMatch.js`) carrying life/max, the in-match log, banked elapsed time,
-avatars, and a `recorded` flag. It is authoritative only for *resuming*; completed history
+avatars, and a `recorded` flag. Its **serialized shape, defaults, and `SNAP_VERSION` are
+owned by `src/store/matchSnapshot.js`** (`buildMatchSnapshot`/`readMatchSnapshot`/
+`isValidMatchSnapshot`) - the single contract that `LifeCounter` (producer), `App.resumeMatch`,
+and `ongoingMatch.js` (the localStorage adapter) all import, so build and restore cannot drift. It is authoritative only for *resuming*; completed history
 lives in `matches` above, written on record. This is the §"localStorage is non-authoritative
 UI state" rule in practice: losing the snapshot costs at most an in-progress game's
 resumability, never recorded history.

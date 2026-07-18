@@ -4,7 +4,7 @@
 // rule) and returned to, preserving life totals, log and banked elapsed time.
 // Numerals + roll-off + bump are driven IMPERATIVELY (refs + classList) so React
 // never overwrites the animation mid-flight.
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import '../theme/counter.css';
 import { recentOpponents, setSetting } from '../store/playRepository.js';
@@ -15,6 +15,7 @@ import { registerBackConsumer } from '../back.js';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { createDdArming, DD } from './ddArming.js';
 import { initSide, restoreSide, applyStep, applyMax, LIFE_CAP, MIN_MAX } from './matchLife.js';
+import { buildMatchSnapshot, readMatchSnapshot } from '../store/matchSnapshot.js';
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
@@ -48,8 +49,13 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const start = settings.default_max_life || 20; // clamped to <=20 by initSide - matchLife owns the cap
   const quick = mode === 'quick';
 
-  const pRef = useRef(resume ? restoreSide({ life: resume.pLife, max: resume.pMax }) : initSide(start));
-  const eRef = useRef(resume ? restoreSide({ life: resume.eLife, max: resume.eMax }) : initSide(start));
+  // The resume snapshot, read through the single-sourced contract (memoized per `resume`,
+  // since only the first-render initializers below consume it). Every initializer seeds from
+  // `r`, so build and restore stay in lockstep. Life/max are still clamped by restoreSide
+  // (matchLife owns the range rule); matchSnapshot only owns the field shape.
+  const r = useMemo(() => (resume ? readMatchSnapshot(resume) : null), [resume]);
+  const pRef = useRef(r ? restoreSide(r.p) : initSide(start));
+  const eRef = useRef(r ? restoreSide(r.e) : initSide(start));
   const [, force] = useState(0);            // re-render for dd-pill / status badge / max
   const [deltas, setDeltas] = useState([]);
   const [rollPhase, setRollPhase] = useState(resume ? null : 'armed');   // 'armed'|'windup'|'rolling'|'result'|null
@@ -106,16 +112,16 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   // film grain). Persisted per profile, applied live to the running match.
   const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0 });
   const [dice, setDice] = useState({ type: settings.die_type || 6, value: null });
-  const [oppName, setOppName] = useState(resume?.oppName || '');
+  const [oppName, setOppName] = useState(r?.oppName ?? '');
   const [recent, setRecent] = useState([]);
-  const [log, setLog] = useState(resume?.log || []);
+  const [log, setLog] = useState(r?.log ?? []);
   const [endInfo, setEndInfo] = useState(null);          // { winner, pLife, eLife, durationSec, recorded }
   const [confirm, setConfirm] = useState(null);          // { label, action } - in-world discard confirm
-  const [clockOn, setClockOn] = useState(resume?.clockOn ?? false);   // match clock; persists across minimize/resume
+  const [clockOn, setClockOn] = useState(r?.clockOn ?? false);   // match clock; persists across minimize/resume
 
   const pNumRef = useRef(null), eNumRef = useRef(null);
   const startedAt = useRef(Date.now());
-  const elapsedBase = useRef(resume?.elapsedSec || 0);   // banked elapsed from prior segments
+  const elapsedBase = useRef(r?.elapsedSec ?? 0);   // banked elapsed from prior segments
   const lastLog = useRef(null);
   const deltaId = useRef(0);
   const lifeTaps = useRef(0);   // successful life taps since the roll offer armed
@@ -132,14 +138,14 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
 
   // Once recorded, a match stays recorded across minimize/resume so it can't be
   // saved twice (double W/L). Seeded from the resumed snapshot.
-  const recordedRef = useRef(!!resume?.recorded);
+  const recordedRef = useRef(r?.recorded ?? false);
   const elapsedSec = () => Math.round(elapsedBase.current + (Date.now() - startedAt.current) / 1000);
   function buildSnapshot() {
-    return {
-      v: 1, mode, settings, you: players.you || null, opp: players.opp || null, deck,
-      pLife: pRef.current.life, pMax: pRef.current.max, eLife: eRef.current.life, eMax: eRef.current.max,
+    return buildMatchSnapshot({
+      mode, settings, you: players.you, opp: players.opp, deck,
+      p: pRef.current, e: eRef.current,
       log, elapsedSec: elapsedSec(), oppName, recorded: recordedRef.current, clockOn,
-    };
+    });
   }
   const snapRef = useRef();
   snapRef.current = buildSnapshot;
