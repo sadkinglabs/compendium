@@ -4,7 +4,7 @@
 // rule) and returned to, preserving life totals, log and banked elapsed time.
 // Numerals + roll-off + bump are driven IMPERATIVELY (refs + classList) so React
 // never overwrites the animation mid-flight.
-import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import '../theme/counter.css';
 import { recentOpponents, setSetting } from '../store/playRepository.js';
@@ -49,10 +49,11 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
   const start = settings.default_max_life || 20; // clamped to <=20 by initSide - matchLife owns the cap
   const quick = mode === 'quick';
 
-  // The resume snapshot, read ONCE through the single-sourced contract; every initializer
-  // below seeds from `r`, so build and restore stay in lockstep. Life/max are still clamped
-  // by restoreSide (matchLife owns the range rule); matchSnapshot only owns the field shape.
-  const r = resume ? readMatchSnapshot(resume) : null;
+  // The resume snapshot, read through the single-sourced contract (memoized per `resume`,
+  // since only the first-render initializers below consume it). Every initializer seeds from
+  // `r`, so build and restore stay in lockstep. Life/max are still clamped by restoreSide
+  // (matchLife owns the range rule); matchSnapshot only owns the field shape.
+  const r = useMemo(() => (resume ? readMatchSnapshot(resume) : null), [resume]);
   const pRef = useRef(r ? restoreSide(r.p) : initSide(start));
   const eRef = useRef(r ? restoreSide(r.e) : initSide(start));
   const [, force] = useState(0);            // re-render for dd-pill / status badge / max
