@@ -20,6 +20,7 @@ import {
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
+import { goalTotals, goalRowState } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
@@ -1068,8 +1069,7 @@ function listSetName(card) {
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
 function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }) {
-  const goalMet = isWanted && target > 0 && owned >= target;
-  const ownedAny = owned >= 1;
+  const { goalMet, ownedAny } = goalRowState({ owned, target, isWanted });
   const setName = listSetName(card);
   return (
     <div
@@ -1271,16 +1271,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     track(clearEntry(cardId));
   }
 
-  const totals = useMemo(() => {
-    let req = 0, have = 0, names = 0, done = 0;
-    for (const [id, t] of qty) {
-      if (t <= 0) continue;
-      names++; req += t;
-      const h = Math.min(ownQty.get(id) || 0, t);
-      have += h; if (h >= t) done++;
-    }
-    return { req, have, names, done, missing: req - have, percent: req ? Math.round((have / req) * 100) : 0, complete: req > 0 && have >= req };
-  }, [qty, ownQty]);
+  const totals = useMemo(() => goalTotals(qty, ownQty), [qty, ownQty]);
 
   const openMissing = async () => setMissing(await listProgress(list.id));
   const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
