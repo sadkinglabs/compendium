@@ -80,7 +80,7 @@ The following capabilities define the responsibility of each pillar. `COMPENDIUM
 
 Compendium is maintained as one product and one architecture.
 
-1. **One design system, enforced.** All pillars use shared tokens and interaction vocabulary. No screen invents color.
+1. **One design system, enforced.** All pillars use shared tokens and interaction vocabulary, defined in [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md) (the source of truth for the visual language). "No screen invents color" is the target, not yet fully met in shipping CSS: two subsystems — `.cx-decks` and `.cx-life-tracker` — carry divergent local values, recorded as **documented current-state exceptions** in `DESIGN_SYSTEM.md` §2 (owner-ruled; not permanent ideals). New exceptions are not permitted.
 2. **One component vocabulary.** Chips, list rows, detail headers, sheets, and the FAB are defined once and reused. Codex, Collection, Decks, Play, and Home consume shared components rather than maintaining pillar-specific copies of the same interaction.
 3. **One data layer.** A single schema with a profile partition powers search, Dashboard, Home, and every pillar repository.
 4. **Graceful everywhere.** Compendium must render fully with **zero images** (§5).

@@ -33,6 +33,7 @@ No historical application or mockup defines Compendium. Authority is divided by 
 | Pillar ownership, dependencies, runtime posture, boundaries | [`COMPENDIUM_ARCHITECTURE.md`](./COMPENDIUM_ARCHITECTURE.md) |
 | Tables, persistence, repositories, import/export, schema evolution | [`COMPENDIUM_DATA_MODEL.md`](./COMPENDIUM_DATA_MODEL.md) |
 | Commands, setup, environment, build, deployment, troubleshooting | [`BUILD.md`](./BUILD.md) |
+| Visual language, tokens, primitives, or platform-render rules | [`DESIGN_SYSTEM.md`](./DESIGN_SYSTEM.md) |
 | Engineering process or agent behavior | [`ENGINEERING_CONSTITUTION.md`](./ENGINEERING_CONSTITUTION.md) and [`AGENTS.md`](./AGENTS.md) |
 
 Documentation is intended design; code and tests are evidence of current behavior. When they disagree, report the discrepancy rather than silently choosing one. Documentation impact is a completion gate, not a courtesy — see [`AGENTS.md`](./AGENTS.md) §5.

@@ -234,6 +234,7 @@ Every proposal and implementation MUST assess all source-of-truth documents:
 | Pillar ownership, dependencies, runtime posture, or system boundaries | `COMPENDIUM_ARCHITECTURE.md` |
 | Tables, persistence, ownership, repositories, imports, exports, or schema evolution | `COMPENDIUM_DATA_MODEL.md` |
 | Commands, setup, environment, build, deployment, or troubleshooting | `BUILD.md` |
+| Visual language, tokens, primitives, or platform-render rules | `DESIGN_SYSTEM.md` |
 | Engineering process or agent behavior | `ENGINEERING_CONSTITUTION.md` and `AGENTS.md` |
 
 Before implementation, every standard or high-risk proposal MUST include a **Documentation impact** section naming each affected document and the expected change. A document may be marked unaffected only with a concrete reason.
@@ -296,7 +297,7 @@ Apply the relevant questions to every proposal and diff.
 - Is the workflow usable with every image absent or failed?
 - Are fallbacks deterministic and layout-stable?
 - Are touch targets, focus, labels, contrast, reduced motion, and back behavior preserved?
-- Does the UI reuse design tokens and shared component vocabulary?
+- Does the UI reuse design tokens and shared component vocabulary? Agents MUST consult `DESIGN_SYSTEM.md` before UI work; a reviewer may reject an invented color or primitive by citing it.
 
 ### Security, privacy, and performance
 
