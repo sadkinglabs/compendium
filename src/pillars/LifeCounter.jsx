@@ -200,7 +200,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       Object.assign(ddPhase, { player: ddRef.current.phase('player'), opponent: ddRef.current.phase('opponent') });
     }
   }
-  const dd = ddRef.current;
+  const dd = /** @type {import('./ddArming.js').DdApi | null} */ (ddRef.current);   // recover the type useRef erases (no @types/react)
   // Bumped each time a side falls, so the shock ring remounts and replays per fall
   // rather than only on first mount.
   const [fallSeq, setFallSeq] = useState({ player: 0, opponent: 0 });
