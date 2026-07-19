@@ -10,11 +10,11 @@ A single authoritative `DESIGN_SYSTEM.md`, **grounded in what all five pillars s
 1. **Breadth:** all five pillars (Home · Codex · Collection · Decks · Play) fully audited and specified **up front**; the system is then used to redesign Collection.
 2. **Adoption** (replacing raw literals like `#cba75f` with tokens in code): **separate later track**, not in this effort.
 3. **Sequencing:** design system **first**, then Collection redesign. The UI-state extraction pass runs in parallel (logic-only, orthogonal).
-4. **Holographic foil:** **included**, defined as one canonical primitive with a device-verified Android-WebView fallback and zero-image behavior.
+4. **Holographic foil:** the owner *wants* it, but it is classified **Candidate / Provisional** — no implementation exists; design and implementation are **deferred** to a future device-verified implementation proposal. This effort may record only *outcome constraints* (offline, reduced-motion safe, zero-image safe, non-load-bearing degradation) — **not** a canonical technique or a verified fallback.
 
 ## The anti-reskin guardrail (core constraint)
-- The system is **derived from shipping reality.** An element earns **Foundation** status only if it already recurs across pillars.
-- Anything that appears **only in the new Collection mockup** — completion rings, wax-seals, corner brackets, fleuron rules, tooled plates, ghost slots — is a **Candidate**, dispositioned explicitly during Assert (Reuse / Compose / Adopt / Drop). It is **never assumed in.** Foil is the sole owner-mandated addition.
+- The system is **derived from shipping reality.** Two-pillar recurrence is **necessary but NOT sufficient** for **Foundation** status; promotion also requires a *recorded comparison* demonstrating: shared semantic role, compatible states + interaction, compatible accessibility contract, compatible platform/degradation behavior, and explicit owner disposition.
+- Anything that appears **only in the new Collection mockup** — completion rings, wax-seals, corner brackets, fleuron rules, tooled plates, ghost slots — is a **Candidate**, dispositioned explicitly during Assert (Reuse / Compose / Adopt / Drop). It is **never assumed in.** Foil is owner-*wanted* but stays **Candidate / Provisional** (deferred), not an assumed-in Foundation; even Ring stays Candidate until its promotion comparison is recorded.
 - **No screen's current look changes as an output of this doc.** Adoption is a later, behavior-preserving track. This effort documents and asserts; it does not restyle.
 
 ## Success criteria
@@ -27,7 +27,8 @@ A single authoritative `DESIGN_SYSTEM.md`, **grounded in what all five pillars s
 - **Acceptance test:** an agent can build a new screen using only the doc, and a reviewer can reject invented color/primitives by citing it.
 
 ## Method
-**Audit (read-only) → Assert (reconcile + decide) → Author (write doc) → Govern (wire foundational docs).**
+**Audit (read-only) → Assert (reconcile + decide) → §8 Proposal (Codex review + owner approval) → Author (write doc) → Govern (wire foundational docs).**
+The **§8 proposal gates all normative authoring** — no `DESIGN_SYSTEM.md` prose or governance edit is written before the proposal is reviewed and approved.
 
 ### Phase 1 — Audit (parallel, read-only)
 Structured reports across two axes:
@@ -42,7 +43,7 @@ Structured reports across two axes:
 ### Phase 2 — Assert / synthesize
 - Reconciled token inventory + primitive catalog.
 - Resolve conflicts → canonical decisions; surface the ones needing an owner ruling.
-- Disposition every Candidate element; define the foil primitive with its fallback.
+- Disposition every Candidate element; **classify foil as Candidate/Provisional and record only its outcome constraints** (no canonical technique or verified fallback). New tokens/primitives are tagged **Target — approved, not implemented**; a distinct adoption-debt ledger keeps them separate from shipping vocabulary.
 
 ### Phase 3 — Author `DESIGN_SYSTEM.md` (seven layers)
 Foundations · Semantic layer · Primitive catalog · Patterns · Interaction contract · Platform constraints · Governance.
@@ -56,7 +57,7 @@ Foundations · Semantic layer · Primitive catalog · Patterns · Interaction co
 ## Checkpoints (owner decision points)
 - **After Phase 1:** review audit findings + the cross-pillar conflict list *before* asserting.
 - **During Phase 2:** any conflict without an obvious canonical answer → owner ruling (batched, not one-by-one).
-- **Before Phase 4:** the doc + governance changes return as a **formal §8 proposal** for Codex review and owner approval (Phases 1–2 are read-only discovery and need no proposal).
+- **Before any normative authoring (corrected — NOT before Phase 4):** after the OD rulings and the Checkpoint B input-freeze, the effort produces the **full §8 proposal** (alternatives, documentation-impact, rollback, verification, Self-Critique) and obtains **Codex review + owner approval before writing any normative `DESIGN_SYSTEM.md` content or governance edit.** Phase-1 audit is read-only discovery; *asserting and authoring* the cross-pillar source of truth is High-risk and must not precede the approved proposal.
 
 ## Non-goals
 - Not a reskin; not a new aesthetic direction.
