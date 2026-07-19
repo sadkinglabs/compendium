@@ -43,7 +43,7 @@ Structured reports across two axes:
 ### Phase 2 — Assert / synthesize
 - Reconciled token inventory + primitive catalog.
 - Resolve conflicts → canonical decisions; surface the ones needing an owner ruling.
-- Disposition every Candidate element; **classify foil as Candidate/Provisional and record only its outcome constraints** (no canonical technique or verified fallback). New tokens/primitives are tagged **Target — approved, not implemented**; a distinct adoption-debt ledger keeps them separate from shipping vocabulary.
+- Disposition every Candidate element; **classify foil as Candidate/Provisional and record only its outcome constraints** (no canonical technique or verified fallback). New tokens/primitives are tagged **`[Proposed Target]` — recommended, pending owner ruling** (approved items promote to `[Target]` at the Checkpoint B freeze); a distinct adoption-debt ledger keeps them separate from shipping vocabulary.
 
 ### Phase 3 — Author `DESIGN_SYSTEM.md` (seven layers)
 Foundations · Semantic layer · Primitive catalog · Patterns · Interaction contract · Platform constraints · Governance.
