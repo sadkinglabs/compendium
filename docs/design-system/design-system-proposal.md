@@ -2,7 +2,7 @@
 
 **Status:** Proposed (pre-authoring gate) · **Class:** High-risk (new cross-pillar normative source of truth + repository-governance change) · **Scope:** documentation only — **no `src/**` change**
 **Owner:** Human · **Lead:** Claude · **Reviewer:** Codex
-**Inputs (frozen — Checkpoint B):** `design-system-audit-report.md`, `design-system-wave1-synthesis.md` **Rev R3** (Codex-Approved; owner OD rulings recorded), `design-system-scope.md`, `design-system-codex-brief.md` — all on `origin/design-system`.
+**Inputs (frozen — Checkpoint B):** `design-system-audit-report.md`, `design-system-wave1-synthesis.md` **Rev R3 + Checkpoint B freeze** (Codex-Approved; owner ruled OD-1..20 → approved items promoted to `[Target]`; `[Proposed Target]` now empty; internally reconciled), `design-system-scope.md`, `design-system-codex-brief.md` — all on `origin/design-system`.
 
 ---
 
@@ -21,9 +21,17 @@
 
 **OD ledger:** OD-1..20 = **owner-approved as recommended** (synthesis "Owner Rulings"); OD-12 = sanction both walls as current-state exceptions; OD-19 = clamp Cinzel to 700 (adoption-debt); foil = Candidate/Provisional.
 
-**File allowlist (mechanical scope guard):**
-- **Allowed:** `DESIGN_SYSTEM.md` (new, root); `CLAUDE.md`; `AGENTS.md`; `COMPENDIUM_ARCHITECTURE.md`; `scripts/check-docs.mjs` + a focused validator test; `docs/design-system/**`.
-- **Denied — no exceptions:** all `src/**` (incl. `src/theme/tokens.css`), any CSS/JSX/asset/token change, dependencies, runtime/build config, migrations. **Any `src/**` path in the Wave-2 diff = scope-guard failure → stop and file a separate implementation proposal.**
+**File allowlist + mechanical guard (deny-by-default):**
+- **Allowed (exact set):** `DESIGN_SYSTEM.md` (new, root) · `CLAUDE.md` · `AGENTS.md` · `COMPENDIUM_ARCHITECTURE.md` · `scripts/check-docs.mjs` · `scripts/check-docs.test.mjs` (new) · `package.json` (**the `check:docs`/`test:docs` script entries ONLY — no dependencies, no other config**) · `docs/design-system/**`.
+- **Denied:** everything else — all `src/**` (incl. `src/theme/tokens.css`), any CSS/JSX/asset/token change, dependencies, and runtime/build config beyond the two named npm scripts.
+- **Executable guard.** `FREEZE_BASE` = the `design-system` tip at proposal approval (recorded in the change ledger). Run at **every Wave-2 increment (pre-commit) and at final verification**:
+  ```
+  git diff --name-only "$FREEZE_BASE"..HEAD \
+    | grep -vE '^(DESIGN_SYSTEM\.md|CLAUDE\.md|AGENTS\.md|COMPENDIUM_ARCHITECTURE\.md|package\.json|scripts/check-docs\.mjs|scripts/check-docs\.test\.mjs|docs/design-system/.*)$' \
+    | { grep . && { echo 'SCOPE-GUARD FAIL: path(s) outside the allowlist'; exit 1; } || echo 'scope-guard: clean'; }
+  ```
+  The regex is an explicit allowlist; any path not matching (any `src/**`, dependency, or other config) makes the pipeline non-empty → **exit 1**. **Unknown files are denied by default.** A failing guard **stops Wave 2** and forces a separate implementation proposal.
+- **Validator-test contract (frozen).** `scripts/check-docs.mjs` has **no test harness today** (repo-inspected); `npm run check:docs` runs only that script, so a new test would not auto-join the gate. Wave 2 will therefore: (1) refactor `check-docs.mjs` to expose a pure **`checkDocs(root)`** taking an injected filesystem root, beside its CLI entry `checkDocs(process.cwd())`; (2) add **`scripts/check-docs.test.mjs`** (`node:test` + `node:assert`) that builds a deterministic fixture root and asserts three cases — **present** (all `required[]` incl. `DESIGN_SYSTEM.md` → pass), **missing** (`DESIGN_SYSTEM.md` absent → **fail**, fail-closed), **unreadable** (present but unreadable → **fail**); (3) wire the tests into the gate so they cannot fail-open: `"test:docs": "node --test scripts/check-docs.test.mjs"` and `"check:docs": "node scripts/check-docs.mjs && node --test scripts/check-docs.test.mjs"`. **Baseline that actually executes the cases:** `npm run check:docs`.
 
 ---
 
@@ -65,9 +73,11 @@ Author `DESIGN_SYSTEM.md` per the 7 frozen layers; each entry status-tagged; the
 ## 5. Implementation plan (Wave 2 — exclusive lanes)
 1. **Checkpoint B freeze** (this doc §0) — TOC/glossary/taxonomy/OD-ledger/allowlist locked.
 2. **Design-system author** (sole writer of `DESIGN_SYSTEM.md`) — the 7 layers, prioritised Foundations → resolved tokens → primitives → pillar patterns, landing as one coherent doc.
-3. **Governance writer** (exclusive: `CLAUDE.md`/`AGENTS.md`/`COMPENDIUM_ARCHITECTURE.md`/`scripts/check-docs.mjs` + test).
+3. **Governance writer** (exclusive: `CLAUDE.md`/`AGENTS.md`/`COMPENDIUM_ARCHITECTURE.md`/`scripts/check-docs.mjs` + `scripts/check-docs.test.mjs` + the two `package.json` script entries).
 4. **Semantic verifier** (read-only: audit→OD→doc-section→governance traceability).
 5. **Checkpoint C** — integrated-draft audit: every OD maps to a normative statement / explicit exception / candidate label / recorded deferral; the draft must NOT claim literals were replaced or candidates adopted; Decks/counter/foil/touch-targets match the rulings exactly.
+
+**Every increment runs the §0 executable allowlist guard pre-commit (expect `scope-guard: clean`); a failing guard halts Wave 2.**
 
 ## 6. Data migration & compatibility
 **Not applicable** — documentation only; no schema, data, persisted format, or runtime touched.
@@ -76,21 +86,22 @@ Author `DESIGN_SYSTEM.md` per the 7 frozen layers; each entry status-tagged; the
 Code rollback = revert the doc commit(s) on `design-system`. No data transformation → no recovery path needed; point of no return: none. `check:docs` change is additive and revertible.
 
 ## 8. Verification plan
+- **Allowlist guard (§0)** — run at each increment + final verification; expect `scope-guard: clean` (exit 0). Any disallowed path → exit 1 = stop.
 - `git diff --check` — expect PASS.
-- `npm run check:docs` — expect PASS after adding `DESIGN_SYSTEM.md` to `required[]`; **prove fail-closed** (temporarily remove the file → check:docs fails) via the new focused test seam (present-file → pass; missing/unreadable → fail).
+- `npm run check:docs` — now runs the validator **and** `test:docs`; expect PASS. **Fail-closed is proven** by the `missing`/`unreadable` cases in `scripts/check-docs.test.mjs` (they fail if `DESIGN_SYSTEM.md` is absent or unreadable) — no manual file-removal needed.
 - **Maintained-doc search** for conflicting gold / touch-target / primitive / subsystem claims across the source-of-truth docs.
 - **Traceability**: audit finding → OD ruling → `DESIGN_SYSTEM.md` section → governance reference (semantic verifier).
 - **Source-of-truth disposition** for all six docs (§ Documentation impact).
 - **Runtime tests & build — Not applicable** (genuinely documentation-only diff): `test:codex/query/ui/app` and `npm run build` exercise no changed runtime surface. If any `src/**` file enters the diff, the scope guard has already failed and this line is void.
 
 ## 9. Security / privacy / performance / operations
-No runtime, input, SQL, or data surface touched → no security/privacy/perf impact. No dependency or build change. A raw-hex `check:docs` lint is explicitly **deferred** (a future additive check, not in this diff).
+No app runtime, input, SQL, or data surface touched → no security/privacy/perf impact. The **only executable change** is the docs-validator (`scripts/check-docs.mjs`) + its new test + two `package.json` script entries — **no dependencies, no app build/runtime config**. A raw-hex `check:docs` lint is explicitly **deferred** (a future additive check, not in this diff).
 
 ## 10. Risks & open questions
 - **R1** Normative overreach — a `[Target]` reads as usable. *Mitigation:* status on every entry + Adoption-Debt Ledger + Checkpoint C audit + the acceptance criterion.
 - **R2** Hidden adoption — a `src/**` edit sneaks in. *Mitigation:* mechanical allowlist; any `src/**` path fails the guard.
 - **R3** Sanctioning the two walls guts enforcement. *Mitigation:* they're **current-state exceptions, not ideals**; teeth come from denying *new* walls (promotion rule), not demolishing sanctioned ones (owner-ruled OD-12).
-- **Q1** Does `scripts/check-docs.mjs` already have a test harness, or does the seam need creating? (Confirm during Wave 2 before editing.)
+- *(Q1 resolved: repo inspection confirms `scripts/check-docs.mjs` has no test harness today; the validator-test contract in §0 creates it.)*
 
 ## 11. Self-Critique
 1. **Strongest reason this is wrong:** a documentation-only design system with a large `[Target]`/adoption-debt ledger risks becoming aspirational shelf-ware — the exact failure it diagnoses — if the adoption track never funds. *Response:* the enforceable core is `[Shipping]`/Observed + `check:docs` fail-closed + the acceptance test; Targets are explicitly debt, not claims.
@@ -105,7 +116,9 @@ No runtime, input, SQL, or data surface touched → no security/privacy/perf imp
 - `CLAUDE.md` — **Updated** (source-of-truth row: design language → `DESIGN_SYSTEM.md`).
 - `AGENTS.md` — **Updated** (mirror row + strengthened UI-review line :299).
 - `DESIGN_SYSTEM.md` — **Created**.
-- `scripts/check-docs.mjs` — **Updated** (`required[]` + test seam).
+- `scripts/check-docs.mjs` — **Updated** (`required[]` + injected-root refactor).
+- `scripts/check-docs.test.mjs` — **Created** (present/missing/unreadable cases).
+- `package.json` — **Updated** (`check:docs` + `test:docs` script entries only).
 - `COMPENDIUM_DATA_MODEL.md` — **Reviewed, no change** (no schema/persistence/data touched).
 - `COMPENDIUM_FEATURE_MATRIX.md` — **Reviewed, no change** (no capability/workflow/status change; Collection redesign is later).
 - `BUILD.md` — **Reviewed, no change** (no command/build/env change; raw-hex lint deferred).
