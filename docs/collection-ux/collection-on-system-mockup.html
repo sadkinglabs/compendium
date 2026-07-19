@@ -1,7 +1,9 @@
 <title>Collection — On-System Mockup</title>
 <style>
   /* ============================================================
-     TOKENS — every colour below is a named [Shipping] token.
+     TOKENS — named design-system tokens. Colours are [Shipping] except the
+     completion-Ring + warm-brown chrome, which are approved [Target] (become
+     [Shipping] on Phase 1 adoption); see the compliance panel below.
      ============================================================ */
   :root{
     /* gold family */
@@ -18,8 +20,9 @@
     --ink-muted:#9a8b6a; --ink-faint:#8f8168; --ink-status:#cbbfa8;
     /* Collection accent — single-accent rule: ruby only */
     --accent-ruby:#d25873; --ruby-rgb:210,88,115;
-    /* completion Ring — owner-approved [Target] now, [Shipping] on Phase 1 adoption */
-    --ring-track:rgba(74,60,34,.9); --ring-fill:var(--accent-ruby);
+    /* completion Ring — owner-approved [Target] now, [Shipping] on Phase 1 adoption.
+       Only the track is a token; the arc fill is the contextual pillar accent. */
+    --ring-track:rgba(74,60,34,.9);
     /* shipping rose-glass stepper */
     --rose-bg:rgba(224,169,177,.12); --rose-glyph:#f0c8ce;
     /* warm-brown chrome family */
@@ -216,7 +219,7 @@
   .ring{position:relative; flex:none; display:inline-flex; align-items:center; justify-content:center;}
   .ring svg{transform:rotate(-90deg);}
   .ring .rg-track{fill:none; stroke:var(--ring-track);}
-  .ring .rg-fill{fill:none; stroke:var(--ring-fill); stroke-linecap:round; transition:stroke-dashoffset .4s;}
+  .ring .rg-fill{fill:none; stroke:var(--accent-ruby); stroke-linecap:round; transition:stroke-dashoffset .4s;}
   .ring .rg-pct{position:absolute; font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-size:11px; color:var(--ink-body);}
 
   /* mono figures */

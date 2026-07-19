@@ -58,7 +58,8 @@ The token source is `src/theme/tokens.css` (`:root`). **Reporting reality is per
 Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `--s-1…--s-8` (4-based) · type sizes `--t-*` · letter-spacing `--ls-*` · icon sizes `--i-*` · blur `--blur-*` · shadow/elevation `--shadow-chip/-card/-pop/-sheet/-modal`. **All defined in `tokens.css`, all 0-consumer.** Owner ruling (OD-9): **keep the scale as the adoption target AND add a composite text-style layer** (`--type-*` recipes) — because the code is written as whole `font:` shorthands (~506), single-value scalars have failed to get adopted. **`[Target]`; refactor deferred.**
 
 ### 1.6 New foundational tokens — all `[Target]` (OD-2/10/11/18)
-- **Warm-brown chrome** (~100 raw uses; the standard input/segmented/divider/well family, a *different hue* from the gold hairlines): `--edge-brown` (`#4a3c22`), `--hair-warm` (`rgba(74,60,34,α)`), `--surface-brown` (`rgba(42,33,20,α)`).
+- **Warm-brown chrome** (~100 raw uses; the standard input/segmented/divider/well family, a *different hue* from the gold hairlines): `--edge-brown` (`#4a3c22`), `--hair-warm-50/-100` (`rgba(74,60,34,α)`), `--surface-brown-50/-70` (`rgba(42,33,20,α)`). **Defined in `tokens.css` (Collection UX Phase 0), still `[Target]`/unconsumed**; the ones Collection consumes promote to `[Shipping]` in Phase 1.
+- **Completion Ring track** — `--ring-track` (`rgba(74,60,34,.9)`), the unfilled arc; **fill = contextual pillar accent (no `--ring-fill`)**. `[Target]` (Phase 0 defined, Phase 1 `[Shipping]`). See §3 + `docs/collection-ux/`.
 - **Motion:** `--dur-*` / `--ease-*` — standardise on M3 `cubic-bezier(.4,0,.2,1)` + the house decelerate `cubic-bezier(.2,.9,.3,1)` + one overshoot spring. (~125 ad-hoc literals today; the "same" spring is spelled two ways.)
 - **z-index:** a semantic `--z-*` ladder incl. portal/top-layer ownership (z is hardcoded 40/50/300/700… today).
 - **Focus:** `--focus-ring` (no `:focus-visible` convention ships today; inputs `outline:none`).
@@ -91,8 +92,8 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 | **`ModalScaffold`** | ChangelogModal + TelemetryDisclosure identical scaffold |
 | **`SectionLabel`** (single rubric) | 3 rubric idioms (component + `EYEBROW` const + `.cx-ov-sec-title`) |
 
-**`[Candidate]` (unproven — NOT Foundations):**
-- **Ring** (completion ring) — recurs (Home ×2 win-rings + Play donut) but the instances **diverge** on fill (`#4db38a` vs `--accent-jade`), track, and inner size (44/51/76px). Two-pillar recurrence is **necessary but not sufficient**; promotion additionally requires a recorded comparison of semantic role, states, a11y, and platform behaviour (see §7). Stays **Candidate/Pattern** until that comparison exists.
+**`[Target]` (owner-approved, being built — promoted from `[Candidate]` 2026-07-20):**
+- **Ring** (completion ring) — recurs (Home ×2 win-rings + Play donut) and now Collection set/total completion. The **recorded comparison** the §7 promotion rule requires is in [`docs/collection-ux/collection-ux-proposal.md`](docs/collection-ux/collection-ux-proposal.md) §5.1 (shared role · compatible states · a11y contract · platform/degradation · owner disposition); owner-approved. **Token:** `--ring-track` (§1.6); the arc **fill is the contextual pillar accent** (Collection `--accent-ruby`), so **no `--ring-fill` is minted**. A canonical geometry ends the 44/51/76px divergence. **Lifecycle:** Phase 0 — defined `[Target]` (unconsumed); Phase 1 — promotes to `[Shipping]` with the `Ring` primitive + its first Collection consumer. Home/Play instances stay untouched (separate adoption track).
 
 ---
 
