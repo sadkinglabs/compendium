@@ -133,7 +133,21 @@ export function ddReduce(phase, event) {
 /** Phase a side should start in, derived from life - never assumed. */
 export const initialPhase = (life) => (life > 0 ? DD.ALIVE : DD.FALLEN);
 
+/** @typedef {'player' | 'opponent'} DdSide */
 const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites - NOT 'enemy'
+
+/**
+ * The Death's Door arming instance. Every public entry that takes a side takes a DdSide, so a
+ * mis-keyed `'enemy'` at a call site is an author-time error (the shipped bug this typing exists
+ * to catch), not a runtime-only assert.
+ * @typedef {object} DdApi
+ * @property {(who: DdSide) => any} phase
+ * @property {(who: DdSide, prev: number, next: number) => void} syncLife
+ * @property {(who: DdSide) => void} tap
+ * @property {(on: boolean, lifeOf: (who: DdSide) => number) => void} setSuppressed
+ * @property {() => number} pending
+ * @property {() => void} dispose
+ */
 
 /**
  * Owns one timer handle per side and applies ddReduce. Timers are injected so tests
@@ -141,6 +155,8 @@ const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites
  *
  * `initialLife` is REQUIRED and derives the starting phase per side: a match resumed
  * with a side already at zero enters FALLEN at mount and arms without a further tap.
+ * @param {{ initialLife: Record<DdSide, number>, onChange?: any, setTimeout?: any, clearTimeout?: any }} opts
+ * @returns {DdApi}
  */
 export function createDdArming({ initialLife, onChange, setTimeout: setT = setTimeout, clearTimeout: clearT = clearTimeout }) {
   // Refuse a missing side outright. `undefined > 0` is false, so a mis-keyed

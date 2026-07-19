@@ -47,7 +47,7 @@ function fmtClock(secs) {
     : `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function LifeCounter({ settings, mode, players = {}, deck = null, resume = null, onMinimize, onPersist, onRecord, onExit, onNewMatch, registerApi }) {
+export default function LifeCounter({ settings, mode, players = /** @type {{ you?: any, opp?: any }} */ ({}), deck = null, resume = null, onMinimize, onPersist, onRecord, onExit, onNewMatch, registerApi }) {
   const start = settings.default_max_life || 20; // clamped to <=20 by initSide - matchLife owns the cap
   const quick = mode === 'quick';
 
@@ -200,7 +200,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
       Object.assign(ddPhase, { player: ddRef.current.phase('player'), opponent: ddRef.current.phase('opponent') });
     }
   }
-  const dd = ddRef.current;
+  const dd = /** @type {import('./ddArming.js').DdApi | null} */ (ddRef.current);   // recover the type useRef erases (no @types/react)
   // Bumped each time a side falls, so the shock ring remounts and replays per fall
   // rather than only on first mount.
   const [fallSeq, setFallSeq] = useState({ player: 0, opponent: 0 });
@@ -851,6 +851,7 @@ export default function LifeCounter({ settings, mode, players = {}, deck = null,
 }
 
 /* ── Play centered modal shell ── */
+/** @param {{ id?: any, title?: any, subtitle?: any, onClose?: any, children?: any, actions?: any, rotated?: any }} props */
 function VModal({ id, title, subtitle, onClose, children, actions, rotated }) {
   return (
     <div className="vc-modal-overlay" id={id} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -914,6 +915,7 @@ function MatchLogModal({ open, log, onClose }) {
   );
 }
 
+/** @param {{ open?: any, who?: any, value?: any, onClose?: any, onSet?: any, rotated?: any }} props */
 function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
   const [v, setV] = useState(value);
   useEffect(() => { if (open) setV(value); }, [open, value]);
@@ -931,6 +933,7 @@ function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
   );
 }
 
+/** @param {{ open?: any, dice?: any, setDice?: any, onClose?: any, rotated?: any }} props */
 function DiceModal({ open, dice, setDice, onClose, rotated }) {
   const [landed, setLanded] = useState(0);
   const [rolling, setRolling] = useState(false);

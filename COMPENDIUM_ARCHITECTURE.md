@@ -284,5 +284,6 @@ No historical application or mockup defines Compendium. Authority is divided by 
 - `src/store/` — persistence, repositories, catalog access, import/export, and cross-pillar data services.
 - `src/components/` and `src/theme/` — shared component and visual language.
 - Tests and schemas — executable contracts for implemented behavior and data integrity.
+- **`check:types`** (`tsconfig.json` + `scripts/check-types.mjs`) — a build-time, **fail-closed** type gate (`tsc --noEmit`, JSDoc-typed JS, no emit) scoped to the match-view typed boundaries (`LifeCounter.jsx` + `matchLife`/`matchRoll`/`matchSnapshot`/`importPlan`/`listGoalModel`/`navBack`). The compiler checks the full reachable closure; the wrapper gates only on diagnostics in those owned files (a global/config/unknown-file diagnostic or a compiler crash fails closed). It catches caller/boundary type mismatches at author time (defence in depth alongside the runtime guards). App/Collection are deliberately out of scope — measured React prop-shape noise. Nothing enters the bundle.
 
 When architecture, product documentation, implementation, and executable contracts disagree, follow the authority order in `ENGINEERING_CONSTITUTION.md` and record the discrepancy explicitly.

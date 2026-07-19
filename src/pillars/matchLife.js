@@ -76,7 +76,7 @@ export function initSide(seedMax) {
  * ongoingMatch validator already discards non-finite snapshots - so a throw here is a
  * defensive assertion, not an expected path).
  */
-export function restoreSide({ life, max } = {}) {
+export function restoreSide({ life, max } = /** @type {{ life?: number, max?: number }} */ ({})) {
   const m = clampMax(finite(max, 'restore.max'));
   const l = clampLife(finite(life, 'restore.life'), m);
   return { life: l, max: m };

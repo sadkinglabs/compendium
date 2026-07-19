@@ -20,9 +20,10 @@ npm run test:codex   # scripts/codex/**   - the build-time codex compiler
 npm run test:query   # src/store/**       - card query grammar, collection compare engine
 npm run test:ui      # src/pillars/**     - pure UI state (e.g. avatar picker selection)
 npm run test:app     # src/*.test.mjs     - App-shell logic (hardware-back precedence, back registry)
+npm run check:types  # tsc --noEmit       - fail-closed type gate over the match-view typed boundaries
 ```
 
-All four are `node --test` over co-located `*.test.mjs` files; there is no browser
+The four `test:*` scripts are `node --test` over co-located `*.test.mjs` files; `check:types` runs its own wrapper tests then the compiler check (fail-closed, gates only on the owned files). There is no browser
 test runner. Logic that carries a real invariant belongs in a plain module with
 fixtures beside it rather than inside a component, so it can be tested without a
 DOM — `src/pillars/avatarPickerState.js` is the pattern.

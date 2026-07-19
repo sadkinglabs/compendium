@@ -20,7 +20,7 @@
 export function planCollectionImport({ items, unresolved }) {
   const single = items.filter((i) => i.sets.length === 1);
   const multi = items.filter((i) => i.sets.length !== 1);   // 0 or 2+ sets need a choice
-  const choiceDefaults = {};
+  const choiceDefaults = /** @type {Record<string, string>} */ ({});
   for (const i of multi) choiceDefaults[i.card_id] = '';      // '' = Unspecified
   return { single, multi, unresolved: unresolved || [], choiceDefaults };
 }

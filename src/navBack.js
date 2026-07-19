@@ -45,7 +45,7 @@ export function resolveAppBackFallback(state) {
 // The `match` row's own internal precedence: BACK in a live match peels the counter's open layers
 // (a confirm dialog, then the end screen, then a secondary sheet, then an open FAB menu), and only
 // when none is open does it minimize - preserving the resumable match. Mirrors LifeCounter.closeTopmost.
-export const COUNTER_BACK_ORDER = ['confirm', 'end', 'sheet', 'fab'];
+export const COUNTER_BACK_ORDER = /** @type {const} */ (['confirm', 'end', 'sheet', 'fab']);
 
 /**
  * Which counter layer BACK peels, or 'minimize' when none is open.

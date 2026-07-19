@@ -214,10 +214,11 @@ npm run test:codex
 npm run test:query
 npm run test:ui
 npm run test:app
+npm run check:types
 npm run build
 ```
 
-`test:ui` covers pure UI state under `src/pillars/**` — reducers, interaction state, and pillar logic extracted from components so it can be tested without a DOM. Run it for any change to those, and prefer extracting such logic over leaving an invariant untestable inside a component. `test:app` covers pure App-shell logic under `src/*.test.mjs` — currently the hardware-back fallback precedence (`navBack.js`) and the back-consumer registry (`back.js`); run it for any change to hardware-back / navigation dispatch.
+`test:ui` covers pure UI state under `src/pillars/**` — reducers, interaction state, and pillar logic extracted from components so it can be tested without a DOM. Run it for any change to those, and prefer extracting such logic over leaving an invariant untestable inside a component. `test:app` covers pure App-shell logic under `src/*.test.mjs` — currently the hardware-back fallback precedence (`navBack.js`) and the back-consumer registry (`back.js`); run it for any change to hardware-back / navigation dispatch. `check:types` is a build-time type gate (`tsc --noEmit` via `scripts/check-types.mjs`) over the match-view typed boundaries (`LifeCounter.jsx` + `matchLife`/`matchRoll`/`matchSnapshot`/`importPlan`/`listGoalModel`/`navBack`); it is **fail-closed** and gates only on those owned files. Run it for any change to them or their JSDoc types.
 
 UI work also exercises relevant interactions and the zero-image mode documented in `BUILD.md`. Native/plugin behavior requires Capacitor/Android evidence; browser fallback is not equivalent — **a browser on the device is not the shipping runtime either**, since the app ships in the Capacitor WebView (Chromium) and a phone browser may be another engine entirely. Engine-sensitive CSS and any plugin path must be observed in the installed app, and the report must name the device, OS version, WebView version, and build type. Data work requires representative prior-state, retry, isolation, and integrity cases.
 
