@@ -21,17 +21,11 @@
 
 **OD ledger:** OD-1..20 = **owner-approved as recommended** (synthesis "Owner Rulings"); OD-12 = sanction both walls as current-state exceptions; OD-19 = clamp Cinzel to 700 (adoption-debt); foil = Candidate/Provisional.
 
-**File allowlist + mechanical guard (deny-by-default):**
+**File allowlist + scope check (deny-by-default):**
 - **Allowed (exact set):** `DESIGN_SYSTEM.md` (new, root) · `CLAUDE.md` · `AGENTS.md` · `COMPENDIUM_ARCHITECTURE.md` · `scripts/check-docs.mjs` · `scripts/check-docs.test.mjs` (new) · `package.json` (**the `check:docs`/`test:docs` script entries ONLY — no dependencies, no other config**) · `docs/design-system/**`.
 - **Denied:** everything else — all `src/**` (incl. `src/theme/tokens.css`), any CSS/JSX/asset/token change, dependencies, and runtime/build config beyond the two named npm scripts.
-- **Executable guard.** `FREEZE_BASE` = the `design-system` tip at proposal approval (recorded in the change ledger). Run at **every Wave-2 increment (pre-commit) and at final verification**:
-  ```
-  git diff --name-only "$FREEZE_BASE"..HEAD \
-    | grep -vE '^(DESIGN_SYSTEM\.md|CLAUDE\.md|AGENTS\.md|COMPENDIUM_ARCHITECTURE\.md|package\.json|scripts/check-docs\.mjs|scripts/check-docs\.test\.mjs|docs/design-system/.*)$' \
-    | { grep . && { echo 'SCOPE-GUARD FAIL: path(s) outside the allowlist'; exit 1; } || echo 'scope-guard: clean'; }
-  ```
-  The regex is an explicit allowlist; any path not matching (any `src/**`, dependency, or other config) makes the pipeline non-empty → **exit 1**. **Unknown files are denied by default.** A failing guard **stops Wave 2** and forces a separate implementation proposal.
-- **Validator-test contract (frozen).** `scripts/check-docs.mjs` has **no test harness today** (repo-inspected); `npm run check:docs` runs only that script, so a new test would not auto-join the gate. Wave 2 will therefore: (1) refactor `check-docs.mjs` to expose a pure **`checkDocs(root)`** taking an injected filesystem root, beside its CLI entry `checkDocs(process.cwd())`; (2) add **`scripts/check-docs.test.mjs`** (`node:test` + `node:assert`) that builds a deterministic fixture root and asserts three cases — **present** (all `required[]` incl. `DESIGN_SYSTEM.md` → pass), **missing** (`DESIGN_SYSTEM.md` absent → **fail**, fail-closed), **unreadable** (present but unreadable → **fail**); (3) wire the tests into the gate so they cannot fail-open: `"test:docs": "node --test scripts/check-docs.test.mjs"` and `"check:docs": "node scripts/check-docs.mjs && node --test scripts/check-docs.test.mjs"`. **Baseline that actually executes the cases:** `npm run check:docs`.
+- **Scope check (cross-platform, review-time).** `FREEZE_BASE` = the `design-system` tip at proposal approval. Before every commit and at final verification, inspect the **complete working state** with two plain git commands (cross-platform; no shell scripting): `git status --porcelain` (staged + unstaged + **untracked**) and `git diff --name-only FREEZE_BASE..HEAD` (committed). The author **and** Codex confirm every listed path is in the allowlist above; any path outside it (any `src/**`, dependency, or other config) → **stop Wave 2** + separate implementation proposal. This is an honest **review gate** — not a bespoke enforcement binary — which is proportionate because a documentation-only diff is trivially inspectable by eye.
+- **check-docs fail-closed (cross-platform, minimal).** Refactor `check-docs.mjs` to a pure `checkDocs(root)` (injected filesystem root) beside its CLI entry. Add `scripts/check-docs.test.mjs` (`node:test`) with two cases against a temp fixture root: **present** (all `required[]` incl. `DESIGN_SYSTEM.md` → pass) and **missing** (`DESIGN_SYSTEM.md` absent → **fail**, proving fail-closed). Temp-dir + Node `fs` only — **no `chmod`, deterministic on Windows.** (The "unreadable" case is dropped: platform-fragile, low value.) Wire `"test:docs"` into `"check:docs"` so it can't fail-open; baseline `npm run check:docs`.
 
 ---
 
@@ -77,7 +71,7 @@ Author `DESIGN_SYSTEM.md` per the 7 frozen layers; each entry status-tagged; the
 4. **Semantic verifier** (read-only: audit→OD→doc-section→governance traceability).
 5. **Checkpoint C** — integrated-draft audit: every OD maps to a normative statement / explicit exception / candidate label / recorded deferral; the draft must NOT claim literals were replaced or candidates adopted; Decks/counter/foil/touch-targets match the rulings exactly.
 
-**Every increment runs the §0 executable allowlist guard pre-commit (expect `scope-guard: clean`); a failing guard halts Wave 2.**
+**Every increment: the author runs the §0 review-time scope check (`git status --porcelain` + diff vs FREEZE_BASE) and confirms only allowlisted paths; any disallowed path halts Wave 2.**
 
 ## 6. Data migration & compatibility
 **Not applicable** — documentation only; no schema, data, persisted format, or runtime touched.
@@ -86,7 +80,7 @@ Author `DESIGN_SYSTEM.md` per the 7 frozen layers; each entry status-tagged; the
 Code rollback = revert the doc commit(s) on `design-system`. No data transformation → no recovery path needed; point of no return: none. `check:docs` change is additive and revertible.
 
 ## 8. Verification plan
-- **Allowlist guard (§0)** — run at each increment + final verification; expect `scope-guard: clean` (exit 0). Any disallowed path → exit 1 = stop.
+- **Scope check (§0)** — author + Codex confirm the complete working state (`git status --porcelain` + diff vs FREEZE_BASE) touches only allowlisted paths; any disallowed path → stop.
 - `git diff --check` — expect PASS.
 - `npm run check:docs` — now runs the validator **and** `test:docs`; expect PASS. **Fail-closed is proven** by the `missing`/`unreadable` cases in `scripts/check-docs.test.mjs` (they fail if `DESIGN_SYSTEM.md` is absent or unreadable) — no manual file-removal needed.
 - **Maintained-doc search** for conflicting gold / touch-target / primitive / subsystem claims across the source-of-truth docs.
