@@ -192,7 +192,9 @@ Phases 1–2 are the spine; if review wants to stop after either, the pillar is 
 ---
 
 ## 12 · Approval record
-- Owner decisions captured (this turn): Overview kept + sets-home under My Collection (Decision B); new/rewritten surfaces token-clean + new tokens sanctioned incl. the Ring (Decision C); "write the full proposal."
-- **Pending owner ruling — Decision A** (the edit-mode reversal) and the **Ring promotion** (`[Proposed Target]` → `[Target]`).
+- **Decision A — APPROVED (owner, 2026-07-20):** adopt the reversal. Permanent steppers, no edit mode — *"add is a place, not a mode, is the whole point of this redesign."* The shipped `collection-redesign` P0 "+Add" toggle is deliberately superseded.
+- **Ring promotion — APPROVED (owner):** the completion Ring is to be built; `[Proposed Target]` → `[Target]` sanctioned, with the §5.1 recorded comparison as its promotion evidence. (Owner: *"especially completion ring."*)
+- **Decision B — resolved (owner):** Overview kept; sets-home becomes the My Collection view.
+- **Decision C — resolved (owner):** new/rewritten surfaces token-clean; new tokens sanctioned (§5).
 - **Pending Codex review** — full proposal, with independent scrutiny of the §5 governance amendment.
-- On approval → Phase 0 first, then Phases 1–2 (the spine), reviewed before 3–6.
+- On Codex clearance → Phase 0 first, then Phases 1–2 (the spine), reviewed before 3–6.
