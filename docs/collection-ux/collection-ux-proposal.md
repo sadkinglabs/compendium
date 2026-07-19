@@ -1,6 +1,6 @@
 # Collection UX Redesign — Engineering Constitution §8 Proposal
 
-**Status:** Owner-approved on product calls · Codex R1 *Changes required* (3 Majors) **addressed** → pending Codex re-review (no `src/**` change until cleared)
+**Status:** Owner-approved on product calls · Codex R1 (3 Majors) + R2 (2 Majors) **addressed** → pending Codex re-review (no `src/**` change until cleared)
 **Class:** High-risk (core-pillar restructure; touches durable-write, transactional-user-data, profile-isolation, zero-image invariants; carries a governed `DESIGN_SYSTEM.md` amendment)
 **Branch:** `collection-ux-redesign` (off `main` @ `05e6ebb`)
 **Author:** Claude (lead engineer) · **Reviewer:** Codex (principal/adversarial) · **Authority:** owner
@@ -95,6 +95,20 @@ Notation: **[reuse]** = existing shipping component, **[rework]** = existing com
 5. **Lists** **[rework of `ListsIndex`]** — three visually-distinct grammars: **Pinned** (Wishlist, star badge) · **Tracked** (`kind='wanted'`, gold progress meter) · **Custom** (`ListFan` fanned thumbs). Parts exist; this is a re-grouping + layout pass.
 6. **Coverage + export** **[reuse `ListDetail`/`ExportListSheet`]** — a list *reads* owned (gold checks / ruby "Missing" tags), one gilt "Export N Missing" action, and the clarifying footnote "*this list reads your collection; owned is edited only in Collection*." Mechanism already correct (compareEngine); this is copy + entry-point alignment.
 
+### 4.1 Stepper write controller (DOM-free) — the mechanism behind the §1 durability contract
+
+The provisional/confirmed contract is only prose until a component *owns* confirmed-vs-pending state. It does. New pure module **`src/pillars/ownedStepController.js`** (sibling to `collectionGoalDrain.js`), consumed by the single existing binding **`useOwnedLedger`** (`OwnedControl.jsx`) that every owned stepper (`LedgerRow`, `BinderTile`, `CollectionCardSheet`) already routes through. That hook is the **consumer boundary** — no stepper touches the repository directly.
+
+- **Factory (injected deps, no DB/DOM):** `createOwnedStepController({ read, write, notify, isAlive })`.
+- **State:** `{ confirmedQty, pendingDelta, pendingCount, error }`.
+- **Displayed quantity:** `max(0, confirmedQty + pendingDelta)` (clamped at zero).
+- **On tap:** record a provisional delta (`pendingDelta += ±1`, `pendingCount++`) and enqueue the **profile-bound** repository write on the row-key chain (`enqueueWrite(ownedRowKey(pid,…), write)`).
+- **On chain drain (success):** `read` the authoritative qty, replace `confirmedQty`, and clear the settled provisional state.
+- **On failure:** perform the same authoritative `read`, restore `confirmedQty`, clear provisional state, and `notify` a visible **"Couldn't save; count restored"**.
+- **After disposal/unmount:** the queued write **persists** (fire-and-continue), but no controller state is applied — the `isAlive` guard, identical to `collectionGoalDrain`.
+
+This makes the §8 acceptance cases *executable*: the controller's optimistic-reconcile + unmount + failure-restore behaviour is tested with injected `read`/`write`/`notify` (pure, deterministic), while repository *persistence* is tested separately against in-memory SQLite. Neither half is provable by repository calls alone.
+
 ---
 
 ## 5 · Design-system amendment (governed — `DESIGN_SYSTEM.md`)
@@ -147,7 +161,7 @@ Order = highest leverage first; later phases are progressively lighter.
 
 - **Phase 0 — design-system amendment (docs + token *definitions*, status stays `[Target]`).** Record the Ring promotion + §5 token definitions in `DESIGN_SYSTEM.md`, and define `--ring-track` + the warm-brown family in `tokens.css`. **They remain `[Target]` — no application code consumes them in this increment** (the lifecycle forbids marking a token `[Shipping]` before its adoption evidence lands). Gate: `npm run check:docs` + `npm run build`.
 - **Phase 1 — Sets-home + Ring primitive (first consumer) → tokens go `[Shipping]` here.** Build the `Ring` primitive and `SetsHome` (its first consumer) + the `buildSetCompletion` model. **In this same increment**, move `--ring-track` and the warm-brown tokens actually consumed to `[Shipping]` in `DESIGN_SYSTEM.md`. No intermediate commit consumes a `[Target]` token. (Overview untouched.)
-- **Phase 2 — Kill edit-mode; permanent steppers + FAB→actions menu.** The reversal (Decision A). Highest-risk for the write model; gated by the §8 durability integration tests.
+- **Phase 2 — Kill edit-mode; permanent steppers + FAB→actions menu.** The reversal (Decision A). Lands the **`ownedStepController`** (§4.1) behind `useOwnedLedger` so every stepper carries confirmed/pending/error state; retires `editMode`/`goAdd` and the stacked FAB. Highest-risk for the write model; gated by the §8 controller + repository tests.
 - **Phase 3 — Inline lens toolbar** in the per-set view (off the stacked FAB).
 - **Phase 4 — Trophy sheet un-gate.**
 - **Phase 5 — Lists three-grammar pass.**
@@ -167,7 +181,8 @@ Phases 1–2 are the spine; if review wants to stop after either, the pillar is 
 
 **New automated tests this proposal requires (acceptance bar, not optional):**
 - **Set-completion model** (`buildSetCompletion`, deterministic, no DB): multi-set cards counted per set · foil-only rows count as owned · the `''` Unspecified bucket excluded from denominators · **empty (zero-owned) sets retained** at 0% · a newly-introduced set code appears automatically · token cards excluded.
-- **Repository integration tests for the Phase 2 stepper→durable-store contract** (real repo, in-memory SQLite; the queue tests prove ordering/profile-binding only — these prove the *component-to-store contract*): (1) rapid same-row increments/decrements settle to the correct final `owned_cards` qty; (2) concurrent writes to different rows all land; (3) a rejected write reconciles the optimistic UI back to the authoritative value; (4) **profile switch mid-pending** does not leak a write across profiles; (5) unmount/navigation while writes finish loses no *confirmed* write; (6) reload after all writes settle shows the confirmed state.
+- **`ownedStepController` tests (§4.1, pure — injected `read`/`write`/`notify`/`isAlive`, no DB/DOM):** (a) displayed qty = `max(0, confirmedQty + pendingDelta)` through interleaved taps; (b) a rejected `write` restores `confirmedQty` from the authoritative `read` and emits the visible error; (c) after `isAlive`→false (unmount) the write still fires but **no state is applied**; (d) on drain, `confirmedQty` is replaced from the authoritative read and settled provisional state clears. These are the optimistic-reconcile/unmount cases that **repository calls alone cannot prove**.
+- **Repository persistence tests (real repo, in-memory SQLite):** (1) rapid same-row increments/decrements settle to the correct final `owned_cards` qty; (2) concurrent writes to different rows all land; (3) **profile switch mid-pending** does not leak a write across profiles; (4) reload after all writes settle shows the confirmed state.
 
 **Manual (documented gates — a browser pass is not native proof):**
 - **Durability pass (Decision A's risk):** rapid stepper taps same-row and across rows; kill/reopen; confirm every **confirmed** tap survived and pending taps were shown as provisional (the §1 contract — *not* "every displayed tap survives kill"). Offline throughout.
@@ -200,7 +215,7 @@ Phases 1–2 are the spine; if review wants to stop after either, the pillar is 
 
 - **Docs/tokens:** `DESIGN_SYSTEM.md`, `src/theme/tokens.css`, `docs/collection-ux/**`.
 - **Collection:** `src/pillars/Collection.jsx` (+ a new `src/pillars/SetsHome.jsx`), `src/components/CollectionCardViews.jsx`, `src/components/CollectionCardSheet.jsx`, and the Collection FAB wiring.
-- **New pure logic (DOM-free + Node test):** a set-completion module (`buildSetCompletion`, e.g. `src/store/setCompletion.js` + `.test.mjs`), mirroring the existing extraction pattern.
+- **New pure logic (DOM-free + Node test):** the set-completion module (`buildSetCompletion`, e.g. `src/store/setCompletion.js` + `.test.mjs`) and the **stepper write controller** (`src/pillars/ownedStepController.js` + `.test.mjs`, §4.1), both mirroring the existing extraction pattern. `useOwnedLedger` (`OwnedControl.jsx`) becomes the controller's React binding (the sole stepper→store boundary).
 - **Shared primitives:** a new `Ring` primitive (`src/components/`), consumed by Collection only for now.
 - **Denied without a follow-up proposal:** any other pillar's files, schema, catalog, or token migration of components not listed above.
 
@@ -215,5 +230,8 @@ Phases 1–2 are the spine; if review wants to stop after either, the pillar is 
   - *Major 1 (durability):* replaced the false "exactly the taps survive kill" criterion with the honest **provisional/confirmed** contract (§1, §6) + six required **repository integration tests** (§8). Persistent journal ruled out of scope.
   - *Major 2 (sets-home data):* removed invented release dates; added the pure **`buildSetCompletion`** model with its derivation rules + deterministic tests (§4.1, §8, §11). Corrected the false "no new reads" claim.
   - *Major 3 (lifecycle ordering):* split token **definition (Phase 0, stays `[Target]`)** from **promotion to `[Shipping]` (Phase 1, with the first consumer)** (§5.1, §5.2, §7); added `test:ui` explicitly (§8).
+- **Codex review R2 — Changes required (2 Majors), both addressed in this revision:**
+  - *Major A (stale design reference):* updated `collection-on-system-mockup.html` to match the corrected proposal — removed `.s-date` + every release date, replaced the set-plate completion bars with the **Ring** (SVG arc, per-plate + a total-completion Ring), and corrected the compliance text to identify the Ring + `--ring-track`/warm-brown as approved `[Target]` inputs that become `[Shipping]` on Phase 1 (no "Ring omitted/Candidate" statements remain; only foil is still Candidate).
+  - *Major B (unspecified provisional/confirmed mechanism):* specified the DOM-free **`ownedStepController`** (§4.1) — state `{confirmedQty, pendingDelta, pendingCount, error}`, displayed `max(0, confirmedQty+pendingDelta)`, drain→authoritative-read, failure→restore+visible signal, `isAlive` unmount guard — consumed via `useOwnedLedger` (the sole stepper→store boundary). Named it in §7/§8/§11 and split the §8 tests into controller (injected deps) vs repository persistence.
 - **Pending Codex re-review** of this revision.
 - On Codex clearance → Phase 0 first, then Phase 1–2 (the spine), reviewed before 3–6.

@@ -18,6 +18,8 @@
     --ink-muted:#9a8b6a; --ink-faint:#8f8168; --ink-status:#cbbfa8;
     /* Collection accent — single-accent rule: ruby only */
     --accent-ruby:#d25873; --ruby-rgb:210,88,115;
+    /* completion Ring — owner-approved [Target] now, [Shipping] on Phase 1 adoption */
+    --ring-track:rgba(74,60,34,.9); --ring-fill:var(--accent-ruby);
     /* shipping rose-glass stepper */
     --rose-bg:rgba(224,169,177,.12); --rose-glyph:#f0c8ce;
     /* warm-brown chrome family */
@@ -203,10 +205,19 @@
   }
   .lrow.unowned .thumb, .lrow.unowned .l-name, .lrow.unowned .l-meta{opacity:.45;}
 
-  /* meters — a slim ruby bar (the Ring is Candidate; a bar ships) */
+  /* meters — gold progress bars for list goals + coverage. Set/total completion uses the Ring. */
   .meter{height:4px; border-radius:var(--rad-pill); background:var(--surface-well); overflow:hidden;}
   .meter i{display:block; height:100%; border-radius:var(--rad-pill); background:var(--accent-ruby);}
   .meter.gold i{background:linear-gradient(90deg, var(--gold-antique), var(--gold-leaf));}
+
+  /* Ring — completion primitive (owner-approved [Target]). Pure SVG arc; fill = contextual accent.
+     No blend-mode, no backdrop-filter, no per-frame animation → clears the WebView paint rules.
+     Decorative (aria-hidden); the adjacent mono count carries the value for screen readers. */
+  .ring{position:relative; flex:none; display:inline-flex; align-items:center; justify-content:center;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .rg-track{fill:none; stroke:var(--ring-track);}
+  .ring .rg-fill{fill:none; stroke:var(--ring-fill); stroke-linecap:round; transition:stroke-dashoffset .4s;}
+  .ring .rg-pct{position:absolute; font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-size:11px; color:var(--ink-body);}
 
   /* mono figures */
   .mono{font-family:var(--f-mono); font-variant-numeric:tabular-nums;}
@@ -278,10 +289,10 @@
      Screen 1 — Sets completion home
      ============================================================ */
   .total-line{
-    display:flex; align-items:baseline; gap:8px; margin:14px 2px 18px;
+    display:flex; align-items:center; gap:14px; margin:14px 2px 18px;
   }
   .total-line .mono{font-size:20px; color:var(--ink-head);}
-  .total-line small{font-family:var(--f-ui); font-size:12px; color:var(--ink-muted); letter-spacing:.04em;}
+  .total-line small{display:block; font-family:var(--f-ui); font-size:12px; color:var(--ink-muted); letter-spacing:.04em;}
   .set-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .set-plate{
     display:block; width:100%; text-align:left; cursor:pointer;
@@ -294,9 +305,8 @@
     letter-spacing:.1em; text-transform:uppercase; color:var(--ink-head);
     min-height:34px; line-height:1.3;
   }
-  .set-plate .meter{margin:10px 0 9px;}
-  .set-plate .s-count{font-size:12.5px; color:var(--ink-body-2); display:block;}
-  .set-plate .s-date{font-family:var(--f-ui); font-size:10.5px; color:var(--ink-faint); letter-spacing:.05em; margin-top:3px; display:block;}
+  .set-plate .s-body{display:flex; align-items:center; gap:12px; margin:12px 0 2px;}
+  .set-plate .s-count{font-size:12.5px; color:var(--ink-body-2);}
 
   /* ============================================================
      Screens 2–3 — inside a set
@@ -446,8 +456,9 @@
 <main class="page">
   <header class="page-head">
     <h1>Collection · On-System</h1>
-    <p>The Collection pillar redesign, rebuilt strictly from the governed design system —
-       shipping tokens and primitives only. Restraint is the feature.</p>
+    <p>The Collection pillar redesign, rebuilt from the governed design system — shipping
+       primitives plus the owner-approved completion Ring and its tokens
+       (<code>[Target]</code> now, <code>[Shipping]</code> on Phase 1 adoption). Restraint is the feature.</p>
   </header>
 
   <section class="gallery" aria-label="Six phone screens">
@@ -468,46 +479,76 @@
           </div>
 
           <div class="total-line">
-            <span class="mono">312 / 3,158</span>
-            <small>cards owned · 9.9%</small>
+            <span class="ring" aria-hidden="true">
+              <svg width="46" height="46" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="4"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="4" stroke-dasharray="100.5" stroke-dashoffset="90.6"></circle></svg>
+              <span class="rg-pct" style="font-size:10px;">10%</span>
+            </span>
+            <div>
+              <span class="mono">312 / 3,158</span>
+              <small>cards owned · 9.9%</small>
+            </div>
           </div>
 
           <div class="set-grid">
             <button class="set-plate" type="button">
               <span class="s-name">Alpha</span>
-              <span class="meter"><i style="width:15%;"></i></span>
-              <span class="s-count mono">118 / 780</span>
-              <span class="s-date">Released Aug 2023</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="85.4"></circle></svg>
+                  <span class="rg-pct">15%</span>
+                </span>
+                <span class="s-count mono">118 / 780</span>
+              </div>
             </button>
             <button class="set-plate" type="button">
               <span class="s-name">Beta</span>
-              <span class="meter"><i style="width:13%;"></i></span>
-              <span class="s-count mono">96 / 766</span>
-              <span class="s-date">Released Nov 2023</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="88.0"></circle></svg>
+                  <span class="rg-pct">13%</span>
+                </span>
+                <span class="s-count mono">96 / 766</span>
+              </div>
             </button>
             <button class="set-plate" type="button">
               <span class="s-name">Arthurian Legends</span>
-              <span class="meter"><i style="width:9%;"></i></span>
-              <span class="s-count mono">52 / 612</span>
-              <span class="s-date">Released Jun 2024</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="92.0"></circle></svg>
+                  <span class="rg-pct">9%</span>
+                </span>
+                <span class="s-count mono">52 / 612</span>
+              </div>
             </button>
             <button class="set-plate" type="button">
               <span class="s-name">Dragonlord</span>
-              <span class="meter"><i style="width:6%;"></i></span>
-              <span class="s-count mono">30 / 520</span>
-              <span class="s-date">Released Mar 2025</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="94.7"></circle></svg>
+                  <span class="rg-pct">6%</span>
+                </span>
+                <span class="s-count mono">30 / 520</span>
+              </div>
             </button>
             <button class="set-plate" type="button">
               <span class="s-name">Gothic</span>
-              <span class="meter"><i style="width:3%;"></i></span>
-              <span class="s-count mono">12 / 406</span>
-              <span class="s-date">Released Jan 2026</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="97.5"></circle></svg>
+                  <span class="rg-pct">3%</span>
+                </span>
+                <span class="s-count mono">12 / 406</span>
+              </div>
             </button>
             <button class="set-plate" type="button">
               <span class="s-name">Promotional</span>
-              <span class="meter"><i style="width:5%;"></i></span>
-              <span class="s-count mono">4 / 74</span>
-              <span class="s-date">Ongoing</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="95.1"></circle></svg>
+                  <span class="rg-pct">5%</span>
+                </span>
+                <span class="s-count mono">4 / 74</span>
+              </div>
             </button>
           </div>
         </div>
@@ -534,7 +575,7 @@
           <span>Home</span><span>Codex</span><span class="on" aria-current="page">Collection</span><span>Decks</span><span>Play</span>
         </nav>
       </div>
-      <figcaption>1 · Sets completion home — plates on <code>--surface-card</code>, slim ruby bars (the Ring is Candidate), mono counts, gold Fab.</figcaption>
+      <figcaption>1 · Sets completion home — plates on <code>--surface-card</code>, completion Rings (owner-approved <code>[Target]</code>), mono counts, gold Fab.</figcaption>
     </figure>
 
     <!-- ============ 2 · LEDGER ============ -->
@@ -914,8 +955,9 @@
   <footer class="compliance" aria-label="Design-system compliance">
     <div class="rubric"><span class="r-label">Compliance</span><span class="r-hair"></span></div>
     <ul>
-      <li><strong>Built only from DESIGN_SYSTEM.md <code>[Shipping]</code> tokens + primitives</strong> — SegTabs, Chip, SectionLabel rubric, GothicSheet, SearchPill, Fab, rose Stepper, CardArt gradient fallback, ListRow, meters.</li>
-      <li><strong>Candidates omitted or flagged</strong> — completion Ring omitted (slim bars instead); foil appears only as a matte "Candidate — not shipping" flag, never a holo effect.</li>
+      <li><strong>DESIGN_SYSTEM.md <code>[Shipping]</code> primitives</strong> — SegTabs, Chip, SectionLabel rubric, GothicSheet, SearchPill, Fab, rose Stepper, CardArt gradient fallback, ListRow, gold meters (list goals + coverage).</li>
+      <li><strong>Approved <code>[Target]</code> inputs — become <code>[Shipping]</code> on Phase 1 adoption</strong> — the completion Ring (promoted from Candidate, owner-approved) with <code>--ring-track</code> + the warm-brown chrome tokens; consumed here as the set/total completion primitive.</li>
+      <li><strong>Still Candidate</strong> — foil appears only as a matte "Candidate — not shipping" flag, never a holo effect.</li>
       <li><strong>Invented decorations removed</strong> — no wax-seals, no fleuron rules (rubric + fade hairline is the only divider), no gold corner brackets, no embossed set sigils, no tooled plates.</li>
       <li><strong>Type discipline</strong> — Cinzel capped at weight 700 (OD-19), EB Garamond for card names, Hanken Grotesk labels, tabular mono counts.</li>
       <li><strong>Single ruby accent</strong> — #d25873 for Collection interaction and the dock; steppers keep the shipping rose glass; all other chrome is gold/warm-brown.</li>
