@@ -47,7 +47,7 @@ function fmtClock(secs) {
     : `${m}:${String(s).padStart(2, '0')}`;
 }
 
-export default function LifeCounter({ settings, mode, players = /** @type {{ you?: any, opp?: any }} */ ({}), deck = null, resume = null, onMinimize, onPersist, onRecord, onExit, onNewMatch, registerApi }) {
+export default function LifeCounter({ settings, mode, players = /** @type {{ you?: object, opp?: object }} */ ({}), deck = null, resume = null, onMinimize, onPersist, onRecord, onExit, onNewMatch, registerApi }) {
   const start = settings.default_max_life || 20; // clamped to <=20 by initSide - matchLife owns the cap
   const quick = mode === 'quick';
 
@@ -851,7 +851,8 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
 }
 
 /* ── Play centered modal shell ── */
-/** @param {{ id?: any, title?: any, subtitle?: any, onClose?: any, children?: any, actions?: any, rotated?: any }} props */
+/** JSX-content props (title/subtitle/children/actions) are `any`: without @types/react a ReactNode has no nameable type here.
+ * @param {{ id?: string, title?: any, subtitle?: any, onClose?: () => void, children?: any, actions?: any, rotated?: boolean }} props */
 function VModal({ id, title, subtitle, onClose, children, actions, rotated }) {
   return (
     <div className="vc-modal-overlay" id={id} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -915,7 +916,7 @@ function MatchLogModal({ open, log, onClose }) {
   );
 }
 
-/** @param {{ open?: any, who?: any, value?: any, onClose?: any, onSet?: any, rotated?: any }} props */
+/** @param {{ open?: boolean, who?: string, value?: number, onClose?: () => void, onSet?: (v: number) => void, rotated?: boolean }} props */
 function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
   const [v, setV] = useState(value);
   useEffect(() => { if (open) setV(value); }, [open, value]);
@@ -933,7 +934,7 @@ function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
   );
 }
 
-/** @param {{ open?: any, dice?: any, setDice?: any, onClose?: any, rotated?: any }} props */
+/** @param {{ open?: boolean, dice?: { type?: number, value?: any }, setDice?: (update: any) => void, onClose?: () => void, rotated?: boolean }} props */
 function DiceModal({ open, dice, setDice, onClose, rotated }) {
   const [landed, setLanded] = useState(0);
   const [rolling, setRolling] = useState(false);
