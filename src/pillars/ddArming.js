@@ -133,6 +133,7 @@ export function ddReduce(phase, event) {
 /** Phase a side should start in, derived from life - never assumed. */
 export const initialPhase = (life) => (life > 0 ? DD.ALIVE : DD.FALLEN);
 
+/** @typedef {'player' | 'opponent'} DdSide */
 const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites - NOT 'enemy'
 
 /**
@@ -141,6 +142,7 @@ const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites
  *
  * `initialLife` is REQUIRED and derives the starting phase per side: a match resumed
  * with a side already at zero enters FALLEN at mount and arms without a further tap.
+ * @param {{ initialLife: Record<DdSide, number>, onChange?: any, setTimeout?: any, clearTimeout?: any }} opts
  */
 export function createDdArming({ initialLife, onChange, setTimeout: setT = setTimeout, clearTimeout: clearT = clearTimeout }) {
   // Refuse a missing side outright. `undefined > 0` is false, so a mis-keyed
