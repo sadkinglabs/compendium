@@ -136,12 +136,14 @@ export const initialPhase = (life) => (life > 0 ? DD.ALIVE : DD.FALLEN);
 /** @typedef {'player' | 'opponent'} DdSide */
 const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites - NOT 'enemy'
 
+/** @typedef {(typeof DD)[keyof typeof DD]} DdPhase */
+
 /**
  * The Death's Door arming instance. Every public entry that takes a side takes a DdSide, so a
  * mis-keyed `'enemy'` at a call site is an author-time error (the shipped bug this typing exists
  * to catch), not a runtime-only assert.
  * @typedef {object} DdApi
- * @property {(who: DdSide) => any} phase
+ * @property {(who: DdSide) => DdPhase} phase
  * @property {(who: DdSide, prev: number, next: number) => void} syncLife
  * @property {(who: DdSide) => void} tap
  * @property {(on: boolean, lifeOf: (who: DdSide) => number) => void} setSuppressed
@@ -155,7 +157,7 @@ const SIDES = ['player', 'opponent'];   // matches change(who) at the call sites
  *
  * `initialLife` is REQUIRED and derives the starting phase per side: a match resumed
  * with a side already at zero enters FALLEN at mount and arms without a further tap.
- * @param {{ initialLife: Record<DdSide, number>, onChange?: any, setTimeout?: any, clearTimeout?: any }} opts
+ * @param {{ initialLife: Record<DdSide, number>, onChange?: (who: DdSide, phase: DdPhase) => void, setTimeout?: (handler: () => void, ms: number) => any, clearTimeout?: (handle: any) => void }} opts
  * @returns {DdApi}
  */
 export function createDdArming({ initialLife, onChange, setTimeout: setT = setTimeout, clearTimeout: clearT = clearTimeout }) {
