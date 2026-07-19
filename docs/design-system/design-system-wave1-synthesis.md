@@ -2,7 +2,7 @@
 
 **Lead/coordinator synthesis of 3 independent read-only reviewers** (Foundations, Patterns & Interaction, Architecture Adversary), **revised per Codex Wave-1 disposition (Changes Required).** Supersedes the original audit where they disagree.
 
-**Checkpoint A is NOT cleared.** Wave 2 authoring cannot begin until: (1) Codex clears the focused re-review; (2) the owner rules or defers OD-1..20; (3) foil + both walled-subsystem calls are decided. *Silence is not approval — including mine.*
+**Checkpoint A is CLEARED (2026-07-19).** Codex review gate = **Approved** (all six Majors + the non-blocking follow-up resolved; `git diff --check` PASS). Owner **ruled OD-1..20** (see *Owner Rulings* below). **Next gate: Checkpoint B input-freeze → §8 proposal (Codex review + owner approval) → THEN normative authoring.** No `DESIGN_SYSTEM.md` prose and no `src/**` change occurs until the §8 proposal is approved.
 
 ---
 
@@ -16,6 +16,16 @@ Rev R2 accepted all six original Majors; **Rev R3** resolves the one Major Codex
 6. **Scope-guard self-contradiction** → **`tokens.css` removed from the allowlist** (Part 5); its stale-comment fix moves to adoption-debt. All `src/**` denied.
 
 Minors accepted: metric methods published + blended figure dropped (Part 2); jade `var()` count corrected 18→**16**; K11 re-described as doc-vs-shipping-reality (not internal self-contradiction); CardRow = visual/data input only, not canonized (OD-13a); OD-20 states the *invariant* not the wiring; check:docs **test seam** defined (Part 5).
+
+---
+
+## Owner Rulings — recorded (Checkpoint A exit, 2026-07-19)
+- **OD-1..20 — APPROVED as recommended.** Each `[Proposed Target]` is owner-approved and promotes to `[Target]` (approved, **not implemented**) at the Checkpoint B freeze; `[Exception]`/`[Deprecated]` dispositions ratified. **Nothing is built** — adoption stays the separate later track. The OD-3/5/7 approvals are of the *role*; their implementation choice (migrate vs new token; win/loss vs danger/destructive semantics) stays deferred pending visual / high-contrast / semantic review, per the sheet.
+- **OD-12 — SANCTION both walled subsystems** (`.cx-decks`, `.cx-life-tracker`) as **documented current-state exceptions (not permanent ideals)**. Migration onto `:root` requires its own device-verified proposal. This pass reconciles only the `--violet-rgb` role rename + documents the 3 same-name overrides.
+- **OD-19 — CLAMP Cinzel usage to 700** (no 800 font asset). Adoption-track code change, deferred.
+- **Foil — Candidate/Provisional, DEFERRED.** Outcome constraints only (offline / reduced-motion / zero-image / non-load-bearing); no canonical technique or verified fallback; design + build deferred to a future device-verified implementation proposal.
+
+These rulings + Codex's Approved disposition **clear Checkpoint A.** Next: Checkpoint B input-freeze, then the §8 proposal.
 
 ---
 
@@ -141,12 +151,12 @@ Order: **OD rulings → Checkpoint B input-freeze → full §8 proposal (Codex r
 
 ---
 
-## Checkpoint A — status
-- [x] Taxonomy distinguishes **`[Proposed Target]`** (recommended, pending owner ruling) from **`[Target]`** (owner-approved — *currently EMPTY, no OD ruled*); implementation may use only `[Shipping]`/Observed; Adoption-Debt Ledger holds the pending items (Part 4/4b).
+## Checkpoint A — status: **CLEARED (2026-07-19)**
+- [x] Taxonomy distinguishes **`[Proposed Target]`** (pending ruling) from **`[Target]`** (owner-approved, not implemented; populated at the Checkpoint B freeze); implementation may use only `[Shipping]`/Observed (Part 4/4b).
 - [x] Foil = **Candidate/Provisional**; OD-19 restored; promotion rule strengthened; allowlist denies all `src/**`; proposal gate precedes authoring; metric per-axis.
 - [x] High-leverage claims verified/qualified (Part 1).
-- [ ] **Codex focused re-review** clears: status taxonomy & target ledger · foil classification · corrected OD-19 · proposal sequencing · promotion criteria · exact Wave-2 allowlist. *(External — pending.)*
-- [ ] **Owner rules/defers OD-1..20** (Part 3). *(External — pending.)*
-- [ ] **Foil (Candidate) + walled-subsystem (OD-12) calls decided.** *(External — pending.)*
+- [x] **Codex review gate = Approved** (six Majors + non-blocking follow-up resolved; `git diff --check` PASS).
+- [x] **Owner ruled OD-1..20** — approved all as recommended (see Owner Rulings).
+- [x] **Foil = Candidate/Provisional (deferred); OD-12 walls sanctioned as current-state exceptions; OD-19 clamp to 700.**
 
-**Wave 2 remains blocked.** Silence is not approval.
+**Checkpoint A cleared → next gate: Checkpoint B input-freeze, then the §8 proposal (Codex + owner approval) BEFORE any normative authoring. Wave 2 authoring has not begun; nothing in `src/**` changes.**
