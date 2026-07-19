@@ -2,12 +2,16 @@
 
 ## Status and classification
 
-**Status: Rev 2 — revised after review; awaiting re-review** · Risk: **Standard** (adds build-time tooling + a baseline gate + JSDoc/ambient annotations in the seven owned files; **zero runtime/logic change** — no device gate, build-time only)
+**Status: Rev 3 — revised after re-review; awaiting re-review** · Risk: **Standard** (adds build-time tooling + a baseline gate + JSDoc/ambient annotations in the seven owned files; **zero runtime/logic change** — no device gate, build-time only)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-18 · Roadmap §16 #5, the final item. **Diagnostic complete (see Evidence); no gate code written yet.**
 
+> **Rev 3 (the Rev-2 wrapper Major + Minor accepted).**
+> - **Major (fail-open wrapper).** The CLI-text-parsing wrapper could exit green when `tsc` failed for a non-diagnostic reason (bad config, crash, spawn failure, global diagnostic, output-format drift). Rewritten **fail-closed** on the **TypeScript compiler API**: config/global/unknown-file diagnostics and any compiler throw all **fail**; only diagnostics in the enumerated known-transitive files are discarded; paths are normalized. The pure `classify` core is unit-tested (`scripts/check-types.test.mjs`) for owned-fail / transitive-pass / global-fail / unknown-fail / clean-pass / compiler-throw, and `check:types` runs those tests before the check on every invocation.
+> - **Minor (two overstatements corrected).** A transitive-*only* diagnostic can't fail the gate, but a transitive *contract* change producing an owned call-site diagnostic correctly can; and success is the **owned diagnostic surface** reaching zero, not the whole closure.
+
 > **Rev 2 (both Majors + the Minor accepted).** The scope/ownership mismatch and the `any` bridge were the same root cause — an *unfiltered* checked program. Fixed together:
-> - **Major 1 (ownership boundary).** The checked program is the enumerated **23-file closure**, not seven files. The gate now **mechanically bounds ownership**: `scripts/check-types.mjs` runs `tsc` over the closure but **fails only on diagnostics in the seven owned files** (+ the ambient `.d.ts`). A transitive file's future diagnostic can never fail the gate; "narrow the include" is removed as a mitigation, replaced by this filter + an explicit policy (§ Checked closure and ownership boundary).
+> - **Major 1 (ownership boundary).** The checked program is the enumerated **23-file closure**, not seven files. The gate now **mechanically bounds ownership**: `scripts/check-types.mjs` runs the compiler over the closure but **fails only on diagnostics in the seven owned files** (+ the ambient `.d.ts`). A transitive-*only* diagnostic cannot fail the gate (a transitive *contract* change that produces an owned diagnostic still can, correctly — see §policy); "narrow the include" is removed as a mitigation, replaced by this filter + an explicit policy (§ Checked closure and ownership boundary).
 > - **Major 2 (broad `any`).** The `Capacitor?: any` / `CapacitorHttp?: any` declarations existed only because the *unfiltered* closure reached `deckRepository`. With the ownership filter, that file's `window.Capacitor` access is transitive and never gates — so those declarations are **removed entirely**. `ambient.d.ts` shrinks to a single non-`any` line (`declare module '*.css'`), needed by `LifeCounter.jsx`'s own CSS import. No `any` bridge is introduced; the native path is simply out of this gate's ownership, stated plainly rather than silenced.
 > - **Minor (dependency lifecycle).** `typescript` is pinned **exactly** (`"6.0.3"`, no caret); `package-lock.json` is in the implementation and rollback scope; the clean-install claim is corrected (a fresh clone *does* fetch it as a direct dependency).
 
@@ -28,7 +32,7 @@ That is the exact class of the shipped bugs — caught before the code runs, by 
 **Success criteria**
 
 1. A committed `tsconfig.json` + a `check:types` script gate the **seven owned files** — `LifeCounter.jsx` + the six typed boundary modules — with **mechanical ownership bounding**: `tsc` checks the full reachable closure (so callee types inform the boundary checks), but the gate **fails only on diagnostics in the owned files** (+ ambient `.d.ts`). `typescript` is a direct, exactly-pinned devDependency.
-2. `check:types` is **green at rest** — the closure is brought to zero diagnostics via **ambient declarations + JSDoc annotations only**. **No production logic is restructured** (`checked-js-pilot.md` criterion 4 — if a file needs restructuring to pass, it leaves the gate).
+2. `check:types` is **green at rest** — the **owned diagnostic surface reaches zero** via **ambient declarations + JSDoc annotations only** (transitive diagnostics are deliberately retained and filtered, not eliminated). **No production logic is restructured** (`checked-js-pilot.md` criterion 4 — if a file needs restructuring to pass, it leaves the gate).
 3. **It bites, proven:** re-injecting `applyStep(cur, 5)` and both historical bugs at their real call sites makes `check:types` fail; reverting makes it pass. Output captured in the commit.
 4. `check:types` joins the enumerated baseline gates (Constitution / AGENTS / CLAUDE.md / BUILD.md), like `test:app`.
 5. **Zero runtime behaviour change.** `--noEmit`; JSDoc/`.d.ts` never reach the bundle. Runtime guards (`assertSide`, snapshot validation) **stay** — this is defence in depth, a second net, not a replacement.
@@ -70,7 +74,7 @@ back.js · ddArming.js · components/QRCode.jsx · native.js · cardArt.js · ca
 
 **The gate owns the seven, not the twenty-three.** `scripts/check-types.mjs` runs `tsc --noEmit` over the closure and then **filters diagnostics to the owned paths**, failing only if an *owned-file* diagnostic remains. This is the mechanical bound Codex asked for, and it defines the maintenance policy exactly:
 
-- **Transitive files are type-checked but never gate.** Their exported signatures still flow into the owned files' checks (a wrong argument LifeCounter passes to `deckRepository` surfaces as a `TS2345` *at the LifeCounter call site* — owned — and is caught). Their *internal* diagnostics (e.g. `deckRepository`'s `window.Capacitor`, `db`'s `import.meta.env`) are **discarded**. A future unrelated edit to a transitive file therefore **cannot** fail the baseline gate.
+- **A transitive-only diagnostic never gates; a transitive *contract* change that produces an owned diagnostic correctly does** (Rev 3, Minor). Transitive files are type-checked, and their exported signatures flow into the owned files' checks — so if `deckRepository` changes a signature `LifeCounter` calls, the resulting `TS2345` surfaces *at the LifeCounter call site* (owned) and **rightly fails**, which is the point. What cannot fail the gate is a diagnostic that exists *only inside* a transitive file (e.g. `deckRepository`'s `window.Capacitor`, `db`'s `import.meta.env`) — those are **discarded**. So an unrelated edit *within* a transitive file cannot fail the gate; a change to the *contract* the owned files depend on can.
 - **Annotation cleanup is allowed only in the seven owned files.** A fix that would require touching a transitive file, or restructuring *logic* in any file, is **out of scope — stop and re-scope** (`checked-js-pilot.md` criterion 4). The gate never pressures the store layer.
 - **Closure growth is irrelevant by construction** — the filter keys on the owned allowlist, not the closure, so the closure may grow or shrink freely. "Narrow the `include`" is **removed** as a mitigation (it cannot bound a TypeScript program anyway).
 - **Boundary soundness:** TypeScript reports argument/shape/excess-property mismatches *at the call site*, which for these boundaries is an owned file — so the owned-only filter does not blind the gate to the target bug class (the `applyStep(cur,5)` bite fires in `LifeCounter.jsx`). The one gap it accepts, stated plainly: a mismatch that surfaces *only inside a transitive callee* is not gated — acceptable, because the target class (caller-key/shape/literal) surfaces at the caller.
@@ -121,7 +125,18 @@ back.js · ddArming.js · components/QRCode.jsx · native.js · cardArt.js · ca
 }
 ```
 
-**`scripts/check-types.mjs`** (the mechanical ownership bound — Major 1): spawn `tsc --noEmit -p tsconfig.json`, parse `path(line,col): error TSxxxx` lines, keep only those whose path is in the **owned allowlist** (the seven files + `src/types/ambient.d.ts`), print the kept ones, `process.exit(kept.length ? 1 : 0)`. The allowlist is a literal array in the script — adding a file to the gate is a deliberate edit, and the closure can grow freely without ever failing the gate.
+**`scripts/check-types.mjs`** (the mechanical ownership bound — Major 1 — built **fail-closed**, Rev 3 Codex Major): it uses the **TypeScript compiler API**, not CLI text-scraping, so it acts on *structured* diagnostics and cannot mistake a compiler failure for "no errors":
+- Load config with `ts.readConfigFile` + `ts.parseJsonConfigFileContent`; **any config read/parse error → FAIL** (exit 1).
+- `ts.createProgram(...)` + `ts.getPreEmitDiagnostics(...)`; the whole thing in `try/catch` — **any throw / missing `typescript` / compiler crash → FAIL** (exit 2).
+- Classify each diagnostic by its `.file` against two explicit, normalized allowlists — **OWNED** (7 files + `ambient.d.ts`) and **KNOWN-TRANSITIVE** (the 16 closure files enumerated above):
+  - diagnostic in an **owned** file → **gated** (fails);
+  - diagnostic in a **known-transitive** file → **discarded** (the intended filter);
+  - diagnostic with **no `.file`** (global/config) → **FAIL** (fail-closed — cannot be attributed);
+  - diagnostic in **any other file** (an unknown/new closure member, a lib, node_modules) → **FAIL** (fail-closed — forces a human to classify closure drift rather than silently absorbing it).
+- Paths are normalized (`path.relative(root, fileName)` → POSIX separators) so Windows/absolute/relative output compares correctly.
+- Exit non-zero if **any** gated **or** unclassified diagnostic remains; zero only when the program compiled and every remaining diagnostic was a known-transitive one.
+
+**The classifier is a pure exported function** `classify(diagnostics, {owned, transitive, root})` → `{gated, discarded, unclassified}`, unit-tested by `scripts/check-types.test.mjs` for the five cases Codex named: an owned-file error **fails**; a transitive-only error **passes** (discarded); a global/config diagnostic (no file) **fails**; an unknown-file diagnostic **fails**; a clean program **passes**; plus a compiler-throw path **fails**. The `check:types` script runs those tests *before* the check — `node --test scripts/check-types.test.mjs && node scripts/check-types.mjs` — so the gate proves its own wrapper is fail-closed on every run. Adding a file to the OWNED set is a deliberate edit; the KNOWN-TRANSITIVE set is the measured closure and any drift from it fails closed.
 
 **`src/types/ambient.d.ts`** (new — one line, no `any` bridge; Major 2):
 ```ts
@@ -137,7 +152,8 @@ No `Capacitor`/`import.meta.env` declarations: those needs live in *transitive* 
 
 ## Implementation plan
 
-1. **Stage 1 — tooling + zero-at-rest.** Add `tsconfig.json`, `scripts/check-types.mjs`, `src/types/ambient.d.ts`, the exact-pinned `typescript` devDep (committing the `package-lock.json` update), and the `check:types` script; apply the CSS ambient + JSDoc annotations in the **seven owned files** until `check:types` is green. **If a fix would require touching a transitive file or restructuring *logic*, STOP and re-scope** (criterion 2 + the ownership policy). **Checkpoint:** `check:types` green; `test:ui`/`test:app`/`test:query`/`test:codex`/`build`/`check:docs` green; the diff is config + `package-lock` + annotations only.
+1. **Stage 1a — the fail-closed wrapper, tested first.** Add `scripts/check-types.mjs` (compiler-API, fail-closed) + `scripts/check-types.test.mjs` (the six classifier cases) + `tsconfig.json` + `src/types/ambient.d.ts` + the exact-pinned `typescript` devDep (committing the `package-lock.json` update) + the `check:types` script. **Checkpoint:** the wrapper tests pass; `check:types` correctly *fails* against the still-dirty owned files (proving it isn't fail-open).
+2. **Stage 1b — zero-at-rest.** Apply the CSS ambient + JSDoc annotations in the **seven owned files** until the owned diagnostic surface is zero and `check:types` is green. **If a fix would require touching a transitive file or restructuring *logic*, STOP and re-scope** (criterion 2 + the ownership policy). **Checkpoint:** `check:types` green; `test:ui`/`test:app`/`test:query`/`test:codex`/`build`/`check:docs` green; the diff is config + `package-lock` + annotations only.
 2. **Stage 2 — prove it bites (the checkpoint that matters).** Re-inject `applyStep(cur, 5)`, `initialLife: { player, enemy }`-shaped mismatch, and `dd.syncLife('enemy', …)` at their real call sites; run `check:types`; confirm each fails; revert. Capture the raw output in the commit message.
 3. **Docs:** add `check:types` to the enumerated baseline gates in `ENGINEERING_CONSTITUTION.md`, `AGENTS.md`, `CLAUDE.md`, `BUILD.md` (mirrors `test:app`).
 
@@ -159,7 +175,8 @@ Delete `tsconfig.json`, `scripts/check-types.mjs`, `src/types/ambient.d.ts`, the
 
 ## Verification plan
 
-- **Automated (the gate):** `check:types` green at rest is the standing proof. **Stage 2's inject/revert is the proof it works** and belongs in the commit message.
+- **Automated (the wrapper is fail-closed):** `scripts/check-types.test.mjs` proves the classifier for the six cases — owned-file diagnostic **fails**, transitive-only diagnostic **passes** (discarded), global/config diagnostic (no file) **fails**, unknown-file diagnostic **fails**, clean program **passes**, compiler-throw **fails**. These run *inside* `check:types` before the check, so a fail-open regression in the wrapper is itself caught by the gate.
+- **Automated (the gate):** `check:types` green at rest is the standing proof. **Stage 2's inject/revert (`applyStep(cur,5)`, `{player, enemy}`, `dd.syncLife('enemy', …)`) is the proof it bites** and belongs in the commit message.
 - **Regression:** `test:ui`/`test:app`/`test:query`/`test:codex` stay green (guards' tests untouched — evidence nothing was traded away); `build` unaffected (Vite ignores tsconfig).
 - **Native/web:** N/A — build-time only, runtime-identical. **This gate must never be cited as evidence for any runtime/device behaviour** (`checked-js-pilot.md` §Verification).
 - **No device gate** — nothing ships.
@@ -175,6 +192,7 @@ No data or telemetry. **Dependency:** `typescript` becomes a *direct* dev depend
 | An owned file needs *logic* restructuring to pass | Low | Medium | Criterion 2 is a stop condition; the 22 owned diagnostics are all annotation-shaped (measured) |
 | A shared transitive file (e.g. `deckRepository`) later emits a diagnostic and fails the gate | — | — | **Resolved (Rev 2):** the ownership filter discards non-owned diagnostics; a transitive edit can never fail the gate |
 | A `any` bridge hides a defect on the native path | — | — | **Resolved (Rev 2):** no `any` declarations; the Capacitor bridge is transitive, out of ownership, and stated as such |
+| The wrapper reports green when the compiler actually failed (fail-open) | — | — | **Resolved (Rev 3):** compiler-API, fail-closed on config/global/unknown/throw; pure `classify` unit-tested for all six cases, run inside `check:types` |
 | The gate becomes noise people skip | Low | Medium | Green-at-rest required; owned-file filter; `strict:false` keeps it signal-focused |
 | False security — "types cover it now" | Medium | Medium | Runtime guards stay, documented as complementary; computed values remain runtime-only |
 | Reviewer judges even the scoped gate ceremony-over-value (no live bug found) | Low–Medium | Low | Fair — the value is author-time capture of a class that *shipped twice*; the diagnostic + bite-proof are the evidence, and the cost is annotations, not logic |
@@ -197,6 +215,8 @@ Add a scoped, committed `check:types` gate — `tsconfig.json` + `scripts/check-
 |---|---|---|
 | Claude Code (author) | Submitted Rev 1 (diagnostic-backed) | 2026-07-18 |
 | Codex (reviewer) | **Changes required** — 2 Major (checked scope broader than ownership model; broad ambient `any` violates the no-`any` condition) + 1 Minor (dependency lifecycle) · ratified declining app-wide + `strict`, approved TS devDep in principle | 2026-07-18 |
-| Claude Code (author) | **Rev 2** — mechanical ownership filter (`scripts/check-types.mjs`) + 23-file closure enumerated + policy; `any` bridge removed (ambient is CSS-only); exact pin + `package-lock` + clean-install corrected | 2026-07-18 |
+| Claude Code (author) | **Rev 2** — mechanical ownership filter + 23-file closure enumerated + policy; `any` bridge removed (ambient is CSS-only); exact pin + `package-lock` + clean-install corrected | 2026-07-18 |
+| Codex (reviewer) | **Changes required (Rev 2)** — 1 Major (wrapper fail-open: a compiler failure could report green) + 1 Minor (two overstatements) · both prior Majors + dependency Minor confirmed resolved; TS devDep + baseline approved in principle | 2026-07-18 |
+| Claude Code (author) | **Rev 3** — wrapper rebuilt fail-closed on the compiler API (config/global/unknown/throw all fail; only known-transitive discarded; normalized paths); pure `classify` unit-tested (6 cases) run inside `check:types`; overstatements corrected | 2026-07-18 |
 | Codex (reviewer) | *pending re-review* | |
 | Human (approver) | *pending* | |
