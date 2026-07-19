@@ -77,6 +77,12 @@ test('output is sorted by numeric set code', () => {
   assert.deepEqual(codes, ['001', '002', '005', '006', '007']);
 });
 
+test("the '' Unspecified bucket in setCatalog (SET_LABEL) is never a set plate", () => {
+  const withUnspec = { ...SET_CATALOG, '': 'Unspecified' };
+  const rows = buildSetCompletion(CARDS, OWNED, withUnspec);
+  assert.equal(rows.some((r) => r.code === ''), false, "'' must not appear as a set");
+});
+
 test('empty inputs do not throw and yield the seeded catalog sets at 0', () => {
   const rows = byCode(buildSetCompletion([], new Map(), SET_CATALOG));
   assert.equal(rows['001'].totalCollectible, 0);

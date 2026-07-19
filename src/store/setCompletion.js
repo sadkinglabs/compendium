@@ -37,7 +37,8 @@ export function buildSetCompletion(catalogCards, ownedBySet, setCatalog) {
   };
 
   // Seed every set the catalog names, so an in-catalog set with no cards still renders.
-  for (const code of Object.keys(setCatalog || {})) ensure(code, setCatalog[code]);
+  // Skip the '' Unspecified ownership bucket (SET_LABEL carries it) — it is not a set.
+  for (const code of Object.keys(setCatalog || {})) { if (!code) continue; ensure(code, setCatalog[code]); }
 
   for (const card of catalogCards || []) {
     if (isTokenCard(card)) continue;

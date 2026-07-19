@@ -32,6 +32,8 @@ import { enqueueWrite } from '../store/collectionWrites.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import { createGoalDrain } from './collectionGoalDrain.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import Ring from '../components/Ring.jsx';
+import SetsHome from './SetsHome.jsx';
 import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
@@ -50,7 +52,7 @@ const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
+const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, setDrill: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   const [view, setView] = useState(session.view);       // overview | cards | lists
@@ -61,12 +63,20 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const [sheetCard, setSheetCard] = useState(session.sheetCard);
   const [sheetSet, setSheetSet] = useState(session.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
   const [editMode, setEditMode] = useState(false);   // My Collection edit mode: steppers + the + add FAB
-  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; session.sheetSet = sheetSet; }, [view, listOpen, sheetCard, sheetSet]);
+  // Sets-are-home: My Collection lands on the sets-completion grid (SetsHome). Tapping a
+  // plate drills into that set's ledger/binder (setDrill = its code). drillInfo carries the
+  // opened set's completion snapshot so the drill header's Ring total stays honest (owned
+  // stays live from the ledger; total is the full-catalog figure).
+  const [setDrill, setSetDrill] = useState(session.setDrill);
+  const [drillInfo, setDrillInfo] = useState(null);
+  const openSet = useCallback((code, info) => { setSetDrill(code); setDrillInfo(info || null); }, []);
+  const closeSet = useCallback(() => { setSetDrill(null); setDrillInfo(null); }, []);
+  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; session.sheetSet = sheetSet; session.setDrill = setDrill; }, [view, listOpen, sheetCard, sheetSet, setDrill]);
   // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
-  const go = (v) => { setListOpen(null); setEditMode(false); setView(v); };
-  const goAdd = () => { setListOpen(null); setView('cards'); setEditMode(true); };
+  const go = (v) => { setListOpen(null); setEditMode(false); setSetDrill(null); setDrillInfo(null); setView(v); };
+  const goAdd = () => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView('cards'); setEditMode(true); };
   const pills = (
     <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
       <div className="cx-scroll" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, overflowX: 'auto' }}>
@@ -74,7 +84,9 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
       </div>
-      {view === 'cards' && (
+      {/* +Add lives inside a drilled set (steppers are per-(card,set)); at the sets-home
+          landing you pick a set first. */}
+      {view === 'cards' && setDrill && (
         <button onClick={() => setEditMode((e) => !e)} aria-pressed={editMode}
           style={{ flex: 'none', padding: '7px 15px', borderRadius: 18, cursor: 'pointer', font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
             background: editMode ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editMode ? '#1a1206' : '#e3c589', border: `1px solid ${editMode ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
@@ -90,7 +102,12 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={peek}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
-        <Cards onOpen={onOpen} onPeek={peek} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
+        setDrill != null ? (
+          <Cards onOpen={onOpen} onPeek={peek} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)}
+            setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
+        ) : (
+          <SetsHome onOpenSet={openSet} rev={rev} />
+        )
       ) : listOpen ? (
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       ) : (
@@ -401,27 +418,6 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 const OWN_OPTS = [['owned', 'Owned'], ['unowned', 'Not owned'], ['wishlist', 'Wishlisted']];
 const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted' };
 
-// Tappable set header - the canonical Manuscript rubric (gold Cinzel label, fade
-// hairline, gold count) with a quiet chevron folding the group. Transparent, flat,
-// exactly like the section rubrics everywhere else in the app.
-function SetHeader({ name, owned, total, collapsed, onToggle }) {
-  return (
-    <button onClick={onToggle} aria-expanded={!collapsed}
-      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '18px 0 8px', margin: '0 0 4px',
-        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer',
-        font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: '#cba75f' }}>
-      <span style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-      <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
-      <span style={{ flex: 'none', font: "600 15px/1 var(--f-display)", letterSpacing: 'normal', color: '#c9b487' }}>
-        <span style={{ color: '#e3c589' }}>{owned}</span> / {total}
-      </span>
-      <span aria-hidden="true" style={{ flex: 'none', color: '#5c554b', display: 'inline-flex', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .2s' }}>
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-      </span>
-    </button>
-  );
-}
-
 // The view-lens FAB glyph - an eye, for "how you're viewing the collection".
 function EyeGlyph() {
   return (
@@ -431,7 +427,10 @@ function EyeGlyph() {
   );
 }
 
-function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
+// Cards is now always the PER-SET drill (the parent shows SetsHome until a plate is
+// tapped). It scopes the shared catalog/search/filter machinery to `setDrill` and adds a
+// back + set-completion header; everything else (steppers, lens FAB, filters) is unchanged.
+function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
 
@@ -478,8 +477,6 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [ownScope, setOwnScope] = useState([]);       // ownership filter: 'owned' | 'unowned' | 'wishlist'
   const ownActive = ownScope.length > 0;
   const toggleOwn = useCallback((v) => setOwnScope((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])), []);
-  const [collapsed, setCollapsed] = useState(() => new Set());
-  const toggleSet = useCallback((code) => setCollapsed((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }), []);
   const [setOpts, setSetOpts] = useState([]);
   // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
   // those sections mount mid-slide and hitch the open animation (see open= below).
@@ -562,7 +559,17 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     pool, owBySet, wishSet, sets, editMode, viewMode, ownScope, ownActive, setLabel: SET_LABEL, setRank,
   }), [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
 
-  const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
+  // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
+  // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
+  // the full-catalog figure from drillInfo (falls back to the filtered pool's set total on
+  // a cold session restore, which is exact when no filter is active).
+  const drillGroup = useMemo(() => groups.find((g) => g.code === setDrill) || null, [groups, setDrill]);
+  const drillRows = drillGroup ? drillGroup.rows : [];
+  const totalRows = drillRows.length;
+  const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
+  const drillOwned = ownedPerSet.get(setDrill) || 0;
+  const drillTotal = drillInfo?.totalCollectible ?? (setTotals.get(setDrill) || 0);
+  const drillPct = drillTotal ? drillOwned / drillTotal : 0;
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
@@ -574,9 +581,26 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
-        <ViewToggle view={view} setView={setView} />
+      {/* Sticky drill header: back + set-completion Ring + owned/total, then the view
+          toggle. Never scrolls away. */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 6, padding: '4px 0 12px', background: 'transparent' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <button onClick={onBack} aria-label="Back to sets" style={{
+            width: 34, height: 34, flex: 'none', borderRadius: '50%', cursor: 'pointer',
+            border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--gold-leaf)',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <Ring value={drillPct} size={34} stroke={4} color="var(--accent-ruby)" showPct={false} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
+            <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <ViewToggle view={view} setView={setView} />
+        </div>
       </div>
 
       {pool == null ? <Loading /> : (
@@ -591,51 +615,36 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
               {editMode || viewMode !== 'owned' ? 'No cards match those filters.'
                 : (activeCount || q) ? 'No owned cards match those filters.'
-                  : 'Your collection is empty.\nTap + Add to record what you own.'}
+                  : `You own no ${drillName} cards yet.\nTap + Add to record what you own.`}
+            </div>
+          ) : view === 'binder' ? (
+            // No cap: every card renders. Off-screen rows are skipped by the browser
+            // (content-visibility on the row components), so a full set stays smooth
+            // without a virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility
+            // tile reports min-content width, which inflated 1fr tracks; pin the min to 0.
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
+              {drillRows.map((r, i) => (
+                <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
+                  <BinderTile card={r.card} set={r.set} setLabel={drillName} owned={r.owned} foil={r.foil}
+                    onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+                </div>
+              ))}
             </div>
           ) : (
-            // No cap: every card renders. Off-screen rows are skipped by the browser
-            // (content-visibility on the row components), so the full catalogue stays
-            // smooth without a virtualization lib.
-            groups.map((grp) => {
-              const isOpen = !collapsed.has(grp.code);
-              const ownedCount = ownedPerSet.get(grp.code) || 0;
-              const total = setTotals.get(grp.code) || grp.rows.length;
-              return (
-                <div key={grp.code || 'unspec'}>
-                  <SetHeader name={grp.name} owned={ownedCount} total={total} collapsed={!isOpen} onToggle={() => toggleSet(grp.code)} />
-                  {isOpen && (view === 'binder' ? (
-                    // minmax(0,1fr), NOT 1fr: 1fr = minmax(auto,1fr), and a content-
-                    // visibility tile reports its intrinsic width as min-content, which
-                    // inflated the tracks to 240px (tiles overflowed + resized between
-                    // lenses). Pinning the min to 0 keeps every tile at a true 50%.
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
-                      {grp.rows.map((r, i) => (
-                        <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
-                          <BinderTile card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
-                            onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    grp.rows.map((r, i) => (
-                      <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
-                        <LedgerRow card={r.card} set={r.set} setLabel={grp.name}
-                          owned={r.owned} foil={r.foil} value={r.owned + r.foil}
-                          onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
-                      </div>
-                    ))
-                  ))}
-                </div>
-              );
-            })
+            drillRows.map((r, i) => (
+              <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
+                <LedgerRow card={r.card} set={r.set} setLabel={drillName}
+                  owned={r.owned} foil={r.foil} value={r.owned + r.foil}
+                  onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
+              </div>
+            ))
           )}
           </div>
         </>
       )}
 
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? `Search ${drillName}…` : `Search ${drillName} owned…`} ariaLabel="Search cards" />
 
       {/* Filter FAB - the docked spot beside the search bar, in BOTH views. A SECOND
           stacked FAB rises above it, its role by view: on the +Add surface it's the
