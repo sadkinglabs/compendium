@@ -2,9 +2,14 @@
 
 ## Status and classification
 
-**Status: Rev 1 — awaiting review** · Risk: **Standard** (adds build-time tooling + a baseline gate + JSDoc/ambient annotations across the LifeCounter type-closure; **zero runtime/logic change** — no device gate, build-time only)
+**Status: Rev 2 — revised after review; awaiting re-review** · Risk: **Standard** (adds build-time tooling + a baseline gate + JSDoc/ambient annotations in the seven owned files; **zero runtime/logic change** — no device gate, build-time only)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-18 · Roadmap §16 #5, the final item. **Diagnostic complete (see Evidence); no gate code written yet.**
+
+> **Rev 2 (both Majors + the Minor accepted).** The scope/ownership mismatch and the `any` bridge were the same root cause — an *unfiltered* checked program. Fixed together:
+> - **Major 1 (ownership boundary).** The checked program is the enumerated **23-file closure**, not seven files. The gate now **mechanically bounds ownership**: `scripts/check-types.mjs` runs `tsc` over the closure but **fails only on diagnostics in the seven owned files** (+ the ambient `.d.ts`). A transitive file's future diagnostic can never fail the gate; "narrow the include" is removed as a mitigation, replaced by this filter + an explicit policy (§ Checked closure and ownership boundary).
+> - **Major 2 (broad `any`).** The `Capacitor?: any` / `CapacitorHttp?: any` declarations existed only because the *unfiltered* closure reached `deckRepository`. With the ownership filter, that file's `window.Capacitor` access is transitive and never gates — so those declarations are **removed entirely**. `ambient.d.ts` shrinks to a single non-`any` line (`declare module '*.css'`), needed by `LifeCounter.jsx`'s own CSS import. No `any` bridge is introduced; the native path is simply out of this gate's ownership, stated plainly rather than silenced.
+> - **Minor (dependency lifecycle).** `typescript` is pinned **exactly** (`"6.0.3"`, no caret); `package-lock.json` is in the implementation and rollback scope; the clean-install claim is corrected (a fresh clone *does* fetch it as a direct dependency).
 
 > **This is the honest revival of the rejected `checked-js-pilot.md`, as its own "Option A".** The pilot was rejected because TypeScript resolves a program *roots→imports, never backward*, so a `checkJs` gate on a pure module can't see a *caller's* mistake — it would have checked the controller (never wrong) and left the wiring (wrong twice: `enemy`, `deltaTimers`) outside. Roadmap #2/#3/#4 changed the board: the callers now import JSDoc-typed boundaries (`matchLife`, `matchRoll`, `matchSnapshot`, `importPlan`, `listGoalModel`, `navBack`). Option A's instruction was: *put the caller in the checked program and run the cheapest disproof first; if it emits substantial unrelated React diagnostics, stop.* **I ran that diagnostic.** It passed at the LifeCounter scope and **failed (correctly) at the app-wide scope** — so this proposal is scoped to exactly the part that passed.
 
@@ -22,7 +27,7 @@ That is the exact class of the shipped bugs — caught before the code runs, by 
 
 **Success criteria**
 
-1. A committed `tsconfig.json` + a `check:types` script (`tsc --noEmit`) gate the **match-view type-closure**: `LifeCounter.jsx` + the six typed boundary modules. `typescript` is declared as a direct devDependency (it currently resolves only transitively).
+1. A committed `tsconfig.json` + a `check:types` script gate the **seven owned files** — `LifeCounter.jsx` + the six typed boundary modules — with **mechanical ownership bounding**: `tsc` checks the full reachable closure (so callee types inform the boundary checks), but the gate **fails only on diagnostics in the owned files** (+ ambient `.d.ts`). `typescript` is a direct, exactly-pinned devDependency.
 2. `check:types` is **green at rest** — the closure is brought to zero diagnostics via **ambient declarations + JSDoc annotations only**. **No production logic is restructured** (`checked-js-pilot.md` criterion 4 — if a file needs restructuring to pass, it leaves the gate).
 3. **It bites, proven:** re-injecting `applyStep(cur, 5)` and both historical bugs at their real call sites makes `check:types` fail; reverting makes it pass. Output captured in the commit.
 4. `check:types` joins the enumerated baseline gates (Constitution / AGENTS / CLAUDE.md / BUILD.md), like `test:app`.
@@ -49,11 +54,30 @@ Run on a throwaway branch, `tsc 6.0.3` (already resolving transitively), config 
   - `navBack.js:56` — `resolveCounterBackFallback`'s `@returns` claims `'confirm'|…|'minimize'`, but `.find()` on a `string[]` returns `string`; the annotation over-promises. Fix: type `COUNTER_BACK_ORDER` as a `const`/readonly tuple so `.find` narrows.
   - `matchSnapshot.js` / `matchLife.restoreSide` — untyped destructured params (`{}`), widened to `any`. Fix: `@param` shapes.
   - (Transitive, out of this scope: `trimHistorySql` tuple widening; `Play.jsx` `isNaN(new Date())` coercion idiom; `ownedRepository` partial-object updates — noted for a future extension, not fixed here.)
-- **Files in scope:** `src/pillars/LifeCounter.jsx` + `src/pillars/matchLife.js`, `src/pillars/matchRoll.js`, `src/store/matchSnapshot.js`, `src/store/importPlan.js`, `src/store/listGoalModel.js`, `src/navBack.js`. Precedent gate: `test:app` (added in #4) — a scoped `node --test` glob wired into the baseline.
+- **Owned files (the gate's ownership):** `src/pillars/LifeCounter.jsx` + `src/pillars/matchLife.js`, `src/pillars/matchRoll.js`, `src/store/matchSnapshot.js`, `src/store/importPlan.js`, `src/store/listGoalModel.js`, `src/navBack.js`. **Owned-file diagnostics: 22** (12 `TS2339` `= {}`/prop-access params, 7 `TS2739`/`TS2741` in-file sheet prop-shapes, 2 `TS2322` incl. the `navBack` over-promise, 1 `TS2882` CSS import) — all annotation-shaped, none `env`/`Capacitor`. Precedent gate: `test:app` (#4).
+
+## Checked closure and ownership boundary (Rev 2 — Codex Major 1)
+
+`tsc` type-checks a whole program, not a file list: seeding it with the seven owned files pulls in their entire reachable import graph. The **measured closure is 23 `src` files** (`tsc --listFiles`):
+
+```
+LifeCounter.jsx · matchLife.js · matchRoll.js · navBack.js · matchSnapshot.js · importPlan.js
+· listGoalModel.js   (the seven owned)
+back.js · ddArming.js · components/QRCode.jsx · native.js · cardArt.js · cardQuery.js
+· catalogCache.js · collectionWrites.js · db.js · deckRepository.js · ids.js · matchShare.js
+· matchStats.js · playRepository.js · profileRepository.js · schema.js   (16 transitive)
+```
+
+**The gate owns the seven, not the twenty-three.** `scripts/check-types.mjs` runs `tsc --noEmit` over the closure and then **filters diagnostics to the owned paths**, failing only if an *owned-file* diagnostic remains. This is the mechanical bound Codex asked for, and it defines the maintenance policy exactly:
+
+- **Transitive files are type-checked but never gate.** Their exported signatures still flow into the owned files' checks (a wrong argument LifeCounter passes to `deckRepository` surfaces as a `TS2345` *at the LifeCounter call site* — owned — and is caught). Their *internal* diagnostics (e.g. `deckRepository`'s `window.Capacitor`, `db`'s `import.meta.env`) are **discarded**. A future unrelated edit to a transitive file therefore **cannot** fail the baseline gate.
+- **Annotation cleanup is allowed only in the seven owned files.** A fix that would require touching a transitive file, or restructuring *logic* in any file, is **out of scope — stop and re-scope** (`checked-js-pilot.md` criterion 4). The gate never pressures the store layer.
+- **Closure growth is irrelevant by construction** — the filter keys on the owned allowlist, not the closure, so the closure may grow or shrink freely. "Narrow the `include`" is **removed** as a mitigation (it cannot bound a TypeScript program anyway).
+- **Boundary soundness:** TypeScript reports argument/shape/excess-property mismatches *at the call site*, which for these boundaries is an owned file — so the owned-only filter does not blind the gate to the target bug class (the `applyStep(cur,5)` bite fires in `LifeCounter.jsx`). The one gap it accepts, stated plainly: a mismatch that surfaces *only inside a transitive callee* is not gated — acceptable, because the target class (caller-key/shape/literal) surfaces at the caller.
 
 ## Assumptions and confidence
 
-1. **The LifeCounter closure reaches zero with annotations only (no logic change).** Confidence: **high** — the 30 are all ambient-decl or `@param`/`@typedef` shaped; none requires restructuring. Stop condition if any does (criterion 2).
+1. **The seven owned files reach zero with annotations only (no logic change).** Confidence: **high** — the 22 owned-file diagnostics are all CSS-ambient or `@param`/`@typedef` shaped; none requires restructuring, and none touches a transitive file. Stop condition if any does (criterion 2).
 2. **The gate keeps biting after cleanup.** Confidence: **high** — the bite proof already fired under this exact config; cleanup adds types, it doesn't remove the boundary checks.
 3. **`strict:false` is enough for the target bug class** (wrong literal / wrong shape / wrong key at a call site). Confidence: **high** — `applyStep(cur,5)`→TS2345 and the object-shape TS2739/2741 all fire under `strict:false`.
 4. **Declaring `typescript` directly changes nothing at runtime.** Confidence: **high** — devDependency, `--noEmit`, absent from bundle/APK.
@@ -77,7 +101,7 @@ Run on a throwaway branch, `tsc 6.0.3` (already resolving transitively), config 
 
 ## Proposed design
 
-**`tsconfig.json`** (repo root; consulted only by `check:types` — Vite uses esbuild and ignores it; editors get inline checking for free):
+**`tsconfig.json`** (repo root; consulted only by the gate — Vite uses esbuild and ignores it; editors get inline checking for free):
 ```jsonc
 {
   "compilerOptions": {
@@ -86,8 +110,8 @@ Run on a throwaway branch, `tsc 6.0.3` (already resolving transitively), config 
     "strict": false, "noImplicitAny": false, "types": [], "skipLibCheck": true,
     "jsx": "preserve"
   },
-  // Deliberately a list, not a glob: adding a file is a decision, not a wildcard's
-  // side effect. tsc still checks the reachable closure; the closure is kept green.
+  // The seven owned roots + the ambient decl. tsc pulls in the 23-file closure to
+  // resolve types; scripts/check-types.mjs decides which diagnostics GATE.
   "include": [
     "src/pillars/LifeCounter.jsx",
     "src/pillars/matchLife.js", "src/pillars/matchRoll.js", "src/navBack.js",
@@ -97,22 +121,23 @@ Run on a throwaway branch, `tsc 6.0.3` (already resolving transitively), config 
 }
 ```
 
-**`src/types/ambient.d.ts`** (new — the environmental noise, declared once):
+**`scripts/check-types.mjs`** (the mechanical ownership bound — Major 1): spawn `tsc --noEmit -p tsconfig.json`, parse `path(line,col): error TSxxxx` lines, keep only those whose path is in the **owned allowlist** (the seven files + `src/types/ambient.d.ts`), print the kept ones, `process.exit(kept.length ? 1 : 0)`. The allowlist is a literal array in the script — adding a file to the gate is a deliberate edit, and the closure can grow freely without ever failing the gate.
+
+**`src/types/ambient.d.ts`** (new — one line, no `any` bridge; Major 2):
 ```ts
-/// <reference types="vite/client" />          // import.meta.env
-declare module '*.css';                         // side-effect CSS imports
-interface Window { Capacitor?: any; CapacitorHttp?: any; }   // Capacitor globals
+declare module '*.css';   // LifeCounter's side-effect CSS import; no meaningful type
 ```
+No `Capacitor`/`import.meta.env` declarations: those needs live in *transitive* files (`deckRepository`, `db`, `cardArt`), which the ownership filter excludes. The Capacitor bridge is **explicitly out of this gate's scope**, not silenced with `any`.
 
-**Annotations (JSDoc only; no logic touched):** `players` prop shape and the in-file `VModal`/sheet prop `@typedef`s in `LifeCounter.jsx`; `restoreSide` arg shape in `matchLife.js`; the `buildMatchSnapshot`/`readMatchSnapshot` param shapes in `matchSnapshot.js`; `COUNTER_BACK_ORDER` as a readonly tuple in `navBack.js` (fixes the over-promising `@returns`).
+**Annotations (JSDoc only; no logic touched; owned files only):** `players` prop shape and the in-file `VModal`/sheet prop `@typedef`s in `LifeCounter.jsx`; `restoreSide` arg shape in `matchLife.js`; the `buildMatchSnapshot`/`readMatchSnapshot` param shapes in `matchSnapshot.js`; `COUNTER_BACK_ORDER` as a readonly tuple in `navBack.js` (fixes the over-promising `@returns`).
 
-**`package.json`:** `"check:types": "tsc --noEmit"` + `"typescript": "^6.0.3"` in `devDependencies` (pinned to the resolving version — declaring reality, not upgrading).
+**`package.json` + `package-lock.json` (Minor):** add `"check:types": "node scripts/check-types.mjs"` and `"typescript": "6.0.3"` — an **exact pin** (no caret), matching the version already resolving transitively. Running `npm install` updates `package-lock.json` to record `typescript` as a **direct** dependency; that lockfile change is committed with the gate. A clean `npm install` (fresh clone) *does* fetch `typescript` — it was only ever present as a transitive of `firebase-tools`, and is now a declared direct dependency; it is dev-only and still ships nothing.
 
 **Runtime guards stay.** `assertSide`, `isValidMatchSnapshot`, the closed-set checks — untouched. A *computed* side (`who = isPlayer ? 'player' : 'enemy'`) still types as `string` and is caught only at runtime; that's why both nets exist.
 
 ## Implementation plan
 
-1. **Stage 1 — tooling + zero-at-rest.** Add `tsconfig.json`, `ambient.d.ts`, `typescript` devDep, `check:types` script; apply the ambient decls + JSDoc annotations until `check:types` is green. **If any file needs *logic* restructuring, STOP and re-scope** (criterion 2). **Checkpoint:** `check:types` green; `test:ui`/`test:app`/`test:query`/`test:codex`/`build`/`check:docs` green; the diff is annotations + config only.
+1. **Stage 1 — tooling + zero-at-rest.** Add `tsconfig.json`, `scripts/check-types.mjs`, `src/types/ambient.d.ts`, the exact-pinned `typescript` devDep (committing the `package-lock.json` update), and the `check:types` script; apply the CSS ambient + JSDoc annotations in the **seven owned files** until `check:types` is green. **If a fix would require touching a transitive file or restructuring *logic*, STOP and re-scope** (criterion 2 + the ownership policy). **Checkpoint:** `check:types` green; `test:ui`/`test:app`/`test:query`/`test:codex`/`build`/`check:docs` green; the diff is config + `package-lock` + annotations only.
 2. **Stage 2 — prove it bites (the checkpoint that matters).** Re-inject `applyStep(cur, 5)`, `initialLife: { player, enemy }`-shaped mismatch, and `dd.syncLife('enemy', …)` at their real call sites; run `check:types`; confirm each fails; revert. Capture the raw output in the commit message.
 3. **Docs:** add `check:types` to the enumerated baseline gates in `ENGINEERING_CONSTITUTION.md`, `AGENTS.md`, `CLAUDE.md`, `BUILD.md` (mirrors `test:app`).
 
@@ -130,7 +155,7 @@ interface Window { Capacitor?: any; CapacitorHttp?: any; }   // Capacitor global
 
 ## Rollback and recovery
 
-Delete `tsconfig.json`, `ambient.d.ts`, the script, the devDep, and the doc lines; the JSDoc comments are inert and may stay. **No runtime code path to roll back.** One-commit revert.
+Delete `tsconfig.json`, `scripts/check-types.mjs`, `src/types/ambient.d.ts`, the `check:types` script, and the doc lines; remove `typescript` from `devDependencies` and **revert the `package-lock.json` entry** (`npm install` regenerates it). The JSDoc comments are inert and may stay. **No runtime code path to roll back.** One-commit revert.
 
 ## Verification plan
 
@@ -141,15 +166,16 @@ Delete `tsconfig.json`, `ambient.d.ts`, the script, the devDep, and the doc line
 
 ## Security, privacy, performance, and operations
 
-No data, dependency download (already resolving), or telemetry. `tsc` on the closure is ~1–3 s locally. Dev-only; nothing enters the bundle or APK.
+No data or telemetry. **Dependency:** `typescript` becomes a *direct* dev dependency; it already resolves transitively (via `firebase-tools`), so an existing workspace re-uses it, but a **clean install fetches it as a declared direct dep** (dev-only, absent from bundle/APK — the offline-first/no-CDN runtime posture is unaffected). `tsc` on the 23-file closure is ~1–3 s locally.
 
 ## Risks and unanswered questions
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| A closure file needs *logic* restructuring to pass | Low | Medium | Criterion 2 is a stop condition; the 30 are all annotation-shaped (measured) |
-| A shared transitive file (e.g. `deckRepository`) later emits a diagnostic and fails the gate on an unrelated change | Low–Medium | Medium | The closure is small and shared files are mostly typed already; if it recurs, add a targeted `@param` or narrow the `include`. Flag at implementation if the closure is noisier than the diagnostic showed. |
-| The gate becomes noise people skip | Low | Medium | Green-at-rest required; scoped `include`; `strict:false` keeps it signal-focused |
+| An owned file needs *logic* restructuring to pass | Low | Medium | Criterion 2 is a stop condition; the 22 owned diagnostics are all annotation-shaped (measured) |
+| A shared transitive file (e.g. `deckRepository`) later emits a diagnostic and fails the gate | — | — | **Resolved (Rev 2):** the ownership filter discards non-owned diagnostics; a transitive edit can never fail the gate |
+| A `any` bridge hides a defect on the native path | — | — | **Resolved (Rev 2):** no `any` declarations; the Capacitor bridge is transitive, out of ownership, and stated as such |
+| The gate becomes noise people skip | Low | Medium | Green-at-rest required; owned-file filter; `strict:false` keeps it signal-focused |
 | False security — "types cover it now" | Medium | Medium | Runtime guards stay, documented as complementary; computed values remain runtime-only |
 | Reviewer judges even the scoped gate ceremony-over-value (no live bug found) | Low–Medium | Low | Fair — the value is author-time capture of a class that *shipped twice*; the diagnostic + bite-proof are the evidence, and the cost is annotations, not logic |
 
@@ -163,12 +189,14 @@ No data, dependency download (already resolving), or telemetry. `tsc` on the clo
 
 ## Approval requested
 
-Add a scoped, committed `check:types` gate (`tsconfig.json` + `typescript` devDep + `tsc --noEmit`) over `LifeCounter.jsx` and the six typed boundary modules, brought to green-at-rest by ambient declarations + JSDoc annotations (no logic change), with the historical-bug inject/revert as the bite-proof, and `check:types` added to the baseline gates. **Decline** the app-wide scope (measured 306 diagnostics / 56% React prop-noise — Option A stop condition) and `strict`. **Standard** risk, build-time only, no device gate. Decisions: (1) approve the scoped gate + the annotation-only cleanup; (2) ratify declining app-wide/`strict`; (3) approve `typescript` as a direct devDep + `check:types` in the baseline. **No gate code written yet.**
+Add a scoped, committed `check:types` gate — `tsconfig.json` + `scripts/check-types.mjs` (the owned-file ownership filter) + exact-pinned `typescript` devDep — over `LifeCounter.jsx` and the six typed boundary modules, brought to green-at-rest by a single CSS ambient decl + JSDoc annotations in the owned files (no logic change, no `any`), with the historical-bug inject/revert as the bite-proof, and `check:types` added to the baseline gates. **Decline** the app-wide scope (measured 306 diagnostics / 56% React prop-noise — Option A stop condition) and `strict`. **Standard** risk, build-time only, no device gate. Rev 2 resolves both Majors (ownership boundary via the filter; no `any` bridge) and the Minor (exact pin, lockfile, clean-install). Decisions: (1) approve the scoped gate + owned-file annotation cleanup; (2) ratify declining app-wide/`strict`; (3) approve `typescript` as an exact-pinned direct devDep + `check:types` in the baseline. **No gate code written yet.**
 
 ### Approval record
 
 | Role | Disposition | Date |
 |---|---|---|
 | Claude Code (author) | Submitted Rev 1 (diagnostic-backed) | 2026-07-18 |
-| Codex (reviewer) | *pending review* | |
+| Codex (reviewer) | **Changes required** — 2 Major (checked scope broader than ownership model; broad ambient `any` violates the no-`any` condition) + 1 Minor (dependency lifecycle) · ratified declining app-wide + `strict`, approved TS devDep in principle | 2026-07-18 |
+| Claude Code (author) | **Rev 2** — mechanical ownership filter (`scripts/check-types.mjs`) + 23-file closure enumerated + policy; `any` bridge removed (ambient is CSS-only); exact pin + `package-lock` + clean-install corrected | 2026-07-18 |
+| Codex (reviewer) | *pending re-review* | |
 | Human (approver) | *pending* | |
