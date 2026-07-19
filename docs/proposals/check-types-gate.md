@@ -2,7 +2,7 @@
 
 ## Status and classification
 
-**Status: Rev 3 — revised after re-review; awaiting re-review** · Risk: **Standard** (adds build-time tooling + a baseline gate + JSDoc/ambient annotations in the seven owned files; **zero runtime/logic change** — no device gate, build-time only)
+**Status: Rev 4 — APPROVED by Codex (Rev 3) with two non-blocking Minors, applied here; awaiting human owner decisions** · Risk: **Standard** (adds build-time tooling + a baseline gate + JSDoc/ambient annotations in the seven owned files; **zero runtime/logic change** — no device gate, build-time only)
 Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 Date: 2026-07-18 · Roadmap §16 #5, the final item. **Diagnostic complete (see Evidence); no gate code written yet.**
 
@@ -136,7 +136,11 @@ back.js · ddArming.js · components/QRCode.jsx · native.js · cardArt.js · ca
 - Paths are normalized (`path.relative(root, fileName)` → POSIX separators) so Windows/absolute/relative output compares correctly.
 - Exit non-zero if **any** gated **or** unclassified diagnostic remains; zero only when the program compiled and every remaining diagnostic was a known-transitive one.
 
-**The classifier is a pure exported function** `classify(diagnostics, {owned, transitive, root})` → `{gated, discarded, unclassified}`, unit-tested by `scripts/check-types.test.mjs` for the five cases Codex named: an owned-file error **fails**; a transitive-only error **passes** (discarded); a global/config diagnostic (no file) **fails**; an unknown-file diagnostic **fails**; a clean program **passes**; plus a compiler-throw path **fails**. The `check:types` script runs those tests *before* the check — `node --test scripts/check-types.test.mjs && node scripts/check-types.mjs` — so the gate proves its own wrapper is fail-closed on every run. Adding a file to the OWNED set is a deliberate edit; the KNOWN-TRANSITIVE set is the measured closure and any drift from it fails closed.
+**Two testable seams** (so *every* fail-closed branch is exercised, not just classification — Rev 4, Codex):
+- **`classify(diagnostics, {owned, transitive, root})` → `{gated, discarded, unclassified}`** — pure. Tests: owned-file diagnostic → `gated`; transitive-only → `discarded`; **no-`file` (global/config)** → `unclassified`; unknown/other file → `unclassified`; empty → all-empty.
+- **`run({loadProgram, argv})` → exit code** — the orchestration, with the compiler ops **injected** so the catch-and-fail branches are real, not simulated. `loadProgram` returns `{diagnostics}` or throws. Tests: `loadProgram` **throws** (compiler crash / missing `typescript`) → non-zero; `loadProgram` returns a **config-error** diagnostic (no file) → non-zero; a `gated` result → non-zero; an `unclassified` result → non-zero; only-`discarded` → **zero**; clean → zero. The production entry wires `loadProgram` to `ts.readConfigFile`→`ts.parseJsonConfigFileContent`→`ts.createProgram`→`ts.getPreEmitDiagnostics` (config/parse errors returned as diagnostics; the whole call in `try/catch` → rethrow surfaces as a throw to `run`).
+
+`scripts/check-types.test.mjs` covers both seams. `check:types` runs those tests *before* the check — `node --test scripts/check-types.test.mjs && node scripts/check-types.mjs` — so the gate proves its own wrapper is fail-closed on every run. Adding a file to the OWNED set is a deliberate edit; the KNOWN-TRANSITIVE set is the measured closure and any drift from it fails closed.
 
 **`src/types/ambient.d.ts`** (new — one line, no `any` bridge; Major 2):
 ```ts
@@ -146,7 +150,7 @@ No `Capacitor`/`import.meta.env` declarations: those needs live in *transitive* 
 
 **Annotations (JSDoc only; no logic touched; owned files only):** `players` prop shape and the in-file `VModal`/sheet prop `@typedef`s in `LifeCounter.jsx`; `restoreSide` arg shape in `matchLife.js`; the `buildMatchSnapshot`/`readMatchSnapshot` param shapes in `matchSnapshot.js`; `COUNTER_BACK_ORDER` as a readonly tuple in `navBack.js` (fixes the over-promising `@returns`).
 
-**`package.json` + `package-lock.json` (Minor):** add `"check:types": "node scripts/check-types.mjs"` and `"typescript": "6.0.3"` — an **exact pin** (no caret), matching the version already resolving transitively. Running `npm install` updates `package-lock.json` to record `typescript` as a **direct** dependency; that lockfile change is committed with the gate. A clean `npm install` (fresh clone) *does* fetch `typescript` — it was only ever present as a transitive of `firebase-tools`, and is now a declared direct dependency; it is dev-only and still ships nothing.
+**`package.json` + `package-lock.json` (Minor):** add `"check:types": "node --test scripts/check-types.test.mjs && node scripts/check-types.mjs"` (the wrapper's own tests run first, then the check) and `"typescript": "6.0.3"` — an **exact pin** (no caret), matching the version already resolving transitively. Running `npm install` updates `package-lock.json` to record `typescript` as a **direct** dependency; that lockfile change is committed with the gate. A clean `npm install` (fresh clone) *does* fetch `typescript` — it was only ever present as a transitive of `firebase-tools`, and is now a declared direct dependency; it is dev-only and still ships nothing.
 
 **Runtime guards stay.** `assertSide`, `isValidMatchSnapshot`, the closed-set checks — untouched. A *computed* side (`who = isPlayer ? 'player' : 'enemy'`) still types as `string` and is caught only at runtime; that's why both nets exist.
 
@@ -175,7 +179,7 @@ Delete `tsconfig.json`, `scripts/check-types.mjs`, `src/types/ambient.d.ts`, the
 
 ## Verification plan
 
-- **Automated (the wrapper is fail-closed):** `scripts/check-types.test.mjs` proves the classifier for the six cases — owned-file diagnostic **fails**, transitive-only diagnostic **passes** (discarded), global/config diagnostic (no file) **fails**, unknown-file diagnostic **fails**, clean program **passes**, compiler-throw **fails**. These run *inside* `check:types` before the check, so a fail-open regression in the wrapper is itself caught by the gate.
+- **Automated (the wrapper is fail-closed):** `scripts/check-types.test.mjs` proves both seams — `classify` (owned → gated; transitive-only → discarded; no-file → unclassified; unknown → unclassified) and `run` with injected compiler ops (`loadProgram` **throws** → non-zero; config-error diagnostic → non-zero; gated/unclassified → non-zero; only-discarded/clean → zero). These run *inside* `check:types` before the check, so a fail-open regression in the wrapper is itself caught by the gate.
 - **Automated (the gate):** `check:types` green at rest is the standing proof. **Stage 2's inject/revert (`applyStep(cur,5)`, `{player, enemy}`, `dd.syncLife('enemy', …)`) is the proof it bites** and belongs in the commit message.
 - **Regression:** `test:ui`/`test:app`/`test:query`/`test:codex` stay green (guards' tests untouched — evidence nothing was traded away); `build` unaffected (Vite ignores tsconfig).
 - **Native/web:** N/A — build-time only, runtime-identical. **This gate must never be cited as evidence for any runtime/device behaviour** (`checked-js-pilot.md` §Verification).
@@ -190,7 +194,7 @@ No data or telemetry. **Dependency:** `typescript` becomes a *direct* dev depend
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | An owned file needs *logic* restructuring to pass | Low | Medium | Criterion 2 is a stop condition; the 22 owned diagnostics are all annotation-shaped (measured) |
-| A shared transitive file (e.g. `deckRepository`) later emits a diagnostic and fails the gate | — | — | **Resolved (Rev 2):** the ownership filter discards non-owned diagnostics; a transitive edit can never fail the gate |
+| A shared transitive file (e.g. `deckRepository`) later emits a diagnostic and fails the gate | — | — | **Resolved (Rev 2):** the ownership filter discards a transitive-*only* diagnostic; a transitive *contract* change that produces an owned call-site diagnostic correctly can fail (that is the point) |
 | A `any` bridge hides a defect on the native path | — | — | **Resolved (Rev 2):** no `any` declarations; the Capacitor bridge is transitive, out of ownership, and stated as such |
 | The wrapper reports green when the compiler actually failed (fail-open) | — | — | **Resolved (Rev 3):** compiler-API, fail-closed on config/global/unknown/throw; pure `classify` unit-tested for all six cases, run inside `check:types` |
 | The gate becomes noise people skip | Low | Medium | Green-at-rest required; owned-file filter; `strict:false` keeps it signal-focused |
@@ -218,5 +222,6 @@ Add a scoped, committed `check:types` gate — `tsconfig.json` + `scripts/check-
 | Claude Code (author) | **Rev 2** — mechanical ownership filter + 23-file closure enumerated + policy; `any` bridge removed (ambient is CSS-only); exact pin + `package-lock` + clean-install corrected | 2026-07-18 |
 | Codex (reviewer) | **Changes required (Rev 2)** — 1 Major (wrapper fail-open: a compiler failure could report green) + 1 Minor (two overstatements) · both prior Majors + dependency Minor confirmed resolved; TS devDep + baseline approved in principle | 2026-07-18 |
 | Claude Code (author) | **Rev 3** — wrapper rebuilt fail-closed on the compiler API (config/global/unknown/throw all fail; only known-transitive discarded; normalized paths); pure `classify` unit-tested (6 cases) run inside `check:types`; overstatements corrected | 2026-07-18 |
-| Codex (reviewer) | *pending re-review* | |
-| Human (approver) | *pending* | |
+| Codex (reviewer) | **Approved** (Rev 3) with 2 non-blocking Minors — script/test-contract alignment (test-first command + orchestration seam for throw/config-failure), and one stale absolute claim | 2026-07-18 |
+| Claude Code (author) | **Rev 4** — test-first `check:types` command; `run()` orchestration seam (injected compiler ops) so compiler-throw + config-failure are tested, not simulated; stale risk-table claim corrected | 2026-07-18 |
+| Human (approver) | *pending — three owner decisions* | |
