@@ -851,8 +851,8 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
 }
 
 /* ── Play centered modal shell ── */
-/** JSX-content props (title/subtitle/children/actions) are `any`: without @types/react a ReactNode has no nameable type here.
- * @param {{ id?: string, title?: any, subtitle?: any, onClose?: () => void, children?: any, actions?: any, rotated?: boolean }} props */
+/** children/actions are `any`: without @types/react a ReactNode has no nameable type here.
+ * @param {{ id?: string, title?: string, subtitle?: string, onClose?: () => void, children?: any, actions?: any, rotated?: boolean }} props */
 function VModal({ id, title, subtitle, onClose, children, actions, rotated }) {
   return (
     <div className="vc-modal-overlay" id={id} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -934,7 +934,8 @@ function MaxLifeModal({ open, who, value, onClose, onSet, rotated }) {
   );
 }
 
-/** @param {{ open?: boolean, dice?: { type?: number, value?: any }, setDice?: (update: any) => void, onClose?: () => void, rotated?: boolean }} props */
+/** @typedef {{ type: number, value: number | null }} DiceState
+ * @param {{ open?: boolean, dice?: DiceState, setDice?: (update: DiceState | ((prev: DiceState) => DiceState)) => void, onClose?: () => void, rotated?: boolean }} props */
 function DiceModal({ open, dice, setDice, onClose, rotated }) {
   const [landed, setLanded] = useState(0);
   const [rolling, setRolling] = useState(false);
