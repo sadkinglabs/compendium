@@ -45,10 +45,10 @@ The token source is `src/theme/tokens.css` (`:root`). **Reporting reality is per
 | `--accent-ruby` `#d25873` (`--ruby-rgb 210,88,115`) | | `[Shipping]` | Collection |
 | `--destructive` `#a8584a` | | `[Shipping]` | destructive actions |
 | **Deck content two-tone** `#a08cc0` + bright `#c9a8e8` | | **`[Exception]`** (OD-12) | Decks *content* violet (distinct from the chrome `--accent-violet`; deliberate). Name `--violet-content` when tokenised. |
-| **`--deck-amethyst`** (rename of `--violet-rgb 160,110,220`) | | `[Target]`/`[Exception]` (OD-6) | the value is **not wrong** — it matches the Decks amethyst *structure* (`decks.css` borders/bg-grad). It is a **role** rename, not a value fix. |
+| **`--deck-amethyst`** (rename of `--violet-rgb 160,110,220`) | | **`[Target]`** (OD-6) | approved token/rename, **not built**. The value is **not wrong** — it matches the Decks amethyst *structure* (`decks.css` borders/bg-grad); a **role** rename, not a value fix. The Decks amethyst *subsystem* it serves is the `[Exception]` in §2. |
 | jade fallback `#4db38a` written as `var(--accent-jade,#4db38a)` (`tokens.css:280`) | | **`[Deprecated]`** (OD-5) | a fallback that contradicts the token's own value; fix the 11 sites + Collection `TEAL #63c9a3` to `var(--accent-jade)`. |
 | **`--win` / `--loss`** (status semantics) | win `#4db38a`, loss `#c98f8f` | **`[Target]`** (OD-7) — **role approved; win/loss-vs-danger/destructive semantics review deferred.** Status colours are a distinct axis from wayfinding accents. |
-| dead rgb-base tokens `--violet-rgb`/`--ruby-rgb`/`--jade-rgb` (0 consumers) | | `[Deprecated]`/`[Target]` (OD-6/K17) — delete or wire; they were minted to de-dupe and adopted by nobody. |
+| dead rgb-base tokens (0 `var()` consumers; minted to de-dupe, adopted by nobody) | | *per-token* | `--violet-rgb` → **`[Deprecated]`** (superseded by the `--deck-amethyst` rename above); `--ruby-rgb` → **`[Target]`** (wire as the single Stepper's alpha base, OD-8); `--jade-rgb` → **`[Deprecated]`** (delete unless a consumer appears). |
 
 ### 1.4 Card-data colour (one app-wide language)
 - **Rarity** `--ordinary #c8c8c8` · `--exceptional #4fc3f7` · `--elite #ab47bc` · `--unique #ffd54f` — `[Shipping]` (consumed via `RARITY_COLOR`/`RARITY_HUE` in 5 files).
@@ -97,14 +97,15 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 ---
 
 ## 4 · Patterns
+*Each pattern is `[Shipping]` (it exists in the app today) unless tagged otherwise.*
 
-- **Rows** — thumb + name + meta + trailing; native-semantics focusable base (target). Divider hairline.
-- **Sheets** — one chassis (`GothicSheet`). **Hard WebView paint rule (§6):** a fixed scrim carries opacity-only animation; a `position:relative` panel carries the transform slide; any nested scroller gets its own opaque `translateZ(0)` layer. Radius/ground per chassis.
-- **Section rubric** — Cinzel gold caps + `.22em` tracking + a fade hairline (`SectionLabel`).
-- **Empty / zero-image** — `BlankState` (rotated gold diamond + Cinzel title) and `CardArt`'s deterministic fallback; every surface must be legible with all art absent.
-- **Add-as-place** — adding is a property of *where you are*, not a hidden mode (Collection-redesign principle; recorded here as the shared pattern).
-- **Back** — the two-tier LIFO contract: ephemeral consumers (`back.js`) first, then the tested declarative precedence (`navBack.js`); never exits a live match on first press.
-- **Ghost / empty slot** — a **Pattern** (composed from `--surface-well` + inset shadow + dashed hairline), **not** a Foundation primitive. Empty-slot idioms already ship (AvatarPicker, counter sockets).
+- **Rows** `[Shipping]` — thumb + name + meta + trailing; divider hairline. *(A native-semantics focusable base is `[Target]`, OD-17.)*
+- **Sheets** `[Shipping]` — one chassis (`GothicSheet`). **Hard WebView paint rule (§6):** a fixed scrim carries opacity-only animation; a `position:relative` panel carries the transform slide; any nested scroller gets its own opaque `translateZ(0)` layer. Radius/ground per chassis.
+- **Section rubric** `[Shipping]` — Cinzel gold caps + `.22em` tracking + a fade hairline (`SectionLabel`).
+- **Empty / zero-image** `[Shipping]` — `BlankState` (rotated gold diamond + Cinzel title) and `CardArt`'s deterministic fallback; every surface must be legible with all art absent.
+- **Add-as-place** `[Target]` — adding is a property of *where you are*, not a hidden mode. This is the **Collection-redesign target interaction model, NOT current behaviour** (Collection ships an edit-mode toggle today).
+- **Back** `[Shipping]` — the two-tier LIFO contract: ephemeral consumers (`back.js`) first, then the tested declarative precedence (`navBack.js`); never exits a live match on first press.
+- **Ghost / empty slot** `[Shipping]` (pattern) — composed from `--surface-well` + inset shadow + dashed hairline; **not** a Foundation primitive. Empty-slot idioms already ship (AvatarPicker, counter sockets).
 
 ---
 

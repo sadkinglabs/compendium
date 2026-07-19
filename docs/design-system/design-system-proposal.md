@@ -1,6 +1,6 @@
 # §8 Proposal — Author `DESIGN_SYSTEM.md` + wire its governance
 
-**Status:** Proposed (pre-authoring gate) · **Class:** High-risk (new cross-pillar normative source of truth + repository-governance change) · **Scope:** documentation only — **no `src/**` change**
+**Status:** Owner-approved (final proposal re-review **waived by owner**) · authored in `c4a74fe` · pending Codex diff re-review → owner merge · **Class:** High-risk (docs-only) · **Scope:** documentation only — **no `src/**` change** (verified)
 **Owner:** Human · **Lead:** Claude · **Reviewer:** Codex
 **Inputs (frozen — Checkpoint B):** `design-system-audit-report.md`, `design-system-wave1-synthesis.md` **Rev R3 + Checkpoint B freeze** (Codex-Approved; owner ruled OD-1..20 → approved items promoted to `[Target]`; `[Proposed Target]` now empty; internally reconciled), `design-system-scope.md`, `design-system-codex-brief.md` — all on `origin/design-system`.
 
@@ -82,7 +82,7 @@ Code rollback = revert the doc commit(s) on `design-system`. No data transformat
 ## 8. Verification plan
 - **Scope check (§0)** — author + Codex confirm the complete working state (`git status --porcelain` + diff vs FREEZE_BASE) touches only allowlisted paths; any disallowed path → stop.
 - `git diff --check` — expect PASS.
-- `npm run check:docs` — now runs the validator **and** `test:docs`; expect PASS. **Fail-closed is proven** by the `missing`/`unreadable` cases in `scripts/check-docs.test.mjs` (they fail if `DESIGN_SYSTEM.md` is absent or unreadable) — no manual file-removal needed.
+- `npm run check:docs` — runs the validator **and** `test:docs`; PASS. **Fail-closed is proven** by the **`missing`** case in `scripts/check-docs.test.mjs` (it fails if `DESIGN_SYSTEM.md` is absent). The **`present`** case asserts the fixture yields **no missing-file failure for `DESIGN_SYSTEM.md`** — it does **not** assert a fully-clean fixture (the minimal fixture intentionally omits `src/store/schema.js`, so other failures are expected and ignored).
 - **Maintained-doc search** for conflicting gold / touch-target / primitive / subsystem claims across the source-of-truth docs.
 - **Traceability**: audit finding → OD ruling → `DESIGN_SYSTEM.md` section → governance reference (semantic verifier).
 - **Source-of-truth disposition** for all six docs (§ Documentation impact).
@@ -93,13 +93,13 @@ No app runtime, input, SQL, or data surface touched → no security/privacy/perf
 
 ## 10. Risks & open questions
 - **R1** Normative overreach — a `[Target]` reads as usable. *Mitigation:* status on every entry + Adoption-Debt Ledger + Checkpoint C audit + the acceptance criterion.
-- **R2** Hidden adoption — a `src/**` edit sneaks in. *Mitigation:* mechanical allowlist; any `src/**` path fails the guard.
+- **R2** Hidden adoption — a `src/**` edit sneaks in. *Mitigation:* the §0 **review-time scope check** over the complete working state (`git status --porcelain` + diff vs `FREEZE_BASE`) — author + Codex confirm only allowlisted paths; any `src/**` is caught and stops Wave 2. (An honest review gate, not a mechanical binary.)
 - **R3** Sanctioning the two walls guts enforcement. *Mitigation:* they're **current-state exceptions, not ideals**; teeth come from denying *new* walls (promotion rule), not demolishing sanctioned ones (owner-ruled OD-12).
 - *(Q1 resolved: repo inspection confirms `scripts/check-docs.mjs` has no test harness today; the validator-test contract in §0 creates it.)*
 
 ## 11. Self-Critique
 1. **Strongest reason this is wrong:** a documentation-only design system with a large `[Target]`/adoption-debt ledger risks becoming aspirational shelf-ware — the exact failure it diagnoses — if the adoption track never funds. *Response:* the enforceable core is `[Shipping]`/Observed + `check:docs` fail-closed + the acceptance test; Targets are explicitly debt, not claims.
-2. **Highest-consequence assumption if false:** that the diff stays documentation-only. If a `src/**` edit enters, "behaviour-preserving" is violated. *Guard:* mechanical allowlist + Checkpoint C.
+2. **Highest-consequence assumption if false:** that the diff stays documentation-only. If a `src/**` edit enters, "behaviour-preserving" is violated. *Guard:* the §0 review-time scope check + Checkpoint C. *(Verified: the committed diff touches no `src/**`.)*
 3. **Simpler solution rejected fairly?** "Just add `DESIGN_SYSTEM.md` to `required[]` and stop" — fixes the dangling reference but records none of the reconciled decisions, so the loop persists. Rejected for under-delivery, but it *is* the minimal enforceable slice if scope must shrink.
 4. **Coupling/regression missed:** editing `COMPENDIUM_ARCHITECTURE.md:83` and moving design specifics could break `check:docs`' own terminology/link checks or the pillar-count assertion — must be verified.
 5. **Failure likely to escape tests:** a subtle status mislabel (a `[Target]` presented as usable) — mechanical tests won't catch semantics; the semantic verifier + Codex diff review are the backstop.
@@ -111,13 +111,15 @@ No app runtime, input, SQL, or data surface touched → no security/privacy/perf
 - `AGENTS.md` — **Updated** (mirror row + strengthened UI-review line :299).
 - `DESIGN_SYSTEM.md` — **Created**.
 - `scripts/check-docs.mjs` — **Updated** (`required[]` + injected-root refactor).
-- `scripts/check-docs.test.mjs` — **Created** (present/missing/unreadable cases).
+- `scripts/check-docs.test.mjs` — **Created** (present + missing cases).
 - `package.json` — **Updated** (`check:docs` + `test:docs` script entries only).
 - `COMPENDIUM_DATA_MODEL.md` — **Reviewed, no change** (no schema/persistence/data touched).
 - `COMPENDIUM_FEATURE_MATRIX.md` — **Reviewed, no change** (no capability/workflow/status change; Collection redesign is later).
 - `BUILD.md` — **Reviewed, no change** (no command/build/env change; raw-hex lint deferred).
 
-## 13. Approval record
-- Codex review disposition: **—** (pending).
-- Owner approval: **—** (pending).
-- On approval → Wave 2 authoring (exclusive lanes, scope guard, Checkpoint C) → Codex diff review → merge.
+## 13. Approval & authoring record
+- **Owner approval (2026-07-19):** the owner directly approved proceeding and **explicitly waived the final proposal re-review round**, right-sizing the process for a documentation-only change and exercising final authority (AGENTS §3.1 / §4). Every Major from Codex's prior proposal rounds was incorporated **before** this waiver.
+- **Authoring:** completed in commit `c4a74fe` (Wave 2) — `DESIGN_SYSTEM.md` created + governance wired; 7 files, all allowlisted; **no `src/**`**.
+- **Codex diff review:** disposition *Changes required* (2 governance Majors + 1 Minor) — addressed in the follow-up commit that disambiguates the status taxonomy and reconciles this record.
+- **Verification:** `npm run check:docs` PASS (2 tests + 7 required files, schema v10); scope check clean (docs only).
+- **Merge to `main`:** owner's decision, after Codex clears the diff re-review.
