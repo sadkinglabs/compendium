@@ -67,14 +67,13 @@
   --link-violet: #c79ad0;
   --destructive: #a8584a;
 
-  /* ── [Target] tokens — Collection UX redesign, Phase 0: DEFINED, UNCONSUMED.
-     Promote to [Shipping] in Phase 1 alongside their first consumer. Governed by
-     DESIGN_SYSTEM.md §1.6/§3 + docs/collection-ux/. Do NOT treat as shipping vocabulary. */
-  /* completion Ring — track only. The arc FILL is the contextual pillar accent
-     (Collection var(--accent-ruby); Play jade; Home gold), so no --ring-fill is minted. */
+  /* ── Collection UX redesign tokens (DESIGN_SYSTEM.md §1.6/§3 + docs/collection-ux/). */
+  /* completion Ring track — [Shipping]: consumed by components/Ring.jsx. The arc FILL is the
+     contextual pillar accent (Collection var(--accent-ruby); Play jade; Home gold), so no
+     --ring-fill is minted. */
   --ring-track: rgba(74, 60, 34, .9);
-  /* warm-brown chrome (OD-2) — the input / segmented / divider / well hue, a different
-     family from the gold hairlines above. */
+  /* warm-brown chrome (OD-2) — [Target], DEFINED/UNCONSUMED until SetsHome lands its consumer.
+     The input / segmented / divider / well hue, a different family from the gold hairlines. */
   --edge-brown: #4a3c22;
   --hair-warm-50: rgba(74, 60, 34, .5);
   --hair-warm-100: rgba(74, 60, 34, 1);
