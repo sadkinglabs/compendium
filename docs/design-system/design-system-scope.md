@@ -24,7 +24,7 @@ A single authoritative `DESIGN_SYSTEM.md`, **grounded in what all five pillars s
 - Every cross-pillar inconsistency **reconciled to one canonical choice** or recorded as an explicit owner decision.
 - Platform constraints (zero-image, WebView paint, offline/no-CDN fonts, native/web parity) captured as first-class rules.
 - Governance wired: owner assigned, addition process defined, foundational docs updated, `check:docs` extended.
-- **Acceptance test:** an agent can build a new screen using only the doc, and a reviewer can reject invented color/primitives by citing it.
+- **Acceptance test:** a reviewer can reject invented color/primitives by citing the doc; and an agent can build a new screen from it **using only `[Shipping]`/Observed vocabulary**. `[Target]` entries require the adoption track first, and `[Candidate]`/`[Proposed Target]` entries require promotion or owner approval, before either may be used.
 
 ## Method
 **Audit (read-only) → Assert (reconcile + decide) → §8 Proposal (Codex review + owner approval) → Author (write doc) → Govern (wire foundational docs).**

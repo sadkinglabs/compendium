@@ -1,4 +1,4 @@
-# Design System — Wave 1 Synthesis (Master Evidence & Decision Ledger) — **Rev R2**
+# Design System — Wave 1 Synthesis (Master Evidence & Decision Ledger) — **Rev R3**
 
 **Lead/coordinator synthesis of 3 independent read-only reviewers** (Foundations, Patterns & Interaction, Architecture Adversary), **revised per Codex Wave-1 disposition (Changes Required).** Supersedes the original audit where they disagree.
 
@@ -6,9 +6,9 @@
 
 ---
 
-## Revision R2 — resolution of Codex's six Major findings (Phase D)
-All six **accepted** (none rebutted):
-1. **Target vs shipping conflation** → §Status taxonomy now has 5 states incl. **Target — approved, not implemented**; every token/primitive is tagged; a distinct **Adoption-Debt Ledger** (Part 4b) holds all Target items, none presented as usable. `var(--gilt)`/`Ring`/`ListRow` etc. are **Target**, not available.
+## Revision R2 → R3 — resolution of Codex's findings (Phase D)
+Rev R2 accepted all six original Majors; **Rev R3** resolves the one Major Codex kept open on re-review (Target status pre-empting the OD rulings). All accepted, none rebutted.
+1. **Target-vs-shipping conflation → pending-vs-approved (R2 + R3)** → the taxonomy separates **`[Proposed Target]`** (recommended, pending the owner's OD ruling — NOT approved, NOT usable) from **`[Target]`** (owner-approved, *currently EMPTY* until an OD is ruled). Every token/primitive is tagged; the **Adoption-Debt Ledger** (Part 4b) holds the pending items; `var(--gilt)`/`Ring`/`ListRow` are `[Proposed Target]`/`[Candidate]`, never presented as available. Implementation may use only `[Shipping]`/Observed vocabulary (acceptance criterion clarified in scope).
 2. **Foil overstated** → reclassified **Candidate/Provisional** everywhere (Parts 4/6/7); only *outcome constraints* recorded, **no canonical technique or verified fallback**. The K14 CSS/SVG/mask/raster details are demoted to *candidate outcome notes*, not law.
 3. **OD-19 dropped** → **restored as the Cinzel-800 decision** (Part 3); the `--danger`/`--hair-18` corrections revert to findings K1/K2, not an OD.
 4. **Proposal gate too late** → the full **§8 proposal now gates before any normative authoring** (after Checkpoint B input-freeze), not before Phase 4. (Primary fix in `design-system-scope.md`; mirrored in Part 7.)
@@ -58,29 +58,29 @@ Per Codex-Minor, the blended "35–45%" is **withdrawn** (its "design decision" 
 
 ## Part 3 — OD-1..20 rulings packet (owner rules or defers each)
 
-**Status legend:** `[Shipping]` available now · `[Exception]` sanctioned shipping wall · `[Target]` approved but **not implemented** · `[Candidate]` provisional · `[Deprecated]` retire. Every ruling below produces the tagged outcome; **`[Target]` names are not usable until the adoption track lands them.** ★ = high-leverage.
+**Status legend:** `[Shipping]` available now (the only usable vocabulary) · `[Exception]` ships today, sanction pending OD-12 · `[Proposed Target]` **recommended, pending this OD's owner ruling — not approved, not usable** · `[Candidate]` provisional · `[Deprecated]` retire. The **Produces** column shows each ruling's *proposed* outcome; a `[Proposed Target]` becomes `[Target]` only on owner approval (Checkpoint B). ★ = high-leverage.
 
 | OD | Decision | Reconciled recommendation (conf.) | Produces |
 |---|---|---|---|
-| **★1** | Two golds | Recognize 3 gold **roles** — brand `--gold-rgb`, gilt `--gilt` (203,167,95), numeral `#e3c589`; retire the false "unified" claim. **Do NOT migrate** (=reskin). (H) | `--gilt`/numeral names **[Target]**; "unified" comment **[Deprecated]** |
-| 2 | Gothic-brown chrome (~100) | Preserve as a **separate semantic family**: `--edge-brown`/`--hair-warm`/`--surface-brown`. (H) | **[Target]** |
-| 3 | Muted warm ink `#8a8175` (84) | Approve a **warm-muted role**; choose migrate-to-`--ink-faint` vs new token **only after visual + high-contrast comparison** (not migration-first). (M) | role **[Target]**; impl choice deferred |
-| 4 | Head/body ink near-dupes | Approve as **[Target]** *conditional on* visual + contrast verification before adoption. (M) | **[Target]** |
+| **★1** | Two golds | Recognize 3 gold **roles** — brand `--gold-rgb`, gilt `--gilt` (203,167,95), numeral `#e3c589`; retire the false "unified" claim. **Do NOT migrate** (=reskin). (H) | `--gilt`/numeral names **[Proposed Target]**; "unified" comment **[Deprecated]** |
+| 2 | Gothic-brown chrome (~100) | Preserve as a **separate semantic family**: `--edge-brown`/`--hair-warm`/`--surface-brown`. (H) | **[Proposed Target]** |
+| 3 | Muted warm ink `#8a8175` (84) | Approve a **warm-muted role**; choose migrate-to-`--ink-faint` vs new token **only after visual + high-contrast comparison** (not migration-first). (M) | role **[Proposed Target]**; impl choice deferred |
+| 4 | Head/body ink near-dupes | Approve as **[Proposed Target]** *conditional on* visual + contrast verification before adoption. (M) | **[Proposed Target]** |
 | 5 | Jade `#8fd3a8`/`#4db38a`/`#63c9a3` | Retain `--accent-jade` (16× consumed); **classify `#4db38a` win-semantics** (→ OD-7) before replacing it. (M) | keep token; `#4db38a` → OD-7 |
-| 6 | Violet two-tone + `--violet-rgb` | Name `--violet-chrome`/`--violet-content`; **rename `--violet-rgb`→`--deck-amethyst` (structural)**, don't "correct" the number. (H) | names **[Target]**; wrong-role name **[Deprecated]** |
-| 7 | Status semantics | Separate `--win`/`--loss` from accents; **do not conflate loss / danger / destructive without semantic review**. (M) | **[Target]** pending semantic review |
-| 8 | Stepper colour | One **Stepper contract** + canonical `--accent-ruby` role; visual adoption deferred. (M) | **[Target]**, pairs w/ OD-13 |
-| 9 | Scalar tokens | Retain the scalar **target** + define **text-style recipes**, clearly marked unimplemented. (M) | **[Target]** |
-| 10 | Motion tokens | Define a small **semantic** motion vocabulary; map existing motion roles before adoption. (M) | **[Target]** |
-| 11 | z-index ladder | Define a **semantic** `--z-*` ladder incl. portal/top-layer ownership. (M) | **[Target]** |
+| 6 | Violet two-tone + `--violet-rgb` | Name `--violet-chrome`/`--violet-content`; **rename `--violet-rgb`→`--deck-amethyst` (structural)**, don't "correct" the number. (H) | names **[Proposed Target]**; wrong-role name **[Deprecated]** |
+| 7 | Status semantics | Separate `--win`/`--loss` from accents; **do not conflate loss / danger / destructive without semantic review**. (M) | **[Proposed Target]** pending semantic review |
+| 8 | Stepper colour | One **Stepper contract** + canonical `--accent-ruby` role; visual adoption deferred. (M) | **[Proposed Target]**, pairs w/ OD-13 |
+| 9 | Scalar tokens | Retain the scalar **target** + define **text-style recipes**, clearly marked unimplemented. (M) | **[Proposed Target]** |
+| 10 | Motion tokens | Define a small **semantic** motion vocabulary; map existing motion roles before adoption. (M) | **[Proposed Target]** |
+| 11 | z-index ladder | Define a **semantic** `--z-*` ladder incl. portal/top-layer ownership. (M) | **[Proposed Target]** |
 | **★12** | Decks + Play walls | **Sanction both as documented CURRENT-STATE exceptions, not permanent ideals**; migration = a separate device-verified proposal. Reconcile only the `--violet-rgb` role + document the 3 same-name overrides. (H) | **[Exception]** |
-| 13 | Primitive-consolidation catalog | Assert consolidation **targets, not implementation equivalence**; dock-slot hook + one Stepper lowest-risk. (H) | **[Target]** |
-| 13a | Orphaned `CardRow.jsx` | **Use as visual/data INPUT only**; the canonical `ListRow` derives from the **strongest shipped semantics (native `<button>`/`<a>`)** — do **not** canonize CardRow wholesale. (H) | `ListRow` **[Target]**; CardRow input-only |
+| 13 | Primitive-consolidation catalog | Assert consolidation **targets, not implementation equivalence**; dock-slot hook + one Stepper lowest-risk. (H) | **[Proposed Target]** |
+| 13a | Orphaned `CardRow.jsx` | **Use as visual/data INPUT only**; the canonical `ListRow` derives from the **strongest shipped semantics (native `<button>`/`<a>`)** — do **not** canonize CardRow wholesale. (H) | `ListRow` **[Proposed Target]**; CardRow input-only |
 | 14 | `.cx-ov-*` out of tokens.css | **Deferred hygiene — NO CSS relocation in Wave 2** (it's `src/**`). Record for adoption. (M) | adoption-debt |
-| **★15** | Touch floor 44 vs 48dp | Retain **48dp as [Target]**; record current 44/34/30px as **debt**; do NOT amend the doc down. RefineSheet numeric cluster = re-layout, not slop-pad. (M-H) | **[Target]** + debt |
-| 16 | State-layer / `:active` | Document bespoke shipped feedback as **[Shipping]/Observed**; missing M3 state-layers as **[Target]/debt**. (M) | mixed |
-| 17 | Focusable row wrapper | Define accessible row behavior using **native semantics** where possible. (M) | **[Target]** |
-| 18 | `:focus-visible` | Define a shared `--focus-ring` requirement; implementation deferred. (M) | **[Target]** |
+| **★15** | Touch floor 44 vs 48dp | Retain **48dp as the [Proposed Target] floor**; record current 44/34/30px as **debt**; do NOT amend the doc down. RefineSheet numeric cluster = re-layout, not slop-pad. (M-H) | **[Proposed Target]** + debt |
+| 16 | State-layer / `:active` | Document bespoke shipped feedback as **[Shipping]/Observed**; missing M3 state-layers as **[Proposed Target]/debt**. (M) | mixed |
+| 17 | Focusable row wrapper | Define accessible row behavior using **native semantics** where possible. (M) | **[Proposed Target]** |
+| 18 | `:focus-visible` | Define a shared `--focus-ring` requirement; implementation deferred. (M) | **[Proposed Target]** |
 | **19** | **Cinzel-800 (RESTORED)** | Cinzel is requested at weight 800 but ships ≤700 → faux-bold (`counter.css:879,891` +). **Recommend clamp usage to 700** unless evidence justifies bundling an 800 font asset. (M) | decision |
 | 20 | Haptics gate | **Invariant:** require **centralized gating** (one choke point); leave state injection + dependency direction to the implementation proposal. (H) | invariant |
 
@@ -91,20 +91,23 @@ Per Codex-Minor, the blended "35–45%" is **withdrawn** (its "design decision" 
 
 ## Part 4 — Frozen assertion input (status taxonomy)
 
-**Five states — every asserted entry MUST declare one; `[Target]` entries are never presented as currently usable:**
+**Status states — every asserted entry MUST declare one. CRITICAL: nothing is "approved" until the owner rules the relevant OD; recommendations are `[Proposed Target]`, never `[Target]`. Implementation/Wave 2 may use ONLY `[Shipping]`/Observed vocabulary.**
 
-- **`[Shipping]` / Observed** — verified shipping fact (normative-as-is or drift-ledger): scalars 0-consumer; colour ~30% tokenised; second gold ~99; brown trio 100; `#e3c589`/`#efe7d8` near-dupes; stepper 3×/2-palette; gilt ≥4 variants; dock-slot ×3; sheet/rubric forks; orphaned `CardRow`; sub-44 offenders; Cinzel-800 faux-bold; haptics inert; the bespoke `:active` feedback.
-- **`[Exception]`** (sanctioned shipping wall, pending OD-12, **current-state not ideal**): `.cx-decks` amethyst; `.cx-life-tracker` scope; violet chrome/content two-tone; the 3 same-name overrides.
-- **`[Target]`** (approved but **NOT implemented** — see Adoption-Debt Ledger 4b): `--gilt`, numeral gold, `--edge-brown/--hair-warm/--surface-brown`, warm-muted ink, `--win/--loss`, `--dur/--ease`, `--z-*`, scalar target + text-recipes, `--focus-ring`; primitives Stepper, Sheet-merge, TrophyCardScaffold, ListRow(+focusable), `useDockSlot`, gilt/danger buttons, ModalScaffold.
+- **`[Shipping]` / Observed** — verified shipping fact; the ONLY vocabulary implementation may use directly: scalars 0-consumer; colour ~30% tokenised; second gold ~99; brown trio 100; `#e3c589`/`#efe7d8` near-dupes; stepper 3×/2-palette; gilt ≥4 variants; dock-slot ×3; sheet/rubric forks; orphaned `CardRow`; sub-44 offenders; Cinzel-800 faux-bold; haptics inert; the bespoke `:active` feedback.
+- **`[Exception]`** — **ships today** (Observed fact); its **sanction as a documented exception is a recommendation pending OD-12**, not yet approved: `.cx-decks` amethyst; `.cx-life-tracker` scope; violet chrome/content two-tone; the 3 same-name overrides.
+- **`[Proposed Target]`** — **recommended, pending the owner's OD ruling. NOT approved, NOT usable.** On owner *approval* it promotes to `[Target]` at the Checkpoint B freeze: `--gilt`, numeral gold, `--edge-brown/--hair-warm/--surface-brown`, warm-muted ink, `--win/--loss`, `--dur/--ease`, `--z-*`, scalar target + text-recipes, `--focus-ring`; primitives Stepper, Sheet-merge, TrophyCardScaffold, ListRow(+focusable), `useDockSlot`, gilt/danger buttons, ModalScaffold.
+- **`[Target]`** — **explicitly owner-approved, NOT implemented.** *Currently EMPTY — no OD has been ruled.* Filled at the Checkpoint B freeze from the `[Proposed Target]` items the owner approves; still requires the adoption track before it is usable.
 - **`[Candidate]`/Provisional** (unproven, design + implementation deferred): **foil**; **Ring** (recurs but promotion criteria unrecorded — see rule below); ghost-slot (→ Pattern); wax-seal blob / fleuron / corner brackets (→ drop/compose).
 - **`[Deprecated]`** (retire): false "unified on 220,184,111" comment; `--violet-rgb` wrong-role name; dead rgb-base tokens; `#4db38a` contradicting jade fallback; 47px stale comment; inert Haptics toggle.
 
+**State machine:** `[Proposed Target]` --(owner approves the OD)--> `[Target]` --(adoption track)--> `[Shipping]`. `[Candidate]` --(recorded promotion comparison + owner)--> `[Proposed Target]`. An owner *deferral or rejection* keeps an item `[Proposed Target]` or drops it — it **never silently becomes `[Target]`**.
+
 **Candidate→Foundation promotion rule (governance).** Two-pillar recurrence is **necessary but NOT sufficient.** Promotion also requires all of: (a) **shared semantic role**; (b) **compatible states + interaction**; (c) **compatible accessibility contract**; (d) **compatible platform/degradation behavior**; (e) **explicit owner disposition** — recorded as a written comparison. **Ring** recurs (Home×2 + Play donut) but its states/semantics/track/inner-size **differ** (`#4db38a` vs `--accent-jade`; 44 vs 51 vs 76px inner) → stays **[Candidate]/Pattern** until the comparison is recorded. **Foil** has zero shipping instances → **[Candidate]/Provisional**, cannot be a Foundation.
 
-### Part 4b — Adoption-Debt Ledger (Target items — approved, NOT implemented)
-*Do not reference any of these as usable in code; each is a future adoption-track item, not shipping vocabulary.*
+### Part 4b — Adoption-Debt Ledger (`[Proposed Target]` items — recommended, PENDING owner OD ruling)
+*None of these is owner-approved yet — each awaits its OD ruling, then the adoption track. Never reference as usable; only `[Shipping]`/Observed vocabulary is usable. On owner approval an item becomes `[Target]` at the Checkpoint B freeze.*
 
-| Target | Replaces / closes (shipping reality) | Adoption cost |
+| Proposed Target (pending OD) | Replaces / closes (shipping reality) | Adoption cost |
 |---|---|---|
 | `--gilt`/`--gilt-rgb`, numeral gold token | ~99 raw `203,167,95`/`#cba75f` + `#e3c589` (54) | find/replace, behaviour-preserving |
 | `--edge-brown`/`--hair-warm`/`--surface-brown` | ~100 raw browns | find/replace |
@@ -125,11 +128,11 @@ Per Codex-Minor, the blended "35–45%" is **withdrawn** (its "design decision" 
 **Denied — no exceptions (this is the adoption track / behaviour change):** **all `src/**`** — including `src/theme/tokens.css` (the `:1` comment fix moves to adoption-debt), any CSS token replacement, JSX consolidation, `cardArt.js`/`GothicSheet.jsx`/`back*.js`, deps, runtime/build config, visual redesign, migrations. **Any `src/**` path in the Wave-2 diff = scope-guard failure → stop and file a separate implementation proposal.**
 
 ## Part 6 — Seven-layer blueprint (each entry carries a status)
-1. **Foundations** — reconciled token roles + rationale/constraint: brand `--gold-rgb` `[Shipping]` + `--gilt`/numeral `[Target]` (OD-1, retire "unified" `[Deprecated]`); warm-brown family `[Target]` (OD-2); warm-muted ink `[Target]` (OD-3); `--win/--loss` `[Target]` (OD-7); `--dur/--ease` `[Target]` (OD-10); `--z-*` `[Target]` (OD-11); scalar **target-only** + text-recipes `[Target]` (OD-9). Per-axis metric (Part 2). Deprecate dead rgb-bases.
+1. **Foundations** — reconciled token roles + rationale/constraint: brand `--gold-rgb` `[Shipping]` + `--gilt`/numeral `[Proposed Target]` (OD-1, retire "unified" `[Deprecated]`); warm-brown family `[Proposed Target]` (OD-2); warm-muted ink `[Proposed Target]` (OD-3); `--win/--loss` `[Proposed Target]` (OD-7); `--dur/--ease` `[Proposed Target]` (OD-10); `--z-*` `[Proposed Target]` (OD-11); scalar **target-only** + text-recipes `[Proposed Target]` (OD-9). Per-axis metric (Part 2). Deprecate dead rgb-bases.
 2. **Semantic** — single-accent rule + the two `[Exception]` walls (`--deck-amethyst` structural; chrome/content two-tone; Play scope-local `--bg/--gold/--gold-head`). Status colours separated from wayfinding.
-3. **Primitives** — consolidation **[Target]** catalog (OD-13, *targets not equivalence*): Stepper, Sheet-merge, TrophyCardScaffold, **ListRow (native-semantics base, CardRow = input only)** (+focusable OD-17), SectionLabel, gilt/danger buttons, ModalScaffold, useDockSlot; `CardArt` = `[Shipping]` zero-image reference primitive. **Ring = `[Candidate]`** (promotion criteria unrecorded). `CardRow` adopt-or-delete recorded.
+3. **Primitives** — consolidation **[Proposed Target]** catalog (OD-13, *targets not equivalence*): Stepper, Sheet-merge, TrophyCardScaffold, **ListRow (native-semantics base, CardRow = input only)** (+focusable OD-17), SectionLabel, gilt/danger buttons, ModalScaffold, useDockSlot; `CardArt` = `[Shipping]` zero-image reference primitive. **Ring = `[Candidate]`** (promotion criteria unrecorded). `CardRow` adopt-or-delete recorded.
 4. **Patterns** — rows, sheets (GothicSheet WebView paint recipe as `[Shipping]` hard pattern), rubric, empty/zero-image + BlankState, add-as-place, two-tier LIFO back. **Ghost-slot = Pattern**, not Foundation.
-5. **Interaction** — motion tiers `[Target]`, reduced-motion law `[Shipping]`, graded haptics `[Shipping]` + centralized-gate invariant `[Target]` (OD-20), state-layer: bespoke `[Shipping]` + M3 `[Target]` (OD-16), `:focus-visible` `[Target]` (OD-18).
+5. **Interaction** — motion tiers `[Proposed Target]`, reduced-motion law `[Shipping]`, graded haptics `[Shipping]` + centralized-gate invariant `[Proposed Target]` (OD-20), state-layer: bespoke `[Shipping]` + M3 `[Proposed Target]` (OD-16), `:focus-visible` `[Proposed Target]` (OD-18).
 6. **Platform** — §7 as hard law with K9/K10 precision: zero-image = **manual** gate; **narrow** backdrop-filter rule; `mix-blend-mode` single non-load-bearing use (engine-sensitive). **Foil = `[Candidate]`/Provisional** — record only outcome constraints (offline, reduced-motion safe, zero-image safe, non-load-bearing degradation); **no canonical technique, no verified fallback** — those await a device-verified implementation proposal.
 7. **Governance** — owner assigned; **strengthened promotion rule** (Part 4, necessary+sufficient criteria); addition/disposition process; `check:docs` `required[]` + **test seam**; the acceptance test.
 
@@ -139,7 +142,7 @@ Order: **OD rulings → Checkpoint B input-freeze → full §8 proposal (Codex r
 ---
 
 ## Checkpoint A — status
-- [x] 5-state taxonomy incl. **Target**; every entry tagged; Adoption-Debt Ledger separates target from shipping (Part 4/4b).
+- [x] Taxonomy distinguishes **`[Proposed Target]`** (recommended, pending owner ruling) from **`[Target]`** (owner-approved — *currently EMPTY, no OD ruled*); implementation may use only `[Shipping]`/Observed; Adoption-Debt Ledger holds the pending items (Part 4/4b).
 - [x] Foil = **Candidate/Provisional**; OD-19 restored; promotion rule strengthened; allowlist denies all `src/**`; proposal gate precedes authoring; metric per-axis.
 - [x] High-leverage claims verified/qualified (Part 1).
 - [ ] **Codex focused re-review** clears: status taxonomy & target ledger · foil classification · corrected OD-19 · proposal sequencing · promotion criteria · exact Wave-2 allowlist. *(External — pending.)*
