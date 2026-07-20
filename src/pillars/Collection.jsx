@@ -604,11 +604,12 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
               {(activeCount || q) ? 'No cards match those filters.' : `${drillName} has no cards yet.`}
             </div>
           ) : (
-            // Card view only. No cap: every card renders - off-screen tiles are skipped by the
+            // Card view only, 2 up: at 3 the quick-add button crowded the card name. No cap:
+            // every card renders - off-screen tiles are skipped by the
             // browser (content-visibility on the tile), so a full set stays smooth without a
             // virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility tile reports
             // min-content width, which inflated 1fr tracks; pin the min to 0.
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
               {drillRows.map((r) => (
                 <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
                   owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek} />

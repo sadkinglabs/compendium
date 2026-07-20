@@ -8,6 +8,7 @@
 // playset check reuses the deckbuilder's legal limits. Ruby stays chrome-only.
 import React, { useEffect, useRef, useState } from 'react';
 import CardArt from './CardArt.jsx';
+import { toast } from '../feedback.js';
 import { RARITY_LIMITS, isUnlimited } from '../store/deckRepository.js';
 import { haptic } from '../native.js';
 
@@ -62,12 +63,12 @@ export function QuickAdd({ label, onAdd, size = 30 }) {
   useEffect(() => () => clearTimeout(timer.current), []);
   const fire = () => {
     onAdd();
-    setTick(true);
+    setTick(true);                       // pops + turns jade, then settles back to the plus
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setTick(false), 620);
   };
   return (
-    <Frost label={label} size={size} onClick={fire}>
+    <Frost label={label} size={size} onClick={fire} tone={tick ? 'ok' : undefined}>
       {tick
         ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
         : '+'}
@@ -75,9 +76,10 @@ export function QuickAdd({ label, onAdd, size = 30 }) {
   );
 }
 
-export function Frost({ label, onClick, disabled, size = 31, children }) {
+export function Frost({ label, onClick, disabled, size = 31, children, tone }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
+  const ok = tone === 'ok';   // confirmed: jade, and a brief pop
   const hit = Math.max(44, size);
   return (
     <button
@@ -88,10 +90,11 @@ export function Frost({ label, onClick, disabled, size = 31, children }) {
     >
       <span style={{
         width: size, height: size, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)',
-        border: `1px solid ${on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)'}`,
-        color: '#f0c8ce', font: "600 18px/1 var(--f-ui)",
-        transition: 'background .12s, border-color .12s',
+        background: ok ? 'rgba(var(--jade-rgb),.22)' : on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)',
+        border: `1px solid ${ok ? 'var(--accent-jade)' : on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)'}`,
+        color: ok ? 'var(--accent-jade)' : '#f0c8ce', font: "600 18px/1 var(--f-ui)",
+        transform: ok ? 'scale(1.16)' : 'scale(1)',
+        transition: 'background .14s, border-color .14s, color .14s, transform .2s cubic-bezier(.2,.9,.3,1)',
       }}>{children}</span>
     </button>
   );
@@ -243,7 +246,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           (read-only surfaces), which is what stops a dead "+" appearing there. */}
       {onStep && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
-          <QuickAdd label={`Add ${card.name}`} onAdd={() => onStep(card.card_id, set, 1)} />
+          <QuickAdd label={`Add ${card.name}`} onAdd={() => { onStep(card.card_id, set, 1); toast(`${card.name} · ${total + 1}`); }} />
         </span>
       )}
     </div>
