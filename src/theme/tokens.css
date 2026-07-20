@@ -487,6 +487,5 @@ input, textarea { -webkit-user-select: text; user-select: text; }
    a re-render (stepping a count) does not replay. --i is the per-tile stagger index. */
 @media (prefers-reduced-motion: reduce) { .cx-deal { animation-duration: .01ms; animation-delay: 0ms; } }
 /* Collection card area: a short fade replayed on each view/lens change. */
-.cx-view-fade { animation: cxfade .22s ease; }
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes cxpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }

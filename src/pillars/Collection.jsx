@@ -21,7 +21,7 @@ import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
 import { goalTotals, goalRowState } from '../store/listGoalModel.js';
-import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
@@ -380,20 +380,7 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
   );
 }
 
-/* ---------------- Cards (dual-view collection browser) ---------------- */
-
-// The sticky, centered List / Binder segmented control.
-function ViewToggle({ view, setView }) {
-  // Sits sticky over the scrolling card list, so it needs the frosted-solid
-  // backing (same as the Decks docked List/Stats toggle) to stay legible.
-  return (
-    <SegTabs ariaLabel="Card view" value={view} onChange={setView}
-      options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'binder', label: 'Binder', icon: <IcGrid /> }]}
-      style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
-  );
-}
-
-const VIEW_KEY = 'cx-collection-view';
+/* ---------------- Cards (per-set card browser) ---------------- */
 
 // The pinned, un-deletable Wishlist is a VIRTUAL list (kind 'wishlist') backed by
 // the owned_cards.qty_wanted ledger, not a card_lists row - this sentinel id keeps
@@ -412,27 +399,13 @@ const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted'
 
 // Cards is the PER-SET drill (the parent shows SetsHome until a plate is tapped). It scopes
 // the shared catalog/search/filter machinery to `setDrill`, adds a back + set-completion
-// header and the inline ownership lens, and carries a permanent stepper on every row.
+// header, and carries a permanent stepper on every tile.
 function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
-  const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
-  useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
-
-  // Adding is a PLACE: the set's whole checklist is here and every row carries a live
-  // stepper. The lens below narrows what you see; it never gates editing.
+  // Adding is a PLACE: the set's whole checklist is here and every tile carries a live
+  // stepper. Card view only - completion is a visual loop, so the empty sleeves ARE the
+  // information. Ownership narrowing lives solely in the filter sheet (see ownScope): an
+  // always-on inline lens both duplicated it and made a card you just added vanish.
   const [importOpen, setImportOpen] = useState(false);
-  // Ownership lens: 'all' (default - the set's whole checklist, so anything is addable) |
-  // 'owned' (just yours) | 'unowned' (the gaps). It narrows what you SEE; steppers stay live
-  // in every lens, so it never gates editing.
-  const [viewMode, setViewMode] = useState('all');
-  const showSteppers = true;   // permanent - add-is-a-place
-  // Fade the card area on a view (list/binder) or lens (owned/all/not-owned) change.
-  // Replays the animation by toggling the class on the SAME node (offsetWidth reflow
-  // between remove/add), so the list reconciles in place - the tiles never remount.
-  const listRef = useRef(null);
-  useEffect(() => {
-    const el = listRef.current; if (!el) return;
-    el.classList.remove('cx-view-fade'); void el.offsetWidth; el.classList.add('cx-view-fade');
-  }, [viewMode, view]);
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -537,8 +510,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const setFilterOpts = hasUnspecOwned ? [...setOpts, 'Unspecified'] : setOpts;
 
   const groups = useMemo(() => groupCollection({
-    pool, owBySet, wishSet, sets, viewMode, ownScope, ownActive, setLabel: SET_LABEL, setRank,
-  }), [pool, owBySet, wishSet, ownScope, ownActive, sets, viewMode]);
+    pool, owBySet, wishSet, sets, viewMode: 'all', ownScope, ownActive, setLabel: SET_LABEL, setRank,
+  }), [pool, owBySet, wishSet, ownScope, ownActive, sets]);
 
   // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
   // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
@@ -579,14 +552,6 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
         </div>
-        {/* View toggle + the ownership LENS, inline. The lens moved off the stacked FAB when
-            edit mode was retired: it narrows what you see, it never gates editing. */}
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <ViewToggle view={view} setView={setView} />
-          <SegTabs ariaLabel="Ownership lens" value={viewMode} onChange={setViewMode}
-            options={[{ key: 'owned', label: 'Owned' }, { key: 'all', label: 'All' }, { key: 'unowned', label: 'Missing' }]}
-            style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
-        </div>
       </div>
 
       {pool == null ? <Loading /> : (
@@ -594,38 +559,22 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
             {totalRows} card{totalRows === 1 ? '' : 's'}
           </div>
-          {/* Card area fades on a view/lens change (replayed by ref in the effect
-              above, so the list reconciles in place - the 1500 tiles never remount). */}
-          <div ref={listRef}>
           {totalRows === 0 ? (
-            <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              {viewMode !== 'owned' ? 'No cards match those filters.'
-                : (activeCount || q) ? 'No owned cards match those filters.'
-                  : `You own no ${drillName} cards yet.\nTap + Add to record what you own.`}
-            </div>
-          ) : view === 'binder' ? (
-            // No cap: every card renders. Off-screen rows are skipped by the browser
-            // (content-visibility on the row components), so a full set stays smooth
-            // without a virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility
-            // tile reports min-content width, which inflated 1fr tracks; pin the min to 0.
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
-              {drillRows.map((r, i) => (
-                <div key={r.card.card_id + '|' + r.set}>
-                  <BinderTile card={r.card} set={r.set} setLabel={drillName} owned={r.owned} foil={r.foil}
-                    onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
-                </div>
-              ))}
+            <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+              {(activeCount || q) ? 'No cards match those filters.' : `${drillName} has no cards yet.`}
             </div>
           ) : (
-            drillRows.map((r, i) => (
-              <div key={r.card.card_id + '|' + r.set}>
-                <LedgerRow card={r.card} set={r.set} setLabel={drillName}
-                  owned={r.owned} foil={r.foil} value={r.owned + r.foil}
-                  onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
-              </div>
-            ))
+            // Card view only. No cap: every card renders - off-screen tiles are skipped by the
+            // browser (content-visibility on the tile), so a full set stays smooth without a
+            // virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility tile reports
+            // min-content width, which inflated 1fr tracks; pin the min to 0.
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 12 }}>
+              {drillRows.map((r) => (
+                <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
+                  owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek} />
+              ))}
+            </div>
           )}
-          </div>
         </>
       )}
 
