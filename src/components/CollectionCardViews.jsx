@@ -69,6 +69,10 @@ export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
   const run = useRef(0);       // copies confirmed in the current burst
   const runTimer = useRef(null);
   useEffect(() => () => { clearTimeout(timer.current); clearTimeout(runTimer.current); }, []);
+  // A chain that drained with an ERROR never increments `ok`, so its taps must be discarded
+  // here - otherwise they would be credited to the NEXT successful confirmation and the toast
+  // would claim copies that were never persisted.
+  useEffect(() => { if (status?.error) taps.current = 0; }, [status?.error]);
   useEffect(() => {
     const ok = status?.ok || 0;
     if (ok <= seenOk.current) { seenOk.current = ok; return; }
