@@ -92,10 +92,15 @@ export async function switchProfile(id) {
   // between the drain and the flip and land under the wrong profile. Taking the same
   // barrier a bulk command takes also means the two serialize against each other instead
   // of interleaving. The flip must stay inside the barrier for that to hold.
+  // failClosed:false is deliberate and is the ONLY holder entitled to it. A switch does not
+  // read-then-write the ledger, and queued writes carry an explicit profileId so they commit
+  // under the profile they were scheduled for whatever the active id becomes. The drain is
+  // here to keep an in-flight edit visible, not correct - so a hung storage operation must
+  // not be able to trap the user in a profile.
   await withExclusiveCollectionWrites(async () => {
     activeId = id;
     await Preferences.set({ key: ACTIVE_KEY, value: id });
-  });
+  }, { failClosed: false });
   return getActiveProfile();
 }
 

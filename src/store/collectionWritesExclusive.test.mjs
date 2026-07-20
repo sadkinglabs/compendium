@@ -55,9 +55,10 @@ test('a write queued WHILE bulk holds the barrier waits behind it', async () => 
 });
 
 test('a write queued DURING the drain waits for bulk, it does not join the drain', async () => {
-  // The exact ordering bug the barrier closes. Exclusivity is claimed before the drain, so a
-  // write arriving mid-drain sees a held gate. If the drain came first, this write would slip
-  // in ahead of bulk and be overwritten by it.
+  // The ordering bug the barrier closes. Admission shuts before the drain begins, so a write
+  // arriving mid-drain is PARKED - it neither runs ahead of the holder nor counts toward the
+  // drain the holder is waiting on. See the timing test below: asserting this order alone is
+  // not enough, because a deadlock produces the same order four seconds later.
   __resetCollectionWritesForTests();
   const log = [];
   const d = defer();
@@ -123,14 +124,73 @@ test('a rejecting gated write does not wedge writes behind it', async () => {
   assert.deepEqual(log, ['good']);
 });
 
-test('the barrier drain is bounded, so a hung write cannot freeze it forever', async () => {
+test('a timed-out PRE-EXISTING write prevents the holder from running at all', async () => {
+  // Fail closed. The barrier was never achieved, so running `fn` would mean performing an
+  // "exclusive" read-and-write alongside an active writer - the exact corruption the
+  // barrier exists to prevent. A hung storage operation must cost a failed command, never
+  // a silently lost edit.
   __resetCollectionWritesForTests();
   const never = defer();          // deliberately never resolved
   enqueueWrite('row', async () => { await never.p; });
-  const log = [];
-  await withExclusiveCollectionWrites(async () => { log.push('bulk'); }, 20);
-  assert.deepEqual(log, ['bulk'], 'bulk proceeded after the bounded drain timed out');
+  let ran = false;
+  await assert.rejects(
+    withExclusiveCollectionWrites(async () => { ran = true; }, { timeoutMs: 20 }),
+    /timed out draining/,
+  );
+  assert.equal(ran, false, 'the callback must NOT run when exclusivity was not achieved');
   never.resolve();
+});
+
+test('failClosed:false proceeds on a timeout - reserved for the profile switch', async () => {
+  // A profile switch does not read-then-write the ledger, and queued writes carry an
+  // explicit profileId, so they commit under the profile they were scheduled for whatever
+  // the active id becomes. Its drain preserves visibility, not correctness, so a hung write
+  // must not be able to trap the user in a profile. Any holder that reads-then-writes must
+  // leave failClosed at its default.
+  __resetCollectionWritesForTests();
+  const never = defer();
+  enqueueWrite('row', async () => { await never.p; });
+  let ran = false;
+  await withExclusiveCollectionWrites(async () => { ran = true; }, { timeoutMs: 20, failClosed: false });
+  assert.equal(ran, true, 'the switch completed despite the hung write');
+  never.resolve();
+});
+
+test('a mid-drain arrival does not add the drain timeout to the holder', async () => {
+  // Regression guard for a barrier that looked correct and was a deadlock. When a parked
+  // write counted toward the holder's drain, the holder waited on a write that was waiting
+  // on the holder, and only the timeout broke it. Ordering assertions alone passed; the
+  // cost was ~4s per bulk command. Timing is therefore part of the contract.
+  __resetCollectionWritesForTests();
+  const d = defer();
+  enqueueWrite('row', async () => { await d.p; });
+
+  const t0 = Date.now();
+  const bulk = withExclusiveCollectionWrites(async () => {}, { timeoutMs: 4000 });
+  await tick();
+  enqueueWrite('row', async () => {});     // arrives mid-drain, must not extend the drain
+  d.resolve();
+  await bulk;
+  const ms = Date.now() - t0;
+  assert.ok(ms < 500, `holder took ${ms}ms; a parked write is being counted in its drain`);
+});
+
+test('a parked write does not keep the NEXT holder from seeing an empty drain', async () => {
+  // Parked writes are admitted synchronously when the gate reopens, so a following holder
+  // either counts them in its own drain or they have already run. It must never hold a
+  // barrier that excludes nothing while an admitted write is about to execute.
+  __resetCollectionWritesForTests();
+  const order = [];
+  const gate = defer();
+  const first = withExclusiveCollectionWrites(async () => { order.push('h1'); await gate.p; });
+  await tick();
+  const w = enqueueWrite('row', async () => { order.push('write'); });
+  await tick();
+  gate.resolve();
+  await first;
+  const second = withExclusiveCollectionWrites(async () => { order.push('h2'); });
+  await Promise.all([w, second]);
+  assert.deepEqual(order, ['h1', 'write', 'h2'], 'the parked write ran before the next holder');
 });
 
 test('a write cannot land between a holder acquiring the barrier and releasing it', async () => {
