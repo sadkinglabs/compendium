@@ -97,6 +97,24 @@ test('rail counts total to the number of cards, so it cannot disagree with the g
   assert.equal(total, cards.length);
 });
 
+test('an accessor lets the drill group its ownership rows without reshaping them', () => {
+  // The set drill holds {card, set, owned, foil}; the grid needs those rows back, not bare
+  // cards. Reshaping to satisfy the grouper would detach the result from what gets rendered.
+  const row = (name, rarity) => ({ card: card(name, { rarity }), set: '001', owned: 2 });
+  const rows = [row('Zephyr', 'Elite'), row('Ancient Dragon', 'Unique'), row('Basilisk', 'Elite')];
+  const g = groupCards(rows, 'rarity', (r) => r.card);
+  assert.deepEqual(g.map((s) => s.key), ['Elite', 'Unique']);
+  assert.deepEqual(g[0].cards.map((r) => r.card.name), ['Basilisk', 'Zephyr']);
+  assert.equal(g[0].cards[0].owned, 2, 'the row survived intact, not just its card');
+});
+
+test('the rail index accepts the same accessor', () => {
+  const rows = [{ card: card('Zephyr') }, { card: card('Ancient Dragon') }];
+  const idx = letterIndex(rows, (r) => r.card);
+  assert.equal(idx.find((l) => l.letter === 'A').index, 0);
+  assert.equal(idx.find((l) => l.letter === 'Z').index, 1);
+});
+
 test('grouping is case-insensitive when ordering names', () => {
   const g = groupCards([card('zephyr'), card('Ancient Dragon')], 'none');
   assert.deepEqual(g[0].cards.map((c) => c.name), ['Ancient Dragon', 'zephyr']);

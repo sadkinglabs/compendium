@@ -7,12 +7,18 @@
 //
 // Pure and DOM-free on purpose - this is the part of the redesign that can be tested without
 // a device, so it should carry as much of the logic as possible.
-import { EL_ORDER, elemKey } from './deckStats.js';
+import { EL_ORDER, elemKey } from './elements.js';   // leaf module - NOT deckStats (see elements.js)
 import { RARITY_ORDER } from './rarity.js';
 
 export const GROUP_MODES = ['none', 'element', 'rarity'];
 
-const byName = (a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'en', { sensitivity: 'base' });
+// Callers hold different shapes: the sets home has bare catalog cards, the set drill has
+// {card, set, owned, foil} ownership rows. An accessor keeps this module working on both
+// without either side reshaping data purely to satisfy it - reshaping would detach the
+// grouped result from the row the grid actually needs to render.
+const identity = (x) => x;
+const byNameWith = (cardOf) => (a, b) =>
+  String(cardOf(a).name || '').localeCompare(String(cardOf(b).name || ''), 'en', { sensitivity: 'base' });
 
 /** The rail bucket for a card: its first letter, or '#' for anything not A-Z (numerals,
  *  quotes, diacritics that fold outside the alphabet). Folding to '#' rather than dropping
@@ -29,13 +35,13 @@ export function letterOf(name) {
  *          Empty sections are omitted; a mode that yields one section still returns an array
  *          so the caller renders one code path rather than branching on mode.
  */
-export function groupCards(cards, mode = 'none') {
-  const list = [...(cards || [])].sort(byName);
+export function groupCards(cards, mode = 'none', cardOf = identity) {
+  const list = [...(cards || [])].sort(byNameWith(cardOf));
   if (mode !== 'element' && mode !== 'rarity') {
     return [{ key: 'all', label: '', cards: list }];
   }
   const order = mode === 'element' ? EL_ORDER : RARITY_ORDER;
-  const keyOf = mode === 'element' ? elemKey : ((c) => c.rarity);
+  const keyOf = mode === 'element' ? ((r) => elemKey(cardOf(r))) : ((r) => cardOf(r).rarity);
   const buckets = new Map();
   for (const c of list) {
     // Unknown values bucket under their own literal key so nothing silently vanishes from
@@ -61,11 +67,11 @@ export function groupCards(cards, mode = 'none') {
  * @returns [{ letter, count, index }] where index is the position of the first matching card
  *          in the sorted list, or -1 when the letter is empty.
  */
-export function letterIndex(cards) {
-  const list = [...(cards || [])].sort(byName);
+export function letterIndex(cards, cardOf = identity) {
+  const list = [...(cards || [])].sort(byNameWith(cardOf));
   const seen = new Map();
   list.forEach((c, i) => {
-    const l = letterOf(c.name);
+    const l = letterOf(cardOf(c).name);
     if (!seen.has(l)) seen.set(l, { count: 0, index: i });
     seen.get(l).count += 1;
   });

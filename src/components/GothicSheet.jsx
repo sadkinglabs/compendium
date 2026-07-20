@@ -6,7 +6,7 @@
 // card detail sheet and the filters sheet so they read as one surface.
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useFocusTrap } from './ui.jsx';
+import { useFocusTrap } from './useFocusTrap.js';   // leaf module - importing ui.jsx here is a cycle
 import { useSheetDrag } from './useSheetDrag.js';
 import { registerBackConsumer } from '../back.js';
 
