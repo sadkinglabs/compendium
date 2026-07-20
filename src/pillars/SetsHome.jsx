@@ -8,6 +8,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { getCatalog } from '../store/catalogCache.js';
 import { ownedBySet, subscribeCollection } from '../store/ownedRepository.js';
 import { buildSetCompletion } from '../store/setCompletion.js';
+import { setHeroUrl } from '../store/cardArt.js';
 import { SET_LABEL } from '../store/sets.js';
 import Ring from '../components/Ring.jsx';
 import { Loading } from '../components/ui.jsx';
@@ -16,9 +17,19 @@ const fmt = (n) => (n || 0).toLocaleString('en-US');
 const pctLabel = (p) => `${(p * 100).toFixed(1)}%`;
 
 const PLATE = {
-  display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
-  padding: '16px 14px 14px', borderRadius: 16, background: 'var(--surface-card)',
+  position: 'relative', overflow: 'hidden', display: 'block', width: '100%', textAlign: 'left',
+  cursor: 'pointer', padding: '16px 14px 14px', borderRadius: 16, background: 'var(--surface-card)',
   border: '1px solid var(--hair-12)', boxShadow: '0 12px 30px -16px rgba(0,0,0,.7)',
+};
+// A faint set-hero watermark behind the plate content; a scrim keeps the name/count legible.
+// Decorative (aria-hidden) and self-removing on error - the plate is fully legible without it.
+const HERO_IMG = {
+  position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+  objectPosition: 'center', opacity: 0.26, pointerEvents: 'none',
+};
+const HERO_SCRIM = {
+  position: 'absolute', inset: 0, pointerEvents: 'none',
+  background: 'linear-gradient(160deg, rgba(10,8,5,.60) 0%, rgba(10,8,5,.34) 45%, rgba(10,8,5,.66) 100%)',
 };
 const PLATE_NAME = {
   display: 'block', font: "700 13px/1.3 var(--f-display)", letterSpacing: '.1em',
@@ -62,17 +73,24 @@ export default function SetsHome({ onOpenSet, rev }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {completion.map((s) => (
-          <button key={s.code} type="button" onClick={() => onOpenSet(s.code, s)} style={PLATE}>
-            <span style={PLATE_NAME}>{s.name}</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 0 2px' }}>
-              <Ring value={s.pct} size={52} stroke={5} color="var(--accent-ruby)" />
-              <span style={{ font: "400 12.5px/1.3 var(--f-mono)", color: 'var(--ink-body-2)' }}>
-                {fmt(s.ownedUnique)} / {fmt(s.totalCollectible)}
+        {completion.map((s) => {
+          const hero = setHeroUrl(s.code);
+          return (
+            <button key={s.code} type="button" onClick={() => onOpenSet(s.code, s)} style={PLATE}>
+              {hero && <img src={hero} alt="" aria-hidden="true" style={HERO_IMG} onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+              {hero && <span style={HERO_SCRIM} aria-hidden="true" />}
+              <span style={{ position: 'relative' }}>
+                <span style={PLATE_NAME}>{s.name}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 0 2px' }}>
+                  <Ring value={s.pct} size={52} stroke={5} color="var(--accent-ruby)" />
+                  <span style={{ font: "400 12.5px/1.3 var(--f-mono)", color: 'var(--ink-body-2)' }}>
+                    {fmt(s.ownedUnique)} / {fmt(s.totalCollectible)}
+                  </span>
+                </div>
               </span>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

@@ -32,6 +32,18 @@ export function cardImageUrl(card) {
   return slug ? `${BASE}cards/${slug}` : null;
 }
 
+// Set-hero art ships BUNDLED as app assets (public/sets/{code}.webp) - deliberately NOT
+// via the card-image CDN, so the Collection landing works fully offline. Only these codes
+// have art; Promotional (999) and any future set render name-forward with no hero. Heroes
+// are decorative (the set name + Ring carry the meaning), so they honour zero-image mode.
+const SET_HEROES = new Set(['001', '002', '004', '005', '006']);
+
+/** URL for a set's bundled hero image, or null when none exists / images are suppressed. */
+export function setHeroUrl(code) {
+  if (imagesDisabled()) return null;
+  return SET_HEROES.has(code) ? `${BASE}sets/${code}.webp` : null;
+}
+
 /** URL for an element's threshold icon (public/icons), or null if suppressed/unknown. */
 export function elementIconUrl(el) {
   if (imagesDisabled()) return null;
