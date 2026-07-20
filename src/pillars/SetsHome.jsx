@@ -113,8 +113,10 @@ export default function SetsHome({ onOpenSet, rev }) {
 
   if (completion == null) return <Loading />;
 
+  // No docked FAB or search pill on this landing, so it needs no deep bottom reserve - the
+  // 150px it used to carry made the page scroll even when the tiles already fitted.
   return (
-    <div style={{ padding: '0 20px 150px' }}>
+    <div style={{ padding: '0 20px 24px' }}>
       <div style={{ margin: '8px 2px 20px' }}>
         <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
         <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>Sets</div>

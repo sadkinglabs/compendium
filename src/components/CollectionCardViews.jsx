@@ -55,20 +55,29 @@ const setPillStyle = {
 
 // A flat frosted-glass round button (steppers + the missing-card quick add): a
 // 31px rose-glass circle inside a >=44px hit area, with a pressed/hover lift.
-// The tile's quick-add: tap and it flips to a tick, then settles back to a plus, so a run of
-// single taps adds a run of copies with confirmation each time and no control moving about.
-export function QuickAdd({ label, onAdd, size = 30 }) {
+// The tile's quick-add. Feedback is split honestly by what has actually happened:
+//   TAP      -> a pending look. The write is only queued at this point.
+//   CONFIRMED-> the jade pop + tick and the toast, driven by `status.ok`, which the controller
+//               increments only when the row's write chain drains successfully.
+// Firing the tick and toast on tap presented a provisional write as a durable one; a later
+// failure toast could not un-say it.
+export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
   const [tick, setTick] = useState(false);
   const timer = useRef(null);
+  const seenOk = useRef(status?.ok || 0);
   useEffect(() => () => clearTimeout(timer.current), []);
-  const fire = () => {
-    onAdd();
-    setTick(true);                       // pops + turns jade, then settles back to the plus
+  useEffect(() => {
+    const ok = status?.ok || 0;
+    if (ok <= seenOk.current) { seenOk.current = ok; return; }
+    seenOk.current = ok;
+    setTick(true);
+    if (cardName) toast(`1 × ${cardName} added`);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setTick(false), 620);
-  };
+  }, [status?.ok, cardName]);
+  const tone = tick ? 'ok' : status?.pending ? 'pending' : undefined;
   return (
-    <Frost label={label} size={size} onClick={fire} tone={tick ? 'ok' : undefined}>
+    <Frost label={label} size={size} onClick={onAdd} tone={tone}>
       {tick
         ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
         : '+'}
@@ -79,7 +88,8 @@ export function QuickAdd({ label, onAdd, size = 30 }) {
 export function Frost({ label, onClick, disabled, size = 31, children, tone }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
-  const ok = tone === 'ok';   // confirmed: jade, and a brief pop
+  const ok = tone === 'ok';          // CONFIRMED by the store: jade, and a brief pop
+  const busy = tone === 'pending';   // tap registered, write still in flight
   const hit = Math.max(44, size);
   return (
     <button
@@ -93,7 +103,8 @@ export function Frost({ label, onClick, disabled, size = 31, children, tone }) {
         background: ok ? 'rgba(var(--jade-rgb),.22)' : on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)',
         border: `1px solid ${ok ? 'var(--accent-jade)' : on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)'}`,
         color: ok ? 'var(--accent-jade)' : '#f0c8ce', font: "600 18px/1 var(--f-ui)",
-        transform: ok ? 'scale(1.16)' : 'scale(1)',
+        opacity: busy ? 0.6 : 1,
+        transform: ok ? 'scale(1.16)' : busy ? 'scale(.94)' : 'scale(1)',
         transition: 'background .14s, border-color .14s, color .14s, transform .2s cubic-bezier(.2,.9,.3,1)',
       }}>{children}</span>
     </button>
@@ -202,7 +213,7 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus }) {
   const total = owned + foil;
   const artCard = artForSet(card, set);
   const { complete } = playsetOf(card, total);
@@ -246,7 +257,8 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           (read-only surfaces), which is what stops a dead "+" appearing there. */}
       {onStep && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
-          <QuickAdd label={`Add ${card.name}`} onAdd={() => { onStep(card.card_id, set, 1); toast(`${card.name} · ${total + 1}`); }} />
+          <QuickAdd label={`Add ${card.name}`} cardName={card.name} status={addStatus}
+            onAdd={() => onStep(card.card_id, set, 1)} />
         </span>
       )}
     </div>

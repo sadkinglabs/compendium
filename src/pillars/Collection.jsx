@@ -428,6 +428,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
   const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
+  // Per-row add status straight from the controller: {pending, ok, error}. `ok` increments
+  // only when a row's write chain drains SUCCESSFULLY, so the tile can distinguish
+  // "tap registered" from "actually persisted" - the tick used to fire on tap, which
+  // presented a provisional write as a confirmed one.
+  const [addStatus, setAddStatus] = useState(new Map());
   const owRef = useRef(owBySet);                     // synchronous mirror, for seeding a row's controller
   owRef.current = owBySet;
   const aliveRef = useRef(true);
@@ -499,15 +504,26 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
         });
       },
-      notify: (reason) => toast(reason === 'unconfirmed'
-        ? "Saved, but couldn't refresh - reopen to confirm"
-        : "Couldn't save; count restored", { tone: 'danger' }),
+      notify: (reason) => toast(
+        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
+          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
+            : "Couldn't save; count restored", { tone: 'danger' }),
       isAlive: () => aliveRef.current,
-      onChange: (key, st) => setOwBySet((prev) => {
-        const m = new Map(prev);
-        m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
-        return m;
-      }),
+      onChange: (key, st) => {
+        setOwBySet((prev) => {
+          const m = new Map(prev);
+          m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
+          return m;
+        });
+        setAddStatus((prev) => {
+          const was = prev.get(key) || { pending: false, ok: 0, error: false };
+          const pending = st.pendingCount > 0;
+          const justConfirmed = was.pending && !pending && !st.error;   // chain drained clean
+          const m = new Map(prev);
+          m.set(key, { pending, ok: was.ok + (justConfirmed ? 1 : 0), error: !!st.error });
+          return m;
+        });
+      },
     });
   }
   const stepSet = useCallback((cardId, set, delta) => {
@@ -574,7 +590,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           title and ring became unreadable. Bled to the screen edges (negative margin against
           the container's 20px padding) so nothing shows through at the sides. */}
       <div style={{
-        position: 'sticky', top: 0, zIndex: 6, margin: '0 -20px', padding: '8px 20px 12px',
+        // marginTop cancels the pillar root's 4px top padding: without it the header sat 4px
+        // below the scrollport and visibly slid those 4px before pinning.
+        position: 'sticky', top: 0, zIndex: 6, margin: '-4px -20px 0', padding: '8px 20px 12px',
         background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         borderBottom: '1px solid var(--hair-12)',
       }}>
@@ -612,7 +630,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
               {drillRows.map((r) => (
                 <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
-                  owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek} />
+                  owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                  addStatus={addStatus.get(r.card.card_id + '|' + r.set)} />
               ))}
             </div>
           )}

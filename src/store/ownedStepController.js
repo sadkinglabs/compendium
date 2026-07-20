@@ -12,7 +12,10 @@
 //
 //   read():   Promise<number>   authoritative quantity from the store
 //   write(delta): Promise       enqueue the durable, profile-bound write for this tap
-//   notify(reason): void         surface a failure to the user ("Couldn't save; count restored")
+//   notify(reason): void         surface a failure. Three honest outcomes:
+//       'save-failed'            the write failed and the read succeeded - the count WAS restored
+//       'unconfirmed'            the write succeeded but the read never did - value is provisional
+//       'save-failed-unresolved' both failed - we cannot say what the stored value is
 //   isAlive(): boolean           false after unmount / card change, to drop a late reconcile
 //   onChange(state): void        re-render hook - called after every state mutation
 //   schedule(fn, ms):            timer seam, so the retry ladder is deterministic in tests
@@ -59,8 +62,11 @@ export function createOwnedStepController({
           if (isAlive() && pendingCount === 0 && version === forVersion) void reconcile(forVersion, attempt + 1);
         }, RETRY_DELAYS[attempt]);
       } else {
-        // Ladder exhausted - stop silently carrying an unconfirmed value and say so.
-        notify(failedInChain ? 'save-failed' : 'unconfirmed');
+        // Ladder exhausted - stop silently carrying an unconfirmed value and say so. THREE
+        // distinct outcomes, because "count restored" is only true when we could actually read
+        // the store: the write failed AND we could not read it back is a different, worse
+        // state than either alone, and the provisional delta is still on screen unresolved.
+        notify(failedInChain ? 'save-failed-unresolved' : 'unconfirmed');
         failedInChain = false;
       }
       return;

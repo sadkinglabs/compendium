@@ -180,3 +180,23 @@ test('init does not stomp an in-flight optimistic value', async () => {
   calls[0].resolve();
   await flush(); await flush();
 });
+
+test('write REJECTED and reads exhausted is its own state - we never claim "restored"', async () => {
+  const { write, calls } = deferredWrites();
+  const timers = [];
+  const notes = [];
+  const c = createOwnedStepController({
+    read: async () => { throw new Error('db down'); },
+    write, notify: (r) => notes.push(r),
+    schedule: (fn) => timers.push(fn),
+  });
+  c.init(5);
+  c.step(+1);
+  calls[0].reject(new Error('write failed'));       // BOTH the write and every read fail
+  await flush(); await flush();
+  while (timers.length) { timers.shift()(); await flush(); await flush(); }
+  assert.deepEqual(notes, ['save-failed-unresolved'],
+    'distinct from save-failed: the count was NOT restored, it is still provisional');
+  assert.notEqual(c.getState().pendingDelta, 0, 'the unresolved delta is still on screen');
+  assert.equal(c.getState().error, true);
+});

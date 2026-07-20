@@ -66,9 +66,10 @@ export function useOwnedLedger(cardId, set = null) {
     const mk = (field) => createOwnedStepController({
       read: async () => (await readAll())[field] || 0,
       write: (delta) => writeField(field, delta),
-      notify: (reason) => toast(reason === 'unconfirmed'
-        ? "Saved, but couldn't refresh - reopen to confirm"
-        : "Couldn't save; count restored", { tone: 'danger' }),
+      notify: (reason) => toast(
+        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
+          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
+            : "Couldn't save; count restored", { tone: 'danger' }),
       isAlive: () => aliveRef.current,
       onChange: () => rerender(),
     });
