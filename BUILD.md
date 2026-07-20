@@ -22,6 +22,7 @@ npm run test:ui      # src/pillars/**     - pure UI state (e.g. avatar picker se
 npm run test:app     # src/*.test.mjs     - App-shell logic (hardware-back precedence, back registry)
 npm run check:types  # tsc --noEmit       - fail-closed type gate over the match-view typed boundaries
 npm run check:cycles # src/**             - fail-closed circular-import gate
+npm run check:smoke  # installed APK      - drives a device, asserts each route rendered
 ```
 
 The four `test:*` scripts are `node --test` over co-located `*.test.mjs` files; `check:types` runs its own wrapper tests then the compiler check (fail-closed, gates only on the owned files). There is no browser
@@ -53,9 +54,39 @@ To fix a reported cycle, move the shared piece into a leaf module that imports
 nothing from either side - `src/components/useFocusTrap.js` and
 `src/store/elements.js` are the two worked examples.
 
-**This gate does not cover the whole failure class.** It catches cycles, not
-every minified-only initialisation hazard. A release-APK smoke check is the
-remaining gap; see **Verify on a device**.
+`check:cycles` catches cycles, not every minified-only initialisation hazard.
+`check:smoke` below covers the general case.
+
+### `check:smoke` - does the installed app actually start?
+
+```bash
+npm run check:smoke
+```
+
+Drives the **installed release APK** on a connected device and asserts that each
+route actually rendered. It needs exactly one device attached with the app
+already installed, and fails closed on zero devices, several devices, or a
+missing package - a gate that silently picks a device can silently test the
+wrong thing.
+
+It asserts **what drew**, not the absence of logged errors. The failure that
+motivated it logged a single error and drew nothing; a log-grepping gate would
+have needed to be told which errors are fatal, whereas "did the screen draw the
+thing" needs no such judgement. Console errors are also reported when Capacitor
+is forwarding them, but their absence is never treated as evidence of health,
+because a stock release build does not forward console at all.
+
+Elements are located by text and tapped at the centre of their reported bounds,
+never at fixed pixels, so it survives a different device or display size. Each
+route's tap path is self-contained from the bottom nav, so one broken route
+reports one failure instead of cascading.
+
+Verified by deliberately breaking the set drill and confirming the gate reports
+`NOTHING RENDERED (empty view tree)` for that route and exits non-zero.
+
+**Scope.** It proves the app starts and each pillar's first screen renders. It
+does not exercise gestures, sheets, writes or the scanner. Interactive behaviour
+still needs a human; see **Verify on a device**.
 
 
 ## Validate documentation
