@@ -14,7 +14,7 @@
 //     narrowed by set (other filters are fine), so the set-less owned cards - which can
 //     belong to any printed set - are present in the pool to be recovered here.
 export function groupCollection({
-  pool, owBySet, wishSet, sets = [], editMode = false, viewMode = 'owned',
+  pool, owBySet, wishSet, sets = [], viewMode = 'owned',
   ownScope = [], ownActive = false, setLabel = {}, setRank = () => 0,
 }) {
   const g = new Map();   // code -> { code, name, rows:[{card,set,owned,foil}] }
@@ -27,7 +27,6 @@ export function groupCollection({
     || (ownScope.includes('unowned') && !isOwned)
     || (ownScope.includes('wishlist') && isWish);
   const matches = (isOwned, isWish) => {
-    if (editMode) return ownActive ? chip(isOwned, isWish) : true;   // +Add: whole catalogue, chips still narrow
     if (viewMode === 'owned') return isOwned;
     if (viewMode === 'unowned') return !isOwned;
     return ownActive ? chip(isOwned, isWish) : true;                 // read 'all'
@@ -48,10 +47,9 @@ export function groupCollection({
   // do - under no set filter, OR under the explicit "Unspecified" chip - never under a
   // real-set-only narrowing, and never under the "Not owned" lens.
   const wantLegacy = (sets.length === 0 || sets.includes('Unspecified')) && (
-    editMode ? true
-      : viewMode === 'unowned' ? false
-        : viewMode === 'owned' ? true
-          : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : true));   // read 'all'
+    viewMode === 'unowned' ? false
+      : viewMode === 'owned' ? true
+        : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : true));   // 'all'
   if (wantLegacy) {
     const byId = new Map((pool || []).map((c) => [c.card_id, c]));
     for (const [k, v] of owBySet) {
@@ -60,7 +58,7 @@ export function groupCollection({
       if ((v.owned || 0) + (v.foil || 0) === 0) continue;
       const card = byId.get(k.slice(0, i));
       if (!card) continue;
-      if (!editMode && viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
+      if (viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
       push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
     }
   }

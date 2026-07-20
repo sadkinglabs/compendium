@@ -73,9 +73,11 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Capability | Required behavior | Persistence | Status |
 |---|---|---|---|
 | Overview | Show owned copies, unique cards, wanted quantities, recent activity, and deck buildability | Derived from `owned_cards`, `card_lists`, decks | **Implemented** |
-| My Collection | Browse owned or catalog cards in list and binder views with search and refinement | `owned_cards` + shared `cards` | **Implemented** |
-| Per-set ownership | Record owned copies per set (Alpha and Beta tracked separately) through the card sheet's set picker; the wishlist stays card-level | `owned_cards` | **Implemented** - per-set (v1); see the granularity note below |
-| Read and edit modes | Keep browsing actions distinct from quantity-changing actions | `owned_cards` | **Implemented** |
+| My Collection | Sets-completion landing (tile per set, non-foil completion + foil count) drilling into a per-set card grid, with search and refinement | `owned_cards` + shared `cards` | **Implemented** |
+| Per-set ownership | Record owned copies per set (Alpha and Beta tracked separately); opened from inside a set the sheet is locked to that printing, and the picker appears only at name-level entry points | `owned_cards` | **Implemented** - per-set (v1); see the granularity note below |
+| Ambient adding | No edit mode: every tile and the card sheet carry a permanent stepper, so adding is a property of where you are. Counts are provisional while a write is pending and confirmed when it resolves | `owned_cards` | **Implemented** |
+| Wishlist toggle | Wanting a card is binary (a heart); per-card quantity goals live in Wanted lists | `owned_cards.qty_wanted` | **Implemented** |
+| Card art viewer | Full-screen card display with gyro parallax, popping from and back into the card sheet | catalog art | **Implemented** |
 | Bulk entry | Paste card text, then review a resolved preview before committing: single-set cards auto-file to their set, multi-set (reprinted) cards get a set toggle defaulting to Unspecified, and unrecognised names are listed and skipped | `owned_cards` | **Implemented** |
 | Camera-assisted entry | Scan cards, resolve candidates, and require a deliberate ownership update | `owned_cards` | **Implemented** |
 | Custom lists | Create, rename, duplicate, populate, export, and delete named card lists | `card_lists`, `card_list_entries` | **Implemented** |

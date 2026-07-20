@@ -495,7 +495,6 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 /* Collection cards "deal" into place on mount - a staggered fade + settle, so entering
    +Add (or a new search) places the cards instead of snapping. Only fresh mounts run it;
    a re-render (stepping a count) does not replay. --i is the per-tile stagger index. */
-@media (prefers-reduced-motion: reduce) { .cx-deal { animation-duration: .01ms; animation-delay: 0ms; } }
 /* Collection card area: a short fade replayed on each view/lens change. */
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes cxpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }

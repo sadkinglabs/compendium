@@ -52,10 +52,10 @@ test('All lens with an owned scope shows the Unspecified pile', () => {
   assert.deepEqual(idsIn(g, ''), ['b']);
 });
 
-test('+Add (edit mode) never receives Unspecified from the caller, but is well-defined if it does', () => {
-  // The component strips 'Unspecified' on entering +Add; the pure fn still behaves (shows
-  // the set-less pile, real rows gated by the per-printing set filter) rather than emptying.
-  const g = run({ sets: ['Unspecified'], editMode: true });
+test('Unspecified with no lens narrowing still yields the set-less pile', () => {
+  // Edit mode is retired; the pure fn must still behave under an explicit Unspecified filter
+  // (show the set-less pile, real rows gated by the per-printing set filter) rather than empty.
+  const g = run({ sets: ['Unspecified'], viewMode: 'all' });
   assert.deepEqual(idsIn(g, ''), ['b']);
 });
 

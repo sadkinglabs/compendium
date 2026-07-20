@@ -106,6 +106,28 @@ test('after unmount (isAlive false) the write still fires but no state is applie
   assert.equal(c.getState().confirmedQty, 4, 'no state applied after unmount');
 });
 
+test('a FAILED authoritative read is not treated as confirmation', async () => {
+  const { write, calls } = deferredWrites();
+  let readOk = false;
+  const c = createOwnedStepController({
+    read: async () => { if (!readOk) throw new Error('db down'); return 6; },
+    write,
+  });
+  c.init(5);
+  c.step(+1);                          // write SUCCEEDS; storage is now 6
+  calls[0].resolve();
+  await flush(); await flush();
+  // The reconcile read failed. Snapping back to 5 would show a value storage no longer holds.
+  assert.equal(c.displayed(), 6, 'provisional value kept, not reverted to pre-write');
+  assert.equal(c.getState().error, true, 'flagged rather than silently stale');
+  // The next successful read (via the collection broadcast -> init) confirms it.
+  readOk = true;
+  c.init(6);
+  assert.equal(c.getState().confirmedQty, 6);
+  assert.equal(c.getState().pendingDelta, 0);
+  assert.equal(c.getState().error, false);
+});
+
 test('init does not stomp an in-flight optimistic value', async () => {
   const { write, calls } = deferredWrites();
   const c = createOwnedStepController({ read: async () => 0, write });

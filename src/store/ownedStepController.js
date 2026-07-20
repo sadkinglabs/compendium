@@ -29,12 +29,26 @@ export function createOwnedStepController({ read, write, notify = () => {}, isAl
 
   async function reconcile(forVersion) {
     let snap = null;
-    try { snap = await read(); } catch { snap = null; }
+    let readFailed = false;
+    try { snap = await read(); } catch { readFailed = true; }
     // Discard a stale reconcile: unmounted, a new write is in flight now (pendingCount>0),
     // or one began+finished during our read (version drifted). Any of these means the chain
     // is no longer drained and this snapshot predates the current optimistic state.
     if (!isAlive() || pendingCount !== 0 || version !== forVersion) return;
-    if (typeof snap === 'number') confirmedQty = snap;
+
+    // A FAILED authoritative read is not a confirmation. Clearing pendingDelta here would
+    // snap the display back to the pre-write value even though the write itself succeeded -
+    // silently showing stale data. Instead keep the provisional value (our best estimate of
+    // storage), flag it, and let the next successful init() - driven by the collection
+    // broadcast - confirm it.
+    if (readFailed || typeof snap !== 'number') {
+      error = true;
+      if (failedInChain) { failedInChain = false; notify('save-failed'); }
+      emit();
+      return;
+    }
+
+    confirmedQty = snap;
     pendingDelta = 0;
     if (failedInChain) { error = true; failedInChain = false; notify('save-failed'); }
     else { error = false; }

@@ -39,3 +39,13 @@ export function goalTotals(qty, ownQty) {
 export function goalRowState({ owned, target, isWanted }) {
   return { goalMet: isWanted && target > 0 && owned >= target, ownedAny: owned >= 1 };
 }
+
+// Whether a ledger broadcast (subscribeCollection) must re-read a list's ROWS, not just its
+// owned counts. The virtual Wishlist IS the qty_wanted ledger, so an external toggle - e.g.
+// the card sheet's heart opened over the open Wishlist - changes its membership. Regular
+// lists live in card_list_entries and are untouched by ledger writes. Skipped while local
+// goal writes are in flight, so a refresh can't trample an optimistic edit (the goal drain
+// reconciles those itself).
+export function listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites = 0 }) {
+  return !!isWishlist && pendingGoalWrites === 0;
+}

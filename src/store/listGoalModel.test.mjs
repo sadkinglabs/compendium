@@ -6,7 +6,7 @@
 // requires a non-empty list fully owned. This drives every wishlist/list bar and the COMPLETE chip.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { goalTotals, goalRowState } from './listGoalModel.js';
+import { goalTotals, goalRowState, listRowsNeedLedgerRefresh } from './listGoalModel.js';
 
 const m = (obj) => new Map(Object.entries(obj));
 
@@ -60,4 +60,17 @@ test('a custom (non-wanted) list never reports goalMet', () => {
 
 test('target 0 is never met even when owned', () => {
   assert.equal(goalRowState({ owned: 3, target: 0, isWanted: true }).goalMet, false);
+});
+
+// Regression: the card sheet's wishlist heart, toggled while the Wishlist list is open,
+// must refresh the list's ROWS - the wishlist IS the ledger. (A full React interaction test
+// needs a harness this repo does not have; this locks the decision rule the subscription uses.)
+test('listRowsNeedLedgerRefresh: wishlist refreshes on a ledger write when idle', () => {
+  assert.equal(listRowsNeedLedgerRefresh({ isWishlist: true, pendingGoalWrites: 0 }), true);
+});
+test('listRowsNeedLedgerRefresh: never tramples a local edit in flight', () => {
+  assert.equal(listRowsNeedLedgerRefresh({ isWishlist: true, pendingGoalWrites: 1 }), false);
+});
+test('listRowsNeedLedgerRefresh: regular lists are unaffected by ledger writes', () => {
+  assert.equal(listRowsNeedLedgerRefresh({ isWishlist: false, pendingGoalWrites: 0 }), false);
 });

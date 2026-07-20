@@ -1,6 +1,7 @@
 // Collection pillar - the card OWNERSHIP ledger. Overview (glance stats + how many
 // decks are buildable + recently added) and Cards (search the catalog, one-tap +/-
-// to record what you Own or Want). Rows are the binder-style LedgerRow/BinderTile;
+// to record what you Own or Want). Sets are browsed as card tiles (BinderTile); LedgerRow
+// still backs Overview's recently-added strip;
 // tapping a card opens the shared CollectionCardSheet (ownership steppers +
 // Codex hand-off) lifted to the pillar root. Data layer is ownedRepository +
 // compareEngine. Accent is ruby, chrome-only.
@@ -20,7 +21,7 @@ import {
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
-import { goalTotals, goalRowState } from '../store/listGoalModel.js';
+import { goalTotals, goalRowState, listRowsNeedLedgerRefresh } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
@@ -29,6 +30,7 @@ import CardArt from '../components/CardArt.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 import { enqueueWrite } from '../store/collectionWrites.js';
+import { createOwnedStepGrid } from '../store/ownedStepGrid.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import { createGoalDrain } from './collectionGoalDrain.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
@@ -47,9 +49,9 @@ const CopySvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 const TrashSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></svg>;
 
-// Where-you-left-off cache. App unmounts the whole pillar when a Codex detail
-// opens ("Open in Codex" included), so this survives the round-trip: coming Back
-// re-mounts Collection exactly as it was - same view, search, filter, open list,
+// Where-you-left-off cache. The app unmounts the whole pillar when a Codex detail opens
+// (e.g. the scanner handing off a recognised card), so this survives the round-trip: coming
+// Back re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
 const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, setDrill: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
@@ -105,9 +107,8 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
-      {/* "Open in Codex" deliberately KEEPS the sheet open in state: the pillar
-          unmounts for the Codex page, and Back should land right back on this
-          sheet - that's where the user left. */}
+      {/* The sheet's open card is KEPT in state across a pillar unmount (a Codex hand-off
+          from the scanner), so Back lands right back on this sheet - where the user left. */}
       <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }} editable />
     </div>
   );
@@ -427,6 +428,10 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
   const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
+  const owRef = useRef(owBySet);                     // synchronous mirror, for seeding a row's controller
+  owRef.current = owBySet;
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
   const [wishSet, setWishSet] = useState(() => new Set());   // card_ids on the wishlist
   const [ownScope, setOwnScope] = useState([]);       // ownership filter: 'owned' | 'unowned' | 'wishlist'
   const ownActive = ownScope.length > 0;
@@ -448,6 +453,20 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
+    // Reconcile the bulk read against rows the grid is editing: keep the optimistic value for
+    // anything still writing, and re-seed settled rows from the truth (which is what confirms
+    // a row whose own post-write read had failed).
+    const grid = gridRef.current;
+    if (grid) {
+      for (const key of grid.keys()) {
+        if (grid.pending(key) > 0) {
+          const st = grid.state(key);
+          obs.set(key, { ...(obs.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
+        } else {
+          grid.reseed(key, obs.get(key)?.owned || 0);
+        }
+      }
+    }
     setOwBySet(obs);
     setWishSet(new Set(wl.map((r) => r.card_id)));
   }, []);
@@ -460,24 +479,38 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     return () => { clearTimeout(t); off(); };
   }, [refreshOwnership]);
 
-  // A stepper edits OWNED for ONE (card, set) printing - the only place owned
-  // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
-  // inside the app-wide per-(card,set) chain so overlapping steps can't clobber.
+  // A stepper edits OWNED for ONE (card, set) printing. This goes through the SAME
+  // provisional/confirmed contract as the card sheet - a tap shows immediately, the row
+  // reconciles against the store when its write chain drains, and a rejected write restores
+  // the true count and tells the user. Controllers are created lazily per TAPPED row, so a
+  // ~780-tile set costs nothing until you actually edit something.
+  const gridRef = useRef(null);
+  if (gridRef.current === null) {
+    const split = (key) => { const i = key.lastIndexOf('|'); return [key.slice(0, i), key.slice(i + 1)]; };
+    gridRef.current = createOwnedStepGrid({
+      read: async (key) => { const [cardId, set] = split(key); return (await qtyForInSet(cardId, set)).owned; },
+      write: (key, delta) => {
+        const [cardId, set] = split(key);
+        // Bound to the profile captured at tap time and re-read inside its turn, so a profile
+        // switch can't redirect it and overlapping steps can't clobber.
+        const pid = activeProfileId();
+        return enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
+          const cur = await qtyForInSet(cardId, set, pid);
+          return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
+        });
+      },
+      notify: () => toast("Couldn't save; count restored", { tone: 'danger' }),
+      isAlive: () => aliveRef.current,
+      onChange: (key, st) => setOwBySet((prev) => {
+        const m = new Map(prev);
+        m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
+        return m;
+      }),
+    });
+  }
   const stepSet = useCallback((cardId, set, delta) => {
-    const mapKey = cardId + '|' + set;
-    setOwBySet((prev) => {
-      const cur = prev.get(mapKey) || { owned: 0, foil: 0 };
-      const next = { ...cur, owned: Math.max(0, cur.owned + delta) };
-      const m = new Map(prev); m.set(mapKey, next);
-      return m;
-    });
-    // Per-set owned row, on the store-layer queue, bound to the captured profile and
-    // re-reading inside its turn so overlapping steps (and the card sheet) can't clobber.
-    const pid = activeProfileId();
-    enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
-      const cur = await qtyForInSet(cardId, set, pid);
-      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
-    });
+    const key = cardId + '|' + set;
+    gridRef.current.step(key, owRef.current.get(key)?.owned || 0, delta);
   }, []);
 
   // Per-set ownership: expand every catalogue card into one row per set it was
@@ -1153,7 +1186,16 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // Arriving via a "View missing ›" tap on the index opens straight to the list.
     if (list.openMissing) listProgress(list.id).then(setMissing);
     // Owned counts are read-only here: they redraw live as the collection grows.
-    const off = subscribeCollection(() => ownedMap().then(setOwnQty));
+    const off = subscribeCollection(() => {
+      ownedMap().then(setOwnQty);
+      // ...and the WISHLIST's rows are themselves the qty_wanted ledger, so an external
+      // toggle (the card sheet's heart, opened over this very list) changes membership, not
+      // just owned counts. Without this the sheet said "not wishlisted" while the list
+      // beneath it still showed the card until reopened.
+      if (listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites: drainRef.current?.pending() || 0 })) {
+        wishlistCards().then((rows) => { if (!cancelled) installGoals(rows); });
+      }
+    });
     return () => { cancelled = true; off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.id]);

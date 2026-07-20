@@ -31,11 +31,46 @@ export default function CardArtViewer({ card, origin, onClose }) {
   const [armed, setArmed] = useState(false);  // transitions enabled (skipped on the first frame)
   const [open, setOpen] = useState(false);
   const cardRef = useRef(null);
+  const rootRef = useRef(null);
+  const closeBtnRef = useRef(null);
+  const restoreRef = useRef(null);
   const gyroSeen = useRef(false);
   const closing = useRef(false);
 
   // Hide the status bar for the duration - this is a full-bleed, immersive moment.
   useEffect(() => { setImmersive(true); return () => { setImmersive(false); }; }, []);
+
+  // A real modal boundary: take focus, hold it, give it back. Without this a keyboard or
+  // switch-control user keeps tabbing through the sheet behind the viewer.
+  useEffect(() => {
+    restoreRef.current = document.activeElement;
+    closeBtnRef.current?.focus();
+    // Everything outside the portal is inert while we are up (aria-hidden covers assistive
+    // tech even where `inert` is unsupported).
+    const me = rootRef.current;
+    const outside = [...document.body.children].filter((el) => el !== me);
+    outside.forEach((el) => { el.setAttribute('aria-hidden', 'true'); el.setAttribute('inert', ''); });
+    return () => {
+      outside.forEach((el) => { el.removeAttribute('aria-hidden'); el.removeAttribute('inert'); });
+      try { restoreRef.current?.focus?.(); } catch { /* origin may be gone */ }
+    };
+  }, []);
+
+  // Contain Tab within the viewer.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Tab') return;
+      const root = rootRef.current; if (!root) return;
+      const f = [...root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => !el.hasAttribute('disabled'));
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, []);
 
   const close = () => {
     if (closing.current) return;
@@ -108,6 +143,7 @@ export default function CardArtViewer({ card, origin, onClose }) {
 
   return createPortal(
     <div
+      ref={rootRef}
       role="dialog" aria-modal="true" aria-label={`${card?.name || 'Card'} artwork`}
       style={{
         position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column',
@@ -171,7 +207,7 @@ export default function CardArtViewer({ card, origin, onClose }) {
 
       {/* The X is the only on-screen way out - the backdrop is inert so you can tilt and
           study the card without dismissing it by accident. Hardware back still works. */}
-      <button type="button" onClick={close} aria-label="Close artwork"
+      <button ref={closeBtnRef} type="button" onClick={close} aria-label="Close artwork"
         style={{
           position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 14px)', right: 16, zIndex: 2,
           width: 40, height: 40, borderRadius: '50%', cursor: 'pointer',
