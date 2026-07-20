@@ -10,6 +10,7 @@ import { createPortal } from 'react-dom';
 import { getPool, getSets, getArtists, listDecks, resolveCardList } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
+import { groupCards } from '../store/collectionGrouping.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   ownedBySet, qtyForInSet, setOwnedInSet,
@@ -54,7 +55,11 @@ const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // Back re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, setDrill: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
+const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, setDrill: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [], groupBy: 'none' };
+
+// The grouping vocabulary offered inside a set. Alphabetical is the resting state; the other
+// two section the grid rather than reorder it.
+const GROUP_OPTS = [['none', 'A to Z'], ['element', 'Element'], ['rarity', 'Rarity']];
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   const [view, setView] = useState(session.view);       // overview | cards | lists
@@ -412,7 +417,10 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [types, setTypes] = useState(session.types);
   const [rarities, setRarities] = useState(session.rarities);
   const [els, setEls] = useState(session.els);
-  useEffect(() => { session.q = q; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, sets, types, rarities, els]);
+  // Grouping, NOT sorting. Collection is always alphabetical; what varies is whether the
+  // grid is one list or sectioned by element/rarity.
+  const [groupBy, setGroupBy] = useState(session.groupBy || 'none');
+  useEffect(() => { session.q = q; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; session.groupBy = groupBy; }, [q, sets, types, rarities, els, groupBy]);
 
   // Full rich filters - the shared Refine engine (Card Lists live in Collection,
   // so the comparator granularity earns its place for cube/draft/list building).
@@ -422,7 +430,6 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
   const [powerCmp, setPowerCmp] = useState({ op: '>=', val: null });
   const [artist, setArtist] = useState('');
-  const [sort, setSort] = useState([]);
   const [artistOpts, setArtistOpts] = useState([]);
 
   const [filterOpen, setFilterOpen] = useState(false);
@@ -450,11 +457,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     const parsed = parseQuery(q);
     // 'Unspecified' is an ownership bucket, not a printed set - keep it out of the
     // catalog pool query (it would match no card and empty the pool); grouping applies it.
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: poolSetFilter(sets), multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: poolSetFilter(sets), multi, thByEl, totalTh, costCmp, powerCmp, artist });
     const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
     // Reconcile the bulk read against rows the grid is editing: keep the optimistic value for
@@ -571,7 +578,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
-  const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
+  const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // grouping is an arrangement, not a filter - it hides nothing
   const clearAll = () => {
     setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
@@ -622,13 +629,26 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             // browser (content-visibility on the tile), so a full set stays smooth without a
             // virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility tile reports
             // min-content width, which inflated 1fr tracks; pin the min to 0.
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 12 }}>
-              {drillRows.map((r) => (
-                <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
-                  owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
-                  addStatus={addStatus.get(r.card.card_id + '|' + r.set)} />
-              ))}
-            </div>
+            // Sections, not a reordered flat list. With grouping off this is one unlabelled
+            // section, so the grid has a single code path either way.
+            groupCards(drillRows, groupBy, (r) => r.card).map((section) => (
+              <div key={section.key}>
+                {section.label && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
+                    <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{section.label}</span>
+                    <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(74,60,34,.6), transparent)' }} />
+                    <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{section.cards.length}</span>
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
+                  {section.cards.map((r) => (
+                    <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
+                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                      addStatus={addStatus.get(r.card.card_id + '|' + r.set)} />
+                  ))}
+                </div>
+              </div>
+            ))
           )}
         </>
       )}
@@ -663,7 +683,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         sets={sets} setSets={setSets} setOpts={setFilterOpts}
         thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
-        sort={sort} setSort={setSort} />
+        groupBy={groupBy} setGroupBy={setGroupBy} groupOpts={GROUP_OPTS} />
     </div>
   );
 }

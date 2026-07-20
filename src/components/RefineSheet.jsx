@@ -17,7 +17,10 @@ const EL_LABEL = { air: 'Air', earth: 'Earth', fire: 'Fire', water: 'Water' };
 const TYPES = [['Minion', 'Minions'], ['Aura', 'Auras'], ['Magic', 'Magic'], ['Artifact', 'Artifacts'], ['Site', 'Sites']];
 const RAR = [['Ordinary', 'Ordinary'], ['Exceptional', 'Exceptional'], ['Elite', 'Elite'], ['Unique', 'Unique']];
 const RARITY_DOT = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
-const SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
+// Default sort vocabulary, for callers that do not supply their own (Codex, the deckbuilder).
+// Collection deliberately supplies none: it is always alphabetical within a group, so it has
+// a grouping control instead. See the `groupBy` note below.
+export const DEFAULT_SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
 const OP_SYM = { '>=': '≥', '<=': '≤', '=': '=' };   // math symbols, not decorative glyphs
 const OP_NEXT = { '>=': '<=', '<=': '=', '=': '>=' };
 const GILT = 'linear-gradient(180deg, #d8b872, #b8954f)';
@@ -86,20 +89,30 @@ export default function RefineSheet({
   els, setEls, multi, setMulti,
   types, setTypes, rarities, setRarities, sets, setSets, setOpts = [],
   thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, powerCmp, setPowerCmp,
-  artist, setArtist, artistOpts = [], sort, setSort,
+  artist, setArtist, artistOpts = [], sort, setSort, sortKeys = DEFAULT_SORT_KEYS,
+  // GROUPING IS NOT SORTING. "Group by element" produces sections with headers; it does not
+  // reorder a flat list, and within every group the order is alphabetical. Modelling it as a
+  // fourth sort key would leak the wrong abstraction into query state and tests, so it is its
+  // own one-of control with its own prop.
+  groupBy, setGroupBy, groupOpts = [],
 }) {
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const toggleSort = (key) => { const i = sort.findIndex((s) => s.key === key); setSort(i >= 0 ? sort.filter((s) => s.key !== key) : [...sort, { key, dir: 'asc' }]); };
   const flipSort = (key) => setSort(sort.map((s) => (s.key === key ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)));
 
-  // Filters / Sort live behind a top toggle so sort isn't buried below a long
-  // filter scroll. The toggle only appears when the surface actually sorts
-  // (setSort supplied - the deckbuilder + Collection; Codex re-sorts A-Z, no sort).
+  // Filters / Arrange live behind a top toggle so arrangement isn't buried below a long filter
+  // scroll. The toggle appears when the surface arranges at all - by sort (the deckbuilder),
+  // by grouping (Collection), or both. Codex re-sorts A-Z and supplies neither, so it sees no
+  // toggle. The tab is named for what it actually offers rather than always saying "Sort".
   const [tab, setTab] = useState('filters');
   useEffect(() => { if (open) setTab('filters'); }, [open]);   // reopen on Filters
   const hasSort = !!setSort;
-  const showFilters = !hasSort || tab === 'filters';
-  const showSort = hasSort && tab === 'sort';
+  const hasGroup = !!setGroupBy && groupOpts.length > 0;
+  const hasArrange = hasSort || hasGroup;
+  const arrangeLabel = hasGroup ? (hasSort ? 'Arrange' : 'Group') : 'Sort';
+  const arrangeActive = (hasSort && sort.length > 0) || (hasGroup && groupBy && groupBy !== 'none');
+  const showFilters = !hasArrange || tab === 'filters';
+  const showSort = hasArrange && tab === 'sort';
 
   // Summary hero: write the active refinement as a manuscript line.
   const labels = [...summaryLead];
@@ -113,6 +126,12 @@ export default function RefineSheet({
   if (costCmp?.val != null) labels.push('Mana');
   if (powerCmp?.val != null) labels.push('Power');
   if (artist) labels.push(artist);
+  // Grouping is an arrangement, not a filter, so it does not affect `activeCount` (which
+  // counts things that HIDE cards). It still belongs in the summary line: a user who grouped
+  // by rarity and then reopened the sheet should see that state written down.
+  if (hasGroup && groupBy && groupBy !== 'none') {
+    labels.push(`by ${(groupOpts.find(([k]) => k === groupBy)?.[1] || groupBy).toLowerCase()}`);
+  }
   const shown = labels.length > 4 ? [...labels.slice(0, 3), `+${labels.length - 3} more`] : labels;
 
   return (
@@ -125,12 +144,12 @@ export default function RefineSheet({
       </div>
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '18px 0 20px' }} />
 
-      {hasSort && (
+      {hasArrange && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 22 }}>
-          <SegTabs ariaLabel="Filters or sort" value={tab} onChange={setTab}
+          <SegTabs ariaLabel={`Filters or ${arrangeLabel.toLowerCase()}`} value={tab} onChange={setTab}
             options={[
               { key: 'filters', label: 'Filters', icon: labels.length ? <span style={DOT} /> : null },
-              { key: 'sort', label: 'Sort', icon: sort.length ? <span style={DOT} /> : null },
+              { key: 'sort', label: arrangeLabel, icon: arrangeActive ? <span style={DOT} /> : null },
             ]} />
         </div>
       )}
@@ -202,11 +221,21 @@ export default function RefineSheet({
       )}
       </>)}
 
-      {showSort && (
+      {showSort && hasGroup && (
+        <div style={{ marginBottom: 22 }}>
+          <SectionLabel label="GROUP BY" count={cnt(groupBy && groupBy !== 'none' ? 1 : 0)} />
+          <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 8px' }}>Cards stay A to Z inside each group.</div>
+          <ChipRow>{groupOpts.map(([key, label]) => (
+            <Chip key={key} label={label} active={(groupBy || 'none') === key} onClick={() => setGroupBy(key)} />
+          ))}</ChipRow>
+        </div>
+      )}
+
+      {showSort && hasSort && (
         <div style={{ marginBottom: 22 }}>
           <SectionLabel label="SORT" count={cnt(sort.length)} />
           <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 4px' }}>Tap to add - order sets priority.</div>
-          {SORT_KEYS.map(([key, label]) => {
+          {sortKeys.map(([key, label]) => {
             const i = sort.findIndex((s) => s.key === key);
             return <SortRow key={key} label={label} index={i} dir={i >= 0 ? sort[i].dir : 'asc'} onToggle={() => toggleSort(key)} onFlip={() => flipSort(key)} />;
           })}
