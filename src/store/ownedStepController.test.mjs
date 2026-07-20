@@ -128,6 +128,48 @@ test('a FAILED authoritative read is not treated as confirmation', async () => {
   assert.equal(c.getState().error, false);
 });
 
+test('a failed reconcile read RETRIES to confirmation on its own', async () => {
+  const { write, calls } = deferredWrites();
+  const timers = [];
+  let attempts = 0;
+  const c = createOwnedStepController({
+    read: async () => { attempts += 1; if (attempts < 3) throw new Error('db busy'); return 6; },
+    write,
+    schedule: (fn) => timers.push(fn),      // deterministic ladder
+  });
+  c.init(5);
+  c.step(+1);                                // write succeeds; storage is 6
+  calls[0].resolve();
+  await flush(); await flush();
+  assert.equal(c.getState().error, true, 'flagged unconfirmed after the first failed read');
+  assert.equal(c.displayed(), 6, 'provisional value kept');
+  // Recovery must NOT depend on some unrelated future ledger mutation - the controller's own
+  // ladder gets there. Drive the scheduled retries; no init() is ever called.
+  timers.shift()(); await flush(); await flush();   // retry 1 - still failing
+  timers.shift()(); await flush(); await flush();   // retry 2 - succeeds
+  assert.equal(c.getState().confirmedQty, 6, 'confirmed by its own retry');
+  assert.equal(c.getState().pendingDelta, 0);
+  assert.equal(c.getState().error, false);
+});
+
+test('an exhausted retry ladder tells the user the value is unconfirmed', async () => {
+  const { write, calls } = deferredWrites();
+  const timers = [];
+  const notes = [];
+  const c = createOwnedStepController({
+    read: async () => { throw new Error('db down'); },
+    write, notify: (r) => notes.push(r),
+    schedule: (fn) => timers.push(fn),
+  });
+  c.init(5);
+  c.step(+1);
+  calls[0].resolve();                        // the WRITE succeeded
+  await flush(); await flush();
+  while (timers.length) { timers.shift()(); await flush(); await flush(); }
+  assert.deepEqual(notes, ['unconfirmed'], 'reported once, and distinct from a save failure');
+  assert.equal(c.displayed(), 6, 'still shows the value the write committed');
+});
+
 test('init does not stomp an in-flight optimistic value', async () => {
   const { write, calls } = deferredWrites();
   const c = createOwnedStepController({ read: async () => 0, write });

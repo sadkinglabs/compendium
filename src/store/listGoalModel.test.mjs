@@ -6,7 +6,7 @@
 // requires a non-empty list fully owned. This drives every wishlist/list bar and the COMPLETE chip.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { goalTotals, goalRowState, listRowsNeedLedgerRefresh } from './listGoalModel.js';
+import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from './listGoalModel.js';
 
 const m = (obj) => new Map(Object.entries(obj));
 
@@ -73,4 +73,21 @@ test('listRowsNeedLedgerRefresh: never tramples a local edit in flight', () => {
 });
 test('listRowsNeedLedgerRefresh: regular lists are unaffected by ledger writes', () => {
   assert.equal(listRowsNeedLedgerRefresh({ isWishlist: false, pendingGoalWrites: 0 }), false);
+});
+
+// Regression for the slow-read race: an external wishlist refresh must not overwrite a local
+// edit that began while its read was in flight. Tests the INTERLEAVING, not just the
+// pre-read predicate.
+test('canApplyExternalRows: applies when nothing changed during the read', () => {
+  assert.equal(canApplyExternalRows({ cancelled: false, pendingGoalWrites: 0, genAtStart: 4, genNow: 4 }), true);
+});
+test('canApplyExternalRows: a local edit STARTED during the read wins', () => {
+  // external refresh begins at gen 4; user edits (gen -> 5) before the read resolves
+  assert.equal(canApplyExternalRows({ cancelled: false, pendingGoalWrites: 0, genAtStart: 4, genNow: 5 }), false);
+});
+test('canApplyExternalRows: a local write still in flight wins', () => {
+  assert.equal(canApplyExternalRows({ cancelled: false, pendingGoalWrites: 1, genAtStart: 4, genNow: 4 }), false);
+});
+test('canApplyExternalRows: never applies after the list closed', () => {
+  assert.equal(canApplyExternalRows({ cancelled: true, pendingGoalWrites: 0, genAtStart: 4, genNow: 4 }), false);
 });

@@ -49,3 +49,12 @@ export function goalRowState({ owned, target, isWanted }) {
 export function listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites = 0 }) {
   return !!isWishlist && pendingGoalWrites === 0;
 }
+
+// Whether an external ledger snapshot may be applied AFTER its async read resolves. Checking
+// only before the read is not enough: a local edit can begin while the read is in flight, and
+// the older snapshot would then overwrite the newer optimistic state - the same stale-snapshot
+// race collectionGoalDrain guards for local writes. So re-check on arrival: still mounted, no
+// local goal write in flight, and no local edit since we started (generation unchanged).
+export function canApplyExternalRows({ cancelled, pendingGoalWrites = 0, genAtStart, genNow }) {
+  return !cancelled && pendingGoalWrites === 0 && genAtStart === genNow;
+}

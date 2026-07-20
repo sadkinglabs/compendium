@@ -21,7 +21,7 @@ import {
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
-import { goalTotals, goalRowState, listRowsNeedLedgerRefresh } from '../store/listGoalModel.js';
+import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
@@ -499,7 +499,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
         });
       },
-      notify: () => toast("Couldn't save; count restored", { tone: 'danger' }),
+      notify: (reason) => toast(reason === 'unconfirmed'
+        ? "Saved, but couldn't refresh - reopen to confirm"
+        : "Couldn't save; count restored", { tone: 'danger' }),
       isAlive: () => aliveRef.current,
       onChange: (key, st) => setOwBySet((prev) => {
         const m = new Map(prev);
@@ -1155,6 +1157,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const cardIndex = useRef(new Map());             // card_id -> full card row
   const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
   const drainRef = useRef(null);                   // per-open-list goal drain: reconciles from the repo after writes settle
+  const goalGenRef = useRef(0);                    // bumped per LOCAL goal edit; guards a slow external refresh
 
   // Install an authoritative goal snapshot into the synchronous mirror + visible state
   // (used by the initial load AND the drain reconcile).
@@ -1193,7 +1196,14 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       // just owned counts. Without this the sheet said "not wishlisted" while the list
       // beneath it still showed the card until reopened.
       if (listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites: drainRef.current?.pending() || 0 })) {
-        wishlistCards().then((rows) => { if (!cancelled) installGoals(rows); });
+        const genAtStart = goalGenRef.current;
+        wishlistCards().then((rows) => {
+          // Re-check AFTER the await: a local edit may have begun while this read was in
+          // flight, and applying the older snapshot would overwrite the newer optimistic state.
+          if (canApplyExternalRows({ cancelled, pendingGoalWrites: drainRef.current?.pending() || 0, genAtStart, genNow: goalGenRef.current })) {
+            installGoals(rows);
+          }
+        });
       }
     });
     return () => { cancelled = true; off(); };
@@ -1230,7 +1240,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
   // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
   // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
-  const applyGoal = (mutate) => { const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
+  // Every LOCAL goal edit bumps a generation, so an external refresh that started earlier can
+  // tell on arrival that it is now stale (see canApplyExternalRows).
+  const applyGoal = (mutate) => { goalGenRef.current += 1; const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
   const track = (p) => drainRef.current?.track(p);
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,

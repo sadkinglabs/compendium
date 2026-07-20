@@ -6,7 +6,7 @@
 //    the detail sheet; a quick + on empty sleeves).
 // Ownership counts come in as props (owned = regular copies, foil, wanted); the
 // playset check reuses the deckbuilder's legal limits. Ruby stays chrome-only.
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CardArt from './CardArt.jsx';
 import { RARITY_LIMITS, isUnlimited } from '../store/deckRepository.js';
 import { haptic } from '../native.js';
@@ -54,6 +54,27 @@ const setPillStyle = {
 
 // A flat frosted-glass round button (steppers + the missing-card quick add): a
 // 31px rose-glass circle inside a >=44px hit area, with a pressed/hover lift.
+// The tile's quick-add: tap and it flips to a tick, then settles back to a plus, so a run of
+// single taps adds a run of copies with confirmation each time and no control moving about.
+export function QuickAdd({ label, onAdd, size = 30 }) {
+  const [tick, setTick] = useState(false);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const fire = () => {
+    onAdd();
+    setTick(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setTick(false), 620);
+  };
+  return (
+    <Frost label={label} size={size} onClick={fire}>
+      {tick
+        ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+        : '+'}
+    </Frost>
+  );
+}
+
 export function Frost({ label, onClick, disabled, size = 31, children }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
@@ -216,14 +237,13 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
         </span>
       )}
-      {/* Missing sleeves get a quick add - ONLY where adding is enabled. Like
-          LedgerRow, the add control is omitted entirely when the caller passes no
-          onStep (read-only: the My Collection lens, Overview). Without this guard the
-          read-view View-all / Not-owned binder showed a dead "+" on every unowned
-          tile that threw on tap. */}
-      {missing && onStep && (
+      {/* Quick add - present wherever adding is enabled, owned or not, so you can keep
+          tapping to add copies without the control disappearing under your finger the moment
+          the card stops being "missing". Omitted entirely when the caller passes no onStep
+          (read-only surfaces), which is what stops a dead "+" appearing there. */}
+      {onStep && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
-          <Frost label={`Add ${card.name}`} size={30} onClick={() => onStep(card.card_id, set, 1)}>+</Frost>
+          <QuickAdd label={`Add ${card.name}`} onAdd={() => onStep(card.card_id, set, 1)} />
         </span>
       )}
     </div>

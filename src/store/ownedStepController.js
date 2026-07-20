@@ -15,7 +15,17 @@
 //   notify(reason): void         surface a failure to the user ("Couldn't save; count restored")
 //   isAlive(): boolean           false after unmount / card change, to drop a late reconcile
 //   onChange(state): void        re-render hook - called after every state mutation
-export function createOwnedStepController({ read, write, notify = () => {}, isAlive = () => true, onChange = () => {} }) {
+//   schedule(fn, ms):            timer seam, so the retry ladder is deterministic in tests
+//
+// RETRY_DELAYS is the ladder walked when the authoritative READ fails after a successful
+// write. Without it the row could sit provisional forever: the write's own broadcast is
+// ignored while pending, so nothing guarantees another refresh ever arrives.
+const RETRY_DELAYS = [300, 900, 2500];
+
+export function createOwnedStepController({
+  read, write, notify = () => {}, isAlive = () => true, onChange = () => {},
+  schedule = (fn, ms) => setTimeout(fn, ms),
+}) {
   let confirmedQty = 0;
   let pendingDelta = 0;
   let pendingCount = 0;
@@ -27,7 +37,7 @@ export function createOwnedStepController({ read, write, notify = () => {}, isAl
   const getState = () => ({ confirmedQty, pendingDelta, pendingCount, error, displayed: displayed() });
   const emit = () => onChange(getState());
 
-  async function reconcile(forVersion) {
+  async function reconcile(forVersion, attempt = 0) {
     let snap = null;
     let readFailed = false;
     try { snap = await read(); } catch { readFailed = true; }
@@ -38,13 +48,21 @@ export function createOwnedStepController({ read, write, notify = () => {}, isAl
 
     // A FAILED authoritative read is not a confirmation. Clearing pendingDelta here would
     // snap the display back to the pre-write value even though the write itself succeeded -
-    // silently showing stale data. Instead keep the provisional value (our best estimate of
-    // storage), flag it, and let the next successful init() - driven by the collection
-    // broadcast - confirm it.
+    // silently showing stale data. Keep the provisional value (our best estimate of storage),
+    // mark it UNCONFIRMED, and walk a retry ladder. Recovery must not depend on some unrelated
+    // future ledger mutation arriving: the write's own broadcast was ignored while pending.
     if (readFailed || typeof snap !== 'number') {
       error = true;
-      if (failedInChain) { failedInChain = false; notify('save-failed'); }
       emit();
+      if (attempt < RETRY_DELAYS.length) {
+        schedule(() => {
+          if (isAlive() && pendingCount === 0 && version === forVersion) void reconcile(forVersion, attempt + 1);
+        }, RETRY_DELAYS[attempt]);
+      } else {
+        // Ladder exhausted - stop silently carrying an unconfirmed value and say so.
+        notify(failedInChain ? 'save-failed' : 'unconfirmed');
+        failedInChain = false;
+      }
       return;
     }
 
