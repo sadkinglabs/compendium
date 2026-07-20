@@ -17,26 +17,30 @@ import { Loading } from '../components/ui.jsx';
 
 const fmt = (n) => (n || 0).toLocaleString('en-US');
 
-// Per-set art treatment: 004 ships an opaque panel (feather its edge into the plate);
-// 005/006 are self-luminous with a baked glow (dim the backlight so they don't bloom).
+// 004 ships an opaque panel behind its wordmark - round its corners so it sits on the tile.
 const BOXED = new Set(['004']);
-const BRIGHT = new Set(['005', '006']);
 
-const PLATE = {
+// Tile shell. Owned sets (>=1 card) get the gilt edge, fuller gradient and a lift; empty sets
+// drop to a warm-brown edge, lighter gradient, no shadow, dimmed art and muted text.
+const tileStyle = (has) => ({
   position: 'relative', overflow: 'hidden', width: '100%', cursor: 'pointer',
   display: 'flex', flexDirection: 'column', alignItems: 'center',
-  padding: 12, borderRadius: 12,
-  background: 'linear-gradient(180deg, var(--plate-1), var(--plate-2))',
-  border: '1px solid var(--edge-plate)',
-  boxShadow: 'var(--shadow-plate), inset 0 1px 0 rgba(233,212,154,.05)',
+  padding: 0, borderRadius: 16,
+  border: `1px solid ${has ? 'rgba(var(--gilt-rgb),.45)' : 'var(--hair-warm-50)'}`,
+  background: has
+    ? 'linear-gradient(180deg, rgba(var(--tile-top-rgb),.55), rgba(var(--tile-bottom-rgb),.55))'
+    : 'linear-gradient(180deg, rgba(var(--tile-top-rgb),.35), rgba(var(--tile-bottom-rgb),.35))',
+  boxShadow: has ? 'var(--shadow-tile)' : 'none',
+});
+// ~92px hero slot; the logo is contained, never cropped.
+const HERO = {
+  width: '100%', height: 92, padding: '16px 18px 0', boxSizing: 'border-box',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
 };
-const HERO = { position: 'relative', width: '100%', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-// minHeight keeps the Ring on a shared baseline whether the title runs one line or two.
 const TITLE = {
-  marginTop: 10, minHeight: 32, textAlign: 'center',
-  font: "600 12.5px/1.25 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase',
-  color: 'var(--gold-leaf)', overflowWrap: 'anywhere',
-  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+  marginTop: 10, padding: '0 12px', textAlign: 'center',
+  font: "600 11.5px/1.35 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase',
+  overflowWrap: 'anywhere',
 };
 const hideOnErr = (e) => { e.currentTarget.style.display = 'none'; };
 
@@ -59,27 +63,49 @@ function CountRing({ pct, owned, total, size = 50 }) {
 function Plate({ s, onOpen }) {
   const hero = setHeroUrl(s.code);
   const boxed = BOXED.has(s.code);
-  const bright = BRIGHT.has(s.code);
+  const has = s.ownedUnique > 0;                 // owned set vs empty set
+  const pct = s.pct;
+  const countColor = has ? 'var(--gold-num)' : 'var(--ink-muted-warm)';
+  const labelColor = has ? 'var(--ink-muted-warm)' : 'var(--ink-dimmest)';
   return (
-    <button type="button" onClick={() => onOpen(s.code, s)} style={PLATE}>
+    <button type="button" onClick={() => onOpen(s.code, s)} style={tileStyle(has)}>
+      {/* corner completion ring - the tile's single completion indicator */}
+      <span style={{ position: 'absolute', top: 10, right: 10 }}>
+        {/* Ring strokes are in its 40-unit viewBox, so scale to render 3.5px at 44px. */}
+        <Ring value={pct} size={44} stroke={3.5 * 40 / 44} track="var(--ring-track-neutral)"
+          color={pct > 0 ? 'var(--completion)' : 'transparent'}>
+          <span style={{ font: "700 11px/1 var(--f-display)", color: pct > 0 ? 'var(--ink-head)' : 'var(--ink-muted-warm)' }}>
+            {Math.round(pct * 100)}%
+          </span>
+        </Ring>
+      </span>
+
       <div style={HERO}>
-        <span aria-hidden="true" style={{ position: 'absolute', inset: '-42% -10%', pointerEvents: 'none',
-          background: `radial-gradient(56% 66% at 50% 52%, ${bright ? 'var(--glow-warm-dim)' : 'var(--glow-warm)'}, transparent 72%)` }} />
         {hero ? (
           <img src={hero} alt="" aria-hidden="true" onError={hideOnErr}
-            style={{ position: 'relative', maxWidth: boxed ? '74%' : '84%', maxHeight: '100%', objectFit: 'contain', display: 'block',
-              ...(boxed ? { borderRadius: 7, boxShadow: '0 0 0 1px rgba(0,0,0,.4), 0 0 16px 9px rgba(10,8,5,.55)' } : {}) }} />
+            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block',
+              opacity: has ? 1 : 0.55, ...(boxed ? { borderRadius: 7 } : {}) }} />
         ) : (
-          // heroless / zero-image: engraved display initial where the art would be
-          <span style={{ position: 'relative', font: "700 40px/1 var(--f-display)", color: '#171209', letterSpacing: '.04em',
+          // heroless / zero-image: engraved display initial in the same slot
+          <span style={{ font: "700 34px/1 var(--f-display)", color: '#171209', letterSpacing: '.04em', opacity: has ? 1 : 0.55,
             textShadow: '0 1px 0 rgba(233,212,154,.12), 0 -1px 1px rgba(0,0,0,.9)' }}>
             {(s.name || '?').charAt(0).toUpperCase()}
           </span>
         )}
       </div>
-      <div style={TITLE}>{s.name}</div>
-      <div style={{ marginTop: 8 }}>
-        <CountRing pct={s.pct} owned={s.ownedUnique} total={s.totalCollectible} />
+
+      <div style={{ ...TITLE, color: has ? 'var(--gold-num)' : 'var(--ink-dim)' }}>{s.name}</div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 9, marginTop: 10, paddingBottom: 15 }}>
+        <span>
+          <span style={{ font: "600 13.5px/1 var(--f-display)", color: countColor }}>{fmt(s.ownedUnique)}</span>
+          <span style={{ font: "400 13px/1 var(--f-read)", color: labelColor }}>/{fmt(s.totalCollectible)}</span>
+        </span>
+        <span style={{ width: 1, height: 11, background: 'var(--rule-warm)' }} />
+        <span>
+          <span style={{ font: "600 13.5px/1 var(--f-display)", color: countColor }}>✦ {fmt(s.foilUnique)}</span>
+          <span style={{ font: "400 13px/1 var(--f-read)", color: labelColor }}> foil</span>
+        </span>
       </div>
     </button>
   );
@@ -120,7 +146,7 @@ export default function SetsHome({ onOpenSet, rev }) {
         <CountRing pct={totals.pct} owned={totals.owned} total={totals.total} size={64} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {completion.map((s) => <Plate key={s.code} s={s} onOpen={onOpenSet} />)}
       </div>
     </div>

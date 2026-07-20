@@ -25,15 +25,16 @@ The token source is `src/theme/tokens.css` (`:root`). **Reporting reality is per
 | `--gold-antique` | `#b08d4e` | `[Shipping]` | |
 | `--hair-06 … --hair-40` | `rgba(var(--gold-rgb), α)` | `[Shipping]` | gold hairline scale |
 | `--edge-gold` / `--edge-gold-strong` | `rgba(var(--gold-rgb), .45/.5)` | `[Shipping]` | |
-| **`--gilt` / `--gilt-rgb`** | **`203,167,95` (`#cba75f`)** | **`[Target]`** (OD-1) | the **second, gilt/chassis gold** shipping ~99× (sheet borders, gilt frames, boot splash, `.cx-card-seal`). A distinct role — do **not** migrate onto `--gold-rgb`. |
-| **`--gold-num`** | **`#e3c589`** | **`[Target]`** (OD-1) | the bright numeral/seal gold (~54 raw uses). |
+| **`--gilt` / `--gilt-rgb`** | **`203,167,95` (`#cba75f`)** | **`--gilt-rgb` `[Shipping]`** (minted for the sets-home tile edge); `--gilt` still `[Target]` (OD-1) | the **second, gilt/chassis gold** shipping ~99× (sheet borders, gilt frames, boot splash, `.cx-card-seal`). A distinct role — do **not** migrate onto `--gold-rgb`. |
+| **`--gold-num`** | **`#e3c589`** | **`[Shipping]`** (OD-1 — minted; consumed by the sets-home tiles) | the bright numeral/seal gold (~54 raw uses); adoption across the remaining raw uses is still the separate track. |
 | ~~"gold unified on 220,184,111"~~ (`tokens.css:26` comment) | — | **`[Deprecated]`** | false: `203,167,95` still ships pervasively. Retire the claim. |
 
 ### 1.2 Ink
 | Token | Value | Status |
 |---|---|---|
 | `--ink-head` `#efe6d2` · `--ink-body` `#e9dcc0` · `--ink-body-2` `#e3d8c2` · `--ink-muted` `#9a8b6a` · `--ink-faint` `#8f8168` · `--ink-status` `#cbbfa8` | | `[Shipping]` |
-| **warm-muted-ink role** (`#8a8175`, ~84 raw uses) | | **`[Target]`** (OD-3) — **role approved; implementation choice deferred** (migrate to `--ink-faint` vs mint `--ink-muted-warm`) pending a visual + `body.hc` high-contrast comparison. Because it is a literal today, `body.hc` never lifts it (a real contrast gap). |
+| **`--ink-muted-warm`** `#8a8175` (~84 raw uses) | | **`[Shipping]`** (OD-3 resolved — **minted** rather than folded into `--ink-faint`, so the warm-muted role keeps its own hue; consumed by the sets-home tiles). Migrating the remaining raw literals onto it is the separate adoption track, and doing so is what finally lets `body.hc` lift them (today they are literals, a real contrast gap). |
+| **`--ink-dim`** `#a99a80` · **`--ink-dimmest`** `#6b6254` | | `[Shipping]` — the two-step de-emphasis for empty-state tiles (name / label). |
 | near-dupe inks `#efe7d8` (~43, ≈`--ink-head`), `#d8cebb` (~25, ≈`--ink-body-2`) | | `[Target]` (OD-4) — migrate to the existing tokens, conditional on visual/contrast verification. |
 
 ### 1.3 Accents (semantic / pillar) — one accent per pillar
@@ -60,7 +61,8 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 ### 1.6 New foundational tokens — all `[Target]` (OD-2/10/11/18)
 - **Warm-brown chrome** (~100 raw uses; the standard input/segmented/divider/well family, a *different hue* from the gold hairlines): `--edge-brown` (`#4a3c22`), `--hair-warm-50/-100` (`rgba(74,60,34,α)`), `--surface-brown-50/-70` (`rgba(42,33,20,α)`). **Defined in `tokens.css` (Collection UX Phase 0), still `[Target]`/unconsumed**; the ones Collection consumes promote to `[Shipping]` in Phase 1.
 - **Completion Ring track** — `--ring-track` (`rgba(74,60,34,.9)`), the unfilled arc; **fill = contextual pillar accent (no `--ring-fill`)**. `[Shipping]` — consumed by `components/Ring.jsx`. See §3 + `docs/collection-ux/`.
-- **Sets-home plate treatment** — `--plate-1/-2` (plate gradient), `--edge-plate` (soft gilt hairline), `--glow-warm`/`--glow-warm-dim` (warm hero backlight, normal vs self-luminous art), `--shadow-plate` (elevation), `--ring-halo` (`rgba(var(--ruby-rgb),.16)`, soft ruby bloom behind the Ring — the first `--ruby-rgb` consumer, per OD-8). `[Shipping]` — consumed by `pillars/SetsHome.jsx`. Plain functional names (owner rule: no thematic names in code).
+- **Sets-home tile treatment** — `[Shipping]`, consumed by `pillars/SetsHome.jsx`; plain functional names (owner rule: no thematic names in code). `--ring-halo` (`rgba(var(--ruby-rgb),.16)`, first `--ruby-rgb` consumer, OD-8) · `--tile-top-rgb`/`--tile-bottom-rgb` (tile gradient) · `--shadow-tile` · `--ring-track-neutral` (neutral arc track, distinct from the warm `--ring-track`) · `--rule-warm` (stat separator) · `--ink-dim`/`--ink-dimmest` (empty-tile name + label). **These mint three previously-unbuilt approved roles:** `--gilt-rgb` and `--gold-num` (OD-1) and `--ink-muted-warm` (OD-3, resolving its deferred implementation choice by minting rather than folding into `--ink-faint`).
+- **`--completion`** `#d24d78` — the completion-arc colour from the app-wide reskin. **`[Proposed Target]` / open question:** it is a near-dupe of the Collection accent `--accent-ruby #d25873` and risks reading as a second accent (§2 single-accent rule). Owner ruling needed: unify on `--accent-ruby`, or sanction `--completion` as a *semantic status* colour (a distinct axis from wayfinding accents, like `--win`/`--loss`, OD-7) and migrate other pillars' completion arcs onto it.
 - **Motion:** `--dur-*` / `--ease-*` — standardise on M3 `cubic-bezier(.4,0,.2,1)` + the house decelerate `cubic-bezier(.2,.9,.3,1)` + one overshoot spring. (~125 ad-hoc literals today; the "same" spring is spelled two ways.)
 - **z-index:** a semantic `--z-*` ladder incl. portal/top-layer ownership (z is hardcoded 40/50/300/700… today).
 - **Focus:** `--focus-ring` (no `:focus-visible` convention ships today; inputs `outline:none`).

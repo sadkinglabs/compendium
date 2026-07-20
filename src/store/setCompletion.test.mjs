@@ -50,6 +50,14 @@ test('Unspecified bucket ("a|") never inflates a real set', () => {
   assert.equal(rows['001'].ownedUnique, 1);
 });
 
+test('foilUnique is reported per set but never feeds completion', () => {
+  const rows = byCode(buildSetCompletion(CARDS, OWNED, SET_CATALOG));
+  // b is foil-only in Alpha: counted as a foil, but not as owned.
+  assert.equal(rows['001'].foilUnique, 1, 'foil-only card is reported as a foil');
+  assert.equal(rows['001'].ownedUnique, 1, 'and still excluded from completion');
+  assert.equal(rows['002'].foilUnique, 0);
+});
+
 test('a card owned BOTH non-foil and foil counts exactly once', () => {
   const owned = new Map([['a|001', { owned: 1, foil: 3 }]]);
   const rows = byCode(buildSetCompletion(CARDS, owned, SET_CATALOG));

@@ -79,14 +79,22 @@
   --hair-warm-100: rgba(74, 60, 34, 1);
   --surface-brown-50: rgba(42, 33, 20, .5);
   --surface-brown-70: rgba(42, 33, 20, .7);
-  /* sets-home plate treatment — [Shipping] (consumed by SetsHome.jsx). Plain names. */
-  --plate-1: #17120c;                       /* plate gradient, top */
-  --plate-2: #0f0c08;                       /* plate gradient, bottom */
-  --edge-plate: rgba(203, 167, 95, .13);    /* soft gilt plate hairline */
-  --glow-warm: rgba(233, 212, 154, .12);    /* warm backlight behind staged hero art */
-  --glow-warm-dim: rgba(233, 212, 154, .06);/* dimmed backlight for self-luminous art */
-  --shadow-plate: 0 10px 22px rgba(0,0,0,.5), 0 2px 5px rgba(0,0,0,.38);
   --ring-halo: rgba(var(--ruby-rgb), .16);  /* soft ruby bloom behind the Ring (first --ruby-rgb consumer) */
+
+  /* sets-home tile treatment — [Shipping] (consumed by SetsHome.jsx). Plain names.
+     Several of these finally mint roles the design system already approved but never built:
+     --gilt-rgb / --gold-num (OD-1) and --ink-muted-warm (OD-3). */
+  --gilt-rgb: 203, 167, 95;                  /* gilt/chassis gold base (OD-1) */
+  --gold-num: #e3c589;                       /* bright numeral/seal gold (OD-1) */
+  --ink-muted-warm: #8a8175;                 /* warm muted ink (OD-3) */
+  --ink-dim: #a99a80;                        /* dimmed set name, empty tiles */
+  --ink-dimmest: #6b6254;                    /* dimmed stat label, empty tiles */
+  --completion: #d24d78;                     /* completion arc (NOTE: differs from --accent-ruby #d25873) */
+  --ring-track-neutral: rgba(255, 255, 255, .08);
+  --rule-warm: rgba(107, 90, 46, .6);        /* stat separator hairline */
+  --tile-top-rgb: 42, 33, 20;                /* tile gradient, top */
+  --tile-bottom-rgb: 26, 20, 12;             /* tile gradient, bottom */
+  --shadow-tile: 0 8px 22px rgba(0, 0, 0, .4);
 
   /* element pips (card data only) */
   --el-air: #67b6c4;

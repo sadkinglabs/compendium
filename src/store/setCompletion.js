@@ -22,14 +22,14 @@ const setRank = (code) => (code && /^\d+$/.test(code) ? parseInt(code, 10) : Num
  * @param {Array}  catalogCards  parsed catalog rows (each with card_id + _sets:[{name,code}])
  * @param {Map}    ownedBySet    Map<"cardId|setCode", {owned,foil}> from ownedRepository.ownedBySet()
  * @param {Object} setCatalog    code -> display name (setCatalog.json)
- * @returns {Array<{code,name,ownedUnique,totalCollectible,pct}>} real sets, sorted by set code
+ * @returns {Array<{code,name,ownedUnique,foilUnique,totalCollectible,pct}>} real sets, by set code
  */
 export function buildSetCompletion(catalogCards, ownedBySet, setCatalog) {
   const sets = new Map(); // code -> { code, name, ownedUnique, totalCollectible }
   const ensure = (code, name) => {
     let s = sets.get(code);
     if (!s) {
-      s = { code, name: name || code, ownedUnique: 0, totalCollectible: 0 };
+      s = { code, name: name || code, ownedUnique: 0, foilUnique: 0, totalCollectible: 0 };
       sets.set(code, s);
     } else if (name && s.name === code) {
       s.name = name; // upgrade a code-only placeholder once a real name shows up
@@ -52,7 +52,9 @@ export function buildSetCompletion(catalogCards, ownedBySet, setCatalog) {
       const s = ensure(code, (setCatalog && setCatalog[code]) || entry.name);
       s.totalCollectible += 1;
       const o = ownedBySet && ownedBySet.get(cardId + '|' + code);
-      if (o && (o.owned || 0) > 0) s.ownedUnique += 1; // non-foil only; foil never counts
+      if (o && (o.owned || 0) > 0) s.ownedUnique += 1; // completion: non-foil only
+      // foilUnique is REPORTED (the tile's "N foil" stat) but never feeds completion.
+      if (o && (o.foil || 0) > 0) s.foilUnique += 1;
     }
   }
 
