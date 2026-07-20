@@ -89,8 +89,10 @@
   --ink-muted-warm: #8a8175;                 /* warm muted ink (OD-3) */
   --ink-dim: #a99a80;                        /* dimmed set name, empty tiles */
   --ink-dimmest: #6b6254;                    /* dimmed stat label, empty tiles */
-  --completion: #d24d78;                     /* completion arc (NOTE: differs from --accent-ruby #d25873) */
-  --ring-track-neutral: rgba(255, 255, 255, .08);
+  /* Completion fill: gold -> ruby. Owner ruling - no separate completion colour; the pillar
+     accent IS the completion colour, so the single-accent rule holds. */
+  --completion-fill: linear-gradient(90deg, var(--accent-gold), var(--accent-ruby));
+  --track-neutral: rgba(255, 255, 255, .08); /* unfilled completion track */
   --rule-warm: rgba(107, 90, 46, .6);        /* stat separator hairline */
   --tile-top-rgb: 42, 33, 20;                /* tile gradient, top */
   --tile-bottom-rgb: 26, 20, 12;             /* tile gradient, bottom */

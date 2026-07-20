@@ -69,17 +69,6 @@ function Plate({ s, onOpen }) {
   const labelColor = has ? 'var(--ink-muted-warm)' : 'var(--ink-dimmest)';
   return (
     <button type="button" onClick={() => onOpen(s.code, s)} style={tileStyle(has)}>
-      {/* corner completion ring - the tile's single completion indicator */}
-      <span style={{ position: 'absolute', top: 10, right: 10 }}>
-        {/* Ring strokes are in its 40-unit viewBox, so scale to render 3.5px at 44px. */}
-        <Ring value={pct} size={44} stroke={3.5 * 40 / 44} track="var(--ring-track-neutral)"
-          color={pct > 0 ? 'var(--completion)' : 'transparent'}>
-          <span style={{ font: "700 11px/1 var(--f-display)", color: pct > 0 ? 'var(--ink-head)' : 'var(--ink-muted-warm)' }}>
-            {Math.round(pct * 100)}%
-          </span>
-        </Ring>
-      </span>
-
       <div style={HERO}>
         {hero ? (
           <img src={hero} alt="" aria-hidden="true" onError={hideOnErr}
@@ -107,6 +96,12 @@ function Plate({ s, onOpen }) {
           <span style={{ font: "400 13px/1 var(--f-read)", color: labelColor }}> foil</span>
         </span>
       </div>
+
+      {/* Completion bar, flush to the tile's bottom edge - replaces the corner ring, which
+          fought the logo art. Gold -> ruby fill; empty sets show the bare track. */}
+      <span aria-hidden="true" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 4, background: 'var(--track-neutral)' }}>
+        <span style={{ display: 'block', height: '100%', width: `${Math.min(100, pct * 100)}%`, background: 'var(--completion-fill)' }} />
+      </span>
     </button>
   );
 }
