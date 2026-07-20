@@ -535,9 +535,15 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky drill header: back + set-completion Ring + owned/total, then the view
-          toggle. Never scrolls away. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, padding: '4px 0 12px', background: 'transparent' }}>
+      {/* Sticky drill header: back + set-completion Ring + owned/total. It needs an OPAQUE
+          backing - the card grid scrolls underneath it, and over a transparent header the
+          title and ring became unreadable. Bled to the screen edges (negative margin against
+          the container's 20px padding) so nothing shows through at the sides. */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 6, margin: '0 -20px', padding: '8px 20px 12px',
+        background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        borderBottom: '1px solid var(--hair-12)',
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
           <button onClick={onBack} aria-label="Back to sets" style={{
             width: 34, height: 34, flex: 'none', borderRadius: '50%', cursor: 'pointer',

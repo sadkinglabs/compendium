@@ -80,7 +80,6 @@
   --hair-warm-100: rgba(74, 60, 34, 1);
   --surface-brown-50: rgba(42, 33, 20, .5);
   --surface-brown-70: rgba(42, 33, 20, .7);
-  --ring-halo: rgba(var(--ruby-rgb), .16);  /* soft ruby bloom behind the Ring (first --ruby-rgb consumer) */
 
   /* sets-home tile treatment — [Shipping] (consumed by SetsHome.jsx). Plain names.
      Several of these finally mint roles the design system already approved but never built:

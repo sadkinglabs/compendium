@@ -268,8 +268,11 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
   return (
     <>
       {/* Set picker - drives the art AND which set the Owned/Foil steppers edit.
-          Single-set cards show a plain set pill instead. Wishlist stays card-level. */}
-      {options.length > 1 ? (
+          Opened from INSIDE a set (`set` given) the printing is already decided, so the sheet
+          shows a plain pill instead of a chooser: you are adding to the set you are in.
+          Single-set cards likewise. Only the name-level entry points (Codex, search, Overview)
+          still need to pick. Wishlist stays card-level. */}
+      {set == null && options.length > 1 ? (
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
           <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
             <SegTabs ariaLabel="Printing"

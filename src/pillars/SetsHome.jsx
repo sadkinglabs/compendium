@@ -1,18 +1,17 @@
 // Collection · My Collection landing (Collection UX redesign, Phase 1).
-// Sets-are-home / completion-is-goal: a 2-up grid of set plates. Each plate stacks the set
-// logo (staged as a lit hero over a warm backlight), the set title, and a completion Ring
-// housing the owned/total count. The title gets its own full-width line so long single-word
-// names (DRAGONLORD, PROMOTIONAL) never clip. Tapping a plate drills into that set's
-// ledger/binder. Completion is over the WHOLE catalog (buildSetCompletion), non-foil only,
-// independent of any search/filter in the drill. Vector + text carry the meaning, so a
-// heroless/zero-image plate stays legible via an engraved initial.
+// Sets-are-home / completion-is-goal: a 2-up grid of set tiles. Each tile stacks the set logo
+// (the hero), the set title, an owned/total + foil stat line, and a completion bar flush to
+// its bottom edge. Owned sets get a gilt edge and a lift; empty sets drop to a warm-brown
+// edge, dimmed art and muted text. Tapping a tile drills into that set's cards. Completion is
+// over the WHOLE catalog (buildSetCompletion), non-foil only, independent of any search or
+// filter in the drill. Text + vector carry the meaning, so a heroless/zero-image tile stays
+// legible via an engraved initial.
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { getCatalog } from '../store/catalogCache.js';
 import { ownedBySet, subscribeCollection } from '../store/ownedRepository.js';
 import { buildSetCompletion } from '../store/setCompletion.js';
 import { setHeroUrl } from '../store/cardArt.js';
 import { SET_LABEL } from '../store/sets.js';
-import Ring from '../components/Ring.jsx';
 import { Loading } from '../components/ui.jsx';
 
 const fmt = (n) => (n || 0).toLocaleString('en-US');
@@ -43,22 +42,6 @@ const TITLE = {
   overflowWrap: 'anywhere',
 };
 const hideOnErr = (e) => { e.currentTarget.style.display = 'none'; };
-
-// The completion Ring, housing owned/total as a stacked fraction (no percentage).
-function CountRing({ pct, owned, total, size = 50 }) {
-  return (
-    <span style={{ flex: 'none', display: 'grid', placeItems: 'center', borderRadius: '50%',
-      background: 'radial-gradient(closest-side, var(--ring-halo), transparent 76%)' }}>
-      <Ring value={pct} size={size} stroke={4} color="var(--accent-ruby)">
-        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
-          <span style={{ font: `600 ${Math.round(size * 0.23)}px/1 var(--f-mono)`, color: 'var(--ink-head)' }}>{fmt(owned)}</span>
-          <span style={{ width: Math.round(size * 0.3), height: 1, background: 'var(--hair-30)', margin: '2px 0' }} />
-          <span style={{ font: `400 ${Math.round(size * 0.155)}px/1 var(--f-mono)`, color: 'var(--ink-muted)' }}>{fmt(total)}</span>
-        </span>
-      </Ring>
-    </span>
-  );
-}
 
 function Plate({ s, onOpen }) {
   const hero = setHeroUrl(s.code);
@@ -132,13 +115,12 @@ export default function SetsHome({ onOpenSet, rev }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '8px 2px 20px' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
-          <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>Sets</div>
-          <div style={{ font: "400 11px/1 var(--f-ui)", letterSpacing: '.06em', color: 'var(--ink-muted)' }}>non-foil owned</div>
+      <div style={{ margin: '8px 2px 20px' }}>
+        <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
+        <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>Sets</div>
+        <div style={{ font: "400 11.5px/1 var(--f-mono)", letterSpacing: '.04em', color: 'var(--ink-muted)' }}>
+          {fmt(totals.owned)} / {fmt(totals.total)} non-foil owned
         </div>
-        <CountRing pct={totals.pct} owned={totals.owned} total={totals.total} size={64} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
