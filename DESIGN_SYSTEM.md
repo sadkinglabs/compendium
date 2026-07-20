@@ -133,12 +133,8 @@ These are **`[Shipping]` constraints** — codify, do not change.
 - **Native vs web (Capacitor)** — use `env(safe-area-inset-*)` for edges and the CSS `--kb` keyboard token (**divided by `--ui-scale`**) for keyboard lift — never a native plugin or hand-rolled offset. Every native capability (haptics, share, status bar, blur) is progressive enhancement with a web fallback.
 - **Accessibility floor** — ≥44px hit target today; **≥48dp is the `[Target]` floor** (OD-15) — `COMPENDIUM_ARCHITECTURE.md:201,203` mandate 48dp twice; current 44px recipe + the 34/30px offenders (RefineSheet operator/flip, OwnedControl stepper) are recorded as **adoption debt** (the RefineSheet numeric cluster wants a re-layout, not slop-padding). `--ui-scale` zoom; `body.hc` high-contrast (reaches only `--ink-*`/`--hair-*` — hence the warm-muted-ink gap, OD-3); reduced-motion still-fallbacks; dialogs `role=dialog` + focus-trap + back-registered.
 
-### Foil — `[Target]` (owner-approved 2026-07-20; `[Shipping]` when its consumer lands)
-Designed in [`docs/foil/foil-proposal.md`](docs/foil/foil-proposal.md) and confined to the card
-art viewer — never grids, tiles or sheets. Compendium's own implementation: the artwork's own
-luminance gates the effect (`color-dodge`), so dark ink stays dark as it does on a real card
-where the foil sits *beneath* the print. Every numeric value is tuned on device; none is
-inherited. The outcome constraints below remain binding:
+### Foil — `[Candidate]` / Provisional
+Owner-wanted, **not designed or built**. This document records only **outcome constraints**, never a canonical technique or verified fallback:
 - must be **offline** (no network, no third-party textures), **reduced-motion safe** (a static sheen fallback), **zero-image safe** (base state = the element-gradient fallback; foil never requires the photo), and its degradation **non-load-bearing** (removing it leaves a legible card).
 - Any concrete technique (CSS/SVG vs WebGL, blend-modes, masks, per-frame budget) is a **design input for a future device-verified implementation proposal** — verified on a low-end Capacitor Chromium WebView — not law here.
 

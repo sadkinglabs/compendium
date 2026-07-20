@@ -3,7 +3,6 @@ import { createPortal } from 'react-dom';
 import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { registerBackConsumer } from '../back.js';
 import { setImmersive } from '../native.js';
-import { FOIL, foilBandsStyle, foilGlareStyle } from './cardFoil.js';
 
 // Full-screen card display. Tapping the art in a card sheet POPS the card out of the sheet
 // onto its own stage, where tilting the phone parallaxes it in 3D over a cast shadow. Closing
@@ -25,7 +24,7 @@ const TILT_RANGE = 26;    // degrees of device rotation mapped to full deflectio
 const POP_MS = 340;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
-export default function CardArtViewer({ card, origin, foilOwned = false, onClose }) {
+export default function CardArtViewer({ card, origin, onClose }) {
   const reduce = typeof document !== 'undefined' && document.body.classList.contains('reduce-motion');
   const [tilt, setTilt] = useState({ x: 0, y: 0, gx: 50, gy: 50, active: false });
   const [flipT, setFlipT] = useState(null);   // transform that maps the stage back onto the sheet frame
@@ -37,11 +36,6 @@ export default function CardArtViewer({ card, origin, foilOwned = false, onClose
   const restoreRef = useRef(null);
   const gyroSeen = useRef(false);
   const closing = useRef(false);
-  // Foil is EARNED: the toggle exists only if you own a foil of the printing on screen. The
-  // preview flag is a tuning affordance (localStorage['cx-foil-preview']='1'), matching the
-  // zero-image gate's convention - it never appears for a normal user.
-  const foilPreview = (() => { try { return localStorage.getItem('cx-foil-preview') === '1'; } catch { return false; } })();
-  const [foilOn, setFoilOn] = useState(false);
 
   // Hide the status bar for the duration - this is a full-bleed, immersive moment.
   useEffect(() => { setImmersive(true); return () => { setImmersive(false); }; }, []);
@@ -145,11 +139,6 @@ export default function CardArtViewer({ card, origin, foilOwned = false, onClose
   const url = cardImageUrl(card);
   const site = !!card?.is_site;
   const artist = card?._artist || null;
-  // Foil needs the photo: with art suppressed there is no luminance to mask against, so the
-  // toggle is hidden entirely and the viewer behaves exactly as before.
-  const canFoil = !!url && (foilOwned || foilPreview);
-  const showFoil = canFoil && foilOn;
-  const tiltMag = Math.min(1, Math.hypot(tilt.x, tilt.y) / 14);
   const popT = open ? 'none' : (flipT || 'scale(.94)');
 
   return createPortal(
@@ -194,20 +183,12 @@ export default function CardArtViewer({ card, origin, foilOwned = false, onClose
                 ...(site ? { width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', top: '50%', left: '50%', inset: 'auto', transform: 'translate(-50%,-50%) rotate(90deg)' } : {}),
               }} />
           )}
-          {showFoil ? (
-            <>
-              {/* The holo. color-dodge means the art's own dark ink masks it - see cardFoil.js. */}
-              <span aria-hidden="true" style={foilBandsStyle(tilt, tiltMag, reduce)} />
-              <span aria-hidden="true" style={foilGlareStyle(tilt.gx, tilt.gy, reduce)} />
-            </>
-          ) : (
-            /* plain sweep when the card is not foiled */
-            <span aria-hidden="true" style={{
-              position: 'absolute', inset: 0, pointerEvents: 'none',
-              background: `radial-gradient(40% 34% at ${tilt.gx}% ${tilt.gy}%, rgba(255,251,235,.28), rgba(255,251,235,.05) 46%, transparent 72%)`,
-              opacity: tilt.active ? 1 : 0, transition: 'opacity .25s ease',
-            }} />
-          )}
+          {/* light catching the face as it turns */}
+          <span aria-hidden="true" style={{
+            position: 'absolute', inset: 0, pointerEvents: 'none',
+            background: `radial-gradient(40% 34% at ${tilt.gx}% ${tilt.gy}%, rgba(255,251,235,.28), rgba(255,251,235,.05) 46%, transparent 72%)`,
+            opacity: tilt.active ? 1 : 0, transition: 'opacity .25s ease',
+          }} />
         </div>
       </div>
 
@@ -221,21 +202,6 @@ export default function CardArtViewer({ card, origin, foilOwned = false, onClose
           <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', marginTop: 7 }}>
             Art by {artist}
           </div>
-        )}
-        {canFoil && (
-          <button type="button" onClick={() => setFoilOn((v) => !v)} aria-pressed={foilOn}
-            style={{
-              marginTop: 13, display: 'inline-flex', alignItems: 'center', gap: 8,
-              padding: '9px 16px', borderRadius: 999, cursor: 'pointer',
-              background: foilOn ? 'rgba(var(--gold-rgb),.16)' : 'rgba(10,9,8,.72)',
-              border: `1px solid ${foilOn ? 'rgba(var(--gold-rgb),.5)' : 'rgba(var(--gold-rgb),.25)'}`,
-              color: foilOn ? 'var(--gold-num)' : 'var(--gold-leaf)',
-              font: "600 12px/1 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase',
-              transition: 'background .16s, border-color .16s, color .16s',
-            }}>
-            <span aria-hidden="true" style={{ fontSize: 13 }}>✦</span>
-            {foilOn ? 'Foil' : 'View foil'}
-          </button>
         )}
       </div>
 

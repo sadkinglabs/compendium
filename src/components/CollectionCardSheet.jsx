@@ -200,7 +200,7 @@ function SiteArt({ c }) {
 
 // The glowing card frame - portrait for cards, flipped landscape for Sites. Tapping it raises
 // the card onto its own full-screen stage (CardArtViewer).
-export function SheetArt({ c, foilOwned = false }) {
+export function SheetArt({ c }) {
   const site = !!c.is_site;
   const [zoom, setZoom] = useState(null);   // the frame we popped FROM, so we can return to it
   const frameRef = useRef(null);
@@ -218,7 +218,7 @@ export function SheetArt({ c, foilOwned = false }) {
           visibility: zoom ? 'hidden' : 'visible' }}>
         {site ? <SiteArt c={c} /> : <CardArt card={c} radius={11} aspect="5/7" />}
       </button>
-      {zoom && <CardArtViewer card={c} origin={zoom.w ? zoom : null} foilOwned={foilOwned} onClose={() => setZoom(null)} />}
+      {zoom && <CardArtViewer card={c} origin={zoom.w ? zoom : null} onClose={() => setZoom(null)} />}
     </div>
   );
 }
@@ -328,8 +328,7 @@ function CardBody({ c, onPick, editable, set }) {
         <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>
       ) : null}
 
-      {/* Foil is gated on owning a foil of THIS printing - own it in Alpha, see it in Alpha. */}
-      <SheetArt c={artCard} foilOwned={(qty?.foil || 0) > 0} />
+      <SheetArt c={artCard} />
 
       <div style={{ font: "700 27px/1.1 var(--f-display)", color: '#efe7d8', textAlign: 'center', marginTop: 20 }}>{c.name}</div>
 
