@@ -226,7 +226,7 @@ export function SheetArt({ c }) {
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
 // `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
 // distinct cards in the collection, so tapping the Alpha row edits only Alpha.
-function CardBody({ c, onOpenCodex, onPick, editable, set }) {
+function CardBody({ c, onPick, editable, set }) {
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
   const variants = jp(c.variants, []) || [];
@@ -353,8 +353,8 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
       )}
 
       {/* One action row: wishlist (a heart that fills when on) and add-to-list (a plus).
-          TODO: "Open in Codex" is commented out below pending a decision on how the card
-          sheet should hand off to the Codex page - see the note in the sheet's history. */}
+          There is deliberately no "Open in Codex" hand-off - this sheet is about OWNING the
+          card, and the Codex page is reached from Codex/search. */}
       <div style={{ display: 'flex', gap: 12, marginTop: 26 }}>
         <ActionButton
           icon={
@@ -374,14 +374,11 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
           }
           label="Add to list" onClick={onPick} />
       </div>
-      {/* {onOpenCodex && (
-        <button onClick={() => onOpenCodex(c.card_id, c.name)}>Open in Codex ›</button>
-      )} */}
     </>
   );
 }
 
-export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, editable = false, set = null }) {
+export default function CollectionCardSheet({ cardId, onClose, editable = false, set = null }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
@@ -389,7 +386,7 @@ export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, edit
     <GothicSheet open={!!cardId} onClose={onClose} label="Card">
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} editable={editable} set={set} />}
+        : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} />}
     </GothicSheet>
   );
 }

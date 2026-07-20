@@ -108,8 +108,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       {/* "Open in Codex" deliberately KEEPS the sheet open in state: the pillar
           unmounts for the Codex page, and Back should land right back on this
           sheet - that's where the user left. */}
-      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }}
-        onOpenCodex={(id, name) => onOpen('card', id, name)} editable />
+      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }} editable />
     </div>
   );
 }
