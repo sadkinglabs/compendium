@@ -43,14 +43,36 @@ That distinction decides everything:
 Same author, same effect, different licence. The MIT route is legitimate and carries no
 copyleft, so **no clean-room is required and none is claimed.**
 
-**Attribution is a real, binding obligation — not a courtesy.** MIT requires the copyright and
-permission notice travel with the work. We will carry it in two places:
-1. a header comment in the foil source naming the author, the pen URL and the MIT licence;
-2. an entry in the app's **Credits** screen.
+**Attribution is a binding obligation, and it is now built — before Phase 0, not after.**
+MIT requires that the copyright *and* permission notice accompany the distributed software. A
+source-header comment does **not** satisfy that (minification strips comments from the
+production bundle), and a Credits line thanking the author is acknowledgement, not notice. The
+compliance mechanism is therefore:
 
-This must not be quietly dropped later; it is the entire basis on which we are allowed to use
-this. (Worth noting: the owner's original instinct — "we can use it, we just credit it" — was
-correct. It was only wrong about *which artifact* it applied to.)
+| Artifact | Role |
+|---|---|
+| `src/thirdPartyNotices.js` | **The shipped notice.** String *data*, so it survives minification into the production bundle. Carries the full MIT text, holder, source URL and retrieval date. |
+| Credits → **Third-party notices** | Renders that document **verbatim** in-app, so the notice reaches every recipient of the APK. |
+| `THIRD-PARTY-NOTICES.md` (repo root) | Mirror for the source distribution. |
+| `src/thirdPartyNotices.test.mjs` | **Enforcement** — fails the build if the shipped notice and the root mirror drift, or if a notice lacks a copyright line or the permission clause. |
+
+A provenance comment may still sit in the foil source, but it is documentation, not the
+compliance path.
+
+**Recorded provenance:** author `simeydotme`, source `https://codepen.io/simeydotme/pen/abYWJdX`,
+retrieved **2026-07-20**.
+
+**⚠ Two items outstanding before Phase 0 completes — owner action:**
+1. **Capture an immutable snapshot.** A Pen is mutable and can be made private; if it changes or
+   disappears, our evidence of what we adapted and under what licence goes with it. CodePen's
+   export includes the generated MIT licence — export it and commit the archive.
+2. **Confirm the copyright identity.** The notice currently names the published handle
+   (`simeydotme`) because that is what is verifiable from the URL. If CodePen's export names a
+   different legal identity, **that** is the one the notice must carry. I have deliberately not
+   guessed a legal name.
+
+(The owner's original instinct — "we can use it, we just credit it" — was correct. It was only
+wrong about *which artifact* it applied to.)
 
 **Assets:** the pasted CSS references **no external images** — the holo is built entirely from
 gradients. So the third-party texture problem that encumbers the GitHub version does not arise,
@@ -199,29 +221,42 @@ nothing here contradicts that.
 - **Zero-image**: toggle absent, viewer unchanged.
 - **Reduced-motion**: static sheen, nothing tracks the gyro.
 - **Backgrounding / rotation / hardware-back** while foil is on.
-- **Art range**: verify dark-art cards still look *intentional*, not dead (this is where layer 4
-  is judged).
+- **Art range**: verify dark-art cards still look *intentional*, not dead (this is where the
+  optional layer 3 is judged), and that bright art does not clip to flat white.
 - **Gate correctness**: foil-owned vs not; switching printings; name-level entry points.
 
 ---
 
 ## 10 · Self-critique
 
+Reconciled against the two-layer stack now proposed (§3-§4), not the speculative four-layer
+version this section originally critiqued.
+
 - **The biggest risk is that it looks cheap.** A procedural holo has no hand-authored mask, so
   it cannot know that *this* card has a metallic border and *that* one does not. It will be
-  more uniform than a per-card treatment. Mitigation is luminance masking doing the art
-  direction for us — but if it reads as a gradient sheet laid over the card, that is failure,
-  and I would rather ship no foil than a sticker.
-- **`color-dodge` can blow out** already-bright art (pale skies, white borders) into flat
-  clipped white. Layer 2's `soft-light` is there to carry colour without pushing luminance, but
-  the balance is a device-tuning problem, not a thing I can settle on paper.
-- **"Dark stays dark" may over-deliver** and leave dark cards looking untouched — see §3.
-- **Blend modes are the load-bearing unknown**, and I am proposing to make them load-bearing on
-  a stack that has deliberately avoided them until now.
-- **What I might be over-building:** the four-layer stack may be more than the effect needs.
-  If two layers get 90% of it, that is the better answer and I would drop the rest.
-
----
+  more uniform than a per-card treatment. Luminance masking does the art direction for us — but
+  if it reads as a gradient sheet laid over the card, that is failure, and I would rather ship
+  no foil than a sticker.
+- **`contrast(2.3)` is a starting point, not an acceptance value.** It is the highest-leverage
+  number in the stack and it is tuned for Pokémon card art — dense line-art with bright borders.
+  Sorcery art is often darker and painterly. Too high and the bands posterise into hard stripes
+  with visible banding on gradients; too low and the whole thing turns to mush. It must be tuned
+  per our art and re-checked on device, where panel gamma differs from a desktop display.
+- **`color-dodge` clipping.** Dodge divides by `(1 - blend)`, so as the holo layer approaches
+  white the result runs away to pure white. Bright regions — pale skies, white borders, snow —
+  can clip to flat featureless white and *lose* the art, which is the mirror image of the
+  dark-area failure and just as bad. The band alphas (0.75 in the reference) and the layer's
+  own brightness are the controls; expect to pull them down for light art.
+- **`hard-light` darkening is a double-edged tool.** Deepening the surround is what sells metal,
+  but it also crushes shadow detail in art that is already dark, and it stacks with the §3
+  behaviour — the same regions get quiet twice. If dark cards read as dead, the cause is likely
+  this compounding rather than the band layer alone.
+- **Blend modes are the load-bearing unknown**, on a stack that has deliberately avoided them
+  until now (one usage app-wide). Transforming a blended layer is *not* proof of
+  compositor-only execution: a blend can force a repaint that negates the transform's advantage.
+  Device measurement is the deciding evidence, not reasoning about it here.
+- **What I might be over-building:** even two layers may be more than the effect needs. If the
+  band layer alone gets most of the way, the glare is a cost we do not have to pay.
 
 ## 11 · Questions for Codex
 
