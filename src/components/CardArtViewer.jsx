@@ -45,13 +45,16 @@ export default function CardArtViewer({ card, origin, onClose }) {
     setTimeout(onClose, POP_MS);
   };
 
-  // Hardware back / Escape close the viewer BEFORE the sheet underneath it.
-  useEffect(() => registerBackConsumer(() => { close(); return true; }));
+  // Hardware back / Escape close the viewer BEFORE the sheet underneath it. Held in a ref so
+  // the consumer registers ONCE - `close` is re-created every render.
+  const closeRef = useRef(close);
+  closeRef.current = close;
+  useEffect(() => registerBackConsumer(() => { closeRef.current(); return true; }), []);
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  });
+  }, []);
 
   // FLIP: measure the stage, then express it as the sheet frame we came from.
   useLayoutEffect(() => {
@@ -100,12 +103,12 @@ export default function CardArtViewer({ card, origin, onClose }) {
 
   const url = cardImageUrl(card);
   const site = !!card?.is_site;
+  const artist = card?._artist || null;
   const popT = open ? 'none' : (flipT || 'scale(.94)');
 
   return createPortal(
     <div
       role="dialog" aria-modal="true" aria-label={`${card?.name || 'Card'} artwork`}
-      onClick={close}
       style={{
         position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 26, padding: 20,
@@ -114,7 +117,7 @@ export default function CardArtViewer({ card, origin, onClose }) {
       }}
     >
       {/* pop layer */}
-      <div ref={cardRef} onClick={(e) => e.stopPropagation()} onPointerMove={track}
+      <div ref={cardRef} onPointerMove={track}
         style={{
           position: 'relative', width: 'min(88vw, 420px)', aspectRatio: site ? '531 / 380' : '5 / 7',
           transform: popT, transition: armed ? `transform ${POP_MS}ms cubic-bezier(.2,.9,.3,1)` : 'none',
@@ -153,12 +156,33 @@ export default function CardArtViewer({ card, origin, onClose }) {
         </div>
       </div>
 
-      <div className="cx-glimmer" style={{
-        font: "600 16px/1.3 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase',
-        textAlign: 'center', maxWidth: '82vw', opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease`,
-      }}>
-        {card?.name}
+      <div style={{ textAlign: 'center', maxWidth: '82vw', opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease` }}>
+        <div className="cx-glimmer" style={{
+          font: "600 16px/1.3 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase',
+        }}>
+          {card?.name}
+        </div>
+        {artist && (
+          <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: 'var(--ink-muted)', marginTop: 7 }}>
+            Art by {artist}
+          </div>
+        )}
       </div>
+
+      {/* The X is the only on-screen way out - the backdrop is inert so you can tilt and
+          study the card without dismissing it by accident. Hardware back still works. */}
+      <button type="button" onClick={close} aria-label="Close artwork"
+        style={{
+          position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 14px)', right: 16, zIndex: 2,
+          width: 40, height: 40, borderRadius: '50%', cursor: 'pointer',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(20,15,10,.7)', border: '1px solid var(--hair-30)', color: 'var(--gold-leaf)',
+          opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease`,
+        }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
+        </svg>
+      </button>
     </div>,
     document.body,
   );

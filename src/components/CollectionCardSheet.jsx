@@ -262,7 +262,12 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
     const vs = variants.filter((v) => v.set === code && v.image);
     return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.image ?? c.image_slug;
   };
-  const artCard = { ...c, image_slug: imageForSet(effSet) };
+  // The credited artist follows the printing on show - a reprint is often a different artist.
+  const artistForSet = (code) => {
+    const vs = (code ? variants.filter((v) => v.set === code) : variants).filter((v) => v.artist);
+    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.artist || null;
+  };
+  const artCard = { ...c, image_slug: imageForSet(effSet), _artist: artistForSet(effSet) };
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
