@@ -270,8 +270,8 @@ function ListBulkAddSheet({ open, onClose, onApply, listName }) {
   );
   const Line = ({ name, note, dim }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
-      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? '#8a8175' : '#d8cebb' }}>{name}</span>
-      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? '#8a8175' : '#cba75f' }}>{note}</span>
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? 'var(--ink-muted-warm)' : '#d8cebb' }}>{name}</span>
+      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? 'var(--ink-muted-warm)' : '#cba75f' }}>{note}</span>
     </div>
   );
   return (
@@ -296,7 +296,7 @@ function ListBulkAddSheet({ open, onClose, onApply, listName }) {
               {plan.adds.map((a) => <Line key={a.card.card_id} name={a.card.name} note={`${a.qty}×`} />)}
             </Section>
           ) : (
-            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px', textAlign: 'center' }}>Nothing recognised in that text.</div>
+            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '4px 0 14px', textAlign: 'center' }}>Nothing recognised in that text.</div>
           )}
           {plan.unknown.length > 0 && (
             <Section label="Not recognised" color="#c98f8f">
@@ -632,16 +632,16 @@ function Section({ title, hint, onAdd, children }) {
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 5px' }}>
         <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: '#c76d85', textTransform: 'uppercase' }}>{title}</span>
-        <button onClick={onAdd} style={{ background: 'none', border: 'none', color: '#e3c589', font: "600 16px/1 var(--f-display)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
+        <button onClick={onAdd} style={{ background: 'none', border: 'none', color: 'var(--gold-num)', font: "600 16px/1 var(--f-display)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
       </div>
-      {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: '#8a8175', marginBottom: 14 }}>{hint}</div>}
+      {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 14 }}>{hint}</div>}
       {children}
     </div>
   );
 }
 
 function Empty({ text }) {
-  return <div style={{ padding: '6px 0 4px', font: "italic 400 15px/1.5 var(--f-read)", color: '#8a8175' }}>{text}</div>;
+  return <div style={{ padding: '6px 0 4px', font: "italic 400 15px/1.5 var(--f-read)", color: 'var(--ink-muted-warm)' }}>{text}</div>;
 }
 
 // Export a list as flat "qty name" text - the Curiosa deck-export format, so it
@@ -715,51 +715,52 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
   const complete = hasBar && p.complete;
   const border = complete ? 'rgba(227,197,137,.45)' : wanted ? 'rgba(199,109,133,.32)' : 'rgba(203,167,95,.2)';
   const bg = complete ? 'rgba(203,167,95,.05)' : wanted ? 'rgba(199,109,133,.04)' : 'rgba(203,167,95,.03)';
-  const barFill = complete ? '#e3c589' : '#e0899e';
 
   return (
     <div onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 12, padding: '16px 20px', borderRadius: 19, border: `1px solid ${border}`, background: bg }}>
-      <ListFan cards={thumbs} />
+      {/* Custom grammar: fanned thumbs (what's IN the grouping). Tracked lists get no fan -
+          their grammar is the completion bar below, so the two never read alike. */}
+      {!wanted && <ListFan cards={thumbs} />}
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Title + tally. */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
           <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: complete ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
           {wanted ? (
             <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-              <span style={{ font: "600 24px/1 var(--f-display)", color: complete ? '#e3c589' : '#e0899e' }}>{p ? p.totalHave : 0}</span>
-              <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{p ? p.totalRequired : 0}</span>
+              <span style={{ font: "600 24px/1 var(--f-display)", color: complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{p ? p.totalHave : 0}</span>
+              <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{p ? p.totalRequired : 0}</span>
             </span>
           ) : (
             <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
               <span style={{ font: "600 22px/1 var(--f-display)", color: '#efe7d8' }}>{list.entryCount}</span>
-              <span style={{ font: "400 14px/1 var(--f-read)", color: '#8a8175' }}> card{list.entryCount === 1 ? '' : 's'}</span>
+              <span style={{ font: "400 14px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> card{list.entryCount === 1 ? '' : 's'}</span>
             </span>
           )}
         </div>
 
         {/* Card list: description. */}
         {!wanted && list.description ? (
-          <div style={{ font: "400 15px/1.4 var(--f-read)", color: '#8a8175', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.description}</div>
+          <div style={{ font: "400 15px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.description}</div>
         ) : null}
 
         {/* Wanted: progress bar + footer. */}
         {wanted && hasBar && (
           <>
-            <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden', marginTop: 12 }}>
-              <div style={{ height: '100%', width: `${p.percent}%`, background: barFill, borderRadius: 3, transition: 'width .3s ease' }} />
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--track-neutral)', overflow: 'hidden', marginTop: 12 }}>
+              <div style={{ height: '100%', width: `${p.percent}%`, background: 'var(--completion-fill)', borderRadius: 3, transition: 'width .3s ease' }} />
             </div>
             {complete ? (
               <div style={{ marginTop: 11 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 11, background: 'rgba(99,201,163,.1)', border: '1px solid rgba(99,201,163,.35)' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#63c9a3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  <span style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.14em', color: '#63c9a3' }}>COMPLETE</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 11, background: 'rgba(var(--jade-rgb),.1)', border: '1px solid rgba(var(--jade-rgb),.35)' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent-jade)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--accent-jade)' }}>COMPLETE</span>
                 </span>
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
-                <span style={{ font: "400 13px/1 var(--f-read)", color: '#8a8175' }}>{p.totalMissing} missing</span>
+                <span style={{ font: "400 13px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>{p.totalMissing} missing</span>
                 <button onClick={(e) => { e.stopPropagation(); onViewMissing?.(); }}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 13px/1 var(--f-ui)", color: '#c76d85', padding: 0 }}>View missing ›</button>
               </div>
@@ -835,7 +836,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
   const toggleAll = () => { haptic('light'); setSelected(allSelected ? new Map() : new Map(shown.map((c) => [c.card_id, c]))); };
 
   const pillBase = { flex: 'none', padding: '7px 15px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap' };
-  const pillGold = { ...pillBase, background: 'rgba(42,33,20,.5)', color: '#e3c589', border: '1px solid rgba(203,167,95,.45)' };
+  const pillGold = { ...pillBase, background: 'rgba(42,33,20,.5)', color: 'var(--gold-num)', border: '1px solid rgba(203,167,95,.45)' };
   const pillRose = { ...pillBase, background: 'rgba(210,88,115,.16)', color: '#f0c8ce', border: '1px solid rgba(210,88,115,.5)' };
 
   return (
@@ -875,14 +876,14 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
               <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                 {setName && <span style={listSetPill}>{setName}</span>}
-                {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: '#e3c589' }}>on list ×{inList}</span>}
+                {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: 'var(--gold-num)' }}>on list ×{inList}</span>}
               </div>
             </div>
             {selectMode ? (
               // The switch slides in from the right when Select mode turns on (staggered
               // by row for a gentle "apparition"); reduced-motion opts out via the class.
               <span aria-hidden="true" className="cx-sel-switch" style={{ flex: 'none', width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? '#e3c589' : 'rgba(203,167,95,.4)'}`,
+                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? 'var(--gold-num)' : 'rgba(203,167,95,.4)'}`,
                 animation: 'cxSelIn .24s cubic-bezier(.2,.9,.3,1) both', animationDelay: `${Math.min(i, 14) * 16}ms` }}>
                 {isSel && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1a1206" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
               </span>
@@ -920,19 +921,27 @@ function WishlistCard({ summary, onClick }) {
     <div onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 22, padding: '16px 20px', borderRadius: 19, border: '1px solid rgba(227,197,137,.42)', background: 'linear-gradient(180deg, rgba(203,167,95,.07), rgba(203,167,95,.02))' }}>
-      <ListFan cards={summary?.thumbs || []} />
+      {/* Pinned grammar: a single ruby star. No fan and no bar - the Wishlist is the one
+          list that is a STATE ("wanted"), not a goal or a grouping. */}
+      <span aria-hidden="true" style={{
+        width: 54, height: 54, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: '1px solid rgba(var(--ruby-rgb),.4)', background: 'rgba(var(--ruby-rgb),.08)',
+      }}>
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--accent-ruby)" stroke="var(--accent-ruby)" strokeWidth="1.4" strokeLinejoin="round">
+          <path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2-5.6-3.2-5.6 3.2 1.3-6.2L3 9.5l6.3-.7z" />
+        </svg>
+      </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#e3c589" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
           <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wishlist</span>
         </div>
-        <div style={{ font: "400 14px/1.4 var(--f-read)", color: '#8a8175', marginTop: 6 }}>
+        <div style={{ font: "400 14px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 6 }}>
           {empty ? 'Cards you want - add from any card or here' : `${summary.count} card${summary.count === 1 ? '' : 's'} wanted`}
         </div>
       </div>
       {!empty && (
         <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-          <span style={{ font: "600 24px/1 var(--f-display)", color: '#e3c589' }}>{summary.total}</span>
+          <span style={{ font: "600 24px/1 var(--f-display)", color: 'var(--gold-num)' }}>{summary.total}</span>
         </span>
       )}
     </div>
@@ -1055,18 +1064,18 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }
           {setName && <span style={listSetPill}>{setName}</span>}
           {goalMet ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#63c9a3', flex: 'none' }} />
-              <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', color: '#63c9a3' }}>COMPLETE</span>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-jade)', flex: 'none' }} />
+              <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-jade)' }}>COMPLETE</span>
             </span>
           ) : isWanted ? (
             <span>
-              <span style={{ font: "600 15px/1 var(--f-display)", color: '#e0899e' }}>{owned}</span>
-              <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}> of {target} wanted</span>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: 'var(--accent-ruby)' }}>{owned}</span>
+              <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> of {target} wanted</span>
             </span>
           ) : (
             <span>
-              <span style={{ font: "600 15px/1 var(--f-display)", color: ownedAny ? '#e3c589' : '#8a8175' }}>{owned}</span>
-              <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}> owned</span>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: ownedAny ? 'var(--gold-num)' : 'var(--ink-muted-warm)' }}>{owned}</span>
+              <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> owned</span>
             </span>
           )}
         </span>
@@ -1234,23 +1243,23 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </div>
         {showProgress && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
-            <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? '#e3c589' : '#e0899e' }}>{totals.have}</span>
-            <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{totals.req}</span>
+            <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{totals.have}</span>
+            <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{totals.req}</span>
           </div>
         )}
       </div>
 
-      {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: '#8a8175', margin: '0 2px 14px' }}>{meta.description}</div>}
+      {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '0 2px 14px' }}>{meta.description}</div>}
 
       {/* Progress bar (wanted only): fills rose as the collection acquires copies,
           turning gold at 100%. "View missing ›" filters to what is still short. */}
       {showProgress && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${totals.percent}%`, background: totals.complete ? '#e3c589' : '#e0899e', borderRadius: 3, transition: 'width .3s ease' }} />
+            <div style={{ height: '100%', width: `${totals.percent}%`, background: 'var(--completion-fill)', borderRadius: 3, transition: 'width .3s ease' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}>
+            <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>
               {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
             </span>
             {isWanted && totals.missing > 0 && (
@@ -1264,7 +1273,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           until Edit; cards join via the in-list "Add cards" picker. */}
       {!loaded ? <Loading /> : listRows.length === 0 ? (
         <div style={{ padding: '40px 0', textAlign: 'center' }}>
-          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>
+          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 10 }}>
             {isWishlist ? 'Nothing on your wishlist yet.' : 'No cards yet.'}
           </div>
           <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Add cards ›</button>
@@ -1277,7 +1286,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             </span>
             <button onClick={() => setEditing((e) => !e)} aria-pressed={editing}
               style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
-                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : '#e3c589', border: `1px solid ${editing ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
+                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : 'var(--gold-num)', border: `1px solid ${editing ? 'var(--gold-num)' : 'rgba(210,88,115,.5)'}` }}>
               {editing ? 'Done' : 'Edit'}
             </button>
           </div>
