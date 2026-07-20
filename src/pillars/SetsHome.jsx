@@ -1,10 +1,11 @@
 // Collection · My Collection landing (Collection UX redesign, Phase 1).
-// Sets-are-home / completion-is-goal: a 2-up grid of set plates. Each plate stages the set
-// logo as the hero (the logo IS the set's identity - no separate name text to clip), with an
-// owned/total subtitle ("— x/y —") and a small completion Ring pinned bottom-right showing
-// the non-foil percentage. Tapping a plate drills into that set's ledger/binder. Completion
-// is over the WHOLE catalog (buildSetCompletion), non-foil only. Vector + text carry the
-// meaning, so a heroless/zero-image plate stays legible via an engraved initial.
+// Sets-are-home / completion-is-goal: a 2-up grid of set plates. Each plate stacks the set
+// logo (staged as a lit hero over a warm backlight), the set title, and a completion Ring
+// housing the owned/total count. The title gets its own full-width line so long single-word
+// names (DRAGONLORD, PROMOTIONAL) never clip. Tapping a plate drills into that set's
+// ledger/binder. Completion is over the WHOLE catalog (buildSetCompletion), non-foil only,
+// independent of any search/filter in the drill. Vector + text carry the meaning, so a
+// heroless/zero-image plate stays legible via an engraved initial.
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { getCatalog } from '../store/catalogCache.js';
 import { ownedBySet, subscribeCollection } from '../store/ownedRepository.js';
@@ -22,39 +23,36 @@ const BOXED = new Set(['004']);
 const BRIGHT = new Set(['005', '006']);
 
 const PLATE = {
-  position: 'relative', overflow: 'hidden', display: 'block', width: '100%', textAlign: 'left',
-  cursor: 'pointer', padding: 12, borderRadius: 12,
+  position: 'relative', overflow: 'hidden', width: '100%', cursor: 'pointer',
+  display: 'flex', flexDirection: 'column', alignItems: 'center',
+  padding: 12, borderRadius: 12,
   background: 'linear-gradient(180deg, var(--plate-1), var(--plate-2))',
   border: '1px solid var(--edge-plate)',
   boxShadow: 'var(--shadow-plate), inset 0 1px 0 rgba(233,212,154,.05)',
 };
-const HERO = { position: 'relative', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const HERO = { position: 'relative', width: '100%', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+// minHeight keeps the Ring on a shared baseline whether the title runs one line or two.
+const TITLE = {
+  marginTop: 10, minHeight: 32, textAlign: 'center',
+  font: "600 12.5px/1.25 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase',
+  color: 'var(--gold-leaf)', overflowWrap: 'anywhere',
+  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+};
 const hideOnErr = (e) => { e.currentTarget.style.display = 'none'; };
 
-// The completion Ring showing the non-foil percentage; used small (plate corner) and large
-// (header). Halo bloom behind it via --ring-halo.
-function PctRing({ pct, size = 34 }) {
+// The completion Ring, housing owned/total as a stacked fraction (no percentage).
+function CountRing({ pct, owned, total, size = 50 }) {
   return (
     <span style={{ flex: 'none', display: 'grid', placeItems: 'center', borderRadius: '50%',
       background: 'radial-gradient(closest-side, var(--ring-halo), transparent 76%)' }}>
-      <Ring value={pct} size={size} stroke={size >= 48 ? 4 : 3} color="var(--accent-ruby)">
-        <span style={{ font: `600 ${Math.max(8, Math.round(size * 0.22))}px/1 var(--f-mono)`, color: 'var(--ink-head)' }}>
-          {Math.round(pct * 100)}%
+      <Ring value={pct} size={size} stroke={4} color="var(--accent-ruby)">
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+          <span style={{ font: `600 ${Math.round(size * 0.23)}px/1 var(--f-mono)`, color: 'var(--ink-head)' }}>{fmt(owned)}</span>
+          <span style={{ width: Math.round(size * 0.3), height: 1, background: 'var(--hair-30)', margin: '2px 0' }} />
+          <span style={{ font: `400 ${Math.round(size * 0.155)}px/1 var(--f-mono)`, color: 'var(--ink-muted)' }}>{fmt(total)}</span>
         </span>
       </Ring>
     </span>
-  );
-}
-
-// "— owned / total —": the count as a captioned subtitle beneath the hero.
-function CountSub({ owned, total }) {
-  const hair = { width: 16, height: 1, background: 'var(--hair-30)', flex: 'none' };
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 10, paddingRight: 30 }}>
-      <span style={hair} />
-      <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-body-2)', letterSpacing: '.02em' }}>{fmt(owned)} / {fmt(total)}</span>
-      <span style={hair} />
-    </div>
   );
 }
 
@@ -68,7 +66,7 @@ function Plate({ s, onOpen }) {
         <span aria-hidden="true" style={{ position: 'absolute', inset: '-42% -10%', pointerEvents: 'none',
           background: `radial-gradient(56% 66% at 50% 52%, ${bright ? 'var(--glow-warm-dim)' : 'var(--glow-warm)'}, transparent 72%)` }} />
         {hero ? (
-          <img src={hero} alt={s.name} onError={hideOnErr}
+          <img src={hero} alt="" aria-hidden="true" onError={hideOnErr}
             style={{ position: 'relative', maxWidth: boxed ? '74%' : '84%', maxHeight: '100%', objectFit: 'contain', display: 'block',
               ...(boxed ? { borderRadius: 7, boxShadow: '0 0 0 1px rgba(0,0,0,.4), 0 0 16px 9px rgba(10,8,5,.55)' } : {}) }} />
         ) : (
@@ -79,10 +77,10 @@ function Plate({ s, onOpen }) {
           </span>
         )}
       </div>
-      <CountSub owned={s.ownedUnique} total={s.totalCollectible} />
-      <span style={{ position: 'absolute', right: 9, bottom: 9 }}>
-        <PctRing pct={s.pct} size={34} />
-      </span>
+      <div style={TITLE}>{s.name}</div>
+      <div style={{ marginTop: 8 }}>
+        <CountRing pct={s.pct} owned={s.ownedUnique} total={s.totalCollectible} />
+      </div>
     </button>
   );
 }
@@ -117,9 +115,9 @@ export default function SetsHome({ onOpenSet, rev }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
           <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>Sets</div>
-          <div style={{ font: "400 11px/1 var(--f-mono)", letterSpacing: '.04em', color: 'var(--ink-muted)' }}>{fmt(totals.owned)} / {fmt(totals.total)} non-foil</div>
+          <div style={{ font: "400 11px/1 var(--f-ui)", letterSpacing: '.06em', color: 'var(--ink-muted)' }}>non-foil owned</div>
         </div>
-        <PctRing pct={totals.pct} size={56} />
+        <CountRing pct={totals.pct} owned={totals.owned} total={totals.total} size={64} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
