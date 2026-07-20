@@ -631,7 +631,7 @@ function Section({ title, hint, onAdd, children }) {
   return (
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 5px' }}>
-        <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: '#c76d85', textTransform: 'uppercase' }}>{title}</span>
+        <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: 'var(--accent-ruby)', textTransform: 'uppercase' }}>{title}</span>
         <button onClick={onAdd} style={{ background: 'none', border: 'none', color: 'var(--gold-num)', font: "600 16px/1 var(--f-display)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
       </div>
       {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 14 }}>{hint}</div>}
@@ -726,7 +726,7 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Title + tally. */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: complete ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
+          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: complete ? '#f4ecdc' : 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
           {wanted ? (
             <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
               <span style={{ font: "600 24px/1 var(--f-display)", color: complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{p ? p.totalHave : 0}</span>
@@ -734,7 +734,7 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
             </span>
           ) : (
             <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-              <span style={{ font: "600 22px/1 var(--f-display)", color: '#efe7d8' }}>{list.entryCount}</span>
+              <span style={{ font: "600 22px/1 var(--f-display)", color: 'var(--ink-head)' }}>{list.entryCount}</span>
               <span style={{ font: "400 14px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> card{list.entryCount === 1 ? '' : 's'}</span>
             </span>
           )}
@@ -762,7 +762,7 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
                 <span style={{ font: "400 13px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>{p.totalMissing} missing</span>
                 <button onClick={(e) => { e.stopPropagation(); onViewMissing?.(); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 13px/1 var(--f-ui)", color: '#c76d85', padding: 0 }}>View missing ›</button>
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 13px/1 var(--f-ui)", color: 'var(--accent-ruby)', padding: 0 }}>View missing ›</button>
               </div>
             )}
           </>
@@ -873,7 +873,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)', cursor: selectMode ? 'pointer' : 'default', contentVisibility: 'auto', containIntrinsicSize: 'auto 62px' }}>
             <span style={{ width: 42, flex: 'none' }}><CardArt card={c} radius={6} aspect="5/7" /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+              <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                 {setName && <span style={listSetPill}>{setName}</span>}
                 {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: 'var(--gold-num)' }}>on list ×{inList}</span>}
@@ -890,7 +890,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
             ) : inList > 0 ? (
               <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
                 <Frost label="One fewer" onClick={() => onStep(c, -1)}>−</Frost>
-                <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: '#efe7d8' }}>{inList}</span>
+                <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: 'var(--ink-head)' }}>{inList}</span>
                 <Frost label="One more" onClick={() => onStep(c, 1)}>+</Frost>
               </span>
             ) : (
@@ -1059,7 +1059,7 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{
           display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-          font: "600 18px/1.2 var(--f-read)", color: goalMet ? '#f4ecdc' : '#efe7d8',
+          font: "600 18px/1.2 var(--f-read)", color: goalMet ? '#f4ecdc' : 'var(--ink-head)',
         }}>{card.name}</span>
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 }}>
           {setName && <span style={listSetPill}>{setName}</span>}
@@ -1089,8 +1089,8 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }
         <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
           <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
-            <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
-            <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+            <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: 'var(--accent-ruby)' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+            <span style={{ font: "600 19px/1 var(--f-display)", color: 'var(--ink-head)', marginTop: 4 }}>{target}</span>
           </span>
           <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
         </span>
@@ -1239,8 +1239,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           background: 'rgba(224,169,177,.07)', border: '1px solid rgba(224,169,177,.22)',
         }}>‹</button>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ font: "700 22px/1.1 var(--f-display)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
+          <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: 'var(--accent-ruby)', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
         {showProgress && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
@@ -1256,7 +1256,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           turning gold at 100%. "View missing ›" filters to what is still short. */}
       {showProgress && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
-          <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
+          <div style={{ height: 6, borderRadius: 3, background: 'var(--track-neutral)', overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${totals.percent}%`, background: 'var(--completion-fill)', borderRadius: 3, transition: 'width .3s ease' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
@@ -1264,7 +1264,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
               {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
             </span>
             {isWanted && totals.missing > 0 && (
-              <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: '#c76d85' }}>View missing ›</button>
+              <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>View missing ›</button>
             )}
           </div>
         </div>
@@ -1277,7 +1277,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 10 }}>
             {isWishlist ? 'Nothing on your wishlist yet.' : 'No cards yet.'}
           </div>
-          <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Add cards ›</button>
+          <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>Add cards ›</button>
         </div>
       ) : (
         <>
