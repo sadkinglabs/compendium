@@ -35,7 +35,6 @@ import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
-import { noticesText } from './thirdPartyNotices.js';
 
 // Route-split: only Home + the app shell load eagerly (the landing screen). Every
 // other pillar and the cold overlays (match, wizard, deck editor, card detail)
@@ -92,7 +91,6 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);   // app Settings (accessibility + prefs) - a modal over the profile sheet
   const [creditsOpen, setCreditsOpen] = useState(false);       // centered Credits/About modal - the Home wordmark's tap target
   const [changelogOpen, setChangelogOpen] = useState(false);   // release notes, opened on demand from Credits (never stamps)
-  const [noticesOpen, setNoticesOpen] = useState(false);       // third-party licence notices, reached from Credits
   const [changelogPending, setChangelogPending] = useState(null);   // unseen entries from the update gate (stamps on dismiss)
   const [telemetryAsk, setTelemetryAsk] = useState(false);          // consent is `unset` - show the disclosure, once
   const [searchHelpOpen, setSearchHelpOpen] = useState(false); // centered search-syntax cheatsheet
@@ -589,9 +587,7 @@ export default function App() {
       {/* Settings paints over the profile sheet, which stays mounted underneath so
           closing this returns the user to where they opened it from. */}
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} onChangelog={() => setChangelogOpen(true)}
-        onNotices={() => setNoticesOpen(true)} />
-      <NoticesModal open={noticesOpen} onClose={() => setNoticesOpen(false)} />
+      <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} onChangelog={() => setChangelogOpen(true)} />
       {/* Opened from Credits, so it shows the WHOLE history on demand. Nothing is
           recorded when it closes: reading the notes because you went looking is not
           the same event as being shown them after an update. */}
@@ -1045,24 +1041,7 @@ function ChevronRow({ label, onClick }) {
 }
 
 // Credits / About uses a centered modal rather than a bottom sheet.
-// The full third-party notices, verbatim. MIT requires the copyright AND permission notice to
-// accompany the distributed software - an acknowledgement line does not satisfy that - so this
-// renders src/thirdPartyNotices.js in full rather than summarising it.
-function NoticesModal({ open, onClose }) {
-  return (
-    <CenteredModal open={open} label="Third-party notices" maxWidth={380} onClose={onClose}>
-      <div style={{ padding: '22px 20px 18px' }}>
-        <div style={{ font: "600 15px/1.2 var(--f-display)", color: 'var(--gold-leaf)', marginBottom: 12 }}>Third-party notices</div>
-        <pre style={{
-          margin: 0, maxHeight: '60vh', overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-          font: "400 11px/1.55 var(--f-mono)", color: 'var(--ink-muted)',
-        }}>{noticesText()}</pre>
-      </div>
-    </CenteredModal>
-  );
-}
-
-function CreditsModal({ open, onClose, onChangelog, onNotices }) {
+function CreditsModal({ open, onClose, onChangelog }) {
   return (
     <CenteredModal open={open} label="Credits" maxWidth={350} onClose={onClose} boxStyle={{ overflow: 'hidden' }}>
         <div style={{ position: 'relative', textAlign: 'center', padding: '34px 26px 22px', background: 'radial-gradient(ellipse at 50% 0%, rgba(220,184,111,.14) 0%, transparent 70%)' }}>
@@ -1089,7 +1068,6 @@ function CreditsModal({ open, onClose, onChangelog, onNotices }) {
               what a build contains without waiting for the next update. */}
           <div style={{ textAlign: 'left', marginTop: 18, borderTop: '1px solid var(--hair-12)' }}>
             <ChevronRow label="What’s New" onClick={onChangelog} />
-            <ChevronRow label="Third-party notices" onClick={onNotices} />
           </div>
         </div>
     </CenteredModal>
