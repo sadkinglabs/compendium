@@ -40,9 +40,12 @@ export function createOwnedStepController({
   // zero - the finally block emits that intermediate state BEFORE reconcile has run, so it is
   // true for a moment even when the write rejected or the read is about to fail.
   let okVersion = 0;
+  // The reconciled chain result, published with each success so consumers never have to infer
+  // how many copies a confirmation represents: { version, appliedDelta, confirmedQty }.
+  let confirmation = null;
 
   const displayed = () => Math.max(0, confirmedQty + pendingDelta);
-  const getState = () => ({ confirmedQty, pendingDelta, pendingCount, error, okVersion, displayed: displayed() });
+  const getState = () => ({ confirmedQty, pendingDelta, pendingCount, error, okVersion, confirmation, displayed: displayed() });
   const emit = () => onChange(getState());
 
   async function reconcile(forVersion, attempt = 0) {
@@ -77,10 +80,17 @@ export function createOwnedStepController({
       return;
     }
 
+    const applied = pendingDelta;   // what this chain actually put into storage
     confirmedQty = snap;
     pendingDelta = 0;
     if (failedInChain) { error = true; failedInChain = false; notify('save-failed'); }
-    else { error = false; okVersion += 1; }   // the ONLY place success is declared
+    else {
+      // The ONLY place success is declared - and it carries the chain's result, so no consumer
+      // has to keep its own tally alongside.
+      error = false;
+      okVersion += 1;
+      confirmation = { version: okVersion, appliedDelta: applied, confirmedQty };
+    }
     emit();
   }
 

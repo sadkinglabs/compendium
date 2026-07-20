@@ -14,8 +14,10 @@
 //   notify(reason):      void             surface a failure to the user
 //   isAlive():           boolean          false after unmount, to drop a late reconcile
 //   onChange(key, status): void          re-render hook, per row. `status` is
-//       { pending, ok, error, displayed } where `ok` is the controller's reconciled-success
-//       counter - it moves ONLY after a successful authoritative read with no failed write.
+//       { pending, ok, confirmation, error, displayed }. `ok` is the controller's
+//       reconciled-success counter - it moves ONLY after a successful authoritative read with
+//       no failed write - and `confirmation` carries that chain's result
+//       ({ version, appliedDelta, confirmedQty }) so a consumer never keeps its own tally.
 //       Never infer success from `pending` going false: that is emitted before reconcile runs.
 import { createOwnedStepController } from './ownedStepController.js';
 
@@ -34,6 +36,7 @@ export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = 
         onChange: (state) => onChange(key, {
           pending: state.pendingCount > 0,
           ok: state.okVersion,
+          confirmation: state.confirmation,   // { version, appliedDelta, confirmedQty }
           error: state.error,
           displayed: state.displayed,
         }),

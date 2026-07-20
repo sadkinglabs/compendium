@@ -167,3 +167,48 @@ test('interleaved rows confirm independently', async () => {
   assert.equal(h.status.get('b|001').ok, 1, 'b confirmed independently');
   assert.equal(h.status.get('b|001').error, false);
 });
+
+/* ── The confirmation payload. Consumers must never keep their own tally of "how many copies
+   did that success represent" - the chain publishes it. ── */
+
+test('confirmation carries the delta the chain actually applied', async () => {
+  const h = harness();
+  h.grid.step('c1|001', 0, +1);
+  h.grid.step('c1|001', 0, +1);
+  h.grid.step('c1|001', 0, +1);
+  h.store().set('c1|001', 3);
+  h.writes.forEach((w) => w.resolve());
+  await flush(); await flush(); await flush();
+  const c = h.status.get('c1|001').confirmation;
+  assert.equal(c.appliedDelta, 3, 'one confirmation crediting all three taps');
+  assert.equal(c.confirmedQty, 3);
+  assert.equal(c.version, 1);
+});
+
+test('a failed chain publishes NO confirmation to credit', async () => {
+  const h = harness();
+  h.store().set('c1|001', 2);
+  h.grid.step('c1|001', 2, +1);
+  h.writes[0].reject(new Error('nope'));
+  await flush(); await flush(); await flush();
+  assert.equal(h.status.get('c1|001').confirmation, null, 'nothing for a consumer to credit');
+});
+
+test('successive bursts publish increasing versions with their own deltas', async () => {
+  const h = harness();
+  h.grid.step('c1|001', 0, +1);
+  h.store().set('c1|001', 1);
+  h.writes[0].resolve();
+  await flush(); await flush(); await flush();
+  assert.deepEqual(
+    { v: h.status.get('c1|001').confirmation.version, d: h.status.get('c1|001').confirmation.appliedDelta },
+    { v: 1, d: 1 });
+  h.grid.step('c1|001', 1, +1);
+  h.grid.step('c1|001', 1, +1);
+  h.store().set('c1|001', 3);
+  h.writes.slice(1).forEach((w) => w.resolve());
+  await flush(); await flush(); await flush();
+  assert.deepEqual(
+    { v: h.status.get('c1|001').confirmation.version, d: h.status.get('c1|001').confirmation.appliedDelta },
+    { v: 2, d: 2 }, 'second burst credits only its own two taps');
+});

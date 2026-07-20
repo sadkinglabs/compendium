@@ -64,34 +64,31 @@ const setPillStyle = {
 export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
   const [tick, setTick] = useState(false);
   const timer = useRef(null);
-  const seenOk = useRef(status?.ok || 0);
-  const taps = useRef(0);      // taps not yet covered by a confirmation
-  const run = useRef(0);       // copies confirmed in the current burst
+  const run = useRef(0);        // copies confirmed in the current burst
   const runTimer = useRef(null);
+  // Track the controller's confirmation VERSION. Initialising from the current value means a
+  // remount never re-fires an old confirmation.
+  const seen = useRef(status?.confirmation?.version || 0);
   useEffect(() => () => { clearTimeout(timer.current); clearTimeout(runTimer.current); }, []);
-  // A chain that drained with an ERROR never increments `ok`, so its taps must be discarded
-  // here - otherwise they would be credited to the NEXT successful confirmation and the toast
-  // would claim copies that were never persisted.
-  useEffect(() => { if (status?.error) taps.current = 0; }, [status?.error]);
   useEffect(() => {
-    const ok = status?.ok || 0;
-    if (ok <= seenOk.current) { seenOk.current = ok; return; }
-    seenOk.current = ok;
-    // A burst of taps can drain as ONE chain, so credit every tap this confirmation covers and
-    // keep a running total: the single-slot toast then counts up rather than repeating "1 x".
-    run.current += taps.current || 1;
-    taps.current = 0;
+    const c = status?.confirmation;
+    if (!c || c.version <= seen.current) { if (c) seen.current = c.version; return; }
+    seen.current = c.version;
+    if (c.appliedDelta <= 0) return;         // this control only adds
+    // appliedDelta is what the chain actually put into storage, so there is no local tap
+    // tally to drift out of step - a burst that drains as one chain is credited exactly once,
+    // and a failed chain never produces a confirmation at all.
+    run.current += c.appliedDelta;
     if (cardName) toast(`${run.current} × ${cardName} added`);
     setTick(true);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setTick(false), 620);
     clearTimeout(runTimer.current);
     runTimer.current = setTimeout(() => { run.current = 0; }, 2600);   // burst ends when you pause
-  }, [status?.ok, cardName]);
-  const fire = () => { taps.current += 1; onAdd(); };
+  }, [status?.confirmation?.version, cardName]);
   const tone = tick ? 'ok' : status?.pending ? 'pending' : undefined;
   return (
-    <Frost label={label} size={size} onClick={fire} tone={tone} variant="gold">
+    <Frost label={label} size={size} onClick={onAdd} tone={tone} variant="gold">
       {tick
         ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
         : '+'}
