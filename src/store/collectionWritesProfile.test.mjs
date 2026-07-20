@@ -146,7 +146,7 @@ test('switchProfile drains the queue before flipping the active profile (barrier
   const d = defer();
   let committed = false;
   enqueueWrite(ownedRowKey('A', 'cardY', '', false), async () => { await d.p; await stepWanted('cardY', 1, 'A'); committed = true; });
-  const switching = switchProfile('B');   // awaits settleCollectionWrites()
+  const switching = switchProfile('B');   // takes the exclusive Collection-write barrier
   await tick();
   assert.equal(activeProfileId(), 'A', 'must NOT flip while a Collection write is pending');
   assert.equal(committed, false);

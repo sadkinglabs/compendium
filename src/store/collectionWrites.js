@@ -5,16 +5,24 @@
 // visible edits settle first. Run: npm run test:query
 //
 // This module is a LEAF: it imports NOTHING from the repository/profile layer, because
-// profileRepository imports IT (settleCollectionWrites). That is what keeps
+// profileRepository imports IT (withExclusiveCollectionWrites). That is what keeps
 //   profileRepository -> collectionWrites
 // acyclic. Profile-binding correctness does NOT live here - the callers pass an explicit
 // profileId to the profile-scoped repository writes, so a queued write mutates the
-// profile it was scheduled under even if the active profile changes mid-flight. This
-// queue only ORDERS writes per row and lets a profile switch WAIT for them.
+// profile it was scheduled under even if the active profile changes mid-flight.
+//
+// The queue offers two coordination levels, and the difference matters:
+//   - enqueueWrite            ORDERS writes per row (one chain per persisted row)
+//   - withExclusiveCollectionWrites  EXCLUDES all row writes for the duration of a command
+// Draining (settleCollectionWrites) proves the queue was idle a moment ago and grants
+// nothing about the next instant, so anything that reads-then-writes - a bulk command, a
+// profile flip - needs the barrier, not the drain.
 
 const chains = {};   // rowKey -> tail Promise (recovered per write, so it never rejects)
 let pending = 0;
 let idle = [];       // settle() resolvers, run when pending returns to 0
+let exclusive = null;             // held (non-null) while an exclusive holder owns the queue
+let exclusiveTail = Promise.resolve();   // serializes exclusive holders against each other
 
 function finalize() {
   if (--pending === 0) { const waiters = idle; idle = []; waiters.forEach((f) => f()); }
@@ -32,9 +40,48 @@ function finalize() {
  */
 export function enqueueWrite(rowKey, fn) {
   pending++;
-  const result = (chains[rowKey] || Promise.resolve()).then(() => fn());
+  // The gate is read AT ENQUEUE TIME. That is what makes exclusivity a barrier rather than a
+  // settle: a write arriving while a bulk command holds the queue captures the holder's
+  // promise here and waits behind it, instead of slipping into the drain the holder is
+  // waiting on. Both `prev` and `gate` are already failure-recovered, so this never rejects.
+  const prev = chains[rowKey] || Promise.resolve();
+  const gate = exclusive || Promise.resolve();
+  const result = Promise.all([prev, gate]).then(() => fn());
   chains[rowKey] = result.catch(() => {}).finally(finalize);
   return result;
+}
+
+/**
+ * Run `fn` with EXCLUSIVE ownership of the Collection write queue: existing queued writes
+ * drain first, and no new row write may run until `fn` settles.
+ *
+ * This exists because a bulk command computes absolute after-values from an authoritative
+ * read. Without exclusivity, a per-row write can commit between that read and the bulk
+ * transaction, and the bulk write then overwrites it - an atomic transaction that still
+ * silently loses a concurrent edit. Draining alone is not enough: `settleCollectionWrites`
+ * only waits for the queue to reach idle, and grants nothing about what happens next.
+ *
+ * The order below is the whole point. Exclusivity is claimed BEFORE the drain, so any write
+ * enqueued during the drain sees a held gate and queues behind us. Reversing those two lines
+ * reintroduces exactly the race this function exists to close.
+ *
+ * Holders are serialized against one another, so a profile switch and a bulk command cannot
+ * interleave. `fn`'s rejection is propagated to the caller but never wedges the queue.
+ */
+export function withExclusiveCollectionWrites(fn, timeoutMs = 4000) {
+  const run = exclusiveTail.then(async () => {
+    let release;
+    exclusive = new Promise((r) => { release = r; });
+    try {
+      await settleCollectionWrites(timeoutMs);   // drain work queued BEFORE we claimed the gate
+      return await fn();
+    } finally {
+      exclusive = null;
+      release();
+    }
+  });
+  exclusiveTail = run.then(() => {}, () => {});
+  return run;
 }
 
 /**
@@ -64,4 +111,6 @@ export function __resetCollectionWritesForTests() {
   for (const k of Object.keys(chains)) delete chains[k];
   pending = 0;
   idle = [];
+  exclusive = null;
+  exclusiveTail = Promise.resolve();
 }

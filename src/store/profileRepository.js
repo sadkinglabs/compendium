@@ -6,7 +6,7 @@ import { Preferences } from '@capacitor/preferences';
 import { query, run, persist } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
-import { settleCollectionWrites } from './collectionWrites.js';
+import { withExclusiveCollectionWrites } from './collectionWrites.js';
 
 const ACTIVE_KEY = 'activeProfileId';
 
@@ -85,11 +85,17 @@ export async function switchProfile(id) {
   if (!exists.length) throw new Error('Unknown profile: ' + id);
   // Write barrier: let any pending Collection writes finish UNDER the current profile
   // before the active id changes, so an in-flight edit is preserved (not dropped) and
-  // cannot be redirected. Bounded, so a hung write can't freeze the switch. There must
-  // be no unrelated await between this drain and the flip below.
-  await settleCollectionWrites();
-  activeId = id;
-  await Preferences.set({ key: ACTIVE_KEY, value: id });
+  // cannot be redirected. Bounded, so a hung write can't freeze the switch.
+  //
+  // EXCLUSIVE, not merely drained. Draining says "nothing is in flight right now" and
+  // grants nothing about the next instant, so a write (or a bulk command) could enter
+  // between the drain and the flip and land under the wrong profile. Taking the same
+  // barrier a bulk command takes also means the two serialize against each other instead
+  // of interleaving. The flip must stay inside the barrier for that to hold.
+  await withExclusiveCollectionWrites(async () => {
+    activeId = id;
+    await Preferences.set({ key: ACTIVE_KEY, value: id });
+  });
   return getActiveProfile();
 }
 

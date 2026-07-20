@@ -7,15 +7,21 @@
 //    confirmation would over-report ("changed 42 cards" when it changed 9) and, worse, undo
 //    would have a before/after pair for a row it never touched.
 //
-// 2. UNDO IS NOT AN INVERSE DELTA. It stores each row's before AND committed-after value, and
-//    restores a row only if that row's CURRENT value still equals the committed-after value.
-//    An inverse delta cannot express "Ensure at least 1" (it does not know which rows it
-//    actually raised), and applying one blindly would silently overwrite any edit the user
-//    made between the bulk write and the undo. Rows that moved on are reported as conflicts,
-//    never overwritten.
+// 2. UNDO IS NOT AN INVERSE DELTA, AND ITS GUARD IS NOT A PRE-CHECK. It stores each row's
+//    before AND committed-after value, and the restore statement is CONDITIONAL - it may
+//    touch a row only while that row still holds the committed-after value. An inverse delta
+//    cannot express "Ensure at least 1" (it does not know which rows it actually raised), and
+//    checking-then-writing would leave a window in which another edit lands and gets
+//    discarded by the very guard meant to protect it. Conflicts are therefore reported from an
+//    authoritative read-back AFTER the transaction, never from a read before it.
 //
-// Pure and DOM-free, and it never touches the database: current quantities arrive through a
-// `qtyOf` callback so the whole thing is testable without a backend.
+// Neither rule is sufficient alone. Both assume the caller holds the exclusive Collection
+// write barrier (`withExclusiveCollectionWrites`) across authoritative read, plan,
+// transaction and confirmation - otherwise a per-row write can commit between the read and
+// the transaction, and an atomic bulk write still silently overwrites it.
+//
+// Pure and DOM-free, and it never touches the database: quantities arrive through callbacks
+// so the whole thing is testable without a backend.
 
 export const BULK_OPS = ['add1', 'ensure1', 'remove1'];
 
@@ -60,9 +66,15 @@ export function planBulk(op, targets, qtyOf) {
 }
 
 /**
- * Turn a committed plan into an undo record. Kept separate from `planBulk` because it must be
- * built from what was actually COMMITTED, not from what was intended - if the transaction
- * wrote a subset, undoing the intent would corrupt rows the write never reached.
+ * Turn a COMMITTED, CONFIRMED plan into an undo record.
+ *
+ * Only ever call this once the whole transaction has committed and been authoritatively
+ * confirmed. If the transaction failed there is nothing to undo; if confirmation failed the
+ * caller must report "unconfirmed" and withhold Undo entirely, because offering to reverse a
+ * write we cannot prove happened is worse than offering nothing.
+ *
+ * `expect` is what the write left in the row. It is the guard the restore is conditional on,
+ * not merely a record of intent.
  */
 export function planUndo(committedChanges) {
   return {
@@ -73,32 +85,36 @@ export function planUndo(committedChanges) {
 }
 
 /**
- * Split an undo record against the database's current state.
+ * Classify an undo AFTER its conditional transaction has run, from an authoritative read-back.
  *
- * A row is safe to restore only while it still holds the value the bulk write left there. If
- * anything changed it since - a quick-add tap, another bulk op, an import - restoring would
- * silently discard that edit, so the row becomes a conflict and is reported instead.
+ * The conflict check cannot live before the write. Classifying rows from a pre-read and then
+ * writing them is read-then-write: another edit can land in between, and the undo would
+ * discard exactly the edit the check exists to protect. So the guard belongs in the statement
+ * (restore only WHERE the quantity still equals `expect`), and this function reports what
+ * actually happened by comparing the read-back against the intended value.
  *
- * @returns { safe: [{cardId,set,to}], conflicts: [{cardId,set,expect,found,to}] }
+ * @param undoRecord  from planUndo
+ * @param qtyAfterOf  (cardId, set) => quantity read back AFTER the restore transaction
+ * @returns { applied: [{cardId,set,to}], conflicts: [{cardId,set,expect,found,to}] }
  */
-export function resolveUndo(undoRecord, qtyOf) {
-  const safe = [];
+export function classifyUndoOutcome(undoRecord, qtyAfterOf) {
+  const applied = [];
   const conflicts = [];
   for (const r of (undoRecord?.restores) || []) {
-    const found = Number(qtyOf(r.cardId, r.set)) || 0;
-    if (found === r.expect) safe.push({ cardId: r.cardId, set: r.set, to: r.to });
+    const found = Number(qtyAfterOf(r.cardId, r.set)) || 0;
+    // The guarded statement either restored the row (it now holds `to`) or declined to touch
+    // it. A row that reads back as `to` is restored regardless of how it got there.
+    if (found === r.to) applied.push({ cardId: r.cardId, set: r.set, to: r.to });
     else conflicts.push({ cardId: r.cardId, set: r.set, expect: r.expect, found, to: r.to });
   }
-  return { safe, conflicts };
+  return { applied, conflicts };
 }
 
-/** Human-facing summary of what a plan will do. Copy lives with the logic so the count in the
- *  toast and the count in the transaction cannot diverge. */
-export function describePlan(plan) {
-  const n = plan.changes.length;
-  if (!n) return 'Nothing to change';
-  const noun = n === 1 ? 'card' : 'cards';
-  if (plan.op === 'add1') return `Added 1 to ${n} ${noun}`;
-  if (plan.op === 'ensure1') return `Marked ${n} ${noun} as owned`;
-  return `Removed 1 from ${n} ${noun}`;
+/**
+ * Structured counts for a plan. Deliberately NOT prose: past-tense copy ("Added 1 to 42
+ * cards") must be formed from a confirmed repository result, never from a plan, or a caller
+ * can announce durable work that has not happened yet.
+ */
+export function summarizePlan(plan) {
+  return { op: plan.op, changed: plan.changes.length, unchanged: plan.unchanged };
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { planBulk, planUndo, resolveUndo, describePlan } from './bulkPlan.js';
+import { planBulk, planUndo, classifyUndoOutcome, summarizePlan } from './bulkPlan.js';
 
 // qtyOf stub: a map keyed the same way the real ledger is keyed (card + printing).
 const ledger = (obj) => (cardId, set) => obj[`${cardId}|${set}`] || 0;
@@ -55,47 +55,63 @@ test("the Unspecified printing ('') is a real row, not a missing value", () => {
   assert.deepEqual(plan.changes, [{ cardId: 'a', set: '', before: 2, after: 3 }]);
 });
 
-test('undo restores rows that are untouched since the write', () => {
+test('an undo record carries the guard value the restore is conditional on', () => {
   const plan = planBulk('add1', [{ cardId: 'a', set: '001' }], ledger({ 'a|001': 2 }));
   const undo = planUndo(plan.changes);
-  const { safe, conflicts } = resolveUndo(undo, ledger({ 'a|001': 3 }));   // still 3, as committed
-  assert.deepEqual(safe, [{ cardId: 'a', set: '001', to: 2 }]);
+  assert.deepEqual(undo.restores, [{ cardId: 'a', set: '001', expect: 3, to: 2 }]);
+});
+
+test('undo reports applied from the read-back AFTER its transaction', () => {
+  const plan = planBulk('add1', [{ cardId: 'a', set: '001' }], ledger({ 'a|001': 2 }));
+  const undo = planUndo(plan.changes);
+  // The guarded statement matched, so the row now reads back at its original value.
+  const { applied, conflicts } = classifyUndoOutcome(undo, ledger({ 'a|001': 2 }));
+  assert.deepEqual(applied, [{ cardId: 'a', set: '001', to: 2 }]);
   assert.equal(conflicts.length, 0);
 });
 
-test('undo REFUSES a row edited since the write, and reports it', () => {
-  // The whole reason undo is not an inverse delta. An inverse would blindly subtract 1 and
-  // silently destroy the user's intervening edit.
+test('undo reports a conflict when the guard declined to touch an edited row', () => {
+  // The lost-update this design exists to prevent. The row was edited after the bulk write,
+  // so the conditional restore matched nothing and the read-back still shows the user's
+  // value. An inverse delta would have blindly subtracted 1 and destroyed it.
   const plan = planBulk('add1', [{ cardId: 'a', set: '001' }], ledger({ 'a|001': 2 }));
   const undo = planUndo(plan.changes);
-  const { safe, conflicts } = resolveUndo(undo, ledger({ 'a|001': 7 }));   // user edited it
-  assert.equal(safe.length, 0);
+  const { applied, conflicts } = classifyUndoOutcome(undo, ledger({ 'a|001': 7 }));
+  assert.equal(applied.length, 0, "the user's edit survived");
   assert.deepEqual(conflicts, [{ cardId: 'a', set: '001', expect: 3, found: 7, to: 2 }]);
 });
 
-test('undo of ensure1 restores only the rows it actually raised', () => {
+test('classification is post-hoc, so it cannot bless a row it is about to lose', () => {
+  // Guarding before the write would classify from a value that can go stale in the gap.
+  // Here the pre-write value matched `expect` and the post-write read-back does not, and the
+  // row is still correctly reported as a conflict rather than as applied.
+  const undo = { restores: [{ cardId: 'a', set: '001', expect: 3, to: 2 }] };
+  const { applied, conflicts } = classifyUndoOutcome(undo, ledger({ 'a|001': 3 }));
+  assert.equal(applied.length, 0);
+  assert.equal(conflicts[0].found, 3, 'the row never moved to `to`, so it was not restored');
+});
+
+test('undo of ensure1 covers only the rows it actually raised', () => {
   const q = ledger({ 'a|001': 0, 'b|001': 3 });
   const plan = planBulk('ensure1', [{ cardId: 'a', set: '001' }, { cardId: 'b', set: '001' }], q);
   const undo = planUndo(plan.changes);
   assert.equal(undo.restores.length, 1, 'b was never changed, so undo must not touch it');
-  const { safe } = resolveUndo(undo, ledger({ 'a|001': 1, 'b|001': 3 }));
-  assert.deepEqual(safe, [{ cardId: 'a', set: '001', to: 0 }]);
+  const { applied } = classifyUndoOutcome(undo, ledger({ 'a|001': 0, 'b|001': 3 }));
+  assert.deepEqual(applied, [{ cardId: 'a', set: '001', to: 0 }]);
 });
 
-test('undo is built from what committed, not from what was intended', () => {
-  const plan = planBulk('add1', [
-    { cardId: 'a', set: '001' }, { cardId: 'b', set: '001' },
-  ], ledger({ 'a|001': 0, 'b|001': 0 }));
-  const committed = plan.changes.slice(0, 1);        // only the first row reached the db
-  const undo = planUndo(committed);
-  assert.equal(undo.restores.length, 1);
-  assert.equal(undo.restores[0].cardId, 'a');
+test('an empty undo record classifies cleanly', () => {
+  const { applied, conflicts } = classifyUndoOutcome(planUndo([]), ledger({}));
+  assert.deepEqual(applied, []);
+  assert.deepEqual(conflicts, []);
 });
 
-test('describePlan counts changed rows, not selected rows', () => {
+test('summarizePlan returns counts, not prose', () => {
+  // Past-tense copy must be formed from a confirmed repository result. If this module
+  // returned "Added 1 to 42 cards", a caller could announce durable work that never landed.
   const q = ledger({ 'a|001': 0, 'b|001': 3 });
   const plan = planBulk('ensure1', [{ cardId: 'a', set: '001' }, { cardId: 'b', set: '001' }], q);
-  assert.equal(describePlan(plan), 'Marked 1 card as owned');
+  assert.deepEqual(summarizePlan(plan), { op: 'ensure1', changed: 1, unchanged: 1 });
 });
 
 test('an unknown operation is rejected rather than guessed', () => {
