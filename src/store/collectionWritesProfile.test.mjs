@@ -141,6 +141,41 @@ test('both list-entry surfaces share one (list,card) chain: concurrent +1s do no
   assert.equal(await listQty('LA', 'c'), 2, 'both +1s committed via serialized re-read; none lost');
 });
 
+test('a HUNG A-bound write does not trap the user in profile A, and still commits under A', async () => {
+  // The tolerant barrier's integration case. Three things must hold together, and it is the
+  // combination that justifies withProfileSwitchWriteBarrier existing at all:
+  //   1. the switch to B completes after the bounded wait rather than hanging on the write;
+  //   2. a write queued while the barrier was held runs under B once admission reopens;
+  //   3. when the hung A-bound write finally resumes it STILL commits under A, because the
+  //      write carries its own profileId and never consults the active id.
+  // If (3) failed, proceeding past the drain would be silent cross-profile corruption and
+  // the tolerant path would be indefensible.
+  __setActiveIdForTests('A');
+  __resetCollectionWritesForTests();
+  const hung = defer();
+  let hungCommitted = false;
+  const slow = enqueueWrite(ownedRowKey('A', 'cardH', '', false), async () => {
+    await hung.p;
+    await stepWanted('cardH', 1, 'A');       // explicitly A-bound, scheduled while A was active
+    hungCommitted = true;
+  });
+
+  await switchProfile('B', { timeoutMs: 20 });
+  assert.equal(activeProfileId(), 'B', 'the switch completed despite the hung write');
+  assert.equal(hungCommitted, false, 'and it completed WITHOUT waiting for that write');
+
+  // A write queued after the flip belongs to B and must run once the barrier released.
+  await enqueueWrite(ownedRowKey('B', 'cardH', '', false), async () => { await stepWanted('cardH', 1, 'B'); });
+  assert.equal(await wantedOf('B', 'cardH'), 1, 'the B-bound write ran under B');
+
+  hung.resolve();
+  await slow;
+  assert.equal(hungCommitted, true);
+  assert.equal(await wantedOf('A', 'cardH'), 1, 'the hung write still committed under A');
+  assert.equal(await wantedOf('B', 'cardH'), 1, 'and did not leak into B');
+  __setActiveIdForTests('A');
+});
+
 test('switchProfile drains the queue before flipping the active profile (barrier preserves the edit)', async () => {
   __setActiveIdForTests('A');
   const d = defer();

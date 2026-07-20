@@ -115,23 +115,14 @@ function drainAdmitted(timeoutMs) {
  * transaction, and the bulk write then overwrites it - an atomic transaction that still
  * silently loses a concurrent edit.
  *
- * FAILS CLOSED BY DEFAULT. If admitted work does not drain within `timeoutMs` the barrier
- * was never achieved, so `fn` does NOT run and the caller is rejected. Proceeding on a
- * timeout would mean running an "exclusive" read-and-write alongside an active writer,
- * which is the exact corruption the barrier exists to prevent - a hung storage operation
- * must cost the user a failed bulk command, never a silently lost edit.
- *
- * `failClosed: false` is for the one holder whose correctness does NOT depend on the drain.
- * A profile switch is safe alongside an in-flight write because queued writes carry an
- * explicit profileId and mutate the profile they were scheduled under regardless of the
- * active id; its drain exists to keep an edit visible, not to keep it correct. Blocking a
- * profile switch on a hung storage operation would be a regression for no safety gain. Any
- * holder that reads-then-writes must leave this at the default.
- *
  * Holders are serialized against one another, so a profile switch and a bulk command cannot
  * interleave. `fn`'s rejection propagates to the caller but never wedges the queue.
+ *
+ * Timeout tolerance is NOT a parameter. There are exactly two semantics and they are two
+ * exported functions, so the tolerant path cannot be reached by passing an option - a caller
+ * has to name it. See withProfileSwitchWriteBarrier for the single legitimate use.
  */
-export function withExclusiveCollectionWrites(fn, { timeoutMs = 4000, failClosed = true } = {}) {
+function runExclusive(fn, timeoutMs, failClosed) {
   const run = exclusiveTail.then(async () => {
     admissionClosed = true;
     try {
@@ -144,6 +135,37 @@ export function withExclusiveCollectionWrites(fn, { timeoutMs = 4000, failClosed
   });
   exclusiveTail = run.then(() => {}, () => {});
   return run;
+}
+
+/**
+ * The barrier for anything that READS THEN WRITES the Collection ledger - every bulk
+ * command, and anything added later with the same shape.
+ *
+ * FAILS CLOSED. If admitted work does not drain within `timeoutMs` the barrier was never
+ * achieved, so `fn` does NOT run and the caller is rejected. Proceeding on a timeout would
+ * mean running an "exclusive" read-and-write alongside an active writer, which is the exact
+ * corruption the barrier exists to prevent - a hung storage operation must cost the user a
+ * failed command, never a silently lost edit.
+ */
+export function withExclusiveCollectionWrites(fn, { timeoutMs = 4000 } = {}) {
+  return runExclusive(fn, timeoutMs, true);
+}
+
+/**
+ * The barrier for a profile switch, and ONLY for a profile switch. This is the sole tolerant
+ * holder: if the drain times out it proceeds anyway.
+ *
+ * That is safe here and nowhere else. A switch does not read-then-write the ledger, and
+ * queued writes carry an explicit profileId, so a hung write still commits under the profile
+ * it was scheduled for whatever the active id becomes - the drain preserves an edit's
+ * visibility, not its correctness. Failing closed would let a hung storage operation trap the
+ * user in a profile for no safety gain.
+ *
+ * If you are reaching for this because a command is timing out, you want the other function
+ * and a real fix.
+ */
+export function withProfileSwitchWriteBarrier(fn, { timeoutMs = 4000 } = {}) {
+  return runExclusive(fn, timeoutMs, false);
 }
 
 /**

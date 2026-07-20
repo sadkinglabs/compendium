@@ -6,7 +6,7 @@ import { Preferences } from '@capacitor/preferences';
 import { query, run, persist } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
-import { withExclusiveCollectionWrites } from './collectionWrites.js';
+import { withProfileSwitchWriteBarrier } from './collectionWrites.js';
 
 const ACTIVE_KEY = 'activeProfileId';
 
@@ -80,27 +80,26 @@ export async function renameProfile(id, name) {
 }
 
 /** Atomic switch: set the active id, persist, return the loaded profile. */
-export async function switchProfile(id) {
+export async function switchProfile(id, { timeoutMs } = {}) {
   const exists = await query('SELECT id FROM profiles WHERE id=?;', [id]);
   if (!exists.length) throw new Error('Unknown profile: ' + id);
-  // Write barrier: let any pending Collection writes finish UNDER the current profile
-  // before the active id changes, so an in-flight edit is preserved (not dropped) and
-  // cannot be redirected. Bounded, so a hung write can't freeze the switch.
+  // Write barrier: let pending Collection writes finish UNDER the current profile before the
+  // active id changes, so an in-flight edit stays visible where the user made it.
   //
-  // EXCLUSIVE, not merely drained. Draining says "nothing is in flight right now" and
-  // grants nothing about the next instant, so a write (or a bulk command) could enter
-  // between the drain and the flip and land under the wrong profile. Taking the same
-  // barrier a bulk command takes also means the two serialize against each other instead
-  // of interleaving. The flip must stay inside the barrier for that to hold.
-  // failClosed:false is deliberate and is the ONLY holder entitled to it. A switch does not
+  // EXCLUSIVE, not merely drained. Draining says "nothing is in flight right now" and grants
+  // nothing about the next instant, so a bulk command could enter between the drain and the
+  // flip. Sharing the barrier means the two serialize instead of interleaving, and the flip
+  // must stay INSIDE it for that to hold.
+  //
+  // This is the ONLY call site entitled to the tolerant barrier. A switch does not
   // read-then-write the ledger, and queued writes carry an explicit profileId so they commit
-  // under the profile they were scheduled for whatever the active id becomes. The drain is
-  // here to keep an in-flight edit visible, not correct - so a hung storage operation must
-  // not be able to trap the user in a profile.
-  await withExclusiveCollectionWrites(async () => {
+  // under the profile they were scheduled for whatever the active id becomes - the drain
+  // preserves an edit's visibility, not its correctness. So a hung storage operation must not
+  // be able to trap the user in a profile.
+  await withProfileSwitchWriteBarrier(async () => {
     activeId = id;
     await Preferences.set({ key: ACTIVE_KEY, value: id });
-  }, { failClosed: false });
+  }, timeoutMs === undefined ? undefined : { timeoutMs });
   return getActiveProfile();
 }
 

@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  enqueueWrite, settleCollectionWrites, withExclusiveCollectionWrites,
+  enqueueWrite, settleCollectionWrites, withExclusiveCollectionWrites, withProfileSwitchWriteBarrier,
   __resetCollectionWritesForTests,
 } from './collectionWrites.js';
 
@@ -141,17 +141,17 @@ test('a timed-out PRE-EXISTING write prevents the holder from running at all', a
   never.resolve();
 });
 
-test('failClosed:false proceeds on a timeout - reserved for the profile switch', async () => {
+test('withProfileSwitchWriteBarrier proceeds on a timeout - the sole tolerant path', async () => {
   // A profile switch does not read-then-write the ledger, and queued writes carry an
   // explicit profileId, so they commit under the profile they were scheduled for whatever
   // the active id becomes. Its drain preserves visibility, not correctness, so a hung write
-  // must not be able to trap the user in a profile. Any holder that reads-then-writes must
-  // leave failClosed at its default.
+  // must not be able to trap the user in a profile. Tolerance is a separate exported
+  // function rather than an option precisely so a read-then-write holder cannot opt into it.
   __resetCollectionWritesForTests();
   const never = defer();
   enqueueWrite('row', async () => { await never.p; });
   let ran = false;
-  await withExclusiveCollectionWrites(async () => { ran = true; }, { timeoutMs: 20, failClosed: false });
+  await withProfileSwitchWriteBarrier(async () => { ran = true; }, { timeoutMs: 20 });
   assert.equal(ran, true, 'the switch completed despite the hung write');
   never.resolve();
 });

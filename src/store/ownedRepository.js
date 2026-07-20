@@ -22,6 +22,10 @@ const _subs = new Set();
 export function collectionRev() { return _rev; }
 export function subscribeCollection(cb) { _subs.add(cb); return () => _subs.delete(cb); }
 function bump() { _rev++; for (const cb of [..._subs]) { try { cb(_rev); } catch { /* ignore */ } } }
+/** Announce that ownership changed outside this module's own writes - currently the bulk
+ *  command, which owns its transaction and fires exactly ONE broadcast after confirmation
+ *  rather than one per row. Callers must not use this to pre-announce intended work. */
+export function notifyOwnedChanged() { bump(); }
 
 /* ---------------- ownership reads ---------------- */
 
