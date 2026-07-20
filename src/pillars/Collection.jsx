@@ -44,7 +44,6 @@ import { toast } from '../feedback.js';
 
 // FAB menu-item glyphs (unsized - the fab-menu CSS sizes them), matching the
 // Decks library FAB's icon language.
-const CameraSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.2" /></svg>;
 const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
 const EditSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>;
 const CopySvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
@@ -110,7 +109,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
             <SetsHome onOpenSet={openSet} rev={rev} />
             {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
                 in", everywhere in this pillar. */}
-            <Fab variant="lib" label="Scan cards" icon={CameraSvg}
+            <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
               onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
           </>
         )
@@ -391,7 +390,7 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
 
       {/* Scan. One tap, no menu - the camera glyph teaches that cards get in by pointing the
           phone at them. Typed import moved to the header overflow above. */}
-      <Fab variant="lib" label="Scan cards" icon={CameraSvg}
+      <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
         onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
@@ -423,6 +422,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // stepper. Card view only - completion is a visual loop, so the empty sleeves ARE the
   // information. Ownership narrowing lives solely in the filter sheet (see ownScope): an
   // always-on inline lens both duplicated it and made a card you just added vanish.
+
+  const [exportOpen, setExportOpen] = useState(false);
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -626,6 +627,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
+          <OverflowMenu label="Set actions" items={[
+            { label: 'Export missing as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
+          ]} />
         </div>
       </div>
 
@@ -679,8 +683,14 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       {/* Scan, one tap. Typed import is NOT here on purpose: a paste spanning many sets must
           stay one paste, so it lives on Collection > Overview rather than inside a set where
           it would imply the set scopes it. */}
-      <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={CameraSvg}
+      <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={<FabGlyph kind="camera" />}
         onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      {/* A buy list for this set. Follows what is LISTED, so an active filter narrows it -
+          the filter badge is visible right there, and "the Fire cards I still need" is a real
+          request. Missing means no NON-FOIL copy, the same definition as the header tally. */}
+      <ExportListSheet open={exportOpen} listName={`${drillName} - missing`}
+        fetchText={async () => drillRows.filter((r) => !(r.owned > 0)).map((r) => `1 ${r.card.name}`).join('\n')}
+        onClose={() => setExportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
