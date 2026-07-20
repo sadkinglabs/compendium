@@ -921,14 +921,15 @@ function WishlistCard({ summary, onClick }) {
     <div onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 22, padding: '16px 20px', borderRadius: 19, border: '1px solid rgba(227,197,137,.42)', background: 'linear-gradient(180deg, rgba(203,167,95,.07), rgba(203,167,95,.02))' }}>
-      {/* Pinned grammar: a single ruby star. No fan and no bar - the Wishlist is the one
-          list that is a STATE ("wanted"), not a goal or a grouping. */}
+      {/* Pinned grammar: a single ruby heart. No fan and no bar - the Wishlist is the one
+          list that is a STATE ("wanted"), not a goal or a grouping. (A star would collide
+          with the Promotional set sigil.) */}
       <span aria-hidden="true" style={{
         width: 54, height: 54, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         border: '1px solid rgba(var(--ruby-rgb),.4)', background: 'rgba(var(--ruby-rgb),.08)',
       }}>
-        <svg viewBox="0 0 24 24" width="24" height="24" fill="var(--accent-ruby)" stroke="var(--accent-ruby)" strokeWidth="1.4" strokeLinejoin="round">
-          <path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2-5.6-3.2-5.6 3.2 1.3-6.2L3 9.5l6.3-.7z" />
+        <svg viewBox="0 0 24 24" width="23" height="23" fill="var(--accent-ruby)" stroke="var(--accent-ruby)" strokeWidth="1.4" strokeLinejoin="round">
+          <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
         </svg>
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
