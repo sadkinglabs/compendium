@@ -180,16 +180,23 @@ function SiteArt({ c }) {
 // the card onto its own full-screen stage (CardArtViewer).
 export function SheetArt({ c }) {
   const site = !!c.is_site;
-  const [zoom, setZoom] = useState(false);
+  const [zoom, setZoom] = useState(null);   // the frame we popped FROM, so we can return to it
+  const frameRef = useRef(null);
+  const raise = () => {
+    const r = frameRef.current?.getBoundingClientRect();
+    setZoom(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : {});
+  };
   return (
     <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
       <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
-      <button type="button" onClick={() => setZoom(true)} aria-label={`View ${c.name || 'card'} artwork`}
+      <button ref={frameRef} type="button" onClick={raise} aria-label={`View ${c.name || 'card'} artwork`}
         style={{ position: 'relative', zIndex: 1, display: 'block', width: '100%', padding: 1, border: 'none', cursor: 'pointer',
-          borderRadius: 12, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))' }}>
+          borderRadius: 12, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))',
+          // The card visually LEAVES this frame, so hide it while the stage owns it.
+          visibility: zoom ? 'hidden' : 'visible' }}>
         {site ? <SiteArt c={c} /> : <CardArt card={c} radius={11} aspect="5/7" />}
       </button>
-      {zoom && <CardArtViewer card={c} onClose={() => setZoom(false)} />}
+      {zoom && <CardArtViewer card={c} origin={zoom.w ? zoom : null} onClose={() => setZoom(null)} />}
     </div>
   );
 }

@@ -481,6 +481,17 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 
 @keyframes cxfade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Gold glimmer for display text - a highlight sweeping across the letterforms, matching the
+   generated set logos. body.reduce-motion stops the sweep; the gradient stays gold. */
+@keyframes cxGlimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.cx-glimmer {
+  background: linear-gradient(100deg, #b08d4e 0%, #e3c589 34%, #fff6dc 50%, #e3c589 66%, #b08d4e 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  animation: cxGlimmer 3.4s linear infinite;
+}
 /* Collection cards "deal" into place on mount - a staggered fade + settle, so entering
    +Add (or a new search) places the cards instead of snapping. Only fresh mounts run it;
    a re-render (stepping a count) does not replay. --i is the per-tile stagger index. */
