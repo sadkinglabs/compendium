@@ -696,12 +696,13 @@ const SHEET_INPUT = {
   color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)",
 };
 
-function Section({ title, hint, onAdd, children }) {
+// Section header for the lists index. Creation lives on the FAB now, not here: one
+// obvious "+" beats a button per section, and it matches every other pillar.
+function Section({ title, hint, children }) {
   return (
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 5px' }}>
         <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: 'var(--accent-ruby)', textTransform: 'uppercase' }}>{title}</span>
-        <button onClick={onAdd} style={{ background: 'none', border: 'none', color: 'var(--gold-num)', font: "600 16px/1 var(--f-display)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
       </div>
       {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 14 }}>{hint}</div>}
       {children}
@@ -1053,12 +1054,16 @@ function ListsIndex({ onOpenList, rev }) {
   return (
     <div style={{ padding: '2px 20px' }}>
       <WishlistCard summary={wl} onClick={() => onOpenList(wishlistRef())} />
-      <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
+      <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards.">
         {wanted.length ? wanted.map(card) : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
-      <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell." onAdd={() => setCreate('custom')}>
+      <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell.">
         {custom.length ? custom.map(card) : <Empty text="No card lists yet." />}
       </Section>
+      <Fab variant="lib" label="New list" icon={<FabGlyph kind="add" />} items={[
+        { label: 'New wanted list', onClick: () => setCreate('wanted') },
+        { label: 'New card list', onClick: () => setCreate('custom') },
+      ]} />
       <ListNameSheet open={!!create} kind={create}
         title={create === 'wanted' ? 'NEW WANTED LIST' : 'NEW CARD LIST'} submitLabel="Create list"
         onClose={() => setCreate(null)}
