@@ -10,6 +10,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
+import CardArtViewer from './CardArtViewer.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
 import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey } from '../store/ownedRepository.js';
@@ -175,15 +176,20 @@ function SiteArt({ c }) {
   );
 }
 
-// The glowing card frame - portrait for cards, flipped landscape for Sites.
+// The glowing card frame - portrait for cards, flipped landscape for Sites. Tapping it raises
+// the card onto its own full-screen stage (CardArtViewer).
 export function SheetArt({ c }) {
   const site = !!c.is_site;
+  const [zoom, setZoom] = useState(false);
   return (
     <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
       <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
-      <div style={{ position: 'relative', zIndex: 1, borderRadius: 12, padding: 1, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))' }}>
+      <button type="button" onClick={() => setZoom(true)} aria-label={`View ${c.name || 'card'} artwork`}
+        style={{ position: 'relative', zIndex: 1, display: 'block', width: '100%', padding: 1, border: 'none', cursor: 'pointer',
+          borderRadius: 12, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))' }}>
         {site ? <SiteArt c={c} /> : <CardArt card={c} radius={11} aspect="5/7" />}
-      </div>
+      </button>
+      {zoom && <CardArtViewer card={c} onClose={() => setZoom(false)} />}
     </div>
   );
 }
