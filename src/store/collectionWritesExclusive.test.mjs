@@ -14,16 +14,26 @@ import {
 } from './collectionWrites.js';
 
 function defer() { let resolve, reject; const p = new Promise((res, rej) => { resolve = res; reject = rej; }); return { p, resolve, reject }; }
-const tick = () => new Promise((r) => setTimeout(r, 0));
+
+// A POSITIVE phase ("the holder is inside fn", "the write started") is proven by a milestone
+// promise the code itself resolves - never inferred from elapsed turns.
+//
+// A NEGATIVE ("this write has NOT run") cannot be proven that way; absence of an event has no
+// event. settleTurns bounds it instead: after a proven milestone, drain several macrotask
+// turns so anything runnable would have run, then assert it did not. That is the honest shape
+// for a negative, and it is anchored to a milestone rather than replacing one.
+const settleTurns = async (n = 5) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 0)); };
 
 test('a write queued BEFORE the barrier drains first', async () => {
   __resetCollectionWritesForTests();
   const log = [];
   const d = defer();
-  const w = enqueueWrite('row', async () => { log.push('write-start'); await d.p; log.push('write-end'); });
+  const writeStarted = defer();
+  const w = enqueueWrite('row', async () => { log.push('write-start'); writeStarted.resolve(); await d.p; log.push('write-end'); });
 
   const bulk = withExclusiveCollectionWrites(async () => { log.push('bulk'); });
-  await tick();
+  await writeStarted.p;                       // proven, not guessed
+  await settleTurns();
   assert.deepEqual(log, ['write-start'], 'bulk waits for the in-flight write');
 
   d.resolve();
@@ -37,16 +47,18 @@ test('a write queued WHILE bulk holds the barrier waits behind it', async () => 
   __resetCollectionWritesForTests();
   const log = [];
   const gate = defer();
+  const holderEntered = defer();
   const bulk = withExclusiveCollectionWrites(async () => {
     log.push('bulk-start');
+    holderEntered.resolve();
     await gate.p;
     log.push('bulk-end');
   });
-  await tick();
+  await holderEntered.p;                      // proven: the holder owns the barrier
   assert.deepEqual(log, ['bulk-start']);
 
   const w = enqueueWrite('row', async () => { log.push('write'); });
-  await tick();
+  await settleTurns();
   assert.deepEqual(log, ['bulk-start'], 'the write is gated, not running');
 
   gate.resolve();
@@ -62,13 +74,14 @@ test('a write queued DURING the drain waits for bulk, it does not join the drain
   __resetCollectionWritesForTests();
   const log = [];
   const d = defer();
-  enqueueWrite('row', async () => { log.push('early-start'); await d.p; log.push('early-end'); });
+  const earlyStarted = defer();
+  enqueueWrite('row', async () => { log.push('early-start'); earlyStarted.resolve(); await d.p; log.push('early-end'); });
 
   const bulk = withExclusiveCollectionWrites(async () => { log.push('bulk'); });
-  await tick();
+  await earlyStarted.p;                       // proven: the drain has real work to wait on
 
   const late = enqueueWrite('row', async () => { log.push('late'); });
-  await tick();
+  await settleTurns();
 
   d.resolve();
   await Promise.all([bulk, late]);
@@ -89,10 +102,11 @@ test('exclusive holders serialize against each other', async () => {
   __resetCollectionWritesForTests();
   const log = [];
   const g1 = defer();
-  const a = withExclusiveCollectionWrites(async () => { log.push('a-start'); await g1.p; log.push('a-end'); });
-  await tick();
+  const aEntered = defer();
+  const a = withExclusiveCollectionWrites(async () => { log.push('a-start'); aEntered.resolve(); await g1.p; log.push('a-end'); });
+  await aEntered.p;
   const b = withExclusiveCollectionWrites(async () => { log.push('b'); });
-  await tick();
+  await settleTurns();
   assert.deepEqual(log, ['a-start'], 'b waits for a');
   g1.resolve();
   await Promise.all([a, b]);
@@ -113,8 +127,9 @@ test('a rejecting gated write does not wedge writes behind it', async () => {
   __resetCollectionWritesForTests();
   const log = [];
   const gate = defer();
-  const bulk = withExclusiveCollectionWrites(async () => { await gate.p; });
-  await tick();
+  const entered = defer();
+  const bulk = withExclusiveCollectionWrites(async () => { entered.resolve(); await gate.p; });
+  await entered.p;
   const bad = enqueueWrite('row', async () => { throw new Error('nope'); });
   const good = enqueueWrite('row', async () => { log.push('good'); });
   gate.resolve();
@@ -167,7 +182,7 @@ test('a mid-drain arrival does not add the drain timeout to the holder', async (
 
   const t0 = Date.now();
   const bulk = withExclusiveCollectionWrites(async () => {}, { timeoutMs: 4000 });
-  await tick();
+  await settleTurns(2);                    // let the holder claim admission and begin draining
   enqueueWrite('row', async () => {});     // arrives mid-drain, must not extend the drain
   d.resolve();
   await bulk;
@@ -182,10 +197,11 @@ test('a parked write does not keep the NEXT holder from seeing an empty drain', 
   __resetCollectionWritesForTests();
   const order = [];
   const gate = defer();
-  const first = withExclusiveCollectionWrites(async () => { order.push('h1'); await gate.p; });
-  await tick();
+  const firstEntered = defer();
+  const first = withExclusiveCollectionWrites(async () => { order.push('h1'); firstEntered.resolve(); await gate.p; });
+  await firstEntered.p;
   const w = enqueueWrite('row', async () => { order.push('write'); });
-  await tick();
+  await settleTurns();
   gate.resolve();
   await first;
   const second = withExclusiveCollectionWrites(async () => { order.push('h2'); });
@@ -202,14 +218,16 @@ test('a write cannot land between a holder acquiring the barrier and releasing i
   const order = [];
   const gate = defer();
   let insideBarrier = false;
+  const entered = defer();
   const holder = withExclusiveCollectionWrites(async () => {
     insideBarrier = true;
+    entered.resolve();
     await gate.p;
     insideBarrier = false;
   });
-  await tick();
+  await entered.p;
   const w = enqueueWrite('row', async () => { order.push(insideBarrier ? 'INSIDE' : 'outside'); });
-  await tick();
+  await settleTurns();
   gate.resolve();
   await Promise.all([holder, w]);
   assert.deepEqual(order, ['outside'], 'the write never ran while the holder owned the barrier');
@@ -220,12 +238,13 @@ test('settleCollectionWrites still resolves for a queue gated behind the barrier
   // idleness while work is parked behind the barrier.
   __resetCollectionWritesForTests();
   const gate = defer();
-  const bulk = withExclusiveCollectionWrites(async () => { await gate.p; });
-  await tick();
+  const entered = defer();
+  const bulk = withExclusiveCollectionWrites(async () => { entered.resolve(); await gate.p; });
+  await entered.p;
   const w = enqueueWrite('row', async () => {});
   let settled = false;
   const s = settleCollectionWrites().then(() => { settled = true; });
-  await tick();
+  await settleTurns();
   assert.equal(settled, false, 'work is still outstanding behind the barrier');
   gate.resolve();
   await Promise.all([bulk, w, s]);
