@@ -21,6 +21,7 @@ npm run test:query   # src/store/**       - card query grammar, collection compa
 npm run test:ui      # src/pillars/**     - pure UI state (e.g. avatar picker selection)
 npm run test:app     # src/*.test.mjs     - App-shell logic (hardware-back precedence, back registry)
 npm run check:types  # tsc --noEmit       - fail-closed type gate over the match-view typed boundaries
+npm run check:cycles # src/**             - fail-closed circular-import gate
 ```
 
 The four `test:*` scripts are `node --test` over co-located `*.test.mjs` files; `check:types` runs its own wrapper tests then the compiler check (fail-closed, gates only on the owned files). There is no browser
@@ -30,6 +31,32 @@ DOM — `src/pillars/avatarPickerState.js` is the pattern.
 
 Run the suites whose surface a change touches, plus `npm run build`. Interactive
 behaviour still needs to be exercised by hand; see **Verify on a device** below.
+
+### Why `check:cycles` exists
+
+A circular import between `GothicSheet.jsx` and `ui.jsx` sat latent in this repo
+until an unrelated Collection import shifted Vite's chunking. The **minified**
+release build then initialised the pair in an order that left a binding in its
+temporal dead zone, and the app rendered nothing on launch with `Cannot access
+'X' before initialization`. The unminified build was fine.
+
+Every gate was green at the time - all four `test:*` suites, `check:types`,
+`check:docs` **and** `npm run build`. Only installing the signed release APK on a
+device surfaced it.
+
+The gate therefore fails on **any** cycle rather than judging which are currently
+harmless: a cycle is a live grenade whose pin gets pulled by an unrelated import
+somewhere else. Dynamic `import()` is deliberately not an edge, since it defers
+evaluation and is how lazy routes legitimately point back at shared code.
+
+To fix a reported cycle, move the shared piece into a leaf module that imports
+nothing from either side - `src/components/useFocusTrap.js` and
+`src/store/elements.js` are the two worked examples.
+
+**This gate does not cover the whole failure class.** It catches cycles, not
+every minified-only initialisation hazard. A release-APK smoke check is the
+remaining gap; see **Verify on a device**.
+
 
 ## Validate documentation
 

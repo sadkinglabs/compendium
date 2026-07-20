@@ -47,9 +47,14 @@ npm run test:codex
 npm run test:query
 npm run test:app
 npm run check:types
+npm run check:cycles
 npm run build
 npm run check:docs
 ```
+
+`check:cycles` fails on any circular import in `src/**`. It exists because a latent cycle
+blanked the app on launch in the **minified** release build while every other gate was green -
+green gates do not yet prove the app starts. See [`BUILD.md`](./BUILD.md).
 
 `check:docs` enforces only mechanical checks (required files present, no superseded terminology in the source-of-truth documents, five pillars named, schema version matches `src/store/schema.js`, local links resolve). It does not replace semantic review.
 
