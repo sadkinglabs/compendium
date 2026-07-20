@@ -14,7 +14,10 @@ const POOL = [
   { card_id: 'b', _sets: [{ code: '002', name: 'Beta' }] },
   { card_id: 'c', _sets: [{ code: '001', name: 'Alpha' }] },
 ];
-// Owned: 2x Alpha of a; 3x Unspecified of b; 1x Alpha foil of c.
+// Owned: 2x Alpha of a; 3x Unspecified of b; 1x Alpha FOIL of c (zero non-foil).
+// `c` is the important one: "owned" means NON-FOIL, matching set completion, so a foil-only
+// card counts as NOT owned. Those two definitions used to disagree, and the gap hid a real
+// card from a real collection - see the note in collectionGroups.js.
 const OW = new Map([['a|001', { owned: 2, foil: 0 }], ['b|', { owned: 3, foil: 0 }], ['c|001', { owned: 0, foil: 1 }]]);
 const WISH = new Set();
 const base = { pool: POOL, owBySet: OW, wishSet: WISH, setLabel: SET_LABEL, setRank };
@@ -38,7 +41,7 @@ test('Unspecified alone: only the set-less pile shows (was: empty)', () => {
 test('Unspecified + a real set: that set plus the set-less pile', () => {
   const g = run({ sets: ['Alpha', 'Unspecified'], viewMode: 'owned' });
   assert.deepEqual(codes(g).sort(), ['', '001']);
-  assert.deepEqual(idsIn(g, '001').sort(), ['a', 'c']);   // Alpha printings only (a's Beta excluded)
+  assert.deepEqual(idsIn(g, '001'), ['a']);   // Alpha printings only; c is foil-only, so not owned
   assert.deepEqual(idsIn(g, ''), ['b']);
 });
 
@@ -62,10 +65,40 @@ test('Unspecified with no lens narrowing still yields the set-less pile', () => 
 test('no set filter: real owned rows + the Unspecified pile (baseline)', () => {
   const g = run({ sets: [], viewMode: 'owned' });
   assert.deepEqual(codes(g).sort(), ['', '001']);
-  assert.deepEqual(idsIn(g, '001').sort(), ['a', 'c']);
+  assert.deepEqual(idsIn(g, '001'), ['a']);   // c is foil-only
   assert.deepEqual(idsIn(g, ''), ['b']);
 });
 
 test('regression: an EMPTY pool (the old bug) yields no groups - proves the caller must not empty it', () => {
   assert.deepEqual(groupCollection({ ...base, pool: [], sets: ['Unspecified'], viewMode: 'owned' }), []);
+});
+
+/* ---------------- owned means non-foil ---------------- */
+
+test('a FOIL-ONLY card counts as NOT owned', () => {
+  // The bug this pins: a Beta collection showed 401/402 yet "Not owned" returned zero
+  // results, so the one card missing in non-foil was unfindable. Completion counted
+  // non-foil; the filter counted foil too.
+  const g = run({ sets: [], viewMode: 'unowned' });
+  assert.ok(idsIn(g, '001').includes('c'), 'the foil-only card must be findable under Not owned');
+});
+
+test('a foil-only card is absent from the Owned lens', () => {
+  const g = run({ sets: [], viewMode: 'owned' });
+  assert.ok(!idsIn(g, '001').includes('c'));
+});
+
+test('the ownership CHIPS use the same definition as the viewMode lens', () => {
+  // Both routes go through `matches`; if they ever diverge the drill header and the filter
+  // would disagree again, which is exactly the failure mode being fixed.
+  const chips = run({ sets: [], viewMode: 'all', ownScope: ['unowned'], ownActive: true });
+  assert.ok(idsIn(chips, '001').includes('c'));
+  const ownedChips = run({ sets: [], viewMode: 'all', ownScope: ['owned'], ownActive: true });
+  assert.ok(!idsIn(ownedChips, '001').includes('c'));
+});
+
+test('a card owned in BOTH foil and non-foil is owned', () => {
+  const ow = new Map([['a|001', { owned: 1, foil: 2 }]]);
+  const g = groupCollection({ ...base, owBySet: ow, sets: [], viewMode: 'owned' });
+  assert.ok(idsIn(g, '001').includes('a'));
 });

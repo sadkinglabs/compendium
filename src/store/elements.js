@@ -14,8 +14,30 @@
 // callers are untouched.
 export const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
 
+/**
+ * Read a card's elements regardless of which shape the caller holds.
+ *
+ * `cards.elements` is stored as a JSON STRING. Deck entries arrive already parsed (an array),
+ * catalog-cache rows carry a parsed copy on `_els`, and raw pool/catalog rows still hold the
+ * string. `elemKey` previously assumed the array shape and called `.filter` on it, so grouping
+ * the set drill by element threw "elements.filter is not a function" and blanked the screen -
+ * while grouping by rarity worked, because rarity is a plain string field.
+ *
+ * Normalising here rather than at each call site means the next caller cannot reintroduce it.
+ */
+export function readElements(e) {
+  if (!e) return [];
+  if (Array.isArray(e._els)) return e._els;          // catalog cache pre-parses to this
+  const raw = e.elements;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try { const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
+  }
+  return [];
+}
+
 /** One bucket per card: 0 elements → Neutral, >1 → Multi, otherwise the element. */
 export function elemKey(e) {
-  const els = (e.elements || []).filter((x) => x && x.toLowerCase() !== 'none');
+  const els = readElements(e).filter((x) => x && String(x).toLowerCase() !== 'none');
   return els.length === 0 ? 'Neutral' : els.length > 1 ? 'Multi' : els[0];
 }

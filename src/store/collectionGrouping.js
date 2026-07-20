@@ -17,6 +17,10 @@ export const GROUP_MODES = ['none', 'element', 'rarity'];
 // without either side reshaping data purely to satisfy it - reshaping would detach the
 // grouped result from the row the grid actually needs to render.
 const identity = (x) => x;
+
+// The DB column is is_avatar; the catalog JSON uses isAvatar. Accept both so this works on a
+// pool row and on a raw catalog card without the caller normalising first.
+const isAvatarCard = (c) => Boolean(c?.is_avatar || c?.isAvatar);
 const byNameWith = (cardOf) => (a, b) =>
   String(cardOf(a).name || '').localeCompare(String(cardOf(b).name || ''), 'en', { sensitivity: 'base' });
 
@@ -41,7 +45,12 @@ export function groupCards(cards, mode = 'none', cardOf = identity) {
     return [{ key: 'all', label: '', cards: list }];
   }
   const order = mode === 'element' ? EL_ORDER : RARITY_ORDER;
-  const keyOf = mode === 'element' ? ((r) => elemKey(cardOf(r))) : ((r) => cardOf(r).rarity);
+  // Avatars genuinely have no rarity in Sorcery, so bucketing them as "Unknown" reads like a
+  // data fault when it is correct data. They get their own named section instead, after the
+  // four real rarities.
+  const keyOf = mode === 'element'
+    ? ((r) => elemKey(cardOf(r)))
+    : ((r) => { const c = cardOf(r); return c.rarity || (isAvatarCard(c) ? 'Avatar' : null); });
   const buckets = new Map();
   for (const c of list) {
     // Unknown values bucket under their own literal key so nothing silently vanishes from

@@ -48,6 +48,26 @@ test('empty sections are omitted', () => {
   assert.deepEqual(g.map((s) => s.key), ['Elite']);
 });
 
+test('avatars get their own section rather than reading as bad data', () => {
+  // Avatars genuinely carry no rarity in Sorcery - all 11 Beta avatars, for instance. Filing
+  // them under "Unknown" made correct data look like a catalog fault.
+  const g = groupCards([
+    card('Sorcerer', { rarity: null, is_avatar: 1 }),
+    card('Basilisk', { rarity: 'Elite' }),
+  ], 'rarity');
+  assert.deepEqual(g.map((s) => s.key), ['Elite', 'Avatar'], 'avatars sort after the real rarities');
+});
+
+test('the catalog JSON spelling of the avatar flag is accepted too', () => {
+  const g = groupCards([card('Seer', { rarity: null, isAvatar: true })], 'rarity');
+  assert.deepEqual(g.map((s) => s.key), ['Avatar']);
+});
+
+test('a non-avatar with no rarity is still Unknown, not silently an Avatar', () => {
+  const g = groupCards([card('Mystery', { rarity: null })], 'rarity');
+  assert.deepEqual(g.map((s) => s.key), ['Unknown']);
+});
+
 test('an unknown value still renders, after the known sections', () => {
   // Silently dropping a card because the catalog has an unexpected rarity would be worse
   // than showing an odd section header.

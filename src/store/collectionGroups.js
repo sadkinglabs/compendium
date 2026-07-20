@@ -39,7 +39,17 @@ export function groupCollection({
       if (sets.length && !sets.includes(s.name)) continue;
       const oc = owBySet.get(c.card_id + '|' + s.code);
       const owned = oc?.owned || 0, foil = oc?.foil || 0;
-      if (!matches(owned + foil > 0, isWish)) continue;
+      // OWNED MEANS NON-FOIL, matching set completion. These two definitions used to disagree
+      // - completion counted `owned` while this filter counted `owned + foil` - and the gap
+      // was invisible until it mattered: a Beta collection reading 401/402 returned ZERO
+      // results under "Not owned", so the one card missing in non-foil could not be found at
+      // all. It was owned in foil only.
+      //
+      // Completion is deliberately non-foil (owner ruling: foils are not part of collection
+      // progress), so the filter follows it rather than the reverse. A foil-only card
+      // therefore appears under "Not owned" while its tile shows its foil count, which is
+      // exactly the question a collector is asking: what do I still need in non-foil?
+      if (!matches(owned > 0, isWish)) continue;
       push(s.code, s.name, { card: c, set: s.code, owned, foil });
     }
   }

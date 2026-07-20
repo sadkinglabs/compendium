@@ -7,7 +7,7 @@
 // Run: npm run check:smoke
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseUi, centerOf, findNode, missingFrom, screenText, parseDevices, run } from './check-smoke.mjs';
+import { parseUi, centerOf, findNode, missingFrom, screenText, parseDevices, isScreenOn, isLocked, run } from './check-smoke.mjs';
 
 const node = (text, x1 = 0, y1 = 0, x2 = 100, y2 = 50) =>
   `<node text="${text}" bounds="[${x1},${y1}][${x2},${y2}]" />`;
@@ -17,7 +17,9 @@ const silent = { log: () => {}, err: () => {} };
 const noSleep = () => Promise.resolve();
 
 /** A fake device that returns a scripted dump per call. */
-function fakeAdb(dumps, { logcat = '' } = {}) {
+const AWAKE = 'mWakefulness=Awake\n  Display Power: state=ON';
+
+function fakeAdb(dumps, { logcat = '', power = AWAKE, window_ = '' } = {}) {
   const calls = [];
   let i = 0;
   return {
@@ -25,6 +27,8 @@ function fakeAdb(dumps, { logcat = '' } = {}) {
     adb(args) {
       calls.push(args.join(' '));
       if (args[0] === 'logcat' && args[1] === '-d') return logcat;
+      if (args[1] === 'dumpsys' && args[2] === 'power') return power;
+      if (args[1] === 'dumpsys' && args[2] === 'window') return window_;
       if (args[1] === 'cat') return dumps[Math.min(i++, dumps.length - 1)];
       return '';
     },
@@ -176,4 +180,75 @@ test('every route is reported, not just the first failure', async () => {
   const text = msgs.join('\n');
   assert.match(text, /A:/);
   assert.match(text, /B:/);
+});
+
+/* ---------------- screen state ---------------- */
+
+test('isScreenOn reads the awake/on case', () => {
+  assert.equal(isScreenOn(AWAKE), true);
+});
+
+test('isScreenOn detects a dark display', () => {
+  assert.equal(isScreenOn('mWakefulness=Awake\n  Display Power: state=OFF'), false);
+  assert.equal(isScreenOn('mWakefulness=Asleep'), false);
+  assert.equal(isScreenOn('mWakefulness=Dozing'), false);
+  assert.equal(isScreenOn('mScreenOn=false'), false);
+});
+
+test('isScreenOn is false for output it cannot interpret', () => {
+  // Fail closed: guessing "probably on" reintroduces the exact false failure this prevents.
+  assert.equal(isScreenOn(''), false);
+  assert.equal(isScreenOn('nonsense'), false);
+});
+
+test('isLocked spots the keyguard', () => {
+  assert.equal(isLocked('mDreamingLockscreen=true'), true);
+  assert.equal(isLocked('mShowingLockscreen=true'), true);
+  assert.equal(isLocked('mDreamingLockscreen=false'), false);
+});
+
+test('a screen that will not wake FAILS as screen-off, not as a render failure', async () => {
+  // The misdiagnosis this prevents: a dark phone yields an empty view tree, identical to a
+  // blanked app, and the gate used to call that "NOTHING RENDERED". It cost an hour of
+  // hunting a boot crash that was never happening.
+  const msgs = [];
+  const { adb } = fakeAdb([doc()], { power: 'mWakefulness=Asleep' });
+  const code = await run({
+    adb, sleep: noSleep, log: () => {}, err: (m) => msgs.push(String(m)),
+    routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }],
+  });
+  assert.equal(code, 1);
+  const text = msgs.join('\n');
+  assert.match(text, /screen is OFF/);
+  assert.doesNotMatch(text, /NOTHING RENDERED/, 'must not blame the app for a dark screen');
+});
+
+test('a LOCKED device fails with its own message', async () => {
+  const msgs = [];
+  const { adb } = fakeAdb([doc(node('WELCOME BACK'))], { window_: 'mShowingLockscreen=true' });
+  const code = await run({
+    adb, sleep: noSleep, log: () => {}, err: (m) => msgs.push(String(m)),
+    routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }],
+  });
+  assert.equal(code, 1);
+  assert.match(msgs.join('\n'), /LOCKED/);
+});
+
+test('it tries to WAKE a sleeping screen before giving up', async () => {
+  let woken = false;
+  let power = 'mWakefulness=Asleep';
+  const adb = (args) => {
+    if (args.includes('KEYCODE_WAKEUP')) { woken = true; power = AWAKE; return ''; }
+    if (args[1] === 'dumpsys' && args[2] === 'power') return power;
+    if (args[1] === 'dumpsys' && args[2] === 'window') return '';
+    if (args[0] === 'logcat' && args[1] === '-d') return '';
+    if (args[1] === 'cat') return doc(node('WELCOME BACK'));
+    return '';
+  };
+  const code = await run({
+    adb, sleep: noSleep, ...silent,
+    routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }],
+  });
+  assert.equal(woken, true, 'should have sent a wake keyevent');
+  assert.equal(code, 0, 'and then proceeded normally');
 });

@@ -11,6 +11,7 @@ import { getPool, getSets, getArtists, listDecks, resolveCardList } from '../sto
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
 import { groupCards } from '../store/collectionGrouping.js';
+import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   ownedBySet, qtyForInSet, setOwnedInSet,
@@ -340,6 +341,13 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
   if (!stats) return <Loading />;
   return (
     <div style={{ padding: '2px 20px' }}>
+      {/* The FAB is the camera and nothing else, so the typed import lives here. Text import
+          is deliberately NOT set-scoped: a paste spanning many sets must stay one paste. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+        <OverflowMenu label="Collection actions" items={[
+          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+        ]} />
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
@@ -375,11 +383,10 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         </div>
       )}
 
-      {/* THE add surface: bulk paste or point the camera. */}
-      <Fab variant="lib" label="Add to collection" icon={<FabGlyph kind="add" />} items={[
-        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-        { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-      ]} />
+      {/* Scan. One tap, no menu - the camera glyph teaches that cards get in by pointing the
+          phone at them. Typed import moved to the header overflow above. */}
+      <Fab variant="lib" label="Scan cards" icon={CameraSvg}
+        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
@@ -582,7 +589,10 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const clearAll = () => {
     setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
-    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setSort([]);
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null });
+    // Clear resets FILTERS only. Grouping is an arrangement, not a filter - it hides nothing,
+    // it is not counted in activeCount, and silently undoing it here would surprise someone
+    // who grouped by rarity and then cleared a type filter.
   };
 
   return (

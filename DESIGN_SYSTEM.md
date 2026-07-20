@@ -82,7 +82,7 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 
 ## 3 · Primitives
 
-**`[Shipping]` (usable now)** — from `src/components/`: `Chip`/`ChipRow`, `SegTabs`, `IconButton`, `SectionLabel`, `ListRow`, `Loading`, `ThresholdPips`/`ElementPip`, `BottomSheet`, `CenteredModal`, `BlankState`, `EmptyCta`, `BTN_GOLD`/`BTN_GHOST`, `GothicSheet` (the sheet chassis), `SearchPill`, `BottomDock`, `Fab` (context FAB), `RefineSheet`, `MissingSheet`, `CardArt` (**the zero-image reference primitive** — deterministic fallback painted behind a self-removing `<img>`, no layout shift), the icon set `icons.jsx`, and the Collection card views (`LedgerRow`/`BinderTile`, `Frost`, `CollectionCardSheet`).
+**`[Shipping]` (usable now)** — from `src/components/`: `Chip`/`ChipRow`, `SegTabs`, `IconButton`, `SectionLabel`, `ListRow`, `Loading`, `ThresholdPips`/`ElementPip`, `BottomSheet`, `CenteredModal`, `BlankState`, `EmptyCta`, `BTN_GOLD`/`BTN_GHOST`, `GothicSheet` (the sheet chassis), `SearchPill`, `BottomDock`, `Fab` (context FAB), `OverflowMenu` (header overflow), `RefineSheet`, `MissingSheet`, `CardArt` (**the zero-image reference primitive** — deterministic fallback painted behind a self-removing `<img>`, no layout shift), the icon set `icons.jsx`, and the Collection card views (`LedgerRow`/`BinderTile`, `Frost`, `CollectionCardSheet`).
 
 **`[Target]` consolidation catalog** (OD-13 — *asserted targets, not implementation equivalence*; refactor deferred):
 | Target primitive | Consolidates (shipping reality) |
@@ -110,6 +110,12 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 - **Empty / zero-image** `[Shipping]` — `BlankState` (rotated gold diamond + Cinzel title) and `CardArt`'s deterministic fallback; every surface must be legible with all art absent.
 - **Add-as-place** `[Target]` — adding is a property of *where you are*, not a hidden mode. This is the **Collection-redesign target interaction model, NOT current behaviour** (Collection ships an edit-mode toggle today).
 - **Back** `[Shipping]` — the two-tier LIFO contract: ephemeral consumers (`back.js`) first, then the tested declarative precedence (`navBack.js`); never exits a live match on first press.
+- **Header overflow** `[Shipping]` — `OverflowMenu`: a 34px dots trigger in a header, opening a small anchored menu of **screen-level commands that are not the primary action**. Rename, duplicate, export, delete, import-from-text. First consumer: Collection › Overview (typed import, once the FAB became camera-only).
+  - **Boundary against the FAB.** The FAB is docked bottom-right and owns the single *add* gesture; the overflow is anchored to the header it acts on. A screen may carry both (list detail: camera FAB + filter FAB + list commands), so they are deliberately separate components rather than one with two anchors.
+  - **Promotion test.** If a command is used most visits it does not belong here — give it real chrome. The overflow is for the tail, not for hiding things that matter.
+  - **It renders nothing when empty** — an affordance that opens an empty menu is worse than no affordance.
+  - **HARD RULE — no `transform: scale()` on the panel.** It animates with opacity + a 6px translate only. The `Fab` menu scales from `.18`, and the WebView accessibility tree keeps reporting that pre-transition box: a 170px menu reports itself at ~36px. Fingers are unaffected (hit-testing uses the real box) but assistive tech gets the wrong target and `check:smoke` cannot drive it. Any future anchored menu inherits this rule. See [`BUILD.md`](./BUILD.md).
+
 - **Ghost / empty slot** `[Shipping]` (pattern) — composed from `--surface-well` + inset shadow + dashed hairline; **not** a Foundation primitive. Empty-slot idioms already ship (AvatarPicker, counter sockets).
 
 ---

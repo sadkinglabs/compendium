@@ -132,6 +132,28 @@ function resolveAdb() {
   return null;
 }
 
+/**
+ * Is the display actually on? `dumpsys power` reports both a wakefulness state and a display
+ * power state; either being off means uiautomator returns an EMPTY view tree.
+ *
+ * This matters more than it sounds. A screen-off phone produces exactly the same signal as a
+ * blanked app - no nodes - and the gate's headline failure is "NOTHING RENDERED". Reporting a
+ * dark screen as a rendering fault sends you hunting a bug that does not exist; it cost me an
+ * hour of chasing a boot crash that was never happening.
+ */
+export function isScreenOn(dumpsysPower) {
+  const s = String(dumpsysPower);
+  if (/Display Power:\s*state=OFF/i.test(s)) return false;
+  if (/mWakefulness=(Asleep|Dozing)/i.test(s)) return false;
+  if (/mScreenOn=false/i.test(s)) return false;
+  return /mWakefulness=Awake/i.test(s) || /Display Power:\s*state=ON/i.test(s);
+}
+
+/** True when the lock screen is up - the app is running but nothing of it is visible. */
+export function isLocked(dumpsysWindow) {
+  return /mDreamingLockscreen=true|mShowingLockscreen=true|isStatusBarKeyguard=true/i.test(String(dumpsysWindow));
+}
+
 export function parseDevices(output) {
   return String(output).split('\n').slice(1)
     .map((l) => l.trim()).filter(Boolean)
@@ -144,6 +166,24 @@ export function parseDevices(output) {
 export async function run({ adb, sleep, routes = ROUTES, log = console.log, err = console.error }) {
   const dumpPath = '/sdcard/cx-smoke.xml';
   const failures = [];
+
+  // WAKE THE SCREEN FIRST, and refuse to run in the dark. A dark or locked phone yields an
+  // empty view tree, which is indistinguishable from a blanked app - so without this the gate
+  // confidently reports a rendering failure that never happened.
+  if (!isScreenOn(adb(['shell', 'dumpsys', 'power']))) {
+    adb(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+    await sleep(1200);
+  }
+  if (!isScreenOn(adb(['shell', 'dumpsys', 'power']))) {
+    err('check:smoke FAILED - the device screen is OFF and would not wake.');
+    err('  Every route would look like a rendering failure, and none of it would mean anything.');
+    return 1;
+  }
+  if (isLocked(adb(['shell', 'dumpsys', 'window']))) {
+    err('check:smoke FAILED - the device is LOCKED, so the app is not visible.');
+    err('  Unlock the phone and run again; a locked screen looks exactly like a blank app.');
+    return 1;
+  }
 
   adb(['shell', 'am', 'force-stop', PKG]);
   adb(['logcat', '-c']);
@@ -217,13 +257,22 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     process.exit(1);
   }
   // Fail closed on both zero and many: a gate that silently picks a device is a gate that can
-  // silently test the wrong thing.
-  if (serials.length !== 1) {
-    console.error(`check:smoke FAILED - expected exactly 1 connected device, found ${serials.length}.`);
-    if (serials.length) console.error(`  ${serials.join('\n  ')}`);
+  // silently test the wrong thing. ANDROID_SERIAL is the explicit opt-out - one phone attached
+  // over BOTH usb and wireless debugging shows up as two entries, which is common enough that
+  // refusing to run without an escape hatch just makes the gate unusable.
+  const wanted = process.env.ANDROID_SERIAL;
+  if (wanted && !serials.includes(wanted)) {
+    console.error(`check:smoke FAILED - ANDROID_SERIAL=${wanted} is not attached.`);
+    if (serials.length) console.error(`  attached: ${serials.join(', ')}`);
     process.exit(1);
   }
-  const adb = makeAdb(binary, serials[0]);
+  if (!wanted && serials.length !== 1) {
+    console.error(`check:smoke FAILED - expected exactly 1 connected device, found ${serials.length}.`);
+    if (serials.length) console.error(`  ${serials.join('\n  ')}`);
+    console.error('  Set ANDROID_SERIAL=<serial> to choose one.');
+    process.exit(1);
+  }
+  const adb = makeAdb(binary, wanted || serials[0]);
   try {
     adb(['shell', 'pm', 'path', PKG]);
   } catch {
@@ -231,7 +280,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error('  Build and install the release APK first (see BUILD.md).');
     process.exit(1);
   }
-  console.log(`check:smoke - driving ${serials[0]}`);
+  console.log(`check:smoke - driving ${wanted || serials[0]}`);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   run({ adb, sleep }).then((code) => process.exit(code));
 }
