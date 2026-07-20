@@ -24,15 +24,23 @@ distinguishes **three** outcomes at ladder exhaustion, each with its own message
 Test: *"write REJECTED and reads exhausted is its own state"* asserts the distinct reason **and**
 that `pendingDelta` is still non-zero (i.e. we do not claim restoration).
 
-**(b) Quick-add announced confirmation on tap.** Feedback is now split by what actually
-happened. A tap gives a **pending** look only (dimmed, slightly pressed). The gold pop, tick
-and toast fire from a per-row `{pending, ok, error}` status the grid derives from the
-controller, where `ok` increments **only when a row's chain drains successfully**. Failure and
-unconfirmed remain distinguishable via their own toasts.
+**(b) Quick-add announced confirmation on tap — REWORKED AGAIN after your delta review.**
+Your finding was correct: `pendingCount` is decremented and emitted from the write's `finally`
+block *before* `reconcile()` runs, so `pending:false, error:false` is briefly true even when
+the write rejected or the read is about to fail. Inferring success from that transition could
+claim a durable copy that never landed. The controller now carries **`okVersion`**, incremented
+in exactly one place — after a successful authoritative read *and* only when no write in the
+chain failed. The grid binding exposes it as `status.ok`; quick-add consumes that signal and
+never inspects `pending`. Five binding-level tests cover it: successful confirmation, rejected
+write, exhausted read-retry, repeated taps draining as one chain, and interleaved rows.
 
-Please check the seam I am least sure of: `Collection.jsx` `onChange` computes
-`justConfirmed = was.pending && !pending && !st.error`. Is that transition detection correct
-under interleaved rows and repeat taps?
+On the surface: a tap gives a **pending** look only (dimmed, slightly pressed); the gold pop,
+tick and toast fire solely off `status.ok`. Failure and unconfirmed remain distinguishable via
+their own toasts.
+
+The derivation moved out of `Collection.jsx` and into the binding, so it is now covered by
+tests rather than living in a component: `ownedStepGrid` emits
+`{ pending, ok, error, displayed }` and the pillar just stores it.
 
 ---
 
@@ -75,10 +83,10 @@ Not attempted; recorded rather than silently dropped:
 
 ## 4 · Verification
 
-`test:codex` 10 · `test:query` 169 · `test:ui` 97 · `test:app` 14 · `check:types` ·
+`test:codex` 10 · `test:query` 174 · `test:ui` 97 · `test:app` 14 · `check:types` ·
 `check:docs` · `build` — all PASS.
 
 Device: **Pixel 9 Pro XL, Android 17 (SDK 37), WebView 150.0.7871.46**, signed release APKs
-through build 95.
+through build 96.
 
 The stray untracked file you spotted is gone — it was mine, from a malformed shell command.

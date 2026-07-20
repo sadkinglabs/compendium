@@ -428,10 +428,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
   const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
-  // Per-row add status straight from the controller: {pending, ok, error}. `ok` increments
-  // only when a row's write chain drains SUCCESSFULLY, so the tile can distinguish
-  // "tap registered" from "actually persisted" - the tick used to fire on tap, which
-  // presented a provisional write as a confirmed one.
+  // Per-row add status straight from the binding: {pending, ok, error, displayed}. `ok` moves
+  // only on a RECONCILED success - authoritative read back, no failed write - so the tile can
+  // distinguish "tap registered" from "actually persisted".
   const [addStatus, setAddStatus] = useState(new Map());
   const owRef = useRef(owBySet);                     // synchronous mirror, for seeding a row's controller
   owRef.current = owBySet;
@@ -509,20 +508,16 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
             : "Couldn't save; count restored", { tone: 'danger' }),
       isAlive: () => aliveRef.current,
-      onChange: (key, st) => {
+      onChange: (key, status) => {
         setOwBySet((prev) => {
           const m = new Map(prev);
-          m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
+          m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: status.displayed });
           return m;
         });
-        setAddStatus((prev) => {
-          const was = prev.get(key) || { pending: false, ok: 0, error: false };
-          const pending = st.pendingCount > 0;
-          const justConfirmed = was.pending && !pending && !st.error;   // chain drained clean
-          const m = new Map(prev);
-          m.set(key, { pending, ok: was.ok + (justConfirmed ? 1 : 0), error: !!st.error });
-          return m;
-        });
+        // `status.ok` is the controller's RECONCILED-success counter. Success is never
+        // inferred from pending going false: that is emitted before reconcile runs, so it is
+        // briefly true even when the write rejected or the read is about to fail.
+        setAddStatus((prev) => new Map(prev).set(key, status));
       },
     });
   }

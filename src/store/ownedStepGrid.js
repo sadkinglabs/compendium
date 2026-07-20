@@ -13,10 +13,13 @@
 //   write(key, delta):   Promise          the durable, profile-bound write for one tap
 //   notify(reason):      void             surface a failure to the user
 //   isAlive():           boolean          false after unmount, to drop a late reconcile
-//   onChange(key, state): void            re-render hook, per row
+//   onChange(key, status): void          re-render hook, per row. `status` is
+//       { pending, ok, error, displayed } where `ok` is the controller's reconciled-success
+//       counter - it moves ONLY after a successful authoritative read with no failed write.
+//       Never infer success from `pending` going false: that is emitted before reconcile runs.
 import { createOwnedStepController } from './ownedStepController.js';
 
-export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = () => true, onChange = () => {} }) {
+export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = () => true, onChange = () => {}, schedule }) {
   const ctls = new Map();   // rowKey -> controller
 
   const controllerFor = (key, seedQty) => {
@@ -27,7 +30,13 @@ export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = 
         write: (delta) => write(key, delta),
         notify,
         isAlive,
-        onChange: (state) => onChange(key, state),
+        ...(schedule ? { schedule } : {}),
+        onChange: (state) => onChange(key, {
+          pending: state.pendingCount > 0,
+          ok: state.okVersion,
+          error: state.error,
+          displayed: state.displayed,
+        }),
       });
       c.init(seedQty || 0);   // seed from what the grid is currently showing
       ctls.set(key, c);

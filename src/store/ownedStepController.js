@@ -34,10 +34,15 @@ export function createOwnedStepController({
   let pendingCount = 0;
   let error = false;
   let failedInChain = false;
-  let version = 0; // bumped per tap; a reconcile bound to an older version is stale
+  let version = 0;   // bumped per tap; a reconcile bound to an older version is stale
+  // Increments ONLY on a reconciled success: the authoritative read came back AND no write in
+  // the chain failed. Consumers must key "confirmed" off this, never off pendingCount hitting
+  // zero - the finally block emits that intermediate state BEFORE reconcile has run, so it is
+  // true for a moment even when the write rejected or the read is about to fail.
+  let okVersion = 0;
 
   const displayed = () => Math.max(0, confirmedQty + pendingDelta);
-  const getState = () => ({ confirmedQty, pendingDelta, pendingCount, error, displayed: displayed() });
+  const getState = () => ({ confirmedQty, pendingDelta, pendingCount, error, okVersion, displayed: displayed() });
   const emit = () => onChange(getState());
 
   async function reconcile(forVersion, attempt = 0) {
@@ -75,7 +80,7 @@ export function createOwnedStepController({
     confirmedQty = snap;
     pendingDelta = 0;
     if (failedInChain) { error = true; failedInChain = false; notify('save-failed'); }
-    else { error = false; }
+    else { error = false; okVersion += 1; }   // the ONLY place success is declared
     emit();
   }
 
