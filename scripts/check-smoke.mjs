@@ -19,6 +19,16 @@
 // PORTABILITY. Elements are located by their text and tapped at the centre of their reported
 // bounds, never at hard-coded pixels, so this survives a different device or display size.
 //
+// KNOWN LIMITATION - IT CANNOT DRIVE FAB MENUS. `.fab-menu` transitions from scale(.18) to
+// scale(1), and the WebView accessibility tree keeps reporting the PRE-transition geometry:
+// 93 device px wide for a menu whose min-width is 170 CSS px. Tapping the reported centre
+// hits the wrong item; tapping the true visual centre dismisses the menu.
+//
+// A human tap works correctly, so rendering and hit-testing agree - only the a11y tree is
+// stale. That still matters for assistive tech, but it is NOT a user-facing hit-test bug, and
+// this gate must never be used to conclude a FAB menu is broken. Routes therefore stay on nav
+// tabs, chips and tiles; anything behind a FAB menu needs a human.
+//
 // Requires: a connected device with the app already installed (npm run android, then install
 // the release APK). Run: npm run check:smoke
 import { execFileSync } from 'node:child_process';

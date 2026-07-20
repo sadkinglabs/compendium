@@ -88,6 +88,17 @@ Verified by deliberately breaking the set drill and confirming the gate reports
 does not exercise gestures, sheets, writes or the scanner. Interactive behaviour
 still needs a human; see **Verify on a device**.
 
+**It cannot drive FAB menus.** `.fab-menu` transitions from `scale(.18)` to
+`scale(1)` and the WebView accessibility tree keeps reporting the pre-transition
+geometry, so tapping the reported centre hits the wrong item. A human tap works
+correctly - rendering and hit-testing agree, only the a11y tree is stale - so
+never conclude from this gate that a FAB menu is broken. Keep routes on nav tabs,
+chips and tiles.
+
+The stale bounds are still worth fixing for assistive tech (a menu reporting
+itself at 18% of its size is wrong for TalkBack), but that is a shared-component
+change affecting every pillar's FAB, tracked separately.
+
 
 ## Validate documentation
 
