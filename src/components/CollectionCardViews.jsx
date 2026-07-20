@@ -65,19 +65,29 @@ export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
   const [tick, setTick] = useState(false);
   const timer = useRef(null);
   const seenOk = useRef(status?.ok || 0);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const taps = useRef(0);      // taps not yet covered by a confirmation
+  const run = useRef(0);       // copies confirmed in the current burst
+  const runTimer = useRef(null);
+  useEffect(() => () => { clearTimeout(timer.current); clearTimeout(runTimer.current); }, []);
   useEffect(() => {
     const ok = status?.ok || 0;
     if (ok <= seenOk.current) { seenOk.current = ok; return; }
     seenOk.current = ok;
+    // A burst of taps can drain as ONE chain, so credit every tap this confirmation covers and
+    // keep a running total: the single-slot toast then counts up rather than repeating "1 x".
+    run.current += taps.current || 1;
+    taps.current = 0;
+    if (cardName) toast(`${run.current} × ${cardName} added`);
     setTick(true);
-    if (cardName) toast(`1 × ${cardName} added`);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setTick(false), 620);
+    clearTimeout(runTimer.current);
+    runTimer.current = setTimeout(() => { run.current = 0; }, 2600);   // burst ends when you pause
   }, [status?.ok, cardName]);
+  const fire = () => { taps.current += 1; onAdd(); };
   const tone = tick ? 'ok' : status?.pending ? 'pending' : undefined;
   return (
-    <Frost label={label} size={size} onClick={onAdd} tone={tone}>
+    <Frost label={label} size={size} onClick={fire} tone={tone} variant="gold">
       {tick
         ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
         : '+'}
@@ -85,11 +95,14 @@ export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
   );
 }
 
-export function Frost({ label, onClick, disabled, size = 31, children, tone }) {
+export function Frost({ label, onClick, disabled, size = 31, children, tone, variant }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
-  const ok = tone === 'ok';          // CONFIRMED by the store: jade, and a brief pop
+  const ok = tone === 'ok';          // CONFIRMED by the store: a brief pop
   const busy = tone === 'pending';   // tap registered, write still in flight
+  // 'gold' speaks the FAB-menu language (dark frosted ground, gold hairline, gold glyph)
+  // instead of the rose stepper glass the inline +/- controls use.
+  const gold = variant === 'gold';
   const hit = Math.max(44, size);
   return (
     <button
@@ -100,9 +113,16 @@ export function Frost({ label, onClick, disabled, size = 31, children, tone }) {
     >
       <span style={{
         width: size, height: size, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: ok ? 'rgba(var(--jade-rgb),.22)' : on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)',
-        border: `1px solid ${ok ? 'var(--accent-jade)' : on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)'}`,
-        color: ok ? 'var(--accent-jade)' : '#f0c8ce', font: "600 18px/1 var(--f-ui)",
+        background: gold
+          ? (ok ? 'rgba(var(--gold-rgb),.20)' : on ? 'rgba(var(--gold-rgb),.12)' : 'rgba(10,9,8,.72)')
+          : (ok ? 'rgba(var(--jade-rgb),.22)' : on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)'),
+        border: `1px solid ${gold
+          ? (ok ? 'rgba(var(--gold-rgb),.55)' : on ? 'rgba(var(--gold-rgb),.4)' : 'rgba(var(--gold-rgb),.25)')
+          : (ok ? 'var(--accent-jade)' : on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)')}`,
+        color: gold ? (ok ? 'var(--gold-num)' : 'var(--gold-leaf)') : (ok ? 'var(--accent-jade)' : '#f0c8ce'),
+        backdropFilter: gold ? 'blur(10px)' : undefined,
+        WebkitBackdropFilter: gold ? 'blur(10px)' : undefined,
+        font: "600 18px/1 var(--f-ui)",
         opacity: busy ? 0.6 : 1,
         transform: ok ? 'scale(1.16)' : busy ? 'scale(.94)' : 'scale(1)',
         transition: 'background .14s, border-color .14s, color .14s, transform .2s cubic-bezier(.2,.9,.3,1)',
