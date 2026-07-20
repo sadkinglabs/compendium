@@ -6,8 +6,9 @@
 //   - derive EVERY set from setCatalog, so a zero-owned set still renders (0%) and a
 //     brand-new set code that appears on a card shows up automatically;
 //   - denominator = unique collectible cards listing that set (TOKEN cards excluded);
-//   - a card counts as owned in a set if it has ANY owned copy there, regular OR foil
-//     (foil-only ownership still counts);
+//   - completion counts NON-FOIL ownership only. Foils are not chased by most collectors,
+//     so a foil-only card does NOT count toward a set's completion. (A per-set non-foil /
+//     foil / playset breakdown lives inside the set page, not here.)
 //   - the '' Unspecified ownership bucket is never a set (cards list only real sets),
 //     so it is inherently excluded from every denominator.
 import { isTokenCard } from './tokens.js';
@@ -51,7 +52,7 @@ export function buildSetCompletion(catalogCards, ownedBySet, setCatalog) {
       const s = ensure(code, (setCatalog && setCatalog[code]) || entry.name);
       s.totalCollectible += 1;
       const o = ownedBySet && ownedBySet.get(cardId + '|' + code);
-      if (o && ((o.owned || 0) > 0 || (o.foil || 0) > 0)) s.ownedUnique += 1;
+      if (o && (o.owned || 0) > 0) s.ownedUnique += 1; // non-foil only; foil never counts
     }
   }
 

@@ -535,12 +535,12 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
     return t;
   }, [pool]);
 
-  // True owned-per-set (all owned rows, independent of the row filter) - drives the
-  // header's owned/total so it stays honest even under a "Not owned" filter.
+  // True owned-per-set (independent of the row filter) - drives the drill header's
+  // owned/total. Non-foil only, matching set completion (foil-only cards don't count).
   const ownedPerSet = useMemo(() => {
     const m = new Map();
     for (const [k, v] of owBySet) {
-      if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+      if ((v.owned || 0) === 0) continue; // non-foil only
       const code = k.slice(k.lastIndexOf('|') + 1);
       m.set(code, (m.get(code) || 0) + 1);
     }

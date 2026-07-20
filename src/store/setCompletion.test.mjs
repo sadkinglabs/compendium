@@ -20,20 +20,20 @@ const CARDS = [
 ];
 
 const OWNED = new Map([
-  ['a|001', { owned: 2, foil: 0 }],  // a owned in Alpha
-  ['b|001', { owned: 0, foil: 1 }],  // b foil-ONLY in Alpha -> still owned
+  ['a|001', { owned: 2, foil: 0 }],  // a owned NON-FOIL in Alpha
+  ['b|001', { owned: 0, foil: 1 }],  // b foil-ONLY in Alpha -> must NOT count (non-foil only)
   ['a|', { owned: 5, foil: 0 }],     // Unspecified bucket -> must NOT count anywhere
 ]);
 
 const byCode = (rows) => Object.fromEntries(rows.map((r) => [r.code, r]));
 
-test('multi-set + foil-only + token exclusion: Alpha denominator and owned are correct', () => {
+test('foil-only does NOT count toward completion; tokens excluded from the denominator', () => {
   const rows = byCode(buildSetCompletion(CARDS, OWNED, SET_CATALOG));
   // a and b list Alpha; the token 'Foot Soldier' also lists Alpha but is excluded.
   assert.equal(rows['001'].totalCollectible, 2, 'token must not inflate the denominator');
-  // a (regular) + b (foil-only) both count as owned.
-  assert.equal(rows['001'].ownedUnique, 2, 'foil-only ownership counts');
-  assert.equal(rows['001'].pct, 1);
+  // a is owned non-foil -> counts; b is foil-only -> does NOT count.
+  assert.equal(rows['001'].ownedUnique, 1, 'foil-only ownership must not count');
+  assert.equal(rows['001'].pct, 0.5);
 });
 
 test('multi-set card counts in each of its sets independently', () => {
@@ -47,7 +47,13 @@ test('Unspecified bucket ("a|") never inflates a real set', () => {
   const rows = byCode(buildSetCompletion(CARDS, OWNED, SET_CATALOG));
   // If "a|" leaked, Alpha owned would exceed its denominator.
   assert.ok(rows['001'].ownedUnique <= rows['001'].totalCollectible);
-  assert.equal(rows['001'].ownedUnique, 2);
+  assert.equal(rows['001'].ownedUnique, 1);
+});
+
+test('a card owned BOTH non-foil and foil counts exactly once', () => {
+  const owned = new Map([['a|001', { owned: 1, foil: 3 }]]);
+  const rows = byCode(buildSetCompletion(CARDS, owned, SET_CATALOG));
+  assert.equal(rows['001'].ownedUnique, 1, 'non-foil presence counts once, foil ignored');
 });
 
 test('zero-owned set is retained (Gothic: 1 card, 0 owned)', () => {
