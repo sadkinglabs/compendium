@@ -936,12 +936,12 @@ function WishlistCard({ summary, onClick }) {
           <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wishlist</span>
         </div>
         <div style={{ font: "400 14px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 6 }}>
-          {empty ? 'Cards you want - add from any card or here' : `${summary.count} card${summary.count === 1 ? '' : 's'} wanted`}
+          {empty ? 'Cards you want - star any card to add it' : `card${summary.count === 1 ? '' : 's'} you want`}
         </div>
       </div>
       {!empty && (
         <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-          <span style={{ font: "600 24px/1 var(--f-display)", color: 'var(--gold-num)' }}>{summary.total}</span>
+          <span style={{ font: "600 24px/1 var(--f-display)", color: 'var(--gold-num)' }}>{summary.count}</span>
         </span>
       )}
     </div>
@@ -960,7 +960,7 @@ function ListsIndex({ onOpenList, rev }) {
       const [all, wlRows] = await Promise.all([listCardLists(), wishlistCards()]);
       if (!alive) return;
       setLists(all);
-      setWl({ count: wlRows.length, total: wlRows.reduce((n, r) => n + (r.quantity || 0), 0), thumbs: wlRows.slice(0, 3) });
+      setWl({ count: wlRows.length, thumbs: wlRows.slice(0, 3) });
       const wantedIds = all.filter((l) => l.kind === 'wanted').map((l) => l.id);
       const [pr, th] = await Promise.all([
         wantedIds.length ? listProgressBulk(wantedIds) : new Map(),

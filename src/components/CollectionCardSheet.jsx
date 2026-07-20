@@ -95,6 +95,38 @@ export function CountCol({ label, foil = false, field, qty, step, editable = tru
   );
 }
 
+// Wishlist as a single toggle: the star fills ruby when the card is wanted. The underlying
+// ledger column stays an integer, so a legacy count above 1 simply reads as "on" and toggling
+// off clears it - no migration, and Wanted lists keep per-card targets for real quantities.
+export function WishlistToggle({ qty, step }) {
+  const loading = qty === null;
+  const on = (qty?.wanted || 0) > 0;
+  return (
+    <button
+      type="button" aria-pressed={on} disabled={loading}
+      onClick={() => step('wanted', on ? -(qty.wanted || 0) : 1)}
+      style={{
+        display: 'flex', width: '100%', alignItems: 'center', gap: 11, marginTop: 16,
+        padding: '13px 16px', borderRadius: 16, cursor: loading ? 'default' : 'pointer',
+        background: on ? 'rgba(var(--ruby-rgb),.10)' : 'rgba(255,255,255,.02)',
+        border: `1px solid ${on ? 'rgba(var(--ruby-rgb),.45)' : 'var(--hair-12)'}`,
+        opacity: loading ? 0.5 : 1, transition: 'background .16s, border-color .16s',
+      }}>
+      <svg viewBox="0 0 24 24" width="19" height="19" aria-hidden="true"
+        fill={on ? 'var(--accent-ruby)' : 'none'} stroke={on ? 'var(--accent-ruby)' : 'var(--ink-muted-warm)'}
+        strokeWidth="1.6" strokeLinejoin="round">
+        <path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2-5.6-3.2-5.6 3.2 1.3-6.2L3 9.5l6.3-.7z" />
+      </svg>
+      <span style={{ flex: 1, textAlign: 'left', font: "500 15px/1 var(--f-read)", color: on ? 'var(--ink-head)' : 'var(--ink-muted-warm)' }}>
+        Wishlist
+      </span>
+      <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', textTransform: 'uppercase', color: on ? 'var(--accent-ruby)' : 'var(--ink-dimmest)' }}>
+        {on ? 'On' : 'Off'}
+      </span>
+    </button>
+  );
+}
+
 // The add-to-list picker: the profile's lists (wanted goals first, then custom),
 // each tappable - a tap adds ONE copy and stays open, so multi-list / multi-copy
 // adds are just taps, the per-list count confirming each.
@@ -315,14 +347,15 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
 
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
 
-      {/* Owned + Foil are the collection ledger - editable only from My Collection's
-          edit mode (read-only in Overview, Lists, Codex). Wishlist is a list, not
-          the owned collection, so it stays editable everywhere. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+      {/* Owned + Foil are the collection ledger - real quantities, so they get steppers.
+          The wishlist is a binary INTENT ("I want this"), not a quantity: wanting three
+          copies is what a Wanted list's per-card target is for. So it is a toggle, and it
+          stays available everywhere (it is a list, not the owned collection). */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
         <CountCol label="Owned" field="owned" qty={qty} step={step} editable={editable} />
         <CountCol label="Foil" foil field="foil" qty={qty} step={step} editable={editable} />
-        <CountCol label="Wishlist" field="wanted" qty={qty} step={step} />
       </div>
+      <WishlistToggle qty={qty} step={step} />
       {!editable && (
         <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 10 }}>
           Edit owned copies in My Collection.
