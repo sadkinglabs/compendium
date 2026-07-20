@@ -106,7 +106,13 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
           <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
             setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
         ) : (
-          <SetsHome onOpenSet={openSet} rev={rev} />
+          <>
+            <SetsHome onOpenSet={openSet} rev={rev} />
+            {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
+                in", everywhere in this pillar. */}
+            <Fab variant="lib" label="Scan cards" icon={CameraSvg}
+              onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+          </>
         )
       ) : listOpen ? (
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
@@ -417,7 +423,6 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // stepper. Card view only - completion is a visual loop, so the empty sleeves ARE the
   // information. Ownership narrowing lives solely in the filter sheet (see ownScope): an
   // always-on inline lens both duplicated it and made a card you just added vanish.
-  const [importOpen, setImportOpen] = useState(false);
 
   const [q, setQ] = useState(session.q);
   const [sets, setSets] = useState(session.sets);
@@ -671,11 +676,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           not a mode, so there is no add surface to toggle into. The ownership lens that used
           to occupy this slot in read mode is now inline in the header. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      <Fab variant="lib" label="Add tools" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
-        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-        { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-      ]} />
-      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
+      {/* Scan, one tap. Typed import is NOT here on purpose: a paste spanning many sets must
+          stay one paste, so it lives on Collection > Overview rather than inside a set where
+          it would imply the set scopes it. */}
+      <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={CameraSvg}
+        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
@@ -1351,6 +1356,17 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{totals.req}</span>
           </div>
         )}
+        {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
+            it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
+            delete, and OverflowMenu drops the null entries. */}
+        <OverflowMenu label="List actions" items={[
+          { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
+          isWishlist ? null : { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
+          isWishlist ? null : { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+          { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
+          isWanted ? { label: 'Get missing cards', icon: SeekSvg, onClick: openMissing } : null,
+          isWishlist ? null : { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+        ]} />
       </div>
 
       {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '0 2px 14px' }}>{meta.description}</div>}
@@ -1401,21 +1417,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      {/* List actions live on the 3-dot FAB (matches the deck FAB spine). Delete
-          routes through its OWN confirm sheet - destructive and undoable-never,
-          so it is never one tap. */}
-      <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
-        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: () => setAddOpen(true) },
-        { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
-        // The Wishlist is virtual + fixed: no rename, duplicate, or delete.
-        ...(isWishlist ? [] : [
-          { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
-          { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
-        ]),
-        { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
-        ...(isWanted ? [{ label: 'Get missing cards', icon: SeekSvg, onClick: openMissing }] : []),
-        ...(isWishlist ? [] : [{ label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) }]),
-      ]} />
+      {/* Adding cards is the primary action, so it gets the FAB. Everything else is
+          list-level chrome and lives in the header overflow.
+
+          It is NOT a camera FAB, despite the set drill's being one. launchScanner has only
+          'collection' and 'deck' modes - scanning here would silently add to the collection
+          rather than to this list, which is worse than not offering it. When the scanner
+          learns a list mode this becomes a camera and "Add cards" joins the overflow. */}
+      <Fab variant="lib" label="Add cards to this list" icon={<FabGlyph kind="add" />}
+        onClick={() => setAddOpen(true)} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>
