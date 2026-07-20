@@ -1,9 +1,11 @@
-// Collection · My Collection landing (Collection UX redesign, Phase 1c).
-// Sets-are-home / completion-is-goal: a grid of set plates, each a completion Ring over
-// owned/total for that set, plus a total-completion header. Tapping a plate drills into
-// that set's ledger/binder (the parent swaps in <Cards setDrill=…>). Completion is over
-// the WHOLE catalog (buildSetCompletion), independent of any search/filter in the drill.
-// Vector + text only → zero-image safe by construction.
+// Collection · My Collection landing (Collection UX redesign, Phase 1).
+// Sets-are-home / completion-is-goal: a 2-up grid of set plates. Each plate stages the set
+// logo as a lit hero over a warm backlight, with the set name and a completion Ring that
+// houses the owned/total count (non-foil). Tapping a plate drills into that set's
+// ledger/binder. Completion is over the WHOLE catalog (buildSetCompletion), non-foil only,
+// independent of any search/filter in the drill. Vector + text carry the meaning, so the
+// plate stays legible with the hero image absent (zero-image / heroless sets show an
+// engraved monogram).
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { getCatalog } from '../store/catalogCache.js';
 import { ownedBySet, subscribeCollection } from '../store/ownedRepository.js';
@@ -14,27 +16,70 @@ import Ring from '../components/Ring.jsx';
 import { Loading } from '../components/ui.jsx';
 
 const fmt = (n) => (n || 0).toLocaleString('en-US');
-const pctLabel = (p) => `${(p * 100).toFixed(1)}%`;
+
+// Per-set art treatment: 004 ships an opaque panel (feather its edge into the plate);
+// 005/006 are self-luminous with a baked glow (dim the backlight so they don't bloom).
+const BOXED = new Set(['004']);
+const BRIGHT = new Set(['005', '006']);
 
 const PLATE = {
   position: 'relative', overflow: 'hidden', display: 'block', width: '100%', textAlign: 'left',
-  cursor: 'pointer', padding: '16px 14px 14px', borderRadius: 16, background: 'var(--surface-card)',
-  border: '1px solid var(--hair-12)', boxShadow: '0 12px 30px -16px rgba(0,0,0,.7)',
+  cursor: 'pointer', padding: 12, borderRadius: 12,
+  background: 'linear-gradient(180deg, var(--plate-1), var(--plate-2))',
+  border: '1px solid var(--edge-plate)',
+  boxShadow: 'var(--shadow-plate), inset 0 1px 0 rgba(233,212,154,.05)',
 };
-// A faint set-hero watermark behind the plate content; a scrim keeps the name/count legible.
-// Decorative (aria-hidden) and self-removing on error - the plate is fully legible without it.
-const HERO_IMG = {
-  position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
-  objectPosition: 'center', opacity: 0.26, pointerEvents: 'none',
-};
-const HERO_SCRIM = {
-  position: 'absolute', inset: 0, pointerEvents: 'none',
-  background: 'linear-gradient(160deg, rgba(10,8,5,.60) 0%, rgba(10,8,5,.34) 45%, rgba(10,8,5,.66) 100%)',
-};
-const PLATE_NAME = {
-  display: 'block', font: "700 13px/1.3 var(--f-display)", letterSpacing: '.1em',
-  textTransform: 'uppercase', color: 'var(--ink-head)', minHeight: 34,
-};
+const HERO = { position: 'relative', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const hideOnErr = (e) => { e.currentTarget.style.display = 'none'; };
+
+// The Ring houses the owned/total figure as a stacked fraction (no percentage).
+function CountRing({ pct, owned, total, size = 60 }) {
+  return (
+    <span style={{ flex: 'none', display: 'grid', placeItems: 'center', borderRadius: '50%',
+      background: 'radial-gradient(closest-side, var(--ring-halo), transparent 76%)' }}>
+      <Ring value={pct} size={size} stroke={4} color="var(--accent-ruby)">
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+          <span style={{ font: `600 ${Math.round(size * 0.23)}px/1 var(--f-mono)`, color: 'var(--ink-head)' }}>{fmt(owned)}</span>
+          <span style={{ width: Math.round(size * 0.3), height: 1, background: 'var(--hair-30)', margin: '2px 0' }} />
+          <span style={{ font: `400 ${Math.round(size * 0.155)}px/1 var(--f-mono)`, color: 'var(--ink-muted)' }}>{fmt(total)}</span>
+        </span>
+      </Ring>
+    </span>
+  );
+}
+
+function Plate({ s, onOpen }) {
+  const hero = setHeroUrl(s.code);
+  const boxed = BOXED.has(s.code);
+  const bright = BRIGHT.has(s.code);
+  return (
+    <button type="button" onClick={() => onOpen(s.code, s)} style={PLATE}>
+      <div style={HERO}>
+        <span aria-hidden="true" style={{ position: 'absolute', inset: '-42% -10%', pointerEvents: 'none',
+          background: `radial-gradient(56% 66% at 50% 52%, ${bright ? 'var(--glow-warm-dim)' : 'var(--glow-warm)'}, transparent 72%)` }} />
+        {hero ? (
+          <img src={hero} alt="" aria-hidden="true" onError={hideOnErr}
+            style={{ position: 'relative', maxWidth: boxed ? '74%' : '84%', maxHeight: '100%', objectFit: 'contain', display: 'block',
+              ...(boxed ? { borderRadius: 7, boxShadow: '0 0 0 1px rgba(0,0,0,.4), 0 0 16px 9px rgba(10,8,5,.55)' } : {}) }} />
+        ) : (
+          // zero-image / heroless: engraved display initial where the art would be
+          <span style={{ position: 'relative', font: "700 40px/1 var(--f-display)", color: '#171209', letterSpacing: '.04em',
+            textShadow: '0 1px 0 rgba(233,212,154,.12), 0 -1px 1px rgba(0,0,0,.9)' }}>
+            {(s.name || '?').charAt(0).toUpperCase()}
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 11 }}>
+        <span style={{ flex: 1, minWidth: 0, font: "600 13px/1.25 var(--f-display)", letterSpacing: '.1em',
+          textTransform: 'uppercase', color: 'var(--gold-leaf)',
+          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          {s.name}
+        </span>
+        <CountRing pct={s.pct} owned={s.ownedUnique} total={s.totalCollectible} />
+      </div>
+    </button>
+  );
+}
 
 export default function SetsHome({ onOpenSet, rev }) {
   const [completion, setCompletion] = useState(null);
@@ -62,35 +107,17 @@ export default function SetsHome({ onOpenSet, rev }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '10px 2px 20px' }}>
-        <Ring value={totals.pct} size={46} stroke={4} color="var(--accent-ruby)" showPct={false} />
-        <div>
-          <div style={{ font: "400 20px/1 var(--f-mono)", color: 'var(--ink-head)' }}>{fmt(totals.owned)} / {fmt(totals.total)}</div>
-          <div style={{ font: "400 12px/1.4 var(--f-ui)", color: 'var(--ink-muted)', letterSpacing: '.04em', marginTop: 3 }}>
-            cards owned · {pctLabel(totals.pct)}
-          </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '8px 2px 20px' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
+          <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>Sets</div>
+          <div style={{ font: "400 11px/1 var(--f-ui)", letterSpacing: '.06em', color: 'var(--ink-muted)' }}>non-foil owned</div>
         </div>
+        <CountRing pct={totals.pct} owned={totals.owned} total={totals.total} size={64} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        {completion.map((s) => {
-          const hero = setHeroUrl(s.code);
-          return (
-            <button key={s.code} type="button" onClick={() => onOpenSet(s.code, s)} style={PLATE}>
-              {hero && <img src={hero} alt="" aria-hidden="true" style={HERO_IMG} onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
-              {hero && <span style={HERO_SCRIM} aria-hidden="true" />}
-              <span style={{ position: 'relative' }}>
-                <span style={PLATE_NAME}>{s.name}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '12px 0 2px' }}>
-                  <Ring value={s.pct} size={52} stroke={5} color="var(--accent-ruby)" />
-                  <span style={{ font: "400 12.5px/1.3 var(--f-mono)", color: 'var(--ink-body-2)' }}>
-                    {fmt(s.ownedUnique)} / {fmt(s.totalCollectible)}
-                  </span>
-                </div>
-              </span>
-            </button>
-          );
-        })}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 11 }}>
+        {completion.map((s) => <Plate key={s.code} s={s} onOpen={onOpenSet} />)}
       </div>
     </div>
   );

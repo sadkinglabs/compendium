@@ -79,6 +79,14 @@
   --hair-warm-100: rgba(74, 60, 34, 1);
   --surface-brown-50: rgba(42, 33, 20, .5);
   --surface-brown-70: rgba(42, 33, 20, .7);
+  /* sets-home plate treatment — [Shipping] (consumed by SetsHome.jsx). Plain names. */
+  --plate-1: #17120c;                       /* plate gradient, top */
+  --plate-2: #0f0c08;                       /* plate gradient, bottom */
+  --edge-plate: rgba(203, 167, 95, .13);    /* soft gilt plate hairline */
+  --glow-warm: rgba(233, 212, 154, .12);    /* warm backlight behind staged hero art */
+  --glow-warm-dim: rgba(233, 212, 154, .06);/* dimmed backlight for self-luminous art */
+  --shadow-plate: 0 10px 22px rgba(0,0,0,.5), 0 2px 5px rgba(0,0,0,.38);
+  --ring-halo: rgba(var(--ruby-rgb), .16);  /* soft ruby bloom behind the Ring (first --ruby-rgb consumer) */
 
   /* element pips (card data only) */
   --el-air: #67b6c4;

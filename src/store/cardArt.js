@@ -36,7 +36,7 @@ export function cardImageUrl(card) {
 // via the card-image CDN, so the Collection landing works fully offline. Only these codes
 // have art; Promotional (999) and any future set render name-forward with no hero. Heroes
 // are decorative (the set name + Ring carry the meaning), so they honour zero-image mode.
-const SET_HEROES = new Set(['001', '002', '004', '005', '006']);
+const SET_HEROES = new Set(['001', '002', '004', '005', '006', '999']);
 
 /** URL for a set's bundled hero image, or null when none exists / images are suppressed. */
 export function setHeroUrl(code) {
