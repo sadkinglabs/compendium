@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Collection cohesion - four surfaces</title>
+<style>
+@import url('../../src/theme/fonts.css');
+
+/* ============================================================
+   TOKENS - copied verbatim from src/theme/tokens.css :root.
+   Anything under the PROPOSED banner is new and called out in
+   the reply. Nothing else here invents a value.
+   ============================================================ */
+:root{
+  --bg:#000; --bg-base:#000;
+  --air:#c4cdd6; --earth:#b35c33; --fire:#e0623f; --water:#4aa3d4; --multi:#d4a83a;
+  --ordinary:#c8c8c8; --exceptional:#4fc3f7; --elite:#ab47bc; --unique:#ffd54f;
+  --surface-card:rgba(34,26,20,.4); --surface-card-2:rgba(34,26,20,.55);
+  --surface-well:rgba(18,13,9,.6);
+  --surface-sheet:linear-gradient(180deg,#151310,#0a0908);
+  --scrim:rgba(8,5,3,.6);
+
+  --gold-rgb:220,184,111;
+  --gold-leaf:#dcb86f; --gold:#cf9a4a; --gold-deep:#c9a35a;
+  --gold-head:#e9d49a; --gold-antique:#b08d4e;
+  --hair-06:rgba(var(--gold-rgb),.06); --hair-08:rgba(var(--gold-rgb),.08);
+  --hair-12:rgba(var(--gold-rgb),.12); --hair-14:rgba(var(--gold-rgb),.14);
+  --hair-16:rgba(var(--gold-rgb),.16); --hair-22:rgba(var(--gold-rgb),.22);
+  --hair-24:rgba(var(--gold-rgb),.24); --hair-28:rgba(var(--gold-rgb),.28);
+  --hair-30:rgba(var(--gold-rgb),.30); --hair-40:rgba(var(--gold-rgb),.40);
+  --edge-gold:rgba(var(--gold-rgb),.45); --edge-gold-strong:rgba(var(--gold-rgb),.5);
+  --hair-glass:rgba(255,255,255,.09); --tint-07:rgba(var(--gold-rgb),.07);
+
+  --ink-head:#efe6d2; --ink-body:#e9dcc0; --ink-body-2:#e3d8c2;
+  --ink-muted:#9a8b6a; --ink-faint:#8f8168; --ink-status:#cbbfa8;
+
+  --accent-gold:#dcb86f; --accent-violet:#c79ad0; --accent-jade:#8fd3a8;
+  --accent-ruby:#d25873; --ruby-rgb:210,88,115;
+  --destructive:#a8584a;
+
+  --ring-track:rgba(74,60,34,.9);
+  --edge-brown:#4a3c22;
+  --hair-warm-50:rgba(74,60,34,.5); --hair-warm-100:rgba(74,60,34,1);
+  --surface-brown-50:rgba(42,33,20,.5); --surface-brown-70:rgba(42,33,20,.7);
+
+  --gilt-rgb:203,167,95; --gold-num:#e3c589;
+  --ink-muted-warm:#8a8175; --ink-dim:#a99a80; --ink-dimmest:#6b6254;
+  --completion-fill:linear-gradient(90deg,var(--accent-gold),var(--accent-ruby));
+  --track-neutral:rgba(255,255,255,.08);
+  --rule-warm:rgba(107,90,46,.6);
+  --tile-top-rgb:42,33,20; --tile-bottom-rgb:26,20,12;
+  --shadow-tile:0 8px 22px rgba(0,0,0,.4);
+
+  --el-air:#67b6c4; --el-earth:#b35c33; --el-fire:#d2645a; --el-water:#5b87d6;
+
+  --f-display:'Cinzel',Georgia,serif;
+  --f-read:'EB Garamond',Georgia,serif;
+  --f-ui:'Hanken Grotesk',sans-serif;
+  --f-mono:'IBM Plex Mono',monospace;
+
+  --r-pill:999px; --r-tag:11px; --r-btn:12px; --r-input:12px; --r-thumb:8px;
+  --r-chip:18px; --r-card:16px; --r-modal:20px; --r-sheet:26px;
+
+  --shadow-chip:0 2px 10px rgba(0,0,0,.5);
+  --shadow-card:0 12px 30px -16px rgba(0,0,0,.7);
+  --shadow-sheet:0 -20px 50px -10px rgba(0,0,0,.5);
+  --sheet-grad:linear-gradient(180deg,#151109,#0b0806);
+
+  /* ─────────── PROPOSED (new in this increment) ─────────── */
+  /* The opaque chrome ground already hand-written as rgba(10,8,5,.94) in the
+     drill header. This increment adds two more consumers (bulk action bar,
+     triage commit bar), so it earns a name. */
+  --surface-chrome:rgba(10,8,5,.94);
+  /* Bulk selection. Ruby is Collection's accent; selection is the one place a
+     card tile is allowed to wear it. Second --ruby-rgb consumer after --ring-halo. */
+  --select-edge:rgba(var(--ruby-rgb),.9);
+  --select-fill:rgba(var(--ruby-rgb),.14);
+  /* De-emphasis for not-selected tiles in bulk mode. A scalar, so it lands in
+     the §1.5 target scale rather than as a colour. */
+  --opacity-deselected:.4;
+}
+
+/* ============================================================
+   MOCKUP PAGE CHROME (not app surface - the notes and frames)
+   ============================================================ */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:#08070a;color:var(--ink-body);font-family:var(--f-ui);
+  -webkit-font-smoothing:antialiased;padding:40px 20px 90px}
+.wrap{max-width:1180px;margin:0 auto}
+.pagehead{max-width:760px;margin:0 auto 54px;text-align:center}
+.pagehead h1{font:700 30px/1.15 var(--f-display);letter-spacing:.06em;color:var(--ink-head);margin:0 0 14px}
+.pagehead p{font:400 16.5px/1.6 var(--f-read);color:var(--ink-muted);margin:0}
+.pagehead .kicker{font:600 10px/1 var(--f-display);letter-spacing:.24em;text-transform:uppercase;color:var(--accent-ruby);margin-bottom:12px}
+
+.sec{margin:0 0 70px;border-top:1px solid var(--hair-12);padding-top:34px}
+.sec > h2{font:700 20px/1.2 var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--gold-num);margin:0 0 8px}
+.sec > h2 span{color:var(--ink-dimmest);margin-right:12px}
+.sec > .lede{font:400 16px/1.6 var(--f-read);color:var(--ink-muted);max-width:720px;margin:0 0 28px}
+
+.rail{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:12px}
+.cap{font:500 11.5px/1.5 var(--f-ui);color:var(--ink-faint);max-width:330px}
+.cap b{color:var(--gold-num);font-weight:600;display:block;font-family:var(--f-display);
+  letter-spacing:.14em;text-transform:uppercase;font-size:10px;margin-bottom:5px}
+
+.note{border-left:2px solid var(--accent-ruby);background:rgba(var(--ruby-rgb),.05);
+  padding:12px 16px;margin:26px 0 0;font:400 15px/1.55 var(--f-read);color:var(--ink-muted);max-width:760px}
+.note b{color:var(--accent-ruby);font-family:var(--f-ui);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;display:block;margin-bottom:6px;font-weight:700}
+
+/* Phone frame - a 390px viewport slice with the app's black ground. */
+.phone{width:390px;flex:none;border-radius:22px;border:1px solid var(--hair-16);
+  background:#000;overflow:hidden;position:relative;box-shadow:0 20px 60px -24px #000}
+.phone.tall{height:660px}
+.phone .body{padding:0 20px;position:relative}
+
+/* ============================================================
+   REAL APP RECIPES - lifted from the shipping source
+   ============================================================ */
+
+/* Drill header (Collection.jsx:587) */
+.dhead{position:relative;z-index:6;padding:8px 20px 12px;background:var(--surface-chrome);
+  border-bottom:1px solid var(--hair-12)}
+.dhead-row{display:flex;align-items:center;gap:12px}
+.icbtn{width:34px;height:34px;flex:none;border-radius:50%;cursor:pointer;
+  border:1px solid var(--hair-40);background:transparent;color:var(--gold-leaf);
+  display:inline-flex;align-items:center;justify-content:center;padding:0}
+.icbtn.on{background:rgba(var(--ruby-rgb),.14);border-color:var(--select-edge);color:var(--accent-ruby)}
+.icbtn svg{width:15px;height:15px}
+.dhead-title{flex:1;min-width:0}
+.dhead-name{font:700 15px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-head);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dhead-count{font:400 11.5px/1 var(--f-mono);color:var(--ink-muted);margin-top:3px}
+
+/* Ring (components/Ring.jsx) - static SVG arc */
+.ring{flex:none;display:block}
+
+/* Header search field - occupies the title's row, never adds a second one. */
+.hsearch{flex:1;min-width:0;display:flex;align-items:center;gap:9px;height:38px;padding:0 6px 0 13px;
+  border-radius:var(--r-pill);background:var(--surface-well);border:1px solid var(--hair-22)}
+.hsearch svg{width:15px;height:15px;color:var(--ink-muted);flex:none}
+.hsearch input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:var(--ink-body);
+  font:400 15px/1 var(--f-read);padding:0}
+.hsearch input::placeholder{color:var(--ink-faint)}
+.hsearch .x{width:34px;height:34px;flex:none;border:0;background:none;color:var(--ink-faint);
+  font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:50%}
+
+/* Bulk header state - the mode wears a ruby underline, not a banner. */
+.dhead.bulk{border-bottom:1px solid var(--select-edge);
+  box-shadow:inset 0 3px 0 -1px rgba(var(--ruby-rgb),.35)}
+.dhead-selcount{font:700 15px/1.1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--accent-ruby)}
+.dhead-selsub{font:400 11.5px/1 var(--f-mono);color:var(--ink-muted);margin-top:3px}
+
+/* Selection chip row - selection ops, kept away from the write ops. */
+.selbar{display:flex;gap:7px;padding:10px 20px 11px;overflow-x:auto;background:var(--surface-chrome);
+  border-bottom:1px solid var(--hair-08)}
+.selbar::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:7px 13px;border-radius:var(--r-pill);cursor:pointer;white-space:nowrap;
+  font:600 12px/1 var(--f-ui);color:var(--ink-body-2);background:var(--surface-brown-50);
+  border:1px solid var(--hair-warm-50)}
+.chip.on{color:#1a1206;background:linear-gradient(180deg,#d8b872,#b8954f);border-color:var(--gold-num)}
+
+/* Card grid + tile (CollectionCardViews.jsx BinderTile) */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px}
+.tile{position:relative;cursor:pointer}
+.face{position:relative;border-radius:13px;overflow:hidden;padding:1px;
+  background:linear-gradient(160deg,rgba(203,167,95,.75),rgba(120,95,48,.35));
+  box-shadow:0 6px 18px -10px rgba(0,0,0,.8)}
+.face.missing{padding:0;background:none;border:1px dashed rgba(203,167,95,.22);box-shadow:none}
+.art{position:relative;border-radius:12px;overflow:hidden;aspect-ratio:5/7;
+  background:linear-gradient(165deg,#2a2114,#12100c)}
+/* Deterministic art placeholder - stands in for CardArt's element-gradient fallback. */
+.art.fire{background:linear-gradient(165deg,#4a2018,#1a0f0b)}
+.art.water{background:linear-gradient(165deg,#16283f,#0b1119)}
+.art.earth{background:linear-gradient(165deg,#3a2412,#170f09)}
+.art.air{background:linear-gradient(165deg,#2b3238,#101316)}
+.art::after{content:'';position:absolute;inset:0;
+  background:radial-gradient(70% 46% at 50% 30%,rgba(255,255,255,.07),transparent 70%)}
+.art .dim{position:absolute;inset:0;background:rgba(6,5,5,.68)}
+.cap-strip{position:absolute;left:0;right:0;bottom:0;padding:18px 9px 8px;z-index:2;
+  background:linear-gradient(transparent,rgba(6,5,5,.92))}
+.cap-name{font:600 12px/1.2 var(--f-read);color:#efe7d8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cap-name.missing{color:#a99a80}
+.cap-set{font:600 8px/1 var(--f-display);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--gold-leaf);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.corner{position:absolute;top:7px;left:7px;display:inline-flex;gap:5px;z-index:3}
+.chipdark{display:inline-flex;align-items:center;font:700 11px/1 var(--f-mono);color:#e3c589;
+  padding:3px 7px;border-radius:8px;background:rgba(8,6,4,.82);border:1px solid rgba(203,167,95,.3)}
+.qadd{position:absolute;bottom:7px;right:7px;z-index:3;width:32px;height:32px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(10,9,8,.78);
+  border:1px solid rgba(224,169,177,.4);color:#f0c8ce;font-size:17px;font-family:var(--f-ui)}
+
+/* Bulk selection state on a tile. The FRAME carries it, not a small control:
+   the whole tile is the target, and it survives zero-image mode. */
+.tile.pick .face{background:linear-gradient(160deg,var(--select-edge),rgba(var(--ruby-rgb),.4));
+  box-shadow:0 0 0 1px rgba(var(--ruby-rgb),.35),0 6px 20px -10px rgba(var(--ruby-rgb),.5)}
+.tile.pick .face.missing{padding:1px;border:0;background:linear-gradient(160deg,var(--select-edge),rgba(var(--ruby-rgb),.4))}
+.tile.pick .art::before{content:'';position:absolute;inset:0;z-index:1;background:var(--select-fill)}
+.tile.nopick{opacity:var(--opacity-deselected)}
+.tick{position:absolute;top:7px;right:7px;z-index:4;width:24px;height:24px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:var(--accent-ruby);
+  border:1px solid rgba(255,255,255,.28);box-shadow:0 2px 8px rgba(0,0,0,.6)}
+.tick svg{width:13px;height:13px;color:#1a0a0e}
+.tick.off{background:rgba(8,6,4,.7);border:1px solid var(--hair-30)}
+.tick.off svg{display:none}
+
+/* Bulk action bar - three objects, not nine. */
+.actionbar{position:absolute;left:0;right:0;bottom:0;z-index:20;padding:12px 16px 16px;
+  background:var(--surface-chrome);border-top:1px solid var(--select-edge);
+  display:flex;align-items:center;gap:10px}
+.abcount{flex:none;min-width:52px}
+.abcount .n{font:700 21px/1 var(--f-display);color:var(--accent-ruby)}
+.abcount .l{font:500 9px/1 var(--f-display);letter-spacing:.16em;text-transform:uppercase;
+  color:var(--ink-muted-warm);margin-top:5px}
+.btn-ghost{flex:none;height:46px;padding:0 16px;border-radius:var(--r-btn);cursor:pointer;
+  background:var(--surface-brown-50);border:1px solid var(--hair-warm-50);color:var(--gold-num);
+  font:600 13px/1 var(--f-ui)}
+.btn-gold{flex:1;height:46px;border-radius:var(--r-btn);cursor:pointer;border:1px solid var(--gold-num);
+  background:linear-gradient(180deg,#d8b872,#b8954f);color:#1a1206;font:700 13.5px/1 var(--f-ui);
+  display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-gold .n{font:700 13.5px/1 var(--f-mono);opacity:.72}
+.btn-gold[disabled]{background:var(--surface-brown-50);border-color:var(--hair-warm-50);
+  color:var(--ink-dimmest);cursor:default}
+
+/* Sheet (GothicSheet chassis) - reused, not re-chassised. */
+.sheet{width:390px;flex:none;border-radius:var(--r-sheet) var(--r-sheet) 0 0;
+  background:var(--sheet-grad);border-top:1px solid rgba(220,184,111,.16);
+  box-shadow:var(--shadow-sheet);padding:10px 0 22px}
+.sheet .handle{width:36px;height:4px;border-radius:2px;background:rgba(220,184,111,.28);margin:2px auto 16px}
+.sheet .title{padding:0 22px;font:700 13px/1 var(--f-display);letter-spacing:.2em;
+  text-transform:uppercase;color:var(--gold-leaf);margin-bottom:4px}
+.srow{display:flex;align-items:center;gap:13px;padding:14px 22px;cursor:pointer;
+  border-bottom:1px solid var(--hair-08)}
+.srow:last-child{border-bottom:0}
+.srow .ic{width:20px;flex:none;color:var(--gold-leaf);display:flex}
+.srow .ic svg{width:18px;height:18px}
+.srow .tx{flex:1;min-width:0}
+.srow .lbl{font:600 15px/1.2 var(--f-read);color:var(--ink-body)}
+.srow .sub{font:400 12.5px/1.35 var(--f-read);color:var(--ink-muted-warm);margin-top:4px}
+.srow.danger{border-top:1px solid var(--hair-warm-50);margin-top:6px}
+.srow.danger .ic,.srow.danger .lbl{color:var(--destructive)}
+.sgroup{font:600 10px/1 var(--f-display);letter-spacing:.22em;text-transform:uppercase;
+  color:var(--ink-muted-warm);padding:16px 22px 8px}
+
+/* Toast (tokens.css .cx-toast) + the Undo affordance */
+.toast{width:340px;padding:11px 6px 11px 18px;border-radius:14px;
+  background:linear-gradient(180deg,#1a1712,#0e0c0a);border:1px solid rgba(220,184,111,.28);
+  color:var(--ink-body);font:500 13px/1.4 var(--f-ui);box-shadow:0 8px 26px rgba(0,0,0,.55);
+  display:flex;align-items:center;gap:12px}
+.toast .msg{flex:1;text-align:left}
+.toast .undo{flex:none;padding:8px 16px;border:0;background:none;cursor:pointer;
+  border-left:1px solid var(--hair-22);color:var(--gold-num);
+  font:700 11.5px/1 var(--f-ui);letter-spacing:.14em;text-transform:uppercase}
+.toast.warn{border-color:rgba(224,120,106,.5)}
+.toast.warn .msg{color:#f0c9c2}
+
+/* A-Z rail. Fixed right gutter, ALWAYS reserved so the grid never reflows
+   when grouping changes. One continuous scrub track, not 26 buttons. */
+.railtrack{position:absolute;right:4px;top:96px;bottom:104px;width:26px;z-index:8;
+  display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+  padding:8px 0;border-radius:var(--r-pill);background:rgba(10,8,5,.5);
+  border:1px solid var(--hair-08)}
+.railtrack b{font:600 9.5px/1 var(--f-display);letter-spacing:.02em;color:var(--gold-antique);
+  font-weight:600;display:block}
+.railtrack b.empty{color:transparent;position:relative}
+.railtrack b.empty::after{content:'';position:absolute;left:50%;top:50%;width:2px;height:2px;
+  border-radius:50%;background:var(--hair-30);transform:translate(-50%,-50%)}
+.railtrack b.act{font-size:13px;color:var(--gold-head);text-shadow:0 0 10px rgba(220,184,111,.55)}
+/* Magnified read-out sits LEFT of the rail so the thumb never covers it. */
+.raillens{position:absolute;right:36px;top:266px;z-index:9;width:54px;height:54px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;background:rgba(10,8,5,.94);
+  border:1px solid var(--edge-gold);box-shadow:0 8px 24px rgba(0,0,0,.7);
+  font:700 26px/1 var(--f-display);color:var(--gold-head)}
+
+/* Section headers for element / rarity grouping (Codex rubric recipe) */
+.rubric{display:flex;align-items:center;gap:10px;padding:18px 0 8px}
+.rubric .dot{width:8px;height:8px;border-radius:50%;flex:none}
+.rubric .lt{font:700 14px/1 var(--f-display);letter-spacing:.18em;text-transform:uppercase;
+  color:#cba75f;flex:none}
+.rubric .hair{flex:1;height:1px;background:linear-gradient(90deg,#4a3c22,transparent)}
+.rubric .n{font:400 11.5px/1 var(--f-mono);color:var(--ink-muted-warm);flex:none}
+.rubric.az .lt{font-size:19px;letter-spacing:.04em}
+
+/* Sets-home plate (SetsHome.jsx) */
+.plates{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.plate{position:relative;overflow:hidden;width:100%;cursor:pointer;display:flex;flex-direction:column;
+  align-items:center;padding:0;border-radius:16px;border:1px solid rgba(var(--gilt-rgb),.45);
+  background:linear-gradient(180deg,rgba(var(--tile-top-rgb),.55),rgba(var(--tile-bottom-rgb),.55));
+  box-shadow:var(--shadow-tile)}
+.plate .hero{width:100%;height:92px;padding:16px 18px 0;display:flex;align-items:center;justify-content:center}
+.plate .wordmark{font:700 19px/1.15 var(--f-display);letter-spacing:.1em;text-align:center;
+  color:#171209;text-shadow:0 1px 0 rgba(233,212,154,.14),0 -1px 1px rgba(0,0,0,.9)}
+.plate .nm{margin-top:10px;padding:0 12px;text-align:center;
+  font:600 11.5px/1.35 var(--f-display);letter-spacing:.18em;text-transform:uppercase;color:var(--gold-num)}
+.plate .stats{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:10px;padding-bottom:15px}
+.plate .num{font:600 13.5px/1 var(--f-display);color:var(--gold-num)}
+.plate .of{font:400 13px/1 var(--f-read);color:var(--ink-muted-warm)}
+.plate .sep{width:1px;height:11px;background:var(--rule-warm)}
+.plate .bar{position:absolute;left:0;right:0;bottom:0;height:4px;background:var(--track-neutral)}
+.plate .bar i{display:block;height:100%;background:var(--completion-fill)}
+
+/* Unspecified plate. Warm-brown edge (it is not a gilt set), full-brightness
+   ink (it is legitimate, not empty), and NO completion bar - a 0% bar is a nag. */
+.plate.unspec{border:1px solid var(--hair-warm-50);
+  background:linear-gradient(180deg,rgba(var(--tile-top-rgb),.42),rgba(var(--tile-bottom-rgb),.42));
+  box-shadow:none}
+.plate.unspec .nm{color:var(--ink-body-2)}
+.plate.unspec .diamond{width:38px;height:38px;transform:rotate(45deg);border:1px solid var(--hair-30);
+  border-radius:3px;position:relative}
+.plate.unspec .diamond::after{content:'';position:absolute;inset:6px;border:1px solid var(--hair-14);border-radius:2px}
+.plate.unspec .action{font:600 11px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--gold-leaf);padding-bottom:16px;margin-top:11px}
+
+/* Triage surface */
+.tgroup{padding:16px 0 14px;border-bottom:1px solid var(--hair-08)}
+.tcard{display:flex;align-items:flex-start;gap:12px}
+.tthumb{width:46px;flex:none;aspect-ratio:5/7;border-radius:var(--r-thumb);overflow:hidden;
+  border:1px solid var(--hair-16);background:linear-gradient(165deg,#2a2114,#12100c)}
+.tname{font:600 16px/1.2 var(--f-read);color:var(--ink-head)}
+.tmeta{font:400 11.5px/1 var(--f-mono);color:var(--ink-muted);margin-top:6px}
+.tleft{font:600 10px/1 var(--f-display);letter-spacing:.14em;text-transform:uppercase;
+  color:var(--accent-ruby);margin-top:7px}
+.tleft.done{color:var(--accent-jade)}
+.alloc{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hair-06)}
+.alloc:last-child{border-bottom:0}
+.alloc .an{flex:1;min-width:0;font:400 14.5px/1.25 var(--f-read);color:var(--ink-body-2)}
+.alloc .hint{display:block;font:400 11px/1 var(--f-read);color:var(--ink-muted-warm);
+  font-style:italic;margin-top:5px}
+.alloc .hint.rank{color:var(--gold-antique)}
+.step{flex:none;display:inline-flex;align-items:center;gap:2px}
+.step button{width:32px;height:32px;border-radius:50%;cursor:pointer;
+  background:rgba(var(--ruby-rgb),.1);border:1px solid rgba(var(--ruby-rgb),.3);
+  color:#f0c8ce;font:400 16px/1 var(--f-ui);display:flex;align-items:center;justify-content:center}
+.step .v{min-width:22px;text-align:center;font:500 16px/1 var(--f-display);color:#efe7d8}
+.step .v.zero{color:var(--ink-dimmest)}
+.resolved{display:flex;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--hair-08)}
+.resolved .ic{width:22px;height:22px;border-radius:50%;flex:none;display:flex;align-items:center;
+  justify-content:center;border:1px solid rgba(143,211,168,.5);background:rgba(10,20,16,.8)}
+.resolved .ic svg{width:12px;height:12px;color:var(--accent-jade)}
+.resolved .tx{flex:1;font:400 14.5px/1.3 var(--f-read);color:var(--ink-body-2)}
+.resolved .chev{color:#5c554b;font-size:15px}
+
+.zerotag{display:inline-block;font:700 8.5px/1 var(--f-ui);letter-spacing:.14em;color:var(--ink-faint);
+  border:1px solid var(--hair-22);border-radius:8px;padding:4px 8px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="pagehead">
+  <div class="kicker">Collection · Manuscript</div>
+  <h1>Set drill, index rail, bulk mode, Unspecified</h1>
+  <p>Four surfaces from the FAB cohesion brief (v2), drawn in the shipping token set. Everything here composes with the existing header, dock, FAB and sheet chassis. No new chassis, no decorative chrome.</p>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     A · SET DRILL HEADER
+     ══════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2><span>A</span>Set drill header</h2>
+  <p class="lede">The header stays exactly one row tall in every state. Search does not push a second row down onto the grid; it takes over the row it needs. That is the whole discipline that keeps this from becoming a toolbar.</p>
+
+  <div class="rail">
+
+    <div class="col">
+      <div class="phone">
+        <div class="dhead">
+          <div class="dhead-row">
+            <button class="icbtn" aria-label="Back to sets">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+            </button>
+            <svg class="ring" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+              <circle cx="17" cy="17" r="15" fill="none" stroke="var(--ring-track)" stroke-width="4"/>
+              <circle cx="17" cy="17" r="15" fill="none" stroke="var(--accent-ruby)" stroke-width="4"
+                stroke-linecap="round" stroke-dasharray="94.2" stroke-dashoffset="34" transform="rotate(-90 17 17)"/>
+            </svg>
+            <div class="dhead-title">
+              <div class="dhead-name">Alpha</div>
+              <div class="dhead-count">241 / 402</div>
+            </div>
+            <button class="icbtn" aria-label="Search this set">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.3" y2="16.3"/></svg>
+            </button>
+            <button class="icbtn" aria-label="Select multiple cards">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="body">
+          <div style="font:400 11.5px/1 var(--f-ui);color:var(--ink-faint);text-align:right;margin:10px 2px 0">402 cards</div>
+          <div class="grid" style="padding-bottom:16px">
+            <div class="tile"><div class="face"><div class="art fire"><div class="cap-strip"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="qadd">+</span></div>
+            <div class="tile"><div class="face missing"><div class="art water"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>Rest</b>Back · completion ring · name + owned/total · search · bulk. Two 34px glyph buttons, no labels, no overflow dots (there is no set-level command yet, per §3). Filters stay on the docked FAB; camera stays on the stacked FAB.</div>
+    </div>
+
+    <div class="col">
+      <div class="phone">
+        <div class="dhead">
+          <div class="dhead-row">
+            <button class="icbtn" aria-label="Back to sets">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+            </button>
+            <div class="hsearch">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.3" y2="16.3"/></svg>
+              <input value="sir" placeholder="Search Alpha" readonly>
+              <button class="x" aria-label="Close search">✕</button>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <div style="font:400 11.5px/1 var(--f-ui);color:var(--ink-faint);text-align:right;margin:10px 2px 0">3 cards</div>
+          <div class="grid" style="padding-bottom:16px">
+            <div class="tile"><div class="face missing"><div class="art water"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+            <div class="tile"><div class="face"><div class="art air"><div class="cap-strip"><div class="cap-name">Sir Bellamy</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×1</span></span><span class="qadd">+</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>Search open</b>The ring, name and count yield the row to the field; back stays put. Dismiss is the ✕ (empty field) or back. Nothing below moves. The permanent dock search pill is gone, so the keyboard-aware dock now carries only the FABs.</div>
+    </div>
+
+    <div class="col">
+      <div class="phone">
+        <div class="dhead bulk">
+          <div class="dhead-row">
+            <button class="icbtn on" aria-label="Exit selection">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+            </button>
+            <div class="dhead-title">
+              <div class="dhead-selcount">42 selected</div>
+              <div class="dhead-selsub">Alpha · 402 cards</div>
+            </div>
+            <button class="icbtn" aria-label="Search this set">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.3" y2="16.3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="selbar">
+          <button class="chip on">All 402</button>
+          <button class="chip">None</button>
+          <button class="chip">Missing</button>
+          <button class="chip">Owned</button>
+        </div>
+        <div class="body">
+          <div class="grid" style="padding-bottom:16px">
+            <div class="tile pick"><div class="face"><div class="art fire"><div class="cap-strip"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="tile nopick"><div class="face missing"><div class="art water"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="tick off"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>Bulk active</b>Back becomes exit-✕ in ruby, the title becomes the live count, and the mode wears a ruby underline plus a ruby top-edge glow. Search survives inside bulk (§5). Detail in section C.</div>
+    </div>
+
+  </div>
+
+  <div class="note"><b>Opinion</b>Search-on-demand is right, but note where the set drill's controls now live: two in the header, filters on the docked FAB, camera on the stacked FAB above it. Three places for one screen. That is defensible only because each group means something different (navigate / narrow / acquire) - if a fourth group ever appears, this breaks and the header should absorb the filter entry instead.</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     B · A-Z INDEX RAIL + SECTION HEADERS
+     ══════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2><span>B</span>A-Z index rail, and grouped section headers</h2>
+  <p class="lede">26 discrete touch targets on a phone is not solvable by making them bigger - there is no room. So they are not touch targets. The rail is <b>one continuous scrub track</b>: press anywhere and drag, and the letter under your thumb is read out in a magnified lens placed to the <b>left</b> of the rail, where your thumb is not covering it. Lifting commits the jump. A single tap still works, it is just a scrub of length zero.</p>
+
+  <div class="rail">
+
+    <div class="col">
+      <div class="phone tall">
+        <div class="dhead">
+          <div class="dhead-row">
+            <button class="icbtn" aria-label="Back">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+            </button>
+            <svg class="ring" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+              <circle cx="17" cy="17" r="15" fill="none" stroke="var(--ring-track)" stroke-width="4"/>
+              <circle cx="17" cy="17" r="15" fill="none" stroke="var(--accent-ruby)" stroke-width="4" stroke-linecap="round" stroke-dasharray="94.2" stroke-dashoffset="34" transform="rotate(-90 17 17)"/>
+            </svg>
+            <div class="dhead-title"><div class="dhead-name">Alpha</div><div class="dhead-count">241 / 402</div></div>
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.3" y2="16.3"/></svg></button>
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg></button>
+          </div>
+        </div>
+        <div class="body" style="padding-right:36px">
+          <div class="rubric az" style="padding-top:14px"><span class="lt">S</span><span class="hair"></span><span class="n">31</span></div>
+          <div class="grid" style="margin-top:4px">
+            <div class="tile"><div class="face"><div class="art water"><div class="cap-strip"><div class="cap-name">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×3</span></span><span class="qadd">+</span></div>
+            <div class="tile"><div class="face missing"><div class="art earth"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Spire Lich</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+            <div class="tile"><div class="face"><div class="art air"><div class="cap-strip"><div class="cap-name">Sir Bellamy</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×1</span><span class="chipdark">✦1</span></span><span class="qadd">+</span></div>
+            <div class="tile"><div class="face missing"><div class="art fire"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Scorch</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+          </div>
+        </div>
+        <div class="raillens">S</div>
+        <div class="railtrack">
+          <b>A</b><b>B</b><b>C</b><b>D</b><b>E</b><b>F</b><b>G</b><b>H</b><b>I</b>
+          <b class="empty">J</b><b>K</b><b>L</b><b>M</b><b>N</b><b>O</b><b>P</b>
+          <b class="empty">Q</b><b>R</b><b class="act">S</b><b>T</b><b>U</b><b>V</b>
+          <b>W</b><b class="empty">X</b><b>Y</b><b class="empty">Z</b>
+        </div>
+      </div>
+      <div class="cap"><b>Ungrouped alphabetical</b>Letters at 9.5px Cinzel in antique gold; the active letter lifts to 13px and bright gold. Letters with no cards under the current filter collapse to a 2px dot - honest, and it de-noises the rail. The grid gains 36px of right padding so art never sits under the rail.</div>
+    </div>
+
+    <div class="col">
+      <div class="phone" style="height:660px">
+        <div class="dhead">
+          <div class="dhead-row">
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+            <svg class="ring" width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+              <circle cx="17" cy="17" r="15" fill="none" stroke="var(--ring-track)" stroke-width="4"/>
+              <circle cx="17" cy="17" r="15" fill="none" stroke="var(--accent-ruby)" stroke-width="4" stroke-linecap="round" stroke-dasharray="94.2" stroke-dashoffset="34" transform="rotate(-90 17 17)"/>
+            </svg>
+            <div class="dhead-title"><div class="dhead-name">Alpha</div><div class="dhead-count">241 / 402</div></div>
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.3" y2="16.3"/></svg></button>
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg></button>
+          </div>
+        </div>
+        <div class="body" style="padding-right:36px">
+          <div class="rubric"><span class="dot" style="background:var(--el-fire)"></span><span class="lt">Fire</span><span class="hair"></span><span class="n">44 / 68</span></div>
+          <div class="grid" style="margin-top:2px">
+            <div class="tile"><div class="face"><div class="art fire"><div class="cap-strip"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="qadd">+</span></div>
+            <div class="tile"><div class="face missing"><div class="art fire"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Scorch</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+          </div>
+          <div class="rubric"><span class="dot" style="background:var(--el-water)"></span><span class="lt">Water</span><span class="hair"></span><span class="n">37 / 71</span></div>
+          <div class="grid" style="margin-top:2px">
+            <div class="tile"><div class="face"><div class="art water"><div class="cap-strip"><div class="cap-name">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×3</span></span><span class="qadd">+</span></div>
+            <div class="tile"><div class="face missing"><div class="art water"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Undertow</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+          </div>
+          <div class="rubric"><span class="dot" style="background:var(--unique)"></span><span class="lt">Unique</span><span class="hair"></span><span class="n">6 / 24</span></div>
+          <div class="grid" style="margin-top:2px">
+            <div class="tile"><div class="face"><div class="art earth"><div class="cap-strip"><div class="cap-name">Wicker Manikin</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×1</span></span><span class="qadd">+</span></div>
+            <div class="tile"><div class="face missing"><div class="art air"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Ythrix</div><div class="cap-set">Alpha</div></div></div></div><span class="qadd">+</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>Grouped by element or rarity</b>Rail hidden; the shipped Codex section rubric does the work - Cinzel caps, a fade hairline, an owned/total on the right, and the one card-data colour as a dot (element pips, rarity hues). Rarity groups sort by the explicit scarcity rank, not alphabetically. The 36px gutter stays reserved so the grid does not reflow when you change grouping.</div>
+    </div>
+
+  </div>
+
+  <div class="note"><b>Problem the owner should know about</b>The rail and the FAB dock compete for the same right edge. The rail has to stop ~104px above the bottom to clear the docked FAB, which costs it about a fifth of its height and squeezes the letter pitch to roughly 14px. That is workable as a scrub track and would be unusable as 26 buttons - which is the real argument for the scrub, beyond ergonomics. If the letter pitch ever drops below ~12px, drop to a coarse rail (A E I M Q U Z with the lens still reading the exact letter) rather than shrinking the type further.</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     C · BULK MODE
+     ══════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2><span>C</span>Bulk mode</h2>
+  <p class="lede">Nine actions is not a list problem, it is a <b>two-kinds problem</b>. Four of them change <i>what is selected</i> and five change <i>what is written</i>. They are separated physically: selection chips ride under the header where selection state lives; write actions live in the bottom bar. One write action is primary, the rest are one tap away in the existing sheet chassis.</p>
+
+  <div class="rail">
+
+    <div class="col">
+      <div class="phone tall">
+        <div class="dhead bulk">
+          <div class="dhead-row">
+            <button class="icbtn on" aria-label="Exit selection">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+            </button>
+            <div class="dhead-title">
+              <div class="dhead-selcount">42 selected</div>
+              <div class="dhead-selsub">Alpha · 402 cards</div>
+            </div>
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.3" y2="16.3"/></svg></button>
+          </div>
+        </div>
+        <div class="selbar">
+          <button class="chip">All 402</button>
+          <button class="chip">None</button>
+          <button class="chip on">Missing</button>
+          <button class="chip">Owned</button>
+        </div>
+        <div class="body">
+          <div class="grid">
+            <div class="tile pick"><div class="face missing"><div class="art fire"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Scorch</div><div class="cap-set">Alpha</div></div></div></div><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="tile nopick"><div class="face"><div class="art water"><div class="cap-strip"><div class="cap-name">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×3</span></span><span class="tick off"></span></div>
+            <div class="tile pick"><div class="face missing"><div class="art earth"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Spire Lich</div><div class="cap-set">Alpha</div></div></div></div><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="tile pick"><div class="face missing"><div class="art air"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Ythrix</div><div class="cap-set">Alpha</div></div></div></div><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="tile nopick"><div class="face"><div class="art fire"><div class="cap-strip"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="tick off"></span></div>
+            <div class="tile pick"><div class="face missing"><div class="art water"><span class="dim"></span><div class="cap-strip"><div class="cap-name missing">Undertow</div><div class="cap-set">Alpha</div></div></div></div><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+          </div>
+        </div>
+        <div class="actionbar">
+          <div class="abcount"><div class="n">42</div><div class="l">Picked</div></div>
+          <button class="btn-ghost">More</button>
+          <button class="btn-gold">Add 1 to each <span class="n">42</span></button>
+        </div>
+      </div>
+      <div class="cap"><b>The selection surface</b>The FAB dock is suppressed while bulk is active - the action bar owns the bottom, so the filter FAB cannot collide with it and per-row quick-add cannot fire mid-transaction (§6, boundary rule 7). Refine is still reachable by exiting bulk; the snapshot survives.</div>
+    </div>
+
+    <div class="col" style="gap:22px">
+
+      <div class="col">
+        <div style="width:390px;border-radius:16px;border:1px solid var(--hair-16);background:#000;padding:16px 20px 22px">
+          <div class="grid" style="grid-template-columns:1fr 1fr;margin:0">
+            <div class="tile pick"><div class="face"><div class="art fire"><div class="cap-strip"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="tile nopick"><div class="face"><div class="art fire"><div class="cap-strip"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="tick off"></span></div>
+          </div>
+        </div>
+        <div class="cap"><b>Per-card affordance</b>The whole tile is the target - no small control to hit on a 2-up grid. Selected: ruby frame, a ruby wash over the art, full opacity, and a ruby tick where the playset seal normally sits (playset is secondary while selecting). Not selected: 40% opacity and a hollow tick. Owned count stays top-left in both, because it is what you decide with.</div>
+      </div>
+
+      <div class="col">
+        <div style="width:390px;border-radius:16px;border:1px solid var(--hair-16);background:#000;padding:16px 20px 22px">
+          <div class="zerotag">ZERO-IMAGE MODE</div>
+          <div class="grid" style="grid-template-columns:1fr 1fr;margin:0">
+            <div class="tile pick"><div class="face"><div class="art" style="background:linear-gradient(165deg,#2a2114,#12100c)"><div class="cap-strip" style="background:none"><div class="cap-name">Ruby Core</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×2</span></span><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span></div>
+            <div class="tile nopick"><div class="face"><div class="art" style="background:linear-gradient(165deg,#2a2114,#12100c)"><div class="cap-strip" style="background:none"><div class="cap-name">Sirens</div><div class="cap-set">Alpha</div></div></div></div><span class="corner"><span class="chipdark">×3</span></span><span class="tick off"></span></div>
+          </div>
+        </div>
+        <div class="cap"><b>Zero-image</b>Selection is carried by frame, wash, tick and opacity - all vector. Nothing about the state was living in the photo, so the surface loses nothing but the picture.</div>
+      </div>
+
+    </div>
+
+    <div class="col">
+      <div class="sheet">
+        <div class="handle"></div>
+        <div class="title">Bulk actions</div>
+        <div style="padding:0 22px;font:400 13px/1.4 var(--f-read);color:var(--ink-muted-warm)">42 cards selected in Alpha</div>
+
+        <div class="sgroup">Ownership</div>
+        <div class="srow">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+          <span class="tx"><span class="lbl">Add 1 to each</span><span class="sub">Every selected card gains one copy.</span></span>
+        </div>
+        <div class="srow">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span class="tx"><span class="lbl">Ensure at least 1</span><span class="sub">Brings cards you own none of up to one. Cards you already own keep their count.</span></span>
+        </div>
+
+        <div class="sgroup">Send to</div>
+        <div class="srow">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg></span>
+          <span class="tx"><span class="lbl">Add to a list</span><span class="sub">Pick a list, or start a new one.</span></span>
+        </div>
+        <div class="srow">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-9.2A3.9 3.9 0 0 1 12 8a3.9 3.9 0 0 1 7 2.8C19 15.6 12 20 12 20z"/></svg></span>
+          <span class="tx"><span class="lbl">Wishlist selected</span><span class="sub">Adds one wanted copy of each.</span></span>
+        </div>
+        <div class="srow">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/></svg></span>
+          <span class="tx"><span class="lbl">Export as text</span><span class="sub">Copy the 42 selected cards as a buy list.</span></span>
+        </div>
+
+        <div class="srow danger">
+          <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg></span>
+          <span class="tx"><span class="lbl">Remove 1 from each</span><span class="sub">Confirms first. Undo is offered afterwards.</span></span>
+        </div>
+      </div>
+      <div class="cap"><b>"More" sheet</b>The existing chassis, no new one. Primary "Add 1 to each" repeats here so the sheet is a complete menu rather than a leftovers drawer. "Ensure at least 1" lives here because it cannot be understood from a button label alone - it needs the second line, and the bar has no room for one. Destructive sits alone below a warm rule, last, and never on the bar.</div>
+    </div>
+
+  </div>
+
+  <h3 style="font:600 12px/1 var(--f-display);letter-spacing:.22em;text-transform:uppercase;color:var(--gold-num);margin:44px 0 16px">Confirmation and undo</h3>
+  <div class="rail">
+    <div class="col">
+      <div class="toast"><span class="msg">Added 1 copy to 42 cards in Alpha</span><button class="undo">Undo</button></div>
+      <div class="cap">Success. Names the count <i>and</i> the destination, because the camera taught us the destination is not obvious (§3).</div>
+    </div>
+    <div class="col">
+      <div class="toast"><span class="msg">Removed 1 copy from 42 cards</span><button class="undo">Undo</button></div>
+      <div class="cap">Destructive, post-confirm. Same shape - the confirm sheet already carried the warning, so the toast does not shout twice.</div>
+    </div>
+    <div class="col">
+      <div class="toast warn"><span class="msg">Restored 40 of 42 - 2 changed since</span></div>
+      <div class="cap">The honest conflict case from §6. Undo restores only rows still equal to the committed-after value; the rest are reported, never overwritten. No Undo button here - there is nothing further to undo.</div>
+    </div>
+  </div>
+
+  <div class="note"><b>Opinion - the toast is the wrong container for this undo</b>A four-second toast is fine for "list duplicated". It is not fine for the undo of a transaction that just rewrote 400 rows, and the brief's own timing concern says that write may take a visible moment on device. Recommend: after a bulk write, the action bar does not disappear - it <i>becomes</i> the confirmation bar ("Added 1 to 42 cards · Undo") and persists until the user exits bulk mode or runs another action. Same real estate, no new chrome, and the undo window matches the weight of the operation instead of a stopwatch.</div>
+
+  <div class="note"><b>Problem the owner should know about</b>Selection is snapshotted, which is correct. But that means a user can select 42 cards, change a filter, and see a grid where only 9 of the selected cards are visible while the bar still says 42. The bar must never lie, so it keeps saying 42 - which means the surface needs one more honest line when it happens: a thin strip under the selection chips reading "33 selected cards are hidden by the current filters". Not designed above because it only appears in that state, but it is required, not optional.</div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     D · UNSPECIFIED
+     ══════════════════════════════════════════════════════════ -->
+<section class="sec">
+  <h2><span>D</span>The Unspecified pseudo-set</h2>
+  <p class="lede">This plate has one job the others do not: look deliberate. A logo-shaped hole reads as a broken tile, and a 0% completion bar reads as failure. So it gets neither. It takes the warm-brown edge that empty sets wear (it is not a gilt set), keeps full-brightness ink (it is not an empty set), carries no bar and no badge, and states its action plainly.</p>
+
+  <div class="rail">
+
+    <div class="col">
+      <div class="phone">
+        <div style="padding:16px 20px 22px">
+          <div style="margin:2px 2px 18px">
+            <div style="font:600 10px/1 var(--f-display);letter-spacing:.22em;text-transform:uppercase;color:var(--accent-ruby)">Collection</div>
+            <div style="font:700 22px/1.1 var(--f-display);letter-spacing:.06em;color:var(--ink-head);margin:6px 0">Sets</div>
+            <div style="font:400 11.5px/1 var(--f-mono);letter-spacing:.04em;color:var(--ink-muted)">1,204 / 3,318 non-foil owned</div>
+          </div>
+          <div class="plates">
+            <div class="plate">
+              <div class="hero"><div class="wordmark">ALPHA</div></div>
+              <div class="nm">Alpha</div>
+              <div class="stats"><span><span class="num">241</span><span class="of">/402</span></span><span class="sep"></span><span><span class="num">✦ 12</span><span class="of"> foil</span></span></div>
+              <span class="bar"><i style="width:60%"></i></span>
+            </div>
+            <div class="plate">
+              <div class="hero"><div class="wordmark">BETA</div></div>
+              <div class="nm">Beta</div>
+              <div class="stats"><span><span class="num">388</span><span class="of">/402</span></span><span class="sep"></span><span><span class="num">✦ 31</span><span class="of"> foil</span></span></div>
+              <span class="bar"><i style="width:96%"></i></span>
+            </div>
+            <div class="plate">
+              <div class="hero"><div class="wordmark" style="font-size:15px">ARTHURIAN<br>LEGENDS</div></div>
+              <div class="nm">Arthurian Legends</div>
+              <div class="stats"><span><span class="num">92</span><span class="of">/210</span></span><span class="sep"></span><span><span class="num">✦ 4</span><span class="of"> foil</span></span></div>
+              <span class="bar"><i style="width:44%"></i></span>
+            </div>
+            <div class="plate unspec">
+              <div class="hero"><span class="diamond"></span></div>
+              <div class="nm">Unspecified</div>
+              <div class="stats"><span><span class="num" style="color:var(--ink-body-2)">17</span><span class="of"> cards · printing unknown</span></span></div>
+              <div class="action">Sort printings ›</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="cap"><b>Plate</b>The hero slot carries the app's own rotated gold diamond (the <code>BlankState</code> mark), hollow and engraved - the house vocabulary for "no content here", which no real set uses. That is what keeps it from reading as a failed image load. No count-to-zero, no badge, no ring. It sorts last, after every real set.</div>
+    </div>
+
+    <div class="col">
+      <div class="phone tall">
+        <div class="dhead">
+          <div class="dhead-row">
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+            <div class="dhead-title">
+              <div class="dhead-name">Sort printings</div>
+              <div class="dhead-count">17 cards · 24 copies</div>
+            </div>
+            <button class="icbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><polyline points="8.5 12 11 14.5 15.5 9.5"/></svg></button>
+          </div>
+        </div>
+        <div class="body">
+          <div class="resolved">
+            <span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+            <span class="tx">9 cards had only one printing<span style="display:block;font:400 12px/1.35 var(--f-read);color:var(--ink-muted-warm);margin-top:4px">Filed automatically. Tap to review.</span></span>
+            <span class="chev">›</span>
+          </div>
+
+          <div class="tgroup">
+            <div class="tcard">
+              <span class="tthumb" style="background:linear-gradient(165deg,#16283f,#0b1119)"></span>
+              <span style="flex:1;min-width:0">
+                <span class="tname" style="display:block">Sirens</span>
+                <span class="tmeta" style="display:block">3 copies · 4 printings</span>
+                <span class="tleft" style="display:block">1 left to place</span>
+              </span>
+            </div>
+            <div style="margin-top:10px">
+              <div class="alloc">
+                <span class="an">Beta<span class="hint rank">You own 6 Beta cards</span></span>
+                <span class="step"><button>−</button><span class="v">2</span><button>+</button></span>
+              </div>
+              <div class="alloc">
+                <span class="an">Alpha<span class="hint rank">You own 4 Alpha cards</span></span>
+                <span class="step"><button>−</button><span class="v zero">0</span><button>+</button></span>
+              </div>
+              <div class="alloc">
+                <span class="an">Arthurian Legends<span class="hint">No cards owned from this set</span></span>
+                <span class="step"><button>−</button><span class="v zero">0</span><button>+</button></span>
+              </div>
+              <div class="alloc">
+                <span class="an">Leave unspecified<span class="hint">A legitimate resting state</span></span>
+                <span class="step"><button>−</button><span class="v">1</span><button>+</button></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tgroup">
+            <div class="tcard">
+              <span class="tthumb" style="background:linear-gradient(165deg,#4a2018,#1a0f0b)"></span>
+              <span style="flex:1;min-width:0">
+                <span class="tname" style="display:block">Ruby Core</span>
+                <span class="tmeta" style="display:block">2 copies · 2 printings</span>
+                <span class="tleft done" style="display:block">All copies placed</span>
+              </span>
+            </div>
+            <div style="margin-top:10px">
+              <div class="alloc">
+                <span class="an">Alpha<span class="hint rank">You own 4 Alpha cards</span></span>
+                <span class="step"><button>−</button><span class="v">2</span><button>+</button></span>
+              </div>
+              <div class="alloc">
+                <span class="an">Beta<span class="hint rank">You own 6 Beta cards</span></span>
+                <span class="step"><button>−</button><span class="v zero">0</span><button>+</button></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="actionbar" style="border-top:1px solid var(--hair-22)">
+          <div class="abcount"><div class="n" style="color:var(--gold-num)">7</div><div class="l">Ready</div></div>
+          <button class="btn-ghost">Later</button>
+          <button class="btn-gold">File 7 cards</button>
+        </div>
+      </div>
+      <div class="cap"><b>Triage</b>Grouped by card, allocating across printings. The remainder line ("1 left to place") is the only progress device - it turns jade and reads "All copies placed" when the row balances. Nothing auto-fills.</div>
+    </div>
+
+  </div>
+
+  <div class="note"><b>Suggestions must not look like answers</b>Existing owned printings are ranked first and annotated - "You own 6 Beta cards" - but they start at zero and are never preselected. The annotation is deliberately a count of your holdings, not a recommendation phrased as one ("Probably Beta" would be the app asserting something it cannot know). Sets you own nothing from still appear, plainly labelled, in normal weight, because a first card from a new set is exactly the case a ranked-suggestion UI would otherwise hide.</div>
+
+  <div class="note"><b>"Leave unspecified" is a real allocation target</b>Per §7, <code>variant_slug=''</code> is a legitimate durable state. So the allocation list ends with it as a peer row, not as a cancel. That is what makes the surface a sorting tool rather than a nag: you can open it, deliberately assign one copy to nothing, and the card is <i>resolved</i>. Without that row, every visit would end with something unfinished, which is precisely the inbox behaviour the owner ruled out.</div>
+
+  <div class="note"><b>Deviation to confirm</b>The brief says the plate carries the "Sort printings" action. I have made the plate's <i>only</i> tap target open triage directly, rather than opening a generic card grid with a triage button inside it. A single-target plate matches every other plate's interaction, and the alternative - two hit regions inside one small tile - is the kind of chrome that gets rejected. The cost: there is no way to simply browse your unspecified cards as a grid. If browsing matters, the honest fix is a "View as cards" row inside the triage surface, not a second target on the plate.</div>
+</section>
+
+</div>
+</body>
+</html>
