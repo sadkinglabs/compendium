@@ -1,0 +1,209 @@
+# Holographic Foil — Engineering Constitution §8 Proposal
+
+**Status:** Proposed — for Codex critique, then owner ruling. No `src/**` change until approved.
+**Class:** High-risk (unproven rendering technique on the target WebView; promotes a
+`[Candidate]` design-system entry; new licensing surface)
+**Scope:** the full-screen card art viewer **only**. Never grids, never tiles, never sheets.
+
+---
+
+## 1 · What we are building, and why it is earned
+
+A **foil view** inside `CardArtViewer`: the card renders with a holographic treatment that moves
+with the phone, on top of the gyro parallax already shipped.
+
+**The toggle appears only if you own a foil copy of the printing on screen.** This is the
+product idea, not a technicality — foil becomes something the collection *grants* you. It
+extends completion-is-goal from "how many do I have" to "what have I earned the right to see".
+A card you own only in non-foil shows no toggle at all; nothing is greyed out, nothing teases.
+
+**Success criteria**
+- Owning a foil of the shown printing reveals a toggle; owning none shows nothing.
+- The holo reads as *material* — it moves with the device, and the art stays readable.
+- **Dark areas of the art stay dark** (see §3 — this is the realism requirement).
+- Costs nothing when off, and nothing at all outside the art viewer.
+- Fully offline, reduced-motion safe, zero-image safe, and non-load-bearing.
+
+**Non-goals:** foil on tiles/grids/sheets; foil as a purchasable or decorative mode; parity with
+any specific reference implementation.
+
+---
+
+## 2 · Licensing stance — read this before critiquing the technique
+
+The owner asked for the "Trainer Gallery Holofoil" look from `simeydotme/pokemon-cards-css`.
+**That repository is GPL-3.0**, and its holo additionally depends on third-party textures
+(Vecteezy, aschefield101) under their own restrictive licences. Copying it into a distributed
+APK would make Compendium a derivative work: GPL-3.0 licensing of the whole app, full source
+published, the iOS App Store foreclosed (the VLC precedent), and anyone free to fork and
+republish. The owner has been briefed and accepted this.
+
+**So this design is deliberately written from the VISUAL TARGET and general CSS technique, not
+from their source.** I have not read or transcribed their implementation, and this proposal
+contains none of their gradients, masks, assets or code structure. Techniques are not
+copyrightable; specific expression is. Every texture here is **procedurally generated in CSS**,
+so we also ship no third-party asset.
+
+Codex: please critique the *technique on its merits*. If any part of it looks like it could
+only have come from reading that repository, say so — that is a finding worth having.
+
+---
+
+## 3 · The realism requirement: dark art must stay dark
+
+The owner's note — *"the dark areas of the card should remain visible and not affected too much
+by the holo"* — is physically correct, and it is the single most important design constraint
+here. On a real foil card the reflective layer sits **beneath** the ink. Heavy dark ink masks
+it; light and unprinted areas let it shine. A holo that uniformly washes the whole card reads
+as a sticker laid on top, which is exactly the "it's all holo!" failure mode this project
+already rejected once during earlier exploration.
+
+**CSS gives us this for free with the right blend mode.** `color-dodge` computes
+`result = base / (1 - blend)`. Where the base (the art) is black, the result stays black **no
+matter what the holo layer contains**. Where the art is bright, it blooms. So the artwork's own
+luminance masks the effect — no hand-authored mask image, no per-card asset, and it degrades
+correctly on art we have never seen.
+
+Proposed layer stack, bottom to top:
+
+| # | Layer | Blend | Purpose |
+|---|---|---|---|
+| 0 | card art | — | the base; its luminance is the mask |
+| 1 | prismatic bands | `color-dodge` | the holo itself; suppressed in dark ink by construction |
+| 2 | hue drift | `soft-light` | colour shift that does not blow highlights |
+| 3 | specular glare | `screen` | a soft highlight tracking the tilt |
+| 4 | edge sheen | normal, low alpha | a hint of life in genuinely black regions (see the honest caveat below) |
+
+**Honest caveat, and a decision for the owner.** Taken literally, "dark stays dark" means a
+card with very dark art shows almost *no* foil — which may read as broken rather than
+realistic. Real foils do catch some light even through dark ink. Layer 4 exists to give those
+regions a *whisper* of sheen (a very low-alpha, non-blended highlight) so the card still feels
+metallic without washing out. **Its strength is the main thing to tune on device**, and it may
+want to be zero.
+
+---
+
+## 4 · Technique
+
+- **Pattern, procedurally generated.** Two `repeating-linear-gradient`s at slightly different
+  angles and frequencies. Their interference is what makes the sweep read as prismatic and
+  alive rather than a static rainbow — a moiré that shifts as the layers move past each other.
+  A `conic-gradient` near the glare point adds the radial break-up. No image files at all.
+- **Motion reuses what already ships.** The viewer's gyro already produces a normalised tilt;
+  the holo layers consume the same values. No new input plumbing, no second sensor path, and
+  the pointer fallback for the browser preview works unchanged.
+- **Compositor-friendly movement.** The holo layers are oversized and moved with
+  `transform: translate3d(...)` rather than animating `background-position`, so the work stays
+  on the GPU. The card is not a scroller, so the transform-plus-scroller WebView rule is not
+  engaged.
+- **Cost when off is zero** — the layers are not rendered at all unless foil is toggled on.
+
+---
+
+## 5 · Gating, and the one code change outside the viewer
+
+Foil ownership is **per printing** (`owned_cards.variant_slug` = set code, `:f` suffix). The
+viewer shows one printing, so the gate must use that printing's foil count.
+
+`CollectionCardSheet` already has it — `useOwnedLedger(c.card_id, effSet)` returns
+`qty.foil` — but `SheetArt` currently receives only the card, and the viewer receives no
+ownership at all. The change is to thread `foilOwned={(qty?.foil || 0) > 0}` through
+`SheetArt` into `CardArtViewer`. That is the entire non-viewer surface.
+
+Consequences worth stating: switching printings in the sheet changes whether the toggle
+appears, which is correct — you own a foil Alpha, not a foil "card". And the wishlist/Codex
+entry points (name-level, no printing) should show no toggle rather than guess.
+
+---
+
+## 6 · Invariant analysis (Constitution §3)
+
+| Invariant | How it holds |
+|---|---|
+| Graceful zero-image degradation | **Foil requires the photo.** With images suppressed there is no luminance to mask against, so the toggle is hidden entirely and the viewer behaves exactly as today. Foil is never load-bearing. |
+| Offline / no-CDN | Every texture is a CSS gradient. No asset is fetched or bundled. |
+| Cross-runtime integrity | The real risk (§7). Confined to one deliberate surface and device-measured before it ships. |
+| Durable writes / profile isolation / schema | Untouched — this is read-only presentation. Schema stays v10. |
+| Content-is-data | Foil is a property of *ownership*, already in the ledger; nothing new is authored. |
+
+Reduced motion: `body.reduce-motion` already neutralises animation globally; additionally the
+holo goes **static** (a fixed sheen at a neutral angle) rather than tracking the gyro, so
+nothing moves under the user.
+
+---
+
+## 7 · The real risk: blend modes on this WebView
+
+`mix-blend-mode` is used **exactly once** in Compendium today (the film grain in `counter.css`,
+toggleable and non-load-bearing), and `DESIGN_SYSTEM.md` §6 explicitly records blend modes as
+"engine-sensitive, unverified until seen in the installed Chromium WebView". This proposal
+makes them load-bearing for a feature.
+
+Mitigations: confine to one card on one deliberate screen (never a grid); no `backdrop-filter`
+anywhere near it; measure frame cost on device before merge; and keep a **kill path** — if the
+composite proves too expensive or renders wrong, foil falls back to the static sheen, which is
+also the reduced-motion path, so the fallback is exercised by design rather than hypothetical.
+
+Target device context for verification: Pixel 9 Pro XL, Android 17 (SDK 37), WebView
+150.0.7871.46 — **plus a low-end device if one is available**, since a flagship will hide
+exactly the cost we care about.
+
+---
+
+## 8 · Phases
+
+- **Phase 0 — governance.** Promote Foil `[Candidate]` → `[Proposed Target]` in
+  `DESIGN_SYSTEM.md` with this proposal as its recorded comparison; owner ruling makes it
+  `[Target]`. Docs only.
+- **Phase 1 — the effect.** Build the layer stack behind a dev-only always-on switch, tune on
+  device against real art (light, dark, and the busiest cards we have).
+- **Phase 2 — the gate.** Thread `foilOwned` through and make the toggle real; foil promotes to
+  `[Shipping]` in the same increment as its consumer.
+- **Phase 3 — hardening.** Reduced-motion, zero-image, backgrounding, frame budget, low-end
+  device. Kill path verified, not assumed.
+
+Codex costed a comparable effort at 2-4 days for a credible prototype plus 3-5 for hardening;
+nothing here contradicts that.
+
+---
+
+## 9 · Verification plan
+
+- **Device frame budget** while tilting, on a full-screen card — the number, not an impression.
+- **Zero-image**: toggle absent, viewer unchanged.
+- **Reduced-motion**: static sheen, nothing tracks the gyro.
+- **Backgrounding / rotation / hardware-back** while foil is on.
+- **Art range**: verify dark-art cards still look *intentional*, not dead (this is where layer 4
+  is judged).
+- **Gate correctness**: foil-owned vs not; switching printings; name-level entry points.
+
+---
+
+## 10 · Self-critique
+
+- **The biggest risk is that it looks cheap.** A procedural holo has no hand-authored mask, so
+  it cannot know that *this* card has a metallic border and *that* one does not. It will be
+  more uniform than a per-card treatment. Mitigation is luminance masking doing the art
+  direction for us — but if it reads as a gradient sheet laid over the card, that is failure,
+  and I would rather ship no foil than a sticker.
+- **`color-dodge` can blow out** already-bright art (pale skies, white borders) into flat
+  clipped white. Layer 2's `soft-light` is there to carry colour without pushing luminance, but
+  the balance is a device-tuning problem, not a thing I can settle on paper.
+- **"Dark stays dark" may over-deliver** and leave dark cards looking untouched — see §3.
+- **Blend modes are the load-bearing unknown**, and I am proposing to make them load-bearing on
+  a stack that has deliberately avoided them until now.
+- **What I might be over-building:** the four-layer stack may be more than the effect needs.
+  If two layers get 90% of it, that is the better answer and I would drop the rest.
+
+---
+
+## 11 · Questions for Codex
+
+1. Is luminance-gating via `color-dodge` the right mechanism, or does it fail on a class of art
+   we should anticipate?
+2. Is the interference-of-two-gradients approach sound for a *prismatic* read, or will it moiré
+   badly at phone DPI?
+3. Is `transform: translate3d` on blended layers actually compositor-friendly in Chromium, or
+   does the blend force a repaint that negates it?
+4. Is confining foil to the art viewer the right product and performance boundary?
+5. Does anything in §3-§4 look like it could only have come from reading the GPL source?
