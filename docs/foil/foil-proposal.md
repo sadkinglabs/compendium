@@ -29,25 +29,32 @@ any specific reference implementation.
 
 ---
 
-## 2 · Licensing stance — read this before critiquing the technique
+## 2 · Licensing — resolved, and simpler than we thought
 
-The owner asked for the "Trainer Gallery Holofoil" look from `simeydotme/pokemon-cards-css`.
-**That repository is GPL-3.0**, and its holo additionally depends on third-party textures
-(Vecteezy, aschefield101) under their own restrictive licences. Copying it into a distributed
-APK would make Compendium a derivative work: GPL-3.0 licensing of the whole app, full source
-published, the iOS App Store foreclosed (the VLC precedent), and anyone free to fork and
-republish. The owner has been briefed and accepted this.
+The technique is taken from **simeydotme's public CodePen**
+(`https://codepen.io/simeydotme/pen/abYWJdX`), **not** from the author's GitHub repository.
+That distinction decides everything:
 
-**So this design is deliberately written from the VISUAL TARGET and general CSS technique, not
-from their source.** I have not read or transcribed their implementation, and this proposal
-contains none of their gradients, masks, assets or code structure. Techniques are not
-copyrightable; specific expression is. Every texture here is **procedurally generated in CSS**,
-so we also ship no third-party asset.
+| Source | Licence | Consequence |
+|---|---|---|
+| `simeydotme/pokemon-cards-css` (GitHub) | **GPL-3.0** | would force GPL on all of Compendium, publish its source, foreclose the iOS App Store |
+| the public CodePen | **MIT** — CodePen: *"Public pens are automatically MIT licensed"* | free to use, modify and ship closed-source, **with attribution** |
 
-Codex: please critique the *technique on its merits*. If any part of it looks like it could
-only have come from reading that repository, say so — that is a finding worth having.
+Same author, same effect, different licence. The MIT route is legitimate and carries no
+copyleft, so **no clean-room is required and none is claimed.**
 
----
+**Attribution is a real, binding obligation — not a courtesy.** MIT requires the copyright and
+permission notice travel with the work. We will carry it in two places:
+1. a header comment in the foil source naming the author, the pen URL and the MIT licence;
+2. an entry in the app's **Credits** screen.
+
+This must not be quietly dropped later; it is the entire basis on which we are allowed to use
+this. (Worth noting: the owner's original instinct — "we can use it, we just credit it" — was
+correct. It was only wrong about *which artifact* it applied to.)
+
+**Assets:** the pasted CSS references **no external images** — the holo is built entirely from
+gradients. So the third-party texture problem that encumbers the GitHub version does not arise,
+and we stay offline/no-CDN with nothing bundled.
 
 ## 3 · The realism requirement: dark art must stay dark
 
@@ -70,35 +77,54 @@ Proposed layer stack, bottom to top:
 |---|---|---|---|
 | 0 | card art | — | the base; its luminance is the mask |
 | 1 | prismatic bands | `color-dodge` | the holo itself; suppressed in dark ink by construction |
-| 2 | hue drift | `soft-light` | colour shift that does not blow highlights |
-| 3 | specular glare | `screen` | a soft highlight tracking the tilt |
-| 4 | edge sheen | normal, low alpha | a hint of life in genuinely black regions (see the honest caveat below) |
+| 2 | specular glare | `hard-light` over a dark surround | brightens the hotspot **and deepens the rest** — see §4 |
+| 3 | *(optional)* whisper sheen | normal, very low alpha | a hint of life in genuinely black regions — may be zero |
+
+This is a **two-layer** stack plus an optional third, not the four I sketched before seeing the
+reference: `hard-light` over a dark surround already does the work I had split between a
+`soft-light` hue drift and a `screen` glare, and does it better, because deepening the
+surround is what makes the highlight read as specular rather than additive.
 
 **Honest caveat, and a decision for the owner.** Taken literally, "dark stays dark" means a
 card with very dark art shows almost *no* foil — which may read as broken rather than
-realistic. Real foils do catch some light even through dark ink. Layer 4 exists to give those
-regions a *whisper* of sheen (a very low-alpha, non-blended highlight) so the card still feels
-metallic without washing out. **Its strength is the main thing to tune on device**, and it may
-want to be zero.
+realistic. Real foils do catch some light even through dark ink. Layer 3 exists to give those
+regions a *whisper* of sheen so the card still feels metallic without washing out. **Its
+strength is the main thing to tune on device**, and it may want to be zero.
 
 ---
 
 ## 4 · Technique
 
-- **Pattern, procedurally generated.** Two `repeating-linear-gradient`s at slightly different
-  angles and frequencies. Their interference is what makes the sweep read as prismatic and
-  alive rather than a static rainbow — a moiré that shifts as the layers move past each other.
-  A `conic-gradient` near the glare point adds the radial break-up. No image files at all.
-- **Motion reuses what already ships.** The viewer's gyro already produces a normalised tilt;
-  the holo layers consume the same values. No new input plumbing, no second sensor path, and
-  the pointer fallback for the browser preview works unchanged.
-- **Compositor-friendly movement.** The holo layers are oversized and moved with
-  `transform: translate3d(...)` rather than animating `background-position`, so the work stays
-  on the GPU. The card is not a scroller, so the transform-plus-scroller WebView rule is not
-  engaged.
-- **Cost when off is zero** — the layers are not rendered at all unless foil is toggled on.
+Adapted from the MIT pen (§2), with our own base layer and gyro drive.
 
----
+**Layer 1 — the prismatic bands.** A `repeating-linear-gradient` at a shallow angle (~-22°)
+cycling a full spectrum every ~7 stops, composited with `color-dodge`. Two details matter more
+than the colours:
+- **`contrast(~2.3)`** on the layer. This is what turns soft gradient ramps into crisp bands;
+  without it the effect reads as a mushy rainbow wash. It is the single highest-leverage value
+  in the whole stack.
+- **Brightness driven by pointer/tilt distance from centre** (`--hyp` in the original), so the
+  foil *intensifies as the card turns away from square-on* — a real physical behaviour.
+
+**Layer 2 — the glare.** A `radial-gradient` hotspot tracking the input, in **`hard-light`**
+over a deliberately **dark** surround rather than a plain white radial. Hard-light multiplies
+below mid-grey and screens above, so the hotspot brightens *while the rest of the card
+deepens*. That simultaneous lift-and-deepen is what reads as metal instead of plastic — and it
+independently serves the §3 requirement, since it darkens rather than washes the art.
+
+**Layer 3 — clipping.** `clip-path: inset(... round ...)` constrains the effect to the card
+face with correct corner rounding. Our inset values differ from the original's: the pen clips
+to a Pokémon card's inner art window, whereas our viewer shows the whole card image, so ours
+approximates the card's own border radius instead.
+
+**What we change for Compendium**
+- **Gyro, not mouse.** The pen drives from pointer position; our viewer already computes a
+  normalised device tilt. We map tilt → the same custom properties, so there is no new input
+  path and the pointer fallback for the browser preview still works.
+- **Our own base layer.** The pasted rule's `background-size`/`background-position` carry two
+  to three comma-separated values, so the pen's base `.card__shine` rule (not supplied)
+  declares further background layers. We supply our own base rather than guess at theirs.
+- **Compositor-friendly movement** and the kill path, per §7, unchanged.
 
 ## 5 · Gating, and the one code change outside the viewer
 
