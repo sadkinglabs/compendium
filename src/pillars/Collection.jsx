@@ -62,7 +62,8 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // subscribeCollection, so each view refreshes itself).
   const [sheetCard, setSheetCard] = useState(session.sheetCard);
   const [sheetSet, setSheetSet] = useState(session.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
-  const [editMode, setEditMode] = useState(false);   // My Collection edit mode: steppers + the + add FAB
+  // No edit mode: adding is a PLACE, not a mode. Steppers are permanent on every row and the
+  // card sheet is always editable - you record what you own wherever a card appears.
   // Sets-are-home: My Collection lands on the sets-completion grid (SetsHome). Tapping a
   // plate drills into that set's ledger/binder (setDrill = its code). drillInfo carries the
   // opened set's completion snapshot so the drill header's Ring total stays honest (owned
@@ -75,8 +76,8 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
-  const go = (v) => { setListOpen(null); setEditMode(false); setSetDrill(null); setDrillInfo(null); setView(v); };
-  const goAdd = () => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView('cards'); setEditMode(true); };
+  const go = (v) => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
+  const goAdd = () => go('cards');   // adding starts by choosing a set; the steppers are always live
   const pills = (
     <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
       <div className="cx-scroll" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, overflowX: 'auto' }}>
@@ -84,15 +85,6 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
       </div>
-      {/* +Add lives inside a drilled set (steppers are per-(card,set)); at the sets-home
-          landing you pick a set first. */}
-      {view === 'cards' && setDrill && (
-        <button onClick={() => setEditMode((e) => !e)} aria-pressed={editMode}
-          style={{ flex: 'none', padding: '7px 15px', borderRadius: 18, cursor: 'pointer', font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
-            background: editMode ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editMode ? '#1a1206' : '#e3c589', border: `1px solid ${editMode ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
-          {editMode ? 'Done' : '+ Add'}
-        </button>
-      )}
     </div>
   );
   return (
@@ -103,7 +95,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
         setDrill != null ? (
-          <Cards onOpen={onOpen} onPeek={peek} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)}
+          <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
             setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
         ) : (
           <SetsHome onOpenSet={openSet} rev={rev} />
@@ -117,7 +109,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
           unmounts for the Codex page, and Back should land right back on this
           sheet - that's where the user left. */}
       <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }}
-        onOpenCodex={(id, name) => onOpen('card', id, name)} editable={view === 'cards' && editMode} />
+        onOpenCodex={(id, name) => onOpen('card', id, name)} editable />
     </div>
   );
 }
@@ -418,31 +410,21 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 const OWN_OPTS = [['owned', 'Owned'], ['unowned', 'Not owned'], ['wishlist', 'Wishlisted']];
 const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted' };
 
-// The view-lens FAB glyph - an eye, for "how you're viewing the collection".
-function EyeGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22 }}>
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-// Cards is now always the PER-SET drill (the parent shows SetsHome until a plate is
-// tapped). It scopes the shared catalog/search/filter machinery to `setDrill` and adds a
-// back + set-completion header; everything else (steppers, lens FAB, filters) is unchanged.
-function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onBack }) {
+// Cards is the PER-SET drill (the parent shows SetsHome until a plate is tapped). It scopes
+// the shared catalog/search/filter machinery to `setDrill`, adds a back + set-completion
+// header and the inline ownership lens, and carries a permanent stepper on every row.
+function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
   useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
 
-  // editMode IS the add surface: reveal the WHOLE catalogue (owned + unowned) with
-  // steppers so you can start adding immediately. Off = read-only owned collection.
+  // Adding is a PLACE: the set's whole checklist is here and every row carries a live
+  // stepper. The lens below narrows what you see; it never gates editing.
   const [importOpen, setImportOpen] = useState(false);
-  // READ-VIEW lens (My Collection, not +Add): 'owned' (default - your collection) |
-  // 'all' (owned + unowned) | 'unowned' (gaps). Read-only, so it never affects
-  // editing. The +Add surface ignores it entirely (it always shows the whole
-  // catalogue so anything is addable).
-  const [viewMode, setViewMode] = useState('owned');
-  const showSteppers = editMode;
+  // Ownership lens: 'all' (default - the set's whole checklist, so anything is addable) |
+  // 'owned' (just yours) | 'unowned' (the gaps). It narrows what you SEE; steppers stay live
+  // in every lens, so it never gates editing.
+  const [viewMode, setViewMode] = useState('all');
+  const showSteppers = true;   // permanent - add-is-a-place
   // Fade the card area on a view (list/binder) or lens (owned/all/not-owned) change.
   // Replays the animation by toggling the class on the SAME node (offsetWidth reflow
   // between remove/add), so the list reconciles in place - the tiles never remount.
@@ -552,12 +534,11 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
   // dimension (printed sets), where an ownership bucket does not belong; entering +Add
   // also strips a stale "Unspecified" selection so it can never get stuck on.
   const hasUnspecOwned = (ownedPerSet.get('') || 0) > 0;
-  const setFilterOpts = (!editMode && hasUnspecOwned) ? [...setOpts, 'Unspecified'] : setOpts;
-  useEffect(() => { if (editMode) setSets((s) => (s.includes('Unspecified') ? s.filter((x) => x !== 'Unspecified') : s)); }, [editMode]);
+  const setFilterOpts = hasUnspecOwned ? [...setOpts, 'Unspecified'] : setOpts;
 
   const groups = useMemo(() => groupCollection({
-    pool, owBySet, wishSet, sets, editMode, viewMode, ownScope, ownActive, setLabel: SET_LABEL, setRank,
-  }), [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
+    pool, owBySet, wishSet, sets, viewMode, ownScope, ownActive, setLabel: SET_LABEL, setRank,
+  }), [pool, owBySet, wishSet, ownScope, ownActive, sets, viewMode]);
 
   // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
   // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
@@ -598,8 +579,13 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
+        {/* View toggle + the ownership LENS, inline. The lens moved off the stacked FAB when
+            edit mode was retired: it narrows what you see, it never gates editing. */}
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <ViewToggle view={view} setView={setView} />
+          <SegTabs ariaLabel="Ownership lens" value={viewMode} onChange={setViewMode}
+            options={[{ key: 'owned', label: 'Owned' }, { key: 'all', label: 'All' }, { key: 'unowned', label: 'Missing' }]}
+            style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
         </div>
       </div>
 
@@ -613,7 +599,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
           <div ref={listRef}>
           {totalRows === 0 ? (
             <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              {editMode || viewMode !== 'owned' ? 'No cards match those filters.'
+              {viewMode !== 'owned' ? 'No cards match those filters.'
                 : (activeCount || q) ? 'No owned cards match those filters.'
                   : `You own no ${drillName} cards yet.\nTap + Add to record what you own.`}
             </div>
@@ -624,7 +610,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
             // tile reports min-content width, which inflated 1fr tracks; pin the min to 0.
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
               {drillRows.map((r, i) => (
-                <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
+                <div key={r.card.card_id + '|' + r.set}>
                   <BinderTile card={r.card} set={r.set} setLabel={drillName} owned={r.owned} foil={r.foil}
                     onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
                 </div>
@@ -632,7 +618,7 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
             </div>
           ) : (
             drillRows.map((r, i) => (
-              <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
+              <div key={r.card.card_id + '|' + r.set}>
                 <LedgerRow card={r.card} set={r.set} setLabel={drillName}
                   owned={r.owned} foil={r.foil} value={r.owned + r.foil}
                   onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
@@ -644,25 +630,17 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex, setDrill, drillInfo, onB
       )}
 
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? `Search ${drillName}…` : `Search ${drillName} owned…`} ariaLabel="Search cards" />
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
 
-      {/* Filter FAB - the docked spot beside the search bar, in BOTH views. A SECOND
-          stacked FAB rises above it, its role by view: on the +Add surface it's the
-          ADD tools (camera + text) search can't do; in the read view it's the VIEW
-          lens (Owned default / All / Not owned) - a read-only toggle for what shows. */}
+      {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
+          (camera + text) search can't do. They are ALWAYS available now: adding is a place,
+          not a mode, so there is no add surface to toggle into. The ownership lens that used
+          to occupy this slot in read mode is now inline in the header. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {editMode ? (
-        <Fab variant="lib" label="Add tools" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
-          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-        ]} />
-      ) : (
-        <Fab variant="lib" label="View" className="fab-stacked" icon={<EyeGlyph />} items={[
-          { label: 'Owned', state: viewMode === 'owned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('owned') },
-          { label: 'View all', state: viewMode === 'all' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('all') },
-          { label: 'Not owned', state: viewMode === 'unowned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('unowned') },
-        ]} />
-      )}
+      <Fab variant="lib" label="Add tools" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+        { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+      ]} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
