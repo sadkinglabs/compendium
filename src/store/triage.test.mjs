@@ -3,7 +3,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  triagePile, pendingCount, autoResolvable, fileLinePlan, OWNED_NONFOIL, OWNED_FOIL, WANTED,
+  triagePile, pendingCount, autoResolvable, fileLinePlan, UNCATEGORISED_KEYS,
+  OWNED_NONFOIL, OWNED_FOIL, WANTED,
 } from './triage.js';
 import { UNCATEGORISED, UNCATEGORISED_FOIL, LEGACY_UNCATEGORISED, LEGACY_FOIL } from './printings.js';
 
@@ -130,16 +131,58 @@ test('filing a line names both halves of the move, with an explicit quantity', (
   assert.equal(plan.qty, 3);
   assert.equal(plan.field, 'owned');
   assert.deepEqual(plan.to, { set: '002', foil: false });
-  assert.equal(plan.from.slug, UNCATEGORISED);
-  assert.equal(plan.legacySlug, LEGACY_UNCATEGORISED, 'a mixed ledger must be drained on both keys');
+  assert.deepEqual(plan.fromSlugs, [UNCATEGORISED]);
 });
 
-test('filing a FOIL line targets the foil destination and the foil legacy twin', () => {
+test('filing drains EVERY key the quantity came from, across both schemas', () => {
+  // A fixed pair of source keys was wrong: it drained what the line looked like rather than
+  // where the quantity actually was.
+  const pile = triagePile([
+    row({ variant_slug: LEGACY_UNCATEGORISED, qty_owned: 2 }),
+    row({ variant_slug: UNCATEGORISED, qty_owned: 3 }),
+  ], sets({ c1: ['001', '002'] }));
+  const plan = fileLinePlan(pile[0], pile[0].lines[0], '002');
+  assert.equal(plan.qty, 5);
+  assert.deepEqual(plan.fromSlugs, [UNCATEGORISED, LEGACY_UNCATEGORISED].sort());
+});
+
+test('filing a FOIL line targets the foil destination and drains the foil sources', () => {
   const pile = triagePile([row({ variant_slug: UNCATEGORISED_FOIL, qty_owned: 1 })], sets({ c1: ['001', '002'] }));
   const plan = fileLinePlan(pile[0], pile[0].lines[0], '001');
   assert.deepEqual(plan.to, { set: '001', foil: true });
-  assert.equal(plan.from.slug, UNCATEGORISED_FOIL);
-  assert.equal(plan.legacySlug, LEGACY_FOIL);
+  assert.deepEqual(plan.fromSlugs, [UNCATEGORISED_FOIL]);
+});
+
+test('a WANT that survived on a FOIL key drains THAT key, not an assumed non-foil one', () => {
+  // The defect this replaced: the pile correctly showed the want as non-foil (7.4), and the
+  // plan then drained '' and 'uncategorised' - neither of which held it. Filing would have
+  // left the original in place and minted a second at the destination.
+  for (const src of [LEGACY_FOIL, UNCATEGORISED_FOIL]) {
+    const pile = triagePile([row({ variant_slug: src, qty_wanted: 4 })], sets({ c1: ['001', '002'] }));
+    const line = pile[0].lines.find((l) => l.kind === WANTED);
+    assert.equal(line.foil, false, 'still displayed as a non-foil want');
+    const plan = fileLinePlan(pile[0], line, '002');
+    assert.deepEqual(plan.fromSlugs, [src], `wanted quantity on ${src} must be drained from ${src}`);
+    assert.equal(plan.to.foil, false, 'and still filed as non-foil');
+  }
+});
+
+test('a want spread across all FOUR uncategorised keys drains all four', () => {
+  const pile = triagePile([
+    row({ variant_slug: LEGACY_UNCATEGORISED, qty_wanted: 1 }),
+    row({ variant_slug: LEGACY_FOIL, qty_wanted: 2 }),
+    row({ variant_slug: UNCATEGORISED, qty_wanted: 3 }),
+    row({ variant_slug: UNCATEGORISED_FOIL, qty_wanted: 4 }),
+  ], sets({ c1: ['001', '002'] }));
+  const line = pile[0].lines.find((l) => l.kind === WANTED);
+  assert.equal(line.qty, 10);
+  const plan = fileLinePlan(pile[0], line, '001');
+  assert.deepEqual(plan.fromSlugs.sort(), UNCATEGORISED_KEYS.slice().sort());
+});
+
+test('a line with no provenance is refused rather than filed from a guess', () => {
+  const pile = triagePile([row({ qty_owned: 1 })], sets({ c1: ['001', '002'] }));
+  assert.throws(() => fileLinePlan(pile[0], { ...pile[0].lines[0], from: [] }, '002'), /came from/);
 });
 
 test('filing a WANT is a wanted move, not an owned one', () => {

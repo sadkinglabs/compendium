@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { wantTarget, needsPicker, pickerOptions, DEFAULT_WANT_FOIL } from './wantIntent.js';
-import { UNCATEGORISED_BUCKET } from './printings.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED, UNCATEGORISED_FOIL } from './printings.js';
 
 /* ---------------- when we already know ---------------- */
 
@@ -85,4 +85,43 @@ test('an UNRANKED set sorts last rather than becoming the default choice', () =>
 
 test('picker options fall back to the raw code when there is no label', () => {
   assert.deepEqual(pickerOptions(['777'], () => 0, {}), [{ code: '777', name: '777' }]);
+});
+
+/* ---------------- a scoped context is not trusted blindly ---------------- */
+
+test('a STALE context set is ignored, and the ordinary rules apply', () => {
+  // Navigation goes stale: a set drill left open across a catalog update, or a card opened from
+  // one grid and swiped to another. Trusting it would write a collector item that does not
+  // exist - which no reader can bucket and no triage can resolve.
+  const t = wantTarget(['001', '002'], { set: '999' });
+  assert.equal(t.kind, 'ask', 'it falls back to asking rather than writing a phantom item');
+  assert.deepEqual(t.options, ['001', '002']);
+});
+
+test('a stale context on a SINGLE-set card resolves to the real set', () => {
+  assert.deepEqual(wantTarget(['004'], { set: '999' }), { kind: 'item', item: { set: '004', foil: false } });
+});
+
+test('a stale context on a card with NO sets reports unknown', () => {
+  assert.deepEqual(wantTarget([], { set: '999' }), { kind: 'unknown' });
+});
+
+test('a canonical uncategorised KEY is never accepted as a context', () => {
+  // Not just the empty bucket code - the storage keys themselves, in case one is passed through
+  // from a row rather than from a set control.
+  for (const set of [UNCATEGORISED, UNCATEGORISED_FOIL]) {
+    assert.equal(wantTarget(['001', '002'], { set }).kind, 'ask', `accepted ${set}`);
+  }
+});
+
+test('a DUPLICATED set does not make a single-set card look like a reprint', () => {
+  // A catalog entry listing the same set twice would otherwise open a picker offering one
+  // answer twice over.
+  assert.deepEqual(wantTarget(['004', '004'], {}), { kind: 'item', item: { set: '004', foil: false } });
+});
+
+test('duplicates are collapsed in the picker options too', () => {
+  const t = wantTarget(['001', '002', '001'], {});
+  assert.equal(t.kind, 'ask');
+  assert.deepEqual(t.options, ['001', '002']);
 });

@@ -1,9 +1,11 @@
-// The import boundary, end to end against the REAL importProfile and a real database.
+// Why the import boundary is NOT wired into importProfile yet.
 //
-// importBoundary.test.mjs proves the pure decisions. This file proves the consequence Codex
-// asked for and that a pure test structurally cannot: when a bundle is rejected, NO PROFILE
-// EXISTS afterwards. Asserting that an error was thrown is the easy half; the requirement is
-// that the user is not left with an orphaned half-profile to find and delete.
+// It was, for one commit, and it was a live data-corruption path rather than a dormant feature.
+// These tests pin the reason so reconnecting it cannot happen by accident: the counterfactual
+// below must go green BEFORE prepareBundle returns to profileTransfer.
+//
+// The rule this encodes: canonical rows may not exist while any ACTIVE writer computes its new
+// value from a card-level total and writes the result to a legacy key.
 // Run: npm run test:query
 import { test, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,18 +14,17 @@ import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import { importProfile } from './profileTransfer.js';
-import { ImportRejected } from './importBoundary.js';
-import { LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting } from './printings.js';
+import { stepWanted, setWanted, qtyFor } from './ownedRepository.js';
+import { LEGACY_UNCATEGORISED, isLegacyPrinting } from './printings.js';
 
 const require = createRequire(import.meta.url);
-const HOME = 'home-profile';
+const PID = 'home-profile';
 let sdb;
 
 const rows = (sql, params = []) => {
   const st = sdb.prepare(sql);
   try { if (params.length) st.bind(params); const r = []; while (st.step()) r.push(st.getAsObject()); return r; } finally { st.free(); }
 };
-const profileCount = () => rows('SELECT COUNT(*) n FROM profiles;')[0].n;
 
 before(async () => {
   const initSqlJs = require('sql.js');
@@ -31,108 +32,82 @@ before(async () => {
   sdb = new SQL.Database();
   sdb.run('PRAGMA foreign_keys = ON;');
   __setBackendForTests({
-    query(sql, params = []) { return Promise.resolve(rows(sql, params)); },
-    run(sql, params = []) { sdb.run(sql, params); return Promise.resolve(); },
-    exec(sql) { sdb.run(sql); return Promise.resolve(); },
-    tx(stmts) { sdb.run('BEGIN;'); try { for (const [s, p = []] of stmts) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
-    persist() { return Promise.resolve(); },
+    query: (s, p = []) => Promise.resolve(rows(s, p)),
+    run: (s, p = []) => { sdb.run(s, p); return Promise.resolve(); },
+    exec: (s) => { sdb.run(s); return Promise.resolve(); },
+    tx: (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+    persist: () => Promise.resolve(),
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);
-  __setActiveIdForTests(HOME);
+  __setActiveIdForTests(PID);
 });
 
 beforeEach(() => {
   sdb.run('DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
-  sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [HOME, 'Home', 10, '2026-01-01']);
-  // c1 is a reprint (want must park), c2 is single-set (want must file).
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c2','Single','[{\"code\":\"004\"}]');");
+  sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Home', 10, '2026-01-01']);
+  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Single','[{\"code\":\"004\"}]');");
 });
 
-const owned = (o) => ({
-  id: 'src', profile_id: 'other-device', card_id: 'c1', variant_slug: LEGACY_UNCATEGORISED,
-  qty_owned: 0, qty_wanted: 0, notes: '', created_at: '2026-01-01', updated_at: '2026-01-01', ...o,
-});
-const bundle = (o = {}) => ({
-  app: 'compendium', schemaVersion: 10, profile: { name: 'Imported', accent: 'gold' }, owned_cards: [], ...o,
-});
+const seedCanonical = (slug, wanted) =>
+  sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?);',
+    [`seed-${slug}`, PID, 'c1', slug, wanted, '', '2026-01-01', '2026-01-01']);
 
-/* ---------------- rejection leaves nothing ---------------- */
+/* ---------------- THE COUNTERFACTUAL ---------------- */
+//
+// This is the gate on reconnecting the boundary. While it fails, normalisation must stay out of
+// the production path; when it passes, the active writers have been switched and it may return.
 
-test('a FUTURE bundle is rejected and creates no profile', async () => {
-  const before = profileCount();
-  await assert.rejects(
-    importProfile(bundle({ schemaVersion: 99, owned_cards: [owned({ qty_owned: 1 })] })),
-    (e) => e instanceof ImportRejected && e.code === 'future',
-  );
-  assert.equal(profileCount(), before, 'NO profile row exists afterwards');
-});
+test('GATE: a canonical want edited by the CURRENT heart still inflates - boundary must stay off', async () => {
+  seedCanonical('004', 2);
+  assert.equal((await qtyFor('c1')).wanted, 2);
 
-test('a malformed bundle is rejected and creates no profile', async () => {
-  const before = profileCount();
-  for (const bad of [null, { app: 'other' }, bundle({ owned_cards: 5 }), bundle({ owned_cards: [{ qty_owned: 1 }] })]) {
-    await assert.rejects(importProfile(bad), (e) => e instanceof ImportRejected);
+  await stepWanted('c1', +1);
+
+  const total = (await qtyFor('c1')).wanted;
+  const stored = rows('SELECT variant_slug, qty_wanted FROM owned_cards ORDER BY variant_slug;');
+  if (total === 3) {
+    assert.equal(stored.some((r) => isLegacyPrinting(r.variant_slug)), false,
+      'REMOVE THIS BRANCH: writers are canonical now, so reconnect prepareBundle in profileTransfer');
+  } else {
+    // The state today. stepWanted reads the card-level total (2), adds one, and writes 3 onto a
+    // fresh legacy row while the canonical row keeps its 2. One tap, +3.
+    assert.equal(total, 5, 'the inflation is exactly as reproduced');
+    assert.deepEqual(stored, [
+      { variant_slug: LEGACY_UNCATEGORISED, qty_wanted: 3 },
+      { variant_slug: '004', qty_wanted: 2 },
+    ], 'two rows for one want - this is why the boundary is disconnected');
   }
-  assert.equal(profileCount(), before, 'still no orphaned profiles after four rejections');
 });
 
-test('rejection leaves no owned_cards rows either', async () => {
-  await assert.rejects(importProfile(bundle({ schemaVersion: 99, owned_cards: [owned({ qty_owned: 5 })] })));
-  assert.equal(rows('SELECT COUNT(*) n FROM owned_cards;')[0].n, 0);
+test('GATE: setWanted has the same problem, so it is not specific to stepping', async () => {
+  seedCanonical('004', 2);
+  await setWanted('c1', 4);
+  const stored = rows('SELECT variant_slug, qty_wanted FROM owned_cards ORDER BY variant_slug;');
+  assert.equal(stored.length, 2, 'the canonical row is orphaned rather than updated');
 });
 
-/* ---------------- acceptance converts ---------------- */
+/* ---------------- the boundary really is disconnected ---------------- */
 
-test('a v10 bundle imports, and the stored rows carry canonical keys', async () => {
-  const pid = await importProfile(bundle({
-    owned_cards: [
-      owned({ id: 'a', card_id: 'c1', variant_slug: LEGACY_UNCATEGORISED, qty_owned: 2 }),
-      owned({ id: 'b', card_id: 'c1', variant_slug: LEGACY_FOIL, qty_owned: 1 }),
-      owned({ id: 'c', card_id: 'c2', variant_slug: LEGACY_UNCATEGORISED, qty_wanted: 3 }),
-    ],
-  }));
-  const stored = rows('SELECT card_id, variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=?;', [pid]);
-  assert.equal(stored.some((r) => isLegacyPrinting(r.variant_slug)), false, 'no legacy key reaches the database');
-
-  const byKey = Object.fromEntries(stored.map((r) => [`${r.card_id}|${r.variant_slug}`, r]));
-  assert.equal(byKey[`c1|${UNCATEGORISED}`].qty_owned, 2);
-  assert.equal(byKey[`c1|${UNCATEGORISED_FOIL}`].qty_owned, 1);
-  assert.equal(byKey['c2|004'].qty_wanted, 3, 'the single-set want was filed, not parked');
+test('importProfile does NOT normalise today - legacy keys pass straight through', async () => {
+  const pid = await importProfile({
+    app: 'compendium', schemaVersion: 10, profile: { name: 'Imported', accent: 'gold' },
+    owned_cards: [{ card_id: 'c1', variant_slug: LEGACY_UNCATEGORISED, qty_owned: 1, qty_wanted: 2, notes: '', created_at: 'x', updated_at: 'x' }],
+  });
+  const stored = rows('SELECT variant_slug FROM owned_cards WHERE profile_id=?;', [pid]);
+  assert.deepEqual(stored, [{ variant_slug: LEGACY_UNCATEGORISED }],
+    'the row stays legacy, so the active writers can still edit it correctly');
 });
 
-test('a want on a REPRINTED card is parked, exactly as at boot', async () => {
-  const pid = await importProfile(bundle({ owned_cards: [owned({ card_id: 'c1', qty_wanted: 4 })] }));
-  const stored = rows('SELECT variant_slug, qty_wanted FROM owned_cards WHERE profile_id=?;', [pid]);
-  assert.deepEqual(stored, [{ variant_slug: UNCATEGORISED, qty_wanted: 4 }]);
+test('a future bundle is still accepted today - the version gate arrives with reconnection', async () => {
+  // Recorded rather than asserted as desirable. Rejecting it needs the boundary, and the
+  // boundary needs canonical writers. Stating the gap keeps it from being forgotten.
+  const pid = await importProfile({
+    app: 'compendium', schemaVersion: 99, profile: { name: 'Future', accent: 'gold' }, owned_cards: [],
+  });
+  assert.ok(pid, 'no version gate is active on the production path yet');
 });
 
-test('quantities are conserved through a real import', async () => {
-  const src = [
-    owned({ id: 'a', card_id: 'c1', variant_slug: LEGACY_UNCATEGORISED, qty_owned: 3, qty_wanted: 2 }),
-    owned({ id: 'b', card_id: 'c1', variant_slug: LEGACY_FOIL, qty_owned: 1 }),
-    owned({ id: 'c', card_id: 'c2', variant_slug: '004', qty_owned: 4 }),
-  ];
-  const pid = await importProfile(bundle({ owned_cards: src }));
-  const stored = rows('SELECT SUM(qty_owned) o, SUM(qty_wanted) w FROM owned_cards WHERE profile_id=?;', [pid])[0];
-  assert.equal(stored.o, 8, 'owned conserved');
-  assert.equal(stored.w, 2, 'wanted conserved');
-});
-
-test('importing does not disturb the existing profile', async () => {
-  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted) VALUES('mine',?,'c1','001',7,0);", [HOME]);
-  await importProfile(bundle({ owned_cards: [owned({ qty_owned: 1 })] }));
-  const mine = rows('SELECT qty_owned, variant_slug FROM owned_cards WHERE profile_id=?;', [HOME]);
-  assert.deepEqual(mine, [{ qty_owned: 7, variant_slug: '001' }], "the home profile's ledger is untouched");
-});
-
-test('a second import of the same bundle does not merge into the first', async () => {
-  // Profile isolation: two imports are two independent profiles, not one doubled ledger.
-  const b = bundle({ owned_cards: [owned({ card_id: 'c2', variant_slug: LEGACY_UNCATEGORISED, qty_owned: 2 })] });
-  const first = await importProfile(b);
-  const second = await importProfile(b);
-  assert.notEqual(first, second);
-  for (const pid of [first, second]) {
-    const t = rows('SELECT SUM(qty_owned) o FROM owned_cards WHERE profile_id=?;', [pid])[0];
-    assert.equal(t.o, 2, 'each profile holds its own two copies');
-  }
+test('a non-Compendium file is still rejected', async () => {
+  await assert.rejects(importProfile({ app: 'something-else' }), /not a compendium/i);
+  assert.equal(rows('SELECT COUNT(*) n FROM profiles;')[0].n, 1, 'only the home profile exists');
 });

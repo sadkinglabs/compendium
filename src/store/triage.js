@@ -40,12 +40,26 @@ export function triagePile(rows, setsOf = () => []) {
     const wanted = r.qty_wanted || 0;
     if (owned <= 0 && wanted <= 0) continue;           // a 0/0 row asks nothing
 
-    if (!byCard.has(r.card_id)) byCard.set(r.card_id, { card_id: r.card_id, owned: 0, ownedFoil: 0, wanted: 0 });
+    if (!byCard.has(r.card_id)) {
+      byCard.set(r.card_id, {
+        card_id: r.card_id, owned: 0, ownedFoil: 0, wanted: 0,
+        // PROVENANCE, per line. Filing has to drain the keys the quantity actually came from,
+        // and for a want that is not knowable from the line itself: a want is displayed as
+        // non-foil by the §7.4 ruling, but it can have SURVIVED on any of the four
+        // uncategorised keys, foil ones included. Aggregating first and assuming two source
+        // keys later would leave the original quantity behind and mint a second at the
+        // destination.
+        ownedFrom: new Set(), ownedFoilFrom: new Set(), wantedFrom: new Set(),
+      });
+    }
     const e = byCard.get(r.card_id);
-    if (owned > 0) e[foil ? 'ownedFoil' : 'owned'] += owned;
+    if (owned > 0) {
+      e[foil ? 'ownedFoil' : 'owned'] += owned;
+      e[foil ? 'ownedFoilFrom' : 'ownedFrom'].add(slug);
+    }
     // A want is non-foil by the §7.4 ruling regardless of the row it survived on, so foil
     // wants are not a separate line. Migration never creates one and no writer may.
-    if (wanted > 0) e.wanted += wanted;
+    if (wanted > 0) { e.wanted += wanted; e.wantedFrom.add(slug); }
   }
 
   const out = [];
@@ -53,9 +67,9 @@ export function triagePile(rows, setsOf = () => []) {
     const e = byCard.get(cardId);
     const sets = (setsOf(cardId) || []).filter(Boolean);
     const lines = [];
-    if (e.owned > 0) lines.push({ kind: OWNED_NONFOIL, qty: e.owned, foil: false });
-    if (e.ownedFoil > 0) lines.push({ kind: OWNED_FOIL, qty: e.ownedFoil, foil: true });
-    if (e.wanted > 0) lines.push({ kind: WANTED, qty: e.wanted, foil: false });
+    if (e.owned > 0) lines.push({ kind: OWNED_NONFOIL, qty: e.owned, foil: false, from: [...e.ownedFrom].sort() });
+    if (e.ownedFoil > 0) lines.push({ kind: OWNED_FOIL, qty: e.ownedFoil, foil: true, from: [...e.ownedFoilFrom].sort() });
+    if (e.wanted > 0) lines.push({ kind: WANTED, qty: e.wanted, foil: false, from: [...e.wantedFrom].sort() });
     if (lines.length) out.push({ card_id: cardId, sets, lines, resolvable: sets.length > 0 });
   }
   return out;
@@ -92,14 +106,19 @@ export function autoResolvable(pile) {
  */
 export function fileLinePlan(entry, line, set) {
   if (!set) throw new Error('A triage line needs a destination set.');
+  if (!line?.from?.length) throw new Error('A triage line must know which rows its quantity came from.');
   const wanted = line.kind === WANTED;
   return {
     card_id: entry.card_id,
     qty: line.qty,
     field: wanted ? 'wanted' : 'owned',
-    from: { set: '', foil: line.foil, slug: line.foil ? UNCATEGORISED_FOIL : UNCATEGORISED },
+    // EVERY key this quantity actually came from, not an assumed pair. A want can have
+    // survived on a foil key while being filed as non-foil, so a fixed two-key drawdown would
+    // leave the original behind and duplicate it at the destination.
+    fromSlugs: line.from,
     to: { set, foil: line.foil },
-    // The legacy twin, because a mixed ledger can still hold one and filing must drain both.
-    legacySlug: line.foil ? LEGACY_FOIL : LEGACY_UNCATEGORISED,
   };
 }
+
+/** Every uncategorised key, for callers that need to bound a drawdown. */
+export const UNCATEGORISED_KEYS = [LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL];

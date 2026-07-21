@@ -10,25 +10,34 @@
 //
 // Finish is not a question here either, it is a toggle with a default. §7.4 rules that a set is
 // completed in non-foil, so that is what a want means unless the user says otherwise.
-import React, { useState } from 'react';
+import React, { useReducer, useEffect } from 'react';
 import { BottomSheet, BTN_GOLD } from './ui.jsx';
-import { pickerOptions, DEFAULT_WANT_FOIL } from '../store/wantIntent.js';
+import { pickerOptions } from '../store/wantIntent.js';
+import { wantPickerReducer, initialWantPicker } from './wantPickerState.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 
 const setRank = (code) => SET_RANK[code] ?? 99;
 
-export default function WantPrintingSheet({ open, cardName, setCodes = [], onPick, onClose }) {
-  const [foil, setFoil] = useState(DEFAULT_WANT_FOIL);
+export default function WantPrintingSheet({ open, cardId, cardName, setCodes = [], onPick, onClose }) {
+  const [state, dispatch] = useReducer(wantPickerReducer, initialWantPicker);
+  const { foil } = state;
   const options = pickerOptions(setCodes, setRank, SET_LABEL);
+
+  // Opening on a new card resets the finish. The reducer treats a repeat open on the SAME card
+  // as a no-op, so a re-render cannot undo a tap the user just made.
+  useEffect(() => { if (open) dispatch({ type: 'open', cardId }); }, [open, cardId]);
+
+  // ONE exit for cancel, backdrop and hardware back. The finish used to be reset only on
+  // confirm, so cancelling left it set and the NEXT card's want was silently stored as foil.
+  const close = () => { dispatch({ type: 'close' }); onClose?.(); };
 
   const choose = (code) => {
     onPick?.({ set: code, foil });
-    setFoil(DEFAULT_WANT_FOIL);   // the next card starts from the default again
-    onClose?.();
+    close();
   };
 
   return (
-    <BottomSheet open={open} title="WHICH PRINTING?" onClose={onClose}>
+    <BottomSheet open={open} title="WHICH PRINTING?" onClose={close}>
       {cardName && (
         <div style={{ font: "600 15px/1.3 var(--f-read)", color: 'var(--gold-leaf)', textAlign: 'center', marginBottom: 3 }}>
           {cardName}
@@ -44,7 +53,7 @@ export default function WantPrintingSheet({ open, cardName, setCodes = [], onPic
         {[{ v: false, label: 'Non-foil' }, { v: true, label: 'Foil' }].map((o) => (
           <button
             key={String(o.v)}
-            onClick={() => setFoil(o.v)}
+            onClick={() => dispatch({ type: 'setFoil', foil: o.v })}
             aria-pressed={foil === o.v}
             style={{
               flex: 1, padding: '9px 0', borderRadius: 8, cursor: 'pointer',
@@ -83,7 +92,7 @@ export default function WantPrintingSheet({ open, cardName, setCodes = [], onPic
         </div>
       )}
 
-      <button onClick={onClose} style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', marginTop: 16, opacity: .8 }}>
+      <button onClick={close} style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', marginTop: 16, opacity: .8 }}>
         Cancel
       </button>
     </BottomSheet>

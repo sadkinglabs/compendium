@@ -11,7 +11,7 @@
 //
 // SET IS ASKED ONLY WHEN IT IS GENUINELY UNKNOWABLE. Guessing it is the original defect: the
 // wishlist rendered ALPHA for a card whose copies were Beta, purely because Alpha sorted first.
-import { UNCATEGORISED_BUCKET } from './printings.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED, UNCATEGORISED_FOIL } from './printings.js';
 
 /** The product default finish for a want. Non-foil, per §7.4. */
 export const DEFAULT_WANT_FOIL = false;
@@ -27,12 +27,21 @@ export const DEFAULT_WANT_FOIL = false;
  *          { kind: 'unknown' }                          the catalog has no sets for this card
  */
 export function wantTarget(setCodes, { set } = {}) {
-  const sets = (Array.isArray(setCodes) ? setCodes : []).filter(Boolean);
+  // Deduplicated: a catalog entry that lists a set twice must not make a single-set card look
+  // like a reprint, which would ask a question with only one possible answer.
+  const sets = [...new Set((Array.isArray(setCodes) ? setCodes : []).filter(Boolean))];
 
-  // A surface scoped to a real set already knows the answer, and it is the user's own choice of
-  // context rather than an inference. The uncategorised bucket is NOT a real set: honouring it
-  // would create exactly the unresolved want §2.1 forbids new writers from making.
-  if (set && set !== UNCATEGORISED_BUCKET) return { kind: 'item', item: { set, foil: DEFAULT_WANT_FOIL } };
+  // A scoped surface is trusted ONLY when the card is actually printed in that set.
+  //
+  // Context arrives from navigation, and navigation goes stale: a set drill left open while the
+  // catalog updates, a card opened from one set's grid and swiped to another. An unchecked
+  // context would write a collector item that does not exist - '999' for an Alpha/Beta card -
+  // which no reader can ever bucket and no triage can resolve.
+  //
+  // The uncategorised keys are rejected for a different reason: they are not sets at all, and
+  // honouring one would create exactly the unresolved want §2.1 forbids new writers from making.
+  const scoped = set && set !== UNCATEGORISED_BUCKET && set !== UNCATEGORISED && set !== UNCATEGORISED_FOIL;
+  if (scoped && sets.includes(set)) return { kind: 'item', item: { set, foil: DEFAULT_WANT_FOIL } };
 
   // One set means there is nothing to disambiguate. This is not a guess: a card printed in a
   // single set can only be wanted from that set.

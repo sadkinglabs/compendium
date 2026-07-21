@@ -20,6 +20,16 @@ export const MAX_SUPPORTED_SCHEMA = 11;
 /** Bundles predate the stamp, so a missing version means the oldest shape we ever wrote. */
 export const ASSUMED_SCHEMA = 10;
 
+/**
+ * Every bundle field profileTransfer iterates. Each one must be an array or the import will
+ * throw partway through, after the profile exists.
+ */
+export const ITERATED_COLLECTIONS = [
+  'decks', 'deck_entries', 'deck_history', 'saved', 'notes', 'collections', 'collection_items',
+  'owned_cards', 'card_lists', 'card_list_entries', 'links', 'matches', 'match_log_entries',
+  'dashboard_blocks', 'dashboard_layouts',
+];
+
 /** Thrown for every rejection, with a `code` so callers can tell the cases apart. */
 export class ImportRejected extends Error {
   constructor(code, message) {
@@ -47,7 +57,9 @@ export function validateBundle(bundle) {
 
   const raw = bundle.schemaVersion;
   const version = raw == null ? ASSUMED_SCHEMA : raw;
-  if (typeof version !== 'number' || !Number.isFinite(version) || version < 1) {
+  // INTEGER, not merely a finite positive number. 10.5 is not a schema anyone ever wrote, and
+  // treating it as v10 would import unknown data under a known label.
+  if (!Number.isInteger(version) || version < 1) {
     throw new ImportRejected('malformed', 'That profile file has an unreadable version.');
   }
   if (version > MAX_SUPPORTED_SCHEMA) {
@@ -57,10 +69,15 @@ export function validateBundle(bundle) {
     );
   }
 
-  // Every collection of rows must actually be a collection of rows. A bundle claiming
-  // `owned_cards: 5` would otherwise throw somewhere deep inside the insert loop, after the
-  // profile had been created.
-  for (const key of ['owned_cards', 'card_lists', 'card_list_entries', 'decks', 'deck_entries']) {
+  // EVERY collection profileTransfer later iterates, not just the ones this module cares about.
+  //
+  // Validating five of them was worse than validating none, because it made the no-orphan
+  // guarantee look true: a bundle claiming `matches: 5` passed validation, the profile was
+  // created, and the insert loop then threw on a number it could not iterate - leaving exactly
+  // the half-profile the boundary exists to prevent. This list must stay in step with the
+  // export shape; ITERATED_COLLECTIONS is the contract, and a test asserts it covers every
+  // `for (const ... of bundle.X || [])` in profileTransfer.
+  for (const key of ITERATED_COLLECTIONS) {
     if (bundle[key] != null && !Array.isArray(bundle[key])) {
       throw new ImportRejected('malformed', `That profile file is damaged (${key}).`);
     }

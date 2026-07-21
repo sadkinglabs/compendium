@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validateBundle, normaliseBundle, prepareBundle, hasLegacyRows,
-  ImportRejected, MAX_SUPPORTED_SCHEMA, ASSUMED_SCHEMA,
+  ImportRejected, MAX_SUPPORTED_SCHEMA, ASSUMED_SCHEMA, ITERATED_COLLECTIONS,
 } from './importBoundary.js';
 import { LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting } from './printings.js';
 
@@ -166,4 +166,47 @@ test('planner bookkeeping does not leak into the bundle', () => {
 test('an empty or absent owned_cards is fine, not an error', () => {
   assert.doesNotThrow(() => prepareBundle(bundleOf({ owned_cards: [] }), sets({})));
   assert.doesNotThrow(() => prepareBundle({ app: 'compendium', schemaVersion: 10 }, sets({})));
+});
+
+/* ---------------- the validator covers what the importer ITERATES ---------------- */
+
+test('every collection profileTransfer iterates is validated', async () => {
+  // Validating five of them was worse than validating none: it made the no-orphan guarantee
+  // look true while a bundle claiming `matches: 5` sailed through, created the profile, and
+  // then threw on a number it could not iterate. This asserts the list against the source.
+  const src = await (await import('node:fs/promises')).readFile('src/store/profileTransfer.js', 'utf8');
+  const iterated = [...new Set([...src.matchAll(/of bundle\.(\w+) \|\| \[\]/g)].map((m) => m[1]))];
+  assert.ok(iterated.length >= 14, `expected the importer to iterate many collections, saw ${iterated.length}`);
+  for (const key of iterated) {
+    assert.ok(ITERATED_COLLECTIONS.includes(key), `${key} is iterated but never validated`);
+  }
+});
+
+test('a non-array in ANY iterated collection is rejected', () => {
+  for (const key of ITERATED_COLLECTIONS) {
+    assert.throws(
+      () => prepareBundle(bundleOf({ [key]: 5 }), sets({})),
+      (e) => e instanceof ImportRejected && e.code === 'malformed',
+      `${key} was accepted as a number`,
+    );
+  }
+});
+
+test('the fields outside the original five are covered too', () => {
+  // Named explicitly, because these are the ones that silently passed before.
+  for (const key of ['matches', 'match_log_entries', 'collections', 'collection_items', 'saved', 'notes', 'links', 'dashboard_blocks', 'dashboard_layouts', 'deck_history']) {
+    assert.throws(() => prepareBundle(bundleOf({ [key]: 'nope' }), sets({})), ImportRejected, key);
+  }
+});
+
+test('schemaVersion must be an INTEGER, not merely a positive number', () => {
+  // 10.5 is not a schema anyone ever wrote. Treating it as v10 would import unknown data under
+  // a known label.
+  for (const v of [10.5, 1e-3, NaN, Infinity, -1, '10', true]) {
+    assert.throws(
+      () => prepareBundle(bundleOf({ schemaVersion: v }), sets({})),
+      (e) => e instanceof ImportRejected && e.code === 'malformed',
+      `accepted schemaVersion ${String(v)}`,
+    );
+  }
 });

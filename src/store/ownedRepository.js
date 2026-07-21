@@ -14,7 +14,7 @@
 // and lives on the '' row only.
 import { query, run, tx } from './db.js';
 import {
-  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED_BUCKET,
+  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
   parsePrinting, printingSlugs, canonicalPrinting, SQL_IS_FOIL,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
@@ -229,6 +229,27 @@ export async function setFoilInSet(cardId, set, qty, pid = activeProfileId()) { 
  * one. Looking only for the canonical key would create a SECOND row meaning the same thing,
  * and the two would drift apart. Canonical is preferred when both somehow exist.
  */
+/**
+ * Refuse to create an unresolved want.
+ *
+ * §2.1 reserves uncategorised wants for MIGRATION and import alone: they are a transitional
+ * state triage exists to remove, not something ordinary code may produce. A caller that skips
+ * wantIntent, or hands over a half-built item, would otherwise manufacture exactly the state
+ * this whole effort is removing - and nothing downstream would object, because the row is
+ * perfectly well-formed.
+ *
+ * Throws BEFORE any mutation or notification, so a rejected call leaves nothing behind and no
+ * subscriber sees a change that did not happen.
+ *
+ * canonicalPrinting stays permissive on purpose: ownership migration genuinely needs to write
+ * uncategorised keys. The invariant belongs here, at the want boundary, not in the key helper.
+ */
+function requireResolvedSet(set, fn) {
+  if (!set || set === UNCATEGORISED_BUCKET || set === UNCATEGORISED || set === UNCATEGORISED_FOIL) {
+    throw new Error(`${fn}: a want must name a real set. Uncategorised wants are created only by migration, import and triage.`);
+  }
+}
+
 async function resolveItemRow(cardId, set, foil, pid) {
   const slugs = printingSlugs(set, foil);
   const rows = await query(
@@ -251,7 +272,8 @@ async function resolveItemRow(cardId, set, foil, pid) {
  * between ownership and the wishlist, so deleting it on wanted=0 would silently take the
  * user's owned copies with it - the exact shape of the bug that made '' unsafe to drop.
  */
-export async function setWantedForItem(cardId, { set = '', foil = false } = {}, qty, pid = activeProfileId()) {
+export async function setWantedForItem(cardId, { set, foil = false } = {}, qty, pid = activeProfileId()) {
+  requireResolvedSet(set, 'setWantedForItem');
   const now = nowIso();
   const slug = canonicalPrinting(set, foil);
   const cur = await resolveItemRow(cardId, set, foil, pid);
@@ -270,7 +292,8 @@ export async function setWantedForItem(cardId, { set = '', foil = false } = {}, 
 
 /** Step a collector item's want by a delta, floored at zero. */
 export async function stepWantedForItem(cardId, item = {}, delta = 1, pid = activeProfileId()) {
-  const cur = await resolveItemRow(cardId, item.set || '', !!item.foil, pid);
+  requireResolvedSet(item.set, 'stepWantedForItem');
+  const cur = await resolveItemRow(cardId, item.set, !!item.foil, pid);
   return setWantedForItem(cardId, item, Math.max(0, (cur?.qty_wanted || 0) + delta), pid);
 }
 
@@ -282,7 +305,8 @@ export async function stepWantedForItem(cardId, item = {}, delta = 1, pid = acti
  * legacy row for the same item is NOT merged here - that is left to the boot pass, because
  * doing it atomically would need the read this function exists to avoid.
  */
-export async function addWantedForItem(cardId, { set = '', foil = false } = {}, n = 1, pid = activeProfileId()) {
+export async function addWantedForItem(cardId, { set, foil = false } = {}, n = 1, pid = activeProfileId()) {
+  requireResolvedSet(set, 'addWantedForItem');
   if (!cardId || !(n > 0)) return;
   const now = nowIso();
   await run(

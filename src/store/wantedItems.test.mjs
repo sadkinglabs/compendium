@@ -10,6 +10,7 @@ import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import {
   setWantedForItem, stepWantedForItem, addWantedForItem, wantedItemsForCard, qtyFor,
+  subscribeCollection,
 } from './ownedRepository.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting,
@@ -69,11 +70,11 @@ test('wants on the same card in different sets and finishes are separate rows', 
 /* ---------------- canonical keys only ---------------- */
 
 test('NO writer here ever emits a legacy key', async () => {
-  await setWantedForItem('c1', { set: '', foil: false }, 1);
-  await setWantedForItem('c1', { set: '', foil: true }, 2);
+  await setWantedForItem('c1', { set: '001', foil: false }, 1);
+  await setWantedForItem('c1', { set: '002', foil: false }, 2);
   await setWantedForItem('c1', { set: '001', foil: true }, 3);
-  await addWantedForItem('c2', { set: '', foil: false }, 1);
-  await addWantedForItem('c2', { set: '', foil: true }, 1);
+  await addWantedForItem('c2', { set: '004', foil: false }, 1);
+  await addWantedForItem('c2', { set: '004', foil: true }, 1);
   const all = rows('SELECT variant_slug FROM owned_cards;');
   assert.ok(all.length > 0);
   for (const r of all) {
@@ -81,14 +82,44 @@ test('NO writer here ever emits a legacy key', async () => {
   }
 });
 
-test('an uncategorised want uses the canonical key, not the empty string', async () => {
-  await setWantedForItem('c1', {}, 2);
-  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED, qty_owned: 0, qty_wanted: 2 }]);
+/* ---------------- unresolved wants are REFUSED ---------------- */
+
+test('creating an uncategorised want is refused, and writes nothing', async () => {
+  // I originally asserted the opposite - that these writers happily produced canonical
+  // uncategorised wants - and called it correct. It is not: 2.1 reserves that state for
+  // migration, import and triage. Ordinary code manufacturing it would recreate exactly what
+  // this work removes, and nothing downstream would object, because the row is well-formed.
+  for (const item of [{}, { set: '' }, { set: null }, { foil: true }]) {
+    await assert.rejects(() => setWantedForItem('c1', item, 2), /must name a real set/);
+  }
+  assert.deepEqual(ledger(), [], 'no row was created by any rejected call');
 });
 
-test('an uncategorised FOIL want is its own collector item', async () => {
-  await setWantedForItem('c1', { foil: true }, 1);
-  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED_FOIL, qty_owned: 0, qty_wanted: 1 }]);
+test('the uncategorised KEYS are refused as sets too, not just the empty string', async () => {
+  // A caller passing a storage key through as if it were a set code.
+  for (const set of [UNCATEGORISED, UNCATEGORISED_FOIL]) {
+    await assert.rejects(() => setWantedForItem('c1', { set }, 1), /must name a real set/);
+    await assert.rejects(() => addWantedForItem('c1', { set }, 1), /must name a real set/);
+    await assert.rejects(() => stepWantedForItem('c1', { set }, 1), /must name a real set/);
+  }
+  assert.deepEqual(ledger(), []);
+});
+
+test('a rejected write emits NO collection notification', async () => {
+  // A subscriber must not be told something changed when nothing did - a spurious refresh
+  // would make the failure look like a successful no-op.
+  let fired = 0;
+  const unsub = subscribeCollection(() => { fired++; });
+  await assert.rejects(() => setWantedForItem('c1', {}, 1), /must name a real set/);
+  await assert.rejects(() => addWantedForItem('c1', {}, 1), /must name a real set/);
+  unsub();
+  assert.equal(fired, 0);
+});
+
+test('a rejected write does not disturb an existing row', async () => {
+  seed('001', 2, 3);
+  await assert.rejects(() => setWantedForItem('c1', {}, 9), /must name a real set/);
+  assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 2, qty_wanted: 3 }]);
 });
 
 /* ---------------- the shared row, and the bug that made '' unsafe ---------------- */
@@ -96,42 +127,27 @@ test('an uncategorised FOIL want is its own collector item', async () => {
 test('setting a want to zero does NOT delete owned copies on the same row', async () => {
   // This is the exact shape of the defect that made dropping '' rows destructive: ownership
   // and the wishlist share a row, so a careless delete takes both.
-  seed(UNCATEGORISED, 3, 2);
-  await setWantedForItem('c1', {}, 0);
-  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED, qty_owned: 3, qty_wanted: 0 }]);
+  seed('001', 3, 2);
+  await setWantedForItem('c1', { set: '001' }, 0);
+  assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 3, qty_wanted: 0 }]);
 });
 
 test('the row IS removed once both quantities reach zero', async () => {
-  seed(UNCATEGORISED, 0, 1);
-  await setWantedForItem('c1', {}, 0);
+  seed('001', 0, 1);
+  await setWantedForItem('c1', { set: '001' }, 0);
   assert.deepEqual(ledger(), [], 'no 0/0 tombstone is left behind');
 });
 
 /* ---------------- writing over a legacy row ---------------- */
 
-test('editing a want on a LEGACY row converts that row instead of duplicating it', async () => {
-  // Looking only for the canonical key would create a second row meaning the same collector
-  // item, and the two would drift apart.
-  seed(LEGACY_UNCATEGORISED, 2, 1);
-  await setWantedForItem('c1', {}, 5);
-  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED, qty_owned: 2, qty_wanted: 5 }],
-    'one row, canonical key, owned copies preserved');
-});
-
-test('a legacy FOIL row is found and converted too', async () => {
-  seed(LEGACY_FOIL, 1, 0);
-  await setWantedForItem('c1', { foil: true }, 2);
-  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED_FOIL, qty_owned: 1, qty_wanted: 2 }]);
-});
-
-test('a canonical row is preferred when both forms somehow exist', async () => {
-  seed(LEGACY_UNCATEGORISED, 1, 1);
-  seed(UNCATEGORISED, 2, 2);
-  await setWantedForItem('c1', {}, 9);
-  const after = ledger();
-  assert.equal(after.find((r) => r.variant_slug === UNCATEGORISED).qty_wanted, 9);
-  assert.equal(after.find((r) => r.variant_slug === LEGACY_UNCATEGORISED)?.qty_wanted, 1,
-    'the legacy row is left for the boot pass rather than silently merged here');
+test('editing a want on a per-set row updates it rather than duplicating it', async () => {
+  // Looking only for one spelling of the key would create a second row meaning the same
+  // collector item, and the two would drift apart. Uncategorised rows are no longer reachable
+  // from these writers at all - only triage may resolve those.
+  seed('001', 2, 1);
+  await setWantedForItem('c1', { set: '001' }, 5);
+  assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 2, qty_wanted: 5 }],
+    'one row, owned copies preserved');
 });
 
 /* ---------------- stepping and atomic adds ---------------- */

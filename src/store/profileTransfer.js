@@ -8,7 +8,6 @@ import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
 import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
-import { prepareBundle } from './importBoundary.js';
 import { saveTextFile } from '../native.js';
 import { safeHref } from '../util.js';
 
@@ -71,24 +70,18 @@ export async function duplicateProfile(profileId) {
 }
 
 /** Import a bundle into a brand-new profile. Returns the new profileId. */
-export async function importProfile(rawBundle, { name } = {}) {
-  // THE BOUNDARY, and it runs before anything is created.
+export async function importProfile(bundle, { name } = {}) {
+  // NOTE: v10 -> v11 normalisation is NOT wired here yet, deliberately.
   //
-  // This used to be `if (bundle.app !== 'compendium') throw`, followed immediately by
-  // createProfile(). Two consequences: a bundle from a NEWER build imported as if it were
-  // current, silently, and any later failure left an orphaned half-profile behind.
+  // It was, briefly, and it was a live data-corruption path. Normalisation writes canonical
+  // want keys, but every ACTIVE want writer still targets the legacy '' row and computes its
+  // new value from the card-level total. So: import a v10 profile, tap the heart once, and the
+  // writer reads 2, writes 3 to a fresh '' row, and leaves the canonical 2 in place - a total
+  // of 5 from a single tap. Reproduced before removing it.
   //
-  // Validation and v10 -> v11 normalisation both happen in memory, against no database, so a
-  // rejection leaves the app exactly as it was. The catalog read below is the only query, and
-  // it creates nothing.
-  const setsById = new Map();
-  for (const c of await query('SELECT card_id, sets FROM cards;')) {
-    try {
-      const parsed = JSON.parse(c.sets || '[]');
-      setsById.set(c.card_id, Array.isArray(parsed) ? parsed.map((s) => s?.code).filter(Boolean) : []);
-    } catch { setsById.set(c.card_id, []); }
-  }
-  const { bundle } = prepareBundle(rawBundle, (cardId) => setsById.get(cardId) || []);
+  // The boundary and its tests stay in importBoundary.js. It reconnects in the activation
+  // commit, once every active want writer emits canonical keys - not before.
+  if (!bundle || bundle.app !== 'compendium') throw new Error('Not a Compendium profile file.');
 
   // Restore under the original name; only add "(imported)" if that name is already
   // taken (e.g. importing your "Sorcerer" next to the fresh-install "Sorcerer").
