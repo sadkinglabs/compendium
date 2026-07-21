@@ -15,7 +15,7 @@ import { fileTriageLine } from '../store/triageRepository.js';
 import { cardNames } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { toast } from '../feedback.js';
-import { lineKey, visiblePile, bulkDecisions, lineDescription, applySummary } from './triageSheetState.js';
+import { lineKey, visiblePile, bulkDecisions, lineDescription, applySummary, shouldHideLine } from './triageSheetState.js';
 
 const setName = (code) => SET_LABEL[code] || code;
 const bySetOrder = (a, b) => (SET_RANK[a] ?? 99) - (SET_RANK[b] ?? 99);
@@ -50,7 +50,7 @@ export default function TriageSheet({ open, pile = [], onClose, onChanged, onOpe
     // but the read-back could not verify what it left behind - so the line stays available
     // until an authoritative refresh removes it. Hiding it here would tell the user the work is
     // done on the strength of the one thing we could not establish.
-    if (result.confirmed) {
+    if (shouldHideLine(result)) {
       setFiled((prev) => new Set(prev).add(lineKey(entry.card_id, line.kind)));
     }
     return result;

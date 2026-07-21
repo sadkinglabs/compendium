@@ -56,3 +56,19 @@ export function applySummary({ filed, unconfirmed, failed, total }) {
   if (failed) parts.push(`${failed} failed`);
   return `${parts.join(' - ')}.`;
 }
+
+/**
+ * Whether a filing RESULT may hide its line.
+ *
+ * Only a confirmed result. An unconfirmed one means the transaction resolved but the read-back
+ * could not verify what it left behind - hiding the line then tells the user the work is done
+ * on the strength of the single thing that could not be established, and the line is the only
+ * way back to it. Extracted so this caller contract is executable rather than a convention.
+ */
+export const shouldHideLine = (result) => result?.confirmed === true;
+
+/** Past-tense success copy is reserved for confirmed results, for the same reason. */
+export const resultTone = (result) => {
+  if (!result || result.confirmed !== true) return 'unconfirmed';
+  return result.noop ? 'noop' : 'filed';
+};

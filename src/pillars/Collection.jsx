@@ -13,6 +13,9 @@ import { isTokenCard } from '../store/tokens.js';
 import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
 import { collectionSurface } from './collectionRoute.js';
 import { triagePile, pendingCount } from '../store/triage.js';
+import { wantTarget } from '../store/wantIntent.js';
+import { canonicalPrinting, UNCATEGORISED } from '../store/printings.js';
+import WantPrintingSheet from '../components/WantPrintingSheet.jsx';
 import TriageSheet from '../components/TriageSheet.jsx';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
@@ -1295,7 +1298,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
   const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [bulkOpen, setBulkOpen] = useState(false); // paste-a-list bulk add
-  const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty (live)
+  const [ownQty, setOwnQty] = useState(new Map()); // keyed like the goal map: item for the Wishlist, card for lists
+  const [addPick, setAddPick] = useState(null);    // { card, codes } while a reprint's printing is chosen
   const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -1324,7 +1328,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // regular lists from card_list_entries. Both carry `quantity` = the goal.
     const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
     installGoals(rows);
-    setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
+    setOwnQty(await ownershipFor(rows));
     setLoaded(true);
   };
   useEffect(() => {
@@ -1334,7 +1338,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // open (the cancel guard), so a slow reconcile can't regress a fresh optimistic edit.
     drainRef.current = createGoalDrain({
       read: () => (isWishlist ? wishlistCards() : listCards(list.id)),
-      apply: installGoals,
+      apply: (rows) => { installGoals(rows); ownershipFor(rows).then(setOwnQty); },
       isAlive: () => !cancelled,
     });
     load();
@@ -1350,6 +1354,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       if (listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites: drainRef.current?.pending() || 0 })) {
         const genAtStart = goalGenRef.current;
         wishlistCards().then((rows) => {
+          ownershipFor(rows).then(setOwnQty);
           // Re-check AFTER the await: a local edit may have begun while this read was in
           // flight, and applying the older snapshot would overwrite the newer optimistic state.
           if (canApplyExternalRows({ cancelled, pendingGoalWrites: drainRef.current?.pending() || 0, genAtStart, genNow: goalGenRef.current })) {
@@ -1417,14 +1422,61 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
   // Every LOCAL goal edit bumps a generation, so an external refresh that started earlier can
   // tell on arrival that it is now stale (see canApplyExternalRows).
+  // Ownership keyed the SAME way as the goal map, or the comparison silently finds nothing.
+  //
+  // Wishlist goals are per collector item, so ownership must be too - and it must be that
+  // item's own count. Owning an Alpha copy does not satisfy a Beta want, and a non-foil copy
+  // does not satisfy a foil want: they are different collector items, which is the premise of
+  // the whole schema change. Custom lists stay card-level, where a card-level sum is right.
+  const ownershipFor = async (rows) => (
+    isWishlist
+      ? new Map(rows.map((r) => [rowKey(r), r.owned || 0]))
+      : await ownedMap(rows.map((r) => r.card_id))
+  );
+
   const applyGoal = (mutate) => { goalGenRef.current += 1; const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
   const track = (p) => drainRef.current?.track(p);
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
   // no confirm, since you're actively curating.
-  const addStep = (card, delta) => {
-    const id = card.card_id;
-    cardIndex.current.set(id, card);
+  // ADDING RESOLVES THE COLLECTOR ITEM FIRST.
+  //
+  // It used to key optimistic state on card_id while existing Wishlist rows are keyed by item,
+  // so adding a reprint created a phantom card-keyed row and then called the card-level writer -
+  // which throws NeedsPrintingChoice when there is no want to resolve to. Resolution happens
+  // before any state is touched, so the picker opens instead of a write failing.
+  const addStep = (card, delta, item = null) => {
+    if (!isWishlist) {
+      const id = card.card_id;
+      cardIndex.current.set(id, card);
+      const next = Math.max(0, (qtyRef.current.get(id) || 0) + delta);
+      haptic('light');
+      applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
+      track(persist(id, delta));
+      return;
+    }
+
+    const codes = (() => { try { return (JSON.parse(card.sets || '[]') || []).map((x) => x?.code).filter(Boolean); } catch { return []; } })();
+    let target = item;
+    if (!target) {
+      // An existing unambiguous want is the obvious target: stepping what is already there
+      // beats asking about a decision the user has already made.
+      const mine = [...qtyRef.current.keys()].filter((k) => String(k).startsWith(`${card.card_id}|`));
+      if (delta < 0 && mine.length === 1) {
+        const r = cardIndex.current.get(mine[0]);
+        if (r) target = { set: r.set, foil: !!r.foil };
+      }
+      if (!target) {
+        const t = wantTarget(codes, { set: null });
+        if (t.kind === 'ask') { setAddPick({ card, codes }); return; }
+        if (t.kind === 'unknown') { toast('The catalog does not list a printing for this card', { tone: 'warn' }); return; }
+        target = t.item;
+      }
+    }
+
+    const slug = target.set ? canonicalPrinting(target.set, !!target.foil) : UNCATEGORISED;
+    const id = `${card.card_id}|${slug}`;
+    cardIndex.current.set(id, { ...card, item_id: id, variant_slug: slug, set: target.set, foil: !!target.foil });
     const next = Math.max(0, (qtyRef.current.get(id) || 0) + delta);
     haptic('light');
     applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
@@ -1452,6 +1504,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   }
 
   const totals = useMemo(() => goalTotals(qty, ownQty), [qty, ownQty]);
+
+  // AddCardsSheet asks "is this card already in the list", which is a CARD question. Handing it
+  // the item-keyed goal map meant every membership check missed, so an already-wanted reprint
+  // looked absent.
+  const cardMembership = useMemo(() => {
+    if (!isWishlist) return qty;
+    const m = new Map();
+    for (const [k, v] of qty) {
+      const cardId = String(k).split('|')[0];
+      m.set(cardId, (m.get(cardId) || 0) + v);
+    }
+    return m;
+  }, [qty, isWishlist]);
 
   const openMissing = async () => setMissing(await listProgress(list.id));
   const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
@@ -1533,7 +1598,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           {listRows.map((c) => (
             // Keyed and stepped by ROW identity, not card_id: two wishlist rows can share a
             // card, and a card_id key would collapse them in React and send both edits to one.
-            <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(rowKey(c))}
+            <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
               printing={isWishlist ? printingLabel(c) : null}
               isWanted={showProgress} editable={editing} onStep={(d) => step(rowKey(c), d)} onPeek={() => onPeek(c.card_id)} />
           ))}
@@ -1580,7 +1645,16 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       <AddCardsSheet open={addOpen} onClose={() => setAddOpen(false)}
         title={isWishlist ? 'ADD TO WISHLIST' : 'ADD CARDS'}
         hint={isWishlist ? 'Search the library and tap + to add cards you want.' : `Search the library and tap + to add to ${meta.name}.`}
-        membership={qty} onStep={addStep} />
+        membership={cardMembership} onStep={addStep} />
+
+      {/* The picker, reached when adding a reprint the user has no existing want for. */}
+      <WantPrintingSheet
+        open={!!addPick}
+        cardId={addPick?.card?.card_id}
+        cardName={addPick?.card?.name}
+        setCodes={addPick?.codes || []}
+        onPick={(item) => { const p = addPick; setAddPick(null); if (p) addStep(p.card, 1, item); }}
+        onClose={() => setAddPick(null)} />
 
       <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
         onApply={(adds) => {

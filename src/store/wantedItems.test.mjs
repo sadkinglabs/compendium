@@ -10,7 +10,7 @@ import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import {
   setWantedForItem, stepWantedForItem, addWantedForItem, wantedItemsForCard, qtyFor,
-  subscribeCollection, wishlistCards,
+  subscribeCollection, wishlistCards, cardWantKey,
 } from './ownedRepository.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting,
@@ -281,4 +281,43 @@ test('a foil want is its own wishlist row, and says so', async () => {
   const wl = (await wishlistCards()).filter((r) => r.card_id === 'c3');
   assert.equal(wl.length, 2);
   assert.deepEqual(wl.map((r) => r.foil).sort(), [false, true]);
+});
+
+/* ---------------- one chain per card, across BOTH surfaces ---------------- */
+
+test('two concurrent increments from different surfaces finish at 3, not 2', async () => {
+  // THE LOST UPDATE. The card sheet called the writer directly while Wishlist rows enqueued, so
+  // a step that read 1 could store an absolute 2 over an atomic add that had already made it 2 -
+  // one increment gone, both surfaces reporting success. Both now queue under cardWantKey.
+  const { enqueueWrite, __resetCollectionWritesForTests } = await import('./collectionWrites.js');
+  __resetCollectionWritesForTests();
+  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('cRace','Solo','[{\"code\":\"004\"}]');");
+  seed('004', 0, 1, 'cRace');
+
+  const key = cardWantKey(PID, 'cRace');
+  await Promise.all([
+    enqueueWrite(key, () => addWantedForItem('cRace', { set: '004', foil: false }, 1, PID)),
+    enqueueWrite(key, () => stepWantedForItem('cRace', { set: '004', foil: false }, 1, PID)),
+  ]);
+
+  assert.deepEqual(ledger('cRace'), [{ variant_slug: '004', qty_owned: 0, qty_wanted: 3 }],
+    'both increments landed');
+});
+
+test('COUNTERFACTUAL: bypassing the shared chain loses one of them', async () => {
+  // Without this the test above proves only that two awaited calls work. Running the same pair
+  // UNQUEUED must corrupt, or the chain is decoration.
+  const { __resetCollectionWritesForTests } = await import('./collectionWrites.js');
+  __resetCollectionWritesForTests();
+  sdb.run('DELETE FROM owned_cards;');
+  seed('004', 0, 1, 'cRace');
+
+  // stepWantedForItem reads, then writes an absolute. Interleaving an atomic add between its
+  // read and its write is exactly what the queue prevents.
+  const stepped = stepWantedForItem('cRace', { set: '004', foil: false }, 1, PID);
+  await addWantedForItem('cRace', { set: '004', foil: false }, 1, PID);
+  await stepped;
+
+  assert.equal(ledger('cRace')[0].qty_wanted, 2,
+    'unqueued, the absolute write clobbers the atomic add - 3 increments became 2');
 });

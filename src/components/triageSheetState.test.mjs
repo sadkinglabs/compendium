@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lineKey, visiblePile, bulkDecisions, lineDescription, applySummary } from './triageSheetState.js';
+import {
+  lineKey, visiblePile, bulkDecisions, lineDescription, applySummary, shouldHideLine, resultTone,
+} from './triageSheetState.js';
 import { OWNED_NONFOIL, OWNED_FOIL, WANTED } from '../store/triage.js';
 
 const entry = (card_id, sets, lines) => ({ card_id, sets, lines, resolvable: sets.length > 0 });
@@ -51,4 +53,22 @@ test('unconfirmed writes are never counted as filed', () => {
     applySummary({ filed: 2, unconfirmed: 1, failed: 1, total: 4 }),
     'Filed 2 of 4 - 1 unconfirmed - 1 failed.',
   );
+});
+
+/* ---------------- an unconfirmed move is not a filed one ---------------- */
+
+test('only a CONFIRMED result hides its line', () => {
+  // The defect: every result was added to the filed set before confirmed was checked, so a
+  // failed read-back hid the line and the toast said "Filed".
+  assert.equal(shouldHideLine({ confirmed: true, moved: 3 }), true);
+  assert.equal(shouldHideLine({ confirmed: false, moved: null }), false, 'stays available to retry');
+  assert.equal(shouldHideLine(undefined), false);
+  assert.equal(shouldHideLine({}), false, 'absence of confirmation is not confirmation');
+});
+
+test('past-tense copy is reserved for confirmed results', () => {
+  assert.equal(resultTone({ confirmed: true, moved: 2 }), 'filed');
+  assert.equal(resultTone({ confirmed: true, moved: 0, noop: true }), 'noop');
+  assert.equal(resultTone({ confirmed: false }), 'unconfirmed');
+  assert.equal(resultTone(null), 'unconfirmed');
 });

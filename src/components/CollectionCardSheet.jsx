@@ -13,14 +13,15 @@ import CardArt from './CardArt.jsx';
 import CardArtViewer from './CardArtViewer.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
-import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted } from '../store/ownedRepository.js';
-import { enqueueWrite } from '../store/collectionWrites.js';
-import { activeProfileId } from '../store/profileRepository.js';
+import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted, cardWantKey } from '../store/ownedRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
 import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, canonicalPrinting } from '../store/printings.js';
 import { wantTarget } from '../store/wantIntent.js';
+import { cardSheetSetReducer, initialSetState, explicitSetOf, displaySetOf } from './cardSheetSetState.js';
+import { enqueueWrite } from '../store/collectionWrites.js';
+import { activeProfileId } from '../store/profileRepository.js';
 import WantPrintingSheet from './WantPrintingSheet.jsx';
 import { toast } from '../feedback.js';
 
@@ -269,17 +270,21 @@ function CardBody({ c, onPick, editable, set }) {
   // count flip the selection to whatever set now had the most copies - a snap
   // mid-edit.) Start from the set the sheet opened on; if it opened without one
   // (Codex/search), pick a smart default ONCE when ownership first loads.
-  const [sel, setSel] = useState(set ?? null);
-  const inited = useRef(sel != null);
+  // DISPLAY and INTENT are separate state - see cardSheetSetState.js. The smart default below
+  // fills display only; writing it into intent made every automatic pick look like a choice.
+  const [setState, dispatchSet] = useReducer(cardSheetSetReducer, set, initialSetState);
+  const setSel = (code) => dispatchSet({ type: 'select', set: code });
+  const inited = useRef(false);
   useEffect(() => {
     if (inited.current || ownedSets == null) return;
     inited.current = true;
     let best = null, n = 0;
     for (const [code, v] of ownedSets) { const t = (v.owned || 0) + (v.foil || 0); if (t > n) { n = t; best = code; } }
-    setSel(best ?? ranked[0]?.code ?? '');
+    dispatchSet({ type: 'default', set: best ?? ranked[0]?.code ?? '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownedSets]);
-  const effSet = sel ?? ranked[0]?.code ?? '';
+  const sel = setState.display;
+  const effSet = displaySetOf(setState, ranked[0]?.code ?? '');
   const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
 
   // THE HEART IS PER COLLECTOR ITEM, not per card.
@@ -305,7 +310,7 @@ function CardBody({ c, onPick, editable, set }) {
   // Alpha "the" printing, and the heart wrote Alpha without ever asking - the exact guess this
   // schema change exists to remove. Only an explicit selection counts: the set the sheet was
   // opened at, or a segment the user tapped.
-  const explicitSet = sel ?? set ?? null;
+  const explicitSet = explicitSetOf(setState);
   const heartItem = { set: effSet, foil: false };
   const heartSlug = effSet ? canonicalPrinting(effSet, false) : null;
   const heartWanted = heartSlug ? (wantedItems?.get(heartSlug) || 0) : 0;
@@ -316,17 +321,24 @@ function CardBody({ c, onPick, editable, set }) {
   // Resolution happens BEFORE the write, never as a rescue afterwards. The optimistic
   // controller converts a rejection into failure state, so a want that needs a choice has to be
   // answered while the gesture is still a gesture.
-  const addWant = (item) => addWantedForItem(c.card_id, item, 1);
+  // SHARED CHAIN. Every interactive want edit for this card - here and in the Wishlist list -
+  // queues under cardWantKey. They used to use different paths: this sheet called the writer
+  // directly while Wishlist rows enqueued, so a step that read 1 could store an absolute 2 over
+  // an atomic add that had already made it 2, and one increment vanished with both surfaces
+  // reporting success. The exact item lives INSIDE the queued operation; the key is
+  // deliberately coarser so any two edits to one card's wants serialise.
+  const queueWant = (fn) => enqueueWrite(cardWantKey(activeProfileId(), c.card_id), fn);
+  const addWant = (item) => queueWant(() => addWantedForItem(c.card_id, item, 1));
 
   // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
   // if migration put it there, and the item writers refuse that key by design - so clearing
   // routes through the card-level writer, which resolves to whichever row actually holds the
   // want instead of naming one. Removing something the user can see must always be possible.
-  const clearWant = () => (
+  const clearWant = () => queueWant(() => (
     effSet && effSet !== UNCATEGORISED_BUCKET
       ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0)
       : setWanted(c.card_id, 0)
-  );
+  ));
 
   const onHeart = async () => {
     if (wished) return clearWant();                          // clearing never needs a choice

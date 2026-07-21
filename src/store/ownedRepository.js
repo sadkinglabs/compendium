@@ -12,7 +12,7 @@
 // deliberate: they use the three-state taxonomy in store/ownership.js (regular / foilOnly /
 // missing), so a foil-only card is never counted as a non-foil copy and set completion stays
 // non-foil. A WANT belongs to a collector item, not to a card - "I need the Beta one" is the
-// whole point of v11 - so the wishlist is per item, not variant-agnostic.
+// whole point of v11 - so the wishlist is per item, not per collector item.
 import { query, run, tx } from './db.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
@@ -68,7 +68,7 @@ export async function ownWantMap() {
 }
 
 // One card's ledger breakdown. `owned` = regular copies, `foil` = foil copies,
-// `wanted` = wishlist (variant-agnostic). Same field names the write path takes.
+// `wanted` = wishlist (per collector item). Same field names the write path takes.
 export async function qtyFor(cardId, pid = activeProfileId()) {
   const r = (await query(
     `SELECT SUM(CASE WHEN ${isFoil()} THEN 0 ELSE qty_owned END) o,
@@ -271,7 +271,7 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
 /* ---------------- per-set ownership (My Collection) ----------------
    Alpha and Beta are physically distinct printings, so OWNED copies live on a
    per-set row: variant_slug = the numeric set code ("001" = Alpha regular,
-   "001:f" = Alpha foil). The wishlist stays card-level on the '' row. Legacy
+   "001:f" = Alpha foil). The wishlist is per collector item on the '' row. Legacy
    card-level owned (scanner/import/old card sheet, written on '' / 'foil') has
    no set and surfaces under an "Uncategorised" group ('' key) so nothing is lost.
    ownedMap() still SUMs every owned row, so deck buildability is unaffected. */
@@ -832,11 +832,12 @@ export async function wishlistCards() {
   // not say which item it meant, which is what raised NeedsPrintingChoice. Grouping by
   // (card_id, variant_slug) is what makes the row editable at all.
   //
-  // `owned` stays card-level on purpose: it answers "how many of this card do I have", which is
-  // the question a shopping list asks, and it is not the thing being edited here.
+  // `owned` is THIS ITEM's ownership, not the card's total. Owning an Alpha copy does not
+  // satisfy a Beta want, and a non-foil copy does not satisfy a foil want - they are different
+  // collector items, which is the whole premise. A card-level sum would report a Beta want as
+  // already met because some other printing sits in the binder.
   const rows = await query(
-    `SELECT o.card_id, o.variant_slug, o.qty_wanted quantity,
-            (SELECT SUM(t.qty_owned) FROM owned_cards t WHERE t.profile_id=o.profile_id AND t.card_id=o.card_id) owned,
+    `SELECT o.card_id, o.variant_slug, o.qty_wanted quantity, o.qty_owned owned,
             c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=? AND o.qty_wanted>0 ORDER BY c.name, o.variant_slug;`,

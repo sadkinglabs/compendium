@@ -397,7 +397,7 @@ The handrails below are the class requirement, not decoration.
 - Completion milestones. Recorded in [`completion-milestones.md`](./completion-milestones.md); v11 only makes them countable.
 - Changing `deck_entries` or `card_list_entries` semantics (§3).
 - Changing the stored SQLite `DEFAULT ''` (§3.2).
-- Any UI redesign beyond the set-and-finish picker and the To Be Categorised surface.
+- Any UI redesign beyond the set picker and the To Be Categorised surface.
 
 ### 9.3 · Point of no return
 
