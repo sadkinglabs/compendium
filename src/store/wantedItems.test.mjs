@@ -10,7 +10,7 @@ import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import {
   setWantedForItem, stepWantedForItem, addWantedForItem, wantedItemsForCard, qtyFor,
-  subscribeCollection,
+  subscribeCollection, wishlistCards,
 } from './ownedRepository.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting,
@@ -247,4 +247,38 @@ test('adversarial rejections emit no notification either', async () => {
   }
   unsub();
   assert.equal(fired, 0);
+});
+
+/* ---------------- the wishlist is per collector item ---------------- */
+
+test('Alpha and Beta wants are two independently editable rows', async () => {
+  // The Wishlist surface could not honestly display the v11 model while wishlistCards() grouped
+  // by card_id: two wants collapsed into one row, and editing it could not say which item was
+  // meant - which is what raised NeedsPrintingChoice on a card the user could plainly see.
+  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
+  await setWantedForItem('c1', { set: '001', foil: false }, 1);
+  await setWantedForItem('c1', { set: '002', foil: false }, 2);
+
+  const wl = await wishlistCards();
+  assert.equal(wl.length, 2, 'two rows, not one');
+  assert.deepEqual(wl.map((r) => [r.set, r.foil, r.quantity]), [['001', false, 1], ['002', false, 2]]);
+  assert.equal(new Set(wl.map((r) => r.item_id)).size, 2, 'each row has its own identity');
+
+  // Incrementing one leaves the other alone, and needs no choice.
+  await stepWantedForItem('c1', { set: '002', foil: false }, 1);
+  const after = await wishlistCards();
+  assert.deepEqual(after.map((r) => [r.set, r.quantity]), [['001', 1], ['002', 3]]);
+
+  // Removing one leaves the other.
+  await setWantedForItem('c1', { set: '001', foil: false }, 0);
+  assert.deepEqual((await wishlistCards()).map((r) => r.set), ['002']);
+});
+
+test('a foil want is its own wishlist row, and says so', async () => {
+  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c3','Both','[{\"code\":\"001\"}]');");
+  await setWantedForItem('c3', { set: '001', foil: false }, 1);
+  await setWantedForItem('c3', { set: '001', foil: true }, 1);
+  const wl = (await wishlistCards()).filter((r) => r.card_id === 'c3');
+  assert.equal(wl.length, 2);
+  assert.deepEqual(wl.map((r) => r.foil).sort(), [false, true]);
 });

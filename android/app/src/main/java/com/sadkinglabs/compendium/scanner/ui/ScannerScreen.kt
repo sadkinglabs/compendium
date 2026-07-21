@@ -47,7 +47,7 @@ fun ScannerScreen(
     collectionMode: Boolean,
     deckMode: Boolean,
     onSearchCodex: (Recognition) -> Unit,
-    onAdd: (Recognition, String) -> Unit,
+    onAdd: (Recognition, String, String?) -> Unit,
     onSaveCollection: (Recognition, Int, String?) -> Unit,
     onAddToDeck: (Recognition, Int) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
@@ -101,8 +101,8 @@ fun ScannerScreen(
                     onSaveCollection(rec, 1, set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
                 },
-                onAddWishlist = {
-                    onAdd(rec, "wishlist")
+                onAddWishlist = { set ->
+                    onAdd(rec, "wishlist", set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
                 },
                 onSaveCollection = { qty, set ->

@@ -85,7 +85,7 @@ class ScannerActivity : ComponentActivity() {
                     collectionMode = collectionMode,
                     deckMode = deckMode,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
-                    onAdd = { rec, action -> onAdd(rec, action) },
+                    onAdd = { rec, action, set -> onAdd(rec, action, set) },
                     onSaveCollection = { rec, qty, set -> onSaveCollection(rec, qty, set) },
                     onAddToDeck = { rec, qty -> onAddToDeck(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
@@ -104,11 +104,13 @@ class ScannerActivity : ComponentActivity() {
         finish()
     }
 
-    private fun onAdd(rec: Recognition, action: String) {
+    private fun onAdd(rec: Recognition, action: String, set: String? = null) {
         // Emit the add to JS; the sheet stays up (sticky) so both actions can be used.
-        ScannerChannel.onEvent?.invoke(
-            JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title),
-        )
+        // `set` carries the chosen printing for wishlist adds - a want names a collector item
+        // under schema v11, and dropping the selection here would make the picker decorative.
+        val js = JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title)
+        if (set != null) js.put("set", set)
+        ScannerChannel.onEvent?.invoke(js)
     }
 
     /** Collection mode: emit +qty owned for the recognised card, onto the chosen

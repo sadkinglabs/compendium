@@ -25,6 +25,7 @@ import {
   deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, cardWantKey,
+  stepWantedForItem, setWantedForItem,
   listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
@@ -1198,9 +1199,12 @@ const listSetName = (card) => soleSetName(card?.sets);
 // frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
-function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }) {
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, printing = null }) {
   const { goalMet, ownedAny } = goalRowState({ owned, target, isWanted });
-  const setName = listSetName(card);
+  // A wishlist row states the collector item it wants. `listSetName` is the old name-level
+  // fallback, which only ever showed a set when the card had exactly one - it cannot tell two
+  // wants of one card apart, which is precisely what this row now has to do.
+  const setName = printing ?? listSetName(card);
   return (
     <div
       onClick={onPeek} className="cx-row"
@@ -1298,7 +1302,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [rename, setRename] = useState(false);
   const [missing, setMissing] = useState(null);    // report for MissingSheet
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
-  const cardIndex = useRef(new Map());             // card_id -> full card row
+  // ROW IDENTITY. The Wishlist is per COLLECTOR ITEM now, so two rows can share a card_id -
+  // an Alpha want and a Beta want are different things to display and to edit. Custom lists
+  // stay card-grain, which is correct: a list entry is about the card, not a copy of it.
+  const rowKey = (r) => (isWishlist ? (r.item_id ?? `${r.card_id}|`) : r.card_id);
+  const cardIndex = useRef(new Map());             // rowKey -> full row
   const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
   const drainRef = useRef(null);                   // per-open-list goal drain: reconciles from the repo after writes settle
   const goalGenRef = useRef(0);                    // bumped per LOCAL goal edit; guards a slow external refresh
@@ -1306,8 +1314,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // Install an authoritative goal snapshot into the synchronous mirror + visible state
   // (used by the initial load AND the drain reconcile).
   const installGoals = (rows) => {
-    for (const c of rows) cardIndex.current.set(c.card_id, c);
-    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
+    for (const c of rows) cardIndex.current.set(rowKey(c), c);
+    const m = new Map(rows.map((r) => [rowKey(r), r.quantity]));
     qtyRef.current = m; setQty(m);
   };
   const load = async () => {
@@ -1357,30 +1365,52 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const listRows = useMemo(() => {
     const out = [];
     for (const [id, t] of qty) { if (t > 0) { const c = cardIndex.current.get(id); if (c) out.push(c); } }
-    out.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // Name first, then printing, so a card's items sit together in a stable order rather than
+    // swapping places between renders.
+    out.sort((a, b) => (a.name || '').localeCompare(b.name || '')
+      || String(a.variant_slug || '').localeCompare(String(b.variant_slug || '')));
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
+  // What a wishlist row is FOR - the set and finish it wants. Without this the surface stores
+  // per item while showing the user nothing to tell two rows of one card apart.
+  const printingLabel = (r) => {
+    if (!r?.set) return UNCATEGORISED_LABEL;
+    return `${SET_LABEL[r.set] || r.set}${r.foil ? ' · Foil' : ''}`;
+  };
   // Persist a goal DELTA on the store-layer queue, bound to the captured profile and
   // keyed per persisted row: a real list writes its card_list_entries row, while the Wishlist
   // uses a CARD-level want chain, because its target row is resolved at write time and cannot
   // be named up front. Keying it on a guessed row meant this surface and the card sheet could
   // serialize edits to the same want on different chains. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
   // under optimistic-vs-authoritative drift.
-  const persist = (cardId, delta) => {
+  // Writes name the exact collector item the row represents, so an edit can never land on a
+  // sibling printing and never has to ask which one was meant - the row already knows.
+  const itemOf = (key) => {
+    const r = cardIndex.current.get(key);
+    return r ? { cardId: r.card_id, set: r.set, foil: !!r.foil } : { cardId: key, set: null, foil: false };
+  };
+  const persist = (key, delta) => {
     if (!delta) return Promise.resolve();
     const pid = activeProfileId();
-    return isWishlist
-      ? enqueueWrite(cardWantKey(pid, cardId), () => stepWanted(cardId, delta, pid))
-      : enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
+    if (!isWishlist) return enqueueWrite(listRowKey(pid, list.id, key), () => stepListEntry(list.id, key, delta, pid));
+    const { cardId, set, foil } = itemOf(key);
+    // A row on a real set steps THAT item. An uncategorised row (a migration leftover) has no
+    // set to name, so it goes through the card-level writer, which resolves to the row that
+    // actually holds the want rather than inventing one.
+    return set
+      ? enqueueWrite(ownedRowKey(pid, cardId, set, foil), () => stepWantedForItem(cardId, { set, foil }, delta, pid))
+      : enqueueWrite(cardWantKey(pid, cardId), () => stepWanted(cardId, delta, pid));
   };
-  const clearEntry = (cardId) => {
+  const clearEntry = (key) => {
     const pid = activeProfileId();
-    return isWishlist
-      ? enqueueWrite(cardWantKey(pid, cardId), () => setWanted(cardId, 0, pid))
-      : enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
+    if (!isWishlist) return enqueueWrite(listRowKey(pid, list.id, key), () => setListEntry(list.id, key, 0, pid));
+    const { cardId, set, foil } = itemOf(key);
+    return set
+      ? enqueueWrite(ownedRowKey(pid, cardId, set, foil), () => setWantedForItem(cardId, { set, foil }, 0, pid))
+      : enqueueWrite(cardWantKey(pid, cardId), () => setWanted(cardId, 0, pid));
   };
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
   // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
@@ -1501,8 +1531,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             </button>
           </div>
           {listRows.map((c) => (
-            <ListCardRow key={c.card_id} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(c.card_id)}
-              isWanted={showProgress} editable={editing} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+            // Keyed and stepped by ROW identity, not card_id: two wishlist rows can share a
+            // card, and a card_id key would collapse them in React and send both edits to one.
+            <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(rowKey(c))}
+              printing={isWishlist ? printingLabel(c) : null}
+              isWanted={showProgress} editable={editing} onStep={(d) => step(rowKey(c), d)} onPeek={() => onPeek(c.card_id)} />
           ))}
         </>
       )}

@@ -141,3 +141,23 @@ test('pickerOptions dedupes before ranking, so order is still correct', () => {
   const rank = (c) => ({ '001': 1, '002': 2 })[c];
   assert.deepEqual(pickerOptions(['002', '001', '002'], rank, {}).map((o) => o.code), ['001', '002']);
 });
+
+/* ---------------- an automatic display default is not a user choice ---------------- */
+
+test('a name-level REPRINT asks even though a surface shows one set by default', () => {
+  // The card sheet always has a set selected so it has art and counts to show, and that default
+  // is just ranked[0]. Passing it as context made opening an Alpha/Beta card from search
+  // silently mean Alpha, and the heart wrote Alpha without asking - the original defect wearing
+  // a different hat. Only an EXPLICIT selection is context; the display default passes null.
+  const t = wantTarget(['001', '002'], { set: null });
+  assert.equal(t.kind, 'ask', 'no explicit choice means ask, whatever the sheet happens to show');
+  assert.deepEqual(t.options, ['001', '002']);
+});
+
+test('an explicit selection is honoured', () => {
+  assert.deepEqual(
+    wantTarget(['001', '002'], { set: '002' }),
+    { kind: 'item', item: { set: '002', foil: false } },
+    'tapping Beta then the heart writes Beta',
+  );
+});

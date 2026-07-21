@@ -233,8 +233,10 @@ the canonical key rather than inserting a twin beside it.
 
 **The writer invariant.** No production writer may create a v10 key. It is asserted per writer by
 `src/store/writerInvariant.test.mjs`, which drives every exported write path rather than a
-remembered list. One path does not yet hold it: `addOwnedCopies()` still writes `''`, which is the
-scanner's multi-set, no-pick add (`src/cardScanner.js`). That test currently fails on it.
+The **writer invariant** (`src/store/writerInvariant.test.mjs`) exercises every exported
+ownership and want writer against a marker-11 ledger and asserts the ledger holds no v10
+key. It asserts the ledger rather than a list of writers, so a writer added later is
+covered without anyone extending it.
 
 **The same empty string elsewhere is not legacy.** In `deck_entries` and `card_list_entries`, `''`
 means "any collector item satisfies this" (`ANY_PRINTING`), which is a settled preference rather

@@ -298,6 +298,14 @@ function CardBody({ c, onPick, editable, set }) {
   }, [c.card_id]);
 
   // Non-foil is what a bare heart means (§7.4), so that is the item it reflects and toggles.
+  // An AUTOMATIC display default is not a user choice.
+  //
+  // `effSet` falls back to ranked[0] so the sheet always has art and counts to show. Treating
+  // that as context meant opening an Alpha/Beta card from a name-level surface silently made
+  // Alpha "the" printing, and the heart wrote Alpha without ever asking - the exact guess this
+  // schema change exists to remove. Only an explicit selection counts: the set the sheet was
+  // opened at, or a segment the user tapped.
+  const explicitSet = sel ?? set ?? null;
   const heartItem = { set: effSet, foil: false };
   const heartSlug = effSet ? canonicalPrinting(effSet, false) : null;
   const heartWanted = heartSlug ? (wantedItems?.get(heartSlug) || 0) : 0;
@@ -322,7 +330,7 @@ function CardBody({ c, onPick, editable, set }) {
 
   const onHeart = async () => {
     if (wished) return clearWant();                          // clearing never needs a choice
-    const t = wantTarget(setCodes, { set: effSet });
+    const t = wantTarget(setCodes, { set: explicitSet });
     if (t.kind === 'item') return addWant(t.item);
     if (t.kind === 'ask') { setPicking(true); return; }
     toast('The catalog does not list a printing for this card', { tone: 'warn' });
@@ -413,6 +421,7 @@ function CardBody({ c, onPick, editable, set }) {
               <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
             </svg>
           }
+          /* Reflects and toggles THIS collector item, not the card. */
           label="Wishlist" on={wished} disabled={wantedItems === null}
           onClick={onHeart} />
         <ActionButton

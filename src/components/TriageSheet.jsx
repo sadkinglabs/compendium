@@ -46,7 +46,13 @@ export default function TriageSheet({ open, pile = [], onClose, onChanged, onOpe
   // so the confirmed/unconfirmed distinction is handled in exactly one place.
   const fileOne = async (entry, line, set) => {
     const result = await fileTriageLine(fileLinePlan(entry, line, set));
-    setFiled((prev) => new Set(prev).add(lineKey(entry.card_id, line.kind)));
+    // ONLY a confirmed result hides the line. An unconfirmed one means the transaction resolved
+    // but the read-back could not verify what it left behind - so the line stays available
+    // until an authoritative refresh removes it. Hiding it here would tell the user the work is
+    // done on the strength of the one thing we could not establish.
+    if (result.confirmed) {
+      setFiled((prev) => new Set(prev).add(lineKey(entry.card_id, line.kind)));
+    }
     return result;
   };
 
@@ -57,7 +63,8 @@ export default function TriageSheet({ open, pile = [], onClose, onChanged, onOpe
       const result = await fileOne(entry, line, set);
       // `confirmed` is the only success signal, and an unconfirmed write exposes no quantity -
       // so there is no number to put in this message and none is invented.
-      if (!result.confirmed) toast('Filed, but the result could not be confirmed', { tone: 'danger' });
+      // Not past tense: "filed" would claim the outcome we specifically could not confirm.
+      if (!result.confirmed) toast('Could not confirm this move - check the line before retrying', { tone: 'danger' });
       else if (result.noop) toast('Nothing left to file here');
       else toast(`Filed ${result.moved} to ${setName(set)}`);
       onChanged?.();

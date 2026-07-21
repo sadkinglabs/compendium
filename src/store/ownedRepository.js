@@ -5,13 +5,14 @@
 // Codex Marginalia tables. All writes are profile-scoped and route through a small
 // revision counter so derived views (deck strips, list bars) refresh live.
 //
-// Variants: regular copies live on the variant_slug='' row, FOIL copies on the
-// variant_slug='foil' row of the same card (foils are tracked as different copies,
-// but a foil is still the card). Stats and buildability SUM across variant rows.
-// OWNERSHIP FILTERS DO NOT, and that is deliberate: they use the three-state taxonomy in
-// store/ownership.js (regular / foilOnly / missing), so a foil-only card is never counted
-// as a non-foil copy and set completion stays non-foil. The wishlist is variant-agnostic
-// and lives on the '' row only.
+// COLLECTOR ITEMS (schema v11): a row is card + set + finish - '001', '001:f',
+// 'uncategorised', 'uncategorised:f'. The v10 keys ('' and 'foil') are still READ so a
+// partially converted ledger buckets correctly, but no writer emits them.
+// Stats and buildability SUM across a card's items. OWNERSHIP FILTERS DO NOT, and that is
+// deliberate: they use the three-state taxonomy in store/ownership.js (regular / foilOnly /
+// missing), so a foil-only card is never counted as a non-foil copy and set completion stays
+// non-foil. A WANT belongs to a collector item, not to a card - "I need the Beta one" is the
+// whole point of v11 - so the wishlist is per item, not variant-agnostic.
 import { query, run, tx } from './db.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
@@ -824,13 +825,28 @@ export async function listCards(listId, pid = activeProfileId()) {
 // is the wanted goal, matching listCards' shape for a shared detail view.
 export async function wishlistCards() {
   const pid = activeProfileId();
-  return query(
-    `SELECT o.card_id, SUM(o.qty_wanted) quantity, SUM(o.qty_owned) owned,
+  // ONE ROW PER COLLECTOR ITEM, not per card.
+  //
+  // Grouping by card_id collapsed an Alpha want and a Beta want into a single row, so the
+  // primary Wishlist surface could not display the model it stores - and editing that row could
+  // not say which item it meant, which is what raised NeedsPrintingChoice. Grouping by
+  // (card_id, variant_slug) is what makes the row editable at all.
+  //
+  // `owned` stays card-level on purpose: it answers "how many of this card do I have", which is
+  // the question a shopping list asks, and it is not the thing being edited here.
+  const rows = await query(
+    `SELECT o.card_id, o.variant_slug, o.qty_wanted quantity,
+            (SELECT SUM(t.qty_owned) FROM owned_cards t WHERE t.profile_id=o.profile_id AND t.card_id=o.card_id) owned,
             c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
-     WHERE o.profile_id=? GROUP BY o.card_id HAVING SUM(o.qty_wanted)>0 ORDER BY c.name;`,
+     WHERE o.profile_id=? AND o.qty_wanted>0 ORDER BY c.name, o.variant_slug;`,
     [pid]
   );
+  // A stable per-item identity the UI can key state on, plus the set/finish it must show.
+  return rows.map((r) => {
+    const { set, foil } = parsePrinting(r.variant_slug);
+    return { ...r, item_id: `${r.card_id}|${r.variant_slug}`, set, foil, owned: r.owned || 0 };
+  });
 }
 
 // Flat "qty name" text of a list - the Curiosa deck-export format, so it pastes

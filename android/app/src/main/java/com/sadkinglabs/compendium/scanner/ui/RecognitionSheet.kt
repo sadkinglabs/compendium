@@ -85,7 +85,7 @@ fun RecognitionCard(
     deckMode: Boolean,
     onSearchCodex: () -> Unit,
     onAddCollection: (String?) -> Unit,
-    onAddWishlist: () -> Unit,
+    onAddWishlist: (String?) -> Unit,
     onSaveCollection: (Int, String?) -> Unit,
     onAddToDeck: (Int) -> Unit,
     onSaveDeck: () -> Unit,
@@ -207,7 +207,11 @@ fun RecognitionCard(
                                 Spacer(Modifier.width(6.dp))
                                 Text("Collection")
                             }
-                            OutlinedButton(onClick = onAddWishlist, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                            // Wants name a collector item under schema v11, so the wishlist
+                            // action carries the SAME selected printing the collection action
+                            // does - and is disabled for a reprint until one is chosen, rather
+                            // than silently discarding the user's pick.
+                            OutlinedButton(onClick = { onAddWishlist(effectiveSet) }, enabled = ready, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
                                 Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Wishlist")
