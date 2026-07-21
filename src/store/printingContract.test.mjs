@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
   isUncategorised, isLegacyPrinting, isFoilPrinting, parsePrinting, printingSlugs,
-  SQL_IS_FOIL, SQL_IS_LEGACY, SQL_IS_UNCATEGORISED,
+  canonicalPrinting, SQL_IS_FOIL, SQL_IS_LEGACY, SQL_IS_UNCATEGORISED,
 } from './printings.js';
 import { planCard } from './canonicalise.js';
 
@@ -124,6 +124,48 @@ test('SQL predicates agree with the JS predicates on every key', async () => {
   assert.deepEqual(matched(SQL_IS_UNCATEGORISED()).sort(), keys.filter(isUncategorised).sort(), 'SQL_IS_UNCATEGORISED');
 
   db.close();
+});
+
+/* ---------------- the write side ---------------- */
+
+test('canonicalPrinting NEVER returns a legacy key, for any input', () => {
+  // A v11 writer that returned a legacy key would quietly reintroduce the exact state the
+  // migration exists to remove - and nothing downstream would complain, because legacy keys
+  // are still perfectly readable.
+  const inputs = [
+    ['', false], ['', true], [null, false], [null, true], [undefined, false],
+    [UNCATEGORISED_BUCKET, false], [UNCATEGORISED_BUCKET, true],
+    ['001', false], ['001', true], ['999', true],
+  ];
+  for (const [set, foil] of inputs) {
+    const slug = canonicalPrinting(set, foil);
+    assert.equal(isLegacyPrinting(slug), false, `legacy key for (${JSON.stringify(set)}, ${foil})`);
+    assert.equal(isFoilPrinting(slug), foil, `finish lost for (${JSON.stringify(set)}, ${foil})`);
+  }
+});
+
+test('canonicalPrinting round-trips through parsePrinting', () => {
+  // Write it, read it back, get the same collector item. If these two ever disagree, a written
+  // row buckets somewhere other than where the writer intended.
+  for (const set of [UNCATEGORISED_BUCKET, '001', '004']) {
+    for (const foil of [false, true]) {
+      const parsed = parsePrinting(canonicalPrinting(set, foil));
+      assert.deepEqual(parsed, { set, foil }, `round trip failed for (${set}, ${foil})`);
+    }
+  }
+});
+
+test('canonicalPrinting output is always found by printingSlugs', () => {
+  // The read side must name the key the write side produces, or an edited row becomes
+  // invisible to the very lookup that should find it.
+  for (const set of [UNCATEGORISED_BUCKET, '001']) {
+    for (const foil of [false, true]) {
+      assert.ok(
+        printingSlugs(set, foil).includes(canonicalPrinting(set, foil)),
+        `printingSlugs(${set}, ${foil}) does not include its own canonical key`,
+      );
+    }
+  }
 });
 
 /* ---------------- what is NOT yet true, stated on purpose ---------------- */

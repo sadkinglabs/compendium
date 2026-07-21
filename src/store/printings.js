@@ -119,6 +119,19 @@ export function printingSlugs(set, foil) {
   return [foil ? `${set}:f` : set];
 }
 
+/**
+ * The ONE key a v11 writer may store for a (set, finish) pair.
+ *
+ * `printingSlugs` is its read-side counterpart: reads must name every slug a row could be
+ * sitting on during the transition, but a write has to choose exactly one, and it is always
+ * the canonical form. A writer that returned a legacy key here would quietly reintroduce the
+ * state the migration exists to remove.
+ */
+export function canonicalPrinting(set, foil) {
+  if (!set || set === UNCATEGORISED_BUCKET) return foil ? UNCATEGORISED_FOIL : UNCATEGORISED;
+  return foil ? `${set}:f` : set;
+}
+
 // SQL fragments, shared so a predicate cannot be spelled differently in two queries.
 //
 // SQL_IS_FOIL already covered 'uncategorised:f' by accident, because it ends in ':f'. Accident

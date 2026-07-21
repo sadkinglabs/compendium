@@ -15,7 +15,7 @@
 import { query, run, tx } from './db.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED_BUCKET,
-  parsePrinting, printingSlugs, SQL_IS_FOIL,
+  parsePrinting, printingSlugs, canonicalPrinting, SQL_IS_FOIL,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
@@ -211,6 +211,100 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
 }
 export async function setOwnedInSet(cardId, set, qty, pid = activeProfileId()) { return writeSetRow(cardId, set, false, qty, pid); }
 export async function setFoilInSet(cardId, set, qty, pid = activeProfileId()) { return writeSetRow(cardId, set, true, qty, pid); }
+
+/* ---------------- v11 wants: per collector item ---------------- */
+//
+// DORMANT. Nothing routes here yet - the picker and triage surfaces land next, and the
+// activation commit switches the existing card-level writers over. These exist now so the
+// canonical write path can be built and tested before anything depends on it.
+//
+// The v10 writers above put every want on the card-level '' row, so "I need the Beta one" was
+// unrepresentable: a want knew neither its set nor its finish. These take a collector item -
+// card + set + finish - and write the canonical key for it, and only ever that key.
+
+/**
+ * Find the row for a collector item, in EITHER schema.
+ *
+ * During the transition the same collector item can be sitting on a legacy key or a canonical
+ * one. Looking only for the canonical key would create a SECOND row meaning the same thing,
+ * and the two would drift apart. Canonical is preferred when both somehow exist.
+ */
+async function resolveItemRow(cardId, set, foil, pid) {
+  const slugs = printingSlugs(set, foil);
+  const rows = await query(
+    `SELECT id, variant_slug, qty_owned, qty_wanted FROM owned_cards
+      WHERE profile_id=? AND card_id=? AND variant_slug IN (${slugs.map(() => '?').join(',')});`,
+    [pid, cardId, ...slugs],
+  );
+  const canonical = canonicalPrinting(set, foil);
+  return rows.find((r) => r.variant_slug === canonical) || rows[0] || null;
+}
+
+/**
+ * Set the wanted quantity for one collector item.
+ *
+ * Writing over a legacy row REWRITES it to the canonical key rather than leaving it behind.
+ * That is deliberate: it is the same collector item either way, and converting on write means
+ * an edited row stops being a straggler the boot pass would otherwise have to catch.
+ *
+ * The row is deleted only when BOTH quantities reach zero. The uncategorised row is shared
+ * between ownership and the wishlist, so deleting it on wanted=0 would silently take the
+ * user's owned copies with it - the exact shape of the bug that made '' unsafe to drop.
+ */
+export async function setWantedForItem(cardId, { set = '', foil = false } = {}, qty, pid = activeProfileId()) {
+  const now = nowIso();
+  const slug = canonicalPrinting(set, foil);
+  const cur = await resolveItemRow(cardId, set, foil, pid);
+  const w = Math.max(0, qty | 0);
+  const o = cur?.qty_owned || 0;
+  if (w === 0 && o === 0) {
+    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+  } else if (cur) {
+    await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, w, now, cur.id]);
+  } else {
+    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?);',
+      [uuid(), pid, cardId, slug, w, '', now, now]);
+  }
+  bump();
+}
+
+/** Step a collector item's want by a delta, floored at zero. */
+export async function stepWantedForItem(cardId, item = {}, delta = 1, pid = activeProfileId()) {
+  const cur = await resolveItemRow(cardId, item.set || '', !!item.foil, pid);
+  return setWantedForItem(cardId, item, Math.max(0, (cur?.qty_wanted || 0) + delta), pid);
+}
+
+/**
+ * Atomic +N want on one collector item, for callers that cannot serialize their writes.
+ *
+ * Upsert rather than read-modify-write, same reason as addCopies: overlapping increments from
+ * independent events would otherwise lose each other. It targets the canonical key only, so a
+ * legacy row for the same item is NOT merged here - that is left to the boot pass, because
+ * doing it atomically would need the read this function exists to avoid.
+ */
+export async function addWantedForItem(cardId, { set = '', foil = false } = {}, n = 1, pid = activeProfileId()) {
+  if (!cardId || !(n > 0)) return;
+  const now = nowIso();
+  await run(
+    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+     VALUES(?,?,?,?,0,?,'',?,?)
+     ON CONFLICT(profile_id,card_id,variant_slug)
+     DO UPDATE SET qty_wanted=qty_wanted+excluded.qty_wanted, updated_at=excluded.updated_at;`,
+    [uuid(), pid, cardId, canonicalPrinting(set, foil), n, now, now],
+  );
+  bump();
+}
+
+/** Every collector item this card is wanted on: Map<canonical slug, qty>. */
+export async function wantedItemsForCard(cardId, pid = activeProfileId()) {
+  const rows = await query('SELECT variant_slug, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND qty_wanted>0;', [pid, cardId]);
+  const m = new Map();
+  for (const r of rows) {
+    const { set, foil } = parsePrinting(r.variant_slug);
+    m.set(canonicalPrinting(set, foil), (m.get(canonicalPrinting(set, foil)) || 0) + r.qty_wanted);
+  }
+  return m;
+}
 
 // Atomic +N to owned/wanted via a single upsert (no read-modify-write). For callers
 // that can't serialize their writes - notably the scanner's rapid, independent
