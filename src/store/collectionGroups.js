@@ -13,8 +13,10 @@
 //   - Whenever 'Unspecified' is selected, the caller must provide a pool that is NOT
 //     narrowed by set (other filters are fine), so the set-less owned cards - which can
 //     belong to any printed set - are present in the pool to be recovered here.
+import { ownershipOf } from './ownership.js';
+
 export function groupCollection({
-  pool, owBySet, wishSet, sets = [], viewMode = 'owned',
+  pool, owBySet, wishSet, sets = [], viewMode = 'all',
   ownScope = [], ownActive = false, setLabel = {}, setRank = () => 0,
 }) {
   const g = new Map();   // code -> { code, name, rows:[{card,set,owned,foil}] }
@@ -23,14 +25,20 @@ export function groupCollection({
     if (!x) { x = { code, name: name || setLabel[code] || code, rows: [] }; g.set(code, x); }
     x.rows.push(row);
   };
-  const chip = (isOwned, isWish) => (ownScope.includes('owned') && isOwned)
-    || (ownScope.includes('unowned') && !isOwned)
+
+  // ONE ownership test, applied identically to printed rows and to the Unspecified pile.
+  // They used to diverge - printed rows counted non-foil, Unspecified counted foil too - so
+  // {owned:0, foil:1} was "not owned" in a set and "owned" under Unspecified. See ownership.js.
+  const chip = (state, isWish) => ownScope.includes(state)
     || (ownScope.includes('wishlist') && isWish);
-  const matches = (isOwned, isWish) => {
-    if (viewMode === 'owned') return isOwned;
-    if (viewMode === 'unowned') return !isOwned;
-    return ownActive ? chip(isOwned, isWish) : true;                 // read 'all'
+  const matches = (state, isWish) => {
+    // viewMode is a legacy lens kept for callers that want a fixed slice; the live surface
+    // passes 'all' and drives everything through the multi-select chips.
+    if (viewMode === 'owned') return state === 'regular';
+    if (viewMode === 'unowned') return state !== 'regular';
+    return ownActive ? chip(state, isWish) : true;
   };
+
   for (const c of (pool || [])) {
     const isWish = wishSet.has(c.card_id);
     for (const s of (c._sets || [])) {
@@ -39,37 +47,26 @@ export function groupCollection({
       if (sets.length && !sets.includes(s.name)) continue;
       const oc = owBySet.get(c.card_id + '|' + s.code);
       const owned = oc?.owned || 0, foil = oc?.foil || 0;
-      // OWNED MEANS NON-FOIL, matching set completion. These two definitions used to disagree
-      // - completion counted `owned` while this filter counted `owned + foil` - and the gap
-      // was invisible until it mattered: a Beta collection reading 401/402 returned ZERO
-      // results under "Not owned", so the one card missing in non-foil could not be found at
-      // all. It was owned in foil only.
-      //
-      // Completion is deliberately non-foil (owner ruling: foils are not part of collection
-      // progress), so the filter follows it rather than the reverse. A foil-only card
-      // therefore appears under "Not owned" while its tile shows its foil count, which is
-      // exactly the question a collector is asking: what do I still need in non-foil?
-      if (!matches(owned > 0, isWish)) continue;
+      if (!matches(ownershipOf(owned, foil), isWish)) continue;
       push(s.code, s.name, { card: c, set: s.code, owned, foil });
     }
   }
-  // Set-less ('' / 'foil') owned rows: always owned, so they show wherever owned cards
-  // do - under no set filter, OR under the explicit "Unspecified" chip - never under a
-  // real-set-only narrowing, and never under the "Not owned" lens.
-  const wantLegacy = (sets.length === 0 || sets.includes('Unspecified')) && (
-    viewMode === 'unowned' ? false
-      : viewMode === 'owned' ? true
-        : (ownActive ? (ownScope.includes('owned') || ownScope.includes('wishlist')) : true));   // 'all'
-  if (wantLegacy) {
+
+  // Set-less ('' ) owned rows recovered into an "Unspecified" group. The SET gate is the only
+  // special case left: they belong to no printed set, so they appear under no set filter or
+  // under the explicit "Unspecified" chip. Their OWNERSHIP is judged by the same `matches`
+  // as everything else, so a foil-only Unspecified row is foilOnly here too.
+  if (sets.length === 0 || sets.includes('Unspecified')) {
     const byId = new Map((pool || []).map((c) => [c.card_id, c]));
     for (const [k, v] of owBySet) {
       const i = k.lastIndexOf('|');
       if (k.slice(i + 1) !== '') continue;                          // only the '' bucket
-      if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+      const owned = v.owned || 0, foil = v.foil || 0;
+      if (owned + foil === 0) continue;                             // no row to recover
       const card = byId.get(k.slice(0, i));
       if (!card) continue;
-      if (viewMode === 'all' && ownActive && !(ownScope.includes('owned') || (ownScope.includes('wishlist') && wishSet.has(card.card_id)))) continue;
-      push('', 'Unspecified', { card, set: '', owned: v.owned || 0, foil: v.foil || 0 });
+      if (!matches(ownershipOf(owned, foil), wishSet.has(card.card_id))) continue;
+      push('', 'Unspecified', { card, set: '', owned, foil });
     }
   }
   return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));

@@ -51,13 +51,15 @@ export function DotsGlyph({ size = 16 }) {
 export default function OverflowMenu({ items = [], label = 'More actions', align = 'right', tone = 'gold' }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
+  const triggerRef = useRef(null);
+  const itemRefs = useRef([]);
   const shown = (items || []).filter(Boolean);
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); } };
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); triggerRef.current?.focus?.({ preventScroll: true }); } };
     // Hardware BACK closes the menu first - it is the topmost layer, same contract as the FAB.
-    const unreg = registerBackConsumer(() => { setOpen(false); return true; });
+    const unreg = registerBackConsumer(() => { setOpen(false); return true; });   // no focus grab: back is a navigation gesture
     // Any tap outside closes. Pointerdown (not click) so it beats the item's own click.
     const onDown = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
     window.addEventListener('keydown', onKey);
@@ -65,56 +67,100 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('pointerdown', onDown, true); unreg(); };
   }, [open]);
 
+  // Focus lands on the first item when the menu opens, and returns to the trigger when it
+  // closes - the menu-button contract. Without the return, dismissing with Escape strands
+  // keyboard focus on a node that no longer exists.
+  useEffect(() => {
+    if (!open) return;
+    const id = setTimeout(() => itemRefs.current[0]?.focus?.({ preventScroll: true }), 0);
+    return () => clearTimeout(id);
+  }, [open]);
+
   if (!shown.length) return null;   // never render an empty affordance
+
+  const close = ({ restoreFocus = true } = {}) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus?.({ preventScroll: true });
+  };
 
   const run = (it) => {
     if (it.disabled) return;
     haptic('light');
-    setOpen(false);
+    close();
     it.onClick?.();
+  };
+
+  // Arrow / Home / End move between items; Escape closes and hands focus back.
+  const onItemKey = (e, i) => {
+    const move = (to) => {
+      e.preventDefault();
+      const n = shown.length;
+      itemRefs.current[((to % n) + n) % n]?.focus?.({ preventScroll: true });
+    };
+    if (e.key === 'ArrowDown') move(i + 1);
+    else if (e.key === 'ArrowUp') move(i - 1);
+    else if (e.key === 'Home') move(0);
+    else if (e.key === 'End') move(shown.length - 1);
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
   };
 
   return (
     <span ref={wrapRef} style={{ position: 'relative', flex: 'none', display: 'inline-flex' }}>
+      {/* 34px visual circle inside a >=44px hit box (DESIGN_SYSTEM §5 touch floor). The
+          negative margin keeps the larger target from changing the header's layout. */}
       <button
+        ref={triggerRef} type="button"
         onClick={() => { haptic('light'); setOpen((o) => !o); }}
         aria-haspopup="menu" aria-expanded={open} aria-label={label}
         style={{
-          width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          width: 44, height: 44, borderRadius: '50%', padding: 0, flex: 'none',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           background: open ? 'var(--surface-well)' : 'transparent',
           border: '1px solid var(--hair-40)', cursor: 'pointer',
           color: tone === 'muted' ? 'var(--ink-muted)' : 'var(--gold-leaf)',
-          WebkitTapHighlightColor: 'transparent', padding: 0,
+          WebkitTapHighlightColor: 'transparent',
         }}
       >
-        <DotsGlyph />
+        <DotsGlyph size={17} />
+        {/* A VISUALLY-HIDDEN text label, not just aria-label.
+            Measured on device: with aria-label alone this button came back from the Android
+            accessibility tree as `content-desc="" NAF="true"` - Chromium's own "not
+            accessibility friendly" flag, meaning TalkBack would announce it as an unnamed
+            "Button". Naming it by CONTENT is what the WebView actually honours here, and it
+            costs nothing visually. Keep both: aria-label for engines that do honour it, and
+            this for the one we ship on. */}
+        <span style={{
+          position: 'absolute', width: 1, height: 1, padding: 0, margin: -1,
+          overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+        }}>{label}</span>
       </button>
-      <div
-        role="menu" aria-label={label}
-        style={{
-          ...PANEL,
-          ...(align === 'left' ? { right: 'auto', left: 0 } : null),
-          opacity: open ? 1 : 0,
-          transform: open ? 'translateY(0)' : 'translateY(-6px)',
-          pointerEvents: open ? 'auto' : 'none',
-        }}
-      >
-        {shown.map((it, i) => (
-          <button
-            key={i} role="menuitem" onClick={() => run(it)} disabled={it.disabled}
-            style={{
-              ...ITEM,
-              color: it.danger ? 'var(--danger)' : ITEM.color,
-              opacity: it.disabled ? 0.4 : 1,
-              cursor: it.disabled ? 'default' : 'pointer',
-              borderBottom: i < shown.length - 1 ? '1px solid rgba(220,184,111,.12)' : 'none',
-            }}
-          >
-            {it.icon}
-            <span>{it.label}</span>
-          </button>
-        ))}
-      </div>
+      {/* UNMOUNTED while closed. Hiding it with opacity left every command tabbable and
+          readable by assistive tech - an invisible "Delete list" you could reach with Tab -
+          and it leaked into UI-automation text. */}
+      {open && (
+        <div
+          role="menu" aria-label={label}
+          style={{ ...PANEL, ...(align === 'left' ? { right: 'auto', left: 0 } : null) }}
+        >
+          {shown.map((it, i) => (
+            <button
+              key={i} type="button" role="menuitem"
+              ref={(el) => { itemRefs.current[i] = el; }}
+              onClick={() => run(it)} onKeyDown={(e) => onItemKey(e, i)} disabled={it.disabled}
+              style={{
+                ...ITEM,
+                color: it.danger ? 'var(--destructive)' : ITEM.color,
+                opacity: it.disabled ? 0.4 : 1,
+                cursor: it.disabled ? 'default' : 'pointer',
+                borderBottom: i < shown.length - 1 ? '1px solid rgba(220,184,111,.12)' : 'none',
+              }}
+            >
+              {it.icon}
+              <span>{it.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </span>
   );
 }

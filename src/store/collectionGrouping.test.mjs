@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupCards, letterIndex, letterOf, GROUP_MODES } from './collectionGrouping.js';
+import { groupCards, GROUP_MODES } from './collectionGrouping.js';
 import { rarityRank, RARITY_ORDER } from './rarity.js';
 
 const card = (name, extra = {}) => ({ name, rarity: 'Ordinary', elements: ['Fire'], ...extra });
@@ -81,42 +81,6 @@ test('every group mode returns an array so the caller has one code path', () => 
   }
 });
 
-test('the rail returns all 27 buckets regardless of content', () => {
-  // Fixed height matters: letters must not reflow as filters change.
-  const idx = letterIndex([card('Ancient Dragon')]);
-  assert.equal(idx.length, 27, '# plus A-Z');
-  assert.equal(idx[0].letter, '#');
-});
-
-test('empty letters report count 0 and index -1', () => {
-  const idx = letterIndex([card('Ancient Dragon')]);
-  const b = idx.find((l) => l.letter === 'B');
-  assert.equal(b.count, 0);
-  assert.equal(b.index, -1);
-});
-
-test('the rail index points at the first card of each letter in sorted order', () => {
-  const idx = letterIndex([card('Zephyr'), card('Basilisk'), card('Ancient Dragon'), card('Avatar')]);
-  assert.equal(idx.find((l) => l.letter === 'A').index, 0);
-  assert.equal(idx.find((l) => l.letter === 'A').count, 2);
-  assert.equal(idx.find((l) => l.letter === 'B').index, 2);
-  assert.equal(idx.find((l) => l.letter === 'Z').index, 3);
-});
-
-test('non-alphabetic names bucket under # rather than disappearing', () => {
-  assert.equal(letterOf('7th Sword'), '#');
-  assert.equal(letterOf('"Quoted"'), '#');
-  assert.equal(letterOf(''), '#');
-  const idx = letterIndex([card('7th Sword'), card('Ancient Dragon')]);
-  assert.equal(idx.find((l) => l.letter === '#').count, 1);
-});
-
-test('rail counts total to the number of cards, so it cannot disagree with the grid', () => {
-  const cards = [card('Ancient Dragon'), card('Avatar'), card('7th Sword'), card('Zephyr')];
-  const total = letterIndex(cards).reduce((n, l) => n + l.count, 0);
-  assert.equal(total, cards.length);
-});
-
 test('an accessor lets the drill group its ownership rows without reshaping them', () => {
   // The set drill holds {card, set, owned, foil}; the grid needs those rows back, not bare
   // cards. Reshaping to satisfy the grouper would detach the result from what gets rendered.
@@ -126,13 +90,6 @@ test('an accessor lets the drill group its ownership rows without reshaping them
   assert.deepEqual(g.map((s) => s.key), ['Elite', 'Unique']);
   assert.deepEqual(g[0].cards.map((r) => r.card.name), ['Basilisk', 'Zephyr']);
   assert.equal(g[0].cards[0].owned, 2, 'the row survived intact, not just its card');
-});
-
-test('the rail index accepts the same accessor', () => {
-  const rows = [{ card: card('Zephyr') }, { card: card('Ancient Dragon') }];
-  const idx = letterIndex(rows, (r) => r.card);
-  assert.equal(idx.find((l) => l.letter === 'A').index, 0);
-  assert.equal(idx.find((l) => l.letter === 'Z').index, 1);
 });
 
 test('grouping is case-insensitive when ordering names', () => {

@@ -27,6 +27,7 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export default function CardArtViewer({ card, origin, onClose }) {
   const reduce = typeof document !== 'undefined' && document.body.classList.contains('reduce-motion');
   const [tilt, setTilt] = useState({ x: 0, y: 0, gx: 50, gy: 50, active: false });
+  const [broken, setBroken] = useState(false);   // a failed image must reveal the fallback, not cover it
   const [flipT, setFlipT] = useState(null);   // transform that maps the stage back onto the sheet frame
   const [armed, setArmed] = useState(false);  // transitions enabled (skipped on the first frame)
   const [open, setOpen] = useState(false);
@@ -176,8 +177,12 @@ export default function CardArtViewer({ card, origin, onClose }) {
           transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg)`,
           transition: tilt.active ? 'transform .1s linear' : 'transform .34s cubic-bezier(.2,.9,.3,1)',
         }}>
-          {url && (
-            <img src={url} alt={card?.name || ''} draggable="false"
+          {/* Self-removing on error, matching CardArt. The deterministic fallback is already
+              painted on the layer behind; without this a 404 or corrupt asset renders a broken
+              image ON TOP of it, so real image failure looked different from zero-image mode
+              even though both should degrade to the same engraved ground. */}
+          {url && !broken && (
+            <img src={url} alt={card?.name || ''} draggable="false" onError={() => setBroken(true)}
               style={{
                 position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                 ...(site ? { width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', top: '50%', left: '50%', inset: 'auto', transform: 'translate(-50%,-50%) rotate(90deg)' } : {}),
@@ -210,7 +215,7 @@ export default function CardArtViewer({ card, origin, onClose }) {
       <button ref={closeBtnRef} type="button" onClick={close} aria-label="Close artwork"
         style={{
           position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 14px)', right: 16, zIndex: 2,
-          width: 40, height: 40, borderRadius: '50%', cursor: 'pointer',
+          width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           background: 'rgba(20,15,10,.7)', border: '1px solid var(--hair-30)', color: 'var(--gold-leaf)',
           opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease`,

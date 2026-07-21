@@ -7,9 +7,11 @@
 //
 // Variants: regular copies live on the variant_slug='' row, FOIL copies on the
 // variant_slug='foil' row of the same card (foils are tracked as different copies,
-// but a foil is still the card - every aggregate SUMs across variant rows, so
-// stats/buildability/owned-filters count them together). The wishlist is
-// variant-agnostic and lives on the '' row only.
+// but a foil is still the card). Stats and buildability SUM across variant rows.
+// OWNERSHIP FILTERS DO NOT, and that is deliberate: they use the three-state taxonomy in
+// store/ownership.js (regular / foilOnly / missing), so a foil-only card is never counted
+// as a non-foil copy and set completion stays non-foil. The wishlist is variant-agnostic
+// and lives on the '' row only.
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';

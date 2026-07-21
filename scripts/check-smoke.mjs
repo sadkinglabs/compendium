@@ -48,10 +48,15 @@ export function parseUi(xml) {
   for (const m of String(xml).matchAll(/<node\b([^>]*)>/g)) {
     const attrs = m[1];
     const text = /\btext="([^"]*)"/.exec(attrs)?.[1] || '';
+    // content-desc too: icon buttons and nav items often carry no text, and a marker that
+    // exists only as an accessible label ("Back to sets", "Set actions") is exactly the kind
+    // that is unique to one screen rather than global chrome.
+    const desc = /\bcontent-desc="([^"]*)"/.exec(attrs)?.[1] || '';
     const b = /\bbounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(attrs);
-    if (!text || !b) continue;
+    if ((!text && !desc) || !b) continue;
     out.push({
-      text,
+      text: text || desc,
+      desc,
       bounds: { x1: +b[1], y1: +b[2], x2: +b[3], y2: +b[4] },
     });
   }
@@ -89,27 +94,24 @@ export function missingFrom(nodes, expect) {
 }
 
 /**
- * The routes. One per pillar, plus the Collection set drill - the surface that actually broke,
- * and the one most exercised by the current increment.
+ * MARKERS MUST BE UNIQUE TO THE DESTINATION. The first version expected 'play' for the Play
+ * route and 'card' for the set drill - both permanently present in the bottom nav or in almost
+ * any card list. A tap that silently did nothing left the previous screen up, and its text
+ * satisfied the next assertion: the gate reported green while going nowhere.
  *
- * `tap` entries are matched by text, so they describe intent rather than geometry. Keep the
- * expectations to durable chrome (pillar names, section rubrics) rather than user data, so the
- * gate does not depend on what happens to be in the tester's collection.
- *
- * Each path is SELF-CONTAINED from the bottom nav rather than assuming where the previous
- * route left off. Re-tapping the current tab is a no-op, and the cost is a few extra taps; the
- * benefit is that one broken route reports one failure instead of cascading into every route
- * after it and burying the real cause.
+ * So every marker below is chosen to be ABSENT from the screen the route arrives from, and
+ * several are accessible labels rather than visible text because those are naturally
+ * screen-specific.
  */
 export const ROUTES = [
   { name: 'Home (launch)', tap: [], expect: ['welcome back'] },
-  { name: 'Codex', tap: ['Codex'], expect: ['rules', 'cards'] },
+  { name: 'Codex', tap: ['Codex'], expect: ['marginalia'] },
   { name: 'Decks', tap: ['Decks'], expect: ['library'] },
-  { name: 'Play', tap: ['Play'], expect: ['play'] },
-  { name: 'Collection > Overview', tap: ['Collection'], expect: ['overview', 'my collection', 'lists'] },
-  { name: 'Collection > My Collection', tap: ['Collection', 'My Collection'], expect: ['sets'] },
-  { name: 'Collection > set drill', tap: ['Collection', 'My Collection', 'BETA'], expect: ['card'] },
-  { name: 'Collection > Lists', tap: ['Collection', 'Lists'], expect: ['wishlist'] },
+  { name: 'Play', tap: ['Play'], expect: ['quick match'] },
+  { name: 'Collection > Overview', tap: ['Collection'], expect: ['cards owned', 'decks buildable'] },
+  { name: 'Collection > My Collection', tap: ['Collection', 'My Collection'], expect: ['non-foil owned'] },
+  { name: 'Collection > set drill', tap: ['Collection', 'My Collection', 'BETA'], expect: ['back to sets', 'set actions'] },
+  { name: 'Collection > Lists', tap: ['Collection', 'Lists'], expect: ['wanted lists', 'card lists'] },
 ];
 
 /* ---------------- device driver ---------------- */
@@ -154,6 +156,29 @@ export function isLocked(dumpsysWindow) {
   return /mDreamingLockscreen=true|mShowingLockscreen=true|isStatusBarKeyguard=true/i.test(String(dumpsysWindow));
 }
 
+/**
+ * The installed build's identity, from `dumpsys package`. The gate previously checked only
+ * that the package EXISTED, so it would happily certify a stale or debug APK - the "green
+ * gate, broken artifact" failure it was built to stop, one level up.
+ */
+export function parseInstalled(dumpsysPackage) {
+  const s = String(dumpsysPackage);
+  const versionCode = Number(/versionCode=(\d+)/.exec(s)?.[1] ?? NaN);
+  // flags=[ ... DEBUGGABLE ... ] marks a debug build; a release APK must not carry it.
+  const debuggable = s.includes('DEBUGGABLE');
+  return { versionCode, debuggable };
+}
+
+/** @returns null when the build matches, else a human-facing reason it does not. */
+export function buildMismatch(installed, expectedVersionCode) {
+  if (!Number.isFinite(installed.versionCode)) return 'could not read the installed versionCode';
+  if (installed.debuggable) return 'the installed build is DEBUGGABLE - this gate certifies release APKs only';
+  if (installed.versionCode !== expectedVersionCode) {
+    return `installed versionCode ${installed.versionCode} != package.json build ${expectedVersionCode} - a stale APK is on the device`;
+  }
+  return null;
+}
+
 export function parseDevices(output) {
   return String(output).split('\n').slice(1)
     .map((l) => l.trim()).filter(Boolean)
@@ -163,7 +188,7 @@ export function parseDevices(output) {
 
 /* ---------------- the gate ---------------- */
 
-export async function run({ adb, sleep, routes = ROUTES, log = console.log, err = console.error }) {
+export async function run({ adb, sleep, routes = ROUTES, expectedBuild = null, log = console.log, err = console.error }) {
   const dumpPath = '/sdcard/cx-smoke.xml';
   const failures = [];
 
@@ -185,12 +210,40 @@ export async function run({ adb, sleep, routes = ROUTES, log = console.log, err 
     return 1;
   }
 
-  adb(['shell', 'am', 'force-stop', PKG]);
+  // Certify the RIGHT artifact. Checking only that the package exists let a stale or debug
+  // APK pass as a verified release - the same class of false confidence, one level up.
+  if (expectedBuild != null) {
+    const why = buildMismatch(parseInstalled(adb(['shell', 'dumpsys', 'package', PKG])), expectedBuild);
+    if (why) {
+      err(`check:smoke FAILED - ${why}.`);
+      err('  Install the current release APK and run again.');
+      return 1;
+    }
+  }
+
   adb(['logcat', '-c']);
-  adb(['shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1']);
-  await sleep(9000);
+
+  // RESTART BEFORE EVERY ROUTE. Routes used to share one long-lived session, so a tap that
+  // silently failed left the previous screen up and its text could satisfy the next route's
+  // assertion. A cold start makes each route's evidence its own.
+  const launch = async () => {
+    adb(['shell', 'am', 'force-stop', PKG]);
+    adb(['shell', 'monkey', '-p', PKG, '-c', 'android.intent.category.LAUNCHER', '1']);
+    // Poll for readiness instead of paying a flat delay: the app is up when Home's marker
+    // renders. Bounded, and reported honestly if it never arrives.
+    for (let i = 0; i < 40; i += 1) {
+      await sleep(500);
+      const nodes = parseUi(readDump(adb, dumpPath));
+      if (missingFrom(nodes, ['welcome back']).length === 0) return true;
+    }
+    return false;
+  };
 
   for (const route of routes) {
+    if (!(await launch())) {
+      failures.push(`${route.name}: the app never reached Home after launch`);
+      continue;
+    }
     for (const label of route.tap) {
       const before = parseUi(readDump(adb, dumpPath));
       const node = findNode(before, label);
@@ -226,6 +279,10 @@ export async function run({ adb, sleep, routes = ROUTES, log = console.log, err 
     for (const l of consoleErrors.slice(0, 10)) err(`  ${l.trim()}`);
     failures.push(`${consoleErrors.length} JS console error(s)`);
   }
+
+  // The dump holds whatever was on screen - card names, profile name, collection counts.
+  // Do not leave it on shared storage.
+  try { adb(['shell', 'rm', '-f', dumpPath]); } catch { /* best effort */ }
 
   if (failures.length) {
     err(`\ncheck:smoke FAILED - ${failures.length} problem(s):`);
@@ -280,7 +337,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error('  Build and install the release APK first (see BUILD.md).');
     process.exit(1);
   }
-  console.log(`check:smoke - driving ${wanted || serials[0]}`);
+  const expectedBuild = Number(JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8')).build);
+  console.log(`check:smoke - driving ${wanted || serials[0]}, expecting build ${expectedBuild}`);
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  run({ adb, sleep }).then((code) => process.exit(code));
+  run({ adb, sleep, expectedBuild }).then((code) => process.exit(code));
 }

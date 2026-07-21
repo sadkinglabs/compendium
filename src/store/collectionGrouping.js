@@ -1,4 +1,8 @@
-// Grouping for the Collection card grid, plus the data the A-Z rail needs.
+// Grouping for the Collection card grid.
+//
+// The A-Z rail helpers (letterOf / letterIndex) were written here and REMOVED again: the rail
+// is Phase 4 and nothing consumed them. Tested-but-unconsumed exports calcify a contract
+// nobody has had to live with yet, so they land with the rail rather than before it.
 //
 // Grouping is NOT sorting, and the distinction is load-bearing. "Group by element" produces
 // sections with headers; it does not reorder a flat list. Modelling these as sort keys would
@@ -23,14 +27,6 @@ const identity = (x) => x;
 const isAvatarCard = (c) => Boolean(c?.is_avatar || c?.isAvatar);
 const byNameWith = (cardOf) => (a, b) =>
   String(cardOf(a).name || '').localeCompare(String(cardOf(b).name || ''), 'en', { sensitivity: 'base' });
-
-/** The rail bucket for a card: its first letter, or '#' for anything not A-Z (numerals,
- *  quotes, diacritics that fold outside the alphabet). Folding to '#' rather than dropping
- *  the card is what keeps the rail's counts honest against the grid. */
-export function letterOf(name) {
-  const ch = String(name || '').trim().charAt(0).toUpperCase();
-  return ch >= 'A' && ch <= 'Z' ? ch : '#';
-}
 
 /**
  * Group cards into rendered sections.
@@ -63,30 +59,4 @@ export function groupCards(cards, mode = 'none', cardOf = identity) {
   const extra = [...buckets.keys()].filter((k) => !order.includes(k)).sort()
     .map((k) => ({ key: k, label: k, cards: buckets.get(k) }));
   return [...known, ...extra];
-}
-
-/**
- * Index data for the A-Z rail. Only meaningful in ungrouped alphabetical mode; element and
- * rarity grouping use section headers instead, and the caller hides the rail.
- *
- * Every letter is returned, present or not, because the rail is a fixed-height scrub track -
- * letters must not reflow as filters change. `count: 0` is the caller's cue to collapse that
- * letter to a dot.
- *
- * @returns [{ letter, count, index }] where index is the position of the first matching card
- *          in the sorted list, or -1 when the letter is empty.
- */
-export function letterIndex(cards, cardOf = identity) {
-  const list = [...(cards || [])].sort(byNameWith(cardOf));
-  const seen = new Map();
-  list.forEach((c, i) => {
-    const l = letterOf(cardOf(c).name);
-    if (!seen.has(l)) seen.set(l, { count: 0, index: i });
-    seen.get(l).count += 1;
-  });
-  const letters = ['#', ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))];
-  return letters.map((letter) => {
-    const hit = seen.get(letter);
-    return { letter, count: hit ? hit.count : 0, index: hit ? hit.index : -1 };
-  });
 }

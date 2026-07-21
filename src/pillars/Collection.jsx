@@ -11,6 +11,7 @@ import { getPool, getSets, getArtists, listDecks, resolveCardList } from '../sto
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
 import { groupCards } from '../store/collectionGrouping.js';
+import { ownershipOf } from '../store/ownership.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -411,8 +412,11 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 
 // My Collection ownership filter (multi-select). Empty = the mode default
 // (read view = owned only, add view = everything).
-const OWN_OPTS = [['owned', 'Owned'], ['unowned', 'Not owned'], ['wishlist', 'Wishlisted']];
-const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted' };
+// Three ownership states plus the independent wishlist axis - see store/ownership.js.
+// "Not owned" is gone deliberately: it had to call a foil-only card unowned, which is false.
+// The chips are multi-select, so "what do I still need in non-foil" is Foil only + Missing.
+const OWN_OPTS = [['regular', 'Owned'], ['foilOnly', 'Foil only'], ['missing', 'Missing'], ['wishlist', 'Wishlisted']];
+const OWN_LABEL = { regular: 'Owned', foilOnly: 'Foil only', missing: 'Missing', wishlist: 'Wishlisted' };
 
 // Cards is the PER-SET drill (the parent shows SetsHome until a plate is tapped). It scopes
 // the shared catalog/search/filter machinery to `setDrill`, adds a back + set-completion
@@ -423,17 +427,27 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // information. Ownership narrowing lives solely in the filter sheet (see ownScope): an
   // always-on inline lens both duplicated it and made a card you just added vanish.
 
+  // Declared FIRST because everything below reads it, including hook dependency arrays -
+  // which are evaluated during render, so a `const` declared further down would still be in
+  // its temporal dead zone. It depends only on props, so there is nothing to wait for.
+  const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
+
   const [exportOpen, setExportOpen] = useState(false);
+  // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
+  // from the filtered pool; the completion denominator and the "missing" export come from
+  // here, so neither can be moved by a filter the user happens to have on.
+  const [roster, setRoster] = useState(null);
 
   const [q, setQ] = useState(session.q);
-  const [sets, setSets] = useState(session.sets);
   const [types, setTypes] = useState(session.types);
   const [rarities, setRarities] = useState(session.rarities);
   const [els, setEls] = useState(session.els);
   // Grouping, NOT sorting. Collection is always alphabetical; what varies is whether the
   // grid is one list or sectioned by element/rarity.
   const [groupBy, setGroupBy] = useState(session.groupBy || 'none');
-  useEffect(() => { session.q = q; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; session.groupBy = groupBy; }, [q, sets, types, rarities, els, groupBy]);
+  // No session.sets: the drill is pinned to its own set, so there is no cross-set selection
+  // left to remember. Restoring one was what let a stale Alpha filter empty the Beta grid.
+  useEffect(() => { session.q = q; session.types = types; session.rarities = rarities; session.els = els; session.groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
 
   // Full rich filters - the shared Refine engine (Card Lists live in Collection,
   // so the comparator granularity earns its place for cube/draft/list building).
@@ -466,15 +480,27 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [optsLoaded, setOptsLoaded] = useState(false);
   useEffect(() => { Promise.all([getSets().then(setSetOpts), getArtists().then(setArtistOpts)]).then(() => setOptsLoaded(true)); }, []);
 
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const rows = await getPool({ sets: [drillName] });
+      if (alive) setRoster(rows.filter((c) => !isTokenCard(c)));   // tokens are not collected
+    })();
+    return () => { alive = false; };
+  }, [drillName]);
+
   async function loadPool() {
     const parsed = parseQuery(q);
     // 'Unspecified' is an ownership bucket, not a printed set - keep it out of the
     // catalog pool query (it would match no card and empty the pool); grouping applies it.
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: poolSetFilter(sets), multi, thByEl, totalTh, costCmp, powerCmp, artist });
+    // PINNED to the drilled set. This component IS the per-set drill, so a cross-set filter
+    // is not a narrowing - it is a contradiction. Selecting Alpha inside Beta used to put
+    // Alpha in the pool while the renderer still asked for Beta, emptying the grid.
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: [drillName], multi, thByEl, totalTh, costCmp, powerCmp, artist });
     const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist]);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
     // Reconcile the bulk read against rows the grid is editing: keep the optimistic value for
@@ -567,16 +593,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     return m;
   }, [owBySet]);
 
-  // Offer an "Unspecified" chip in the Sets filter ONLY when you own set-less cards -
-  // it isolates them for filing. Read view only: in +Add the Sets filter is a catalog
-  // dimension (printed sets), where an ownership bucket does not belong; entering +Add
-  // also strips a stale "Unspecified" selection so it can never get stuck on.
-  const hasUnspecOwned = (ownedPerSet.get('') || 0) > 0;
-  const setFilterOpts = hasUnspecOwned ? [...setOpts, 'Unspecified'] : setOpts;
-
   const groups = useMemo(() => groupCollection({
-    pool, owBySet, wishSet, sets, viewMode: 'all', ownScope, ownActive, setLabel: SET_LABEL, setRank,
-  }), [pool, owBySet, wishSet, ownScope, ownActive, sets]);
+    pool, owBySet, wishSet, sets: [drillName], viewMode: 'all', ownScope, ownActive, setLabel: SET_LABEL, setRank,
+  }), [pool, owBySet, wishSet, ownScope, ownActive, drillName]);
 
   // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
   // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
@@ -585,15 +604,24 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const drillGroup = useMemo(() => groups.find((g) => g.code === setDrill) || null, [groups, setDrill]);
   const drillRows = drillGroup ? drillGroup.rows : [];
   const totalRows = drillRows.length;
-  const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
   const drillOwned = ownedPerSet.get(setDrill) || 0;
-  const drillTotal = drillInfo?.totalCollectible ?? (setTotals.get(setDrill) || 0);
+  // The denominator is IMMUTABLE for the set: it comes from the canonical roster, never from
+  // the filtered pool. It used to fall back to the filtered set total whenever drillInfo was
+  // absent - which is exactly what happens on a session restore - so returning to a filtered
+  // drill could render a header like "402 / 50".
+  const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
+  // Everything in the set you do NOT hold in non-foil - missing outright, or foil-only.
+  // Filter-independent by construction: it reads the roster, not the grid.
+  const missingInSet = useMemo(() => (roster || []).filter((c) => {
+    const oc = owBySet.get(c.card_id + '|' + setDrill);
+    return ownershipOf(oc?.owned, oc?.foil) !== 'regular';
+  }), [roster, owBySet, setDrill]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
-  const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // grouping is an arrangement, not a filter - it hides nothing
+  const activeCount = ownScope.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // no sets facet in a set drill; grouping is an arrangement, not a filter
   const clearAll = () => {
-    setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
+    setOwnScope([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
     setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null });
     // Clear resets FILTERS only. Grouping is an arrangement, not a filter - it hides nothing,
@@ -616,7 +644,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
           <button onClick={onBack} aria-label="Back to sets" style={{
-            width: 34, height: 34, flex: 'none', borderRadius: '50%', cursor: 'pointer',
+            width: 44, height: 44, margin: -5, flex: 'none', borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor; negative margin keeps the header layout
             border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--gold-leaf)',
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           }}>
@@ -685,11 +713,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           it would imply the set scopes it. */}
       <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={<FabGlyph kind="camera" />}
         onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
-      {/* A buy list for this set. Follows what is LISTED, so an active filter narrows it -
-          the filter badge is visible right there, and "the Fire cards I still need" is a real
-          request. Missing means no NON-FOIL copy, the same definition as the header tally. */}
+      {/* A buy list for the WHOLE set, never the filtered view: selecting "Owned" must not
+          turn "Export missing" into an empty file. Missing means no non-foil copy - the same
+          definition as the header tally and as set completion. */}
       <ExportListSheet open={exportOpen} listName={`${drillName} - missing`}
-        fetchText={async () => drillRows.filter((r) => !(r.owned > 0)).map((r) => `1 ${r.card.name}`).join('\n')}
+        fetchText={async () => missingInSet.map((c) => `1 ${c.name}`).join('\n')}
         onClose={() => setExportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
@@ -705,7 +733,6 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         )}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
-        sets={sets} setSets={setSets} setOpts={setFilterOpts}
         thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         groupBy={groupBy} setGroupBy={setGroupBy} groupOpts={GROUP_OPTS} />
@@ -1032,7 +1059,7 @@ function WishlistCard({ summary, onClick }) {
           <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wishlist</span>
         </div>
         <div style={{ font: "400 14px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 6 }}>
-          {empty ? 'Cards you want - star any card to add it' : `card${summary.count === 1 ? '' : 's'} you want`}
+          {empty ? 'Cards you want - tap the heart on any card to add it' : `card${summary.count === 1 ? '' : 's'} you want`}
         </div>
       </div>
       {!empty && (

@@ -7,7 +7,7 @@
 // Run: npm run check:smoke
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseUi, centerOf, findNode, missingFrom, screenText, parseDevices, isScreenOn, isLocked, run } from './check-smoke.mjs';
+import { parseUi, centerOf, findNode, missingFrom, screenText, parseDevices, isScreenOn, isLocked, parseInstalled, buildMismatch, run } from './check-smoke.mjs';
 
 const node = (text, x1 = 0, y1 = 0, x2 = 100, y2 = 50) =>
   `<node text="${text}" bounds="[${x1},${y1}][${x2},${y2}]" />`;
@@ -19,7 +19,9 @@ const noSleep = () => Promise.resolve();
 /** A fake device that returns a scripted dump per call. */
 const AWAKE = 'mWakefulness=Awake\n  Display Power: state=ON';
 
-function fakeAdb(dumps, { logcat = '', power = AWAKE, window_ = '' } = {}) {
+const GOOD_PKG = 'versionCode=42 minSdk=29\n    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ]';
+
+function fakeAdb(dumps, { logcat = '', power = AWAKE, window_ = '', pkg = GOOD_PKG } = {}) {
   const calls = [];
   let i = 0;
   return {
@@ -29,6 +31,7 @@ function fakeAdb(dumps, { logcat = '', power = AWAKE, window_ = '' } = {}) {
       if (args[0] === 'logcat' && args[1] === '-d') return logcat;
       if (args[1] === 'dumpsys' && args[2] === 'power') return power;
       if (args[1] === 'dumpsys' && args[2] === 'window') return window_;
+      if (args[1] === 'dumpsys' && args[2] === 'package') return pkg;
       if (args[1] === 'cat') return dumps[Math.min(i++, dumps.length - 1)];
       return '';
     },
@@ -150,10 +153,13 @@ test('a quiet logcat is NOT treated as evidence of health', async () => {
 });
 
 test('taps the centre of the located node, not a fixed coordinate', async () => {
-  const { adb, calls } = fakeAdb([doc(node('Codex', 200, 400, 300, 500)), doc(node('Rules'))]);
+  // The first dump must satisfy the launch readiness poll (Home's marker), since every route
+  // now cold-starts the app before driving it.
+  const home = doc(node('WELCOME BACK'), node('Codex', 200, 400, 300, 500));
+  const { adb, calls } = fakeAdb([home, home, doc(node('Marginalia'))]);
   await run({
     adb, sleep: noSleep, ...silent,
-    routes: [{ name: 'Codex', tap: ['Codex'], expect: ['rules'] }],
+    routes: [{ name: 'Codex', tap: ['Codex'], expect: ['marginalia'] }],
   });
   assert.ok(calls.includes('shell input tap 250 450'), `tap not issued at the node centre: ${calls.join(' | ')}`);
 });
@@ -251,4 +257,87 @@ test('it tries to WAKE a sleeping screen before giving up', async () => {
   });
   assert.equal(woken, true, 'should have sent a wake keyevent');
   assert.equal(code, 0, 'and then proceeded normally');
+});
+
+/* ---------------- build identity ---------------- */
+
+test('parseInstalled reads versionCode and the debuggable flag', () => {
+  assert.deepEqual(parseInstalled('versionCode=127 targetSdk=35\n    flags=[ HAS_CODE ]'),
+    { versionCode: 127, debuggable: false });
+  assert.equal(parseInstalled('versionCode=9\n    flags=[ DEBUGGABLE HAS_CODE ]').debuggable, true);
+});
+
+test('buildMismatch accepts the intended release build', () => {
+  assert.equal(buildMismatch({ versionCode: 127, debuggable: false }, 127), null);
+});
+
+test('buildMismatch REJECTS a stale APK', () => {
+  // The gate used to check only that the package existed, so an old install passed as a
+  // verified release - the same false confidence it was built to prevent, one level up.
+  const why = buildMismatch({ versionCode: 120, debuggable: false }, 127);
+  assert.match(why, /stale APK/);
+});
+
+test('buildMismatch REJECTS a debuggable build', () => {
+  assert.match(buildMismatch({ versionCode: 127, debuggable: true }, 127), /DEBUGGABLE/);
+});
+
+test('buildMismatch fails closed when the versionCode is unreadable', () => {
+  assert.match(buildMismatch({ versionCode: NaN, debuggable: false }, 127), /could not read/);
+});
+
+test('run() REFUSES to certify a stale install', async () => {
+  const msgs = [];
+  const { adb } = fakeAdb([doc(node('WELCOME BACK'))], { pkg: 'versionCode=1\n    flags=[ HAS_CODE ]' });
+  const code = await run({
+    adb, sleep: noSleep, expectedBuild: 127, log: () => {}, err: (m) => msgs.push(String(m)),
+    routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }],
+  });
+  assert.equal(code, 1);
+  assert.match(msgs.join('\n'), /stale APK/);
+});
+
+/* ---------------- the tap-does-nothing counterfactual ---------------- */
+
+test('a tap that does NOTHING must fail, not inherit the previous screen', async () => {
+  // The oracle bug: markers like "play" or "card" exist on almost every screen, so a silent
+  // tap left the old screen up and satisfied the next assertion. Here the device never
+  // changes screen; the route must still fail.
+  const stuck = doc(node('WELCOME BACK'), node('Codex', 200, 2900, 300, 2950));
+  const { adb } = fakeAdb([stuck]);
+  const code = await run({
+    adb, sleep: noSleep, ...silent,
+    routes: [{ name: 'Codex', tap: ['Codex'], expect: ['marginalia'] }],
+  });
+  assert.equal(code, 1, 'an unchanged screen must not satisfy the destination marker');
+});
+
+test('every route relaunches, so one route cannot inherit another route state', async () => {
+  const calls = [];
+  const { adb } = fakeAdb([doc(node('WELCOME BACK'))]);
+  const wrapped = (args) => { calls.push(args.join(' ')); return adb(args); };
+  await run({
+    adb: wrapped, sleep: noSleep, ...silent,
+    routes: [
+      { name: 'A', tap: [], expect: ['welcome back'] },
+      { name: 'B', tap: [], expect: ['welcome back'] },
+    ],
+  });
+  const stops = calls.filter((c) => c.includes('force-stop')).length;
+  assert.ok(stops >= 2, `expected a relaunch per route, saw ${stops}`);
+});
+
+test('the screen dump is removed from shared storage', async () => {
+  // It contains whatever was on screen: card names, profile name, collection counts.
+  const calls = [];
+  const { adb } = fakeAdb([doc(node('WELCOME BACK'))]);
+  const wrapped = (args) => { calls.push(args.join(' ')); return adb(args); };
+  await run({ adb: wrapped, sleep: noSleep, ...silent, routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }] });
+  assert.ok(calls.some((c) => c.startsWith('shell rm -f /sdcard/')), 'dump file not cleaned up');
+});
+
+test('parseUi reads content-desc when a node has no text', () => {
+  const nodes = parseUi('<hierarchy><node content-desc="Back to sets" bounds="[0,0][40,40]" /></hierarchy>');
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].text, 'Back to sets');
 });
