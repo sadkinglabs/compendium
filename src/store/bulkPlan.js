@@ -1,3 +1,4 @@
+import { normalizePrinting } from './printings.js';
 // Planning and undo for Collection bulk writes.
 //
 // Two rules drive everything here, and both came out of review rather than intuition.
@@ -51,7 +52,7 @@ export function planBulk(op, targets, qtyOf) {
   const seen = new Set();
   for (const t of targets || []) {
     const cardId = t.cardId ?? t.card_id;
-    const set = t.set ?? t.variant_slug ?? '';
+    const set = normalizePrinting(t.set ?? t.variant_slug);
     // Deduplicate: the same printing must never be written twice in one transaction, or the
     // second write's "before" would be the first write's result and undo would be wrong.
     const key = `${cardId}|${set}`;

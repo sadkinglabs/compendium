@@ -1,3 +1,5 @@
+import { UNSPECIFIED_PRINTING, normalizePrinting } from './printings.js';
+
 // Selection state for Collection bulk mode.
 //
 // The central rule, and the reason this is a module rather than a useState: selection is
@@ -18,12 +20,12 @@
 /** Stable key for one owned row. `set` may be '' - that is the Unspecified printing, a real
  *  row, not a missing value. */
 export function selectionKey(cardId, set) {
-  return `${cardId}|${set ?? ''}`;
+  return `${cardId}|${normalizePrinting(set)}`;
 }
 
 export function parseSelectionKey(key) {
   const i = String(key).indexOf('|');
-  return i < 0 ? { cardId: key, set: '' } : { cardId: key.slice(0, i), set: key.slice(i + 1) };
+  return i < 0 ? { cardId: key, set: UNSPECIFIED_PRINTING } : { cardId: key.slice(0, i), set: key.slice(i + 1) };
 }
 
 /** Snapshot the given rows. Takes a copy so later mutation of `rows` cannot reach back in. */

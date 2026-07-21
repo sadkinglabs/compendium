@@ -14,6 +14,7 @@
 //     narrowed by set (other filters are fine), so the set-less owned cards - which can
 //     belong to any printed set - are present in the pool to be recovered here.
 import { ownershipOf } from './ownership.js';
+import { UNSPECIFIED_PRINTING, isUnspecified } from './printings.js';
 
 export function groupCollection({
   pool, owBySet, wishSet, sets = [], viewMode = 'all',
@@ -60,13 +61,13 @@ export function groupCollection({
     const byId = new Map((pool || []).map((c) => [c.card_id, c]));
     for (const [k, v] of owBySet) {
       const i = k.lastIndexOf('|');
-      if (k.slice(i + 1) !== '') continue;                          // only the '' bucket
+      if (!isUnspecified(k.slice(i + 1))) continue;                  // only the unspecified bucket
       const owned = v.owned || 0, foil = v.foil || 0;
       if (owned + foil === 0) continue;                             // no row to recover
       const card = byId.get(k.slice(0, i));
       if (!card) continue;
       if (!matches(ownershipOf(owned, foil), wishSet.has(card.card_id))) continue;
-      push('', 'Unspecified', { card, set: '', owned, foil });
+      push(UNSPECIFIED_PRINTING, 'Unspecified', { card, set: UNSPECIFIED_PRINTING, owned, foil });
     }
   }
   return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));

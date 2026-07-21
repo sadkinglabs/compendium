@@ -43,6 +43,7 @@ import { activeProfileId as realActiveProfileId } from './profileRepository.js';
 import { withExclusiveCollectionWrites } from './collectionWrites.js';
 import { planBulk, planUndo, classifyUndoOutcome } from './bulkPlan.js';
 import { uuid, nowIso } from './ids.js';
+import { normalizePrinting } from './printings.js';
 import { notifyOwnedChanged } from './ownedRepository.js';
 
 // SQLite has a bound-parameter ceiling and a selection can be arbitrarily large.
@@ -57,7 +58,7 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
       const rows = await query(
         `SELECT card_id, variant_slug, qty_owned FROM owned_cards
          WHERE profile_id=? AND (${slice.map(() => '(card_id=? AND variant_slug=?)').join(' OR ')});`,
-        [pid, ...slice.flatMap((t) => [t.cardId, t.set ?? ''])]
+        [pid, ...slice.flatMap((t) => [t.cardId, normalizePrinting(t.set)])]
       );
       for (const r of rows) map.set(`${r.card_id}|${r.variant_slug}`, r.qty_owned);
     }
