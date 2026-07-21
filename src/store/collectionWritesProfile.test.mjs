@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests, query } from './db.js';
 import { __setActiveIdForTests, activeProfileId, switchProfile } from './profileRepository.js';
-import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey } from './ownedRepository.js';
+import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey , listCards, listEntries, exportListText, listProgress, listProgressBulk, listThumbsBulk } from './ownedRepository.js';
 import { enqueueWrite, __resetCollectionWritesForTests } from './collectionWrites.js';
 
 const require = createRequire(import.meta.url);
@@ -51,6 +51,8 @@ before(async () => {
   for (const id of ['A', 'B']) sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LA','A','custom','ListA','2026-01-01');");
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LB','B','custom','ListB','2026-01-01');");
+  // listCards joins the catalog, so the boundary tests need a real card row.
+  sdb.run("INSERT INTO cards(card_id,name,system) VALUES('c','Test Card','sorcery');");
 });
 
 beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
@@ -141,12 +143,47 @@ test('both list-entry surfaces share one (list,card) chain: concurrent +1s do no
   assert.equal(await listQty('LA', 'c'), 2, 'both +1s committed via serialized re-read; none lost');
 });
 
+test('a HUNG A-bound write does not trap the user in profile A, and still commits under A', async () => {
+  // The tolerant barrier's integration case. Three things must hold together, and it is the
+  // combination that justifies withProfileSwitchWriteBarrier existing at all:
+  //   1. the switch to B completes after the bounded wait rather than hanging on the write;
+  //   2. a write queued while the barrier was held runs under B once admission reopens;
+  //   3. when the hung A-bound write finally resumes it STILL commits under A, because the
+  //      write carries its own profileId and never consults the active id.
+  // If (3) failed, proceeding past the drain would be silent cross-profile corruption and
+  // the tolerant path would be indefensible.
+  __setActiveIdForTests('A');
+  __resetCollectionWritesForTests();
+  const hung = defer();
+  let hungCommitted = false;
+  const slow = enqueueWrite(ownedRowKey('A', 'cardH', '', false), async () => {
+    await hung.p;
+    await stepWanted('cardH', 1, 'A');       // explicitly A-bound, scheduled while A was active
+    hungCommitted = true;
+  });
+
+  await switchProfile('B', { timeoutMs: 20 });
+  assert.equal(activeProfileId(), 'B', 'the switch completed despite the hung write');
+  assert.equal(hungCommitted, false, 'and it completed WITHOUT waiting for that write');
+
+  // A write queued after the flip belongs to B and must run once the barrier released.
+  await enqueueWrite(ownedRowKey('B', 'cardH', '', false), async () => { await stepWanted('cardH', 1, 'B'); });
+  assert.equal(await wantedOf('B', 'cardH'), 1, 'the B-bound write ran under B');
+
+  hung.resolve();
+  await slow;
+  assert.equal(hungCommitted, true);
+  assert.equal(await wantedOf('A', 'cardH'), 1, 'the hung write still committed under A');
+  assert.equal(await wantedOf('B', 'cardH'), 1, 'and did not leak into B');
+  __setActiveIdForTests('A');
+});
+
 test('switchProfile drains the queue before flipping the active profile (barrier preserves the edit)', async () => {
   __setActiveIdForTests('A');
   const d = defer();
   let committed = false;
   enqueueWrite(ownedRowKey('A', 'cardY', '', false), async () => { await d.p; await stepWanted('cardY', 1, 'A'); committed = true; });
-  const switching = switchProfile('B');   // awaits settleCollectionWrites()
+  const switching = switchProfile('B');   // takes the exclusive Collection-write barrier
   await tick();
   assert.equal(activeProfileId(), 'A', 'must NOT flip while a Collection write is pending');
   assert.equal(committed, false);
@@ -155,5 +192,81 @@ test('switchProfile drains the queue before flipping the active profile (barrier
   assert.equal(activeProfileId(), 'B', 'flips only after the drain');
   assert.equal(committed, true, 'the pending edit was preserved, committed under A');
   assert.equal(await wantedOf('A', 'cardY'), 1);
+  __setActiveIdForTests('A');
+});
+
+/* ---------------- profile boundary on READS, not just writes ---------------- */
+
+test("another profile's list id returns NOTHING through every read path", async () => {
+  // The disclosure this closes: the Collection nav cache is a module singleton holding a whole
+  // list row, so opening A's list, switching to B and returning restored A's list under B -
+  // name and entries rendered, and Export could hand them over. Writes had always refused the
+  // foreign id; reads had not. The UI cache is now profile-aware AND every child-list read
+  // joins card_lists on profile_id, because either guard alone is one refactor from leaking.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 3, 'A');
+  assert.equal(await listQty('LA', 'c'), 3, 'the row exists under A');
+
+  __setActiveIdForTests('B');
+  assert.deepEqual(await listCards('LA'), [], 'listCards must not read across profiles');
+  assert.deepEqual(await listEntries('LA'), [], 'listEntries must not read across profiles');
+  assert.equal(await exportListText('LA'), '', 'export must produce nothing for a foreign list');
+
+  const prog = await listProgress('LA');
+  assert.equal(prog.totalRequired ?? 0, 0, 'progress must not compute from a foreign list');
+
+  const bulk = await listProgressBulk(['LA']);
+  assert.equal(bulk.get('LA')?.totalRequired ?? 0, 0, 'bulk progress must not leak either');
+
+  const thumbs = await listThumbsBulk(['LA']);
+  assert.equal(thumbs.get('LA'), undefined, 'thumbnails must not leak either');
+
+  __setActiveIdForTests('A');
+  assert.equal((await listCards('LA')).length, 1, 'and A can still read its own list');
+});
+
+test('an explicit profileId still wins over the active one', async () => {
+  // The queued-write contract extended to reads: a caller that captured a profile can finish
+  // its work correctly even after the active id moves.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 1, 'A');
+  __setActiveIdForTests('B');
+  const rows = await listCards('LA', 'A');
+  assert.equal(rows.length, 1, 'explicitly asking as A returns A rows while B is active');
+  assert.deepEqual(await listCards('LA'), [], 'and the default binding still refuses');
+});
+
+test('progress captures ONE profile even if the active id switches between its reads', async () => {
+  // listProgress is two reads with an await between them. Each used to resolve the active
+  // profile independently, so a switch landing in that gap combined one profile's
+  // requirements with another's ownership.
+  //
+  // No interposition needed: the profile is captured SYNCHRONOUSLY when the call is made
+  // (a default parameter), so switching immediately afterwards lands squarely in the gap
+  // between the requirements read and the ownership read.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 2, 'A');       // A needs 2
+  await setOwnedInSet('c', '001', 5, 'A');     // A owns 5 -> complete
+  // B owns nothing and needs nothing.
+
+  const pending = listProgress('LA');          // captures A here, before any await resolves
+  __setActiveIdForTests('B');                  // switch inside the operation
+  const prog = await pending;
+
+  assert.equal(activeProfileId(), 'B', 'the active profile really did change mid-operation');
+  assert.equal(prog.totalRequired, 2, "requirements came from A's list");
+  assert.ok(prog.complete, "and ownership came from A too - 5 covers the 2 required");
+  __setActiveIdForTests('A');
+});
+
+test('bulk progress captures one profile the same way', async () => {
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 2, 'A');
+  await setOwnedInSet('c', '001', 5, 'A');
+  const pending = listProgressBulk(['LA']);
+  __setActiveIdForTests('B');
+  const out = await pending;
+  assert.equal(out.get('LA')?.totalRequired, 2);
+  assert.ok(out.get('LA')?.complete);
   __setActiveIdForTests('A');
 });

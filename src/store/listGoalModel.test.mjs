@@ -6,7 +6,7 @@
 // requires a non-empty list fully owned. This drives every wishlist/list bar and the COMPLETE chip.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { goalTotals, goalRowState } from './listGoalModel.js';
+import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from './listGoalModel.js';
 
 const m = (obj) => new Map(Object.entries(obj));
 
@@ -60,4 +60,34 @@ test('a custom (non-wanted) list never reports goalMet', () => {
 
 test('target 0 is never met even when owned', () => {
   assert.equal(goalRowState({ owned: 3, target: 0, isWanted: true }).goalMet, false);
+});
+
+// Regression: the card sheet's wishlist heart, toggled while the Wishlist list is open,
+// must refresh the list's ROWS - the wishlist IS the ledger. (A full React interaction test
+// needs a harness this repo does not have; this locks the decision rule the subscription uses.)
+test('listRowsNeedLedgerRefresh: wishlist refreshes on a ledger write when idle', () => {
+  assert.equal(listRowsNeedLedgerRefresh({ isWishlist: true, pendingGoalWrites: 0 }), true);
+});
+test('listRowsNeedLedgerRefresh: never tramples a local edit in flight', () => {
+  assert.equal(listRowsNeedLedgerRefresh({ isWishlist: true, pendingGoalWrites: 1 }), false);
+});
+test('listRowsNeedLedgerRefresh: regular lists are unaffected by ledger writes', () => {
+  assert.equal(listRowsNeedLedgerRefresh({ isWishlist: false, pendingGoalWrites: 0 }), false);
+});
+
+// Regression for the slow-read race: an external wishlist refresh must not overwrite a local
+// edit that began while its read was in flight. Tests the INTERLEAVING, not just the
+// pre-read predicate.
+test('canApplyExternalRows: applies when nothing changed during the read', () => {
+  assert.equal(canApplyExternalRows({ cancelled: false, pendingGoalWrites: 0, genAtStart: 4, genNow: 4 }), true);
+});
+test('canApplyExternalRows: a local edit STARTED during the read wins', () => {
+  // external refresh begins at gen 4; user edits (gen -> 5) before the read resolves
+  assert.equal(canApplyExternalRows({ cancelled: false, pendingGoalWrites: 0, genAtStart: 4, genNow: 5 }), false);
+});
+test('canApplyExternalRows: a local write still in flight wins', () => {
+  assert.equal(canApplyExternalRows({ cancelled: false, pendingGoalWrites: 1, genAtStart: 4, genNow: 4 }), false);
+});
+test('canApplyExternalRows: never applies after the list closed', () => {
+  assert.equal(canApplyExternalRows({ cancelled: true, pendingGoalWrites: 0, genAtStart: 4, genNow: 4 }), false);
 });

@@ -3,6 +3,11 @@
 // tokens. Pure functions over the {spellbook, atlas, collection} shape from
 // deckRepository.getDeckCards (entries carry cost/attack/type/rarity/elements/thresholds).
 
+import { RARITY_ORDER } from './rarity.js';
+import { EL_ORDER, elemKey } from './elements.js';
+// Re-exported for existing callers; both now live in the leaf module elements.js.
+export { EL_ORDER, elemKey };
+
 // Element + rarity chart colours - the app-wide language (mirror the tokens in
 // tokens.css): Air grey, Earth brown, Fire red, Water blue, Multi gold; rarity
 // = Ordinary silver, Exceptional blue, Elite purple, Unique gold (the same hues
@@ -13,14 +18,9 @@ export const EL_GRAD = {
   Water: ['#4aa3d4', '#255777'], Multi: ['#d4a83a', '#7a5e1e'], Neutral: ['#a08cc0', '#6a5a80'],
 };
 export const RAR_CHART = { Ordinary: '#c8c8c8', Exceptional: '#4fc3f7', Elite: '#ab47bc', Unique: '#ffd54f' };
-export const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
-const RAR_ORDER = ['Ordinary', 'Exceptional', 'Elite', 'Unique'];
+// Canonical order lives in rarity.js so grouping, sorting and this chart cannot drift apart.
+const RAR_ORDER = RARITY_ORDER;
 
-// One bucket per card: 0 elements → Neutral, >1 → Multi, otherwise the element.
-export function elemKey(e) {
-  const els = (e.elements || []).filter((x) => x && x.toLowerCase() !== 'none');
-  return els.length === 0 ? 'Neutral' : els.length > 1 ? 'Multi' : els[0];
-}
 
 const typeIs = (e, t) => (e.type || '').includes(t);
 

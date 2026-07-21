@@ -6,8 +6,9 @@
 //    the detail sheet; a quick + on empty sleeves).
 // Ownership counts come in as props (owned = regular copies, foil, wanted); the
 // playset check reuses the deckbuilder's legal limits. Ruby stays chrome-only.
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import CardArt from './CardArt.jsx';
+import { toast } from '../feedback.js';
 import { RARITY_LIMITS, isUnlimited } from '../store/deckRepository.js';
 import { haptic } from '../native.js';
 
@@ -54,9 +55,55 @@ const setPillStyle = {
 
 // A flat frosted-glass round button (steppers + the missing-card quick add): a
 // 31px rose-glass circle inside a >=44px hit area, with a pressed/hover lift.
-export function Frost({ label, onClick, disabled, size = 31, children }) {
+// The tile's quick-add. Feedback is split honestly by what has actually happened:
+//   TAP      -> a pending look. The write is only queued at this point.
+//   CONFIRMED-> the jade pop + tick and the toast, driven by `status.ok`, which the controller
+//               increments only when the row's write chain drains successfully.
+// Firing the tick and toast on tap presented a provisional write as a durable one; a later
+// failure toast could not un-say it.
+export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
+  const [tick, setTick] = useState(false);
+  const timer = useRef(null);
+  const run = useRef(0);        // copies confirmed in the current burst
+  const runTimer = useRef(null);
+  // Track the controller's confirmation VERSION. Initialising from the current value means a
+  // remount never re-fires an old confirmation.
+  const seen = useRef(status?.confirmation?.version || 0);
+  useEffect(() => () => { clearTimeout(timer.current); clearTimeout(runTimer.current); }, []);
+  useEffect(() => {
+    const c = status?.confirmation;
+    if (!c || c.version <= seen.current) { if (c) seen.current = c.version; return; }
+    seen.current = c.version;
+    if (c.appliedDelta <= 0) return;         // this control only adds
+    // appliedDelta is what the chain actually put into storage, so there is no local tap
+    // tally to drift out of step - a burst that drains as one chain is credited exactly once,
+    // and a failed chain never produces a confirmation at all.
+    run.current += c.appliedDelta;
+    if (cardName) toast(`${run.current} × ${cardName} added`);
+    setTick(true);
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setTick(false), 620);
+    clearTimeout(runTimer.current);
+    runTimer.current = setTimeout(() => { run.current = 0; }, 2600);   // burst ends when you pause
+  }, [status?.confirmation?.version, cardName]);
+  const tone = tick ? 'ok' : status?.pending ? 'pending' : undefined;
+  return (
+    <Frost label={label} size={size} onClick={onAdd} tone={tone} variant="gold">
+      {tick
+        ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+        : '+'}
+    </Frost>
+  );
+}
+
+export function Frost({ label, onClick, disabled, size = 31, children, tone, variant }) {
   const [act, setAct] = useState(false);
   const on = act && !disabled;
+  const ok = tone === 'ok';          // CONFIRMED by the store: a brief pop
+  const busy = tone === 'pending';   // tap registered, write still in flight
+  // 'gold' speaks the FAB-menu language (dark frosted ground, gold hairline, gold glyph)
+  // instead of the rose stepper glass the inline +/- controls use.
+  const gold = variant === 'gold';
   const hit = Math.max(44, size);
   return (
     <button
@@ -67,10 +114,19 @@ export function Frost({ label, onClick, disabled, size = 31, children }) {
     >
       <span style={{
         width: size, height: size, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        background: on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)',
-        border: `1px solid ${on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)'}`,
-        color: '#f0c8ce', font: "600 18px/1 var(--f-ui)",
-        transition: 'background .12s, border-color .12s',
+        background: gold
+          ? (ok ? 'rgba(var(--gold-rgb),.20)' : on ? 'rgba(var(--gold-rgb),.12)' : 'rgba(10,9,8,.72)')
+          : (ok ? 'rgba(var(--jade-rgb),.22)' : on ? 'rgba(224,169,177,.20)' : 'rgba(224,169,177,.12)'),
+        border: `1px solid ${gold
+          ? (ok ? 'rgba(var(--gold-rgb),.55)' : on ? 'rgba(var(--gold-rgb),.4)' : 'rgba(var(--gold-rgb),.25)')
+          : (ok ? 'var(--accent-jade)' : on ? 'rgba(240,190,198,.45)' : 'rgba(224,169,177,.28)')}`,
+        color: gold ? (ok ? 'var(--gold-num)' : 'var(--gold-leaf)') : (ok ? 'var(--accent-jade)' : '#f0c8ce'),
+        backdropFilter: gold ? 'blur(10px)' : undefined,
+        WebkitBackdropFilter: gold ? 'blur(10px)' : undefined,
+        font: "600 18px/1 var(--f-ui)",
+        opacity: busy ? 0.6 : 1,
+        transform: ok ? 'scale(1.16)' : busy ? 'scale(.94)' : 'scale(1)',
+        transition: 'background .14s, border-color .14s, color .14s, transform .2s cubic-bezier(.2,.9,.3,1)',
       }}>{children}</span>
     </button>
   );
@@ -178,7 +234,7 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus }) {
   const total = owned + foil;
   const artCard = artForSet(card, set);
   const { complete } = playsetOf(card, total);
@@ -216,14 +272,14 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
         </span>
       )}
-      {/* Missing sleeves get a quick add - ONLY where adding is enabled. Like
-          LedgerRow, the add control is omitted entirely when the caller passes no
-          onStep (read-only: the My Collection lens, Overview). Without this guard the
-          read-view View-all / Not-owned binder showed a dead "+" on every unowned
-          tile that threw on tap. */}
-      {missing && onStep && (
+      {/* Quick add - present wherever adding is enabled, owned or not, so you can keep
+          tapping to add copies without the control disappearing under your finger the moment
+          the card stops being "missing". Omitted entirely when the caller passes no onStep
+          (read-only surfaces), which is what stops a dead "+" appearing there. */}
+      {onStep && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
-          <Frost label={`Add ${card.name}`} size={30} onClick={() => onStep(card.card_id, set, 1)}>+</Frost>
+          <QuickAdd label={`Add ${card.name}`} cardName={card.name} status={addStatus}
+            onAdd={() => onStep(card.card_id, set, 1)} />
         </span>
       )}
     </div>

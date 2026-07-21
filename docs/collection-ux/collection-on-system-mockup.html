@@ -1,0 +1,1037 @@
+<title>Collection — On-System Mockup</title>
+<style>
+  /* ============================================================
+     TOKENS — named design-system tokens. Colours are [Shipping] except the
+     completion-Ring + warm-brown chrome, which are approved [Target] (become
+     [Shipping] on Phase 1 adoption); see the compliance panel below.
+     ============================================================ */
+  :root{
+    /* gold family */
+    --gold-leaf:#dcb86f; --gold:#cf9a4a; --gold-head:#e9d49a;
+    --gold-deep:#c9a35a; --gold-antique:#b08d4e; --gilt:#cba75f;
+    --edge-gold:rgba(220,184,111,.45);
+    /* gold hairlines */
+    --hair-06:rgba(220,184,111,.06); --hair-10:rgba(220,184,111,.10);
+    --hair-12:rgba(220,184,111,.12); --hair-14:rgba(220,184,111,.14);
+    --hair-22:rgba(220,184,111,.22); --hair-30:rgba(220,184,111,.30);
+    --hair-40:rgba(220,184,111,.40);
+    /* ink */
+    --ink-head:#efe6d2; --ink-body:#e9dcc0; --ink-body-2:#e3d8c2;
+    --ink-muted:#9a8b6a; --ink-faint:#8f8168; --ink-status:#cbbfa8;
+    /* Collection accent — single-accent rule: ruby only */
+    --accent-ruby:#d25873; --ruby-rgb:210,88,115;
+    /* completion Ring — owner-approved [Target] now, [Shipping] on Phase 1 adoption.
+       Only the track is a token; the arc fill is the contextual pillar accent. */
+    --ring-track:rgba(74,60,34,.9);
+    /* shipping rose-glass stepper */
+    --rose-bg:rgba(224,169,177,.12); --rose-glyph:#f0c8ce;
+    /* warm-brown chrome family */
+    --brown-border:#4a3c22;
+    --brown-hair-50:rgba(74,60,34,.5); --brown-hair-100:rgba(74,60,34,1);
+    --brown-fill-50:rgba(42,33,20,.5); --brown-fill-70:rgba(42,33,20,.7);
+    /* surfaces */
+    --surface-card:rgba(34,26,20,.4); --surface-card-2:rgba(34,26,20,.55);
+    --surface-well:rgba(18,13,9,.6);
+    --surface-sheet:linear-gradient(180deg,#151310,#0a0908);
+    --scrim:rgba(8,5,3,.6);
+    /* element pips */
+    --el-air:#67b6c4; --el-earth:#b35c33; --el-fire:#d2645a;
+    --el-water:#5b87d6; --el-multi:#d4a83a;
+    /* rarity */
+    --r-ordinary:#c8c8c8; --r-exceptional:#4fc3f7; --r-elite:#ab47bc; --r-unique:#ffd54f;
+    /* radii */
+    --rad-card:16px; --rad-sheet:26px; --rad-pill:999px; --rad-chip:18px;
+    --rad-btn:12px; --rad-tag:11px; --rad-thumb:8px;
+    /* shadow */
+    --shadow-card:0 12px 30px -16px rgba(0,0,0,.7);
+    --shadow-sheet:0 -20px 50px -10px rgba(0,0,0,.5);
+    /* type */
+    --f-display:'Cinzel','Trajan Pro',Georgia,serif;
+    --f-read:'EB Garamond',Georgia,serif;
+    --f-ui:'Hanken Grotesk',system-ui,sans-serif;
+    --f-mono:'IBM Plex Mono',ui-monospace,monospace;
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  body{
+    background:#000;
+    background-image:
+      radial-gradient(1100px 700px at 50% -8%, rgba(207,154,74,.10), transparent 60%),
+      radial-gradient(900px 640px at 88% 104%, rgba(var(--ruby-rgb),.07), transparent 62%);
+    color:var(--ink-body); font-family:var(--f-ui);
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  button{font-family:inherit;}
+  :focus-visible{outline:2px solid var(--gold-leaf); outline-offset:2px; border-radius:4px;}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{transition:none!important;animation:none!important;}
+  }
+
+  /* ============================================================
+     Page shell + gallery
+     ============================================================ */
+  .page{max-width:1400px; margin:0 auto; padding:40px 20px 32px;}
+  .page-head{text-align:center; margin-bottom:8px;}
+  .page-head h1{
+    font-family:var(--f-display); font-weight:700; font-size:clamp(20px,3vw,28px);
+    letter-spacing:.18em; text-transform:uppercase; color:var(--gold-head); margin:0 0 8px;
+  }
+  .page-head p{
+    font-family:var(--f-read); font-size:15px; color:var(--ink-muted); margin:0 auto 4px; max-width:62ch;
+  }
+  .gallery{
+    display:grid; grid-template-columns:repeat(auto-fit,minmax(min(300px,100%),390px));
+    justify-content:center; gap:32px; padding:32px 0 16px;
+  }
+  .shot{margin:0; display:flex; flex-direction:column; gap:12px; align-items:center; min-width:0;}
+  .shot figcaption{
+    font-family:var(--f-read); font-style:italic; font-size:14px; color:var(--ink-faint);
+    text-align:center; max-width:36ch;
+  }
+
+  /* Phone frame */
+  .frame{
+    position:relative; width:min(390px,100%); height:840px; overflow:hidden;
+    border-radius:28px; border:1px solid var(--hair-22);
+    background:#000;
+    background-image:
+      radial-gradient(120% 46% at 50% -6%, rgba(207,154,74,.10), transparent 70%),
+      radial-gradient(90% 40% at 50% 108%, rgba(var(--ruby-rgb),.08), transparent 70%);
+    box-shadow:var(--shadow-card);
+  }
+  .f-body{
+    position:absolute; inset:0; overflow-y:auto; overscroll-behavior:contain;
+    padding:20px 16px 120px; scrollbar-width:thin; scrollbar-color:var(--hair-22) transparent;
+  }
+  .f-body.no-scroll{overflow:hidden;}
+
+  /* ============================================================
+     Primitives
+     ============================================================ */
+
+  /* SectionLabel rubric — the ONLY divider idiom. */
+  .rubric{display:flex; align-items:center; gap:12px; margin:24px 0 12px;}
+  .rubric:first-child{margin-top:0;}
+  .rubric .r-label{
+    font-family:var(--f-display); font-weight:700; font-size:12px;
+    letter-spacing:.22em; text-transform:uppercase; color:var(--gilt); white-space:nowrap;
+  }
+  .rubric .r-hair{flex:1; height:1px; background:linear-gradient(90deg, var(--brown-hair-100), transparent);}
+  .rubric .r-count{
+    font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-size:12px; color:var(--ink-muted);
+  }
+
+  /* SegTabs — the one segmented control. */
+  .seg{display:inline-flex; border:1px solid var(--brown-border); border-radius:var(--rad-pill); overflow:hidden;}
+  .seg button{
+    padding:8px 12px; border:none; background:transparent; cursor:pointer;
+    font-family:var(--f-display); font-size:11px; font-weight:500;
+    letter-spacing:.08em; text-transform:uppercase; color:#8a8175;
+    transition:background .16s, color .16s;
+  }
+  .seg button[aria-pressed="true"]{background:var(--brown-fill-70); color:#d8c9a4; font-weight:600;}
+  .seg button:focus-visible{outline-offset:-2px;}
+
+  /* Chip — gilt-gradient active, dark ghost inactive. */
+  .chip{
+    display:inline-flex; align-items:center; gap:6px; padding:7px 16px;
+    border-radius:var(--rad-chip); cursor:pointer;
+    font:600 13px/1 var(--f-ui); white-space:nowrap;
+    background:var(--brown-fill-50); color:#c9bda6; border:1px solid var(--brown-border);
+    transition:background .16s, color .16s;
+  }
+  .chip[aria-pressed="true"]{
+    background:linear-gradient(180deg,#d8b872,#b8954f); color:#1a1206; border-color:#e3c589;
+  }
+
+  /* SearchPill */
+  .searchpill{
+    display:flex; align-items:center; gap:10px; padding:11px 16px;
+    border-radius:var(--rad-pill); background:rgba(10,10,12,.58);
+    border:1px solid rgba(255,255,255,.09);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+    color:var(--ink-muted); font-family:var(--f-read); font-size:15px;
+  }
+  .searchpill svg{flex:none; stroke:var(--ink-muted);}
+
+  /* Stepper — shipping rose glass, always visible, ~44px hit. */
+  .stepper{display:inline-flex; align-items:center; gap:2px; flex:none;}
+  .stepper button{
+    width:42px; height:42px; border-radius:var(--rad-btn); cursor:pointer;
+    background:var(--rose-bg); border:1px solid rgba(224,169,177,.18);
+    color:var(--rose-glyph); font:500 20px/1 var(--f-ui);
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background .16s;
+  }
+  .stepper button:hover{background:rgba(224,169,177,.18);}
+  .stepper .st-count{
+    min-width:30px; text-align:center; font-family:var(--f-mono);
+    font-variant-numeric:tabular-nums; font-size:15px; color:var(--ink-body);
+  }
+
+  /* CardArt — deterministic element-tinted gradient fallback. Never a photo. */
+  .thumb{
+    position:relative; flex:none; border-radius:var(--rad-thumb); overflow:hidden;
+    border:1px solid var(--hair-14); width:40px; height:56px;
+  }
+  .art-air  {background:linear-gradient(160deg, rgba(103,182,196,.50), rgba(103,182,196,.10) 55%, rgba(0,0,0,.62)), #0d1418;}
+  .art-earth{background:linear-gradient(160deg, rgba(179,92,51,.50),  rgba(179,92,51,.10) 55%,  rgba(0,0,0,.62)), #16100b;}
+  .art-fire {background:linear-gradient(160deg, rgba(210,100,90,.50), rgba(210,100,90,.10) 55%,  rgba(0,0,0,.62)), #170e0c;}
+  .art-water{background:linear-gradient(160deg, rgba(91,135,214,.50), rgba(91,135,214,.10) 55%,  rgba(0,0,0,.62)), #0c1119;}
+  .art-multi{background:linear-gradient(160deg, rgba(212,168,58,.48), rgba(212,168,58,.10) 55%,  rgba(0,0,0,.62)), #16120a;}
+
+  /* pips + rarity ticks */
+  .pip{width:8px; height:8px; border-radius:50%; flex:none; display:inline-block;}
+  .pip-air{background:var(--el-air);} .pip-earth{background:var(--el-earth);}
+  .pip-fire{background:var(--el-fire);} .pip-water{background:var(--el-water);}
+  .pip-multi{background:var(--el-multi);}
+  .rtick{width:3px; height:14px; border-radius:2px; flex:none; display:inline-block;}
+  .r-ordinary{background:var(--r-ordinary);} .r-exceptional{background:var(--r-exceptional);}
+  .r-elite{background:var(--r-elite);} .r-unique{background:var(--r-unique);}
+
+  /* ListRow */
+  .lrow{
+    display:flex; align-items:center; gap:12px; padding:10px 12px;
+    border-radius:var(--rad-card); background:var(--surface-card);
+    border:1px solid var(--hair-10); margin-bottom:8px;
+    transition:opacity .16s;
+  }
+  .lrow .l-main{flex:1; min-width:0;}
+  .lrow .l-name{
+    font-family:var(--f-read); font-size:16px; color:var(--ink-body);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .lrow .l-meta{
+    display:flex; align-items:center; gap:7px; margin-top:3px;
+    font-family:var(--f-ui); font-size:11.5px; color:var(--ink-muted); letter-spacing:.04em;
+  }
+  .lrow.unowned .thumb, .lrow.unowned .l-name, .lrow.unowned .l-meta{opacity:.45;}
+
+  /* meters — gold progress bars for list goals + coverage. Set/total completion uses the Ring. */
+  .meter{height:4px; border-radius:var(--rad-pill); background:var(--surface-well); overflow:hidden;}
+  .meter i{display:block; height:100%; border-radius:var(--rad-pill); background:var(--accent-ruby);}
+  .meter.gold i{background:linear-gradient(90deg, var(--gold-antique), var(--gold-leaf));}
+
+  /* Ring — completion primitive (owner-approved [Target]). Pure SVG arc; fill = contextual accent.
+     No blend-mode, no backdrop-filter, no per-frame animation → clears the WebView paint rules.
+     Decorative (aria-hidden); the adjacent mono count carries the value for screen readers. */
+  .ring{position:relative; flex:none; display:inline-flex; align-items:center; justify-content:center;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .rg-track{fill:none; stroke:var(--ring-track);}
+  .ring .rg-fill{fill:none; stroke:var(--accent-ruby); stroke-linecap:round; transition:stroke-dashoffset .4s;}
+  .ring .rg-pct{position:absolute; font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-size:11px; color:var(--ink-body);}
+
+  /* mono figures */
+  .mono{font-family:var(--f-mono); font-variant-numeric:tabular-nums;}
+
+  /* tags */
+  .tag{
+    display:inline-flex; align-items:center; padding:3px 9px; border-radius:var(--rad-tag);
+    font:600 10.5px/1.3 var(--f-ui); letter-spacing:.06em; text-transform:uppercase;
+  }
+  .tag-missing{color:var(--accent-ruby); border:1px solid rgba(var(--ruby-rgb),.4); background:rgba(var(--ruby-rgb),.08);}
+  .tag-candidate{color:var(--ink-muted); border:1px dashed var(--hair-22); background:var(--surface-well); text-transform:none; letter-spacing:.02em;}
+  .tag-owned{color:var(--gold-leaf); border:1px solid var(--hair-22); background:var(--surface-card);}
+
+  /* header row inside a frame */
+  .f-head{display:flex; align-items:center; gap:12px; margin-bottom:16px;}
+  .f-head .back{
+    width:34px; height:34px; flex:none; border-radius:50%; cursor:pointer;
+    border:1px solid var(--hair-40); background:transparent; color:var(--gold-leaf);
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  .f-head .h-title{
+    font-family:var(--f-display); font-weight:700; font-size:17px;
+    letter-spacing:.14em; text-transform:uppercase; color:var(--ink-head); flex:1; min-width:0;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .f-head .h-count{font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-size:12.5px; color:var(--ink-muted);}
+
+  /* Dock — 5 pillars, Collection active in ruby. */
+  .dock{
+    position:absolute; left:0; right:0; bottom:0; z-index:5;
+    display:flex; justify-content:space-around; align-items:center;
+    padding:14px 8px 22px; border-top:1px solid var(--hair-12);
+    background:rgba(8,5,3,.86);
+    backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+  }
+  .dock span{
+    font-family:var(--f-display); font-size:10px; font-weight:600;
+    letter-spacing:.12em; text-transform:uppercase; color:var(--ink-faint);
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+  }
+  .dock span::before{content:""; width:4px; height:4px; border-radius:50%; background:transparent;}
+  .dock span.on{color:var(--accent-ruby);}
+  .dock span.on::before{background:var(--accent-ruby);}
+
+  /* Fab — the gold context FAB + small menu. */
+  .fab{
+    position:absolute; right:16px; bottom:88px; z-index:6;
+    width:56px; height:56px; border-radius:50%; cursor:pointer;
+    background:linear-gradient(180deg,#d8b872,#b8954f); border:1px solid #e3c589;
+    color:#1a1206; box-shadow:var(--shadow-card);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .fab-menu{
+    position:absolute; right:16px; bottom:152px; z-index:6; min-width:180px;
+    border-radius:var(--rad-card); background:var(--surface-sheet);
+    border:1px solid var(--hair-22); box-shadow:var(--shadow-card);
+    padding:6px; display:none;
+  }
+  .fab-menu.open{display:block;}
+  .fab-menu button{
+    display:flex; width:100%; align-items:center; gap:10px; padding:11px 12px;
+    border:none; background:transparent; border-radius:var(--rad-btn); cursor:pointer;
+    font:600 13px/1 var(--f-ui); color:var(--ink-body-2); text-align:left;
+  }
+  .fab-menu button:hover{background:var(--brown-fill-50);}
+  .fab-menu svg{stroke:var(--gold-leaf); flex:none;}
+
+  /* ============================================================
+     Screen 1 — Sets completion home
+     ============================================================ */
+  .total-line{
+    display:flex; align-items:center; gap:14px; margin:14px 2px 18px;
+  }
+  .total-line .mono{font-size:20px; color:var(--ink-head);}
+  .total-line small{display:block; font-family:var(--f-ui); font-size:12px; color:var(--ink-muted); letter-spacing:.04em;}
+  .set-grid{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .set-plate{
+    display:block; width:100%; text-align:left; cursor:pointer;
+    padding:16px 14px 14px; border-radius:var(--rad-card);
+    background:var(--surface-card); border:1px solid var(--hair-10);
+    box-shadow:var(--shadow-card);
+  }
+  .set-plate .s-name{
+    font-family:var(--f-display); font-weight:700; font-size:13px;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--ink-head);
+    min-height:34px; line-height:1.3;
+  }
+  .set-plate .s-body{display:flex; align-items:center; gap:12px; margin:12px 0 2px;}
+  .set-plate .s-count{font-size:12.5px; color:var(--ink-body-2);}
+
+  /* ============================================================
+     Screens 2–3 — inside a set
+     ============================================================ */
+  .toolbar{display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:16px;}
+
+  .binder-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+  .b-frame{ /* gilt frame = 1px gradient pad wrapper */
+    padding:1px; border-radius:11px;
+    background:linear-gradient(180deg,#d8b872,#7a5f2e);
+    box-shadow:var(--shadow-card);
+  }
+  .b-face{
+    position:relative; border-radius:10px; aspect-ratio:5/7; overflow:hidden;
+    display:flex; align-items:flex-end; padding:8px;
+  }
+  .b-face .b-name{
+    font-family:var(--f-read); font-size:12.5px; line-height:1.25; color:var(--ink-head);
+    text-shadow:0 1px 3px rgba(0,0,0,.8);
+  }
+  .b-face .b-n{
+    position:absolute; top:6px; right:6px; font-family:var(--f-mono);
+    font-variant-numeric:tabular-nums; font-size:10.5px; color:var(--gold-head);
+    background:rgba(8,5,3,.6); border:1px solid var(--hair-22);
+    padding:2px 6px; border-radius:var(--rad-tag);
+  }
+  .b-slot{ /* debossed empty slot — the documented missing-card Pattern */
+    border-radius:10px; aspect-ratio:5/7;
+    background:var(--surface-well);
+    border:1px dashed var(--hair-14);
+    box-shadow:inset 0 2px 10px rgba(0,0,0,.55);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:8px; padding:8px; text-align:center;
+  }
+  .b-slot .b-name{font-family:var(--f-read); font-size:12px; line-height:1.25; color:var(--ink-faint);}
+  .b-cand{position:relative;}
+  .b-cand .tag-candidate{position:absolute; left:6px; bottom:6px; z-index:2;}
+
+  /* ============================================================
+     Screen 4 — GothicSheet trophy
+     ============================================================ */
+  .scrim{position:absolute; inset:0; z-index:4; background:var(--scrim);}
+  .sheet{
+    position:absolute; left:0; right:0; bottom:0; z-index:5; max-height:78%;
+    border-radius:var(--rad-sheet) var(--rad-sheet) 0 0;
+    background:var(--surface-sheet);
+    border-top:1px solid var(--hair-30);
+    box-shadow:var(--shadow-sheet);
+    display:flex; flex-direction:column;
+  }
+  .sheet .grab{flex:none; padding:10px 0 4px; display:flex; justify-content:center;}
+  .sheet .grab i{width:44px; height:4px; border-radius:var(--rad-pill); background:var(--hair-22);}
+  .sheet-body{overflow-y:auto; padding:8px 20px 28px; scrollbar-width:thin; scrollbar-color:var(--hair-22) transparent;}
+  .hero-wrap{display:flex; justify-content:center; margin:8px 0 14px;}
+  .hero{
+    width:150px; aspect-ratio:5/7; border-radius:10px; overflow:hidden;
+    display:flex; align-items:flex-end; padding:12px;
+  }
+  .hero .b-name{font-size:15px;}
+  .sheet-title{
+    font-family:var(--f-display); font-weight:700; font-size:19px;
+    letter-spacing:.1em; text-transform:uppercase; color:var(--ink-head);
+    text-align:center; margin:0;
+  }
+  .sheet-meta{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    margin:8px 0 4px; font-family:var(--f-ui); font-size:12.5px;
+    color:var(--ink-muted); letter-spacing:.05em;
+  }
+  .own-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:10px 12px; border-radius:var(--rad-card);
+    background:var(--surface-card); border:1px solid var(--hair-10); margin-bottom:8px;
+  }
+  .own-row .o-label{font:600 13.5px/1.3 var(--f-ui); color:var(--ink-body-2);}
+  .own-row .o-sub{display:block; font:400 11px/1.4 var(--f-ui); color:var(--ink-faint); margin-top:2px;}
+  .act-row{
+    display:flex; width:100%; align-items:center; gap:12px; padding:13px 12px;
+    border-radius:var(--rad-card); background:var(--surface-card);
+    border:1px solid var(--hair-10); margin-bottom:8px; cursor:pointer;
+    font:600 13.5px/1 var(--f-ui); color:var(--ink-body-2); text-align:left;
+  }
+  .act-row .spacer{flex:1;}
+  .act-row .chev{color:var(--ink-faint);}
+  .star-btn svg{stroke:var(--ink-muted); fill:none; transition:fill .16s, stroke .16s;}
+  .star-btn[aria-pressed="true"] svg{stroke:var(--accent-ruby); fill:var(--accent-ruby);}
+  .star-btn[aria-pressed="true"] .star-state{color:var(--accent-ruby);}
+  .star-state{font:600 11px/1 var(--f-ui); color:var(--ink-faint); letter-spacing:.08em; text-transform:uppercase;}
+
+  /* ============================================================
+     Screen 5 — lists in three grammars
+     ============================================================ */
+  .list-row{
+    display:flex; align-items:center; gap:14px; width:100%; text-align:left; cursor:pointer;
+    padding:14px; border-radius:var(--rad-card); background:var(--surface-card);
+    border:1px solid var(--hair-10); margin-bottom:10px; box-shadow:var(--shadow-card);
+  }
+  .list-row .l-main{flex:1; min-width:0;}
+  .list-row .l-title{font-family:var(--f-read); font-size:17px; color:var(--ink-body);}
+  .list-row .l-sub{font:400 11.5px/1.4 var(--f-ui); color:var(--ink-muted); margin-top:3px; letter-spacing:.04em;}
+  .list-row .meter{margin-top:8px;}
+  .star-badge{
+    width:40px; height:40px; flex:none; border-radius:50%;
+    border:1px solid rgba(var(--ruby-rgb),.4); background:rgba(var(--ruby-rgb),.08);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .star-badge svg{fill:var(--accent-ruby); stroke:var(--accent-ruby);}
+  .fan{position:relative; width:52px; height:56px; flex:none;}
+  .fan .thumb{position:absolute; width:32px; height:45px; top:5px;}
+  .fan .thumb:nth-child(1){left:0;  transform:rotate(-8deg);}
+  .fan .thumb:nth-child(2){left:10px; transform:rotate(0deg); z-index:1;}
+  .fan .thumb:nth-child(3){left:20px; transform:rotate(8deg); z-index:2;}
+
+  /* ============================================================
+     Screen 6 — coverage + export
+     ============================================================ */
+  .coverage{
+    padding:16px 14px; border-radius:var(--rad-card); background:var(--surface-card-2);
+    border:1px solid var(--hair-10); box-shadow:var(--shadow-card); margin-bottom:16px;
+  }
+  .coverage .mono{font-size:14px; color:var(--ink-body-2);}
+  .btn-gilt{
+    display:flex; width:100%; align-items:center; justify-content:center; gap:8px;
+    padding:13px 16px; margin:14px 0 20px; border-radius:var(--rad-btn); cursor:pointer;
+    background:linear-gradient(180deg,#d8b872,#b8954f); border:1px solid #e3c589;
+    color:#1a1206; font:700 13px/1 var(--f-ui); letter-spacing:.06em; text-transform:uppercase;
+  }
+  .check{stroke:var(--gold-leaf); flex:none;}
+  .footnote{
+    font-family:var(--f-read); font-style:italic; font-size:12.5px; color:var(--ink-faint);
+    margin:14px 4px 0; line-height:1.5;
+  }
+
+  /* ============================================================
+     Compliance panel
+     ============================================================ */
+  .compliance{
+    max-width:900px; margin:24px auto 0; padding:18px 22px;
+    border-radius:var(--rad-card); background:var(--surface-card);
+    border:1px solid var(--hair-12);
+  }
+  .compliance .rubric{margin-top:0;}
+  .compliance ul{margin:8px 0 0; padding-left:18px; font-size:13px; line-height:1.7; color:var(--ink-status);}
+  .compliance li strong{color:var(--ink-body-2); font-weight:600;}
+</style>
+
+<main class="page">
+  <header class="page-head">
+    <h1>Collection · On-System</h1>
+    <p>The Collection pillar redesign, rebuilt from the governed design system — shipping
+       primitives plus the owner-approved completion Ring and its tokens
+       (<code>[Target]</code> now, <code>[Shipping]</code> on Phase 1 adoption). Restraint is the feature.</p>
+  </header>
+
+  <section class="gallery" aria-label="Six phone screens">
+
+    <!-- ============ 1 · SETS COMPLETION HOME ============ -->
+    <figure class="shot">
+      <div class="frame" role="group" aria-label="Screen 1: Sets completion home">
+        <div class="f-body">
+          <div class="searchpill" role="search">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><line x1="16.5" y1="16.5" x2="21" y2="21"></line></svg>
+            <span>Search your collection…</span>
+          </div>
+
+          <div class="rubric" style="margin-top:22px;">
+            <span class="r-label">My Collection</span>
+            <span class="r-hair"></span>
+            <span class="r-count">6 sets</span>
+          </div>
+
+          <div class="total-line">
+            <span class="ring" aria-hidden="true">
+              <svg width="46" height="46" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="4"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="4" stroke-dasharray="100.5" stroke-dashoffset="90.6"></circle></svg>
+              <span class="rg-pct" style="font-size:10px;">10%</span>
+            </span>
+            <div>
+              <span class="mono">312 / 3,158</span>
+              <small>cards owned · 9.9%</small>
+            </div>
+          </div>
+
+          <div class="set-grid">
+            <button class="set-plate" type="button">
+              <span class="s-name">Alpha</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="85.4"></circle></svg>
+                  <span class="rg-pct">15%</span>
+                </span>
+                <span class="s-count mono">118 / 780</span>
+              </div>
+            </button>
+            <button class="set-plate" type="button">
+              <span class="s-name">Beta</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="88.0"></circle></svg>
+                  <span class="rg-pct">13%</span>
+                </span>
+                <span class="s-count mono">96 / 766</span>
+              </div>
+            </button>
+            <button class="set-plate" type="button">
+              <span class="s-name">Arthurian Legends</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="92.0"></circle></svg>
+                  <span class="rg-pct">9%</span>
+                </span>
+                <span class="s-count mono">52 / 612</span>
+              </div>
+            </button>
+            <button class="set-plate" type="button">
+              <span class="s-name">Dragonlord</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="94.7"></circle></svg>
+                  <span class="rg-pct">6%</span>
+                </span>
+                <span class="s-count mono">30 / 520</span>
+              </div>
+            </button>
+            <button class="set-plate" type="button">
+              <span class="s-name">Gothic</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="97.5"></circle></svg>
+                  <span class="rg-pct">3%</span>
+                </span>
+                <span class="s-count mono">12 / 406</span>
+              </div>
+            </button>
+            <button class="set-plate" type="button">
+              <span class="s-name">Promotional</span>
+              <div class="s-body">
+                <span class="ring" aria-hidden="true">
+                  <svg width="52" height="52" viewBox="0 0 40 40"><circle class="rg-track" cx="20" cy="20" r="16" stroke-width="5"></circle><circle class="rg-fill" cx="20" cy="20" r="16" stroke-width="5" stroke-dasharray="100.5" stroke-dashoffset="95.1"></circle></svg>
+                  <span class="rg-pct">5%</span>
+                </span>
+                <span class="s-count mono">4 / 74</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div class="fab-menu" id="fabMenu" role="menu" aria-label="Collection actions">
+          <button type="button" role="menuitem">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"></rect><circle cx="12" cy="12.5" r="3.5"></circle></svg>
+            Scan cards
+          </button>
+          <button type="button" role="menuitem">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12"></path><path d="M7 11l5 5 5-5"></path><path d="M4 20h16"></path></svg>
+            Import
+          </button>
+          <button type="button" role="menuitem">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            New list
+          </button>
+        </div>
+        <button class="fab" id="fabBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Collection actions">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        </button>
+
+        <nav class="dock" aria-label="Pillars">
+          <span>Home</span><span>Codex</span><span class="on" aria-current="page">Collection</span><span>Decks</span><span>Play</span>
+        </nav>
+      </div>
+      <figcaption>1 · Sets completion home — plates on <code>--surface-card</code>, completion Rings (owner-approved <code>[Target]</code>), mono counts, gold Fab.</figcaption>
+    </figure>
+
+    <!-- ============ 2 · LEDGER ============ -->
+    <figure class="shot">
+      <div class="frame" role="group" aria-label="Screen 2: Alpha ledger">
+        <div class="f-body">
+          <div class="f-head">
+            <button class="back" type="button" aria-label="Back to sets">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+            </button>
+            <span class="h-title">Alpha</span>
+            <span class="h-count">118 / 780</span>
+          </div>
+
+          <div class="toolbar">
+            <div class="seg" role="group" aria-label="View">
+              <button type="button" aria-pressed="true">Ledger</button>
+              <button type="button" aria-pressed="false">Binder</button>
+            </div>
+            <div class="seg" role="group" aria-label="Lens" id="lensSeg">
+              <button type="button" aria-pressed="false" data-lens="owned">Owned</button>
+              <button type="button" aria-pressed="true" data-lens="all">All</button>
+              <button type="button" aria-pressed="false" data-lens="missing">Missing</button>
+            </div>
+          </div>
+
+          <div id="ledgerRows">
+            <div class="lrow" data-owned="1">
+              <span class="thumb art-air" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Avatar of Air</div>
+                <div class="l-meta"><span class="pip pip-air" aria-hidden="true"></span><span class="rtick r-elite" aria-hidden="true"></span>Elite · Avatar</div>
+              </div>
+              <div class="stepper" data-count="1">
+                <button type="button" class="st-dec" aria-label="Remove one Avatar of Air">&#8722;</button>
+                <span class="st-count" aria-live="polite">1</span>
+                <button type="button" class="st-inc" aria-label="Add one Avatar of Air">+</button>
+              </div>
+            </div>
+            <div class="lrow unowned" data-owned="0">
+              <span class="thumb art-fire" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Avatar of Fire</div>
+                <div class="l-meta"><span class="pip pip-fire" aria-hidden="true"></span><span class="rtick r-elite" aria-hidden="true"></span>Elite · Avatar</div>
+              </div>
+              <div class="stepper" data-count="0">
+                <button type="button" class="st-dec" aria-label="Remove one Avatar of Fire">&#8722;</button>
+                <span class="st-count" aria-live="polite">0</span>
+                <button type="button" class="st-inc" aria-label="Add one Avatar of Fire">+</button>
+              </div>
+            </div>
+            <div class="lrow" data-owned="1">
+              <span class="thumb art-fire" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Blaze</div>
+                <div class="l-meta"><span class="pip pip-fire" aria-hidden="true"></span><span class="rtick r-ordinary" aria-hidden="true"></span>Ordinary · Magic</div>
+              </div>
+              <div class="stepper" data-count="3">
+                <button type="button" class="st-dec" aria-label="Remove one Blaze">&#8722;</button>
+                <span class="st-count" aria-live="polite">3</span>
+                <button type="button" class="st-inc" aria-label="Add one Blaze">+</button>
+              </div>
+            </div>
+            <div class="lrow" data-owned="1">
+              <span class="thumb art-earth" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Cave Trolls</div>
+                <div class="l-meta"><span class="pip pip-earth" aria-hidden="true"></span><span class="rtick r-ordinary" aria-hidden="true"></span>Ordinary · Minion</div>
+              </div>
+              <div class="stepper" data-count="2">
+                <button type="button" class="st-dec" aria-label="Remove one Cave Trolls">&#8722;</button>
+                <span class="st-count" aria-live="polite">2</span>
+                <button type="button" class="st-inc" aria-label="Add one Cave Trolls">+</button>
+              </div>
+            </div>
+            <div class="lrow" data-owned="1">
+              <span class="thumb art-air" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Cloud Spirit</div>
+                <div class="l-meta"><span class="pip pip-air" aria-hidden="true"></span><span class="rtick r-exceptional" aria-hidden="true"></span>Exceptional · Minion</div>
+              </div>
+              <div class="stepper" data-count="1">
+                <button type="button" class="st-dec" aria-label="Remove one Cloud Spirit">&#8722;</button>
+                <span class="st-count" aria-live="polite">1</span>
+                <button type="button" class="st-inc" aria-label="Add one Cloud Spirit">+</button>
+              </div>
+            </div>
+            <div class="lrow" data-owned="1">
+              <span class="thumb art-water" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Mermaid</div>
+                <div class="l-meta"><span class="pip pip-water" aria-hidden="true"></span><span class="rtick r-ordinary" aria-hidden="true"></span>Ordinary · Minion</div>
+              </div>
+              <div class="stepper" data-count="4">
+                <button type="button" class="st-dec" aria-label="Remove one Mermaid">&#8722;</button>
+                <span class="st-count" aria-live="polite">4</span>
+                <button type="button" class="st-inc" aria-label="Add one Mermaid">+</button>
+              </div>
+            </div>
+            <div class="lrow unowned" data-owned="0">
+              <span class="thumb art-multi" aria-hidden="true"></span>
+              <div class="l-main">
+                <div class="l-name">Philosopher's Stone</div>
+                <div class="l-meta"><span class="pip pip-multi" aria-hidden="true"></span><span class="rtick r-unique" aria-hidden="true"></span>Unique · Artifact</div>
+              </div>
+              <div class="stepper" data-count="0">
+                <button type="button" class="st-dec" aria-label="Remove one Philosopher's Stone">&#8722;</button>
+                <span class="st-count" aria-live="polite">0</span>
+                <button type="button" class="st-inc" aria-label="Add one Philosopher's Stone">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <nav class="dock" aria-label="Pillars">
+          <span>Home</span><span>Codex</span><span class="on" aria-current="page">Collection</span><span>Decks</span><span>Play</span>
+        </nav>
+      </div>
+      <figcaption>2 · Ledger — add-is-a-place: the rose stepper is permanent, no edit mode. Unowned rows dim but keep it. Lens filters live.</figcaption>
+    </figure>
+
+    <!-- ============ 3 · BINDER ============ -->
+    <figure class="shot">
+      <div class="frame" role="group" aria-label="Screen 3: Alpha binder">
+        <div class="f-body">
+          <div class="f-head">
+            <button class="back" type="button" aria-label="Back to sets">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+            </button>
+            <span class="h-title">Alpha</span>
+            <span class="h-count">118 / 780</span>
+          </div>
+
+          <div class="toolbar">
+            <div class="seg" role="group" aria-label="View">
+              <button type="button" aria-pressed="false">Ledger</button>
+              <button type="button" aria-pressed="true">Binder</button>
+            </div>
+            <div class="seg" role="group" aria-label="Lens">
+              <button type="button" aria-pressed="false">Owned</button>
+              <button type="button" aria-pressed="true">All</button>
+              <button type="button" aria-pressed="false">Missing</button>
+            </div>
+          </div>
+
+          <div class="binder-grid">
+            <div class="b-frame"><div class="b-face art-air"><span class="b-n">×1</span><span class="b-name">Avatar of Air</span></div></div>
+            <div class="b-slot"><span class="b-name">Avatar of Fire</span></div>
+            <div class="b-frame"><div class="b-face art-earth"><span class="b-n">×2</span><span class="b-name">Avatar of Earth</span></div></div>
+            <div class="b-frame b-cand">
+              <div class="b-face art-fire"><span class="b-n">×3</span><span class="b-name">Blaze</span></div>
+              <span class="tag tag-candidate">Foil · Candidate (not shipping)</span>
+            </div>
+            <div class="b-frame"><div class="b-face art-earth"><span class="b-n">×2</span><span class="b-name">Cave Trolls</span></div></div>
+            <div class="b-slot"><span class="b-name">Court Jester</span></div>
+            <div class="b-frame"><div class="b-face art-air"><span class="b-n">×1</span><span class="b-name">Cloud Spirit</span></div></div>
+            <div class="b-frame"><div class="b-face art-water"><span class="b-n">×4</span><span class="b-name">Mermaid</span></div></div>
+            <div class="b-slot"><span class="b-name">Philosopher's Stone</span></div>
+          </div>
+        </div>
+        <nav class="dock" aria-label="Pillars">
+          <span>Home</span><span>Codex</span><span class="on" aria-current="page">Collection</span><span>Decks</span><span>Play</span>
+        </nav>
+      </div>
+      <figcaption>3 · Binder — gilt-framed gradient faces vs debossed empty slots on <code>--surface-well</code>. One matte foil tag, flagged Candidate.</figcaption>
+    </figure>
+
+    <!-- ============ 4 · TROPHY SHEET ============ -->
+    <figure class="shot">
+      <div class="frame" role="group" aria-label="Screen 4: card trophy sheet">
+        <div class="f-body no-scroll" aria-hidden="true">
+          <div class="f-head">
+            <button class="back" type="button" tabindex="-1" aria-label="Back">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+            </button>
+            <span class="h-title">Alpha</span>
+            <span class="h-count">118 / 780</span>
+          </div>
+          <div class="lrow"><span class="thumb art-water"></span><div class="l-main"><div class="l-name">Mermaid</div><div class="l-meta">Ordinary · Minion</div></div></div>
+          <div class="lrow"><span class="thumb art-multi"></span><div class="l-main"><div class="l-name">Philosopher's Stone</div><div class="l-meta">Unique · Artifact</div></div></div>
+          <div class="lrow"><span class="thumb art-fire"></span><div class="l-main"><div class="l-name">Blaze</div><div class="l-meta">Ordinary · Magic</div></div></div>
+          <div class="lrow"><span class="thumb art-earth"></span><div class="l-main"><div class="l-name">Cave Trolls</div><div class="l-meta">Ordinary · Minion</div></div></div>
+        </div>
+        <div class="scrim" aria-hidden="true"></div>
+
+        <section class="sheet" aria-label="Philosopher's Stone">
+          <div class="grab" aria-hidden="true"><i></i></div>
+          <div class="sheet-body">
+            <div class="hero-wrap">
+              <div class="b-frame"><div class="b-face hero art-multi"><span class="b-name">Philosopher's Stone</span></div></div>
+            </div>
+            <h2 class="sheet-title">Philosopher's Stone</h2>
+            <p class="sheet-meta"><span class="pip pip-multi" aria-hidden="true"></span>Alpha · Unique · Artifact</p>
+
+            <div class="rubric"><span class="r-label">Printing</span><span class="r-hair"></span></div>
+            <div class="seg" role="group" aria-label="Printing" id="printSeg" style="display:flex; justify-content:center;">
+              <button type="button" aria-pressed="true" style="flex:1;">Alpha</button>
+              <button type="button" aria-pressed="false" style="flex:1;">Beta</button>
+              <button type="button" aria-pressed="false" style="flex:1;">Promo</button>
+            </div>
+
+            <div class="rubric"><span class="r-label">Ownership</span><span class="r-hair"></span></div>
+            <div class="own-row">
+              <span class="o-label">Owned</span>
+              <div class="stepper" data-count="0">
+                <button type="button" class="st-dec" aria-label="Remove one owned copy">&#8722;</button>
+                <span class="st-count" aria-live="polite">0</span>
+                <button type="button" class="st-inc" aria-label="Add one owned copy">+</button>
+              </div>
+            </div>
+            <div class="own-row">
+              <span class="o-label">Foil
+                <span class="tag tag-candidate" style="margin-left:8px;">Candidate — not shipping</span>
+                <span class="o-sub">Shown for classification only; matte in this mockup.</span>
+              </span>
+              <div class="stepper" data-count="0">
+                <button type="button" class="st-dec" aria-label="Remove one foil copy">&#8722;</button>
+                <span class="st-count" aria-live="polite">0</span>
+                <button type="button" class="st-inc" aria-label="Add one foil copy">+</button>
+              </div>
+            </div>
+
+            <div class="rubric"><span class="r-label">Actions</span><span class="r-hair"></span></div>
+            <button class="act-row star-btn" id="wishStar" type="button" aria-pressed="false">
+              <svg width="17" height="17" viewBox="0 0 24 24" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2-5.6-3.2-5.6 3.2 1.3-6.2L3 9.5l6.3-.7z"></path></svg>
+              Wishlist
+              <span class="spacer"></span>
+              <span class="star-state" id="wishState">Off</span>
+            </button>
+            <button class="act-row" type="button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold-leaf)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+              Add to list
+              <span class="spacer"></span>
+              <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg>
+            </button>
+            <button class="act-row" type="button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold-leaf)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V6a2 2 0 0 1 2-2h5v15H6a2 2 0 0 0-2 2z"></path><path d="M20 19V6a2 2 0 0 0-2-2h-5v15h5a2 2 0 0 1 2 2z"></path></svg>
+              Open in Codex
+              <span class="spacer"></span>
+              <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"></path></svg>
+            </button>
+          </div>
+        </section>
+      </div>
+      <figcaption>4 · Trophy sheet — the GothicSheet chassis: scrim, 26px crown, gold hairline, grab handle. House star (ruby when on), rubric dividers.</figcaption>
+    </figure>
+
+    <!-- ============ 5 · LISTS ============ -->
+    <figure class="shot">
+      <div class="frame" role="group" aria-label="Screen 5: lists">
+        <div class="f-body">
+          <div class="f-head">
+            <span class="h-title" style="margin-left:2px;">Lists</span>
+            <span class="h-count">5 lists</span>
+          </div>
+
+          <div class="rubric"><span class="r-label">Pinned</span><span class="r-hair"></span></div>
+          <button class="list-row" type="button">
+            <span class="star-badge" aria-hidden="true">
+              <svg width="17" height="17" viewBox="0 0 24 24" stroke-width="1.5" stroke-linejoin="round"><path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2-5.6-3.2-5.6 3.2 1.3-6.2L3 9.5l6.3-.7z"></path></svg>
+            </span>
+            <span class="l-main">
+              <span class="l-title">Wishlist</span>
+              <span class="l-sub" style="display:block;"><span class="mono">23</span> cards wanted</span>
+            </span>
+          </button>
+
+          <div class="rubric"><span class="r-label">Tracked</span><span class="r-hair"></span><span class="r-count">2</span></div>
+          <button class="list-row" type="button">
+            <span class="l-main">
+              <span class="l-title">Playset: Ordinaries</span>
+              <span class="l-sub" style="display:block;"><span class="mono">210 / 240</span> toward goal</span>
+              <span class="meter gold"><i style="width:87%;"></i></span>
+            </span>
+          </button>
+          <button class="list-row" type="button">
+            <span class="l-main">
+              <span class="l-title">Avatar Cycle</span>
+              <span class="l-sub" style="display:block;"><span class="mono">3 / 4</span> toward goal</span>
+              <span class="meter gold"><i style="width:75%;"></i></span>
+            </span>
+          </button>
+
+          <div class="rubric"><span class="r-label">Custom</span><span class="r-hair"></span><span class="r-count">2</span></div>
+          <button class="list-row" type="button">
+            <span class="fan" aria-hidden="true">
+              <span class="thumb art-water"></span><span class="thumb art-earth"></span><span class="thumb art-fire"></span>
+            </span>
+            <span class="l-main">
+              <span class="l-title">Winter Draft Cube</span>
+              <span class="l-sub" style="display:block;"><span class="mono">40</span> cards · <span class="mono">34</span> owned</span>
+            </span>
+          </button>
+          <button class="list-row" type="button">
+            <span class="fan" aria-hidden="true">
+              <span class="thumb art-air"></span><span class="thumb art-multi"></span><span class="thumb art-water"></span>
+            </span>
+            <span class="l-main">
+              <span class="l-title">Gift Box for Sam</span>
+              <span class="l-sub" style="display:block;"><span class="mono">12</span> cards · <span class="mono">12</span> owned</span>
+            </span>
+          </button>
+        </div>
+        <nav class="dock" aria-label="Pillars">
+          <span>Home</span><span>Codex</span><span class="on" aria-current="page">Collection</span><span>Decks</span><span>Play</span>
+        </nav>
+      </div>
+      <figcaption>5 · Lists — three grammars kept distinct: star (Wishlist), gold progress (Tracked), fanned thumbs (Custom). No new idioms invented.</figcaption>
+    </figure>
+
+    <!-- ============ 6 · COVERAGE + EXPORT ============ -->
+    <figure class="shot">
+      <div class="frame" role="group" aria-label="Screen 6: Winter Draft Cube coverage">
+        <div class="f-body">
+          <div class="f-head">
+            <button class="back" type="button" aria-label="Back to lists">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"></path></svg>
+            </button>
+            <span class="h-title">Winter Draft Cube</span>
+          </div>
+
+          <div class="coverage">
+            <div class="rubric" style="margin:0 0 10px;"><span class="r-label">Coverage</span><span class="r-hair"></span></div>
+            <div class="meter gold" style="height:5px;"><i style="width:85%;"></i></div>
+            <p class="mono" style="margin:10px 0 0;">34 / 40 owned · 6 missing</p>
+          </div>
+
+          <button class="btn-gilt" type="button">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M4 20h16"></path></svg>
+            Export 6 Missing
+          </button>
+
+          <div class="rubric"><span class="r-label">Cards</span><span class="r-hair"></span><span class="r-count">40</span></div>
+
+          <div class="lrow">
+            <span class="thumb art-fire" aria-hidden="true"></span>
+            <div class="l-main"><div class="l-name">Blaze</div><div class="l-meta"><span class="pip pip-fire" aria-hidden="true"></span>Alpha · Ordinary</div></div>
+            <svg class="check" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Owned"><path d="M4 12.5l5 5L20 6.5"></path></svg>
+          </div>
+          <div class="lrow">
+            <span class="thumb art-earth" aria-hidden="true"></span>
+            <div class="l-main"><div class="l-name">Cave Trolls</div><div class="l-meta"><span class="pip pip-earth" aria-hidden="true"></span>Alpha · Ordinary</div></div>
+            <svg class="check" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Owned"><path d="M4 12.5l5 5L20 6.5"></path></svg>
+          </div>
+          <div class="lrow unowned">
+            <span class="thumb art-air" aria-hidden="true"></span>
+            <div class="l-main"><div class="l-name">Court Jester</div><div class="l-meta"><span class="pip pip-air" aria-hidden="true"></span>Alpha · Exceptional</div></div>
+            <span class="tag tag-missing">Missing</span>
+          </div>
+          <div class="lrow">
+            <span class="thumb art-water" aria-hidden="true"></span>
+            <div class="l-main"><div class="l-name">Mermaid</div><div class="l-meta"><span class="pip pip-water" aria-hidden="true"></span>Alpha · Ordinary</div></div>
+            <svg class="check" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Owned"><path d="M4 12.5l5 5L20 6.5"></path></svg>
+          </div>
+          <div class="lrow unowned">
+            <span class="thumb art-multi" aria-hidden="true"></span>
+            <div class="l-main"><div class="l-name">Philosopher's Stone</div><div class="l-meta"><span class="pip pip-multi" aria-hidden="true"></span>Alpha · Unique</div></div>
+            <span class="tag tag-missing">Missing</span>
+          </div>
+          <div class="lrow unowned">
+            <span class="thumb art-water" aria-hidden="true"></span>
+            <div class="l-main"><div class="l-name">Sea Serpent</div><div class="l-meta"><span class="pip pip-water" aria-hidden="true"></span>Alpha · Elite</div></div>
+            <span class="tag tag-missing">Missing</span>
+          </div>
+
+          <p class="footnote">This list reads your collection; owned is edited only in Collection.</p>
+        </div>
+        <nav class="dock" aria-label="Pillars">
+          <span>Home</span><span>Codex</span><span class="on" aria-current="page">Collection</span><span>Decks</span><span>Play</span>
+        </nav>
+      </div>
+      <figcaption>6 · Coverage + export — a list reads owned, never writes it: gold checks, ruby Missing tags, one gilt export action.</figcaption>
+    </figure>
+
+  </section>
+
+  <!-- ============ COMPLIANCE PANEL ============ -->
+  <footer class="compliance" aria-label="Design-system compliance">
+    <div class="rubric"><span class="r-label">Compliance</span><span class="r-hair"></span></div>
+    <ul>
+      <li><strong>DESIGN_SYSTEM.md <code>[Shipping]</code> primitives</strong> — SegTabs, Chip, SectionLabel rubric, GothicSheet, SearchPill, Fab, rose Stepper, CardArt gradient fallback, ListRow, gold meters (list goals + coverage).</li>
+      <li><strong>Approved <code>[Target]</code> inputs — become <code>[Shipping]</code> on Phase 1 adoption</strong> — the completion Ring (promoted from Candidate, owner-approved) with <code>--ring-track</code> + the warm-brown chrome tokens; consumed here as the set/total completion primitive.</li>
+      <li><strong>Still Candidate</strong> — foil appears only as a matte "Candidate — not shipping" flag, never a holo effect.</li>
+      <li><strong>Invented decorations removed</strong> — no wax-seals, no fleuron rules (rubric + fade hairline is the only divider), no gold corner brackets, no embossed set sigils, no tooled plates.</li>
+      <li><strong>Type discipline</strong> — Cinzel capped at weight 700 (OD-19), EB Garamond for card names, Hanken Grotesk labels, tabular mono counts.</li>
+      <li><strong>Single ruby accent</strong> — #d25873 for Collection interaction and the dock; steppers keep the shipping rose glass; all other chrome is gold/warm-brown.</li>
+    </ul>
+  </footer>
+</main>
+
+<script>
+  (function(){
+    "use strict";
+
+    /* Steppers — permanent, no edit mode. Dim a ledger row at 0. */
+    document.querySelectorAll(".stepper").forEach(function(st){
+      var countEl = st.querySelector(".st-count");
+      function set(n){
+        n = Math.max(0, Math.min(99, n));
+        st.dataset.count = String(n);
+        countEl.textContent = String(n);
+        var row = st.closest(".lrow");
+        if(row){
+          row.classList.toggle("unowned", n === 0);
+          row.dataset.owned = n > 0 ? "1" : "0";
+        }
+      }
+      st.querySelector(".st-inc").addEventListener("click", function(){ set(+st.dataset.count + 1); });
+      st.querySelector(".st-dec").addEventListener("click", function(){ set(+st.dataset.count - 1); });
+    });
+
+    /* SegTabs — one pressed option per group. */
+    document.querySelectorAll(".seg").forEach(function(seg){
+      seg.querySelectorAll("button").forEach(function(btn){
+        btn.addEventListener("click", function(){
+          seg.querySelectorAll("button").forEach(function(b){ b.setAttribute("aria-pressed", b === btn ? "true" : "false"); });
+          if(seg.id === "lensSeg"){ applyLens(btn.dataset.lens); }
+        });
+      });
+    });
+
+    /* Ledger lens: Owned / All / Missing. */
+    function applyLens(lens){
+      document.querySelectorAll("#ledgerRows .lrow").forEach(function(row){
+        var owned = row.dataset.owned === "1";
+        var show = lens === "all" || (lens === "owned" && owned) || (lens === "missing" && !owned);
+        row.style.display = show ? "" : "none";
+      });
+    }
+
+    /* Wishlist star — the house Star, ruby when on. No wax-seal. */
+    var star = document.getElementById("wishStar");
+    if(star){
+      star.addEventListener("click", function(){
+        var on = star.getAttribute("aria-pressed") === "true";
+        star.setAttribute("aria-pressed", on ? "false" : "true");
+        document.getElementById("wishState").textContent = on ? "Off" : "On";
+      });
+    }
+
+    /* Fab menu. */
+    var fab = document.getElementById("fabBtn"), menu = document.getElementById("fabMenu");
+    if(fab && menu){
+      fab.addEventListener("click", function(){
+        var open = menu.classList.toggle("open");
+        fab.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+      document.addEventListener("keydown", function(e){
+        if(e.key === "Escape" && menu.classList.contains("open")){
+          menu.classList.remove("open");
+          fab.setAttribute("aria-expanded", "false");
+          fab.focus();
+        }
+      });
+    }
+  })();
+</script>

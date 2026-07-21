@@ -67,6 +67,37 @@
   --link-violet: #c79ad0;
   --destructive: #a8584a;
 
+  /* ── Collection UX redesign tokens (DESIGN_SYSTEM.md §1.6/§3 + docs/collection-ux/). */
+  /* completion Ring track — [Shipping]: consumed by components/Ring.jsx. The arc FILL is the
+     contextual pillar accent (Collection var(--accent-ruby); Play jade; Home gold), so no
+     --ring-fill is minted. */
+  --ring-track: rgba(74, 60, 34, .9);
+  /* warm-brown chrome (OD-2) — the input / segmented / divider / well hue, a different family
+     from the gold hairlines. --hair-warm-50 is [Shipping] (empty sets-home tile edge); the
+     rest stay [Target]/unconsumed until a consumer lands. */
+  --edge-brown: #4a3c22;
+  --hair-warm-50: rgba(74, 60, 34, .5);
+  --hair-warm-100: rgba(74, 60, 34, 1);
+  --surface-brown-50: rgba(42, 33, 20, .5);
+  --surface-brown-70: rgba(42, 33, 20, .7);
+
+  /* sets-home tile treatment — [Shipping] (consumed by SetsHome.jsx). Plain names.
+     Several of these finally mint roles the design system already approved but never built:
+     --gilt-rgb / --gold-num (OD-1) and --ink-muted-warm (OD-3). */
+  --gilt-rgb: 203, 167, 95;                  /* gilt/chassis gold base (OD-1) */
+  --gold-num: #e3c589;                       /* bright numeral/seal gold (OD-1) */
+  --ink-muted-warm: #8a8175;                 /* warm muted ink (OD-3) */
+  --ink-dim: #a99a80;                        /* dimmed set name, empty tiles */
+  --ink-dimmest: #6b6254;                    /* dimmed stat label, empty tiles */
+  /* Completion fill: gold -> ruby. Owner ruling - no separate completion colour; the pillar
+     accent IS the completion colour, so the single-accent rule holds. */
+  --completion-fill: linear-gradient(90deg, var(--accent-gold), var(--accent-ruby));
+  --track-neutral: rgba(255, 255, 255, .08); /* unfilled completion track */
+  --rule-warm: rgba(107, 90, 46, .6);        /* stat separator hairline */
+  --tile-top-rgb: 42, 33, 20;                /* tile gradient, top */
+  --tile-bottom-rgb: 26, 20, 12;             /* tile gradient, bottom */
+  --shadow-tile: 0 8px 22px rgba(0, 0, 0, .4);
+
   /* element pips (card data only) */
   --el-air: #67b6c4;
   --el-earth: #b35c33;   /* rust, not tan - too close to the gold/multi hue */
@@ -350,6 +381,10 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-toast { max-width: min(88vw, 420px); padding: 11px 18px; border-radius: 14px; background: linear-gradient(180deg,#1a1712,#0e0c0a); border: 1px solid rgba(220,184,111,.28); color: var(--ink-body); font: 500 13px/1.4 var(--f-ui); text-align: center; box-shadow: 0 8px 26px rgba(0,0,0,.55); animation: cxToastIn .26s cubic-bezier(.2,.9,.3,1); }
 .cx-toast.danger { border-color: rgba(224,120,106,.5); color: #f0c9c2; }
 @keyframes cxToastIn { from { opacity: 0; transform: translateY(-10px) scale(.96); } to { opacity: 1; transform: none; } }
+/* The exit is the entrance reversed, so a run of toasts reads as one object arriving, being
+   updated in place, then leaving the way it came. */
+@keyframes cxToastOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(-10px) scale(.96); } }
+.cx-toast.leaving { animation: cxToastOut .2s cubic-bezier(.4,0,.2,1) forwards; }
 /* Multi-select checkboxes sliding in from the right when Select mode turns on. */
 @keyframes cxSelIn { from { opacity: 0; transform: translateX(14px) scale(.7); } to { opacity: 1; transform: none; } }
 
@@ -450,13 +485,20 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 
 @keyframes cxfade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Gold glimmer for display text - a highlight sweeping across the letterforms, matching the
+   generated set logos. body.reduce-motion stops the sweep; the gradient stays gold. */
+@keyframes cxGlimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.cx-glimmer {
+  background: linear-gradient(100deg, #b08d4e 0%, #e3c589 34%, #fff6dc 50%, #e3c589 66%, #b08d4e 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  animation: cxGlimmer 3.4s linear infinite;
+}
 /* Collection cards "deal" into place on mount - a staggered fade + settle, so entering
    +Add (or a new search) places the cards instead of snapping. Only fresh mounts run it;
    a re-render (stepping a count) does not replay. --i is the per-tile stagger index. */
-@keyframes cx-deal { from { opacity: 0; transform: translateY(15px) scale(.965); } to { opacity: 1; transform: none; } }
-.cx-deal { animation: cx-deal .34s cubic-bezier(.22, .61, .36, 1) both; animation-delay: calc(var(--i, 0) * 24ms); }
-@media (prefers-reduced-motion: reduce) { .cx-deal { animation-duration: .01ms; animation-delay: 0ms; } }
 /* Collection card area: a short fade replayed on each view/lens change. */
-.cx-view-fade { animation: cxfade .22s ease; }
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes cxpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }

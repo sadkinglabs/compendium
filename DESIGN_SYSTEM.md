@@ -25,15 +25,16 @@ The token source is `src/theme/tokens.css` (`:root`). **Reporting reality is per
 | `--gold-antique` | `#b08d4e` | `[Shipping]` | |
 | `--hair-06 … --hair-40` | `rgba(var(--gold-rgb), α)` | `[Shipping]` | gold hairline scale |
 | `--edge-gold` / `--edge-gold-strong` | `rgba(var(--gold-rgb), .45/.5)` | `[Shipping]` | |
-| **`--gilt` / `--gilt-rgb`** | **`203,167,95` (`#cba75f`)** | **`[Target]`** (OD-1) | the **second, gilt/chassis gold** shipping ~99× (sheet borders, gilt frames, boot splash, `.cx-card-seal`). A distinct role — do **not** migrate onto `--gold-rgb`. |
-| **`--gold-num`** | **`#e3c589`** | **`[Target]`** (OD-1) | the bright numeral/seal gold (~54 raw uses). |
+| **`--gilt` / `--gilt-rgb`** | **`203,167,95` (`#cba75f`)** | **`--gilt-rgb` `[Shipping]`** (minted for the sets-home tile edge); `--gilt` still `[Target]` (OD-1) | the **second, gilt/chassis gold** shipping ~99× (sheet borders, gilt frames, boot splash, `.cx-card-seal`). A distinct role — do **not** migrate onto `--gold-rgb`. |
+| **`--gold-num`** | **`#e3c589`** | **`[Shipping]`** (OD-1 — minted; consumed by the sets-home tiles) | the bright numeral/seal gold (~54 raw uses); adoption across the remaining raw uses is still the separate track. |
 | ~~"gold unified on 220,184,111"~~ (`tokens.css:26` comment) | — | **`[Deprecated]`** | false: `203,167,95` still ships pervasively. Retire the claim. |
 
 ### 1.2 Ink
 | Token | Value | Status |
 |---|---|---|
 | `--ink-head` `#efe6d2` · `--ink-body` `#e9dcc0` · `--ink-body-2` `#e3d8c2` · `--ink-muted` `#9a8b6a` · `--ink-faint` `#8f8168` · `--ink-status` `#cbbfa8` | | `[Shipping]` |
-| **warm-muted-ink role** (`#8a8175`, ~84 raw uses) | | **`[Target]`** (OD-3) — **role approved; implementation choice deferred** (migrate to `--ink-faint` vs mint `--ink-muted-warm`) pending a visual + `body.hc` high-contrast comparison. Because it is a literal today, `body.hc` never lifts it (a real contrast gap). |
+| **`--ink-muted-warm`** `#8a8175` (~84 raw uses) | | **`[Shipping]`** (OD-3 resolved — **minted** rather than folded into `--ink-faint`, so the warm-muted role keeps its own hue; consumed by the sets-home tiles). Migrating the remaining raw literals onto it is the separate adoption track, and doing so is what finally lets `body.hc` lift them (today they are literals, a real contrast gap). |
+| **`--ink-dim`** `#a99a80` · **`--ink-dimmest`** `#6b6254` | | `[Shipping]` — the two-step de-emphasis for empty-state tiles (name / label). |
 | near-dupe inks `#efe7d8` (~43, ≈`--ink-head`), `#d8cebb` (~25, ≈`--ink-body-2`) | | `[Target]` (OD-4) — migrate to the existing tokens, conditional on visual/contrast verification. |
 
 ### 1.3 Accents (semantic / pillar) — one accent per pillar
@@ -48,7 +49,7 @@ The token source is `src/theme/tokens.css` (`:root`). **Reporting reality is per
 | **`--deck-amethyst`** (rename of `--violet-rgb 160,110,220`) | | **`[Target]`** (OD-6) | approved token/rename, **not built**. The value is **not wrong** — it matches the Decks amethyst *structure* (`decks.css` borders/bg-grad); a **role** rename, not a value fix. The Decks amethyst *subsystem* it serves is the `[Exception]` in §2. |
 | jade fallback `#4db38a` written as `var(--accent-jade,#4db38a)` (`tokens.css:280`) | | **`[Deprecated]`** (OD-5) | a fallback that contradicts the token's own value; fix the 11 sites + Collection `TEAL #63c9a3` to `var(--accent-jade)`. |
 | **`--win` / `--loss`** (status semantics) | win `#4db38a`, loss `#c98f8f` | **`[Target]`** (OD-7) — **role approved; win/loss-vs-danger/destructive semantics review deferred.** Status colours are a distinct axis from wayfinding accents. |
-| dead rgb-base tokens (0 `var()` consumers; minted to de-dupe, adopted by nobody) | | *per-token* | `--violet-rgb` → **`[Deprecated]`** (superseded by the `--deck-amethyst` rename above); `--ruby-rgb` → **`[Target]`** (wire as the single Stepper's alpha base, OD-8); `--jade-rgb` → **`[Deprecated]`** (delete unless a consumer appears). |
+| rgb-base tokens (minted to de-dupe; adoption varies - the heading no longer implies all are dead) | | *per-token* | `--violet-rgb` → **`[Deprecated]`** (superseded by the `--deck-amethyst` rename above); `--ruby-rgb` → **`[Target]`** (wire as the single Stepper's alpha base, OD-8); `--jade-rgb` → **`[Shipping]`** (2 consumers: the playset-collected jewel in `CollectionCardViews`, the list-complete pill in `Collection`). |
 
 ### 1.4 Card-data colour (one app-wide language)
 - **Rarity** `--ordinary #c8c8c8` · `--exceptional #4fc3f7` · `--elite #ab47bc` · `--unique #ffd54f` — `[Shipping]` (consumed via `RARITY_COLOR`/`RARITY_HUE` in 5 files).
@@ -58,7 +59,11 @@ The token source is `src/theme/tokens.css` (`:root`). **Reporting reality is per
 Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `--s-1…--s-8` (4-based) · type sizes `--t-*` · letter-spacing `--ls-*` · icon sizes `--i-*` · blur `--blur-*` · shadow/elevation `--shadow-chip/-card/-pop/-sheet/-modal`. **All defined in `tokens.css`, all 0-consumer.** Owner ruling (OD-9): **keep the scale as the adoption target AND add a composite text-style layer** (`--type-*` recipes) — because the code is written as whole `font:` shorthands (~506), single-value scalars have failed to get adopted. **`[Target]`; refactor deferred.**
 
 ### 1.6 New foundational tokens — all `[Target]` (OD-2/10/11/18)
-- **Warm-brown chrome** (~100 raw uses; the standard input/segmented/divider/well family, a *different hue* from the gold hairlines): `--edge-brown` (`#4a3c22`), `--hair-warm` (`rgba(74,60,34,α)`), `--surface-brown` (`rgba(42,33,20,α)`).
+- **Warm-brown chrome** (~100 raw uses; the standard input/segmented/divider/well family, a *different hue* from the gold hairlines): `--edge-brown` (`#4a3c22`), `--hair-warm-50/-100` (`rgba(74,60,34,α)`), `--surface-brown-50/-70` (`rgba(42,33,20,α)`). **Defined in `tokens.css` (Collection UX Phase 0), still `[Target]`/unconsumed**; the ones Collection consumes promote to `[Shipping]` in Phase 1.
+- **Completion Ring track** — `--ring-track` (`rgba(74,60,34,.9)`), the unfilled arc; **fill = contextual pillar accent (no `--ring-fill`)**. `[Shipping]` — consumed by `components/Ring.jsx`. See §3 + `docs/collection-ux/`.
+- **Sets-home tile treatment** — `[Shipping]`, consumed by `pillars/SetsHome.jsx`; plain functional names (owner rule: no thematic names in code). `--ring-halo` (`rgba(var(--ruby-rgb),.16)`, first `--ruby-rgb` consumer, OD-8) · `--tile-top-rgb`/`--tile-bottom-rgb` (tile gradient) · `--shadow-tile` · `--ring-track-neutral` (neutral arc track, distinct from the warm `--ring-track`) · `--rule-warm` (stat separator) · `--ink-dim`/`--ink-dimmest` (empty-tile name + label). **These mint three previously-unbuilt approved roles:** `--gilt-rgb` and `--gold-num` (OD-1) and `--ink-muted-warm` (OD-3, resolving its deferred implementation choice by minting rather than folding into `--ink-faint`).
+- **Completion fill** — `--completion-fill` (`linear-gradient(90deg, var(--accent-gold), var(--accent-ruby))`) over `--track-neutral`. `[Shipping]`. **Owner ruling (2026-07-20): NO separate completion colour** — the proposed `#d24d78` was rejected as a near-dupe of `--accent-ruby #d25873`; the pillar accent *is* the completion colour, so the §2 single-accent rule holds and no second pink exists.
+- **Completion is a bar, not a ring, on the sets-home tiles** (owner, 2026-07-20): a ring overlaid on set art fought the logos at tile scale. The `Ring` primitive remains `[Shipping]` and is still the page-level/overall completion device; tiles use the bar.
 - **Motion:** `--dur-*` / `--ease-*` — standardise on M3 `cubic-bezier(.4,0,.2,1)` + the house decelerate `cubic-bezier(.2,.9,.3,1)` + one overshoot spring. (~125 ad-hoc literals today; the "same" spring is spelled two ways.)
 - **z-index:** a semantic `--z-*` ladder incl. portal/top-layer ownership (z is hardcoded 40/50/300/700… today).
 - **Focus:** `--focus-ring` (no `:focus-visible` convention ships today; inputs `outline:none`).
@@ -77,7 +82,7 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 
 ## 3 · Primitives
 
-**`[Shipping]` (usable now)** — from `src/components/`: `Chip`/`ChipRow`, `SegTabs`, `IconButton`, `SectionLabel`, `ListRow`, `Loading`, `ThresholdPips`/`ElementPip`, `BottomSheet`, `CenteredModal`, `BlankState`, `EmptyCta`, `BTN_GOLD`/`BTN_GHOST`, `GothicSheet` (the sheet chassis), `SearchPill`, `BottomDock`, `Fab` (context FAB), `RefineSheet`, `MissingSheet`, `CardArt` (**the zero-image reference primitive** — deterministic fallback painted behind a self-removing `<img>`, no layout shift), the icon set `icons.jsx`, and the Collection card views (`LedgerRow`/`BinderTile`, `Frost`, `CollectionCardSheet`).
+**`[Shipping]` (usable now)** — from `src/components/`: `Chip`/`ChipRow`, `SegTabs`, `IconButton`, `SectionLabel`, `ListRow`, `Loading`, `ThresholdPips`/`ElementPip`, `BottomSheet`, `CenteredModal`, `BlankState`, `EmptyCta`, `BTN_GOLD`/`BTN_GHOST`, `GothicSheet` (the sheet chassis), `SearchPill`, `BottomDock`, `Fab` (context FAB), `OverflowMenu` (header overflow), `RefineSheet`, `MissingSheet`, `CardArt` (**the zero-image reference primitive** — deterministic fallback painted behind a self-removing `<img>`, no layout shift), the icon set `icons.jsx`, and the Collection card views (`LedgerRow`/`BinderTile`, `Frost`, `CollectionCardSheet`).
 
 **`[Target]` consolidation catalog** (OD-13 — *asserted targets, not implementation equivalence*; refactor deferred):
 | Target primitive | Consolidates (shipping reality) |
@@ -91,8 +96,8 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 | **`ModalScaffold`** | ChangelogModal + TelemetryDisclosure identical scaffold |
 | **`SectionLabel`** (single rubric) | 3 rubric idioms (component + `EYEBROW` const + `.cx-ov-sec-title`) |
 
-**`[Candidate]` (unproven — NOT Foundations):**
-- **Ring** (completion ring) — recurs (Home ×2 win-rings + Play donut) but the instances **diverge** on fill (`#4db38a` vs `--accent-jade`), track, and inner size (44/51/76px). Two-pillar recurrence is **necessary but not sufficient**; promotion additionally requires a recorded comparison of semantic role, states, a11y, and platform behaviour (see §7). Stays **Candidate/Pattern** until that comparison exists.
+**`[Target]` (owner-approved, being built — promoted from `[Candidate]` 2026-07-20):**
+- **Ring** (completion ring) — `[Shipping]` as the primitive **`src/components/Ring.jsx`** (pure SVG stroke-dashoffset arc; static by default → reduced-motion + zero-image safe; clears the §6 WebView rules). Recurs (Home ×2 win-rings + Play donut) and now Collection set/total completion; the **recorded comparison** the §7 promotion rule requires is in [`docs/collection-ux/collection-ux-proposal.md`](docs/collection-ux/collection-ux-proposal.md) §5.1 (shared role · states · a11y · platform · owner disposition), owner-approved. **Token:** `--ring-track` (`[Shipping]`, §1.6); the arc **fill is the contextual pillar accent** passed via `color` (Collection `--accent-ruby`), so **no `--ring-fill` is minted**. Its canonical geometry ends the 44/51/76px divergence. Home/Play instances stay on their bespoke rings for now (their migration is the separate adoption track).
 
 ---
 
@@ -105,6 +110,13 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 - **Empty / zero-image** `[Shipping]` — `BlankState` (rotated gold diamond + Cinzel title) and `CardArt`'s deterministic fallback; every surface must be legible with all art absent.
 - **Add-as-place** `[Target]` — adding is a property of *where you are*, not a hidden mode. This is the **Collection-redesign target interaction model, NOT current behaviour** (Collection ships an edit-mode toggle today).
 - **Back** `[Shipping]` — the two-tier LIFO contract: ephemeral consumers (`back.js`) first, then the tested declarative precedence (`navBack.js`); never exits a live match on first press.
+- **Header overflow** `[Shipping]` — `OverflowMenu`: a 44px dots trigger in a header (one circle at the §5 touch floor - an inner 34px styling span cost the button its accessible name in the WebView, so the button IS the circle), opening a small anchored menu of **screen-level commands that are not the primary action**. Rename, duplicate, export, delete, import-from-text. First consumer: Collection › Overview (typed import, once the FAB became camera-only).
+  - **Boundary against the FAB, stated as a rule.** The **FAB is narrow and physical**: filter/sort, and the camera. The **overflow is editing and bulk**: rename, duplicate, export, delete, typed import, and (from Phase 5) bulk selection. A screen may carry both — the set drill has a filter FAB, a camera FAB and a Set-actions overflow — so they are deliberately separate components rather than one with two anchors.
+  - **Every screen with editing or bulk commands gets one.** Overview (typed import), set drill (export missing), list detail (six list commands). Consistency here is what makes the FAB's meaning learnable: if commands sometimes hide in the FAB, the camera stops being a promise.
+  - **Promotion test.** If a command is used most visits it does not belong here — give it real chrome. The overflow is for the tail, not for hiding things that matter.
+  - **It renders nothing when empty** — an affordance that opens an empty menu is worse than no affordance.
+  - **HARD RULE — no `transform: scale()` on the panel.** It animates with opacity + a 6px translate only. The `Fab` menu scales from `.18`, and the WebView accessibility tree keeps reporting that pre-transition box: a 170px menu reports itself at ~36px. Fingers are unaffected (hit-testing uses the real box) but assistive tech gets the wrong target and `check:smoke` cannot drive it. Any future anchored menu inherits this rule. See [`BUILD.md`](./BUILD.md).
+
 - **Ghost / empty slot** `[Shipping]` (pattern) — composed from `--surface-well` + inset shadow + dashed hairline; **not** a Foundation primitive. Empty-slot idioms already ship (AvatarPicker, counter sockets).
 
 ---

@@ -4,6 +4,7 @@ import { elementIconUrl } from '../store/cardArt.js';
 import { linkRuns } from '../store/inlineRuns.js';
 import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
+import { useFocusTrap } from './useFocusTrap.js';
 import GothicSheet from './GothicSheet.jsx';   // the one bottom-sheet chassis (BottomSheet is a thin titled adapter over it)
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
@@ -212,31 +213,11 @@ function ElementPip({ el, color, size }) {
 /* Focus trap for modal surfaces - moves focus into the panel on open, keeps Tab
    cycling inside it, and restores focus to the opener on close. Accessibility
    for keyboard / switch-access users; a no-op for touch. */
-export function useFocusTrap(active) {
-  const ref = React.useRef(null);
-  React.useEffect(() => {
-    if (!active || !ref.current) return;
-    const panel = ref.current;
-    const opener = document.activeElement;
-    const sel = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
-    const first = panel.querySelector(sel);
-    // preventScroll: focusing must not scroll the panel's scroll body to the first
-    // control (in the missing-cards sheet that's a button BELOW the list, which
-    // opened the list scrolled past its top). Keeps focus, drops the implicit jump.
-    if (first) setTimeout(() => first.focus?.({ preventScroll: true }), 0);
-    const onKey = (e) => {
-      if (e.key !== 'Tab') return;
-      const items = [...panel.querySelectorAll(sel)].filter((el) => el.offsetParent !== null);
-      if (!items.length) return;
-      const a = items[0], b = items[items.length - 1];
-      if (e.shiftKey && document.activeElement === a) { e.preventDefault(); b.focus(); }
-      else if (!e.shiftKey && document.activeElement === b) { e.preventDefault(); a.focus(); }
-    };
-    panel.addEventListener('keydown', onKey);
-    return () => { panel.removeEventListener('keydown', onKey); try { opener?.focus?.(); } catch { /* gone */ } };
-  }, [active]);
-  return ref;
-}
+// The focus trap lives in its own leaf module: ui.jsx imports GothicSheet (for BottomSheet)
+// and GothicSheet needs the trap, which was a circular import. Imported AND re-exported, not
+// `export ... from` - a bare re-export creates no local binding, and BottomSheet below calls
+// the hook itself.
+export { useFocusTrap };
 
 /* Titled bottom sheet - a thin adapter over the canonical GothicSheet chassis
    (portal, drag-to-dismiss, gold hairline, grab handle), with an optional

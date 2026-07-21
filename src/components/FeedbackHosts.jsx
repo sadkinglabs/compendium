@@ -7,33 +7,42 @@ import Sheet from './Sheet.jsx';
 
 let seq = 0;
 
+const TOAST_OUT_MS = 200;   // must match the cxToastOut duration in tokens.css
+
 export function ToastHost() {
-  const [items, setItems] = useState([]);   // {id, message, tone}
-  const timers = useRef({});
+  // Single slot. The FIRST toast of a run animates in; while it is still showing, a new
+  // message swaps its TEXT in place - same React key, so no remount and no replayed
+  // animation, which reads as just the number updating. The last one animates out on the
+  // reverse of the entrance.
+  const [item, setItem] = useState(null);   // {id, message, tone, leaving}
+  const hide = useRef(null);
+  const drop = useRef(null);
   useEffect(() => {
     const onToast = (e) => {
-      const id = ++seq;
       const { message, tone = 'default', ms = 2100 } = e.detail || {};
       if (!message) return;
-      // Single slot: cancel any pending timer and REPLACE the toast, so rapid edits
-      // show the latest one over the previous instead of stacking a wall of toasts.
-      // The id increments every time, so React remounts the node and the cxToastIn
-      // appear animation replays - enough to signal a new toast landed.
-      Object.values(timers.current).forEach(clearTimeout);
-      timers.current = {};
-      setItems([{ id, message, tone }]);
-      timers.current[id] = setTimeout(() => {
-        setItems((xs) => xs.filter((x) => x.id !== id));
-        delete timers.current[id];
+      clearTimeout(hide.current);
+      clearTimeout(drop.current);
+      setItem((prev) => (prev && !prev.leaving
+        ? { ...prev, message, tone }                 // update in place - keeps the key
+        : { id: ++seq, message, tone, leaving: false }));   // fresh mount - plays cxToastIn
+      hide.current = setTimeout(() => {
+        setItem((prev) => (prev ? { ...prev, leaving: true } : null));
+        drop.current = setTimeout(() => setItem(null), TOAST_OUT_MS);
       }, ms);
     };
     window.addEventListener('cx-toast', onToast);
-    return () => { window.removeEventListener('cx-toast', onToast); Object.values(timers.current).forEach(clearTimeout); };
+    return () => {
+      window.removeEventListener('cx-toast', onToast);
+      clearTimeout(hide.current); clearTimeout(drop.current);
+    };
   }, []);
-  if (!items.length) return null;
+  if (!item) return null;
   return (
     <div className="cx-toast-stack" role="status" aria-live="polite">
-      {items.map((t) => <div key={t.id} className={`cx-toast${t.tone === 'danger' ? ' danger' : ''}`}>{t.message}</div>)}
+      <div key={item.id} className={`cx-toast${item.tone === 'danger' ? ' danger' : ''}${item.leaving ? ' leaving' : ''}`}>
+        {item.message}
+      </div>
     </div>
   );
 }

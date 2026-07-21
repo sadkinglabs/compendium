@@ -47,9 +47,16 @@ npm run test:codex
 npm run test:query
 npm run test:app
 npm run check:types
+npm run check:cycles
 npm run build
 npm run check:docs
 ```
+
+`check:cycles` fails on any circular import in `src/**`. `check:smoke` drives the installed
+release APK on a device and asserts every route rendered. Both exist because a latent cycle
+blanked the app on launch in the **minified** release build while every other gate was green -
+passing tests did not prove the app started. `check:smoke` needs a connected device, so it is
+a pre-merge/pre-release gate rather than one to run on every edit. See [`BUILD.md`](./BUILD.md).
 
 `check:docs` enforces only mechanical checks (required files present, no superseded terminology in the source-of-truth documents, five pillars named, schema version matches `src/store/schema.js`, local links resolve). It does not replace semantic review.
 

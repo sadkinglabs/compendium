@@ -21,6 +21,8 @@ npm run test:query   # src/store/**       - card query grammar, collection compa
 npm run test:ui      # src/pillars/**     - pure UI state (e.g. avatar picker selection)
 npm run test:app     # src/*.test.mjs     - App-shell logic (hardware-back precedence, back registry)
 npm run check:types  # tsc --noEmit       - fail-closed type gate over the match-view typed boundaries
+npm run check:cycles # src/**             - fail-closed circular-import gate
+npm run check:smoke  # installed APK      - drives a device, asserts each route rendered
 ```
 
 The four `test:*` scripts are `node --test` over co-located `*.test.mjs` files; `check:types` runs its own wrapper tests then the compiler check (fail-closed, gates only on the owned files). There is no browser
@@ -30,6 +32,73 @@ DOM — `src/pillars/avatarPickerState.js` is the pattern.
 
 Run the suites whose surface a change touches, plus `npm run build`. Interactive
 behaviour still needs to be exercised by hand; see **Verify on a device** below.
+
+### Why `check:cycles` exists
+
+A circular import between `GothicSheet.jsx` and `ui.jsx` sat latent in this repo
+until an unrelated Collection import shifted Vite's chunking. The **minified**
+release build then initialised the pair in an order that left a binding in its
+temporal dead zone, and the app rendered nothing on launch with `Cannot access
+'X' before initialization`. The unminified build was fine.
+
+Every gate was green at the time - all four `test:*` suites, `check:types`,
+`check:docs` **and** `npm run build`. Only installing the signed release APK on a
+device surfaced it.
+
+The gate therefore fails on **any** cycle rather than judging which are currently
+harmless: a cycle is a live grenade whose pin gets pulled by an unrelated import
+somewhere else. Dynamic `import()` is deliberately not an edge, since it defers
+evaluation and is how lazy routes legitimately point back at shared code.
+
+To fix a reported cycle, move the shared piece into a leaf module that imports
+nothing from either side - `src/components/useFocusTrap.js` and
+`src/store/elements.js` are the two worked examples.
+
+`check:cycles` catches cycles, not every minified-only initialisation hazard.
+`check:smoke` below covers the general case.
+
+### `check:smoke` - does the installed app actually start?
+
+```bash
+npm run check:smoke
+```
+
+Drives the **installed release APK** on a connected device and asserts that each
+route actually rendered. It needs exactly one device attached with the app
+already installed, and fails closed on zero devices, several devices, or a
+missing package - a gate that silently picks a device can silently test the
+wrong thing.
+
+It asserts **what drew**, not the absence of logged errors. The failure that
+motivated it logged a single error and drew nothing; a log-grepping gate would
+have needed to be told which errors are fatal, whereas "did the screen draw the
+thing" needs no such judgement. Console errors are also reported when Capacitor
+is forwarding them, but their absence is never treated as evidence of health,
+because a stock release build does not forward console at all.
+
+Elements are located by text and tapped at the centre of their reported bounds,
+never at fixed pixels, so it survives a different device or display size. Each
+route's tap path is self-contained from the bottom nav, so one broken route
+reports one failure instead of cascading.
+
+Verified by deliberately breaking the set drill and confirming the gate reports
+`NOTHING RENDERED (empty view tree)` for that route and exits non-zero.
+
+**Scope.** It proves the app starts and each pillar's first screen renders. It
+does not exercise gestures, sheets, writes or the scanner. Interactive behaviour
+still needs a human; see **Verify on a device**.
+
+**It cannot drive FAB menus.** `.fab-menu` transitions from `scale(.18)` to
+`scale(1)` and the WebView accessibility tree keeps reporting the pre-transition
+geometry, so tapping the reported centre hits the wrong item. A human tap works
+correctly - rendering and hit-testing agree, only the a11y tree is stale - so
+never conclude from this gate that a FAB menu is broken. Keep routes on nav tabs,
+chips and tiles.
+
+The stale bounds are still worth fixing for assistive tech (a menu reporting
+itself at 18% of its size is wrong for TalkBack), but that is a shared-component
+change affecting every pillar's FAB, tracked separately.
+
 
 ## Validate documentation
 

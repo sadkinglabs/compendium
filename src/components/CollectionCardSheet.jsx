@@ -2,14 +2,15 @@
 // each has a distinct job: CardSheet.jsx is the deckbuilder's (deck-zone
 // steppers), CodexDetail.jsx is the full page (stats, rules, rulings, FAQ), and
 // THIS sheet is about OWNING the card: a centered, symmetric "trophy" layout -
-// glowing card art over its identity, then Owned / Foil / Wishlist counts and a
-// pair of actions (add-to-list · open in Codex). No rule text; no decorative
+// glowing card art over its identity, then Owned / Foil counts and one action row
+// (wishlist heart · add-to-list). No rule text; no decorative
 // glyphs but the Foil ✦. Behaviour (open/close, hardware-back, drag-to-dismiss,
 // the ledger writes) is unchanged - this is a presentational restructure.
 import React, { useEffect, useState, useRef } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
+import CardArtViewer from './CardArtViewer.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
 import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey } from '../store/ownedRepository.js';
@@ -94,6 +95,28 @@ export function CountCol({ label, foil = false, field, qty, step, editable = tru
   );
 }
 
+// One action in the sheet's bottom row. `on` fills it with the pillar accent - used by the
+// wishlist, which is a toggle (a heart that fills when the card is wanted) rather than a
+// quantity. Wanting N copies is what a Wanted list's per-card target is for.
+export function ActionButton({ icon, label, on = false, disabled = false, onClick }) {
+  return (
+    <button
+      type="button" onClick={onClick} disabled={disabled} aria-pressed={on || undefined}
+      style={{
+        flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9,
+        padding: '15px 0', borderRadius: 16, cursor: disabled ? 'default' : 'pointer',
+        background: on ? 'rgba(var(--ruby-rgb),.10)' : 'transparent',
+        border: `1px solid ${on ? 'rgba(var(--ruby-rgb),.45)' : 'var(--edge-brown)'}`,
+        color: on ? 'var(--accent-ruby)' : '#d8c9a4',
+        font: "500 13.5px/1 var(--f-display)", opacity: disabled ? 0.5 : 1,
+        transition: 'background .16s, border-color .16s, color .16s',
+      }}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
 // The add-to-list picker: the profile's lists (wanted goals first, then custom),
 // each tappable - a tap adds ONE copy and stays open, so multi-list / multi-copy
 // adds are just taps, the per-list count confirming each.
@@ -175,15 +198,27 @@ function SiteArt({ c }) {
   );
 }
 
-// The glowing card frame - portrait for cards, flipped landscape for Sites.
+// The glowing card frame - portrait for cards, flipped landscape for Sites. Tapping it raises
+// the card onto its own full-screen stage (CardArtViewer).
 export function SheetArt({ c }) {
   const site = !!c.is_site;
+  const [zoom, setZoom] = useState(null);   // the frame we popped FROM, so we can return to it
+  const frameRef = useRef(null);
+  const raise = () => {
+    const r = frameRef.current?.getBoundingClientRect();
+    setZoom(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : {});
+  };
   return (
     <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
       <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
-      <div style={{ position: 'relative', zIndex: 1, borderRadius: 12, padding: 1, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))' }}>
+      <button ref={frameRef} type="button" onClick={raise} aria-label={`View ${c.name || 'card'} artwork`}
+        style={{ position: 'relative', zIndex: 1, display: 'block', width: '100%', padding: 1, border: 'none', cursor: 'pointer',
+          borderRadius: 12, background: 'linear-gradient(160deg, rgba(203,167,95,.7), rgba(203,167,95,.12) 45%, rgba(203,167,95,.5))',
+          // The card visually LEAVES this frame, so hide it while the stage owns it.
+          visibility: zoom ? 'hidden' : 'visible' }}>
         {site ? <SiteArt c={c} /> : <CardArt card={c} radius={11} aspect="5/7" />}
-      </div>
+      </button>
+      {zoom && <CardArtViewer card={c} origin={zoom.w ? zoom : null} onClose={() => setZoom(null)} />}
     </div>
   );
 }
@@ -191,7 +226,7 @@ export function SheetArt({ c }) {
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
 // `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
 // distinct cards in the collection, so tapping the Alpha row edits only Alpha.
-function CardBody({ c, onOpenCodex, onPick, editable, set }) {
+function CardBody({ c, onPick, editable, set }) {
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
   const variants = jp(c.variants, []) || [];
@@ -242,6 +277,7 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
   }, [ownedSets]);
   const effSet = sel ?? ranked[0]?.code ?? '';
   const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Unspecified) is a real bucket - do NOT `|| null`
+  const wished = (qty?.wanted || 0) > 0;
 
   // Art follows the active printing (Unspecified -> the card's default art).
   const imageForSet = (code) => {
@@ -249,7 +285,12 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
     const vs = variants.filter((v) => v.set === code && v.image);
     return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.image ?? c.image_slug;
   };
-  const artCard = { ...c, image_slug: imageForSet(effSet) };
+  // The credited artist follows the printing on show - a reprint is often a different artist.
+  const artistForSet = (code) => {
+    const vs = (code ? variants.filter((v) => v.set === code) : variants).filter((v) => v.artist);
+    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.artist || null;
+  };
+  const artCard = { ...c, image_slug: imageForSet(effSet), _artist: artistForSet(effSet) };
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
@@ -268,8 +309,11 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
   return (
     <>
       {/* Set picker - drives the art AND which set the Owned/Foil steppers edit.
-          Single-set cards show a plain set pill instead. Wishlist stays card-level. */}
-      {options.length > 1 ? (
+          Opened from INSIDE a set (`set` given) the printing is already decided, so the sheet
+          shows a plain pill instead of a chooser: you are adding to the set you are in.
+          Single-set cards likewise. Only the name-level entry points (Codex, search, Overview)
+          still need to pick. Wishlist stays card-level. */}
+      {set == null && options.length > 1 ? (
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
           <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
             <SegTabs ariaLabel="Printing"
@@ -294,13 +338,13 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
 
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
 
-      {/* Owned + Foil are the collection ledger - editable only from My Collection's
-          edit mode (read-only in Overview, Lists, Codex). Wishlist is a list, not
-          the owned collection, so it stays editable everywhere. */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+      {/* Owned + Foil are the collection ledger - real quantities, so they get steppers.
+          The wishlist is a binary INTENT ("I want this"), not a quantity: wanting three
+          copies is what a Wanted list's per-card target is for. So it is a toggle, and it
+          stays available everywhere (it is a list, not the owned collection). */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
         <CountCol label="Owned" field="owned" qty={qty} step={step} editable={editable} />
         <CountCol label="Foil" foil field="foil" qty={qty} step={step} editable={editable} />
-        <CountCol label="Wishlist" field="wanted" qty={qty} step={step} />
       </div>
       {!editable && (
         <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 10 }}>
@@ -308,17 +352,33 @@ function CardBody({ c, onOpenCodex, onPick, editable, set }) {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 14, marginTop: 26 }}>
-        <button onClick={onPick} style={{ flex: 1, padding: '15px 0', borderRadius: 16, background: 'transparent', border: '1px solid #4a3c22', color: '#d8c9a4', font: "500 13.5px/1 var(--f-display)", cursor: 'pointer' }}>Add to a list</button>
-        {onOpenCodex && (
-          <button onClick={() => onOpenCodex(c.card_id, c.name)} style={{ flex: 1.15, padding: '15px 0', borderRadius: 16, background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid #e3c589', color: '#1a1206', font: "600 13.5px/1 var(--f-display)", boxShadow: '0 6px 20px rgba(203,167,95,.22)', cursor: 'pointer' }}>Open in Codex ›</button>
-        )}
+      {/* One action row: wishlist (a heart that fills when on) and add-to-list (a plus).
+          There is deliberately no "Open in Codex" hand-off - this sheet is about OWNING the
+          card, and the Codex page is reached from Codex/search. */}
+      <div style={{ display: 'flex', gap: 12, marginTop: 26 }}>
+        <ActionButton
+          icon={
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"
+              fill={wished ? 'var(--accent-ruby)' : 'none'} stroke={wished ? 'var(--accent-ruby)' : 'currentColor'}
+              strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
+            </svg>
+          }
+          label="Wishlist" on={wished} disabled={qty === null}
+          onClick={() => step('wanted', wished ? -(qty.wanted || 0) : 1)} />
+        <ActionButton
+          icon={
+            <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          }
+          label="Add to list" onClick={onPick} />
       </div>
     </>
   );
 }
 
-export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, editable = false, set = null }) {
+export default function CollectionCardSheet({ cardId, onClose, editable = false, set = null }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
@@ -326,7 +386,7 @@ export default function CollectionCardSheet({ cardId, onClose, onOpenCodex, edit
     <GothicSheet open={!!cardId} onClose={onClose} label="Card">
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-        : <CardBody c={c} onOpenCodex={onOpenCodex} onPick={() => setPicking(true)} editable={editable} set={set} />}
+        : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} />}
     </GothicSheet>
   );
 }

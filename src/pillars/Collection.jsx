@@ -1,14 +1,19 @@
 // Collection pillar - the card OWNERSHIP ledger. Overview (glance stats + how many
 // decks are buildable + recently added) and Cards (search the catalog, one-tap +/-
-// to record what you Own or Want). Rows are the binder-style LedgerRow/BinderTile;
+// to record what you Own or Want). Sets are browsed as card tiles (BinderTile); LedgerRow
+// still backs Overview's recently-added strip;
 // tapping a card opens the shared CollectionCardSheet (ownership steppers +
 // Codex hand-off) lifted to the pillar root. Data layer is ownedRepository +
 // compareEngine. Accent is ruby, chrome-only.
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getPool, getSets, getArtists, listDecks, resolveCardList } from '../store/deckRepository.js';
+import { getPool, getArtists, listDecks, resolveCardList } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
+import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
+import { groupCards } from '../store/collectionGrouping.js';
+import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
+import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   ownedBySet, qtyForInSet, setOwnedInSet,
@@ -18,10 +23,10 @@ import {
   listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
-import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
+import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
-import { goalTotals, goalRowState } from '../store/listGoalModel.js';
-import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
+import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
@@ -29,44 +34,60 @@ import CardArt from '../components/CardArt.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
 import { enqueueWrite } from '../store/collectionWrites.js';
+import { createOwnedStepGrid } from '../store/ownedStepGrid.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import { createGoalDrain } from './collectionGoalDrain.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import Ring from '../components/Ring.jsx';
+import SetsHome from './SetsHome.jsx';
 import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
 
 // FAB menu-item glyphs (unsized - the fab-menu CSS sizes them), matching the
 // Decks library FAB's icon language.
-const CameraSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.2" /></svg>;
 const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
 const EditSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>;
 const CopySvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
 const TrashSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
 const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></svg>;
 
-// Where-you-left-off cache. App unmounts the whole pillar when a Codex detail
-// opens ("Open in Codex" included), so this survives the round-trip: coming Back
-// re-mounts Collection exactly as it was - same view, search, filter, open list,
+// Where-you-left-off cache. The app unmounts the whole pillar when a Codex detail opens
+// (e.g. the scanner handing off a recognised card), so this survives the round-trip: coming
+// Back re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [] };
+// The grouping vocabulary offered inside a set. Alphabetical is the resting state; the other
+// two section the grid rather than reorder it.
+const GROUP_OPTS = [['none', 'A to Z'], ['element', 'Element'], ['rarity', 'Rarity']];
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
-  const [view, setView] = useState(session.view);       // overview | cards | lists
-  const [listOpen, setListOpen] = useState(session.listOpen);  // a list row when its detail is open
+  // Reconcile the cache with the ACTIVE profile before reading a single field from it. Done
+  // in the initialiser rather than an effect so no render ever sees another profile's state.
+  const [boundSession] = useState(() => resetCollectionSessionFor(activeProfileId()));
+  const [view, setView] = useState(boundSession.view);       // overview | cards | lists
+  const [listOpen, setListOpen] = useState(boundSession.listOpen);  // a list row when its detail is open
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
-  const [sheetCard, setSheetCard] = useState(session.sheetCard);
-  const [sheetSet, setSheetSet] = useState(session.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
-  const [editMode, setEditMode] = useState(false);   // My Collection edit mode: steppers + the + add FAB
-  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; session.sheetSet = sheetSet; }, [view, listOpen, sheetCard, sheetSet]);
+  const [sheetCard, setSheetCard] = useState(boundSession.sheetCard);
+  const [sheetSet, setSheetSet] = useState(boundSession.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
+  // No edit mode: adding is a PLACE, not a mode. Steppers are permanent on every row and the
+  // card sheet is always editable - you record what you own wherever a card appears.
+  // Sets-are-home: My Collection lands on the sets-completion grid (SetsHome). Tapping a
+  // plate drills into that set's ledger/binder (setDrill = its code). drillInfo carries the
+  // opened set's completion snapshot so the drill header's Ring total stays honest (owned
+  // stays live from the ledger; total is the full-catalog figure).
+  const [setDrill, setSetDrill] = useState(boundSession.setDrill);
+  const [drillInfo, setDrillInfo] = useState(null);
+  const openSet = useCallback((code, info) => { setSetDrill(code); setDrillInfo(info || null); }, []);
+  const closeSet = useCallback(() => { setSetDrill(null); setDrillInfo(null); }, []);
+  useEffect(() => { collectionSession().view = view; collectionSession().listOpen = listOpen; collectionSession().sheetCard = sheetCard; collectionSession().sheetSet = sheetSet; collectionSession().setDrill = setDrill; }, [view, listOpen, sheetCard, sheetSet, setDrill]);
   // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
-  const go = (v) => { setListOpen(null); setEditMode(false); setView(v); };
-  const goAdd = () => { setListOpen(null); setView('cards'); setEditMode(true); };
+  const go = (v) => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
+  const goAdd = () => go('cards');   // adding starts by choosing a set; the steppers are always live
   const pills = (
     <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
       <div className="cx-scroll" style={{ display: 'flex', gap: 8, flex: 1, minWidth: 0, overflowX: 'auto' }}>
@@ -74,13 +95,6 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
       </div>
-      {view === 'cards' && (
-        <button onClick={() => setEditMode((e) => !e)} aria-pressed={editMode}
-          style={{ flex: 'none', padding: '7px 15px', borderRadius: 18, cursor: 'pointer', font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
-            background: editMode ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editMode ? '#1a1206' : '#e3c589', border: `1px solid ${editMode ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
-          {editMode ? 'Done' : '+ Add'}
-        </button>
-      )}
     </div>
   );
   return (
@@ -90,17 +104,26 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={peek}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
       ) : view === 'cards' ? (
-        <Cards onOpen={onOpen} onPeek={peek} editMode={editMode} onOpenCodex={(id, name) => onOpen('card', id, name)} />
+        setDrill != null ? (
+          <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
+            setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
+        ) : (
+          <>
+            <SetsHome onOpenSet={openSet} rev={rev} />
+            {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
+                in", everywhere in this pillar. */}
+            <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
+              onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+          </>
+        )
       ) : listOpen ? (
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       ) : (
         <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
-      {/* "Open in Codex" deliberately KEEPS the sheet open in state: the pillar
-          unmounts for the Codex page, and Back should land right back on this
-          sheet - that's where the user left. */}
-      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }}
-        onOpenCodex={(id, name) => onOpen('card', id, name)} editable={view === 'cards' && editMode} />
+      {/* The sheet's open card is KEPT in state across a pillar unmount (a Codex hand-off
+          from the scanner), so Back lands right back on this sheet - where the user left. */}
+      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }} editable />
     </div>
   );
 }
@@ -261,8 +284,8 @@ function ListBulkAddSheet({ open, onClose, onApply, listName }) {
   );
   const Line = ({ name, note, dim }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
-      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? '#8a8175' : '#d8cebb' }}>{name}</span>
-      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? '#8a8175' : '#cba75f' }}>{note}</span>
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? 'var(--ink-muted-warm)' : '#d8cebb' }}>{name}</span>
+      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? 'var(--ink-muted-warm)' : '#cba75f' }}>{note}</span>
     </div>
   );
   return (
@@ -287,7 +310,7 @@ function ListBulkAddSheet({ open, onClose, onApply, listName }) {
               {plan.adds.map((a) => <Line key={a.card.card_id} name={a.card.name} note={`${a.qty}×`} />)}
             </Section>
           ) : (
-            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px', textAlign: 'center' }}>Nothing recognised in that text.</div>
+            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '4px 0 14px', textAlign: 'center' }}>Nothing recognised in that text.</div>
           )}
           {plan.unknown.length > 0 && (
             <Section label="Not recognised" color="#c98f8f">
@@ -326,6 +349,13 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
   if (!stats) return <Loading />;
   return (
     <div style={{ padding: '2px 20px' }}>
+      {/* The FAB is the camera and nothing else, so the typed import lives here. Text import
+          is deliberately NOT set-scoped: a paste spanning many sets must stay one paste. */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
+        <OverflowMenu label="Collection actions" items={[
+          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
+        ]} />
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
@@ -361,30 +391,16 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         </div>
       )}
 
-      {/* THE add surface: bulk paste or point the camera. */}
-      <Fab variant="lib" label="Add to collection" icon={<FabGlyph kind="add" />} items={[
-        { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-        { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-      ]} />
+      {/* Scan. One tap, no menu - the camera glyph teaches that cards get in by pointing the
+          phone at them. Typed import moved to the header overflow above. */}
+      <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
+        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
 }
 
-/* ---------------- Cards (dual-view collection browser) ---------------- */
-
-// The sticky, centered List / Binder segmented control.
-function ViewToggle({ view, setView }) {
-  // Sits sticky over the scrolling card list, so it needs the frosted-solid
-  // backing (same as the Decks docked List/Stats toggle) to stay legible.
-  return (
-    <SegTabs ariaLabel="Card view" value={view} onChange={setView}
-      options={[{ key: 'list', label: 'List', icon: <IcList /> }, { key: 'binder', label: 'Binder', icon: <IcGrid /> }]}
-      style={{ background: 'rgba(11,11,13,.82)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', boxShadow: '0 4px 16px rgba(0,0,0,.45)' }} />
-  );
-}
-
-const VIEW_KEY = 'cx-collection-view';
+/* ---------------- Cards (per-set card browser) ---------------- */
 
 // The pinned, un-deletable Wishlist is a VIRTUAL list (kind 'wishlist') backed by
 // the owned_cards.qty_wanted ledger, not a card_lists row - this sentinel id keeps
@@ -398,67 +414,42 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 
 // My Collection ownership filter (multi-select). Empty = the mode default
 // (read view = owned only, add view = everything).
-const OWN_OPTS = [['owned', 'Owned'], ['unowned', 'Not owned'], ['wishlist', 'Wishlisted']];
-const OWN_LABEL = { owned: 'Owned', unowned: 'Not owned', wishlist: 'Wishlisted' };
+// Three ownership states plus the independent wishlist axis - see store/ownership.js.
+// "Not owned" is gone deliberately: it had to call a foil-only card unowned, which is false.
+// The chips are multi-select, so "what do I still need in non-foil" is Foil only + Missing.
+const OWN_OPTS = [['regular', 'Owned'], ['foilOnly', 'Foil only'], ['missing', 'Missing'], ['wishlist', 'Wishlisted']];
+const OWN_LABEL = { regular: 'Owned', foilOnly: 'Foil only', missing: 'Missing', wishlist: 'Wishlisted' };
 
-// Tappable set header - the canonical Manuscript rubric (gold Cinzel label, fade
-// hairline, gold count) with a quiet chevron folding the group. Transparent, flat,
-// exactly like the section rubrics everywhere else in the app.
-function SetHeader({ name, owned, total, collapsed, onToggle }) {
-  return (
-    <button onClick={onToggle} aria-expanded={!collapsed}
-      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '18px 0 8px', margin: '0 0 4px',
-        background: 'none', border: 'none', textAlign: 'left', cursor: 'pointer',
-        font: "600 13px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: '#cba75f' }}>
-      <span style={{ flex: '0 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
-      <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg,#4a3c22,transparent)' }} />
-      <span style={{ flex: 'none', font: "600 15px/1 var(--f-display)", letterSpacing: 'normal', color: '#c9b487' }}>
-        <span style={{ color: '#e3c589' }}>{owned}</span> / {total}
-      </span>
-      <span aria-hidden="true" style={{ flex: 'none', color: '#5c554b', display: 'inline-flex', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .2s' }}>
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-      </span>
-    </button>
-  );
-}
+// Cards is the PER-SET drill (the parent shows SetsHome until a plate is tapped). It scopes
+// the shared catalog/search/filter machinery to `setDrill`, adds a back + set-completion
+// header, and carries a permanent stepper on every tile.
+function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
+  // Adding is a PLACE: the set's whole checklist is here and every tile carries a live
+  // stepper. Card view only - completion is a visual loop, so the empty sleeves ARE the
+  // information. Ownership narrowing lives solely in the filter sheet (see ownScope): an
+  // always-on inline lens both duplicated it and made a card you just added vanish.
 
-// The view-lens FAB glyph - an eye, for "how you're viewing the collection".
-function EyeGlyph() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 22, height: 22 }}>
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
+  // Declared FIRST because everything below reads it, including hook dependency arrays -
+  // which are evaluated during render, so a `const` declared further down would still be in
+  // its temporal dead zone. It depends only on props, so there is nothing to wait for.
+  const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
 
-function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
-  const [view, setView] = useState(() => { try { return localStorage.getItem(VIEW_KEY) === 'binder' ? 'binder' : 'list'; } catch { return 'list'; } });
-  useEffect(() => { try { localStorage.setItem(VIEW_KEY, view); } catch { /* private mode */ } }, [view]);
+  const [exportOpen, setExportOpen] = useState(false);
+  // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
+  // from the filtered pool; the completion denominator and the "missing" export come from
+  // here, so neither can be moved by a filter the user happens to have on.
+  const [roster, setRoster] = useState(null);
 
-  // editMode IS the add surface: reveal the WHOLE catalogue (owned + unowned) with
-  // steppers so you can start adding immediately. Off = read-only owned collection.
-  const [importOpen, setImportOpen] = useState(false);
-  // READ-VIEW lens (My Collection, not +Add): 'owned' (default - your collection) |
-  // 'all' (owned + unowned) | 'unowned' (gaps). Read-only, so it never affects
-  // editing. The +Add surface ignores it entirely (it always shows the whole
-  // catalogue so anything is addable).
-  const [viewMode, setViewMode] = useState('owned');
-  const showSteppers = editMode;
-  // Fade the card area on a view (list/binder) or lens (owned/all/not-owned) change.
-  // Replays the animation by toggling the class on the SAME node (offsetWidth reflow
-  // between remove/add), so the list reconciles in place - the tiles never remount.
-  const listRef = useRef(null);
-  useEffect(() => {
-    const el = listRef.current; if (!el) return;
-    el.classList.remove('cx-view-fade'); void el.offsetWidth; el.classList.add('cx-view-fade');
-  }, [viewMode, view]);
-
-  const [q, setQ] = useState(session.q);
-  const [sets, setSets] = useState(session.sets);
-  const [types, setTypes] = useState(session.types);
-  const [rarities, setRarities] = useState(session.rarities);
-  const [els, setEls] = useState(session.els);
-  useEffect(() => { session.q = q; session.sets = sets; session.types = types; session.rarities = rarities; session.els = els; }, [q, sets, types, rarities, els]);
+  const [q, setQ] = useState(collectionSession().q);
+  const [types, setTypes] = useState(collectionSession().types);
+  const [rarities, setRarities] = useState(collectionSession().rarities);
+  const [els, setEls] = useState(collectionSession().els);
+  // Grouping, NOT sorting. Collection is always alphabetical; what varies is whether the
+  // grid is one list or sectioned by element/rarity.
+  const [groupBy, setGroupBy] = useState(collectionSession().groupBy || 'none');
+  // No collectionSession().sets: the drill is pinned to its own set, so there is no cross-set selection
+  // left to remember. Restoring one was what let a stale Alpha filter empty the Beta grid.
+  useEffect(() => { collectionSession().q = q; collectionSession().types = types; collectionSession().rarities = rarities; collectionSession().els = els; collectionSession().groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
 
   // Full rich filters - the shared Refine engine (Card Lists live in Collection,
   // so the comparator granularity earns its place for cube/draft/list building).
@@ -468,35 +459,68 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
   const [costCmp, setCostCmp] = useState({ op: '>=', val: null });
   const [powerCmp, setPowerCmp] = useState({ op: '>=', val: null });
   const [artist, setArtist] = useState('');
-  const [sort, setSort] = useState([]);
   const [artistOpts, setArtistOpts] = useState([]);
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [pool, setPool] = useState(null);
   const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
+  // Per-row add status straight from the binding: {pending, ok, error, displayed}. `ok` moves
+  // only on a RECONCILED success - authoritative read back, no failed write - so the tile can
+  // distinguish "tap registered" from "actually persisted".
+  const [addStatus, setAddStatus] = useState(new Map());
+  const owRef = useRef(owBySet);                     // synchronous mirror, for seeding a row's controller
+  owRef.current = owBySet;
+  const aliveRef = useRef(true);
+  useEffect(() => () => { aliveRef.current = false; }, []);
   const [wishSet, setWishSet] = useState(() => new Set());   // card_ids on the wishlist
   const [ownScope, setOwnScope] = useState([]);       // ownership filter: 'owned' | 'unowned' | 'wishlist'
   const ownActive = ownScope.length > 0;
   const toggleOwn = useCallback((v) => setOwnScope((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])), []);
-  const [collapsed, setCollapsed] = useState(() => new Set());
-  const toggleSet = useCallback((code) => setCollapsed((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n; }), []);
-  const [setOpts, setSetOpts] = useState([]);
   // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
   // those sections mount mid-slide and hitch the open animation (see open= below).
   const [optsLoaded, setOptsLoaded] = useState(false);
-  useEffect(() => { Promise.all([getSets().then(setSetOpts), getArtists().then(setArtistOpts)]).then(() => setOptsLoaded(true)); }, []);
+  // Only the artist list is still needed: the Sets facet left the drill with the set-scope
+  // fix, and waiting on getSets() meant an irrelevant query could reject and leave an
+  // otherwise-usable drill with no filters at all.
+  useEffect(() => { getArtists().then(setArtistOpts).finally(() => setOptsLoaded(true)); }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const rows = await getPool({ sets: [drillName] });
+      if (alive) setRoster(rows.filter((c) => !isTokenCard(c)));   // tokens are not collected
+    })();
+    return () => { alive = false; };
+  }, [drillName]);
 
   async function loadPool() {
     const parsed = parseQuery(q);
     // 'Unspecified' is an ownership bucket, not a printed set - keep it out of the
     // catalog pool query (it would match no card and empty the pool); grouping applies it.
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: poolSetFilter(sets), multi, thByEl, totalTh, costCmp, powerCmp, artist, sort });
+    // PINNED to the drilled set. This component IS the per-set drill, so a cross-set filter
+    // is not a narrowing - it is a contradiction. Selecting Alpha inside Beta used to put
+    // Alpha in the pool while the renderer still asked for Beta, emptying the grid.
+    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: [drillName], multi, thByEl, totalTh, costCmp, powerCmp, artist });
     const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, sets, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist, sort]);
+  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, types, rarities, els, multi, thByEl, totalTh, costCmp, powerCmp, artist]);
   const refreshOwnership = useCallback(async () => {
     const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
+    // Reconcile the bulk read against rows the grid is editing: keep the optimistic value for
+    // anything still writing, and re-seed settled rows from the truth (which is what confirms
+    // a row whose own post-write read had failed).
+    const grid = gridRef.current;
+    if (grid) {
+      for (const key of grid.keys()) {
+        if (grid.pending(key) > 0) {
+          const st = grid.state(key);
+          obs.set(key, { ...(obs.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
+        } else {
+          grid.reseed(key, obs.get(key)?.owned || 0);
+        }
+      }
+    }
     setOwBySet(obs);
     setWishSet(new Set(wl.map((r) => r.card_id)));
   }, []);
@@ -509,74 +533,128 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
     return () => { clearTimeout(t); off(); };
   }, [refreshOwnership]);
 
-  // A stepper edits OWNED for ONE (card, set) printing - the only place owned
-  // counts change. Optimistic off the cached map; the WRITE re-reads qtyForInSet
-  // inside the app-wide per-(card,set) chain so overlapping steps can't clobber.
+  // A stepper edits OWNED for ONE (card, set) printing. This goes through the SAME
+  // provisional/confirmed contract as the card sheet - a tap shows immediately, the row
+  // reconciles against the store when its write chain drains, and a rejected write restores
+  // the true count and tells the user. Controllers are created lazily per TAPPED row, so a
+  // ~780-tile set costs nothing until you actually edit something.
+  const gridRef = useRef(null);
+  if (gridRef.current === null) {
+    const split = (key) => { const i = key.lastIndexOf('|'); return [key.slice(0, i), key.slice(i + 1)]; };
+    gridRef.current = createOwnedStepGrid({
+      read: async (key) => { const [cardId, set] = split(key); return (await qtyForInSet(cardId, set)).owned; },
+      write: (key, delta) => {
+        const [cardId, set] = split(key);
+        // Bound to the profile captured at tap time and re-read inside its turn, so a profile
+        // switch can't redirect it and overlapping steps can't clobber.
+        const pid = activeProfileId();
+        return enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
+          const cur = await qtyForInSet(cardId, set, pid);
+          return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
+        });
+      },
+      notify: (reason) => toast(
+        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
+          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
+            : "Couldn't save; count restored", { tone: 'danger' }),
+      isAlive: () => aliveRef.current,
+      onChange: (key, status) => {
+        setOwBySet((prev) => {
+          const m = new Map(prev);
+          m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: status.displayed });
+          return m;
+        });
+        // `status.ok` is the controller's RECONCILED-success counter. Success is never
+        // inferred from pending going false: that is emitted before reconcile runs, so it is
+        // briefly true even when the write rejected or the read is about to fail.
+        setAddStatus((prev) => new Map(prev).set(key, status));
+      },
+    });
+  }
   const stepSet = useCallback((cardId, set, delta) => {
-    const mapKey = cardId + '|' + set;
-    setOwBySet((prev) => {
-      const cur = prev.get(mapKey) || { owned: 0, foil: 0 };
-      const next = { ...cur, owned: Math.max(0, cur.owned + delta) };
-      const m = new Map(prev); m.set(mapKey, next);
-      return m;
-    });
-    // Per-set owned row, on the store-layer queue, bound to the captured profile and
-    // re-reading inside its turn so overlapping steps (and the card sheet) can't clobber.
-    const pid = activeProfileId();
-    enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
-      const cur = await qtyForInSet(cardId, set, pid);
-      return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
-    });
+    const key = cardId + '|' + set;
+    gridRef.current.step(key, owRef.current.get(key)?.owned || 0, delta);
   }, []);
 
   // Per-set ownership: expand every catalogue card into one row per set it was
-  // printed in. Read view keeps only (card, set) pairs you own; add mode shows
-  // every printing so anything is addable. Rows are grouped + collapsible by set.
-  const setTotals = useMemo(() => {
-    const t = new Map();
-    for (const c of (pool || [])) for (const s of (c._sets || [])) if (s.code) t.set(s.code, (t.get(s.code) || 0) + 1);
-    return t;
-  }, [pool]);
-
-  // True owned-per-set (all owned rows, independent of the row filter) - drives the
-  // header's owned/total so it stays honest even under a "Not owned" filter.
+  // True owned-per-set (independent of the row filter) - drives the drill header's
+  // owned/total. Non-foil only, matching set completion (foil-only cards don't count).
   const ownedPerSet = useMemo(() => {
     const m = new Map();
     for (const [k, v] of owBySet) {
-      if ((v.owned || 0) + (v.foil || 0) === 0) continue;
+      if (!countsTowardCompletion(ownershipOf(v.owned, v.foil))) continue;   // one shared definition
       const code = k.slice(k.lastIndexOf('|') + 1);
       m.set(code, (m.get(code) || 0) + 1);
     }
     return m;
   }, [owBySet]);
 
-  // Offer an "Unspecified" chip in the Sets filter ONLY when you own set-less cards -
-  // it isolates them for filing. Read view only: in +Add the Sets filter is a catalog
-  // dimension (printed sets), where an ownership bucket does not belong; entering +Add
-  // also strips a stale "Unspecified" selection so it can never get stuck on.
-  const hasUnspecOwned = (ownedPerSet.get('') || 0) > 0;
-  const setFilterOpts = (!editMode && hasUnspecOwned) ? [...setOpts, 'Unspecified'] : setOpts;
-  useEffect(() => { if (editMode) setSets((s) => (s.includes('Unspecified') ? s.filter((x) => x !== 'Unspecified') : s)); }, [editMode]);
-
   const groups = useMemo(() => groupCollection({
-    pool, owBySet, wishSet, sets, editMode, viewMode, ownScope, ownActive, setLabel: SET_LABEL, setRank,
-  }), [pool, owBySet, wishSet, editMode, ownScope, ownActive, sets, viewMode]);
+    pool, owBySet, wishSet, sets: [drillName], viewMode: 'all', ownScope, ownActive, setLabel: SET_LABEL, setRank,
+  }), [pool, owBySet, wishSet, ownScope, ownActive, drillName]);
 
-  const totalRows = useMemo(() => groups.reduce((n, gr) => n + gr.rows.length, 0), [groups]);
+  // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
+  // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
+  // the full-catalog figure from drillInfo (falls back to the filtered pool's set total on
+  // a cold session restore, which is exact when no filter is active).
+  const drillGroup = useMemo(() => groups.find((g) => g.code === setDrill) || null, [groups, setDrill]);
+  const drillRows = drillGroup ? drillGroup.rows : [];
+  const totalRows = drillRows.length;
+  const drillOwned = ownedPerSet.get(setDrill) || 0;
+  // The denominator is IMMUTABLE for the set: it comes from the canonical roster, never from
+  // the filtered pool. It used to fall back to the filtered set total whenever drillInfo was
+  // absent - which is exactly what happens on a session restore - so returning to a filtered
+  // drill could render a header like "402 / 50".
+  const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
+  const drillPct = drillTotal ? drillOwned / drillTotal : 0;
+  // Everything in the set you do NOT hold in non-foil - missing outright, or foil-only.
+  // Filter-independent by construction: it reads the roster, not the grid.
+  const missingInSet = useMemo(() => (roster || []).filter((c) => {
+    const oc = owBySet.get(c.card_id + '|' + setDrill);
+    return ownershipOf(oc?.owned, oc?.foil) !== 'regular';
+  }), [roster, owBySet, setDrill]);
 
   const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
-  const activeCount = ownScope.length + sets.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp + (sort.length ? 1 : 0);
+  const activeCount = ownScope.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // no sets facet in a set drill; grouping is an arrangement, not a filter
   const clearAll = () => {
-    setOwnScope([]); setSets([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
+    setOwnScope([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
     setThByEl({ air: { op: '>=', val: null }, earth: { op: '>=', val: null }, fire: { op: '>=', val: null }, water: { op: '>=', val: null } });
-    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null }); setSort([]);
+    setTotalTh({ op: '>=', val: null }); setCostCmp({ op: '>=', val: null }); setPowerCmp({ op: '>=', val: null });
+    // Clear resets FILTERS only. Grouping is an arrangement, not a filter - it hides nothing,
+    // it is not counted in activeCount, and silently undoing it here would surprise someone
+    // who grouped by rarity and then cleared a type filter.
   };
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky centered view toggle - never scrolls away. */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 6, display: 'flex', justifyContent: 'center', padding: '6px 0 12px', background: 'transparent' }}>
-        <ViewToggle view={view} setView={setView} />
+      {/* Sticky drill header: back + set-completion Ring + owned/total. It needs an OPAQUE
+          backing - the card grid scrolls underneath it, and over a transparent header the
+          title and ring became unreadable. Bled to the screen edges (negative margin against
+          the container's 20px padding) so nothing shows through at the sides. */}
+      <div style={{
+        // marginTop cancels the pillar root's 4px top padding: without it the header sat 4px
+        // below the scrollport and visibly slid those 4px before pinning.
+        position: 'sticky', top: 0, zIndex: 6, margin: '-4px -20px 0', padding: '8px 20px 12px',
+        background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        borderBottom: '1px solid var(--hair-12)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+          <button onClick={onBack} aria-label="Back to sets" style={{
+            width: 44, height: 44, margin: -5, flex: 'none', borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor; negative margin keeps the header layout
+            border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--gold-leaf)',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+          </button>
+          <Ring value={drillPct} size={34} stroke={4} color="var(--accent-ruby)" showPct={false} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
+            <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
+          </div>
+          <OverflowMenu label="Set actions" items={[
+            { label: 'Export missing as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
+          ]} />
+        </div>
       </div>
 
       {pool == null ? <Loading /> : (
@@ -584,77 +662,59 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
           <div style={{ font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'right', margin: '0 2px 8px' }}>
             {totalRows} card{totalRows === 1 ? '' : 's'}
           </div>
-          {/* Card area fades on a view/lens change (replayed by ref in the effect
-              above, so the list reconciles in place - the 1500 tiles never remount). */}
-          <div ref={listRef}>
           {totalRows === 0 ? (
-            <div style={{ padding: '48px 0', textAlign: 'center', whiteSpace: 'pre-line', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-              {editMode || viewMode !== 'owned' ? 'No cards match those filters.'
-                : (activeCount || q) ? 'No owned cards match those filters.'
-                  : 'Your collection is empty.\nTap + Add to record what you own.'}
+            <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+              {(activeCount || q) ? 'No cards match those filters.' : `${drillName} has no cards yet.`}
             </div>
           ) : (
-            // No cap: every card renders. Off-screen rows are skipped by the browser
-            // (content-visibility on the row components), so the full catalogue stays
-            // smooth without a virtualization lib.
-            groups.map((grp) => {
-              const isOpen = !collapsed.has(grp.code);
-              const ownedCount = ownedPerSet.get(grp.code) || 0;
-              const total = setTotals.get(grp.code) || grp.rows.length;
-              return (
-                <div key={grp.code || 'unspec'}>
-                  <SetHeader name={grp.name} owned={ownedCount} total={total} collapsed={!isOpen} onToggle={() => toggleSet(grp.code)} />
-                  {isOpen && (view === 'binder' ? (
-                    // minmax(0,1fr), NOT 1fr: 1fr = minmax(auto,1fr), and a content-
-                    // visibility tile reports its intrinsic width as min-content, which
-                    // inflated the tracks to 240px (tiles overflowed + resized between
-                    // lenses). Pinning the min to 0 keeps every tile at a true 50%.
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 12, marginTop: 12 }}>
-                      {grp.rows.map((r, i) => (
-                        <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
-                          <BinderTile card={r.card} set={r.set} setLabel={grp.name} owned={r.owned} foil={r.foil}
-                            onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    grp.rows.map((r, i) => (
-                      <div key={r.card.card_id + '|' + r.set} className={editMode && i < 24 ? 'cx-deal' : undefined} style={editMode && i < 24 ? { '--i': i } : undefined}>
-                        <LedgerRow card={r.card} set={r.set} setLabel={grp.name}
-                          owned={r.owned} foil={r.foil} value={r.owned + r.foil}
-                          onStep={showSteppers ? stepSet : undefined} onPeek={onPeek} />
-                      </div>
-                    ))
+            // Card view only, 2 up: at 3 the quick-add button crowded the card name. No cap:
+            // every card renders - off-screen tiles are skipped by the
+            // browser (content-visibility on the tile), so a full set stays smooth without a
+            // virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility tile reports
+            // min-content width, which inflated 1fr tracks; pin the min to 0.
+            // Sections, not a reordered flat list. With grouping off this is one unlabelled
+            // section, so the grid has a single code path either way.
+            groupCards(drillRows, groupBy, (r) => r.card).map((section) => (
+              <div key={section.key}>
+                {section.label && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
+                    <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{section.label}</span>
+                    <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(74,60,34,.6), transparent)' }} />
+                    <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{section.cards.length}</span>
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
+                  {section.cards.map((r) => (
+                    <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
+                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                      addStatus={addStatus.get(r.card.card_id + '|' + r.set)} />
                   ))}
                 </div>
-              );
-            })
+              </div>
+            ))
           )}
-          </div>
         </>
       )}
 
       {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={editMode ? 'Search the library…' : 'Search your collection…'} ariaLabel="Search cards" />
+      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
 
-      {/* Filter FAB - the docked spot beside the search bar, in BOTH views. A SECOND
-          stacked FAB rises above it, its role by view: on the +Add surface it's the
-          ADD tools (camera + text) search can't do; in the read view it's the VIEW
-          lens (Owned default / All / Not owned) - a read-only toggle for what shows. */}
+      {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
+          (camera + text) search can't do. They are ALWAYS available now: adding is a place,
+          not a mode, so there is no add surface to toggle into. The ownership lens that used
+          to occupy this slot in read mode is now inline in the header. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {editMode ? (
-        <Fab variant="lib" label="Add tools" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
-          { label: 'Add with camera', icon: CameraSvg, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-        ]} />
-      ) : (
-        <Fab variant="lib" label="View" className="fab-stacked" icon={<EyeGlyph />} items={[
-          { label: 'Owned', state: viewMode === 'owned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('owned') },
-          { label: 'View all', state: viewMode === 'all' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('all') },
-          { label: 'Not owned', state: viewMode === 'unowned' ? '✓' : undefined, keepOpen: true, onClick: () => setViewMode('unowned') },
-        ]} />
-      )}
-      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
+      {/* Scan, one tap. Typed import is NOT here on purpose: a paste spanning many sets must
+          stay one paste, so it lives on Collection > Overview rather than inside a set where
+          it would imply the set scopes it. */}
+      <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={<FabGlyph kind="camera" />}
+        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      {/* A buy list for the WHOLE set, never the filtered view: selecting "Owned" must not
+          turn "Export missing" into an empty file. Missing means no non-foil copy - the same
+          definition as the header tally and as set completion. */}
+      <ExportListSheet open={exportOpen} listName={`${drillName} - missing`}
+        fetchText={async () => missingInSet.map((c) => `1 ${c.name}`).join('\n')}
+        onClose={() => setExportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
@@ -669,10 +729,9 @@ function Cards({ onOpen, onPeek, editMode, onOpenCodex }) {
         )}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
-        sets={sets} setSets={setSets} setOpts={setFilterOpts}
         thByEl={thByEl} setThByEl={setThByEl} totalTh={totalTh} setTotalTh={setTotalTh} costCmp={costCmp} setCostCmp={setCostCmp} powerCmp={powerCmp} setPowerCmp={setPowerCmp}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
-        sort={sort} setSort={setSort} />
+        groupBy={groupBy} setGroupBy={setGroupBy} groupOpts={GROUP_OPTS} />
     </div>
   );
 }
@@ -685,21 +744,22 @@ const SHEET_INPUT = {
   color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)",
 };
 
-function Section({ title, hint, onAdd, children }) {
+// Section header for the lists index. Creation lives on the FAB now, not here: one
+// obvious "+" beats a button per section, and it matches every other pillar.
+function Section({ title, hint, children }) {
   return (
     <div style={{ marginBottom: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 5px' }}>
-        <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: '#c76d85', textTransform: 'uppercase' }}>{title}</span>
-        <button onClick={onAdd} style={{ background: 'none', border: 'none', color: '#e3c589', font: "600 16px/1 var(--f-display)", cursor: 'pointer', padding: '2px 0' }}>+ New</button>
+        <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: 'var(--accent-ruby)', textTransform: 'uppercase' }}>{title}</span>
       </div>
-      {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: '#8a8175', marginBottom: 14 }}>{hint}</div>}
+      {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 14 }}>{hint}</div>}
       {children}
     </div>
   );
 }
 
 function Empty({ text }) {
-  return <div style={{ padding: '6px 0 4px', font: "italic 400 15px/1.5 var(--f-read)", color: '#8a8175' }}>{text}</div>;
+  return <div style={{ padding: '6px 0 4px', font: "italic 400 15px/1.5 var(--f-read)", color: 'var(--ink-muted-warm)' }}>{text}</div>;
 }
 
 // Export a list as flat "qty name" text - the Curiosa deck-export format, so it
@@ -773,53 +833,54 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
   const complete = hasBar && p.complete;
   const border = complete ? 'rgba(227,197,137,.45)' : wanted ? 'rgba(199,109,133,.32)' : 'rgba(203,167,95,.2)';
   const bg = complete ? 'rgba(203,167,95,.05)' : wanted ? 'rgba(199,109,133,.04)' : 'rgba(203,167,95,.03)';
-  const barFill = complete ? '#e3c589' : '#e0899e';
 
   return (
     <div onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 12, padding: '16px 20px', borderRadius: 19, border: `1px solid ${border}`, background: bg }}>
-      <ListFan cards={thumbs} />
+      {/* Custom grammar: fanned thumbs (what's IN the grouping). Tracked lists get no fan -
+          their grammar is the completion bar below, so the two never read alike. */}
+      {!wanted && <ListFan cards={thumbs} />}
       <div style={{ flex: 1, minWidth: 0 }}>
         {/* Title + tally. */}
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: complete ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
+          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: complete ? '#f4ecdc' : 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
           {wanted ? (
             <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-              <span style={{ font: "600 24px/1 var(--f-display)", color: complete ? '#e3c589' : '#e0899e' }}>{p ? p.totalHave : 0}</span>
-              <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{p ? p.totalRequired : 0}</span>
+              <span style={{ font: "600 24px/1 var(--f-display)", color: complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{p ? p.totalHave : 0}</span>
+              <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{p ? p.totalRequired : 0}</span>
             </span>
           ) : (
             <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-              <span style={{ font: "600 22px/1 var(--f-display)", color: '#efe7d8' }}>{list.entryCount}</span>
-              <span style={{ font: "400 14px/1 var(--f-read)", color: '#8a8175' }}> card{list.entryCount === 1 ? '' : 's'}</span>
+              <span style={{ font: "600 22px/1 var(--f-display)", color: 'var(--ink-head)' }}>{list.entryCount}</span>
+              <span style={{ font: "400 14px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> card{list.entryCount === 1 ? '' : 's'}</span>
             </span>
           )}
         </div>
 
         {/* Card list: description. */}
         {!wanted && list.description ? (
-          <div style={{ font: "400 15px/1.4 var(--f-read)", color: '#8a8175', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.description}</div>
+          <div style={{ font: "400 15px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.description}</div>
         ) : null}
 
         {/* Wanted: progress bar + footer. */}
         {wanted && hasBar && (
           <>
-            <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden', marginTop: 12 }}>
-              <div style={{ height: '100%', width: `${p.percent}%`, background: barFill, borderRadius: 3, transition: 'width .3s ease' }} />
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--track-neutral)', overflow: 'hidden', marginTop: 12 }}>
+              <div style={{ height: '100%', width: `${p.percent}%`, background: 'var(--completion-fill)', borderRadius: 3, transition: 'width .3s ease' }} />
             </div>
             {complete ? (
               <div style={{ marginTop: 11 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 11, background: 'rgba(99,201,163,.1)', border: '1px solid rgba(99,201,163,.35)' }}>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#63c9a3" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  <span style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.14em', color: '#63c9a3' }}>COMPLETE</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 11, background: 'rgba(var(--jade-rgb),.1)', border: '1px solid rgba(var(--jade-rgb),.35)' }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--accent-jade)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                  <span style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--accent-jade)' }}>COMPLETE</span>
                 </span>
               </div>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 9 }}>
-                <span style={{ font: "400 13px/1 var(--f-read)", color: '#8a8175' }}>{p.totalMissing} missing</span>
+                <span style={{ font: "400 13px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>{p.totalMissing} missing</span>
                 <button onClick={(e) => { e.stopPropagation(); onViewMissing?.(); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 13px/1 var(--f-ui)", color: '#c76d85', padding: 0 }}>View missing ›</button>
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 13px/1 var(--f-ui)", color: 'var(--accent-ruby)', padding: 0 }}>View missing ›</button>
               </div>
             )}
           </>
@@ -893,7 +954,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
   const toggleAll = () => { haptic('light'); setSelected(allSelected ? new Map() : new Map(shown.map((c) => [c.card_id, c]))); };
 
   const pillBase = { flex: 'none', padding: '7px 15px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap' };
-  const pillGold = { ...pillBase, background: 'rgba(42,33,20,.5)', color: '#e3c589', border: '1px solid rgba(203,167,95,.45)' };
+  const pillGold = { ...pillBase, background: 'rgba(42,33,20,.5)', color: 'var(--gold-num)', border: '1px solid rgba(203,167,95,.45)' };
   const pillRose = { ...pillBase, background: 'rgba(210,88,115,.16)', color: '#f0c8ce', border: '1px solid rgba(210,88,115,.5)' };
 
   return (
@@ -930,24 +991,24 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
             style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--hair-12)', cursor: selectMode ? 'pointer' : 'default', contentVisibility: 'auto', containIntrinsicSize: 'auto 62px' }}>
             <span style={{ width: 42, flex: 'none' }}><CardArt card={c} radius={6} aspect="5/7" /></span>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+              <div style={{ font: "600 15px/1.2 var(--f-read)", color: inList > 0 ? '#f4ecdc' : 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                 {setName && <span style={listSetPill}>{setName}</span>}
-                {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: '#e3c589' }}>on list ×{inList}</span>}
+                {inList > 0 && <span style={{ font: "600 10.5px/1 var(--f-mono)", color: 'var(--gold-num)' }}>on list ×{inList}</span>}
               </div>
             </div>
             {selectMode ? (
               // The switch slides in from the right when Select mode turns on (staggered
               // by row for a gentle "apparition"); reduced-motion opts out via the class.
               <span aria-hidden="true" className="cx-sel-switch" style={{ flex: 'none', width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? '#e3c589' : 'rgba(203,167,95,.4)'}`,
+                background: isSel ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'transparent', border: `1px solid ${isSel ? 'var(--gold-num)' : 'rgba(203,167,95,.4)'}`,
                 animation: 'cxSelIn .24s cubic-bezier(.2,.9,.3,1) both', animationDelay: `${Math.min(i, 14) * 16}ms` }}>
                 {isSel && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1a1206" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
               </span>
             ) : inList > 0 ? (
               <span style={{ flex: 'none', display: 'inline-flex', alignItems: 'center' }}>
                 <Frost label="One fewer" onClick={() => onStep(c, -1)}>−</Frost>
-                <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: '#efe7d8' }}>{inList}</span>
+                <span style={{ minWidth: 22, textAlign: 'center', font: "600 16px/1 var(--f-display)", color: 'var(--ink-head)' }}>{inList}</span>
                 <Frost label="One more" onClick={() => onStep(c, 1)}>+</Frost>
               </span>
             ) : (
@@ -978,19 +1039,28 @@ function WishlistCard({ summary, onClick }) {
     <div onClick={onClick} role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
       style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 22, padding: '16px 20px', borderRadius: 19, border: '1px solid rgba(227,197,137,.42)', background: 'linear-gradient(180deg, rgba(203,167,95,.07), rgba(203,167,95,.02))' }}>
-      <ListFan cards={summary?.thumbs || []} />
+      {/* Pinned grammar: a single ruby heart. No fan and no bar - the Wishlist is the one
+          list that is a STATE ("wanted"), not a goal or a grouping. (A star would collide
+          with the Promotional set sigil.) */}
+      <span aria-hidden="true" style={{
+        width: 54, height: 54, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: '1px solid rgba(var(--ruby-rgb),.4)', background: 'rgba(var(--ruby-rgb),.08)',
+      }}>
+        <svg viewBox="0 0 24 24" width="23" height="23" fill="var(--accent-ruby)" stroke="var(--accent-ruby)" strokeWidth="1.4" strokeLinejoin="round">
+          <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
+        </svg>
+      </span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#e3c589" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" /></svg>
           <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Wishlist</span>
         </div>
-        <div style={{ font: "400 14px/1.4 var(--f-read)", color: '#8a8175', marginTop: 6 }}>
-          {empty ? 'Cards you want - add from any card or here' : `${summary.count} card${summary.count === 1 ? '' : 's'} wanted`}
+        <div style={{ font: "400 14px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 6 }}>
+          {empty ? 'Cards you want - tap the heart on any card to add it' : `card${summary.count === 1 ? '' : 's'} you want`}
         </div>
       </div>
       {!empty && (
         <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
-          <span style={{ font: "600 24px/1 var(--f-display)", color: '#e3c589' }}>{summary.total}</span>
+          <span style={{ font: "600 24px/1 var(--f-display)", color: 'var(--gold-num)' }}>{summary.count}</span>
         </span>
       )}
     </div>
@@ -1009,7 +1079,7 @@ function ListsIndex({ onOpenList, rev }) {
       const [all, wlRows] = await Promise.all([listCardLists(), wishlistCards()]);
       if (!alive) return;
       setLists(all);
-      setWl({ count: wlRows.length, total: wlRows.reduce((n, r) => n + (r.quantity || 0), 0), thumbs: wlRows.slice(0, 3) });
+      setWl({ count: wlRows.length, thumbs: wlRows.slice(0, 3) });
       const wantedIds = all.filter((l) => l.kind === 'wanted').map((l) => l.id);
       const [pr, th] = await Promise.all([
         wantedIds.length ? listProgressBulk(wantedIds) : new Map(),
@@ -1032,12 +1102,16 @@ function ListsIndex({ onOpenList, rev }) {
   return (
     <div style={{ padding: '2px 20px' }}>
       <WishlistCard summary={wl} onClick={() => onOpenList(wishlistRef())} />
-      <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards." onAdd={() => setCreate('wanted')}>
+      <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards.">
         {wanted.length ? wanted.map(card) : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
-      <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell." onAdd={() => setCreate('custom')}>
+      <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell.">
         {custom.length ? custom.map(card) : <Empty text="No card lists yet." />}
       </Section>
+      <Fab variant="lib" label="New list" icon={<FabGlyph kind="add" />} items={[
+        { label: 'New wanted list', onClick: () => setCreate('wanted') },
+        { label: 'New card list', onClick: () => setCreate('custom') },
+      ]} />
       <ListNameSheet open={!!create} kind={create}
         title={create === 'wanted' ? 'NEW WANTED LIST' : 'NEW CARD LIST'} submitLabel="Create list"
         onClose={() => setCreate(null)}
@@ -1107,24 +1181,24 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{
           display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
-          font: "600 18px/1.2 var(--f-read)", color: goalMet ? '#f4ecdc' : '#efe7d8',
+          font: "600 18px/1.2 var(--f-read)", color: goalMet ? '#f4ecdc' : 'var(--ink-head)',
         }}>{card.name}</span>
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 }}>
           {setName && <span style={listSetPill}>{setName}</span>}
           {goalMet ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#63c9a3', flex: 'none' }} />
-              <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', color: '#63c9a3' }}>COMPLETE</span>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-jade)', flex: 'none' }} />
+              <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-jade)' }}>COMPLETE</span>
             </span>
           ) : isWanted ? (
             <span>
-              <span style={{ font: "600 15px/1 var(--f-display)", color: '#e0899e' }}>{owned}</span>
-              <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}> of {target} wanted</span>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: 'var(--accent-ruby)' }}>{owned}</span>
+              <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> of {target} wanted</span>
             </span>
           ) : (
             <span>
-              <span style={{ font: "600 15px/1 var(--f-display)", color: ownedAny ? '#e3c589' : '#8a8175' }}>{owned}</span>
-              <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}> owned</span>
+              <span style={{ font: "600 15px/1 var(--f-display)", color: ownedAny ? 'var(--gold-num)' : 'var(--ink-muted-warm)' }}>{owned}</span>
+              <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}> owned</span>
             </span>
           )}
         </span>
@@ -1137,8 +1211,8 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }
         <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
           <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
-            <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: '#c76d85' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
-            <span style={{ font: "600 19px/1 var(--f-display)", color: '#efe7d8', marginTop: 4 }}>{target}</span>
+            <span style={{ font: "600 8.5px/1 var(--f-display)", letterSpacing: '.18em', color: 'var(--accent-ruby)' }}>{isWanted ? 'WANT' : 'COPIES'}</span>
+            <span style={{ font: "600 19px/1 var(--f-display)", color: 'var(--ink-head)', marginTop: 4 }}>{target}</span>
           </span>
           <Frost label={isWanted ? 'Want one more' : 'One more copy'} onClick={() => onStep(1)}>+</Frost>
         </span>
@@ -1171,6 +1245,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const cardIndex = useRef(new Map());             // card_id -> full card row
   const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
   const drainRef = useRef(null);                   // per-open-list goal drain: reconciles from the repo after writes settle
+  const goalGenRef = useRef(0);                    // bumped per LOCAL goal edit; guards a slow external refresh
 
   // Install an authoritative goal snapshot into the synchronous mirror + visible state
   // (used by the initial load AND the drain reconcile).
@@ -1202,7 +1277,23 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // Arriving via a "View missing ›" tap on the index opens straight to the list.
     if (list.openMissing) listProgress(list.id).then(setMissing);
     // Owned counts are read-only here: they redraw live as the collection grows.
-    const off = subscribeCollection(() => ownedMap().then(setOwnQty));
+    const off = subscribeCollection(() => {
+      ownedMap().then(setOwnQty);
+      // ...and the WISHLIST's rows are themselves the qty_wanted ledger, so an external
+      // toggle (the card sheet's heart, opened over this very list) changes membership, not
+      // just owned counts. Without this the sheet said "not wishlisted" while the list
+      // beneath it still showed the card until reopened.
+      if (listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites: drainRef.current?.pending() || 0 })) {
+        const genAtStart = goalGenRef.current;
+        wishlistCards().then((rows) => {
+          // Re-check AFTER the await: a local edit may have begun while this read was in
+          // flight, and applying the older snapshot would overwrite the newer optimistic state.
+          if (canApplyExternalRows({ cancelled, pendingGoalWrites: drainRef.current?.pending() || 0, genAtStart, genNow: goalGenRef.current })) {
+            installGoals(rows);
+          }
+        });
+      }
+    });
     return () => { cancelled = true; off(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list.id]);
@@ -1237,7 +1328,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
   // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
   // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
-  const applyGoal = (mutate) => { const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
+  // Every LOCAL goal edit bumps a generation, so an external refresh that started earlier can
+  // tell on arrival that it is now stale (see canApplyExternalRows).
+  const applyGoal = (mutate) => { goalGenRef.current += 1; const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
   const track = (p) => drainRef.current?.track(p);
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
@@ -1287,32 +1380,43 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           background: 'rgba(224,169,177,.07)', border: '1px solid rgba(224,169,177,.22)',
         }}>‹</button>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ font: "700 22px/1.1 var(--f-display)", color: '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: '#c76d85', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
+          <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: 'var(--accent-ruby)', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
         {showProgress && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
-            <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? '#e3c589' : '#e0899e' }}>{totals.have}</span>
-            <span style={{ font: "400 15px/1 var(--f-read)", color: '#8a8175' }}>/{totals.req}</span>
+            <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{totals.have}</span>
+            <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{totals.req}</span>
           </div>
         )}
+        {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
+            it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
+            delete, and OverflowMenu drops the null entries. */}
+        <OverflowMenu label="List actions" items={[
+          { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
+          isWishlist ? null : { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
+          isWishlist ? null : { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+          { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
+          isWanted ? { label: 'Get missing cards', icon: SeekSvg, onClick: openMissing } : null,
+          isWishlist ? null : { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+        ]} />
       </div>
 
-      {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: '#8a8175', margin: '0 2px 14px' }}>{meta.description}</div>}
+      {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '0 2px 14px' }}>{meta.description}</div>}
 
       {/* Progress bar (wanted only): fills rose as the collection acquires copies,
           turning gold at 100%. "View missing ›" filters to what is still short. */}
       {showProgress && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
-          <div style={{ height: 6, borderRadius: 3, background: 'rgba(255,255,255,.06)', overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${totals.percent}%`, background: totals.complete ? '#e3c589' : '#e0899e', borderRadius: 3, transition: 'width .3s ease' }} />
+          <div style={{ height: 6, borderRadius: 3, background: 'var(--track-neutral)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${totals.percent}%`, background: 'var(--completion-fill)', borderRadius: 3, transition: 'width .3s ease' }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
-            <span style={{ font: "400 12.5px/1 var(--f-read)", color: '#8a8175' }}>
+            <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>
               {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
             </span>
             {isWanted && totals.missing > 0 && (
-              <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: '#c76d85' }}>View missing ›</button>
+              <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>View missing ›</button>
             )}
           </div>
         </div>
@@ -1322,10 +1426,10 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           until Edit; cards join via the in-list "Add cards" picker. */}
       {!loaded ? <Loading /> : listRows.length === 0 ? (
         <div style={{ padding: '40px 0', textAlign: 'center' }}>
-          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: '#8a8175', marginBottom: 10 }}>
+          <div style={{ font: "italic 400 15px/1.6 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 10 }}>
             {isWishlist ? 'Nothing on your wishlist yet.' : 'No cards yet.'}
           </div>
-          <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: '#c76d85' }}>Add cards ›</button>
+          <button onClick={() => setAddOpen(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', font: "600 14px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>Add cards ›</button>
         </div>
       ) : (
         <>
@@ -1335,7 +1439,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             </span>
             <button onClick={() => setEditing((e) => !e)} aria-pressed={editing}
               style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
-                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : '#e3c589', border: `1px solid ${editing ? '#e3c589' : 'rgba(210,88,115,.5)'}` }}>
+                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : 'var(--gold-num)', border: `1px solid ${editing ? 'var(--gold-num)' : 'rgba(210,88,115,.5)'}` }}>
               {editing ? 'Done' : 'Edit'}
             </button>
           </div>
@@ -1346,21 +1450,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      {/* List actions live on the 3-dot FAB (matches the deck FAB spine). Delete
-          routes through its OWN confirm sheet - destructive and undoable-never,
-          so it is never one tap. */}
-      <Fab variant="deck" label="List options" icon={<FabGlyph kind="dots" />} items={[
-        { label: 'Add cards', icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>, onClick: () => setAddOpen(true) },
-        { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
-        // The Wishlist is virtual + fixed: no rename, duplicate, or delete.
-        ...(isWishlist ? [] : [
-          { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
-          { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
-        ]),
-        { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
-        ...(isWanted ? [{ label: 'Get missing cards', icon: SeekSvg, onClick: openMissing }] : []),
-        ...(isWishlist ? [] : [{ label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) }]),
-      ]} />
+      {/* Adding cards is the primary action, so it gets the FAB. Everything else is
+          list-level chrome and lives in the header overflow.
+
+          It is NOT a camera FAB, despite the set drill's being one. launchScanner has only
+          'collection' and 'deck' modes - scanning here would silently add to the collection
+          rather than to this list, which is worse than not offering it. When the scanner
+          learns a list mode this becomes a camera and "Add cards" joins the overflow. */}
+      <Fab variant="lib" label="Add cards to this list" icon={<FabGlyph kind="add" />}
+        onClick={() => setAddOpen(true)} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>

@@ -7,9 +7,11 @@
 //
 // Variants: regular copies live on the variant_slug='' row, FOIL copies on the
 // variant_slug='foil' row of the same card (foils are tracked as different copies,
-// but a foil is still the card - every aggregate SUMs across variant rows, so
-// stats/buildability/owned-filters count them together). The wishlist is
-// variant-agnostic and lives on the '' row only.
+// but a foil is still the card). Stats and buildability SUM across variant rows.
+// OWNERSHIP FILTERS DO NOT, and that is deliberate: they use the three-state taxonomy in
+// store/ownership.js (regular / foilOnly / missing), so a foil-only card is never counted
+// as a non-foil copy and set completion stays non-foil. The wishlist is variant-agnostic
+// and lives on the '' row only.
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
@@ -22,6 +24,10 @@ const _subs = new Set();
 export function collectionRev() { return _rev; }
 export function subscribeCollection(cb) { _subs.add(cb); return () => _subs.delete(cb); }
 function bump() { _rev++; for (const cb of [..._subs]) { try { cb(_rev); } catch { /* ignore */ } } }
+/** Announce that ownership changed outside this module's own writes - currently the bulk
+ *  command, which owns its transaction and fires exactly ONE broadcast after confirmation
+ *  rather than one per row. Callers must not use this to pre-announce intended work. */
+export function notifyOwnedChanged() { bump(); }
 
 /* ---------------- ownership reads ---------------- */
 
@@ -34,8 +40,7 @@ const isFoil = (col = 'variant_slug') => `(${col}='foil' OR ${col} LIKE '%:f')`;
 // Map<card_id, totalOwned> - THE aggregation across printings, one indexed GROUP
 // BY. Optionally narrowed to a set of card_ids. This is the only ownership read
 // the engine ever needs; no caller aggregates itself.
-export async function ownedMap(cardIds = null) {
-  const pid = activeProfileId();
+export async function ownedMap(cardIds = null, pid = activeProfileId()) {
   let sql = 'SELECT card_id, SUM(qty_owned) t FROM owned_cards WHERE profile_id=?';
   const params = [pid];
   if (cardIds && cardIds.length) { sql += ` AND card_id IN (${cardIds.map(() => '?').join(',')})`; params.push(...cardIds); }
@@ -402,8 +407,20 @@ export async function duplicateList(listId) {
   return nid;
 }
 
-export async function listEntries(listId) {
-  return query('SELECT card_id, quantity FROM card_list_entries WHERE list_id=? ORDER BY added_at ASC;', [listId]);
+// EVERY child-list read joins card_lists and filters on profile_id.
+//
+// Writes already refused a foreign list id, but reads did not, and the Collection session
+// cache is a module singleton: open profile A's list, switch to B, come back, and A's name,
+// entries, progress and EXPORT could render under B. Scoping the parent in SQL means the
+// boundary holds even if a stale id reaches the repository - defence at the layer that owns
+// the data, not only at the layer that happens to call it.
+export async function listEntries(listId, pid = activeProfileId()) {
+  return query(
+    `SELECT e.card_id, e.quantity FROM card_list_entries e
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id=? AND l.profile_id=? ORDER BY e.added_at ASC;`,
+    [listId, pid]
+  );
 }
 
 // The first few cards' art per list, for the index's card-art "fan" (Map<listId,
@@ -411,11 +428,14 @@ export async function listEntries(listId) {
 // sliced in JS (the lists page has only a handful of lists).
 export async function listThumbsBulk(listIds, perList = 3) {
   if (!listIds || !listIds.length) return new Map();
+  const pid = activeProfileId();
   const rows = await query(
     `SELECT e.list_id, c.card_id, c.image_slug, c.is_site
-     FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id
-     WHERE e.list_id IN (${listIds.map(() => '?').join(',')})
-     ORDER BY e.list_id, e.added_at ASC;`, listIds);
+     FROM card_list_entries e
+     JOIN cards c ON c.card_id=e.card_id
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id IN (${listIds.map(() => '?').join(',')}) AND l.profile_id=?
+     ORDER BY e.list_id, e.added_at ASC;`, [...listIds, pid]);
   const m = new Map();
   for (const r of rows) {
     const arr = m.get(r.list_id) || [];
@@ -447,18 +467,26 @@ export async function stepListEntry(listId, cardId, delta, pid = activeProfileId
 }
 
 // Card-level requirement of a list (mirrors deckRequirements shape).
-async function listRequirements(listId) {
-  const rows = await query('SELECT card_id, SUM(quantity) q FROM card_list_entries WHERE list_id=? GROUP BY card_id;', [listId]);
+async function listRequirements(listId, pid = activeProfileId()) {
+  const rows = await query(
+    `SELECT e.card_id, SUM(e.quantity) q FROM card_list_entries e
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id=? AND l.profile_id=? GROUP BY e.card_id;`,
+    [listId, pid]
+  );
   return rows.map((r) => ({ card_id: r.card_id, qty: r.q }));
 }
 
 // A list's cards joined to the catalog (for the list detail view). quantity =
 // target (wanted) or copies (custom).
-export async function listCards(listId) {
+export async function listCards(listId, pid = activeProfileId()) {
   return query(
     `SELECT e.card_id, e.quantity, c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
-     FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id WHERE e.list_id=? ORDER BY c.name;`,
-    [listId]
+     FROM card_list_entries e
+     JOIN cards c ON c.card_id=e.card_id
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id=? AND l.profile_id=? ORDER BY c.name;`,
+    [listId, pid]
   );
 }
 
@@ -516,20 +544,26 @@ export async function deckBuildabilityBulk(deckIds) {
   for (const [id, { required, unresolved }] of reqByDeck) out.set(id, compareRequirements(required, owned, unresolved));
   return out;
 }
-export async function listProgress(listId) {
-  const required = await listRequirements(listId);
-  const owned = await ownedMap(required.map((r) => r.card_id));
+// CAPTURE THE PROFILE ONCE. Progress is two reads with an await between them, and each used
+// to resolve the active profile independently - so a switch landing in that gap could combine
+// one profile's requirements with another's ownership. Binding both reads to a single pid
+// makes the whole calculation belong to one profile by construction.
+export async function listProgress(listId, pid = activeProfileId()) {
+  const required = await listRequirements(listId, pid);
+  const owned = await ownedMap(required.map((r) => r.card_id), pid);
   return compareRequirements(required, owned, 0);
 }
-export async function listProgressBulk(listIds) {
+export async function listProgressBulk(listIds, pid = activeProfileId()) {
   const out = new Map();
   if (!listIds.length) return out;
-  const owned = await ownedMap();   // full map once
+  const owned = await ownedMap(null, pid);   // full map once, bound to the captured profile
   // One grouped query for all lists' requirements (no N+1, mirrors deckRequirementsBulk).
   const rows = await query(
-    `SELECT list_id, card_id, SUM(quantity) q FROM card_list_entries
-     WHERE list_id IN (${listIds.map(() => '?').join(',')}) GROUP BY list_id, card_id;`,
-    listIds
+    `SELECT e.list_id, e.card_id, SUM(e.quantity) q FROM card_list_entries e
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id IN (${listIds.map(() => '?').join(',')}) AND l.profile_id=?
+     GROUP BY e.list_id, e.card_id;`,
+    [...listIds, pid]
   );
   const byList = new Map(listIds.map((id) => [id, []]));
   for (const r of rows) byList.get(r.list_id)?.push({ card_id: r.card_id, qty: r.q });
