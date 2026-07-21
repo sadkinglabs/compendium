@@ -5,7 +5,7 @@ import {
   createProfile, switchProfile, renameProfile, deleteProfile,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
-import { backfillSingleSetOwned } from './store/ownedRepository.js';
+import { canonicaliseLedger } from './store/canonicaliseBoot.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
@@ -133,6 +133,20 @@ export default function App() {
       try {
         await openDatabase();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
+        // Ledger canonicalisation (v10 -> v11), and the ONE step in this effect that is not
+        // allowed to fail quietly.
+        //
+        // Its position is load-bearing in both directions. It needs the catalog to decide where
+        // an ambiguous legacy want belongs, so it cannot be a schema migration - those run
+        // inside openDatabase(), before any catalog exists. And it must convert EVERY profile,
+        // so it has to happen before initProfiles() makes one active.
+        //
+        // Deliberately not wrapped in try/catch. Every other gate below is best-effort and must
+        // never cost a boot; this one is the opposite. A throw lands in the catch at the bottom
+        // of this effect and puts the app in its error state, which is what we want: Collection
+        // must never render against a half-converted ledger. The transaction has already rolled
+        // back, so the user's v10 data is intact for the next attempt.
+        await canonicaliseLedger();
         const p = await initProfiles();
         setProfile(p);
         // Reconcile a live match that survived a process death. The former initializer
@@ -143,9 +157,6 @@ export default function App() {
         // Splash is still up and nothing reads `ongoing` until Home paints, so this is the
         // point that makes "Return to Match" appear after an OS kill.
         setOngoing(loadOngoing());
-        // Move any single-set card owned in the Unspecified bucket onto its real
-        // set row (e.g. older scanner adds). Idempotent; never blocks boot.
-        try { await backfillSingleSetOwned(); } catch (e) { console.error('single-set backfill failed', e); }
         try { applyAppearance(await getSettings()); } catch { /* pre-settings profile */ }
         // The update gate: show, once, the notes for every build this install
         // skipped. The stamp is app-global (Preferences), NOT a profile setting,

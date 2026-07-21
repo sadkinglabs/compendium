@@ -14,7 +14,7 @@
 // and lives on the '' row only.
 import { query, run, tx } from './db.js';
 import {
-  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED_BUCKET,
+  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
   parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
@@ -79,23 +79,135 @@ export async function qtyFor(cardId, pid = activeProfileId()) {
 
 /* ---------------- ownership writes (upsert the '' row, delete at 0/0) ---------------- */
 
+// Card-level owned edits land on the UNCATEGORISED row - copies whose set is not established.
+// That is a legitimate v11 state (unlike an uncategorised WANT, which only migration may make).
+// Looks across both schemas and rewrites to canonical, so a legacy row is converted rather than
+// twinned.
 async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
   const now = nowIso();
-  const cur = (await query('SELECT id, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, '']))[0];
+  const candidates = printingSlugs(UNCATEGORISED_BUCKET, false);
+  const found = await query(
+    `SELECT id, variant_slug, qty_owned, qty_wanted FROM owned_cards
+      WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
+    [pid, cardId, ...candidates],
+  );
+  const cur = found.find((r) => r.variant_slug === UNCATEGORISED) || found[0];
   const o = Math.max(0, owned != null ? owned : (cur?.qty_owned || 0));
   const w = Math.max(0, wanted != null ? wanted : (cur?.qty_wanted || 0));
   if (o === 0 && w === 0) {
     if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
   } else if (cur) {
-    await run('UPDATE owned_cards SET qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [o, w, now, cur.id]);
+    await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]);
   } else {
     await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
-      [uuid(), pid, cardId, '', o, w, '', now, now]);
+      [uuid(), pid, cardId, UNCATEGORISED, o, w, '', now, now]);
   }
   bump();
 }
 export async function setOwned(cardId, qty, pid = activeProfileId()) { return writeQty(cardId, { owned: qty }, pid); }
-export async function setWanted(cardId, qty, pid = activeProfileId()) { return writeQty(cardId, { wanted: qty }, pid); }
+
+/**
+ * Thrown when a want gesture cannot tell which collector item the user means.
+ *
+ * Not an error condition so much as a request for input: the caller catches it and opens the
+ * printing picker. Named so a UI can distinguish it from a genuine failure.
+ */
+export class NeedsPrintingChoice extends Error {
+  constructor(cardId, options) {
+    super(`Which printing of ${cardId}?`);
+    this.name = 'NeedsPrintingChoice';
+    this.cardId = cardId;
+    this.options = options;
+  }
+}
+
+/**
+ * Which row a card-level want gesture should act on.
+ *
+ * v10 had one answer for every card: the empty-string row. v11 has as many answers as the card
+ * has collector items, so the question has to be asked properly:
+ *
+ *   an existing want    -> act on THAT row, whichever key it is on. Stepping a want the user can
+ *                          see must change the number they are looking at, not create a sibling.
+ *   no want, one set    -> that set, non-foil. Not a guess; the card has one printing.
+ *   no want, a reprint  -> ask. This is the defect v11 exists to remove.
+ *
+ * Legacy rows are honoured as targets so a mixed ledger still edits correctly; writing through
+ * one converts it, because writeQtyAt rewrites the key it lands on.
+ */
+async function resolveWantTarget(cardId, pid) {
+  const existing = await query(
+    'SELECT variant_slug FROM owned_cards WHERE profile_id=? AND card_id=? AND qty_wanted>0;',
+    [pid, cardId],
+  );
+  if (existing.length === 1) {
+    const { set, foil } = parsePrinting(existing[0].variant_slug);
+    // An uncategorised want is a migration leftover. Editing it in place is correct - triage is
+    // what resolves it, and a heart tap must not silently file it to a set on the user's behalf.
+    return existing[0].variant_slug === LEGACY_UNCATEGORISED || existing[0].variant_slug === UNCATEGORISED
+      ? UNCATEGORISED
+      : canonicalPrinting(set, foil);
+  }
+  if (existing.length > 1) {
+    // Several collector items wanted at once: a card-level gesture cannot say which.
+    throw new NeedsPrintingChoice(cardId, await setCodesFor(cardId));
+  }
+  const sets = await setCodesFor(cardId);
+  if (sets.length === 1) return canonicalPrinting(sets[0], false);
+  throw new NeedsPrintingChoice(cardId, sets);
+}
+
+async function setCodesFor(cardId) {
+  const row = (await query('SELECT sets FROM cards WHERE card_id=?;', [cardId]))[0];
+  try {
+    const parsed = JSON.parse(row?.sets || '[]');
+    return Array.isArray(parsed) ? parsed.map((x) => x?.code).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+/**
+ * Absolute want on ONE row, preserving whatever else that row holds.
+ *
+ * Looks for the row across BOTH schemas and rewrites whatever it finds to the canonical key.
+ * Looking only for the canonical spelling would insert a SECOND row whenever the want was still
+ * sitting on a legacy one - the same orphaning shape as the inflation this activation fixes,
+ * and it is only the profile-scope tests that caught it.
+ */
+async function writeQtyAt(cardId, slug, wanted, pid) {
+  const now = nowIso();
+  const { set, foil } = parsePrinting(slug);
+  const candidates = printingSlugs(set, foil);
+  const found = await query(
+    `SELECT id, variant_slug, qty_owned, qty_wanted FROM owned_cards
+      WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
+    [pid, cardId, ...candidates],
+  );
+  const cur = found.find((r) => r.variant_slug === slug) || found[0];
+  const w = Math.max(0, wanted | 0);
+  const o = cur?.qty_owned || 0;
+  if (w === 0 && o === 0) {
+    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+  } else if (cur) {
+    // Rewrites the key too, so editing a legacy row converts it rather than leaving a twin.
+    await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, w, now, cur.id]);
+  } else {
+    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?);',
+      [uuid(), pid, cardId, slug, w, '', now, now]);
+  }
+  bump();
+}
+
+/**
+ * Card-level want. Resolves to a collector item first, then writes exactly one row.
+ *
+ * The v10 version summed every row's want and wrote the total to the empty-string row, which is
+ * why an imported canonical want inflated: it read 2 across all rows, added one, and wrote 3
+ * somewhere else while the original stayed put.
+ */
+export async function setWanted(cardId, qty, pid = activeProfileId(), { set = null, foil = false } = {}) {
+  const slug = set ? canonicalPrinting(set, foil) : await resolveWantTarget(cardId, pid);
+  return writeQtyAt(cardId, slug, qty, pid);
+}
 
 // Card-level owned edit as a DELTA on the '' ("Uncategorised") bucket. qtyFor sums
 // owned across EVERY row (incl. the per-set '001'… rows My Collection writes), so
@@ -103,25 +215,40 @@ export async function setWanted(cardId, qty, pid = activeProfileId()) { return w
 // rows - the +2-on-plus / dead-minus bug. Stepping the '' bucket directly composes
 // correctly with the set rows the card sheet doesn't manage.
 export async function stepOwnedBucket(cardId, delta, pid = activeProfileId()) {
-  const cur = (await query("SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='';", [pid, cardId]))[0];
+  const cur = (await query(
+    `SELECT SUM(qty_owned) qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${printingSlugs(UNCATEGORISED_BUCKET, false).map(() => '?').join(',')});`,
+    [pid, cardId, ...printingSlugs(UNCATEGORISED_BUCKET, false)]))[0];
   return writeQty(cardId, { owned: Math.max(0, (cur?.qty_owned || 0) + delta) }, pid);
 }
 export async function stepOwned(cardId, delta, pid = activeProfileId()) { const { owned } = await qtyFor(cardId, pid); return setOwned(cardId, owned + delta, pid); }
-export async function stepWanted(cardId, delta, pid = activeProfileId()) { const { wanted } = await qtyFor(cardId, pid); return setWanted(cardId, wanted + delta, pid); }
+export async function stepWanted(cardId, delta, pid = activeProfileId(), item = {}) {
+  const slug = item.set ? canonicalPrinting(item.set, !!item.foil) : await resolveWantTarget(cardId, pid);
+  // Reads THAT row, not the card-level total. Summing across rows and writing the sum to one of
+  // them is precisely how a single tap could add three.
+  const cur = (await query('SELECT qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
+  return writeQtyAt(cardId, slug, Math.max(0, (cur?.qty_wanted || 0) + delta), pid);
+}
 
 // Foil copies: the variant_slug='foil' row's qty_owned (wishlist never lives here).
 // Same upsert/delete-at-0 shape as writeQty, on its own row.
 export async function setFoil(cardId, qty, pid = activeProfileId()) {
   const now = nowIso();
   const q = Math.max(0, qty | 0);
-  const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, 'foil']))[0];
+  // Card-level FOIL copies with no set recorded: the uncategorised foil item. Found across both
+  // schemas and rewritten to canonical, so the legacy 'foil' row is converted rather than twinned.
+  const candidates = printingSlugs(UNCATEGORISED_BUCKET, true);
+  const found = await query(
+    `SELECT id, variant_slug FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
+    [pid, cardId, ...candidates],
+  );
+  const cur = found.find((r) => r.variant_slug === UNCATEGORISED_FOIL) || found[0];
   if (q === 0) {
     if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
   } else if (cur) {
-    await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
+    await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]);
   } else {
     await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
-      [uuid(), pid, cardId, 'foil', q, '', now, now]);
+      [uuid(), pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]);
   }
   bump();
 }
@@ -141,9 +268,9 @@ const parseVslug = parsePrinting;
 // Foil slug: a named set's foil is "<code>:f" (e.g. "001:f"); the Uncategorised
 // bucket's foil is the legacy card-level "foil" row (what setFoil/qtyFor/ownWantMap
 // read), NOT ":f" - so an Uncategorised foil reads and writes the same row everywhere.
-// WRITER side, still on the v10 keys on purpose: readers must be able to see canonical rows
-// before anything starts producing them. Flipping this is the activation commit, not this one.
-const vslug = (set, foil) => (foil ? (set ? set + ':f' : LEGACY_FOIL) : (set || LEGACY_UNCATEGORISED));
+// ACTIVATED. Writers now emit canonical v11 keys; readers have understood them since the
+// compatibility foundation landed, so a ledger holding both is read correctly throughout.
+const vslug = canonicalPrinting;
 
 // Write-queue keys: ONE per persisted row, so key equality === owned_cards /
 // card_list_entries row equality. Built with the canonical vslug so the 'foil' and
@@ -335,7 +462,20 @@ export async function wantedItemsForCard(cardId, pid = activeProfileId()) {
 // that can't serialize their writes - notably the scanner's rapid, independent
 // scanAction events, where step*'s read-then-write would lose overlapping increments.
 export async function addOwnedCopies(cardId, n = 1) { return addCopies(cardId, 'qty_owned', n); }
-export async function addWantedCopies(cardId, n = 1) { return addCopies(cardId, 'qty_wanted', n); }
+export async function addWantedCopies(cardId, n = 1, pid = activeProfileId()) {
+  // Resolves first, then upserts onto that one row. Still overlap-safe: the upsert is atomic,
+  // and the resolve is a read that only decides WHICH row the atomic add lands on.
+  const slug = await resolveWantTarget(cardId, pid);
+  const now = nowIso();
+  await run(
+    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+     VALUES(?,?,?,?,0,?,'',?,?)
+     ON CONFLICT(profile_id,card_id,variant_slug)
+     DO UPDATE SET qty_wanted=qty_wanted+excluded.qty_wanted, updated_at=excluded.updated_at;`,
+    [uuid(), pid, cardId, slug, n, now, now],
+  );
+  bump();
+}
 async function addCopies(cardId, col, n) {
   if (!cardId || !(n > 0)) return;
   const pid = activeProfileId();
@@ -368,49 +508,10 @@ export async function addOwnedCopiesInSet(cardId, set, n = 1) {
   bump();
 }
 
-// One-time cleanup: a card owned in the '' ("Uncategorised") bucket that exists in
-// exactly ONE set can only BE that set, so move its owned copies onto the real set
-// row. Multi-set cards (Alpha/Beta reprints) stay Uncategorised - the printing is
-// genuinely unknowable from the name. Idempotent (re-running finds nothing to move).
-export async function backfillSingleSetOwned() {
-  const pid = activeProfileId();
-  const rows = await query("SELECT card_id, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND variant_slug='' AND qty_owned>0;", [pid]);
-  if (!rows.length) return 0;
-  const catRows = await query('SELECT card_id, sets FROM cards;');
-  const setsById = new Map();
-  for (const r of catRows) { try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ } }
-  const now = nowIso();
-  const stmts = [];
-  let moved = 0;
-  for (const r of rows) {
-    const sets = setsById.get(r.card_id) || [];
-    if (sets.length !== 1 || !sets[0]?.code) continue;   // multi-set / unknown -> leave in Uncategorised
-    // Fold the legacy '' owned onto the single set row AND remove exactly that many
-    // from '' in the SAME transaction, so an interruption can never re-add on the
-    // next boot (all-or-nothing). Subtract the EXACT moved amount (not a blind
-    // zero/delete) so a copy added to '' concurrently - a scanner scan mid-boot - is
-    // not lost; the leftover stays in '' and is handled next pass. Delete the '' row
-    // only once fully drained, preserving any wishlist that lives on it.
-    stmts.push([
-      `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
-       VALUES(?,?,?,?,?,0,'',?,?)
-       ON CONFLICT(profile_id,card_id,variant_slug)
-       DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-      [uuid(), pid, r.card_id, sets[0].code, r.qty_owned, now, now],
-    ]);
-    stmts.push([
-      "UPDATE owned_cards SET qty_owned=MAX(0, qty_owned-?), updated_at=? WHERE profile_id=? AND card_id=? AND variant_slug='';",
-      [r.qty_owned, now, pid, r.card_id],
-    ]);
-    stmts.push([
-      "DELETE FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug='' AND qty_owned=0 AND qty_wanted=0;",
-      [pid, r.card_id],
-    ]);
-    moved++;
-  }
-  if (stmts.length) { await tx(stmts); bump(); }
-  return moved;
-}
+// backfillSingleSetOwned lived here. Canonicalisation converts the empty-string rows it used
+// to look for, so it would find nothing; and retargeting it at the uncategorised key would
+// contradict the approved triage model, which requires the user to be present when previously
+// recorded copies are moved. Removed rather than rewritten.
 
 // PREVIEW a bulk import without writing: resolve each "qty name" line to a card and
 // its sets, merging duplicate names. The import review sheet uses this to let the

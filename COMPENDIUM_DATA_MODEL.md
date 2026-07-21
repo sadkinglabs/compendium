@@ -6,9 +6,10 @@
 
 ## 1. Current schema baseline
 
-- **Schema version:** 10
+- **Schema version:** 11
 - **Database:** `compendium.db` on Capacitor/SQLite; an exported SQLite image persisted in IndexedDB for the browser sql.js runtime
 - **Schema version record:** `_meta.schema_version`
+- **Ledger canonicalisation record:** `_meta.owned_cards_canonical_version` (see below)
 - **Active profile singleton:** Capacitor Preferences key `activeProfileId`
 - **Schema evolution:** ordered entries in `MIGRATIONS` within `src/store/schema.js`
 - **Repository gate:** `activeProfileId()` in `src/store/profileRepository.js`
@@ -273,6 +274,53 @@ links(id, profile_id, kind, a_type, a_id, b_type, b_id, description, created_at,
 ```
 
 `saved` represents whole-target bookmarks. `notes` and `links` remain supported persisted records.
+
+### The collector item (schema v11)
+
+One collector item is exactly `card_id + set + finish`. Alpha non-foil, Alpha foil, Beta
+non-foil and Beta foil are four distinct items for a card printed in both sets. Catalog
+`variants[]` may hold several art or product records inside one set; those are NOT additional
+ownership identities.
+
+`owned_cards.variant_slug` stores that identity:
+
+| key | meaning |
+|---|---|
+| `001` | Alpha, non-foil |
+| `001:f` | Alpha, foil |
+| `uncategorised` | owned copies whose set is not established yet, non-foil |
+| `uncategorised:f` | the same, foil |
+
+v11 changed no DDL. The column was already `TEXT NOT NULL DEFAULT ''` inside the unique index
+`(profile_id, card_id, variant_slug)`; the canonical keys are different *string values* in that
+column, so there was no table to rebuild and no default to change.
+
+**The v10 keys it replaced.** `''` meant both "set not established" for `qty_owned` AND the only
+row a `qty_wanted` could live on - so a want identified neither its set nor its finish, and
+dropping stale `''` rows would have destroyed the wishlist. `'foil'` was the card-level foil row.
+Both are still *readable* (`printings.js` recognises all four forms) so a partially converted
+ledger reads correctly, but no writer emits them.
+
+**Wants.** A want is a property of a collector item, exactly like ownership. New wants always
+identify set and finish; entry points ask when either is unknown. An *uncategorised want* is a
+transitional state that only migration, import and triage may create or hold - the want
+repository refuses to produce one.
+
+**Canonicalisation, not migration.** Deciding where an ambiguous legacy want belongs requires
+the catalog, and `openDatabase()` applies `MIGRATIONS` before `seedCatalogIfNeeded()`. So the
+data conversion is a separate boot step:
+
+    DDL -> seed catalog -> canonicalise ledger -> initProfiles() -> Collection reachable
+
+It runs in one transaction over every profile, asserts no legacy key survived, and records
+`_meta.owned_cards_canonical_version = 11` in that same transaction. The marker is an
+optimisation only: a boot that finds legacy rows converts them regardless of what it says,
+because the ledger shape is the invariant. Failure is closed - the transaction rolls back and
+boot fails rather than exposing a half-converted ledger.
+
+**Import.** Profile bundles carry `schemaVersion`. Import validates and normalises the whole
+bundle in memory *before* creating anything, rejecting bundles from newer builds; profile,
+settings and imported rows share one transaction, so a rejection or failure leaves no orphan.
 
 ### Anchored annotations (removed in schema v10)
 

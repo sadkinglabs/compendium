@@ -1,11 +1,9 @@
-// Why the import boundary is NOT wired into importProfile yet.
+// The import boundary, ACTIVE, plus the contract that gated its reconnection.
 //
-// It was, for one commit, and it was a live data-corruption path rather than a dormant feature.
-// These tests pin the reason so reconnecting it cannot happen by accident: the counterfactual
-// below must go green BEFORE prepareBundle returns to profileTransfer.
-//
-// The rule this encodes: canonical rows may not exist while any ACTIVE writer computes its new
-// value from a card-level total and writes the result to a legacy key.
+// It was disconnected for two checkpoints because normalisation wrote canonical keys while the
+// active want writers still derived their new value from a card-level total: one heart tap on
+// an imported want added three. These tests are what proved that, and what now proves it is
+// fixed - the same scenarios, asserting the opposite outcomes.
 // Run: npm run test:query
 import { test, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -66,31 +64,10 @@ const seedCanonical = (slug, wanted) =>
 // This is the gate on reconnecting the boundary. While it fails, normalisation must stay out of
 // the production path; when it passes, the active writers have been switched and it may return.
 
-test('CHARACTERIZATION: the current heart inflates a canonical want - exactly, not conditionally', async () => {
-  // This asserts the BROKEN state unconditionally, on purpose.
-  //
-  // My first version branched on the outcome and passed either way, which meant it could never
-  // fail and therefore proved nothing about activation readiness. A test that accepts both the
-  // defect and its fix is not a gate; it is a comment that costs CPU.
-  //
-  // At activation this test is DELETED and replaced by the contract below it.
-  seedCanonical('004', 2);
-  assert.equal((await qtyFor('c1')).wanted, 2);
-
-  await stepWanted('c1', +1);
-
-  assert.equal((await qtyFor('c1')).wanted, 5,
-    'one tap adds three: the writer reads the total, adds one, and orphans the canonical row');
-  assert.deepEqual(rows('SELECT variant_slug, qty_wanted FROM owned_cards ORDER BY variant_slug;'), [
-    { variant_slug: LEGACY_UNCATEGORISED, qty_wanted: 3 },
-    { variant_slug: '004', qty_wanted: 2 },
-  ], 'two rows for one want - this is why the import boundary stays disconnected');
-});
-
-test('ACTIVATION CONTRACT: written now, skipped now, unconditional later', { skip: 'activation' }, async () => {
-  // The unconditional end-to-end contract activation must satisfy. Written here so it is not
-  // invented later under pressure: remove the skip, delete the characterization test above,
-  // and reconnect prepareBundle only when this passes.
+test('ACTIVATION CONTRACT: an imported canonical want takes exactly one tap to reach 3', async () => {
+  // ENABLED. This is the contract the whole disconnection existed to protect: before
+  // activation the same sequence produced 5 across two rows, because the writer summed every
+  // row and wrote the total somewhere else.
   seedCanonical('004', 2);
   await stepWanted('c1', +1);
   assert.equal((await qtyFor('c1')).wanted, 3, 'a tap adds exactly one');
@@ -100,32 +77,60 @@ test('ACTIVATION CONTRACT: written now, skipped now, unconditional later', { ski
   assert.equal(stored.some((r) => isLegacyPrinting(r.variant_slug)), false);
 });
 
-test('GATE: setWanted has the same problem, so it is not specific to stepping', async () => {
+test('setWanted updates the canonical row in place rather than orphaning it', async () => {
+  // Before activation this produced two rows: the original plus a legacy one holding the new
+  // value. The card-level gesture now resolves to the collector item that already carries the
+  // want, so the number the user is looking at is the number that changes.
   seedCanonical('004', 2);
   await setWanted('c1', 4);
-  const stored = rows('SELECT variant_slug, qty_wanted FROM owned_cards ORDER BY variant_slug;');
-  assert.equal(stored.length, 2, 'the canonical row is orphaned rather than updated');
+  assert.deepEqual(rows('SELECT variant_slug, qty_wanted FROM owned_cards;'), [
+    { variant_slug: '004', qty_wanted: 4 },
+  ]);
+});
+
+test('a want on a REPRINT with no existing want asks rather than guessing', async () => {
+  // The gesture cannot tell which printing is meant, and guessing is the original defect.
+  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c2','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
+  await assert.rejects(() => stepWanted('c2', +1), (e) => {
+    assert.equal(e.name, 'NeedsPrintingChoice');
+    assert.deepEqual(e.options, ['001', '002'], 'it hands the caller the choices to offer');
+    return true;
+  });
+  assert.equal(rows("SELECT COUNT(*) n FROM owned_cards WHERE card_id='c2';")[0].n, 0, 'nothing was written');
+});
+
+test('an UNCATEGORISED want is edited in place, not filed on the user behalf', async () => {
+  // A migration leftover. Triage is what resolves it; a heart tap must not silently choose a
+  // set for previously recorded data.
+  seedCanonical('uncategorised', 2);
+  await stepWanted('c1', +1);
+  assert.deepEqual(rows('SELECT variant_slug, qty_wanted FROM owned_cards;'), [
+    { variant_slug: 'uncategorised', qty_wanted: 3 },
+  ]);
 });
 
 /* ---------------- the boundary really is disconnected ---------------- */
 
-test('importProfile does NOT normalise today - legacy keys pass straight through', async () => {
+test('importProfile normalises a v10 bundle - no legacy key reaches the database', async () => {
   const pid = await importProfile({
     app: 'compendium', schemaVersion: 10, profile: { name: 'Imported', accent: 'gold' },
     owned_cards: [{ card_id: 'c1', variant_slug: LEGACY_UNCATEGORISED, qty_owned: 1, qty_wanted: 2, notes: '', created_at: 'x', updated_at: 'x' }],
   });
-  const stored = rows('SELECT variant_slug FROM owned_cards WHERE profile_id=?;', [pid]);
-  assert.deepEqual(stored, [{ variant_slug: LEGACY_UNCATEGORISED }],
-    'the row stays legacy, so the active writers can still edit it correctly');
+  const stored = rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? ORDER BY variant_slug;', [pid]);
+  assert.equal(stored.some((r) => isLegacyPrinting(r.variant_slug)), false);
+  // c1 is single-set (004), so the want is filed while the copies stay uncategorised.
+  assert.deepEqual(stored, [
+    { variant_slug: '004', qty_owned: 0, qty_wanted: 2 },
+    { variant_slug: 'uncategorised', qty_owned: 1, qty_wanted: 0 },
+  ]);
 });
 
-test('a future bundle is still accepted today - the version gate arrives with reconnection', async () => {
-  // Recorded rather than asserted as desirable. Rejecting it needs the boundary, and the
-  // boundary needs canonical writers. Stating the gap keeps it from being forgotten.
-  const pid = await importProfile({
+test('a FUTURE bundle is now rejected, and creates no profile', async () => {
+  const before = rows('SELECT COUNT(*) n FROM profiles;')[0].n;
+  await assert.rejects(importProfile({
     app: 'compendium', schemaVersion: 99, profile: { name: 'Future', accent: 'gold' }, owned_cards: [],
-  });
-  assert.ok(pid, 'no version gate is active on the production path yet');
+  }), (e) => e.name === 'ImportRejected' && e.code === 'future');
+  assert.equal(rows('SELECT COUNT(*) n FROM profiles;')[0].n, before);
 });
 
 test('a non-Compendium file is still rejected', async () => {

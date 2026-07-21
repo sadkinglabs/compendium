@@ -287,3 +287,15 @@ No historical application or mockup defines Compendium. Authority is divided by 
 - **`check:types`** (`tsconfig.json` + `scripts/check-types.mjs`) — a build-time, **fail-closed** type gate (`tsc --noEmit`, JSDoc-typed JS, no emit) scoped to the match-view typed boundaries (`LifeCounter.jsx` + `matchLife`/`matchRoll`/`matchSnapshot`/`importPlan`/`listGoalModel`/`navBack`). The compiler checks the full reachable closure; the wrapper gates only on diagnostics in those owned files (a global/config/unknown-file diagnostic or a compiler crash fails closed). It catches caller/boundary type mismatches at author time (defence in depth alongside the runtime guards). App/Collection are deliberately out of scope — measured React prop-shape noise. Nothing enters the bundle.
 
 When architecture, product documentation, implementation, and executable contracts disagree, follow the authority order in `ENGINEERING_CONSTITUTION.md` and record the discrepancy explicitly.
+
+
+## Boot sequence and ledger canonicalisation (schema v11)
+
+    open database (DDL migrations) -> seed catalog -> canonicalise ledger -> initProfiles()
+    -> Collection reachable
+
+Canonicalisation converts `owned_cards` to the collector-item key space. Its position is
+load-bearing in both directions: it needs the catalog, so it cannot be a schema migration; and
+it must convert every profile, so it cannot run once one is active. It is transactional and
+fail-closed - the only boot step permitted to abort a launch, because Collection must never
+render against a half-converted ledger. See `COMPENDIUM_DATA_MODEL.md`.

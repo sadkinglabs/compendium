@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
-import { qtyFor, ownWantMap, recentlyAdded, backfillSingleSetOwned } from './ownedRepository.js';
+import { qtyFor, ownWantMap, recentlyAdded } from './ownedRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'test-profile';
@@ -63,42 +63,3 @@ test('foil classification: recentlyAdded splits set foils correctly', async () =
   assert.equal(r.qty_foil, 3);
 });
 
-test('backfill: single-set Unspecified moves to its set row; total conserved; idempotent on retry', async () => {
-  card('c1', [{ code: '001', name: 'Alpha' }]);
-  own('c1', '', 3);
-  const before = totalOwned('c1');
-  assert.equal(await backfillSingleSetOwned(), 1);
-  assert.equal(rowQty('c1', '001'), 3);
-  assert.equal(rowQty('c1', ''), 0, 'Unspecified row deleted');
-  assert.equal(totalOwned('c1'), before, 'no copies gained or lost');
-  // A retry (as after an interrupted boot) must not re-add - the move is one tx, so
-  // an interruption leaves '' intact; here the successful move drained it, so retry is a no-op.
-  assert.equal(await backfillSingleSetOwned(), 0);
-  assert.equal(totalOwned('c1'), before, 'retry does not inflate');
-});
-
-test('backfill: multi-set card stays in Unspecified (printing is unknowable)', async () => {
-  card('c2', [{ code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]);
-  own('c2', '', 4);
-  await backfillSingleSetOwned();
-  assert.equal(rowQty('c2', ''), 4);
-  assert.equal(rowQty('c2', '001'), 0);
-});
-
-test('backfill: preserves wishlist on the Unspecified row, drains only owned', async () => {
-  card('c3', [{ code: '001', name: 'Alpha' }]);
-  own('c3', '', 2, 5);
-  await backfillSingleSetOwned();
-  assert.equal(rowQty('c3', '001'), 2);
-  assert.equal(rowQty('c3', ''), 0, 'owned drained');
-  assert.equal(rowWanted('c3', ''), 5, 'wishlist preserved');
-});
-
-test('backfill: adds onto an existing set row instead of overwriting it', async () => {
-  card('c4', [{ code: '001', name: 'Alpha' }]);
-  own('c4', '001', 1);
-  own('c4', '', 2);
-  await backfillSingleSetOwned();
-  assert.equal(rowQty('c4', '001'), 3, '1 existing + 2 moved');
-  assert.equal(totalOwned('c4'), 3);
-});
