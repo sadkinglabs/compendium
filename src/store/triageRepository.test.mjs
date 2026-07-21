@@ -239,7 +239,9 @@ test('a failed READ-BACK yields confirmed:false with a NULL count, not a guess',
   const res = await c(planFor(asRows(), ['001', '002'], '002'));
   assert.equal(res.confirmed, false);
   assert.equal(res.moved, null, 'NULL, not zero and not the intent');
-  assert.equal(res.attempted, 3, 'the only quantity we can honestly report');
+  assert.equal('attempted' in res, false,
+    'NO quantity is exposed when unconfirmed - an "attempted" count is a number a caller can mistake for a result');
+  assert.deepEqual(Object.keys(res).sort(), ['confirmed', 'moved'], 'the result surface is structurally minimal');
 });
 
 test('an unconfirmed result STILL broadcasts, because persisted state may have changed', async () => {
@@ -311,38 +313,109 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
   assert.equal(totals().o, 5, 'the real command conserves all five');
 });
 
-test('COUNTERFACTUAL: the real barrier is used in production, and serialises overlapping files', async () => {
-  // Two files against the same pile, launched together. Under a pass-through barrier they both
-  // read 6 before either writes, so both move 6 and the destination ends at 12 from 6 copies.
-  // Under the real exclusive barrier the second read happens after the first commit.
-  const seedTwo = () => { sdb.run('DELETE FROM owned_cards;'); seed(UNCATEGORISED, 6); };
+test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real barrier holds at 6', async () => {
+  // A RENDEZVOUS, not a timeout. The previous version slept 5ms and then asserted
+  // `unguarded >= 6` - which the CORRECT answer also satisfies, so it could pass without the
+  // race ever occurring. A sensitivity test that passes when the thing it tests has vanished
+  // is worse than no test: it reports safety it never measured.
+  //
+  // Here both readers are held until BOTH have read, so the dangerous interleaving is
+  // guaranteed rather than hoped for, and the corrupted total is asserted exactly.
+  const rendezvous = (n) => {
+    let arrived = 0, release;
+    const all = new Promise((r) => { release = r; });
+    return async () => { if (++arrived >= n) release(); await all; };
+  };
 
-  // Pass-through: the dangerous interleaving, made to actually occur rather than hoped for.
-  seedTwo();
+  const seedSix = () => { sdb.run('DELETE FROM owned_cards;'); seed(UNCATEGORISED, 6); };
+
+  /* ---- pass-through barrier: both read 6 before either writes ---- */
+  seedSix();
   const plan = planFor(asRows(), ['001', '002'], '002');
-  let firstRead = null;
+  const meet = rendezvous(2);
   const racing = cmd({
     exclusive: (fn) => fn(),
-    query: async (s, p = []) => {
-      const out = rows(s, p);
-      if (s.includes('variant_slug IN')) {
-        // Hold both reads open until both have happened.
-        if (!firstRead) { firstRead = out; await new Promise((r) => setTimeout(r, 5)); }
-      }
+    query: async (sql, p = []) => {
+      const out = rows(sql, p);
+      // Hold on the authoritative ledger read - the one the barrier exists to serialise.
+      if (sql.includes('variant_slug IN') && sql.includes('qty_owned')) await meet();
       return out;
     },
   });
-  await Promise.all([racing(plan).catch(() => {}), racing(plan).catch(() => {})]);
+  await Promise.all([racing(plan), racing(plan)]);
   const unguarded = totals().o;
+  assert.equal(unguarded, 12,
+    'both readers saw 6 and both moved 6 - six copies became twelve, which is the corruption the barrier prevents');
 
-  // The real barrier, same scenario.
+  /* ---- the real barrier: the second read happens after the first commit ---- */
   const { withExclusiveCollectionWrites, __resetCollectionWritesForTests } = await import('./collectionWrites.js');
   __resetCollectionWritesForTests();
-  seedTwo();
+  seedSix();
   const plan2 = planFor(asRows(), ['001', '002'], '002');
   const guarded = cmd({ exclusive: withExclusiveCollectionWrites });
-  await Promise.all([guarded(plan2).catch(() => {}), guarded(plan2).catch(() => {})]);
+  await Promise.all([guarded(plan2), guarded(plan2)]);
 
-  assert.equal(totals().o, 6, 'the real barrier conserves all six copies');
-  assert.ok(unguarded >= 6, `the unguarded run reached ${unguarded} - recorded so this test cannot silently become vacuous`);
+  assert.equal(totals().o, 6, 'exactly six - the second file found the pile already drained and was a no-op');
+  assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 6, qty_wanted: 0 }]);
+});
+
+/* ---------------- finish is enforced by the command, not by the plan ---------------- */
+
+test('foil ownership cannot be filed into a NON-foil destination', async () => {
+  // A stale or forged plan asking for it would silently change what the user owns. The command
+  // derives its sources from the line's own finish, so a non-foil file simply never looks at
+  // the foil rows.
+  seed(UNCATEGORISED_FOIL, 3);
+  const plan = planFor(asRows(), ['001', '002'], '002');   // an OWNED_FOIL line
+  // Refused outright rather than quietly moving nothing: the plan names a foil source while
+  // asking for a non-foil destination, and that contradiction is a bug worth surfacing.
+  await assert.rejects(() => cmd()({ ...plan, to: { set: '002', foil: false } }), /does not belong to a non-foil/);
+  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED_FOIL, qty_owned: 3, qty_wanted: 0 }],
+    'the foil copies stayed foil, and stayed in the pile');
+});
+
+test('non-foil ownership cannot be filed into a FOIL destination', async () => {
+  seed(UNCATEGORISED, 3);
+  const plan = planFor(asRows(), ['001', '002'], '002');
+  await assert.rejects(() => cmd()({ ...plan, to: { set: '002', foil: true } }), /does not belong to a foil/);
+  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED, qty_owned: 3, qty_wanted: 0 }]);
+});
+
+test('a want can never be filed as foil', async () => {
+  seed(UNCATEGORISED, 0, 4);
+  const plan = planFor(asRows(), ['001', '002'], '002', WANTED);
+  await assert.rejects(() => cmd()({ ...plan, to: { set: '002', foil: true } }), /wants are non-foil/);
+  assert.equal(ledger()[0].qty_wanted, 4, 'the want is untouched');
+});
+
+test('to.foil must be a real boolean - "false" does not become true', async () => {
+  // `!!"false"` is true. Coercion here would flip a non-foil destination to foil.
+  seed(UNCATEGORISED, 2);
+  const plan = planFor(asRows(), ['001', '002'], '002');
+  for (const bad of ['false', 'true', 1, 0, null, undefined, {}]) {
+    await assert.rejects(() => cmd()({ ...plan, to: { set: '002', foil: bad } }), /must be a boolean/, String(bad));
+  }
+  assert.deepEqual(ledger(), [{ variant_slug: UNCATEGORISED, qty_owned: 2, qty_wanted: 0 }]);
+});
+
+test('a source that appeared AFTER the render is still drained', async () => {
+  // fromSlugs is UI provenance. If it decided what gets drained, copies added between render
+  // and tap would be stranded in the pile with no indication anything was left behind.
+  seed(UNCATEGORISED, 2);
+  const plan = planFor(asRows(), ['001', '002'], '002');
+  assert.deepEqual(plan.fromSlugs, [UNCATEGORISED], 'the plan only knows about the canonical row');
+  seed(LEGACY_UNCATEGORISED, 5);                       // a legacy row appears afterwards
+
+  const res = await cmd()(plan);
+  assert.equal(res.moved, 7, 'both rows drained, not just the one the plan remembered');
+  assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 7, qty_wanted: 0 }]);
+});
+
+test('a plan naming a source of the WRONG finish is refused outright', async () => {
+  seed(UNCATEGORISED, 2);
+  const plan = planFor(asRows(), ['001', '002'], '002');
+  await assert.rejects(
+    () => cmd()({ ...plan, fromSlugs: [UNCATEGORISED_FOIL] }),
+    /does not belong to a non-foil/,
+  );
 });

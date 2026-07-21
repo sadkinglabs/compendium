@@ -11,8 +11,9 @@
 // THE RESULT CONTRACT, identical to bulkOwnedRepository so callers do not learn two:
 //   - confirmed: true    `moved` is authoritative, from the read-back.
 //   - confirmed: false   the transaction resolved but we could not verify the outcome.
-//                        `moved` is NULL - not zero, and not the plan's intent, because we do
-//                        not know it. No success count is reported and no undo is offered.
+//                        `moved` is NULL and NO other quantity is exposed - not zero, not the
+//                        plan's intent, and not an "attempted" count a caller could mistake for
+//                        a result. Quantities are structurally absent, not merely discouraged.
 //   - throws             the barrier was not achieved or the transaction failed. Nothing was
 //                        written; the pile is exactly as it was.
 //
@@ -30,7 +31,10 @@ import { query as dbQuery, tx as dbTx } from './db.js';
 import { activeProfileId as realActiveProfileId } from './profileRepository.js';
 import { withExclusiveCollectionWrites } from './collectionWrites.js';
 import { notifyOwnedChanged } from './ownedRepository.js';
-import { canonicalPrinting, isRealSetCode } from './printings.js';
+import {
+  canonicalPrinting, isRealSetCode,
+  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL,
+} from './printings.js';
 import { UNCATEGORISED_KEYS } from './triage.js';
 import { uuid, nowIso } from './ids.js';
 
@@ -49,17 +53,50 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
     if (!field) throw new Error(`fileTriageLine: unknown field ${JSON.stringify(plan?.field)}.`);
     if (!plan.card_id) throw new Error('fileTriageLine: no card.');
     if (!isRealSetCode(plan?.to?.set)) throw new Error(`fileTriageLine: ${JSON.stringify(plan?.to?.set)} is not a set code.`);
-    const sources = [...new Set(plan.fromSlugs || [])];
-    if (!sources.length) throw new Error('fileTriageLine: no source rows.');
-    const foreign = sources.filter((s) => !UNCATEGORISED_KEYS.includes(s));
-    if (foreign.length) throw new Error(`fileTriageLine: may only drain uncategorised rows, not ${foreign.join(', ')}.`);
+    // FINISH IS NOT NEGOTIABLE, and the plan does not get a vote on it.
+    //
+    // `to.foil` must be a real boolean: `!!` would coerce the string "false" to true and quietly
+    // turn a non-foil destination foil.
+    if (typeof plan?.to?.foil !== 'boolean') {
+      throw new Error(`fileTriageLine: to.foil must be a boolean, got ${JSON.stringify(plan?.to?.foil)}.`);
+    }
+    const foil = plan.to.foil;
+    // A want is always non-foil (§7.4). Migration never creates a foil want and no writer may,
+    // so a plan asking to file one is refused rather than honoured.
+    if (field === 'qty_wanted' && foil) {
+      throw new Error('fileTriageLine: wants are non-foil; a foil want cannot be filed.');
+    }
+
+    // SOURCES ARE DERIVED, not taken from the plan.
+    //
+    // `fromSlugs` is UI provenance and may be stale or forged. If it decided what gets drained,
+    // a plan could move foil ownership into a non-foil row - copies silently changing finish -
+    // or omit a source that appeared after the render, stranding those copies in the pile.
+    //
+    // Ownership drains only the keys of ITS OWN finish. A want drains all four, because the
+    // §7.4 ruling means a legacy want can have survived on any of them while still being
+    // non-foil.
+    const sources = field === 'qty_wanted'
+      ? [...UNCATEGORISED_KEYS]
+      : (foil ? [LEGACY_FOIL, UNCATEGORISED_FOIL] : [LEGACY_UNCATEGORISED, UNCATEGORISED]);
+
+    // The plan's provenance is still checked, but only as a sanity assertion: it may not name
+    // anything outside the pile, and it may not claim a source this operation would not drain.
+    for (const slug of new Set(plan.fromSlugs || [])) {
+      if (!UNCATEGORISED_KEYS.includes(slug)) {
+        throw new Error(`fileTriageLine: may only drain uncategorised rows, not ${slug}.`);
+      }
+      if (!sources.includes(slug)) {
+        throw new Error(`fileTriageLine: ${slug} does not belong to a ${foil ? 'foil' : 'non-foil'} ${plan.field} line.`);
+      }
+    }
 
     // CAPTURED, not read again later. A profile switch mid-operation must not redirect the
     // write: every statement below is scoped to the id we started with.
     const pid = activeProfileId();
     if (!pid) throw new Error('fileTriageLine: no active profile.');
 
-    const dest = canonicalPrinting(plan.to.set, !!plan.to.foil);
+    const dest = canonicalPrinting(plan.to.set, foil);
 
     return exclusive(async () => {
       // AUTHORITATIVE READ, inside the barrier. The quantity in the plan came from a render and
@@ -124,6 +161,16 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
           now, now],
       ]);
 
+      // ACCEPTED ALPHA DEBT, owner ruling: a note on a fully drained source row is LOST.
+      //
+      // The v11 proposal's merge policy says distinct non-empty notes should be carried to the
+      // destination and the earliest created_at preserved. Filing does neither: the destination
+      // is inserted with notes='' and an emptied source is deleted underneath it. A note on a
+      // row that survives (because its other quantity remains) is unaffected.
+      //
+      // Recorded rather than silently skipped so it is a decision with an owner, not a defect
+      // nobody noticed. Closing it means reading notes/created_at in the authoritative read
+      // above and merging them into the upsert - a contained change, deliberately deferred.
       // Delete ONLY rows this operation emptied, and only when BOTH quantities are zero. A
       // source row still holding the other field must survive; that asymmetry is the whole
       // reason the empty-string row was unsafe to drop in the first place.
@@ -161,7 +208,10 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
         confirmed = false;   // a failed read-back is an unconfirmed result, never a failed write
       }
 
-      return { confirmed, moved, attempted: moving };
+      // No quantity is exposed when unconfirmed. `attempted` was a hedge - a number the caller
+      // could mistake for a result - and the established boundary is that an unverified outcome
+      // reports nothing numeric at all.
+      return confirmed ? { confirmed, moved } : { confirmed, moved: null };
     }).then((result) => {
       // ONE broadcast, and only when a transaction actually ran. It is a cache invalidation
       // rather than a success announcement, so it fires for the unconfirmed case too: persisted
