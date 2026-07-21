@@ -3,7 +3,7 @@
 // bundle into a NEW profile in one transaction. Catalogue refs (card_id/rule_id)
 // are preserved as-is. Forward-only: an older schemaVersion still imports.
 import { query, tx } from './db.js';
-import { activeProfileId, createProfile, switchProfile, renameProfile } from './profileRepository.js';
+import { activeProfileId, switchProfile, renameProfile } from './profileRepository.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
@@ -90,10 +90,29 @@ export async function importProfile(bundle, { name } = {}) {
     const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
     if (taken.has(pname)) pname = `${pname} (imported)`;
   }
-  // avatar is stored as a JSON string; createProfile re-stringifies, so parse it back.
+  // avatar is stored as a JSON string and is re-stringified on write, so parse it back.
   let avatar = null;
   try { avatar = bundle.profile?.avatar ? JSON.parse(bundle.profile.avatar) : null; } catch { avatar = null; }
-  const { id: pid } = await createProfile(pname, { accent: bundle.profile?.accent || 'gold', avatar });
+
+  // THE PROFILE IS CREATED INSIDE THE SAME TRANSACTION AS ITS ROWS.
+  //
+  // This used to call createProfile() first, which issues two un-transacted INSERTs, and only
+  // then open a transaction for the imported data. Any failure after that point - a constraint,
+  // a full disk, a malformed row the validator did not anticipate - left a profile behind with
+  // partial or no contents, and the user had to find and delete it themselves.
+  //
+  // Validating the bundle harder narrows the window but cannot close it: constraint, transaction
+  // and storage failures are not properties of the input. Only atomicity closes it. So the
+  // profile and settings rows are simply the first two statements below, and a rollback takes
+  // the profile with it.
+  const pid = uuid();
+  const pts = nowIso();
+  const stmts = [];
+  const ins = (table, cols, vals) => stmts.push([`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')});`, vals]);
+
+  ins('profiles', ['id', 'name', 'avatar', 'accent', 'system', 'schema_version', 'is_default', 'created_at', 'updated_at'],
+    [pid, pname, avatar ? JSON.stringify(avatar) : null, bundle.profile?.accent || 'gold', 'sorcery', SCHEMA_VERSION, 0, pts, pts]);
+  stmts.push(['INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [pid]]);
 
   // id remaps (old -> new), so two imports never collide.
   const deckMap = new Map(), colMap = new Map(), matchMap = new Map(), listMap = new Map();
@@ -101,9 +120,6 @@ export async function importProfile(bundle, { name } = {}) {
   for (const c of bundle.collections || []) colMap.set(c.id, uuid());
   for (const m of bundle.matches || []) matchMap.set(m.id, uuid());
   for (const l of bundle.card_lists || []) listMap.set(l.id, uuid());
-
-  const stmts = [];
-  const ins = (table, cols, vals) => stmts.push([`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')});`, vals]);
 
   for (const d of bundle.decks || [])
     ins('decks', ['id', 'profile_id', 'name', 'slug', 'archetype', 'avatar_card_id', 'avatar_slug', 'cover_slug', 'notes', 'curiosa_url', 'wins', 'losses', 'starred', 'lib_order', 'created_at', 'updated_at'],

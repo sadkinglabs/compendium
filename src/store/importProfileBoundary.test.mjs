@@ -20,6 +20,7 @@ import { LEGACY_UNCATEGORISED, isLegacyPrinting } from './printings.js';
 const require = createRequire(import.meta.url);
 const PID = 'home-profile';
 let sdb;
+let backend;
 
 const rows = (sql, params = []) => {
   const st = sdb.prepare(sql);
@@ -31,12 +32,20 @@ before(async () => {
   const SQL = await initSqlJs({ locateFile: () => require.resolve('sql.js/dist/sql-wasm.wasm') });
   sdb = new SQL.Database();
   sdb.run('PRAGMA foreign_keys = ON;');
-  __setBackendForTests({
+  backend = {
     query: (s, p = []) => Promise.resolve(rows(s, p)),
     run: (s, p = []) => { sdb.run(s, p); return Promise.resolve(); },
     exec: (s) => { sdb.run(s); return Promise.resolve(); },
     tx: (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
     persist: () => Promise.resolve(),
+  };
+  // Indirected so a test can swap tx() for a failing one and prove atomicity.
+  __setBackendForTests({
+    query: (...a) => backend.query(...a),
+    run: (...a) => backend.run(...a),
+    exec: (...a) => backend.exec(...a),
+    tx: (...a) => backend.tx(...a),
+    persist: (...a) => backend.persist(...a),
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);
   __setActiveIdForTests(PID);
@@ -122,4 +131,52 @@ test('a future bundle is still accepted today - the version gate arrives with re
 test('a non-Compendium file is still rejected', async () => {
   await assert.rejects(importProfile({ app: 'something-else' }), /not a compendium/i);
   assert.equal(rows('SELECT COUNT(*) n FROM profiles;')[0].n, 1, 'only the home profile exists');
+});
+
+/* ---------------- no orphan, proven by atomicity rather than by validation ---------------- */
+
+test('a DATABASE failure mid-import leaves no profile behind', async () => {
+  // The case validation can never cover: the bundle is perfectly well-formed and the failure
+  // is a constraint, a full disk, or anything else that is not a property of the input.
+  // Previously createProfile() ran first, outside any transaction, so this left a profile with
+  // partial contents for the user to find and delete.
+  const before = rows('SELECT COUNT(*) n FROM profiles;')[0].n;
+  const realTx = backend.tx;
+  backend.tx = () => Promise.reject(new Error('disk full'));
+  try {
+    await assert.rejects(importProfile({
+      app: 'compendium', schemaVersion: 10, profile: { name: 'Doomed', accent: 'gold' },
+      owned_cards: [{ card_id: 'c1', variant_slug: '', qty_owned: 1, qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' }],
+    }), /disk full/);
+  } finally { backend.tx = realTx; }
+
+  assert.equal(rows('SELECT COUNT(*) n FROM profiles;')[0].n, before, 'NO profile row survives');
+  assert.equal(rows("SELECT COUNT(*) n FROM profiles WHERE name='Doomed';")[0].n, 0);
+  assert.equal(rows('SELECT COUNT(*) n FROM settings;')[0].n, 0, 'and no orphaned settings row either');
+});
+
+test('a constraint violation partway through the rows rolls the profile back too', async () => {
+  // A duplicate primary key deep in the insert list - the shape of failure a validator cannot
+  // predict, because it depends on what is already in the database.
+  const before = rows('SELECT COUNT(*) n FROM profiles;')[0].n;
+  await assert.rejects(importProfile({
+    app: 'compendium', schemaVersion: 10, profile: { name: 'Broken', accent: 'gold' },
+    // Two card_lists sharing one id: the second INSERT violates the primary key.
+    card_lists: [
+      { id: 'dupe', kind: 'custom', name: 'A', description: '', sort_order: 0, created_at: 'x', updated_at: 'x' },
+      { id: 'dupe', kind: 'custom', name: 'B', description: '', sort_order: 1, created_at: 'x', updated_at: 'x' },
+    ],
+  }));
+  assert.equal(rows('SELECT COUNT(*) n FROM profiles;')[0].n, before, 'the profile went back with the rollback');
+});
+
+test('a successful import still creates exactly one profile with its settings', async () => {
+  const pid = await importProfile({
+    app: 'compendium', schemaVersion: 10, profile: { name: 'Good', accent: 'jade' },
+    owned_cards: [{ card_id: 'c1', variant_slug: '', qty_owned: 2, qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' }],
+  });
+  assert.equal(rows('SELECT COUNT(*) n FROM profiles WHERE id=?;', [pid])[0].n, 1);
+  assert.equal(rows('SELECT COUNT(*) n FROM settings WHERE profile_id=?;', [pid])[0].n, 1, 'settings came with it');
+  assert.equal(rows('SELECT accent FROM profiles WHERE id=?;', [pid])[0].accent, 'jade', 'accent preserved');
+  assert.equal(rows('SELECT qty_owned o FROM owned_cards WHERE profile_id=?;', [pid])[0].o, 2);
 });
