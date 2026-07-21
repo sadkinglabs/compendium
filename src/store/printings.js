@@ -56,7 +56,10 @@ export function setCodeOf(slug) {
 }
 
 /**
- * The display name of a card's SOLE printing, or null when it has more than one.
+ * The display name of a card's SOLE SET, or null when the name belongs to more than one.
+ *
+ * It establishes a SET and nothing more - not a finish, and not an exact catalog variant.
+ * The Collection grain is card + set + finish; this answers only the middle term.
  *
  * Used by list rows for their set pill. The rule is "say nothing rather than guess": the pill
  * previously rendered `sets[0].name`, an array index, so a wishlisted Albespine Pikemen showed
@@ -69,7 +72,7 @@ export function setCodeOf(slug) {
  *
  * @param setsJson the catalog `sets` field: a JSON array of { code, name }
  */
-export function solePrintingName(setsJson) {
+export function soleSetName(setsJson) {
   try {
     const s = JSON.parse(setsJson || '[]');
     if (!Array.isArray(s) || s.length !== 1) return null;

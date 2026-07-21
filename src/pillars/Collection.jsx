@@ -14,7 +14,7 @@ import { resetCollectionSessionFor, collectionSession } from './collectionSessio
 import { collectionSurface } from './collectionRoute.js';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
-import { solePrintingName } from '../store/printings.js';
+import { soleSetName } from '../store/printings.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -1140,8 +1140,8 @@ const listSetPill = {
   borderRadius: 999, border: '1px solid var(--hair-16)', background: 'rgba(10,9,7,.5)',
 };
 // The set pill shows a set only when the card has exactly ONE printing - never an array
-// index. See solePrintingName in store/printings.js for the bug this replaced.
-const listSetName = (card) => solePrintingName(card?.sets);
+// index. See soleSetName in store/printings.js for the bug this replaced.
+const listSetName = (card) => soleSetName(card?.sets);
 
 // One card on a list detail. A full-width hairline row (never a rounded card): a
 // gilt-framed 5:7 thumb that lights up as you own copies toward the goal, the
