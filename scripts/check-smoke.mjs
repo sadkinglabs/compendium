@@ -223,6 +223,11 @@ export async function run({ adb, sleep, routes = ROUTES, expectedBuild = null, l
 
   adb(['logcat', '-c']);
 
+  // From here a dump can exist on the device, so everything below runs in a try/finally.
+  // An exception from uiautomator, cat, a tap or the launch poll used to skip cleanup and
+  // leave a file full of card names, the profile name and collection counts on shared storage.
+  try {
+
   // RESTART BEFORE EVERY ROUTE. Routes used to share one long-lived session, so a tap that
   // silently failed left the previous screen up and its text could satisfy the next route's
   // assertion. A cold start makes each route's evidence its own.
@@ -280,10 +285,6 @@ export async function run({ adb, sleep, routes = ROUTES, expectedBuild = null, l
     failures.push(`${consoleErrors.length} JS console error(s)`);
   }
 
-  // The dump holds whatever was on screen - card names, profile name, collection counts.
-  // Do not leave it on shared storage.
-  try { adb(['shell', 'rm', '-f', dumpPath]); } catch { /* best effort */ }
-
   if (failures.length) {
     err(`\ncheck:smoke FAILED - ${failures.length} problem(s):`);
     for (const f of failures) err(`  - ${f}`);
@@ -291,6 +292,11 @@ export async function run({ adb, sleep, routes = ROUTES, expectedBuild = null, l
   }
   log(`check:smoke OK - ${routes.length} routes rendered on device`);
   return 0;
+
+  } finally {
+    // Best effort, always: the dump holds whatever was on screen.
+    try { adb(['shell', 'rm', '-f', dumpPath]); } catch { /* device may be gone */ }
+  }
 }
 
 function readDump(adb, dumpPath) {

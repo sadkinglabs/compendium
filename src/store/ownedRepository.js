@@ -408,8 +408,20 @@ export async function duplicateList(listId) {
   return nid;
 }
 
-export async function listEntries(listId) {
-  return query('SELECT card_id, quantity FROM card_list_entries WHERE list_id=? ORDER BY added_at ASC;', [listId]);
+// EVERY child-list read joins card_lists and filters on profile_id.
+//
+// Writes already refused a foreign list id, but reads did not, and the Collection session
+// cache is a module singleton: open profile A's list, switch to B, come back, and A's name,
+// entries, progress and EXPORT could render under B. Scoping the parent in SQL means the
+// boundary holds even if a stale id reaches the repository - defence at the layer that owns
+// the data, not only at the layer that happens to call it.
+export async function listEntries(listId, pid = activeProfileId()) {
+  return query(
+    `SELECT e.card_id, e.quantity FROM card_list_entries e
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id=? AND l.profile_id=? ORDER BY e.added_at ASC;`,
+    [listId, pid]
+  );
 }
 
 // The first few cards' art per list, for the index's card-art "fan" (Map<listId,
@@ -417,11 +429,14 @@ export async function listEntries(listId) {
 // sliced in JS (the lists page has only a handful of lists).
 export async function listThumbsBulk(listIds, perList = 3) {
   if (!listIds || !listIds.length) return new Map();
+  const pid = activeProfileId();
   const rows = await query(
     `SELECT e.list_id, c.card_id, c.image_slug, c.is_site
-     FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id
-     WHERE e.list_id IN (${listIds.map(() => '?').join(',')})
-     ORDER BY e.list_id, e.added_at ASC;`, listIds);
+     FROM card_list_entries e
+     JOIN cards c ON c.card_id=e.card_id
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id IN (${listIds.map(() => '?').join(',')}) AND l.profile_id=?
+     ORDER BY e.list_id, e.added_at ASC;`, [...listIds, pid]);
   const m = new Map();
   for (const r of rows) {
     const arr = m.get(r.list_id) || [];
@@ -453,18 +468,26 @@ export async function stepListEntry(listId, cardId, delta, pid = activeProfileId
 }
 
 // Card-level requirement of a list (mirrors deckRequirements shape).
-async function listRequirements(listId) {
-  const rows = await query('SELECT card_id, SUM(quantity) q FROM card_list_entries WHERE list_id=? GROUP BY card_id;', [listId]);
+async function listRequirements(listId, pid = activeProfileId()) {
+  const rows = await query(
+    `SELECT e.card_id, SUM(e.quantity) q FROM card_list_entries e
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id=? AND l.profile_id=? GROUP BY e.card_id;`,
+    [listId, pid]
+  );
   return rows.map((r) => ({ card_id: r.card_id, qty: r.q }));
 }
 
 // A list's cards joined to the catalog (for the list detail view). quantity =
 // target (wanted) or copies (custom).
-export async function listCards(listId) {
+export async function listCards(listId, pid = activeProfileId()) {
   return query(
     `SELECT e.card_id, e.quantity, c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
-     FROM card_list_entries e JOIN cards c ON c.card_id=e.card_id WHERE e.list_id=? ORDER BY c.name;`,
-    [listId]
+     FROM card_list_entries e
+     JOIN cards c ON c.card_id=e.card_id
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id=? AND l.profile_id=? ORDER BY c.name;`,
+    [listId, pid]
   );
 }
 
@@ -532,10 +555,13 @@ export async function listProgressBulk(listIds) {
   if (!listIds.length) return out;
   const owned = await ownedMap();   // full map once
   // One grouped query for all lists' requirements (no N+1, mirrors deckRequirementsBulk).
+  const pid = activeProfileId();
   const rows = await query(
-    `SELECT list_id, card_id, SUM(quantity) q FROM card_list_entries
-     WHERE list_id IN (${listIds.map(() => '?').join(',')}) GROUP BY list_id, card_id;`,
-    listIds
+    `SELECT e.list_id, e.card_id, SUM(e.quantity) q FROM card_list_entries e
+     JOIN card_lists l ON l.id = e.list_id
+     WHERE e.list_id IN (${listIds.map(() => '?').join(',')}) AND l.profile_id=?
+     GROUP BY e.list_id, e.card_id;`,
+    [...listIds, pid]
   );
   const byList = new Map(listIds.map((id) => [id, []]));
   for (const r of rows) byList.get(r.list_id)?.push({ card_id: r.card_id, qty: r.q });

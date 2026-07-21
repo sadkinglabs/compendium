@@ -41,10 +41,13 @@ const TITLE = {
   font: "600 11.5px/1.35 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase',
   overflowWrap: 'anywhere',
 };
-const hideOnErr = (e) => { e.currentTarget.style.display = 'none'; };
 
 function Plate({ s, onOpen }) {
   const hero = setHeroUrl(s.code);
+  // A failed hero must REVEAL the engraved initial, not just vanish. Hiding the <img> left a
+  // blank art slot, so a missing or corrupt bundled asset looked different from zero-image
+  // mode even though both should degrade to the same deterministic mark.
+  const [heroBroken, setHeroBroken] = useState(false);
   const boxed = BOXED.has(s.code);
   const has = s.ownedUnique > 0;                 // owned set vs empty set
   const pct = s.pct;
@@ -53,12 +56,12 @@ function Plate({ s, onOpen }) {
   return (
     <button type="button" onClick={() => onOpen(s.code, s)} style={tileStyle(has)}>
       <div style={HERO}>
-        {hero ? (
-          <img src={hero} alt="" aria-hidden="true" onError={hideOnErr}
+        {hero && !heroBroken ? (
+          <img src={hero} alt="" aria-hidden="true" onError={() => setHeroBroken(true)}
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block',
               opacity: has ? 1 : 0.55, ...(boxed ? { borderRadius: 7 } : {}) }} />
         ) : (
-          // heroless / zero-image: engraved display initial in the same slot
+          // heroless, zero-image, OR a hero that failed to load: the same engraved initial
           <span style={{ font: "700 34px/1 var(--f-display)", color: '#171209', letterSpacing: '.04em', opacity: has ? 1 : 0.55,
             textShadow: '0 1px 0 rgba(233,212,154,.12), 0 -1px 1px rgba(0,0,0,.9)' }}>
             {(s.name || '?').charAt(0).toUpperCase()}

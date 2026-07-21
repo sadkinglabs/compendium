@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests, query } from './db.js';
 import { __setActiveIdForTests, activeProfileId, switchProfile } from './profileRepository.js';
-import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey } from './ownedRepository.js';
+import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey , listCards, listEntries, exportListText, listProgress, listProgressBulk, listThumbsBulk } from './ownedRepository.js';
 import { enqueueWrite, __resetCollectionWritesForTests } from './collectionWrites.js';
 
 const require = createRequire(import.meta.url);
@@ -51,6 +51,8 @@ before(async () => {
   for (const id of ['A', 'B']) sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LA','A','custom','ListA','2026-01-01');");
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LB','B','custom','ListB','2026-01-01');");
+  // listCards joins the catalog, so the boundary tests need a real card row.
+  sdb.run("INSERT INTO cards(card_id,name,system) VALUES('c','Test Card','sorcery');");
 });
 
 beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
@@ -191,4 +193,45 @@ test('switchProfile drains the queue before flipping the active profile (barrier
   assert.equal(committed, true, 'the pending edit was preserved, committed under A');
   assert.equal(await wantedOf('A', 'cardY'), 1);
   __setActiveIdForTests('A');
+});
+
+/* ---------------- profile boundary on READS, not just writes ---------------- */
+
+test("another profile's list id returns NOTHING through every read path", async () => {
+  // The disclosure this closes: the Collection nav cache is a module singleton holding a whole
+  // list row, so opening A's list, switching to B and returning restored A's list under B -
+  // name and entries rendered, and Export could hand them over. Writes had always refused the
+  // foreign id; reads had not. The UI cache is now profile-aware AND every child-list read
+  // joins card_lists on profile_id, because either guard alone is one refactor from leaking.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 3, 'A');
+  assert.equal(await listQty('LA', 'c'), 3, 'the row exists under A');
+
+  __setActiveIdForTests('B');
+  assert.deepEqual(await listCards('LA'), [], 'listCards must not read across profiles');
+  assert.deepEqual(await listEntries('LA'), [], 'listEntries must not read across profiles');
+  assert.equal(await exportListText('LA'), '', 'export must produce nothing for a foreign list');
+
+  const prog = await listProgress('LA');
+  assert.equal(prog.totalRequired ?? 0, 0, 'progress must not compute from a foreign list');
+
+  const bulk = await listProgressBulk(['LA']);
+  assert.equal(bulk.get('LA')?.totalRequired ?? 0, 0, 'bulk progress must not leak either');
+
+  const thumbs = await listThumbsBulk(['LA']);
+  assert.equal(thumbs.get('LA'), undefined, 'thumbnails must not leak either');
+
+  __setActiveIdForTests('A');
+  assert.equal((await listCards('LA')).length, 1, 'and A can still read its own list');
+});
+
+test('an explicit profileId still wins over the active one', async () => {
+  // The queued-write contract extended to reads: a caller that captured a profile can finish
+  // its work correctly even after the active id moves.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 1, 'A');
+  __setActiveIdForTests('B');
+  const rows = await listCards('LA', 'A');
+  assert.equal(rows.length, 1, 'explicitly asking as A returns A rows while B is active');
+  assert.deepEqual(await listCards('LA'), [], 'and the default binding still refuses');
 });

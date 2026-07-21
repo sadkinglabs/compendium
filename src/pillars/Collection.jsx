@@ -7,11 +7,12 @@
 // compareEngine. Accent is ruby, chrome-only.
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { getPool, getSets, getArtists, listDecks, resolveCardList } from '../store/deckRepository.js';
+import { getPool, getArtists, listDecks, resolveCardList } from '../store/deckRepository.js';
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
+import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
 import { groupCards } from '../store/collectionGrouping.js';
-import { ownershipOf } from '../store/ownership.js';
+import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -22,7 +23,7 @@ import {
   listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
-import { groupCollection, poolSetFilter } from '../store/collectionGroups.js';
+import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
@@ -56,31 +57,32 @@ const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
 // Back re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-const session = { view: 'overview', listOpen: null, sheetCard: null, sheetSet: null, setDrill: null, q: '', filter: 'all', sets: [], types: [], rarities: [], els: [], groupBy: 'none' };
-
 // The grouping vocabulary offered inside a set. Alphabetical is the resting state; the other
 // two section the grid rather than reorder it.
 const GROUP_OPTS = [['none', 'A to Z'], ['element', 'Element'], ['rarity', 'Rarity']];
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
-  const [view, setView] = useState(session.view);       // overview | cards | lists
-  const [listOpen, setListOpen] = useState(session.listOpen);  // a list row when its detail is open
+  // Reconcile the cache with the ACTIVE profile before reading a single field from it. Done
+  // in the initialiser rather than an effect so no render ever sees another profile's state.
+  const [boundSession] = useState(() => resetCollectionSessionFor(activeProfileId()));
+  const [view, setView] = useState(boundSession.view);       // overview | cards | lists
+  const [listOpen, setListOpen] = useState(boundSession.listOpen);  // a list row when its detail is open
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
-  const [sheetCard, setSheetCard] = useState(session.sheetCard);
-  const [sheetSet, setSheetSet] = useState(session.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
+  const [sheetCard, setSheetCard] = useState(boundSession.sheetCard);
+  const [sheetSet, setSheetSet] = useState(boundSession.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
   // No edit mode: adding is a PLACE, not a mode. Steppers are permanent on every row and the
   // card sheet is always editable - you record what you own wherever a card appears.
   // Sets-are-home: My Collection lands on the sets-completion grid (SetsHome). Tapping a
   // plate drills into that set's ledger/binder (setDrill = its code). drillInfo carries the
   // opened set's completion snapshot so the drill header's Ring total stays honest (owned
   // stays live from the ledger; total is the full-catalog figure).
-  const [setDrill, setSetDrill] = useState(session.setDrill);
+  const [setDrill, setSetDrill] = useState(boundSession.setDrill);
   const [drillInfo, setDrillInfo] = useState(null);
   const openSet = useCallback((code, info) => { setSetDrill(code); setDrillInfo(info || null); }, []);
   const closeSet = useCallback(() => { setSetDrill(null); setDrillInfo(null); }, []);
-  useEffect(() => { session.view = view; session.listOpen = listOpen; session.sheetCard = sheetCard; session.sheetSet = sheetSet; session.setDrill = setDrill; }, [view, listOpen, sheetCard, sheetSet, setDrill]);
+  useEffect(() => { collectionSession().view = view; collectionSession().listOpen = listOpen; collectionSession().sheetCard = sheetCard; collectionSession().sheetSet = sheetSet; collectionSession().setDrill = setDrill; }, [view, listOpen, sheetCard, sheetSet, setDrill]);
   // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
@@ -438,16 +440,16 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // here, so neither can be moved by a filter the user happens to have on.
   const [roster, setRoster] = useState(null);
 
-  const [q, setQ] = useState(session.q);
-  const [types, setTypes] = useState(session.types);
-  const [rarities, setRarities] = useState(session.rarities);
-  const [els, setEls] = useState(session.els);
+  const [q, setQ] = useState(collectionSession().q);
+  const [types, setTypes] = useState(collectionSession().types);
+  const [rarities, setRarities] = useState(collectionSession().rarities);
+  const [els, setEls] = useState(collectionSession().els);
   // Grouping, NOT sorting. Collection is always alphabetical; what varies is whether the
   // grid is one list or sectioned by element/rarity.
-  const [groupBy, setGroupBy] = useState(session.groupBy || 'none');
-  // No session.sets: the drill is pinned to its own set, so there is no cross-set selection
+  const [groupBy, setGroupBy] = useState(collectionSession().groupBy || 'none');
+  // No collectionSession().sets: the drill is pinned to its own set, so there is no cross-set selection
   // left to remember. Restoring one was what let a stale Alpha filter empty the Beta grid.
-  useEffect(() => { session.q = q; session.types = types; session.rarities = rarities; session.els = els; session.groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
+  useEffect(() => { collectionSession().q = q; collectionSession().types = types; collectionSession().rarities = rarities; collectionSession().els = els; collectionSession().groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
 
   // Full rich filters - the shared Refine engine (Card Lists live in Collection,
   // so the comparator granularity earns its place for cube/draft/list building).
@@ -474,11 +476,13 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [ownScope, setOwnScope] = useState([]);       // ownership filter: 'owned' | 'unowned' | 'wishlist'
   const ownActive = ownScope.length > 0;
   const toggleOwn = useCallback((v) => setOwnScope((prev) => (prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v])), []);
-  const [setOpts, setSetOpts] = useState([]);
   // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
   // those sections mount mid-slide and hitch the open animation (see open= below).
   const [optsLoaded, setOptsLoaded] = useState(false);
-  useEffect(() => { Promise.all([getSets().then(setSetOpts), getArtists().then(setArtistOpts)]).then(() => setOptsLoaded(true)); }, []);
+  // Only the artist list is still needed: the Sets facet left the drill with the set-scope
+  // fix, and waiting on getSets() meant an irrelevant query could reject and leave an
+  // otherwise-usable drill with no filters at all.
+  useEffect(() => { getArtists().then(setArtistOpts).finally(() => setOptsLoaded(true)); }, []);
 
   useEffect(() => {
     let alive = true;
@@ -573,20 +577,12 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   }, []);
 
   // Per-set ownership: expand every catalogue card into one row per set it was
-  // printed in. Read view keeps only (card, set) pairs you own; add mode shows
-  // every printing so anything is addable. Rows are grouped + collapsible by set.
-  const setTotals = useMemo(() => {
-    const t = new Map();
-    for (const c of (pool || [])) for (const s of (c._sets || [])) if (s.code) t.set(s.code, (t.get(s.code) || 0) + 1);
-    return t;
-  }, [pool]);
-
   // True owned-per-set (independent of the row filter) - drives the drill header's
   // owned/total. Non-foil only, matching set completion (foil-only cards don't count).
   const ownedPerSet = useMemo(() => {
     const m = new Map();
     for (const [k, v] of owBySet) {
-      if ((v.owned || 0) === 0) continue; // non-foil only
+      if (!countsTowardCompletion(ownershipOf(v.owned, v.foil))) continue;   // one shared definition
       const code = k.slice(k.lastIndexOf('|') + 1);
       m.set(code, (m.get(code) || 0) + 1);
     }

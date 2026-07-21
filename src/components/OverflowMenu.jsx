@@ -72,9 +72,13 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
   // keyboard focus on a node that no longer exists.
   useEffect(() => {
     if (!open) return;
-    const id = setTimeout(() => itemRefs.current[0]?.focus?.({ preventScroll: true }), 0);
+    // The FIRST ENABLED item. `disabled` is part of this component's declared API, so focusing
+    // index 0 blindly could strand focus on a control that cannot be actioned.
+    const first = shown.findIndex((it) => !it.disabled);
+    if (first < 0) return undefined;
+    const id = setTimeout(() => itemRefs.current[first]?.focus?.({ preventScroll: true }), 0);
     return () => clearTimeout(id);
-  }, [open]);
+  }, [open, shown]);
 
   if (!shown.length) return null;   // never render an empty affordance
 
@@ -92,22 +96,35 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
 
   // Arrow / Home / End move between items; Escape closes and hands focus back.
   const onItemKey = (e, i) => {
-    const move = (to) => {
+    const n = shown.length;
+    // Step over disabled items rather than landing on them. Wrapping is bounded by `n` so a
+    // menu of entirely-disabled items cannot spin forever.
+    const step = (dir) => {
       e.preventDefault();
-      const n = shown.length;
-      itemRefs.current[((to % n) + n) % n]?.focus?.({ preventScroll: true });
+      for (let k = 1; k <= n; k += 1) {
+        const j = (((i + dir * k) % n) + n) % n;
+        if (!shown[j].disabled) { itemRefs.current[j]?.focus?.({ preventScroll: true }); return; }
+      }
     };
-    if (e.key === 'ArrowDown') move(i + 1);
-    else if (e.key === 'ArrowUp') move(i - 1);
-    else if (e.key === 'Home') move(0);
-    else if (e.key === 'End') move(shown.length - 1);
+    const edge = (from, dir) => {
+      e.preventDefault();
+      for (let k = 0; k < n; k += 1) {
+        const j = from + dir * k;
+        if (j >= 0 && j < n && !shown[j].disabled) { itemRefs.current[j]?.focus?.({ preventScroll: true }); return; }
+      }
+    };
+    if (e.key === 'ArrowDown') step(1);
+    else if (e.key === 'ArrowUp') step(-1);
+    else if (e.key === 'Home') edge(0, 1);
+    else if (e.key === 'End') edge(n - 1, -1);
     else if (e.key === 'Escape') { e.preventDefault(); close(); }
   };
 
   return (
     <span ref={wrapRef} style={{ position: 'relative', flex: 'none', display: 'inline-flex' }}>
-      {/* 34px visual circle inside a >=44px hit box (DESIGN_SYSTEM §5 touch floor). The
-          negative margin keeps the larger target from changing the header's layout. */}
+      {/* One 44px circle at the §5 touch floor. It is not a 34px circle in a larger hit box:
+          an inner styling <span> made the WebView expose that span as the button content and
+          the button lost its accessible name entirely. */}
       <button
         ref={triggerRef} type="button"
         onClick={() => { haptic('light'); setOpen((o) => !o); }}

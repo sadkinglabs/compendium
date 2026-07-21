@@ -11,6 +11,8 @@
 //     foil / playset breakdown lives inside the set page, not here.)
 //   - the '' Unspecified ownership bucket is never a set (cards list only real sets),
 //     so it is inherently excluded from every denominator.
+import { ownershipOf, countsTowardCompletion } from './ownership.js';
+
 import { isTokenCard } from './tokens.js';
 
 // Set order is derived from the numeric set code (same rule as sets.js:setRank, inlined
@@ -52,7 +54,9 @@ export function buildSetCompletion(catalogCards, ownedBySet, setCatalog) {
       const s = ensure(code, (setCatalog && setCatalog[code]) || entry.name);
       s.totalCollectible += 1;
       const o = ownedBySet && ownedBySet.get(cardId + '|' + code);
-      if (o && (o.owned || 0) > 0) s.ownedUnique += 1; // completion: non-foil only
+      // ONE definition of "counts toward completion", shared with the ownership filters.
+      // These used to be two independent `owned > 0` checks that could drift apart - and did.
+      if (countsTowardCompletion(ownershipOf(o?.owned, o?.foil))) s.ownedUnique += 1;
       // foilUnique is REPORTED (the tile's "N foil" stat) but never feeds completion.
       if (o && (o.foil || 0) > 0) s.foilUnique += 1;
     }
