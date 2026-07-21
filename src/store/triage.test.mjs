@@ -196,3 +196,37 @@ test('filing without a destination is refused rather than silently dropped', () 
   const pile = triagePile([row({ qty_owned: 1 })], sets({ c1: ['001', '002'] }));
   assert.throws(() => fileLinePlan(pile[0], pile[0].lines[0], ''), /destination set/);
 });
+
+/* ---------------- a forged or stale plan is refused ---------------- */
+
+test('filing to a set the card was never printed in is refused', () => {
+  // Stale UI state offering a set from a previous card, or a code that vanished in a catalog
+  // update. Filing there would move copies onto a collector item that does not exist - which
+  // no reader can bucket and no later triage can find again.
+  const pile = triagePile([row({ qty_owned: 2 })], sets({ c1: ['001', '002'] }));
+  assert.throws(() => fileLinePlan(pile[0], pile[0].lines[0], '999'), /not one of this card/);
+});
+
+test('filing to a storage key or padded value is refused', () => {
+  const pile = triagePile([row({ qty_owned: 2 })], sets({ c1: ['001', '002'] }));
+  for (const dest of ['foil', 'uncategorised', 'uncategorised:f', '001:f', ' 001', '', null]) {
+    assert.throws(() => fileLinePlan(pile[0], pile[0].lines[0], dest), /destination set|not one of this card/,
+      `accepted destination ${JSON.stringify(dest)}`);
+  }
+});
+
+test('a plan naming a CATEGORISED row as a source is refused', () => {
+  // Triage may only ever drain the pile. A forged or stale plan listing a real set row would
+  // otherwise draw down holdings the user never put in it.
+  const pile = triagePile([row({ qty_owned: 2 })], sets({ c1: ['001', '002'] }));
+  const forged = { ...pile[0].lines[0], from: [UNCATEGORISED, '001'] };
+  assert.throws(() => fileLinePlan(pile[0], forged, '002'), /only drain uncategorised/);
+});
+
+test('every uncategorised key IS an allowed source', () => {
+  const pile = triagePile([row({ qty_owned: 1 })], sets({ c1: ['001', '002'] }));
+  for (const src of UNCATEGORISED_KEYS) {
+    const line = { ...pile[0].lines[0], from: [src] };
+    assert.doesNotThrow(() => fileLinePlan(pile[0], line, '002'), `${src} was rejected as a source`);
+  }
+});

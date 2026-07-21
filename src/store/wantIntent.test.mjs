@@ -125,3 +125,19 @@ test('duplicates are collapsed in the picker options too', () => {
   assert.equal(t.kind, 'ask');
   assert.deepEqual(t.options, ['001', '002']);
 });
+
+/* ---------------- pickerOptions is what actually gets rendered ---------------- */
+
+test('pickerOptions deduplicates - tested on the function the sheet renders from', () => {
+  // The earlier "duplicates are collapsed" test exercised wantTarget, which proved nothing
+  // about what gets drawn. A doubled catalog entry here means two identical buttons and two
+  // identical React keys.
+  const opts = pickerOptions(['001', '002', '001', '002', '001'], () => 0, { '001': 'Alpha', '002': 'Beta' });
+  assert.deepEqual(opts.map((o) => o.code), ['001', '002']);
+  assert.equal(new Set(opts.map((o) => o.code)).size, opts.length, 'React keys are unique');
+});
+
+test('pickerOptions dedupes before ranking, so order is still correct', () => {
+  const rank = (c) => ({ '001': 1, '002': 2 })[c];
+  assert.deepEqual(pickerOptions(['002', '001', '002'], rank, {}).map((o) => o.code), ['001', '002']);
+});

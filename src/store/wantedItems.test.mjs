@@ -90,7 +90,7 @@ test('creating an uncategorised want is refused, and writes nothing', async () =
   // migration, import and triage. Ordinary code manufacturing it would recreate exactly what
   // this work removes, and nothing downstream would object, because the row is well-formed.
   for (const item of [{}, { set: '' }, { set: null }, { foil: true }]) {
-    await assert.rejects(() => setWantedForItem('c1', item, 2), /must name a real set/);
+    await assert.rejects(() => setWantedForItem('c1', item, 2), /is not a set code/);
   }
   assert.deepEqual(ledger(), [], 'no row was created by any rejected call');
 });
@@ -98,9 +98,9 @@ test('creating an uncategorised want is refused, and writes nothing', async () =
 test('the uncategorised KEYS are refused as sets too, not just the empty string', async () => {
   // A caller passing a storage key through as if it were a set code.
   for (const set of [UNCATEGORISED, UNCATEGORISED_FOIL]) {
-    await assert.rejects(() => setWantedForItem('c1', { set }, 1), /must name a real set/);
-    await assert.rejects(() => addWantedForItem('c1', { set }, 1), /must name a real set/);
-    await assert.rejects(() => stepWantedForItem('c1', { set }, 1), /must name a real set/);
+    await assert.rejects(() => setWantedForItem('c1', { set }, 1), /is not a set code/);
+    await assert.rejects(() => addWantedForItem('c1', { set }, 1), /is not a set code/);
+    await assert.rejects(() => stepWantedForItem('c1', { set }, 1), /is not a set code/);
   }
   assert.deepEqual(ledger(), []);
 });
@@ -110,15 +110,15 @@ test('a rejected write emits NO collection notification', async () => {
   // would make the failure look like a successful no-op.
   let fired = 0;
   const unsub = subscribeCollection(() => { fired++; });
-  await assert.rejects(() => setWantedForItem('c1', {}, 1), /must name a real set/);
-  await assert.rejects(() => addWantedForItem('c1', {}, 1), /must name a real set/);
+  await assert.rejects(() => setWantedForItem('c1', {}, 1), /is not a set code/);
+  await assert.rejects(() => addWantedForItem('c1', {}, 1), /is not a set code/);
   unsub();
   assert.equal(fired, 0);
 });
 
 test('a rejected write does not disturb an existing row', async () => {
   seed('001', 2, 3);
-  await assert.rejects(() => setWantedForItem('c1', {}, 9), /must name a real set/);
+  await assert.rejects(() => setWantedForItem('c1', {}, 9), /is not a set code/);
   assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 2, qty_wanted: 3 }]);
 });
 
@@ -202,4 +202,49 @@ test('card-level totals still sum across every collector item', async () => {
   await setWantedForItem('c1', { set: '002' }, 2);
   const { wanted } = await qtyFor('c1');
   assert.equal(wanted, 3);
+});
+
+/* ---------------- adversarial set codes, across ALL THREE writers ---------------- */
+
+test('every writer refuses storage keys, foil suffixes and padding', async () => {
+  // My first validator listed forbidden values inline and missed half of them: the legacy
+  // 'foil' key sailed through as a "set", and '001:f' with foil:true produced the malformed
+  // key '001:f:f'. A hand-written reject-list is the wrong shape - the rule is what a set
+  // code IS, which is why this now shares assertRealSetCode with every other writer.
+  const bad = [
+    undefined, null, '', '   ', ' 001', '001 ',
+    'foil',              // the legacy card-level key
+    'uncategorised',
+    'uncategorised:f',
+    '001:f',             // a printing key, not a set
+    5, {}, [],
+  ];
+  for (const set of bad) {
+    for (const [name, call] of [
+      ['setWantedForItem', () => setWantedForItem('c1', { set }, 1)],
+      ['stepWantedForItem', () => stepWantedForItem('c1', { set }, 1)],
+      ['addWantedForItem', () => addWantedForItem('c1', { set }, 1)],
+    ]) {
+      await assert.rejects(call, /is not a set code/, `${name} accepted ${JSON.stringify(set)}`);
+    }
+  }
+  assert.deepEqual(ledger(), [], 'not one of those attempts wrote a row');
+});
+
+test('the malformed double-suffix key can no longer be produced', async () => {
+  // canonicalPrinting('001:f', true) returns '001:f:f'. It stays permissive because ownership
+  // migration needs it; the want boundary is what must never hand it such an input.
+  await assert.rejects(() => setWantedForItem('c1', { set: '001:f', foil: true }, 1), /is not a set code/);
+  assert.equal(rows("SELECT COUNT(*) n FROM owned_cards WHERE variant_slug LIKE '%:f:f';")[0].n, 0);
+});
+
+test('adversarial rejections emit no notification either', async () => {
+  let fired = 0;
+  const unsub = subscribeCollection(() => { fired++; });
+  for (const set of ['foil', '001:f', '  ', 'uncategorised']) {
+    await assert.rejects(() => setWantedForItem('c1', { set }, 1));
+    await assert.rejects(() => addWantedForItem('c1', { set }, 1));
+  }
+  unsub();
+  assert.equal(fired, 0);
 });

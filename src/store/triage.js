@@ -14,7 +14,13 @@
 // FINISH IS NEVER ASKED HERE. An uncategorised row already states its finish - that survived
 // migration intact; only the set was lost. Asking again would invite the user to contradict
 // what their own ledger says.
-import { UNCATEGORISED, UNCATEGORISED_FOIL, LEGACY_UNCATEGORISED, LEGACY_FOIL, parsePrinting, isUncategorised } from './printings.js';
+import {
+  UNCATEGORISED, UNCATEGORISED_FOIL, LEGACY_UNCATEGORISED, LEGACY_FOIL,
+  parsePrinting, isUncategorised, isRealSetCode,
+} from './printings.js';
+
+/** Every uncategorised key - the only rows triage is ever allowed to drain. */
+export const UNCATEGORISED_KEYS = [LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL];
 
 /** The kinds of line triage can present. Each is filed independently. */
 export const OWNED_NONFOIL = 'owned';
@@ -105,8 +111,19 @@ export function autoResolvable(pile) {
  * duplicated.
  */
 export function fileLinePlan(entry, line, set) {
-  if (!set) throw new Error('A triage line needs a destination set.');
+  // The destination must be one of THIS card's sets, not merely truthy. Stale UI state can
+  // offer a set the card was never printed in - filing there would move copies onto a
+  // collector item that does not exist, which no reader can bucket and no later triage can
+  // find again.
+  if (!isRealSetCode(set)) throw new Error(`A triage line needs a real destination set, not ${JSON.stringify(set)}.`);
+  if (!entry?.sets?.includes(set)) throw new Error(`${set} is not one of this card's sets.`);
   if (!line?.from?.length) throw new Error('A triage line must know which rows its quantity came from.');
+
+  // Sources are constrained to the uncategorised keys. A forged or stale plan naming a
+  // categorised row would otherwise drain holdings the user never put in the pile.
+  const foreign = line.from.filter((slug) => !UNCATEGORISED_KEYS.includes(slug));
+  if (foreign.length) throw new Error(`Triage may only drain uncategorised rows, not ${foreign.join(', ')}.`);
+
   const wanted = line.kind === WANTED;
   return {
     card_id: entry.card_id,
@@ -120,5 +137,4 @@ export function fileLinePlan(entry, line, set) {
   };
 }
 
-/** Every uncategorised key, for callers that need to bound a drawdown. */
-export const UNCATEGORISED_KEYS = [LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL];
+

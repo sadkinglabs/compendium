@@ -67,8 +67,10 @@ export function needsPicker(setCodes, context) {
  * silently become the default choice.
  */
 export function pickerOptions(setCodes, setRank = () => 0, setLabel = {}) {
-  return (Array.isArray(setCodes) ? setCodes : [])
-    .filter(Boolean)
+  // Deduplicated HERE, not only in wantTarget. This is the function the sheet renders from, so
+  // a doubled catalog entry would otherwise produce two identical buttons and two identical
+  // React keys. Testing the dedupe on wantTarget proved nothing about what gets drawn.
+  return [...new Set((Array.isArray(setCodes) ? setCodes : []).filter(Boolean))]
     .map((code) => ({ code, name: setLabel[code] || code }))
     .sort((a, b) => (setRank(a.code) ?? 99) - (setRank(b.code) ?? 99));
 }

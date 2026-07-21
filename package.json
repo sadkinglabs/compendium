@@ -16,7 +16,7 @@
     "compile:codex": "node scripts/compile-codex.mjs",
     "test:codex": "node --test \"scripts/codex/**/*.test.mjs\"",
     "test:query": "node --test \"src/store/**/*.test.mjs\"",
-    "test:ui": "node --test \"src/pillars/**/*.test.mjs\"",
+    "test:ui": "node --test \"src/pillars/**/*.test.mjs\" \"src/components/**/*.test.mjs\"",
     "test:app": "node --test \"src/*.test.mjs\"",
     "check:types": "node --test scripts/check-types.test.mjs && node scripts/check-types.mjs",
     "check:cycles": "node --test scripts/check-cycles.test.mjs && node scripts/check-cycles.mjs",

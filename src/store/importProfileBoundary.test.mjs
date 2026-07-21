@@ -57,26 +57,38 @@ const seedCanonical = (slug, wanted) =>
 // This is the gate on reconnecting the boundary. While it fails, normalisation must stay out of
 // the production path; when it passes, the active writers have been switched and it may return.
 
-test('GATE: a canonical want edited by the CURRENT heart still inflates - boundary must stay off', async () => {
+test('CHARACTERIZATION: the current heart inflates a canonical want - exactly, not conditionally', async () => {
+  // This asserts the BROKEN state unconditionally, on purpose.
+  //
+  // My first version branched on the outcome and passed either way, which meant it could never
+  // fail and therefore proved nothing about activation readiness. A test that accepts both the
+  // defect and its fix is not a gate; it is a comment that costs CPU.
+  //
+  // At activation this test is DELETED and replaced by the contract below it.
   seedCanonical('004', 2);
   assert.equal((await qtyFor('c1')).wanted, 2);
 
   await stepWanted('c1', +1);
 
-  const total = (await qtyFor('c1')).wanted;
-  const stored = rows('SELECT variant_slug, qty_wanted FROM owned_cards ORDER BY variant_slug;');
-  if (total === 3) {
-    assert.equal(stored.some((r) => isLegacyPrinting(r.variant_slug)), false,
-      'REMOVE THIS BRANCH: writers are canonical now, so reconnect prepareBundle in profileTransfer');
-  } else {
-    // The state today. stepWanted reads the card-level total (2), adds one, and writes 3 onto a
-    // fresh legacy row while the canonical row keeps its 2. One tap, +3.
-    assert.equal(total, 5, 'the inflation is exactly as reproduced');
-    assert.deepEqual(stored, [
-      { variant_slug: LEGACY_UNCATEGORISED, qty_wanted: 3 },
-      { variant_slug: '004', qty_wanted: 2 },
-    ], 'two rows for one want - this is why the boundary is disconnected');
-  }
+  assert.equal((await qtyFor('c1')).wanted, 5,
+    'one tap adds three: the writer reads the total, adds one, and orphans the canonical row');
+  assert.deepEqual(rows('SELECT variant_slug, qty_wanted FROM owned_cards ORDER BY variant_slug;'), [
+    { variant_slug: LEGACY_UNCATEGORISED, qty_wanted: 3 },
+    { variant_slug: '004', qty_wanted: 2 },
+  ], 'two rows for one want - this is why the import boundary stays disconnected');
+});
+
+test('ACTIVATION CONTRACT: written now, skipped now, unconditional later', { skip: 'activation' }, async () => {
+  // The unconditional end-to-end contract activation must satisfy. Written here so it is not
+  // invented later under pressure: remove the skip, delete the characterization test above,
+  // and reconnect prepareBundle only when this passes.
+  seedCanonical('004', 2);
+  await stepWanted('c1', +1);
+  assert.equal((await qtyFor('c1')).wanted, 3, 'a tap adds exactly one');
+  const stored = rows('SELECT variant_slug, qty_wanted FROM owned_cards;');
+  assert.equal(stored.length, 1, 'exactly one row');
+  assert.deepEqual(stored[0], { variant_slug: '004', qty_wanted: 3 });
+  assert.equal(stored.some((r) => isLegacyPrinting(r.variant_slug)), false);
 });
 
 test('GATE: setWanted has the same problem, so it is not specific to stepping', async () => {

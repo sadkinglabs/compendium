@@ -14,8 +14,8 @@
 // and lives on the '' row only.
 import { query, run, tx } from './db.js';
 import {
-  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
-  parsePrinting, printingSlugs, canonicalPrinting, SQL_IS_FOIL,
+  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED_BUCKET,
+  parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
@@ -243,12 +243,13 @@ export async function setFoilInSet(cardId, set, qty, pid = activeProfileId()) { 
  *
  * canonicalPrinting stays permissive on purpose: ownership migration genuinely needs to write
  * uncategorised keys. The invariant belongs here, at the want boundary, not in the key helper.
+ *
+ * The check is assertRealSetCode, shared with every other writer that may not create an
+ * unresolved row. An earlier version listed the forbidden values inline and missed half of
+ * them: the legacy 'foil' key passed as a "set", and '001:f' produced the malformed '001:f:f'.
+ * A hand-written list of what to reject is the wrong shape - the rule is what a set code IS.
  */
-function requireResolvedSet(set, fn) {
-  if (!set || set === UNCATEGORISED_BUCKET || set === UNCATEGORISED || set === UNCATEGORISED_FOIL) {
-    throw new Error(`${fn}: a want must name a real set. Uncategorised wants are created only by migration, import and triage.`);
-  }
-}
+const requireResolvedSet = assertRealSetCode;
 
 async function resolveItemRow(cardId, set, foil, pid) {
   const slugs = printingSlugs(set, foil);

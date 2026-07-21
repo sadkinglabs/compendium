@@ -132,6 +132,38 @@ export function canonicalPrinting(set, foil) {
   return foil ? `${set}:f` : set;
 }
 
+/**
+ * Is this a SET CODE, as opposed to a stored printing key?
+ *
+ * The two are different alphabets that happen to overlap, and conflating them let ordinary
+ * writers produce nonsense: `canonicalPrinting('001:f', true)` returned `'001:f:f'`, and a
+ * caller passing the legacy `'foil'` key through as a "set" wrote an unresolved row while
+ * satisfying a check that only looked for the empty string.
+ *
+ * WHAT THIS ENFORCES: shape. A set code is a non-empty, non-padded token that is not any of the
+ * four uncategorised keys and carries no finish suffix - finish travels separately, always.
+ *
+ * WHAT IT DELIBERATELY DOES NOT ENFORCE: catalog membership. That needs the card, which this
+ * leaf module does not have and must not import. Membership is proven one layer up, in
+ * wantIntent, which checks the code against the card's own sets before any writer is reached.
+ * Stating the division here so neither layer assumes the other did it.
+ */
+export function isRealSetCode(set) {
+  if (typeof set !== 'string') return false;
+  if (set !== set.trim() || set === '') return false;
+  if (set === LEGACY_UNCATEGORISED || set === LEGACY_FOIL) return false;
+  if (set === UNCATEGORISED || set === UNCATEGORISED_FOIL) return false;
+  if (set.endsWith(':f')) return false;          // a printing key, not a set
+  return true;
+}
+
+/** Throw unless `set` is a real set code. Used by writers that may not create unresolved rows. */
+export function assertRealSetCode(set, fn) {
+  if (!isRealSetCode(set)) {
+    throw new Error(`${fn}: ${JSON.stringify(set)} is not a set code. Uncategorised rows are created only by migration, import and triage.`);
+  }
+}
+
 // SQL fragments, shared so a predicate cannot be spelled differently in two queries.
 //
 // SQL_IS_FOIL already covered 'uncategorised:f' by accident, because it ends in ':f'. Accident
