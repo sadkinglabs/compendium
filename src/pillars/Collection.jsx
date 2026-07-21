@@ -11,6 +11,7 @@ import { getPool, getArtists, listDecks, resolveCardList } from '../store/deckRe
 import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
 import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
+import { collectionSurface } from './collectionRoute.js';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
@@ -97,30 +98,36 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       </div>
     </div>
   );
+  const surface = collectionSurface({ view, setDrill, listOpen });
+
   return (
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
-      {view === 'overview' ? (
+      {/* WHICH surface is a pure decision (collectionRoute.js), characterized by tests before
+          this file was split. It carries two rules that a nested ternary made easy to lose:
+          a stale `setDrill` must not resurrect the drill from another view, and likewise
+          `listOpen`. Both are real states - the nav cache survives an unmount. */}
+      {surface === 'overview' && (
         <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={peek}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
-      ) : view === 'cards' ? (
-        setDrill != null ? (
-          <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
-            setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
-        ) : (
-          <>
-            <SetsHome onOpenSet={openSet} rev={rev} />
-            {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
-                in", everywhere in this pillar. */}
-            <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
-              onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
-          </>
-        )
-      ) : listOpen ? (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
-      ) : (
-        <ListsIndex onOpenList={setListOpen} rev={rev} />
       )}
+      {surface === 'setDrill' && (
+        <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
+          setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
+      )}
+      {surface === 'setsHome' && (
+        <>
+          <SetsHome onOpenSet={openSet} rev={rev} />
+          {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
+              in", everywhere in this pillar. */}
+          <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
+            onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+        </>
+      )}
+      {surface === 'listDetail' && (
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
+      )}
+      {surface === 'listsIndex' && <ListsIndex onOpenList={setListOpen} rev={rev} />}
       {/* The sheet's open card is KEPT in state across a pillar unmount (a Codex hand-off
           from the scanner), so Back lands right back on this sheet - where the user left. */}
       <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }} editable />
