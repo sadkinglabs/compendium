@@ -43,9 +43,9 @@ product behaviour and the storage has never supported it.
 **2. The UI asserted a printing anyway.** The list-row set pill returned `sets[0].name`, an
 array index. A wishlisted *Albespine Pikemen* rendered **ALPHA** because Alpha sorts first in
 its catalog entry, while the copies in hand were Beta. It was right exactly when it could not
-be wrong (single-printing cards) and silently wrong on every reprint — which is how the owner
+be wrong (single-set cards) and silently wrong on every reprint — which is how the owner
 came to believe wants were tied to a stored collector item. *Already fixed:* the pill now shows a set only when
-the card has exactly one printing. That is a stopgap, not the answer.
+the card belongs to exactly one set. That is a stopgap, not the answer.
 
 **3. `''` means two unrelated things.** It is both the not-yet-categorised bucket for
 `qty_owned` **and** the only home of `qty_wanted`. This is why "discard the old `''` cards,
@@ -111,9 +111,26 @@ Ambiguous legacy wants are the reason the To Be Categorised pile must temporaril
 state. The migration may create them; the triage flow removes them; new writers may not.
 
 **Deliberately NOT migrated:** `deck_entries.variant_slug` and `card_list_entries.variant_slug`
-keep `''`. There it legitimately means *"any printing will do"* — a deck does not care which
-Lightning Bolt. Only `owned_cards` gains the new state. This is a real asymmetry and §7 asks
-Codex whether it is the right call.
+keep `''`. Only `owned_cards` gains the new state.
+
+**`card_list_entries` — ruled on its own semantics, not by copying the Deck ruling.** Both
+list kinds want the same thing from it:
+
+- A **wishlist** entry is "I want this card"; *which* collector item is the want's own
+  property, on the `owned_cards` row, and duplicating it here would create two answers to one
+  question.
+- A **curated list** ("cards to trade", "favourites") is about the card, not a copy in hand.
+
+So in `card_list_entries`, `''` means **any collector item satisfies this entry** - the same
+meaning as in `deck_entries`, reached independently. Neither table gains an uncategorised
+state, and neither needs migrating.
+
+**The asymmetry must be spelled in the code, not implied.** `owned_cards` and the entry tables
+now use the same character for different meanings, so they get **table-specific constants** -
+`UNCATEGORISED` (ownership: set not yet established) and `ANY_PRINTING` (entries: any copy
+will do). Sharing one constant across both would guarantee that a future reader propagates
+ownership triage into deck rows, which is exactly the class of bug this proposal exists to
+end.
 
 ## 3.1 · Boot order — the migration cannot run where migrations run
 
@@ -133,8 +150,20 @@ Boot becomes: apply DDL → seed catalog → canonicalise ledger (transactional,
 `initProfiles()` → expose Collection. Collection must not render before canonicalisation
 succeeds, or a user could edit rows mid-conversion.
 
-**Marker.** A row in `settings` (or a dedicated `migrations_data` table) records that
-canonicalisation completed for a given version. It is written **inside the same transaction**
+**Marker — RULED: a single global row in `_meta`.** `_meta` already exists and already holds
+`schema_version` (`db.js:27`), so canonicalisation records
+`owned_cards_canonical_version = 11` there.
+
+Not `settings`: that table is **profile-owned**, and canonicalisation converts *every* profile
+before `initProfiles()` runs. A per-profile marker would either be mistaken for whole-database
+completion or change meaning as profiles are created and switched, leaving some profiles in
+v10 shape under v11 code. Not a new table either - `_meta` is exactly this.
+
+**The global marker governs BOOT ONLY.** Imported bundles are normalised independently, at the
+import boundary (§3.4). A restored v10 bundle must never skip conversion because boot already
+marked the database canonical.
+
+It is written **inside the same transaction**
 as the data change: a marker written afterwards can be lost to a crash and the pass would
 re-run, and a marker written before can strand half-converted data as "done".
 
@@ -169,7 +198,7 @@ exception. For every `(profile_id, card_id)`:
 |---|---|
 | `qty_owned` | **conserved** — the per-card total across all rows is identical before and after |
 | `qty_wanted` | **conserved** per card |
-| finish | preserved for owned copies; never inferred for wants (§7.4) |
+| finish | preserved for owned copies; legacy wants are assigned **non-foil** by the owner-approved product rule (§7.4). Set is inferred only when catalog membership is unambiguous |
 
 On collision with an existing destination row: **sum the quantities, keep the earliest
 `created_at`, take the latest `updated_at`, and concatenate distinct non-empty `notes`**
@@ -203,8 +232,9 @@ triage to a single question.
 - **Truthy**, which kills the `if (slug)` footgun the empty string has caused repeatedly.
 - Cannot collide: categorised collector items are numeric set codes with an optional `:f`
   suffix.
-- The DDL `DEFAULT ''` on `owned_cards` changes with it; the unique index
-  `(profile_id, card_id, variant_slug)` is unaffected in shape.
+- The stored SQLite `DEFAULT ''` is **left alone** (§3.2): every writer supplies
+  `variant_slug` explicitly, so the default is unreachable and a table rebuild buys nothing.
+  The unique index `(profile_id, card_id, variant_slug)` is unaffected in shape.
 
 `printings.js` already centralises this, so the change is one constant plus the migration.
 
@@ -228,9 +258,49 @@ migration. See [`completion-milestones.md`](./completion-milestones.md), which a
 inconsistency the framing exposed: playsets currently count foils while set completion does
 not.
 
-**Export/import.** `profileTransfer` carries `variant_slug` verbatim, so older backups contain
-`''`. Import must run the same mapping as the migration, or a restore silently reintroduces
-the old state. This is the part most likely to be forgotten.
+### 5.1 · Export/import - the boundary, stated executably
+
+`profileTransfer` carries `variant_slug` verbatim, so older backups contain `''`. Import must
+run the same mapping as the migration, or a restore silently reintroduces the old state.
+
+**Today `importProfile` cannot do this.** It validates one field - `bundle.app !== 'compendium'`
+(`profileTransfer.js:73`) - and then calls `createProfile()` at line 85. `schemaVersion` is
+never read. A v10 bundle imports as if it were v11, and a *future* bundle imports as if it were
+current, silently.
+
+The required order, and the reason for it:
+
+| # | step | why it must be here |
+|---|---|---|
+| 1 | read `bundle.schemaVersion`; missing ⇒ treat as v10 | pre-stamp exports exist |
+| 2 | reject `> 11` with a named error | a future bundle's meaning is unknown; guessing corrupts |
+| 3 | reject malformed structure | fail before anything is created |
+| 4 | normalise the **whole bundle** in memory, v10 ⇒ v11 | pure, no database contact |
+| 5 | **only now** `createProfile()` and insert | nothing partial can be left behind |
+
+Steps 1-4 happen **before** `createProfile()`. If any fails, the profile does not exist - the
+user sees a rejected import, not an orphaned half-profile they must find and delete. That
+ordering is the whole point, and it is the opposite of the current code.
+
+The normaliser is the **same pure v10 ⇒ v11 function the boot canonicalisation uses**, called
+on a bundle instead of on rows. Two implementations of one mapping would drift, and the drift
+would only ever be visible on restore - the least-tested path there is.
+
+The boot marker in `_meta` (§3.1) has no authority here: it records that *this database* was
+converted, and says nothing about a bundle that arrived afterwards.
+
+**Tests (six named):**
+
+1. v10 bundle ⇒ imported rows carry canonical collector-item keys; no `''` survives in `owned_cards`.
+2. v11 bundle ⇒ passes through byte-identical; normalisation is a no-op.
+3. Missing `schemaVersion` ⇒ treated as v10, not rejected.
+4. `schemaVersion: 12` ⇒ rejected, **and no profile row exists afterwards**.
+5. Malformed bundle ⇒ rejected, **and no profile row exists afterwards**.
+6. Export ⇒ import ⇒ export round-trip is stable, and `qty_owned`/`qty_wanted` totals per card
+   are conserved across it.
+
+Tests 4 and 5 assert the *absence* of a profile, not merely that an error was thrown. The
+throw is easy; the cleanliness is the requirement.
 
 **The wishlist gains a set-and-finish picker.** A sheet scoped to a set already knows the set
 but must still identify foil/non-foil. A name-level surface must ask for every unknown
@@ -238,9 +308,9 @@ dimension. It must not create new uncategorised wants.
 
 ## 6 · Phasing
 
-- **A — landed behavior, naming cleanup required.** Set pill stops guessing. Rename
-  `solePrintingName` to `soleSetName` or `unambiguousSetName`: it establishes a set, not an
-  exact catalog variant or a finish.
+- **A — COMPLETE.** Set pill stops guessing, and the rename to **`soleSetName`** has landed
+  (`printings.js`, covered by `printings.test.mjs`). It establishes a set, not an exact catalog
+  variant and not a finish.
 - **B.** `UNCATEGORISED` constant + predicates; rename in code only, value still `''`. Pure
   refactor, no migration, no behaviour change.
 - **C–E, one releasable increment.** Seed the current catalog; run the transactional migration
@@ -252,7 +322,7 @@ dimension. It must not create new uncategorised wants.
 B remains separable on purpose: a rename that cannot lose data should not be entangled with
 the migration. The schema flip and its user-visible consumers are one release boundary.
 
-## 7 · Decisions and remaining owner question
+## 7 · Decisions (all resolved)
 
 1. **Table asymmetry — Codex ruling:** keep `deck_entries` as "any collector item". Decide
    `card_list_entries` by list semantics rather than copying the Deck ruling. `owned_cards`
@@ -288,9 +358,9 @@ the migration. The schema flip and its user-visible consumers are one release bo
   disagrees with the one at write time changes the outcome. Belt: the decision is per-row and
   idempotent, so a re-run cannot compound.
 - **I am extending a state, not removing one.** After this, `owned_cards.variant_slug` has
-  categorised set/finish keys, uncategorised non-foil and uncategorised foil, plus a narrowly
-  bounded migration-only legacy-want state if finish was historically unspecified. The win is
-  that each value states what is known instead of making `''` mean two unrelated things.
+  categorised set/finish keys, uncategorised non-foil, and uncategorised foil. Four value
+  shapes where there was one. The win is that each states what is known, instead of `''`
+  meaning two unrelated things - but it is still more surface to keep honest.
 - **The user-visible conversion is the risky release boundary.** Set-and-finish wants touch
   the card sheet, the wishlist, Codex entry points and the scanner. That is why migration,
   writers and triage form one releasable increment even if developed in checkpoints.
@@ -300,3 +370,87 @@ the migration. The schema flip and its user-visible consumers are one release bo
 - **The honest inbox may be a trap.** Making the count truthful invites making it loud, and a
   user with 300 uncategorised imports does not want a permanent 300 on their home screen.
   Honest and quiet is a coherent position; I have not defended it here.
+
+## 9 · High-risk handrails
+
+This change is High-risk under the constitution: forward-only migration over live user data.
+The handrails below are the class requirement, not decoration.
+
+### 9.1 · Success criteria (testable, not aspirational)
+
+| # | criterion | how it is proven |
+|---|---|---|
+| 1 | No `''` row survives in `owned_cards` after canonicalisation | query asserts zero, across every profile |
+| 2 | `qty_owned` and `qty_wanted` totals per profile+card are identical before and after | snapshot both sides, compare |
+| 3 | Finish is preserved for every owned copy | legacy `'foil'` rows land in `UNCATEGORISED_FOIL`, never in the non-foil bucket |
+| 4 | Canonicalisation is idempotent | run twice; second run is a no-op and the marker is unchanged |
+| 5 | Failure leaves untouched v10 data | inject a mid-transaction throw; assert no marker, no partial rows |
+| 6 | Collection cannot render pre-canonicalisation | assert boot order; the surface is unreachable until the step resolves |
+| 7 | A rejected import creates no profile | tests 4 and 5 of §5.1 |
+| 8 | The owner's 80-card wishlist survives with its quantities | fixture taken from a real export |
+
+### 9.2 · Non-goals
+
+- Exact catalog-variant ownership (art, product). The grain is `card_id + set + finish`, full stop.
+- Completion milestones. Recorded in [`completion-milestones.md`](./completion-milestones.md); v11 only makes them countable.
+- Changing `deck_entries` or `card_list_entries` semantics (§3).
+- Changing the stored SQLite `DEFAULT ''` (§3.2).
+- Any UI redesign beyond the set-and-finish picker and the To Be Categorised surface.
+
+### 9.3 · Point of no return
+
+**Phase B (constants and predicates, value still `''`) is fully reversible** - a pure rename,
+revertable by `git revert`.
+
+**The point of no return is the first successful canonicalisation on a user's device.** After
+it, rows carry v11 keys and the marker is set. There is no down-migration, and a code revert
+would leave v11 data under v10 readers - which read `''` and would see an empty collection.
+
+Therefore, before the C-E increment reaches any device:
+
+1. **Push `main` to `origin`.** It is currently **69 commits ahead, unpushed**. A live-data
+   migration with no off-device recovery point is not defensible. This is a prerequisite, not
+   a suggestion.
+2. **Export the owner's profile to a file and keep it outside the repo.** It is the only copy
+   of the 80-card wishlist, and it doubles as the §9.1 criterion-8 fixture.
+3. Run the migration against that exported bundle in a test first.
+
+### 9.4 · Verification matrix
+
+| surface | gate |
+|---|---|
+| pure mapping, predicates, constants | `npm run test:query` |
+| migration, collision, conservation, idempotency, failure | `npm run test:query` (new suite) |
+| import boundary, six named tests (§5.1) | `npm run test:query` |
+| Collection reads and writes | `npm run test:app` |
+| import cycles | `npm run check:cycles` |
+| types, build | `npm run check:types`, `npm run build` |
+| **boot order and real device data** | `npm run check:smoke` on the installed release APK - required, because this is the only gate that has ever caught a minified-only boot failure |
+| documentation | `npm run check:docs` |
+
+A browser-only pass is not evidence here: the migration runs against native SQLite, whose
+`execute()` splitter is quote-unaware. Every statement must go through parameterized `tx()`.
+
+### 9.5 · Documentation impact
+
+Completion gate, per `AGENTS.md` §5. To be updated **in the same commit** as the change:
+
+- [`COMPENDIUM_DATA_MODEL.md`](../../COMPENDIUM_DATA_MODEL.md) - schema v11; the collector-item
+  grain; the `owned_cards` state table; the `UNCATEGORISED` / `ANY_PRINTING` split; the
+  canonicalisation step and its `_meta` marker; the import boundary.
+- [`COMPENDIUM_FEATURE_MATRIX.md`](../../COMPENDIUM_FEATURE_MATRIX.md) - per-set-and-finish
+  wants; the To Be Categorised surface.
+- [`COMPENDIUM_ARCHITECTURE.md`](../../COMPENDIUM_ARCHITECTURE.md) - boot sequence gains a
+  catalog-dependent canonicalisation step between seed and `initProfiles()`.
+- `src/store/schema.js` version constant, which `check:docs` asserts against the docs.
+
+### 9.6 · Approval record
+
+| date | event |
+|---|---|
+| - | Proposal drafted; Codex review requested |
+| - | Codex: changes required (grain correction, boot ordering, conservation, import) |
+| - | Redrafted; §7.4 ruled by owner (legacy wants migrate non-foil) |
+| - | Codex v11 review: changes required, document correction pass only, no redesign |
+| 2026-07-21 | Correction pass applied: marker ruled to `_meta`; import boundary made executable; six contradictions removed; `card_list_entries` ruled; these handrails added |
+| **pending** | **Owner approval to implement. No `src/**` change beyond the landed Phase A until given.** |

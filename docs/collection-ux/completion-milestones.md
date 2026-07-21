@@ -37,48 +37,115 @@ Much more than the framing suggests.
   `RARITY_LIMITS` (4/3/2/1) and handles "any number of" cards. It paints the jade jewel on
   card tiles. Shipping at card level.
 
-So the gap is presentation and aggregation, not data or algorithm.
+It is tempting to conclude the gap is presentation and aggregation. **It is not** - §3 shows
+the foil numerator exists but a correct foil *denominator* does not, and §4 shows the non-foil
+denominator is already wrong today.
 
-## 3 · The inconsistency this framing exposed
+## 3 · The denominators do not exist yet
 
-**Playsets currently count foils; set completion does not.**
+`foilUnique` is a numerator. There is no foil denominator, and `totalCollectible` cannot be
+reused as one, because **the catalog is finish-asymmetric**: not every card in a set was
+printed in both finishes.
 
-`LedgerRow` and `BinderTile` both compute `const total = owned + foil` before calling
-`playsetOf`. So three non-foil plus one foil reads as a complete playset, while the same
-holding contributes only one card to set completion.
+Measured against the installed catalog, variants scoped to their own set
+(`v.set === s.code` - scoping across all of a card's sets inflates every multi-set count):
 
-Both rules are defensible because they answer different questions:
+| set | entries | has Standard | has Foil |
+|---|---|---|---|
+| Alpha | 404 | **403** | 404 |
+| Beta | 402 | 402 | 402 |
+| Arthurian Legends | 223 | 222 | **221** |
+| Dragonlord | 13 | 13 | 13 |
+| Gothic | 443 | 443 | **439** |
+| Promotional | 62 | **22** | 40 |
 
-- **Playset for deck legality** — 4 legal copies. Foils are legal, so `owned + foil` is right.
-- **Playset as a collecting achievement** — presumably 4 *non-foil*, the same way a set is
-  non-foil, with the foil playset belonging to the master track.
+The exceptions are nameable, which is what makes this a design input rather than noise:
 
-**Owner decision required.** If playsets are an achievement in the same ladder as set and
-master set, the current behaviour is wrong and the jade jewel is over-awarded. If the jewel
-means "I can build with this", it is right and simply belongs to a different axis than the set
-ladder - in which case it should probably not sit in the same visual family.
+- **Alpha** - *Winter River* exists only as a foil Box Topper.
+- **Gothic** - *Spire*, *Stream*, *Valley*, *Wasteland* have no foil printing.
+- **Arthurian Legends** - *Druid* has no foil printing.
+- **Promotional** is not a set in the collecting sense at all: only 22 of 62 entries have a
+  Standard form, 23 are foil-only. A "complete Promotional set" counted against 62 is
+  unreachable in either finish. It likely needs excluding from the ladder, or its own framing.
 
-## 4 · What v11 changes, and what it does not
+So each track needs **its own denominator**, computed from per-set finish availability:
+
+```text
+non-foil set  = cards in the set WITH a Standard variant
+foil set      = cards in the set WITH a Foil variant
+master set    = both complete
+```
+
+## 4 · This is already a live defect
+
+`setCompletion.js` counts every non-token card/set entry into `totalCollectible` regardless of
+whether a Standard printing exists (the loop at lines 46-52 keys off `card._sets`, never
+consulting `variants`).
+
+**Alpha therefore cannot reach 100% non-foil today.** Its denominator is 404; only 403 cards
+have a non-foil printing. The plate will read 403/404 for a player who owns every non-foil
+card in the set. The same holds for Gothic (439 foil-eligible counted as 443) once a foil
+track exists.
+
+This is not a milestone-increment concern that can wait. It is a wrong number on a shipping
+surface, and it is the strongest argument for building the denominators properly rather than
+deriving them on a tile.
+
+## 5 · Playsets - ruled, and the real weakness is elsewhere
+
+**The jade jewel is NOT over-awarded, and `total = owned + foil` stays.** A playset is a
+*card-level* achievement: four copies of the card, in any finish, from any set. Three Alpha
+non-foil plus one Beta foil is a playset. It is a different axis from the set ladder, not a
+laxer version of it, so it does not inherit the non-foil rule.
+
+The actual defect is **scope**. `LedgerRow` and `BinderTile`
+(`CollectionCardViews.jsx:164`, `:239`) compute `owned + foil` from the counts *the current
+view hands them*. Inside a set drill those are set-scoped, so the jewel silently means "a
+playset from this set" on one screen and "a playset of this card" on another. The milestone
+must aggregate **across every set and finish**, once, and be passed down - not recomputed from
+whatever the surrounding view happened to be filtered to.
+
+## 6 · Sites and avatars - by availability, not by category
+
+They are in. The rule is simple and needs no per-type list: **if the catalog offers the card in
+a finish for that set, it counts toward that finish's denominator.** Sites have printings, so
+they count. Avatars have printings, so they count. Tokens are already excluded by
+`isTokenCard`.
+
+Avatars have no rarity, so `playsetOf` returns `limit: 0` and no jewel - correct, and already
+the shipping behaviour. They participate in set and master-set completion but not in playsets.
+
+## 7 · Presentation - the plate stays one bar
+
+Two equal bars on a 2-up plate is a density problem and would imply the tracks are equals; the
+owner's ruling is that the non-foil set is *the* set.
+
+- **Set plate:** one primary bar - **non-foil completion**. A compact foil marker beside it
+  (count, not a second bar). Earned badges shown as badges: set, master set.
+- **Set drill:** both tracks in full, each with its own denominator, since that is where a
+  player who cares about foils has gone looking.
+- **Master set** is displayed as a badge earned when both tracks are complete, not as a third
+  progress bar.
+
+**Does master set imply set?** Yes - by construction it requires the non-foil track. A player
+with a complete foil set and a partial non-foil set holds neither badge, which is why the foil
+track must be *visible* in the drill even when it earns nothing on its own.
+
+## 8 · What v11 changes, and what it does not
 
 v11 makes the ledger grain **card + set + finish**, which is exactly the shape a per-finish
-completion track needs: a foil set becomes countable the same way a non-foil set is, from rows
-that state their own finish rather than from a `foil` column read alongside.
+track needs: a foil set becomes countable from rows that state their own finish, rather than
+from a `foil` column read alongside.
 
 It does **not** implement any of this. The milestones are a later increment; v11 only ensures
 they will not need a second migration to arrive.
 
-## 5 · Open questions for that increment
+## 9 · What is left to decide
 
-1. **Playset finish** (§3) — achievement or deck-legality? Decides whether `total` stays
-   `owned + foil`.
-2. **Two tracks on one plate.** The owner wants owned/total shown twice, non-foil and foil.
-   The plates already carry a completion bar; two bars per tile at 2-up is a real density
-   problem and probably a Fable question.
-3. **Does master set imply set?** A player with a full foil set and a partial non-foil set has
-   neither achievement, but has clearly done something. Whether the foil track is shown
-   independently or only as the second half of master set changes what that player sees.
-4. **Sites and avatars.** `totalCollectible` already excludes tokens. Do avatars belong in a
-   set for these purposes? They have no rarity, so they also have no playset.
-5. **Where achievements live.** Overview, the set plate, or a dedicated surface. "Collecting
-   is about achieving" argues for making them visible somewhere permanent rather than derived
-   on a tile.
+Everything in §1-§7 is ruled. Open for the milestone increment itself:
+
+1. **Promotional's place in the ladder** (§3) - excluded, or shown with its own framing?
+2. **Where earned achievements live permanently.** "Collecting is about achieving" argues for a
+   surface that persists, rather than a badge derived on a tile the player has to navigate to.
+3. **Whether the Alpha denominator fix (§4) ships ahead of the ladder.** It is a wrong number
+   on a live surface today and is separable from everything else here.
