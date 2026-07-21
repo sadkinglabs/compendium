@@ -54,19 +54,53 @@ Measured against the installed catalog, variants scoped to their own set
 |---|---|---|---|
 | Alpha | 404 | **403** | 404 |
 | Beta | 402 | 402 | 402 |
-| Arthurian Legends | 223 | 222 | **221** |
+| Arthurian Legends | 222 | 222 | **221** |
 | Dragonlord | 13 | 13 | 13 |
-| Gothic | 443 | 443 | **439** |
+| Gothic | 444 | 444 | **440** |
 | Promotional | 62 | **22** | 40 |
+
+**Provenance.** Counted with the production `isTokenCard()` from
+[`tokens.js`](../../src/store/tokens.js), not a hand-written token filter. An earlier revision
+of this note used a regex and was wrong in both directions - `^Skeleton` excluded *Skeleton
+Mage*, a real Gothic card, while `^Foot Soldier` missed the genuine token *Foot Soldiers*
+because the trailing `s` blocks the word boundary. Any future recount of this table must import
+the production boundary rather than restate it.
 
 The exceptions are nameable, which is what makes this a design input rather than noise:
 
 - **Alpha** - *Winter River* exists only as a foil Box Topper.
 - **Gothic** - *Spire*, *Stream*, *Valley*, *Wasteland* have no foil printing.
 - **Arthurian Legends** - *Druid* has no foil printing.
-- **Promotional** is not a set in the collecting sense at all: only 22 of 62 entries have a
-  Standard form, 23 are foil-only. A "complete Promotional set" counted against 62 is
-  unreachable in either finish. It likely needs excluding from the ladder, or its own framing.
+- **Promotional** is not a set in the collecting sense at all - see §3.1.
+
+### 3.1 · Promotional - RULED: browsable and countable, but not on the ladder
+
+Code `999` is an accumulating bucket, not a bounded release. Its 62 entries break down as:
+
+| shape | count |
+|---|---|
+| both finishes | 17 |
+| Standard only | 5 |
+| Foil only | 23 |
+| listed as Promotional but neither finish present in the catalog | 17 |
+
+After finish filtering, 22/22 would be *arithmetically* completable - and that is precisely the
+trap. It would announce an achievement that means nothing, because promotions keep arriving.
+Alpha, Beta, Arthurian Legends and Gothic make a bounded-release promise: the set is finite and
+finishing it is a real accomplishment. Promotional makes no such promise.
+
+So:
+
+- Label it **Promotional collection**, never a set.
+- Show owned Standard and Foil counts.
+- **No** completion percentage, **no** Set badge, **no** Master Set badge.
+- Every promotional collector item is still recorded normally under v11 - this is a
+  presentation ruling, not a data exclusion. Nothing about the ledger changes.
+
+If promotions are later split into bounded named waves, each wave can join the ladder on its
+own merits. The exclusion is of the *aggregate bucket*, not of promotional cards.
+
+---
 
 So each track needs **its own denominator**, computed from per-set finish availability:
 
@@ -88,8 +122,25 @@ card in the set. The same holds for Gothic (439 foil-eligible counted as 443) on
 track exists.
 
 This is not a milestone-increment concern that can wait. It is a wrong number on a shipping
-surface, and it is the strongest argument for building the denominators properly rather than
-deriving them on a tile.
+surface.
+
+**RULED: fix it in its own increment, before the milestone UI, and outside v11.** It must not
+be buried inside the migration - a data migration and a counting fix have different risk
+profiles, and bundling them would make a wrong plate number indistinguishable from a
+mis-migrated row.
+
+The fix establishes **one shared per-set finish-eligibility model**:
+
+```text
+nonfoilEligible = the card has a Standard variant in this set
+foilEligible    = the card has a Foil variant in this set
+```
+
+Alpha then reads 403/403 - reachable - instead of an impossible 403/404. This is deliberately
+the same boundary that will later supply both the Set and Master Set denominators, so the
+milestone increment consumes it rather than reimplementing it. Promotional (§3.1) is handled at
+**presentation**, not by distorting this model: it computes eligibility like any other set and
+simply never renders a percentage or a badge.
 
 ## 5 · Playsets - ruled, and the real weakness is elsewhere
 
@@ -144,8 +195,6 @@ they will not need a second migration to arrive.
 
 Everything in §1-§7 is ruled. Open for the milestone increment itself:
 
-1. **Promotional's place in the ladder** (§3) - excluded, or shown with its own framing?
-2. **Where earned achievements live permanently.** "Collecting is about achieving" argues for a
+1. **Where earned achievements live permanently.** "Collecting is about achieving" argues for a
    surface that persists, rather than a badge derived on a tile the player has to navigate to.
-3. **Whether the Alpha denominator fix (§4) ships ahead of the ladder.** It is a wrong number
-   on a live surface today and is separable from everything else here.
+2. **Nothing else.** Promotional (§3.1) and the Alpha denominator increment (§4) are ruled.

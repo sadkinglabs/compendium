@@ -422,11 +422,17 @@ Therefore, before the C-E increment reaches any device:
 | pure mapping, predicates, constants | `npm run test:query` |
 | migration, collision, conservation, idempotency, failure | `npm run test:query` (new suite) |
 | import boundary, six named tests (§5.1) | `npm run test:query` |
-| Collection reads and writes | `npm run test:app` |
+| **Collection repository reads and writes** | `npm run test:query` - these live in `src/store/**`, which is what this gate globs |
+| **extracted Collection pillar state** | `npm run test:ui` (`src/pillars/**`) |
+| **App-shell and navigation regressions** | `npm run test:app` - `src/*.test.mjs` only; it is the shell gate, not the Collection gate |
+| catalog-side scripts | `npm run test:codex` |
 | import cycles | `npm run check:cycles` |
 | types, build | `npm run check:types`, `npm run build` |
 | **boot order and real device data** | `npm run check:smoke` on the installed release APK - required, because this is the only gate that has ever caught a minified-only boot failure |
 | documentation | `npm run check:docs` |
+
+Final high-risk verification runs **every** applicable baseline gate, `test:codex` included -
+not only the ones whose surface obviously changed.
 
 A browser-only pass is not evidence here: the migration runs against native SQLite, whose
 `execute()` splitter is quote-unaware. Every statement must go through parameterized `tx()`.
@@ -453,4 +459,5 @@ Completion gate, per `AGENTS.md` §5. To be updated **in the same commit** as th
 | - | Redrafted; §7.4 ruled by owner (legacy wants migrate non-foil) |
 | - | Codex v11 review: changes required, document correction pass only, no redesign |
 | 2026-07-21 | Correction pass applied: marker ruled to `_meta`; import boundary made executable; six contradictions removed; `card_list_entries` ruled; these handrails added |
-| **pending** | **Owner approval to implement. No `src/**` change beyond the landed Phase A until given.** |
+| 2026-07-21 | **Codex: Approved with non-blocking follow-ups.** No architectural or owner decision remains for v11. Follow-ups applied: milestone evidence recounted with production `isTokenCard()`; §9.4 gate ownership corrected; Promotional and the Alpha denominator ruled in the milestones note |
+| **pending** | **Human approval to implement. High-risk migration - no `src/**` change beyond the landed Phase A until given.** |
