@@ -2,8 +2,8 @@
 
 **Status:** Revised twice - after Codex critique, then to close the three technical gaps its
 review left open (boot ordering §3.1, the SQLite `DEFAULT` §3.2, merge and conservation §3.3).
-Not approved. **One owner decision outstanding: §7.4, historical finish semantics** - a
-recommendation is given there. No `src/**` change beyond the already-landed set-pill fix until
+**All owner decisions are now made** (§7.4 ruled: legacy wants migrate as non-foil,
+`uncategorised:?` dropped). Ready for Codex's approval pass. No `src/**` change beyond the already-landed set-pill fix until
 approved.
 **Class:** High-risk — forward-only migration over live user data, touching the ownership
 ledger and the profile export format.
@@ -97,12 +97,14 @@ These are pure relabels. Finish is preserved; only the set remains unresolved.
 
 **Wanted rows** — the only lossy-looking case, and it need not be:
 
+Finish is settled for every legacy want by the §7.4 ruling: **non-foil**. Only the set can be
+unresolved, so there are three cases, not four.
+
 | case | action | rationale |
 |---|---|---|
-| historical semantics explicitly ruled to mean non-foil, and card has exactly one set | move to that set's non-foil row | both dimensions are then known |
-| card has several sets | park as an unresolved legacy want for triage | the set is unknowable from a name match |
-| finish was not historically defined | triage must ask finish as well as set | row placement was an implementation detail, not evidence of intent |
-| card has no catalog match | retain as unresolved legacy want | catalog gap, not a user decision |
+| card has exactly one set | move to that set's non-foil row | both dimensions known; strictly better data |
+| card has several sets | park as `UNCATEGORISED` (non-foil) for triage | the set is unknowable from a name match; the user knows |
+| card has no catalog match | keep as `UNCATEGORISED` (non-foil) | catalog gap, not a user decision |
 
 Ambiguous legacy wants are the reason the To Be Categorised pile must temporarily hold
 **wants as well as owned copies**. This does not make uncategorised wants a normal domain
@@ -193,9 +195,10 @@ UNCATEGORISED      = 'uncategorised'    // set unknown, non-foil
 UNCATEGORISED_FOIL = 'uncategorised:f'  // set unknown, foil
 ```
 
-If old wants are ruled to have unknown finish, the implementation also needs an explicit
-migration-only representation for that fact (for example `uncategorised:?`) rather than
-silently treating the old `''` row as evidence of non-foil intent.
+**Exactly two, now that §7.4 is ruled.** An unknown-finish state (`uncategorised:?`) was
+considered and rejected: legacy wants migrate as non-foil, so finish is always known and only
+the set is ever unresolved. That keeps one transitional exception rather than two, and keeps
+triage to a single question.
 
 - **Truthy**, which kills the `if (slug)` footgun the empty string has caused repeatedly.
 - Cannot collide: categorised collector items are numeric set codes with an optional `:f`
@@ -215,6 +218,15 @@ table. **Open question in §7:** whether it nags.
 
 **Completion is unaffected.** It counts `regular` ownership per set, and uncategorised rows
 have never counted. Migration does not move any number the user sees on a set plate.
+
+**It does, however, unblock the milestone ladder.** The owner has since named what Collection
+is for - *set* (every non-foil), *master set* (non-foil and foil), *playset* (per card) - all
+game lingo, framed as achievements. The card+set+finish grain is exactly what a per-finish
+completion track needs, and `setCompletion.js` already computes `foilUnique`, so the numerator
+exists. That work is a **separate increment**; v11 only ensures it will not need a second
+migration. See [`completion-milestones.md`](./completion-milestones.md), which also records an
+inconsistency the framing exposed: playsets currently count foils while set completion does
+not.
 
 **Export/import.** `profileTransfer` carries `variant_slug` verbatim, so older backups contain
 `''`. Import must run the same mapping as the migration, or a restore silently reintroduces
@@ -249,31 +261,21 @@ the migration. The schema flip and its user-visible consumers are one release bo
    the owner's wishlist when a lossless path exists.
 3. **Import mapping — Codex ruling:** use the existing profile-export `schemaVersion`; do not
    add another stamp or infer the source version from sentinel values.
-4. **Historical finish semantics — OWNER DECISION, the last thing blocking approval.**
-   Did the old heart mean *non-foil*, or was finish simply unstated?
+4. **Historical finish semantics — OWNER RULED: legacy wants migrate as NON-FOIL.**
+   `uncategorised:?` is dropped; there is no unknown-finish state.
 
-   Codex is right that the stored `''` row is not evidence: it is where the implementation put
-   things, not what the user meant. But there is a second argument it did not consider, and it
-   points the other way.
+   The justification is deliberately not "that is where the row was". It is that the product
+   already defines the default copy: set completion counts non-foil only, on the owner's
+   instruction that foils are not the collecting target. Reading old hearts as non-foil applies
+   an existing product rule rather than inferring intent from a storage detail - which is the
+   distinction Codex was right to insist on.
 
-   **The product already has a ruling on this.** Set completion counts non-foil only, on the
-   owner's own instruction: *"no one collects foils unless they are very dedicated, so NF is
-   all we need to track."* Under that rule, "I need this card" already means the non-foil one
-   everywhere else in Collection. Reading old hearts as non-foil is not inferring intent from a
-   storage detail - it is applying the product's existing definition of the default copy.
+   Owner's standard, recorded because it should govern the rest of this work: *"we want
+   fireproof assertions that are clearly inferred from design intent and user behaviour."*
 
-   **Recommendation: treat legacy wants as non-foil**, and skip `uncategorised:?` entirely.
+   Consequence: §2.1 keeps exactly one transitional exception (ambiguous SET), not two.
+   Triage asks which set, never which finish.
 
-   The asymmetry of being wrong decides it. If we guess non-foil and a want was really for a
-   foil, the user sees a want on the wrong finish - visible, and one tap to fix during triage.
-   If we refuse to guess, every legacy want must ask two questions instead of one; on this
-   device that is 80 wants and roughly 80 extra interactions, to recover a preference the
-   product says is rare.
-
-   **If the owner rules the other way**, `uncategorised:?` is added as a migration-only third
-   state, triage asks finish as well as set, and §2.1's "wants are never uncategorised"
-   acquires a second transitional exception. That is a real cost in surface area, which is why
-   it should be a decision rather than a default.
 5. **Count — Codex ruling:** honest but quiet; show it on the To Be Categorised entry, not as a
    persistent global nag.
 6. **Migration failure — Codex ruling:** fail closed and retry from untouched v10 data. Do not
