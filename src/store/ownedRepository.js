@@ -14,6 +14,7 @@
 // non-foil. A WANT belongs to a collector item, not to a card - "I need the Beta one" is the
 // whole point of v11 - so the wishlist is per item, not per collector item.
 import { query, run, tx } from './db.js';
+import { enqueueWrite } from './collectionWrites.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
   parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL, SQL_IS_UNCATEGORISED,
@@ -307,6 +308,22 @@ export const ownedRowKey = (pid, cardId, set = '', foil = false) => `o:${pid}:${
  * to - which is the trade worth making for a gesture whose target is not known in advance.
  */
 export const cardWantKey = (pid, cardId) => `o:${pid}:${cardId}:*want`;
+
+/**
+ * Bind a want edit to its serialisation chain. THE only way any surface should queue one.
+ *
+ * Both surfaces previously chose their own key - the card sheet used cardWantKey while the
+ * Wishlist rows used ownedRowKey - so two edits to the same want ran on different chains and
+ * one could clobber the other. A test that reproduces the intended keys by hand cannot catch
+ * that, because it is testing its own assumption rather than the code. Routing every caller
+ * through one helper makes the binding a fact about the module instead of a convention.
+ *
+ * The exact collector item lives INSIDE `fn`; the key is deliberately coarser, so any two want
+ * edits to one card serialise regardless of which items they touch.
+ */
+export function queueWantWrite(pid, cardId, fn) {
+  return enqueueWrite(cardWantKey(pid, cardId), fn);
+}
 export const listRowKey = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
 
 // Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.

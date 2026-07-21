@@ -27,7 +27,7 @@ import {
   ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
-  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, cardWantKey,
+  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, queueWantWrite,
   stepWantedForItem, setWantedForItem,
   listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
@@ -1299,7 +1299,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [bulkOpen, setBulkOpen] = useState(false); // paste-a-list bulk add
   const [ownQty, setOwnQty] = useState(new Map()); // keyed like the goal map: item for the Wishlist, card for lists
-  const [addPick, setAddPick] = useState(null);    // { card, codes } while a reprint's printing is chosen
+  const [addPick, setAddPick] = useState([]);      // FIFO of reprints still awaiting a printing choice
   const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -1402,20 +1402,21 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     const pid = activeProfileId();
     if (!isWishlist) return enqueueWrite(listRowKey(pid, list.id, key), () => stepListEntry(list.id, key, delta, pid));
     const { cardId, set, foil } = itemOf(key);
-    // A row on a real set steps THAT item. An uncategorised row (a migration leftover) has no
-    // set to name, so it goes through the card-level writer, which resolves to the row that
-    // actually holds the want rather than inventing one.
-    return set
-      ? enqueueWrite(ownedRowKey(pid, cardId, set, foil), () => stepWantedForItem(cardId, { set, foil }, delta, pid))
-      : enqueueWrite(cardWantKey(pid, cardId), () => stepWanted(cardId, delta, pid));
+    // ONE chain per card, whichever item is edited - bound through queueWantWrite so this
+    // surface cannot pick a different key from the card sheet. A row on a real set steps THAT
+    // item; an uncategorised row (a migration leftover) has no set to name, so it goes through
+    // the card-level writer, which resolves to the row that actually holds the want.
+    return queueWantWrite(pid, cardId, () => (
+      set ? stepWantedForItem(cardId, { set, foil }, delta, pid) : stepWanted(cardId, delta, pid)
+    ));
   };
   const clearEntry = (key) => {
     const pid = activeProfileId();
     if (!isWishlist) return enqueueWrite(listRowKey(pid, list.id, key), () => setListEntry(list.id, key, 0, pid));
     const { cardId, set, foil } = itemOf(key);
-    return set
-      ? enqueueWrite(ownedRowKey(pid, cardId, set, foil), () => setWantedForItem(cardId, { set, foil }, 0, pid))
-      : enqueueWrite(cardWantKey(pid, cardId), () => setWanted(cardId, 0, pid));
+    return queueWantWrite(pid, cardId, () => (
+      set ? setWantedForItem(cardId, { set, foil }, 0, pid) : setWanted(cardId, 0, pid)
+    ));
   };
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
   // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
@@ -1461,14 +1462,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     if (!target) {
       // An existing unambiguous want is the obvious target: stepping what is already there
       // beats asking about a decision the user has already made.
+      // Reused for ANY delta, not just removals. Pressing + on a card the user already wants
+      // exactly one printing of should step THAT printing - asking again would make them
+      // re-answer a question they have already answered, and would then create a second row.
       const mine = [...qtyRef.current.keys()].filter((k) => String(k).startsWith(`${card.card_id}|`));
-      if (delta < 0 && mine.length === 1) {
+      if (mine.length === 1) {
         const r = cardIndex.current.get(mine[0]);
         if (r) target = { set: r.set, foil: !!r.foil };
       }
       if (!target) {
         const t = wantTarget(codes, { set: null });
-        if (t.kind === 'ask') { setAddPick({ card, codes }); return; }
+        // QUEUED, not assigned. A multi-select can contain several reprints, and overwriting a
+        // pending question with the next one silently dropped the first card.
+        if (t.kind === 'ask') { setAddPick((q) => [...q, { card, codes }]); return; }
         if (t.kind === 'unknown') { toast('The catalog does not list a printing for this card', { tone: 'warn' }); return; }
         target = t.item;
       }
@@ -1649,18 +1655,29 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
       {/* The picker, reached when adding a reprint the user has no existing want for. */}
       <WantPrintingSheet
-        open={!!addPick}
-        cardId={addPick?.card?.card_id}
-        cardName={addPick?.card?.name}
-        setCodes={addPick?.codes || []}
-        onPick={(item) => { const p = addPick; setAddPick(null); if (p) addStep(p.card, 1, item); }}
-        onClose={() => setAddPick(null)} />
+        open={addPick.length > 0}
+        cardId={addPick[0]?.card?.card_id}
+        cardName={addPick[0]?.card?.name}
+        setCodes={addPick[0]?.codes || []}
+        onPick={(item) => { const p = addPick[0]; setAddPick((q) => q.slice(1)); if (p) addStep(p.card, 1, item); }}
+        /* Skipping one card must not abandon the rest of the batch. */
+        onClose={() => setAddPick((q) => q.slice(1))} />
 
       <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
         onApply={(adds) => {
           // ADD each resolved qty onto the list in one state write; persist each as a
           // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
           haptic('light');
+          // ADD FROM TEXT, routed through the same resolution as every other add.
+          //
+          // It used to write optimistic state under card_id and call the card-level persist
+          // path, so an ambiguous reprint was announced as added and then failed - the surface
+          // said one thing and the ledger did another. addStep resolves the collector item
+          // first, files what it can, and queues the reprints it cannot for the picker.
+          if (isWishlist) {
+            for (const a of adds) addStep(a.card, a.qty);
+            return;
+          }
           const m = new Map(qtyRef.current);
           for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
           qtyRef.current = m; setQty(m);

@@ -6,14 +6,14 @@
 // (wishlist heart · add-to-list). No rule text; no decorative
 // glyphs but the Foil ✦. Behaviour (open/close, hardware-back, drag-to-dismiss,
 // the ledger writes) is unchanged - this is a presentational restructure.
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useReducer } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import CardArtViewer from './CardArtViewer.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
-import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted, cardWantKey } from '../store/ownedRepository.js';
+import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted, queueWantWrite } from '../store/ownedRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
@@ -327,7 +327,7 @@ function CardBody({ c, onPick, editable, set }) {
   // an atomic add that had already made it 2, and one increment vanished with both surfaces
   // reporting success. The exact item lives INSIDE the queued operation; the key is
   // deliberately coarser so any two edits to one card's wants serialise.
-  const queueWant = (fn) => enqueueWrite(cardWantKey(activeProfileId(), c.card_id), fn);
+  const queueWant = (fn) => queueWantWrite(activeProfileId(), c.card_id, fn);
   const addWant = (item) => queueWant(() => addWantedForItem(c.card_id, item, 1));
 
   // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
