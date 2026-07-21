@@ -145,6 +145,16 @@ export default function TriageSheet({ open, pile = [], onClose, onChanged, onOpe
                 <div style={{ font: "500 15px/1.25 var(--f-read)", color: 'var(--ink-body)' }}>{nameOf(entry.card_id)}</div>
               )}
 
+              {/* Rendered ONCE per card, not per line. It describes the CARD's situation - the
+                  catalog knows no printings for it - so repeating it under each line said the
+                  same thing twice for a card with both owned copies and a want. */}
+              {!entry.resolvable && (
+                <div style={{ ...NOTE, fontStyle: 'italic', color: 'var(--ink-faint)', marginTop: 8 }}>
+                  The catalog lists no printings for this card, so there is no set to file it to.
+                  It stays here until the catalog covers it.
+                </div>
+              )}
+
               {entry.lines.map((line) => {
                 const key = lineKey(entry.card_id, line.kind);
                 const working = busy === key;
@@ -154,14 +164,10 @@ export default function TriageSheet({ open, pile = [], onClose, onChanged, onOpe
                       <span style={{ color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-mono)" }}>{line.qty}×</span>
                       <span style={LABEL}>{lineDescription(line)}</span>
                     </div>
-                    {/* A card the catalog has no printings for is still shown. Hiding it would
-                        leave the count wrong and the user with no idea why. */}
-                    {!entry.resolvable ? (
-                      <div style={{ ...NOTE, fontStyle: 'italic', color: 'var(--ink-faint)' }}>
-                        The catalog lists no printings for this card, so there is no set to file it
-                        to. It stays here until the catalog covers it.
-                      </div>
-                    ) : (
+                    {/* A card the catalog has no printings for is still LISTED - hiding it would
+                        leave the count wrong and the user with no idea why - but it offers no
+                        destinations, because there are none to offer. */}
+                    {entry.resolvable && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                         {[...entry.sets].sort(bySetOrder).map((code) => (
                           <button key={code} onClick={() => fileLine(entry, line, code)} disabled={!!busy}

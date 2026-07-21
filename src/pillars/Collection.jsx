@@ -12,16 +12,19 @@ import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
 import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
 import { collectionSurface } from './collectionRoute.js';
+import { triagePile, pendingCount } from '../store/triage.js';
+import TriageSheet from '../components/TriageSheet.jsx';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
+  uncategorisedRows, cardSetsFor,
   ownedBySet, qtyForInSet, setOwnedInSet,
   deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
-  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey,
+  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, cardWantKey,
   listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
@@ -340,12 +343,29 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
   const [recent, setRecent] = useState([]);
   const [deckStat, setDeckStat] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+
+  // THE TO BE CATEGORISED PILE.
+  //
+  // It lives in Overview because the pile is a standing state of the collection rather than a
+  // step in a flow. Read here and passed down, so the sheet owns no query of its own and one
+  // re-read serves both the entry row and the sheet.
+  const [pile, setPile] = useState([]);
+  const [triageOpen, setTriageOpen] = useState(false);
+  const loadPile = React.useCallback(async () => {
+    const rows = await uncategorisedRows();
+    if (!rows.length) { setPile([]); return; }
+    const ids = [...new Set(rows.map((r) => r.card_id))];
+    const sets = await cardSetsFor(ids);
+    setPile(triagePile(rows, (id) => sets.get(id) || []));
+  }, []);
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
       const [s, r, decks] = await Promise.all([collectionStats(), recentlyAdded(10), listDecks()]);
       if (!alive) return;
       setStats(s); setRecent(r);
+      loadPile();
       const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
       let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
       if (alive) setDeckStat({ buildable, total: decks.length });
@@ -403,6 +423,35 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
           phone at them. Typed import moved to the header overflow above. */}
       <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
         onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      {/* HONEST BUT QUIET, per the ruling: the count sits on the entry itself rather than as a
+          standing badge. A user with 300 uncategorised imports does not want a permanent 300 on
+          their home screen. An empty pile shows no row at all. */}
+      {pendingCount(pile) > 0 && (
+        <button
+          onClick={() => setTriageOpen(true)}
+          className="cx-row"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            width: '100%', marginTop: 14, padding: '13px 14px', borderRadius: 10,
+            background: 'rgba(18,16,13,.85)', border: '1px solid var(--hair-16)',
+            cursor: 'pointer', textAlign: 'left',
+          }}>
+          <span style={{ font: "500 14px/1.25 var(--f-read)", color: 'var(--ink-body)' }}>
+            To Be Categorised
+          </span>
+          <span style={{ font: "600 12px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>
+            {pendingCount(pile)}
+          </span>
+        </button>
+      )}
+
+      <TriageSheet
+        open={triageOpen}
+        pile={pile}
+        onClose={() => setTriageOpen(false)}
+        onChanged={loadPile}
+        onOpenCard={onPeek} />
+
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
@@ -1315,21 +1364,22 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
   const targetOf = (id) => qty.get(id) || 0;
   // Persist a goal DELTA on the store-layer queue, bound to the captured profile and
-  // keyed per persisted row: the Wishlist shares the '' owned_cards row (so it commutes
-  // with the card sheet's owned/wanted edits) and a real list writes its card_list_entries
-  // row. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
+  // keyed per persisted row: a real list writes its card_list_entries row, while the Wishlist
+  // uses a CARD-level want chain, because its target row is resolved at write time and cannot
+  // be named up front. Keying it on a guessed row meant this surface and the card sheet could
+  // serialize edits to the same want on different chains. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
   // under optimistic-vs-authoritative drift.
   const persist = (cardId, delta) => {
     if (!delta) return Promise.resolve();
     const pid = activeProfileId();
     return isWishlist
-      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => stepWanted(cardId, delta, pid))
+      ? enqueueWrite(cardWantKey(pid, cardId), () => stepWanted(cardId, delta, pid))
       : enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
   };
   const clearEntry = (cardId) => {
     const pid = activeProfileId();
     return isWishlist
-      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => setWanted(cardId, 0, pid))
+      ? enqueueWrite(cardWantKey(pid, cardId), () => setWanted(cardId, 0, pid))
       : enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
   };
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps

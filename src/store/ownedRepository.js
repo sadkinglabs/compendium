@@ -15,7 +15,7 @@
 import { query, run, tx } from './db.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, UNCATEGORISED_BUCKET,
-  parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL,
+  parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL, SQL_IS_UNCATEGORISED,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
@@ -292,6 +292,20 @@ const vslug = canonicalPrinting;
 // (src/store/collectionWrites.js) is keyed by these opaque strings and imports
 // nothing from here (it stays a leaf); the CALLER supplies the captured profile id.
 export const ownedRowKey = (pid, cardId, set = '', foil = false) => `o:${pid}:${cardId}:${vslug(set, foil)}`;
+
+/**
+ * Chain key for a CARD-LEVEL want edit, where the target row is resolved at write time.
+ *
+ * ownedRowKey cannot serve here: it needs the collector item up front, and setWanted/stepWanted
+ * only discover theirs by reading the ledger. Keying on a guessed item produced a chain that did
+ * not match the row eventually written, so the card sheet and the wishlist could serialize edits
+ * to the SAME want on two different chains and lose one.
+ *
+ * Deliberately coarser than a row: every want edit on this card shares one chain. Slightly more
+ * serialisation than strictly required, and correct regardless of which row the write resolves
+ * to - which is the trade worth making for a gesture whose target is not known in advance.
+ */
+export const cardWantKey = (pid, cardId) => `o:${pid}:${cardId}:*want`;
 export const listRowKey = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
 
 // Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.
@@ -307,6 +321,36 @@ export async function ownedBySet() {
     m.set(key, cur);
   }
   return m;
+}
+
+/** Set codes for a batch of cards: Map<card_id, string[]>. One read, chunked for the host-parameter limit. */
+export async function cardSetsFor(cardIds = []) {
+  const out = new Map();
+  const ids = [...new Set(cardIds.filter(Boolean))];
+  for (let i = 0; i < ids.length; i += 400) {
+    const slice = ids.slice(i, i + 400);
+    for (const c of await query(`SELECT card_id, sets FROM cards WHERE card_id IN (${slice.map(() => '?').join(',')});`, slice)) {
+      try {
+        const parsed = JSON.parse(c.sets || '[]');
+        out.set(c.card_id, Array.isArray(parsed) ? [...new Set(parsed.map((x) => x?.code).filter(Boolean))] : []);
+      } catch { out.set(c.card_id, []); }
+    }
+  }
+  return out;
+}
+
+/**
+ * Every row in the To Be Categorised pile, for the active profile.
+ *
+ * Reads all four uncategorised keys, not just the canonical pair: a ledger can still hold a
+ * legacy row from an import or an interrupted conversion, and those need triaging too.
+ */
+export async function uncategorisedRows(pid = activeProfileId()) {
+  return query(
+    `SELECT card_id, variant_slug, qty_owned, qty_wanted FROM owned_cards
+      WHERE profile_id=? AND ${SQL_IS_UNCATEGORISED()} AND (qty_owned>0 OR qty_wanted>0);`,
+    [pid],
+  );
 }
 
 // Every set bucket a card is owned in (incl '' Uncategorised), for the card sheet's

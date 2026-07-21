@@ -200,20 +200,73 @@ card_list_entries(
 )
 ```
 
-### The `owned_cards.variant_slug` vocabulary
+### The collector item (schema v11)
 
-`variant_slug` records *which set* a copy belongs to. Ownership is per set (v1), so a card's copies are spread across one row per bucket it is owned in; the `UNIQUE(profile_id, card_id, variant_slug)` key and every `ON CONFLICT` upsert key on that triple.
+One collector item is exactly `card_id + set + finish`. Alpha non-foil, Alpha foil, Beta
+non-foil and Beta foil are four distinct items for a card printed in both sets. Catalog
+`variants[]` may hold several art or product records inside one set; those are NOT additional
+ownership identities.
+
+`owned_cards.variant_slug` stores that identity, and a card's copies are spread across one row
+per item it is owned or wanted on. The `UNIQUE(profile_id, card_id, variant_slug)` constraint and
+every `ON CONFLICT` upsert key on that triple.
 
 | `variant_slug` | Meaning |
 |---|---|
-| `''` | Unspecified - owned without a recorded set. The wishlist (`qty_wanted`) lives only on this row |
-| `'foil'` | legacy card-level foil, no recorded set |
-| `'<code>'`, e.g. `'001'` | owned in that set (Alpha) |
-| `'<code>:f'`, e.g. `'001:f'` | that set's foil |
+| `'001'` | Alpha, non-foil |
+| `'001:f'` | Alpha, foil |
+| `'uncategorised'` | set not established yet, non-foil |
+| `'uncategorised:f'` | set not established yet, foil |
 
-**Foil classification recognises both forms.** A copy is foil when `variant_slug = 'foil'` OR `variant_slug LIKE '%:f'`. Foil-sensitive card-level aggregates (`ownWantMap`, `qtyFor`, `recentlyAdded`) must honour both, or a per-set foil reads as a regular copy and the card view disagrees with the set view. `ownedMap` and buildability sum `qty_owned` across every row regardless of set or finish, so the per-set key never affects ownership totals or deck comparison.
+v11 changed no DDL. The column was already `TEXT NOT NULL DEFAULT ''` inside the unique index
+`(profile_id, card_id, variant_slug)`; the canonical keys are different *string values* in that
+column, so there was no table to rebuild and no default to change. The `''` DEFAULT is now only
+a DDL artefact for `owned_cards` - no canonical ownership key is the empty string.
 
-**Single-set boot backfill.** `backfillSingleSetOwned()` (run once per boot from `App.jsx`) moves owned copies out of the `''` bucket onto their set row for any card that exists in exactly one set, where the printing is then unambiguous. It runs in one transaction that adds the exact quantity to the set row and subtracts that same quantity from `''` (subtract-exact, not blind-delete), so a copy added to `''` concurrently - a scanner scan mid-boot - is not lost; any leftover stays in `''` for the next pass, and the `''` row is deleted only once it fully drains (preserving a wishlist that lives on it). Multi-set cards (Alpha/Beta reprints) stay Unspecified because the printing is not knowable from the name. The backfill is idempotent and forward-only: an app-level data canonicalisation, not schema evolution - it makes no `SCHEMA_VERSION` bump and adds no `MIGRATIONS` entry.
+**The v10 keys it replaced.** `''` meant both "set not established" for `qty_owned` AND the only
+row a `qty_wanted` could live on - so a want identified neither its set nor its finish, and
+dropping stale `''` rows would have destroyed the wishlist. `'foil'` was the card-level foil row.
+Both remain *readable*: `src/store/printings.js` declares all four keys and every reader predicate
+(`isUncategorised`, `parsePrinting`, `printingSlugs`, `SQL_IS_UNCATEGORISED`) accepts both schemas,
+so a partially converted ledger reads correctly. A writer that meets a legacy row rewrites it to
+the canonical key rather than inserting a twin beside it.
+
+**The writer invariant.** No production writer may create a v10 key. It is asserted per writer by
+`src/store/writerInvariant.test.mjs`, which drives every exported write path rather than a
+remembered list. One path does not yet hold it: `addOwnedCopies()` still writes `''`, which is the
+scanner's multi-set, no-pick add (`src/cardScanner.js`). That test currently fails on it.
+
+**The same empty string elsewhere is not legacy.** In `deck_entries` and `card_list_entries`, `''`
+means "any collector item satisfies this" (`ANY_PRINTING`), which is a settled preference rather
+than an unresolved state. It does not migrate with the ownership keys.
+
+**Foil classification.** A copy is foil when `variant_slug = 'foil'` OR `variant_slug LIKE '%:f'`,
+which covers `'001:f'` and `'uncategorised:f'` alike. Foil-sensitive card-level aggregates
+(`ownWantMap`, `qtyFor`, `recentlyAdded`) must honour both, or a per-set foil reads as a regular
+copy and the card view disagrees with the set view. `ownedMap` and buildability sum `qty_owned`
+across every row regardless of set or finish, so the per-item key never affects ownership totals
+or deck comparison.
+
+**Wants.** A want is a property of a collector item, exactly like ownership. New wants always
+identify set and finish; entry points ask when either is unknown. An *uncategorised want* is a
+transitional state that only canonicalisation, import and triage may create or hold - the want
+writers refuse to produce one (`assertRealSetCode`). Card-level want gestures resolve to an item
+first and then write exactly one row; when a card is a reprint with no set context, the resolver
+raises `NeedsPrintingChoice` for the caller to answer.
+
+**Canonicalisation, not migration.** Deciding where an ambiguous legacy want belongs requires
+the catalog, and `openDatabase()` applies `MIGRATIONS` before `seedCatalogIfNeeded()`. So the
+data conversion is a separate boot step:
+
+    DDL -> seed catalog -> canonicalise ledger -> initProfiles() -> Collection reachable
+
+It runs in one transaction over every profile, asserts no legacy key survived, and records
+`_meta.owned_cards_canonical_version = 11` in that same transaction. The marker is an
+optimisation only: a boot that finds legacy rows converts them regardless of what it says,
+because the ledger shape is the invariant. Failure is closed - the transaction rolls back and
+boot fails rather than exposing a half-converted ledger. `backfillSingleSetOwned()`, the v10
+single-set boot promotion, was removed: canonicalisation converts the `''` rows it looked for,
+and moving previously recorded copies without the user present contradicts the triage model.
 
 Collection invariants:
 
@@ -274,53 +327,6 @@ links(id, profile_id, kind, a_type, a_id, b_type, b_id, description, created_at,
 ```
 
 `saved` represents whole-target bookmarks. `notes` and `links` remain supported persisted records.
-
-### The collector item (schema v11)
-
-One collector item is exactly `card_id + set + finish`. Alpha non-foil, Alpha foil, Beta
-non-foil and Beta foil are four distinct items for a card printed in both sets. Catalog
-`variants[]` may hold several art or product records inside one set; those are NOT additional
-ownership identities.
-
-`owned_cards.variant_slug` stores that identity:
-
-| key | meaning |
-|---|---|
-| `001` | Alpha, non-foil |
-| `001:f` | Alpha, foil |
-| `uncategorised` | owned copies whose set is not established yet, non-foil |
-| `uncategorised:f` | the same, foil |
-
-v11 changed no DDL. The column was already `TEXT NOT NULL DEFAULT ''` inside the unique index
-`(profile_id, card_id, variant_slug)`; the canonical keys are different *string values* in that
-column, so there was no table to rebuild and no default to change.
-
-**The v10 keys it replaced.** `''` meant both "set not established" for `qty_owned` AND the only
-row a `qty_wanted` could live on - so a want identified neither its set nor its finish, and
-dropping stale `''` rows would have destroyed the wishlist. `'foil'` was the card-level foil row.
-Both are still *readable* (`printings.js` recognises all four forms) so a partially converted
-ledger reads correctly, but no writer emits them.
-
-**Wants.** A want is a property of a collector item, exactly like ownership. New wants always
-identify set and finish; entry points ask when either is unknown. An *uncategorised want* is a
-transitional state that only migration, import and triage may create or hold - the want
-repository refuses to produce one.
-
-**Canonicalisation, not migration.** Deciding where an ambiguous legacy want belongs requires
-the catalog, and `openDatabase()` applies `MIGRATIONS` before `seedCatalogIfNeeded()`. So the
-data conversion is a separate boot step:
-
-    DDL -> seed catalog -> canonicalise ledger -> initProfiles() -> Collection reachable
-
-It runs in one transaction over every profile, asserts no legacy key survived, and records
-`_meta.owned_cards_canonical_version = 11` in that same transaction. The marker is an
-optimisation only: a boot that finds legacy rows converts them regardless of what it says,
-because the ledger shape is the invariant. Failure is closed - the transaction rolls back and
-boot fails rather than exposing a half-converted ledger.
-
-**Import.** Profile bundles carry `schemaVersion`. Import validates and normalises the whole
-bundle in memory *before* creating anything, rejecting bundles from newer builds; profile,
-settings and imported rows share one transaction, so a rejection or failure leaves no orphan.
 
 ### Anchored annotations (removed in schema v10)
 
@@ -447,11 +453,11 @@ Dashboard blocks store type-specific JSON configuration and ordering. Named layo
 ## 11. Repository and transaction boundaries
 
 - Repositories resolve the active profile rather than accepting an arbitrary profile from UI code; the interactive Collection ledger writers additionally accept an explicit `profileId` (defaulting to the active one) so a queued edit stays bound to the profile it was scheduled under.
-- **Interactive Collection ledger writes** (the `owned_cards` / `card_list_entries` steppers) serialize through a store-layer per-row queue (`src/store/collectionWrites.js`), keyed per persisted row. `qty_wanted` and unspecified `qty_owned` share the `variant_slug=''` row, so they commit on **one** chain and a re-read inside each turn stops either from restoring the other's stale column. Every queued write is bound to the `profileId` captured at schedule time, so a mid-edit profile switch cannot redirect it, and `switchProfile` **drains the queue before** changing the active profile (preserving the in-flight edit).
-- **Batch/atomic ledger writers** (scanner add, resolved import, single-set backfill, add-missing-to-wishlist) stay *outside* that queue by design: each captures the profile once and writes atomically or in a single `tx`, and is lifecycle-exclusive from the interactive steppers.
+- **Interactive Collection ledger writes** (the `owned_cards` / `card_list_entries` steppers) serialize through a store-layer per-row queue (`src/store/collectionWrites.js`), keyed per persisted row by `ownedRowKey`/`listRowKey`, which build the key from the canonical collector-item slug so a legacy and a canonical spelling of the same item cannot land on two chains. `qty_owned` and `qty_wanted` on one collector item share a row, so they commit on **one** chain and a re-read inside each turn stops either from restoring the other's stale column. Every queued write is bound to the `profileId` captured at schedule time, so a mid-edit profile switch cannot redirect it, and `switchProfile` **drains the queue before** changing the active profile (preserving the in-flight edit).
+- **Batch/atomic ledger writers** (scanner add, resolved import, boot canonicalisation, triage resolution, add-missing-to-wishlist) stay *outside* that queue by design: each captures the profile once and writes atomically or in a single `tx`, and is lifecycle-exclusive from the interactive steppers.
 - **Bulk ledger commands** (`src/store/bulkOwnedRepository.js`) are the exception, and they do **not** merely stay outside the queue - they take an **exclusive barrier** over it (`withExclusiveCollectionWrites`). A bulk command computes absolute after-values from an authoritative read, so without exclusivity a per-row write can commit between that read and the transaction and be overwritten by it: an atomic transaction that still silently loses a concurrent edit. The barrier admits work already in flight, parks anything arriving after it, and **fails closed** - if in-flight writes do not drain, the command does not run. `switchProfile` takes the same barrier (tolerant variant: queued writes carry their own `profileId`, so a hung write cannot trap the user in a profile).
 - **Bulk results are confirmed or nothing.** Counts come from an authoritative read-back, never from the plan. If the read-back fails or disagrees, the result is `confirmed: false` with **null** counts and **no undo offered** - reversing a write we cannot describe is worse than offering nothing. A broadcast still fires whenever a transaction executed, as cache invalidation rather than a success claim.
-- **Bulk undo is conditional, not an inverse delta.** The undo record stores each row's before **and** committed-after value, and the restore statement only touches a row while it still holds the committed-after value (`UPDATE … WHERE qty_owned = ?`). An inverse delta cannot express "ensure at least 1" and would silently discard any edit made in between; conflicts are reported from a read-back after the restore. Undo is session-scoped - durable cross-restart undo would need persisted operation history (v11).
+- **Bulk undo is conditional, not an inverse delta.** The undo record stores each row's before **and** committed-after value, and the restore statement only touches a row while it still holds the committed-after value (`UPDATE … WHERE qty_owned = ?`). An inverse delta cannot express "ensure at least 1" and would silently discard any edit made in between; conflicts are reported from a read-back after the restore. Undo is session-scoped - durable cross-restart undo would need persisted operation history, which no schema version yet provides.
 - Mutations that affect multiple rows use `tx()` where atomicity is required.
 - Imported collection quantities and lists are planned/validated before batch writes.
 - Deck imports preserve unresolved cards visibly rather than silently discarding them.
@@ -484,14 +490,31 @@ profile-owned table payloads
 
 Import creates a new profile and re-keys profile-owned entity identifiers. Catalog identifiers remain stable. URLs in imported configuration are sanitized, and deck records are recomputed from imported matches.
 
-### Current transfer gaps
+### The import boundary
 
-The current `profileTransfer.js` implementation does not yet satisfy the complete data contract:
+`src/store/importBoundary.js` decides everything about a bundle *in memory*, against no database,
+before `profileTransfer.js` creates anything. It is pure, and it reuses the same planner as boot
+canonicalisation so the two cannot drift.
 
-1. `schemaVersion` is written but is not currently used to reject unsupported future bundles or run explicit bundle transformations.
-2. The destination profile is created before the row-import transaction; a failed import can therefore leave an empty profile requiring cleanup.
+1. **Validation.** The bundle must be an object stamped `app: "compendium"`. `schemaVersion` must
+   be an integer; a missing stamp is read as v10, the oldest shape ever exported. A version above
+   `MAX_SUPPORTED_SCHEMA` is **rejected** - forward-only migration means an older bundle is always
+   readable, and a newer one cannot be guessed at without silently corrupting data. Every field
+   the importer later iterates (`ITERATED_COLLECTIONS`) must be an array if present, and every
+   `owned_cards` row must be an object with a `card_id`. A test asserts that list covers every
+   collection `profileTransfer.js` iterates.
+2. **Normalisation.** A bundle carrying v10 ownership keys is rewritten to the collector-item key
+   space. This is shape-first: the stamped version is a hint, the rows are the truth, so a bundle
+   claiming v11 while holding legacy keys is normalised anyway. An already-canonical bundle is
+   returned unchanged, so a v11 round trip perturbs nothing. Boot canonicalisation cannot cover
+   this, because an imported bundle arrives after boot has already run.
+3. **Atomicity.** The `profiles` and `settings` rows are the first two statements of the same
+   transaction as the imported rows. A constraint failure, a full disk, or a row the validator did
+   not anticipate rolls the profile back with its contents, so no orphaned half-profile is left for
+   the user to find and delete. Validation narrows that window; only atomicity closes it.
 
-These are known data-integrity gaps. They require a reviewed proposal and focused transfer tests before profile export can be considered a complete backup of all profile-owned data.
+Rejections raise `ImportRejected` with a `code` (`malformed`, `not-compendium`, `future`) so the
+caller can distinguish them.
 
 ## 13. Search and derived data
 
