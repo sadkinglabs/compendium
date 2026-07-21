@@ -42,6 +42,10 @@ export function soleExistingItem(itemKeys, cardId) {
  * reported as choices, never as additions - the whole point, since they can still be skipped.
  * Refused cards said their own per-card warning already and are not re-counted here.
  *
+ * An UNKNOWN status - `undefined` from a missing return, say - is counted as neither applied
+ * nor a choice. A missing return is a bug, and laundering it into "Added" is the fail-open
+ * failure mode this whole branch kept getting burned by; the honest move is to not claim it.
+ *
  * @returns a message, or null when there is nothing truthful to say
  */
 export function batchAddSummary(results) {

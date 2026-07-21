@@ -79,3 +79,12 @@ test('reuse does not depend on the delta - the property that makes + and - symme
   // user already wants one printing of resolves to the same row.
   assert.equal(soleExistingItem.length, 2, 'signature is (itemKeys, cardId) - no delta');
 });
+
+test('an UNKNOWN or undefined status is never counted as an addition', () => {
+  // A missing return from addStep must not become "Added". This is the fail-open pattern that
+  // cost this branch three review rounds - a bug should surface as an undercount, never as a
+  // false success.
+  assert.equal(batchAddSummary([ADD_APPLIED, undefined]), 'Added 1 card', 'the undefined is not added');
+  assert.equal(batchAddSummary([undefined, undefined]), null, 'all-unknown says nothing rather than claiming success');
+  assert.equal(batchAddSummary([undefined, ADD_CHOICE_REQUIRED]), 'Choose printing for 1 card', 'unknown does not inflate the applied count');
+});

@@ -1010,7 +1010,9 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
     // Count what actually happened. onStep returns a status - a reprint with no existing want
     // is queued for the picker, not added - so the copy must not claim it. summarise() reserves
     // "Added N" for cards that applied and reports the rest as choices still to make.
-    const results = cards.map((c) => onStep(c, 1) || 'applied');
+    // No fail-open default. onStep returns a status on every path; if one ever does not,
+    // the card is simply not counted rather than silently reported as added.
+    const results = cards.map((c) => onStep(c, 1));
     const msg = summarise(results);
     if (msg) toast(msg);
     setSelected(new Map());
@@ -1688,7 +1690,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           if (isWishlist) {
             // Same honesty as the tap-add batch: reprints queue for the picker rather than
             // being announced, so the copy reports applied and pending separately.
-            const results = adds.map((a) => addStep(a.card, a.qty) || ADD_APPLIED);
+            const results = adds.map((a) => addStep(a.card, a.qty));
             const msg = batchAddSummary(results);
             if (msg) toast(msg);
             return;
