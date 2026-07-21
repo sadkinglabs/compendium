@@ -204,9 +204,16 @@ async function writeQtyAt(cardId, slug, wanted, pid) {
  * why an imported canonical want inflated: it read 2 across all rows, added one, and wrote 3
  * somewhere else while the original stayed put.
  */
-export async function setWanted(cardId, qty, pid = activeProfileId(), { set = null, foil = false } = {}) {
-  const slug = set ? canonicalPrinting(set, foil) : await resolveWantTarget(cardId, pid);
-  return writeQtyAt(cardId, slug, qty, pid);
+export async function setWanted(cardId, qty, pid = activeProfileId(), item = null) {
+  // An explicit collector item goes through the SAME validated boundary as every other want
+  // writer - it may not name an uncategorised key, and its finish must be a real boolean.
+  // Calling canonicalPrinting directly here would have bypassed both.
+  if (item?.set != null) {
+    assertRealSetCode(item.set, 'setWanted');
+    if (typeof item.foil !== 'boolean') throw new Error('setWanted: foil must be a boolean.');
+    return writeQtyAt(cardId, canonicalPrinting(item.set, item.foil), qty, pid);
+  }
+  return writeQtyAt(cardId, await resolveWantTarget(cardId, pid), qty, pid);
 }
 
 // Card-level owned edit as a DELTA on the '' ("Uncategorised") bucket. qtyFor sums
@@ -221,8 +228,15 @@ export async function stepOwnedBucket(cardId, delta, pid = activeProfileId()) {
   return writeQty(cardId, { owned: Math.max(0, (cur?.qty_owned || 0) + delta) }, pid);
 }
 export async function stepOwned(cardId, delta, pid = activeProfileId()) { const { owned } = await qtyFor(cardId, pid); return setOwned(cardId, owned + delta, pid); }
-export async function stepWanted(cardId, delta, pid = activeProfileId(), item = {}) {
-  const slug = item.set ? canonicalPrinting(item.set, !!item.foil) : await resolveWantTarget(cardId, pid);
+export async function stepWanted(cardId, delta, pid = activeProfileId(), item = null) {
+  let slug;
+  if (item?.set != null) {
+    assertRealSetCode(item.set, 'stepWanted');
+    if (typeof item.foil !== 'boolean') throw new Error('stepWanted: foil must be a boolean.');
+    slug = canonicalPrinting(item.set, item.foil);
+  } else {
+    slug = await resolveWantTarget(cardId, pid);
+  }
   // Reads THAT row, not the card-level total. Summing across rows and writing the sum to one of
   // them is precisely how a single tap could add three.
   const cur = (await query('SELECT qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
@@ -323,11 +337,15 @@ export async function qtyForInSet(cardId, set, pid = activeProfileId()) {
 
 async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
   const slug = vslug(set, foil);
-  // The unspecified regular row ('') is SHARED with the wishlist (qty_wanted lives on it).
-  // Route it through writeQty, which preserves qty_wanted, instead of deleting the whole
-  // row when owned hits 0 - that would wipe a wishlist entry for the same card. Per-set and
-  // foil rows are owned-only, so their delete-at-0 below is safe.
-  if (slug === '') return writeQty(cardId, { owned: qty }, pid);
+  // The UNCATEGORISED row can carry a want as well as copies - a migrated want on an ambiguous
+  // reprint lives exactly there. Route it through writeQty, which preserves qty_wanted, rather
+  // than the delete-at-0 below, which would take the want with it.
+  //
+  // This guard used to read `slug === ''` and became DEAD the moment writers went canonical:
+  // vslug now returns 'uncategorised', so every uncategorised reduction fell through to the
+  // delete. Comparing against the canonical constant instead of a literal is the whole reason
+  // those constants exist.
+  if (slug === UNCATEGORISED) return writeQty(cardId, { owned: qty }, pid);
   const now = nowIso();
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];

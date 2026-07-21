@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
-import { qtyFor, ownWantMap, recentlyAdded } from './ownedRepository.js';
+import { qtyFor, ownWantMap, recentlyAdded, setOwnedInSet } from './ownedRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'test-profile';
@@ -63,3 +63,15 @@ test('foil classification: recentlyAdded splits set foils correctly', async () =
   assert.equal(r.qty_foil, 3);
 });
 
+
+test('v11 regression: emptying UNCATEGORISED owned preserves a migrated want on that row', async () => {
+  // The guard that protects this row compared against the literal '' and went dead the moment
+  // writers became canonical - vslug returns 'uncategorised' now, so every uncategorised
+  // reduction fell through to a delete that took the want with it. Migration produces exactly
+  // this row shape for an ambiguous reprint, so the loss would have landed on real data.
+  card('cU', [{ code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]);
+  own('cU', 'uncategorised', 2, 1);
+  await setOwnedInSet('cU', '', 0);
+  assert.equal(rowQty('cU', 'uncategorised'), 0, 'the copies are gone');
+  assert.equal(rowWanted('cU', 'uncategorised'), 1, 'the want survives');
+});
