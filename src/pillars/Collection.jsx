@@ -14,6 +14,7 @@ import { resetCollectionSessionFor, collectionSession } from './collectionSessio
 import { collectionSurface } from './collectionRoute.js';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
+import { solePrintingName } from '../store/printings.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -1138,10 +1139,9 @@ const listSetPill = {
   textTransform: 'uppercase', color: 'var(--gold-leaf)', padding: '4px 9px',
   borderRadius: 999, border: '1px solid var(--hair-16)', background: 'rgba(10,9,7,.5)',
 };
-function listSetName(card) {
-  try { const s = JSON.parse(card?.sets || '[]'); return (Array.isArray(s) && s[0]?.name) || null; }
-  catch { return null; }
-}
+// The set pill shows a set only when the card has exactly ONE printing - never an array
+// index. See solePrintingName in store/printings.js for the bug this replaced.
+const listSetName = (card) => solePrintingName(card?.sets);
 
 // One card on a list detail. A full-width hairline row (never a rounded card): a
 // gilt-framed 5:7 thumb that lights up as you own copies toward the goal, the

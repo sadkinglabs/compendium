@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  UNSPECIFIED_PRINTING, isUnspecified, isFoilPrinting, normalizePrinting, setCodeOf,
+  UNSPECIFIED_PRINTING, isUnspecified, isFoilPrinting, normalizePrinting, setCodeOf, solePrintingName,
 } from './printings.js';
 
 test('the unspecified bucket is recognised', () => {
@@ -54,4 +54,24 @@ test("a set code is never the literal 'unspecified'", () => {
   // Guards the v11 option: if a real printing could be spelled 'unspecified', that value
   // would be unusable as the sentinel later.
   assert.equal(isUnspecified('unspecified'), false);
+});
+
+/* ---------------- the list-row set pill ---------------- */
+
+test('a single-printing card shows its set', () => {
+  assert.equal(solePrintingName(JSON.stringify([{ code: '004', name: 'Arthurian Legends' }])), 'Arthurian Legends');
+});
+
+test('a REPRINT shows nothing rather than guessing', () => {
+  // The real case: Albespine Pikemen is Alpha+Beta, and the wishlist rendered "ALPHA" purely
+  // because Alpha sorts first - while the copies actually owned were Beta.
+  const albespine = JSON.stringify([{ code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]);
+  assert.equal(solePrintingName(albespine), null);
+});
+
+test('no printings, malformed or missing data all show nothing', () => {
+  assert.equal(solePrintingName('[]'), null);
+  assert.equal(solePrintingName('{not json'), null);
+  assert.equal(solePrintingName(undefined), null);
+  assert.equal(solePrintingName(null), null);
 });

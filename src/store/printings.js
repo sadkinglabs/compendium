@@ -54,3 +54,25 @@ export function setCodeOf(slug) {
   const s = normalizePrinting(slug);
   return s.endsWith(':f') ? s.slice(0, -2) : s;
 }
+
+/**
+ * The display name of a card's SOLE printing, or null when it has more than one.
+ *
+ * Used by list rows for their set pill. The rule is "say nothing rather than guess": the pill
+ * previously rendered `sets[0].name`, an array index, so a wishlisted Albespine Pikemen showed
+ * "ALPHA" because Alpha sorts first, while the copies in hand were Beta. It was correct
+ * exactly when it could not be wrong - single-printing cards - and silently wrong on every
+ * reprint, which taught the reader that wants were tied to a printing when nothing stored one.
+ *
+ * When wants become per-printing (schema v11) the row carries a real printing and rows should
+ * show THAT instead of calling this.
+ *
+ * @param setsJson the catalog `sets` field: a JSON array of { code, name }
+ */
+export function solePrintingName(setsJson) {
+  try {
+    const s = JSON.parse(setsJson || '[]');
+    if (!Array.isArray(s) || s.length !== 1) return null;
+    return s[0]?.name || null;
+  } catch { return null; }
+}
