@@ -1,0 +1,185 @@
+// Filing a triage line - the last new backend primitive for v11.
+//
+// Moving a quantity out of the uncategorised pile and onto a real collector item is a MOVE, and
+// a move is the operation most likely to duplicate or lose the thing it moves. So it follows
+// the same protocol the bulk ownership commands use, for the same reasons:
+//
+//   capture profile -> exclusive admission -> authoritative read -> plan
+//     -> one transaction -> authoritative read-back -> confirmed result
+//     -> release -> one broadcast
+//
+// THE RESULT CONTRACT, identical to bulkOwnedRepository so callers do not learn two:
+//   - confirmed: true    `moved` is authoritative, from the read-back.
+//   - confirmed: false   the transaction resolved but we could not verify the outcome.
+//                        `moved` is NULL - not zero, and not the plan's intent, because we do
+//                        not know it. No success count is reported and no undo is offered.
+//   - throws             the barrier was not achieved or the transaction failed. Nothing was
+//                        written; the pile is exactly as it was.
+//
+// WHY IT RE-VALIDATES WHAT triage.js ALREADY CHECKED. The plan arrives from the UI, and UI
+// state goes stale: a pile rendered before a scan, a destination chosen from a card that has
+// since been swiped away. The pure module validates the plan it was given; this validates the
+// plan against the DATABASE, under the barrier, at the moment of writing. Trusting the caller
+// would make every one of those pure checks advisory.
+//
+// WHY ONLY ONE FIELD MOVES. A triage line is either owned copies or a want - never both, per
+// the ruling that they resolve independently. The other field on the same row must survive
+// untouched, which is why the drawdown names its column explicitly and the destination merge
+// adds to one column only.
+import { query as dbQuery, tx as dbTx } from './db.js';
+import { activeProfileId as realActiveProfileId } from './profileRepository.js';
+import { withExclusiveCollectionWrites } from './collectionWrites.js';
+import { notifyOwnedChanged } from './ownedRepository.js';
+import { canonicalPrinting, isRealSetCode } from './printings.js';
+import { UNCATEGORISED_KEYS } from './triage.js';
+import { uuid, nowIso } from './ids.js';
+
+const FIELDS = { owned: 'qty_owned', wanted: 'qty_wanted' };
+
+export function createTriageCommands({ exclusive, query, tx, notify, activeProfileId }) {
+  /**
+   * File one triage line onto a real set.
+   *
+   * @param plan from `fileLinePlan` - { card_id, qty, field, fromSlugs, to: { set, foil } }
+   */
+  async function fileTriageLine(plan) {
+    // Validated BEFORE the barrier: a malformed plan should not consume an exclusive holder,
+    // and these checks need nothing from the database.
+    const field = FIELDS[plan?.field];
+    if (!field) throw new Error(`fileTriageLine: unknown field ${JSON.stringify(plan?.field)}.`);
+    if (!plan.card_id) throw new Error('fileTriageLine: no card.');
+    if (!isRealSetCode(plan?.to?.set)) throw new Error(`fileTriageLine: ${JSON.stringify(plan?.to?.set)} is not a set code.`);
+    const sources = [...new Set(plan.fromSlugs || [])];
+    if (!sources.length) throw new Error('fileTriageLine: no source rows.');
+    const foreign = sources.filter((s) => !UNCATEGORISED_KEYS.includes(s));
+    if (foreign.length) throw new Error(`fileTriageLine: may only drain uncategorised rows, not ${foreign.join(', ')}.`);
+
+    // CAPTURED, not read again later. A profile switch mid-operation must not redirect the
+    // write: every statement below is scoped to the id we started with.
+    const pid = activeProfileId();
+    if (!pid) throw new Error('fileTriageLine: no active profile.');
+
+    const dest = canonicalPrinting(plan.to.set, !!plan.to.foil);
+
+    return exclusive(async () => {
+      // AUTHORITATIVE READ, inside the barrier. The quantity in the plan came from a render and
+      // may be stale - the user could have scanned another copy since. Moving the planned
+      // amount rather than the amount that is actually there is how a move invents copies.
+      // MEMBERSHIP, proven against the catalog rather than taken from the plan.
+      //
+      // The shape check above rejects storage keys and malformed values, but '999' is a
+      // perfectly well-shaped set code that a given card may simply never have been printed in.
+      // The pure layer proved membership against the sets it was handed at render time; this
+      // proves it against the catalog now. Filing onto a set the card does not belong to would
+      // create a collector item that no reader can bucket and no later triage can find.
+      const cardSets = await query('SELECT sets FROM cards WHERE card_id=?;', [plan.card_id]);
+      let known = [];
+      try {
+        const parsed = JSON.parse(cardSets[0]?.sets || '[]');
+        known = Array.isArray(parsed) ? parsed.map((x) => x?.code).filter(Boolean) : [];
+      } catch { known = []; }
+      // A card the catalog does not know has NO valid destination. Refusing is right: the pile
+      // shows such cards as unresolvable precisely because there is nothing to file them to.
+      if (!known.includes(plan.to.set)) {
+        throw new Error(`fileTriageLine: ${plan.card_id} is not printed in set ${plan.to.set}.`);
+      }
+
+      const before = await query(
+        `SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards
+          WHERE profile_id=? AND card_id=? AND variant_slug IN (${[...sources, dest].map(() => '?').join(',')});`,
+        [pid, plan.card_id, ...sources, dest],
+      );
+      const at = (slug) => before.find((r) => r.variant_slug === slug);
+      const moving = sources.reduce((n, slug) => n + (at(slug)?.[field] || 0), 0);
+
+      // Nothing to move is a no-op, NOT a failure and NOT a broadcast. The row may have been
+      // filed by another surface already; saying so honestly beats inventing a change.
+      if (moving <= 0) return { confirmed: true, moved: 0, noop: true };
+
+      const now = nowIso();
+      const statements = [];
+
+      // DRAW DOWN one column only. The other field on the same row is untouched, because owned
+      // and wanted resolve independently - filing copies must not silently discard a want that
+      // shares the row.
+      for (const slug of sources) {
+        const row = at(slug);
+        if (!row || !(row[field] > 0)) continue;
+        statements.push([
+          `UPDATE owned_cards SET ${field}=0, updated_at=? WHERE profile_id=? AND card_id=? AND variant_slug=?;`,
+          [now, pid, plan.card_id, slug],
+        ]);
+      }
+
+      // MERGE at the destination, adding rather than replacing: the user may already own copies
+      // of this exact collector item, and filing must not overwrite them.
+      statements.push([
+        `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+         VALUES(?,?,?,?,?,?,'',?,?)
+         ON CONFLICT(profile_id,card_id,variant_slug)
+         DO UPDATE SET ${field}=${field}+excluded.${field}, updated_at=excluded.updated_at;`,
+        [uuid(), pid, plan.card_id, dest,
+          field === 'qty_owned' ? moving : 0,
+          field === 'qty_wanted' ? moving : 0,
+          now, now],
+      ]);
+
+      // Delete ONLY rows this operation emptied, and only when BOTH quantities are zero. A
+      // source row still holding the other field must survive; that asymmetry is the whole
+      // reason the empty-string row was unsafe to drop in the first place.
+      for (const slug of sources) {
+        statements.push([
+          'DELETE FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=? AND qty_owned=0 AND qty_wanted=0;',
+          [pid, plan.card_id, slug],
+        ]);
+      }
+
+      await tx(statements);
+
+      // AUTHORITATIVE READ-BACK. Conservation is checked against what the database actually
+      // holds now, not against what we intended - the difference between the two is exactly
+      // what a confirmation is for.
+      let confirmed = false;
+      let moved = null;
+      try {
+        const after = await query(
+          `SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards
+            WHERE profile_id=? AND card_id=? AND variant_slug IN (${[...sources, dest].map(() => '?').join(',')});`,
+          [pid, plan.card_id, ...sources, dest],
+        );
+        const sumBefore = before.reduce((n, r) => n + (r[field] || 0), 0);
+        const sumAfter = after.reduce((n, r) => n + (r[field] || 0), 0);
+        const destAfter = after.find((r) => r.variant_slug === dest)?.[field] || 0;
+        const sourcesDrained = sources.every((s) => !(after.find((r) => r.variant_slug === s)?.[field] > 0));
+        const destBefore = at(dest)?.[field] || 0;
+
+        // Three independent facts, all of which must hold: the total is conserved, the sources
+        // are empty, and the destination grew by exactly the amount that left them.
+        confirmed = sumAfter === sumBefore && sourcesDrained && destAfter === destBefore + moving;
+        if (confirmed) moved = moving;
+      } catch {
+        confirmed = false;   // a failed read-back is an unconfirmed result, never a failed write
+      }
+
+      return { confirmed, moved, attempted: moving };
+    }).then((result) => {
+      // ONE broadcast, and only when a transaction actually ran. It is a cache invalidation
+      // rather than a success announcement, so it fires for the unconfirmed case too: persisted
+      // state may well have changed, and stale UI is worse than a redundant refresh.
+      if (!result.noop) notify();
+      return result;
+    });
+  }
+
+  return { fileTriageLine };
+}
+
+const production = createTriageCommands({
+  exclusive: withExclusiveCollectionWrites,
+  query: dbQuery,
+  tx: dbTx,
+  notify: notifyOwnedChanged,
+  activeProfileId: realActiveProfileId,
+});
+
+export const fileTriageLine = production.fileTriageLine;
