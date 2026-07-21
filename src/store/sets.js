@@ -6,15 +6,16 @@
 //   - ORDER is DERIVED from the numeric set code. Codes are sequential by design
 //     (001 Alpha, 002 Beta, 004 Arthurian Legends, 005 Dragonlord, 006 Gothic, 999
 //     Promotional; no 003), so numeric ascending IS the release order and a new code
-//     slots itself in. '' (the Unspecified ownership bucket) and any non-numeric code
+//     slots itself in. '' (the Uncategorised ownership bucket) and any non-numeric code
 //     sort LAST.
 import setCatalog from './setCatalog.json';
+import { UNCATEGORISED, UNCATEGORISED_LABEL } from './printings.js';
 
-export const SET_LABEL = { ...setCatalog, '': 'Unspecified' };
+export const SET_LABEL = { ...setCatalog, [UNCATEGORISED]: UNCATEGORISED_LABEL };
 
 // Sort key for a set code. Purely derived - no table to maintain.
 export const setRank = (code) => (code && /^\d+$/.test(code) ? parseInt(code, 10) : Number.MAX_SAFE_INTEGER);
 
 // Back-compat object for the `SET_RANK[code] ?? fallback` call sites; relative order
-// is identical to the derived rank. Covers every known set plus the Unspecified bucket.
+// is identical to the derived rank. Covers every known set plus the Uncategorised bucket.
 export const SET_RANK = Object.fromEntries([...Object.keys(setCatalog), ''].map((c) => [c, setRank(c)]));

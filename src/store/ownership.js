@@ -1,7 +1,7 @@
 // The ONE ownership taxonomy for a card printing.
 //
 // This exists because a boolean could not carry the question. "Owned" was computed two
-// different ways in the same file - printed rows used `owned > 0`, the Unspecified pile used
+// different ways in the same file - printed rows used `owned > 0`, the Uncategorised pile used
 // `owned + foil > 0` - so the identical physical state ({owned: 0, foil: 1}) was "not owned"
 // on one screen and "owned" on another. Before that, the filter and the completion tally
 // disagreed, which hid a real card from a real collection: Beta read 401/402 while "Not owned"

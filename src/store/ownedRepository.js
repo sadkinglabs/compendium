@@ -93,7 +93,7 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
 export async function setOwned(cardId, qty, pid = activeProfileId()) { return writeQty(cardId, { owned: qty }, pid); }
 export async function setWanted(cardId, qty, pid = activeProfileId()) { return writeQty(cardId, { wanted: qty }, pid); }
 
-// Card-level owned edit as a DELTA on the '' ("Unspecified") bucket. qtyFor sums
+// Card-level owned edit as a DELTA on the '' ("Uncategorised") bucket. qtyFor sums
 // owned across EVERY row (incl. the per-set '001'… rows My Collection writes), so
 // reading that total and writing it back to '' (setOwned) double-counts the set
 // rows - the +2-on-plus / dead-minus bug. Stepping the '' bucket directly composes
@@ -127,7 +127,7 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
    per-set row: variant_slug = the numeric set code ("001" = Alpha regular,
    "001:f" = Alpha foil). The wishlist stays card-level on the '' row. Legacy
    card-level owned (scanner/import/old card sheet, written on '' / 'foil') has
-   no set and surfaces under an "Unspecified" group ('' key) so nothing is lost.
+   no set and surfaces under an "Uncategorised" group ('' key) so nothing is lost.
    ownedMap() still SUMs every owned row, so deck buildability is unaffected. */
 const SET_UNSPEC = '';   // group key for owned copies with no recorded set
 
@@ -136,9 +136,9 @@ function parseVslug(slug) {
   const foil = slug.endsWith(':f');
   return { set: foil ? slug.slice(0, -2) : slug, foil };          // '' stays unspecified
 }
-// Foil slug: a named set's foil is "<code>:f" (e.g. "001:f"); the Unspecified
+// Foil slug: a named set's foil is "<code>:f" (e.g. "001:f"); the Uncategorised
 // bucket's foil is the legacy card-level "foil" row (what setFoil/qtyFor/ownWantMap
-// read), NOT ":f" - so an Unspecified foil reads and writes the same row everywhere.
+// read), NOT ":f" - so an Uncategorised foil reads and writes the same row everywhere.
 const vslug = (set, foil) => (foil ? (set ? set + ':f' : 'foil') : set);
 
 // Write-queue keys: ONE per persisted row, so key equality === owned_cards /
@@ -164,7 +164,7 @@ export async function ownedBySet() {
   return m;
 }
 
-// Every set bucket a card is owned in (incl '' Unspecified), for the card sheet's
+// Every set bucket a card is owned in (incl '' Uncategorised), for the card sheet's
 // set picker: Map<setCode, { owned, foil }>. Same parse as ownedBySet, one card.
 export async function ownedSetsForCard(cardId) {
   const pid = activeProfileId();
@@ -227,7 +227,7 @@ async function addCopies(cardId, col, n) {
 
 // Atomic +N owned onto a specific PRINTING (set-coded row). Same overlap-safe
 // upsert as addOwnedCopies, but on the '001'/'002'/… row - the scanner uses this
-// to file a recognised single-set card under its (only) set instead of Unspecified.
+// to file a recognised single-set card under its (only) set instead of Uncategorised.
 export async function addOwnedCopiesInSet(cardId, set, n = 1) {
   if (!cardId || !set || !(n > 0)) return;
   const pid = activeProfileId();
@@ -242,9 +242,9 @@ export async function addOwnedCopiesInSet(cardId, set, n = 1) {
   bump();
 }
 
-// One-time cleanup: a card owned in the '' ("Unspecified") bucket that exists in
+// One-time cleanup: a card owned in the '' ("Uncategorised") bucket that exists in
 // exactly ONE set can only BE that set, so move its owned copies onto the real set
-// row. Multi-set cards (Alpha/Beta reprints) stay Unspecified - the printing is
+// row. Multi-set cards (Alpha/Beta reprints) stay Uncategorised - the printing is
 // genuinely unknowable from the name. Idempotent (re-running finds nothing to move).
 export async function backfillSingleSetOwned() {
   const pid = activeProfileId();
@@ -258,7 +258,7 @@ export async function backfillSingleSetOwned() {
   let moved = 0;
   for (const r of rows) {
     const sets = setsById.get(r.card_id) || [];
-    if (sets.length !== 1 || !sets[0]?.code) continue;   // multi-set / unknown -> leave in Unspecified
+    if (sets.length !== 1 || !sets[0]?.code) continue;   // multi-set / unknown -> leave in Uncategorised
     // Fold the legacy '' owned onto the single set row AND remove exactly that many
     // from '' in the SAME transaction, so an interruption can never re-add on the
     // next boot (all-or-nothing). Subtract the EXACT moved amount (not a blind
@@ -311,7 +311,7 @@ export async function previewCollectionText(text) {
 }
 
 // Commit a reviewed import: each item files its copies into a chosen bucket. setCode
-// '' (or falsy) = the Unspecified bucket; a set code files that printing. One tx.
+// '' (or falsy) = the Uncategorised bucket; a set code files that printing. One tx.
 export async function importCollectionResolved(items) {
   const pid = activeProfileId();
   const now = nowIso();

@@ -14,7 +14,7 @@ import { resetCollectionSessionFor, collectionSession } from './collectionSessio
 import { collectionSurface } from './collectionRoute.js';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
-import { soleSetName } from '../store/printings.js';
+import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -229,7 +229,7 @@ function ImportTextSheet({ open, onClose }) {
                       <SegTabs ariaLabel={`Set for ${i.name}`}
                         value={choice[i.card_id] === '' ? '__unspec__' : choice[i.card_id]}
                         onChange={(k) => setChoice((m) => ({ ...m, [i.card_id]: k === '__unspec__' ? '' : k }))}
-                        options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: 'Unspecified' }]} />
+                        options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: UNCATEGORISED_LABEL }]} />
                     </div>
                   </div>
                 ))}
@@ -503,7 +503,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
 
   async function loadPool() {
     const parsed = parseQuery(q);
-    // 'Unspecified' is an ownership bucket, not a printed set - keep it out of the
+    // The uncategorised bucket is an ownership state, not a printed set - keep it out of the
     // catalog pool query (it would match no card and empty the pool); grouping applies it.
     // PINNED to the drilled set. This component IS the per-set drill, so a cross-set filter
     // is not a narrowing - it is a contradiction. Selecting Alpha inside Beta used to put
