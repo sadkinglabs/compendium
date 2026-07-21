@@ -54,6 +54,11 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
   const triggerRef = useRef(null);
   const itemRefs = useRef([]);
   const shown = (items || []).filter(Boolean);
+  // Index of the first actionable item, as a PRIMITIVE. The focus effect below must not
+  // depend on `shown` - that array is rebuilt every render, so any parent re-render while the
+  // menu is open would re-run the effect and yank focus back to the top of the list while
+  // someone was arrowing through it.
+  const firstEnabled = shown.findIndex((it) => !it.disabled);
 
   useEffect(() => {
     if (!open) return;
@@ -71,14 +76,12 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
   // closes - the menu-button contract. Without the return, dismissing with Escape strands
   // keyboard focus on a node that no longer exists.
   useEffect(() => {
-    if (!open) return;
-    // The FIRST ENABLED item. `disabled` is part of this component's declared API, so focusing
-    // index 0 blindly could strand focus on a control that cannot be actioned.
-    const first = shown.findIndex((it) => !it.disabled);
-    if (first < 0) return undefined;
-    const id = setTimeout(() => itemRefs.current[first]?.focus?.({ preventScroll: true }), 0);
+    // Focus the first ACTIONABLE item: `disabled` is part of the declared API, so focusing
+    // index 0 blindly could strand focus on a control that cannot be used.
+    if (!open || firstEnabled < 0) return undefined;
+    const id = setTimeout(() => itemRefs.current[firstEnabled]?.focus?.({ preventScroll: true }), 0);
     return () => clearTimeout(id);
-  }, [open, shown]);
+  }, [open, firstEnabled]);
 
   if (!shown.length) return null;   // never render an empty affordance
 

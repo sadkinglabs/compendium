@@ -341,3 +341,42 @@ test('parseUi reads content-desc when a node has no text', () => {
   assert.equal(nodes.length, 1);
   assert.equal(nodes[0].text, 'Back to sets');
 });
+
+test('the dump is removed even when a device command THROWS', async () => {
+  // The structural fix was a try/finally, but only the happy path was covered - and this
+  // branch has a history of green tests missing the case they were written for. Here adb
+  // fails AFTER a dump can exist; cleanup must still run.
+  const calls = [];
+  let dumps = 0;
+  const adb = (args) => {
+    calls.push(args.join(' '));
+    if (args[1] === 'dumpsys' && args[2] === 'power') return AWAKE;
+    if (args[1] === 'dumpsys' && args[2] === 'window') return '';
+    if (args[1] === 'dumpsys' && args[2] === 'package') return GOOD_PKG;
+    if (args[1] === 'uiautomator') { dumps += 1; if (dumps > 1) throw new Error('device went away'); return ''; }
+    if (args[1] === 'cat') return doc(node('WELCOME BACK'));
+    if (args[0] === 'logcat') return '';
+    return '';
+  };
+  await assert.rejects(
+    run({ adb, sleep: noSleep, ...silent, routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }] }),
+    /device went away/,
+  );
+  assert.ok(calls.some((c) => c.startsWith('shell rm -f /sdcard/')), 'cleanup must run on the failure path too');
+});
+
+test('cleanup failing does not mask the original error', async () => {
+  const adb = (args) => {
+    if (args[1] === 'dumpsys' && args[2] === 'power') return AWAKE;
+    if (args[1] === 'dumpsys' && args[2] === 'window') return '';
+    if (args[1] === 'dumpsys' && args[2] === 'package') return GOOD_PKG;
+    if (args[1] === 'rm') throw new Error('cleanup also failed');
+    if (args[1] === 'uiautomator') throw new Error('the real problem');
+    if (args[0] === 'logcat') return '';
+    return '';
+  };
+  await assert.rejects(
+    run({ adb, sleep: noSleep, ...silent, routes: [{ name: 'Home', tap: [], expect: ['welcome back'] }] }),
+    /the real problem/,
+  );
+});

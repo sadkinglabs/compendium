@@ -40,8 +40,7 @@ const isFoil = (col = 'variant_slug') => `(${col}='foil' OR ${col} LIKE '%:f')`;
 // Map<card_id, totalOwned> - THE aggregation across printings, one indexed GROUP
 // BY. Optionally narrowed to a set of card_ids. This is the only ownership read
 // the engine ever needs; no caller aggregates itself.
-export async function ownedMap(cardIds = null) {
-  const pid = activeProfileId();
+export async function ownedMap(cardIds = null, pid = activeProfileId()) {
   let sql = 'SELECT card_id, SUM(qty_owned) t FROM owned_cards WHERE profile_id=?';
   const params = [pid];
   if (cardIds && cardIds.length) { sql += ` AND card_id IN (${cardIds.map(() => '?').join(',')})`; params.push(...cardIds); }
@@ -545,17 +544,20 @@ export async function deckBuildabilityBulk(deckIds) {
   for (const [id, { required, unresolved }] of reqByDeck) out.set(id, compareRequirements(required, owned, unresolved));
   return out;
 }
-export async function listProgress(listId) {
-  const required = await listRequirements(listId);
-  const owned = await ownedMap(required.map((r) => r.card_id));
+// CAPTURE THE PROFILE ONCE. Progress is two reads with an await between them, and each used
+// to resolve the active profile independently - so a switch landing in that gap could combine
+// one profile's requirements with another's ownership. Binding both reads to a single pid
+// makes the whole calculation belong to one profile by construction.
+export async function listProgress(listId, pid = activeProfileId()) {
+  const required = await listRequirements(listId, pid);
+  const owned = await ownedMap(required.map((r) => r.card_id), pid);
   return compareRequirements(required, owned, 0);
 }
-export async function listProgressBulk(listIds) {
+export async function listProgressBulk(listIds, pid = activeProfileId()) {
   const out = new Map();
   if (!listIds.length) return out;
-  const owned = await ownedMap();   // full map once
+  const owned = await ownedMap(null, pid);   // full map once, bound to the captured profile
   // One grouped query for all lists' requirements (no N+1, mirrors deckRequirementsBulk).
-  const pid = activeProfileId();
   const rows = await query(
     `SELECT e.list_id, e.card_id, SUM(e.quantity) q FROM card_list_entries e
      JOIN card_lists l ON l.id = e.list_id

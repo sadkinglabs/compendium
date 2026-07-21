@@ -235,3 +235,38 @@ test('an explicit profileId still wins over the active one', async () => {
   assert.equal(rows.length, 1, 'explicitly asking as A returns A rows while B is active');
   assert.deepEqual(await listCards('LA'), [], 'and the default binding still refuses');
 });
+
+test('progress captures ONE profile even if the active id switches between its reads', async () => {
+  // listProgress is two reads with an await between them. Each used to resolve the active
+  // profile independently, so a switch landing in that gap combined one profile's
+  // requirements with another's ownership.
+  //
+  // No interposition needed: the profile is captured SYNCHRONOUSLY when the call is made
+  // (a default parameter), so switching immediately afterwards lands squarely in the gap
+  // between the requirements read and the ownership read.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 2, 'A');       // A needs 2
+  await setOwnedInSet('c', '001', 5, 'A');     // A owns 5 -> complete
+  // B owns nothing and needs nothing.
+
+  const pending = listProgress('LA');          // captures A here, before any await resolves
+  __setActiveIdForTests('B');                  // switch inside the operation
+  const prog = await pending;
+
+  assert.equal(activeProfileId(), 'B', 'the active profile really did change mid-operation');
+  assert.equal(prog.totalRequired, 2, "requirements came from A's list");
+  assert.ok(prog.complete, "and ownership came from A too - 5 covers the 2 required");
+  __setActiveIdForTests('A');
+});
+
+test('bulk progress captures one profile the same way', async () => {
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 2, 'A');
+  await setOwnedInSet('c', '001', 5, 'A');
+  const pending = listProgressBulk(['LA']);
+  __setActiveIdForTests('B');
+  const out = await pending;
+  assert.equal(out.get('LA')?.totalRequired, 2);
+  assert.ok(out.get('LA')?.complete);
+  __setActiveIdForTests('A');
+});
