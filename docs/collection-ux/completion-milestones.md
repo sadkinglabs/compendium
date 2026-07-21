@@ -61,8 +61,8 @@ Measured against the installed catalog, variants scoped to their own set
 
 **Provenance.** Counted with the production `isTokenCard()` from
 [`tokens.js`](../../src/store/tokens.js), not a hand-written token filter. An earlier revision
-of this note used a regex and was wrong in both directions - `^Skeleton` excluded *Skeleton
-Mage*, a real Gothic card, while `^Foot Soldier` missed the genuine token *Foot Soldiers*
+of this note used a regex and was wrong in both directions - `^Skeleton\b` excluded *Skeleton
+Mage*, a real Gothic card, while `^Foot Soldier\b` missed the genuine token *Foot Soldiers*
 because the trailing `s` blocks the word boundary. Any future recount of this table must import
 the production boundary rather than restate it.
 

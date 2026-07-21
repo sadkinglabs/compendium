@@ -15,6 +15,7 @@ const row = (o) => ({
   notes: '', created_at: '2026-01-01', updated_at: '2026-01-01', ...o,
 });
 const keyed = (rows) => Object.fromEntries(rows.map((r) => [r.variant_slug, r]));
+const plan = (rows, sets) => planCard(rows, sets).rows;
 const totals = (rows) => rows.reduce(
   (a, r) => ({ owned: a.owned + (r.qty_owned || 0), wanted: a.wanted + (r.qty_wanted || 0) }),
   { owned: 0, wanted: 0 },
@@ -34,7 +35,7 @@ test('the empty string and the legacy foil row are the only keys rewritten', () 
 /* ---------------- owned copies: a pure relabel ---------------- */
 
 test('owned copies keep an unknown set, and keep their finish', () => {
-  const out = keyed(planCard([
+  const out = keyed(plan([
     row({ variant_slug: '', qty_owned: 3 }),
     row({ variant_slug: 'foil', qty_owned: 2 }),
   ], ['001']));
@@ -45,7 +46,7 @@ test('owned copies keep an unknown set, and keep their finish', () => {
 
 test('already-categorised rows are left completely alone', () => {
   const before = [row({ variant_slug: '001', qty_owned: 4 }), row({ variant_slug: '002:f', qty_owned: 1 })];
-  const out = keyed(planCard(before, ['001', '002']));
+  const out = keyed(plan(before, ['001', '002']));
   assert.equal(out['001'].qty_owned, 4);
   assert.equal(out['002:f'].qty_owned, 1);
   assert.equal(Object.keys(out).length, 2);
@@ -54,14 +55,14 @@ test('already-categorised rows are left completely alone', () => {
 /* ---------------- wants: the ruled behaviour ---------------- */
 
 test('a want on a SINGLE-set card is filed to that set, non-foil', () => {
-  const out = keyed(planCard([row({ qty_wanted: 1 })], ['004']));
+  const out = keyed(plan([row({ qty_wanted: 1 })], ['004']));
   assert.equal(out['004'].qty_wanted, 1);
   assert.ok(!out['004:f'], 'never foil - the owner ruled legacy wants are non-foil');
 });
 
 test('a want on a REPRINTED card is parked, not guessed', () => {
   // The whole reason v11 exists: guessing produced "ALPHA" for a card whose copies were Beta.
-  const out = keyed(planCard([row({ qty_wanted: 1 })], ['001', '002']));
+  const out = keyed(plan([row({ qty_wanted: 1 })], ['001', '002']));
   assert.equal(out[V11_UNCATEGORISED].qty_wanted, 1);
   assert.ok(!out['001'] && !out['002']);
 });
@@ -69,7 +70,7 @@ test('a want on a REPRINTED card is parked, not guessed', () => {
 test('a want on a card the catalog does not know is parked', () => {
   // A catalog gap is not a user decision, so it must not be resolved on the user's behalf.
   for (const sets of [[], null, undefined]) {
-    const out = keyed(planCard([row({ qty_wanted: 2 })], sets));
+    const out = keyed(plan([row({ qty_wanted: 2 })], sets));
     assert.equal(out[V11_UNCATEGORISED].qty_wanted, 2, `sets=${JSON.stringify(sets)}`);
   }
 });
@@ -79,24 +80,115 @@ test('a want on a card the catalog does not know is parked', () => {
 test('a row holding BOTH owned copies and a want splits, and loses neither', () => {
   // This is the case that makes "just drop the empty-string rows" destructive: the wishlist
   // shares a row with ownership, so deleting the row deletes the want.
-  const out = keyed(planCard([row({ qty_owned: 2, qty_wanted: 1 })], ['004']));
+  const out = keyed(plan([row({ qty_owned: 2, qty_wanted: 1 })], ['004']));
   assert.equal(out[V11_UNCATEGORISED].qty_owned, 2, 'copies stay uncategorised');
   assert.equal(out[V11_UNCATEGORISED].qty_wanted, 0);
   assert.equal(out['004'].qty_wanted, 1, 'the want is filed to the sole set');
   assert.equal(out['004'].qty_owned, 0);
 });
 
-test('a legacy FOIL row never produces a want', () => {
-  // Wants only ever lived on the '' row. If a foil row carried a want we would be inventing one.
-  const out = keyed(planCard([row({ variant_slug: 'foil', qty_owned: 1, qty_wanted: 5 })], ['004']));
-  assert.equal(out[V11_UNCATEGORISED_FOIL].qty_owned, 1);
-  assert.ok(!out['004'], 'no want is fabricated from a foil ownership row');
+test('a want carried on a legacy FOIL row is preserved, not deleted', () => {
+  // I previously asserted the opposite, reasoning that the app only ever wrote wants to the ''
+  // row. That is true of the app and irrelevant to the data: nothing in the schema enforces it,
+  // and imported or hand-edited ledgers can carry a want anywhere. The old behaviour silently
+  // destroyed wishlist data on exactly the inputs we control least.
+  const before = [row({ variant_slug: 'foil', qty_owned: 1, qty_wanted: 5 })];
+  const out = keyed(plan(before, ['004']));
+  assert.equal(out[V11_UNCATEGORISED_FOIL].qty_owned, 1, 'foil ownership keeps its finish');
+  assert.equal(out['004'].qty_wanted, 5, 'the want survives, filed to the sole set');
+  assert.deepEqual(totals(plan(before, ['004'])), totals(before), 'both totals conserved');
+});
+
+test('a want on a foil row is filed NON-foil, per the owner ruling', () => {
+  // The row it sat on described its ownership finish, never the finish of the want.
+  const out = keyed(plan([row({ variant_slug: 'foil', qty_wanted: 2 })], ['004']));
+  assert.equal(out['004'].qty_wanted, 2);
+  assert.ok(!out['004:f'], 'a foil want is never inferred');
+});
+
+test('a want on a foil row with a reprinted card is parked, still non-foil', () => {
+  const out = keyed(plan([row({ variant_slug: 'foil', qty_wanted: 3 })], ['001', '002']));
+  assert.equal(out[V11_UNCATEGORISED].qty_wanted, 3);
+});
+
+/* ---------------- identity ---------------- */
+
+test('a split never emits two rows sharing one id', () => {
+  // The source row physically exists once. Returning its id twice would violate the
+  // owned_cards PRIMARY KEY and leave the adapter guessing which copy is authoritative.
+  const { rows, releasedIds } = planCard([
+    row({ id: 'row-1', variant_slug: '', qty_owned: 2, qty_wanted: 1 }),
+  ], ['004']);
+  assert.equal(rows.length, 2, 'the split produced two logical rows');
+  const ids = rows.map((r) => r.id).filter((v) => v != null);
+  assert.equal(new Set(ids).size, ids.length, 'no duplicate ids');
+  assert.ok(rows.every((r) => r.needsId === true && r.id === null), 'both are NEW rows');
+  assert.deepEqual(releasedIds, ['row-1'], 'the source row is released for deletion');
+});
+
+test('a row already sitting at its destination key retains its id', () => {
+  const { rows, releasedIds } = planCard([
+    row({ id: 'keep', variant_slug: '004', qty_owned: 1 }),
+    row({ id: 'legacy', variant_slug: '', qty_wanted: 2 }),
+  ], ['004']);
+  const out = keyed(rows);
+  assert.equal(out['004'].id, 'keep', 'the row that already lived here keeps its identity');
+  assert.equal(out['004'].needsId, false);
+  assert.deepEqual(releasedIds, ['legacy'], 'only the consumed legacy row is released');
+});
+
+test('ids are unique across the WHOLE planned ledger, not just per card', () => {
+  const { rows } = planLedger([
+    row({ id: 'a', profile_id: 'p1', card_id: 'c1', variant_slug: '', qty_owned: 1, qty_wanted: 1 }),
+    row({ id: 'b', profile_id: 'p1', card_id: 'c2', variant_slug: 'foil', qty_owned: 1, qty_wanted: 1 }),
+    row({ id: 'c', profile_id: 'p2', card_id: 'c1', variant_slug: '004', qty_owned: 1 }),
+  ], () => ['004']);
+  const ids = rows.map((r) => r.id).filter((v) => v != null);
+  assert.equal(new Set(ids).size, ids.length, 'no id appears twice anywhere in the plan');
+});
+
+test('every planned row declares its identity state explicitly', () => {
+  // The adapter must never have to infer whether to UPDATE or INSERT.
+  const { rows } = planLedger([row({ id: 'x', variant_slug: '', qty_owned: 1, qty_wanted: 1 })], () => ['004']);
+  for (const r of rows) {
+    assert.equal(typeof r.needsId, 'boolean');
+    assert.equal(r.needsId, r.id === null, 'needsId and a null id always agree');
+  }
+});
+
+/* ---------------- order independence ---------------- */
+
+test('reversing the input rows produces the same logical plan', () => {
+  // Database query order is not a semantic input.
+  const rows = [
+    row({ id: 'r1', variant_slug: '', qty_owned: 2, qty_wanted: 1 }),
+    row({ id: 'r2', variant_slug: '004', qty_owned: 1, notes: 'signed' }),
+    row({ id: 'r3', variant_slug: 'foil', qty_owned: 3 }),
+  ];
+  const shape = (p) => p.rows
+    .map((r) => [r.variant_slug, r.qty_owned, r.qty_wanted, r.notes, r.id, r.needsId])
+    .sort((a, b) => String(a).localeCompare(String(b)));
+
+  const forward = planCard(rows, ['004']);
+  const reversed = planCard(rows.slice().reverse(), ['004']);
+  assert.deepEqual(shape(reversed), shape(forward));
+  assert.deepEqual(reversed.releasedIds.slice().sort(), forward.releasedIds.slice().sort());
+});
+
+test('ledger-level conservation holds for wants on EVERY legacy key', () => {
+  const before = [
+    row({ card_id: 'c1', variant_slug: '', qty_owned: 1, qty_wanted: 2 }),
+    row({ card_id: 'c2', variant_slug: 'foil', qty_owned: 3, qty_wanted: 4 }),
+    row({ card_id: 'c3', variant_slug: '001', qty_owned: 1, qty_wanted: 5 }),
+  ];
+  const { rows } = planLedger(before, () => ['001', '002']);
+  assert.deepEqual(totals(rows), totals(before), 'no want is lost on any key');
 });
 
 /* ---------------- collision ---------------- */
 
 test('merging onto an existing destination row sums rather than overwriting', () => {
-  const out = keyed(planCard([
+  const out = keyed(plan([
     row({ variant_slug: '004', qty_owned: 1, qty_wanted: 1, created_at: '2026-03-01', updated_at: '2026-03-01' }),
     row({ variant_slug: '', qty_wanted: 2, created_at: '2026-01-01', updated_at: '2026-06-01' }),
   ], ['004']));
@@ -107,14 +199,14 @@ test('merging onto an existing destination row sums rather than overwriting', ()
 });
 
 test('distinct notes are concatenated, and a re-merge does not duplicate them', () => {
-  const out = keyed(planCard([
+  const out = keyed(plan([
     row({ variant_slug: '004', qty_owned: 1, notes: 'signed' }),
     row({ variant_slug: '', qty_wanted: 1, notes: 'want the misprint' }),
   ], ['004']));
   assert.ok(out['004'].notes.includes('signed'));
   assert.ok(out['004'].notes.includes('want the misprint'), 'a typed note is never discarded');
 
-  const same = keyed(planCard([
+  const same = keyed(plan([
     row({ variant_slug: '004', qty_owned: 1, notes: 'signed' }),
     row({ variant_slug: '', qty_wanted: 1, notes: 'signed' }),
   ], ['004']));
@@ -124,11 +216,11 @@ test('distinct notes are concatenated, and a re-merge does not duplicate them', 
 /* ---------------- tombstones ---------------- */
 
 test('a 0/0 row is dropped, not carried forward', () => {
-  assert.deepEqual(planCard([row({ qty_owned: 0, qty_wanted: 0 })], ['004']), []);
+  assert.deepEqual(plan([row({ qty_owned: 0, qty_wanted: 0 })], ['004']), []);
 });
 
 test('a row that empties through merging is still dropped', () => {
-  const out = planCard([row({ variant_slug: '', qty_owned: 0, qty_wanted: 0, notes: 'stale' })], ['001', '002']);
+  const out = plan([row({ variant_slug: '', qty_owned: 0, qty_wanted: 0, notes: 'stale' })], ['001', '002']);
   assert.deepEqual(out, [], 'notes alone do not justify keeping an empty ledger row');
 });
 
@@ -140,7 +232,7 @@ test('quantities are conserved per card across a messy ledger', () => {
     row({ variant_slug: 'foil', qty_owned: 1 }),
     row({ variant_slug: '001', qty_owned: 4, qty_wanted: 1 }),
   ];
-  const after = planCard(before, ['001', '002']);
+  const after = plan(before, ['001', '002']);
   assert.deepEqual(totals(after), totals(before), 'nothing is created and nothing is lost');
 });
 
@@ -197,11 +289,11 @@ test('an already-v11 ledger is reported untouched', () => {
 test('a card that GAINED a set since the want was written is parked, not re-filed', () => {
   // The catalog is not frozen. A card that was Alpha-only when the heart was tapped may be a
   // reprint by the time this runs, and the honest answer is then "ask the user".
-  const out = keyed(planCard([row({ qty_wanted: 1 })], ['001', '002']));
+  const out = keyed(plan([row({ qty_wanted: 1 })], ['001', '002']));
   assert.equal(out[V11_UNCATEGORISED].qty_wanted, 1);
 });
 
 test('a card that LOST sets down to one is filed to the survivor', () => {
-  const out = keyed(planCard([row({ qty_wanted: 1 })], ['002']));
+  const out = keyed(plan([row({ qty_wanted: 1 })], ['002']));
   assert.equal(out['002'].qty_wanted, 1);
 });
