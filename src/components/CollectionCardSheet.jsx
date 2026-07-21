@@ -13,13 +13,16 @@ import CardArt from './CardArt.jsx';
 import CardArtViewer from './CardArtViewer.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
-import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey } from '../store/ownedRepository.js';
+import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted } from '../store/ownedRepository.js';
 import { enqueueWrite } from '../store/collectionWrites.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
-import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL } from '../store/printings.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, canonicalPrinting } from '../store/printings.js';
+import { wantTarget } from '../store/wantIntent.js';
+import WantPrintingSheet from './WantPrintingSheet.jsx';
+import { toast } from '../feedback.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
 
@@ -277,8 +280,53 @@ function CardBody({ c, onPick, editable, set }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownedSets]);
   const effSet = sel ?? ranked[0]?.code ?? '';
-  const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Unspecified) is a real bucket - do NOT `|| null`
-  const wished = (qty?.wanted || 0) > 0;
+  const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
+
+  // THE HEART IS PER COLLECTOR ITEM, not per card.
+  //
+  // It used to read the card-level want total, so with Alpha wanted and Beta selected the Beta
+  // heart rendered filled - and tapping it cleared Alpha. Storage has been per collector item
+  // since v11; the UI was still asserting card-level meaning over it.
+  const setCodes = sets.map((x) => x?.code).filter(Boolean);
+  const [wantedItems, setWantedItems] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => wantedItemsForCard(c.card_id).then((m) => { if (alive) setWantedItems(m); });
+    load();
+    const unsub = subscribeCollection(load);
+    return () => { alive = false; unsub(); };
+  }, [c.card_id]);
+
+  // Non-foil is what a bare heart means (§7.4), so that is the item it reflects and toggles.
+  const heartItem = { set: effSet, foil: false };
+  const heartSlug = effSet ? canonicalPrinting(effSet, false) : null;
+  const heartWanted = heartSlug ? (wantedItems?.get(heartSlug) || 0) : 0;
+  const wished = heartWanted > 0;
+
+  const [picking, setPicking] = useState(false);
+
+  // Resolution happens BEFORE the write, never as a rescue afterwards. The optimistic
+  // controller converts a rejection into failure state, so a want that needs a choice has to be
+  // answered while the gesture is still a gesture.
+  const addWant = (item) => addWantedForItem(c.card_id, item, 1);
+
+  // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
+  // if migration put it there, and the item writers refuse that key by design - so clearing
+  // routes through the card-level writer, which resolves to whichever row actually holds the
+  // want instead of naming one. Removing something the user can see must always be possible.
+  const clearWant = () => (
+    effSet && effSet !== UNCATEGORISED_BUCKET
+      ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0)
+      : setWanted(c.card_id, 0)
+  );
+
+  const onHeart = async () => {
+    if (wished) return clearWant();                          // clearing never needs a choice
+    const t = wantTarget(setCodes, { set: effSet });
+    if (t.kind === 'item') return addWant(t.item);
+    if (t.kind === 'ask') { setPicking(true); return; }
+    toast('The catalog does not list a printing for this card', { tone: 'warn' });
+  };
 
   // Art follows the active printing (Unspecified -> the card's default art).
   const imageForSet = (code) => {
@@ -365,8 +413,8 @@ function CardBody({ c, onPick, editable, set }) {
               <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
             </svg>
           }
-          label="Wishlist" on={wished} disabled={qty === null}
-          onClick={() => step('wanted', wished ? -(qty.wanted || 0) : 1)} />
+          label="Wishlist" on={wished} disabled={wantedItems === null}
+          onClick={onHeart} />
         <ActionButton
           icon={
             <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -375,6 +423,13 @@ function CardBody({ c, onPick, editable, set }) {
           }
           label="Add to list" onClick={onPick} />
       </div>
+      <WantPrintingSheet
+        open={picking}
+        cardId={c.card_id}
+        cardName={c.name}
+        setCodes={setCodes}
+        onPick={(item) => addWant(item)}
+        onClose={() => setPicking(false)} />
     </>
   );
 }
