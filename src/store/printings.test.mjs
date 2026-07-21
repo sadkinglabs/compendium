@@ -5,13 +5,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  UNCATEGORISED, ANY_PRINTING, LEGACY_FOIL_PRINTING, UNCATEGORISED_LABEL,
-  isUncategorised, isFoilPrinting, normalizePrinting, setCodeOf, soleSetName,
+  UNCATEGORISED, UNCATEGORISED_FOIL, LEGACY_UNCATEGORISED, LEGACY_FOIL, ANY_PRINTING,
+  UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, isUncategorised, isLegacyPrinting, isFoilPrinting,
+  normalizePrinting, setCodeOf, soleSetName, parsePrinting, printingSlugs,
 } from './printings.js';
 
 test('the uncategorised bucket is recognised', () => {
   assert.equal(isUncategorised(UNCATEGORISED), true);
-  assert.equal(isUncategorised(''), true);
+  assert.equal(isUncategorised(LEGACY_UNCATEGORISED), true);
 });
 
 test('a real set code is NOT uncategorised', () => {
@@ -24,11 +25,12 @@ test('null and undefined read as uncategorised - the one place falsiness is inte
   assert.equal(isUncategorised(undefined), true);
 });
 
-test('the sentinel is STILL falsy, and that is the trap this module documents', () => {
+test('the LEGACY sentinel is still falsy, and that is the trap this module documents', () => {
   // Named, not fixed. `if (slug)` remains wrong for a card you genuinely own, which is why
   // callers must use isUncategorised() rather than testing the value.
-  assert.equal(Boolean(UNCATEGORISED), false);
-  assert.ok(UNCATEGORISED != null, 'but it is NOT null - `!= null` is the safe check');
+  assert.equal(Boolean(LEGACY_UNCATEGORISED), false);
+  assert.ok(LEGACY_UNCATEGORISED != null, 'but it is NOT null - `!= null` is the safe check');
+  assert.ok(Boolean(UNCATEGORISED), 'the v11 key is truthy - the trap does not survive the migration');
 });
 
 test('foil printings are recognised, including the legacy card-level row', () => {
@@ -51,10 +53,10 @@ test('normalizePrinting always returns a string', () => {
   }
 });
 
-test("a set code is never the literal 'uncategorised'", () => {
+test("'uncategorised' is the v11 key, and a numeric set code never collides with it", () => {
   // Guards the v11 option: if a real printing could be spelled 'uncategorised', that value
   // would be unusable as the sentinel later.
-  assert.equal(isUncategorised('uncategorised'), false);
+  assert.equal(isUncategorised('uncategorised'), true, 'it IS the v11 key now');
 });
 
 /* ---------------- what each sentinel MEANS (Phase B) ---------------- */
@@ -65,15 +67,15 @@ test('ANY_PRINTING and UNCATEGORISED are equal today, and that is the hazard', (
   //   deck/list entries -> ANY_PRINTING: any collector item satisfies this; nothing to resolve.
   // They are kept as separate constants precisely BECAUSE this assertion passes - equality is
   // a fact about today's storage, not a licence to use one where the other is meant.
-  assert.equal(ANY_PRINTING, UNCATEGORISED, 'both are the empty string in v10 storage');
+  assert.equal(ANY_PRINTING, LEGACY_UNCATEGORISED, 'both are the empty string in v10 storage');
 });
 
 test('the legacy card-level foil row is named, and is not the uncategorised bucket', () => {
   // Pre-v11, foil copies with no set recorded live on a 'foil' row rather than ''. The
   // migration reads it; nothing else should spell it as a literal.
-  assert.equal(LEGACY_FOIL_PRINTING, 'foil');
-  assert.equal(isFoilPrinting(LEGACY_FOIL_PRINTING), true);
-  assert.equal(isUncategorised(LEGACY_FOIL_PRINTING), false, 'a foil row is not the "" bucket');
+  assert.equal(LEGACY_FOIL, 'foil');
+  assert.equal(isFoilPrinting(LEGACY_FOIL), true);
+  assert.equal(isUncategorised(LEGACY_FOIL), true, 'a legacy foil row IS uncategorised - it has no set');
 });
 
 test('the uncategorised label is a value the filter matches, not just display text', () => {

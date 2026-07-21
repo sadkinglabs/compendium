@@ -18,6 +18,10 @@ function fakeDb({ owned = [], cards = [], marker = null, failTx = false } = {}) 
     get txCalls() { return txCalls; },
     async query(sql, params = []) {
       if (sql.includes('_meta')) return marker ? [{ value: String(marker) }] : [];
+      // The straggler probe: how many LEGACY rows remain, regardless of the marker.
+      if (sql.includes('COUNT(*)')) {
+        return [{ n: owned.filter((r) => r.variant_slug === '' || r.variant_slug === 'foil').length }];
+      }
       if (sql.includes('FROM owned_cards')) return owned;
       if (sql.includes('FROM cards')) return cards;
       return [];
@@ -41,17 +45,50 @@ const run = (db) => createCanonicaliser({ query: db.query, tx: db.tx, uuid: (() 
 
 /* ---------------- the marker ---------------- */
 
-test('an already-canonical database is skipped without a transaction', () => {
-  const db = fakeDb({ marker: 11, owned: [owned({ qty_owned: 1 })] });
-  return run(db).then((res) => {
-    assert.equal(res.skipped, true);
-    assert.equal(db.txCalls, 0, 'no transaction is opened at all');
-  });
+test('an already-canonical database is skipped without a transaction', async () => {
+  // NOTE the canonical variant_slug. An earlier version of this test used a '' row and still
+  // expected a skip - it was asserting the very bug the marker hardening removes.
+  const db = fakeDb({ marker: 11, owned: [owned({ variant_slug: 'uncategorised', qty_owned: 1 })] });
+  const res = await run(db);
+  assert.equal(res.skipped, true);
+  assert.equal(db.txCalls, 0, 'no transaction is opened at all');
 });
 
-test('a marker from a FUTURE version is also skipped, not downgraded', () => {
-  const db = fakeDb({ marker: 12, owned: [owned({ qty_owned: 1 })] });
-  return run(db).then((res) => assert.equal(res.skipped, true));
+test('a marker from a FUTURE version is skipped, never downgraded or reinterpreted', async () => {
+  // Legacy rows present AND a future marker: still hands off. Data written by a newer version
+  // means something we do not know, and converting it would be worse than leaving it.
+  const db = fakeDb({ marker: 12, owned: [owned({ variant_slug: '', qty_owned: 1 })] });
+  const res = await run(db);
+  assert.equal(res.skipped, true);
+  assert.equal(res.reason, 'future-marker');
+  assert.equal(db.txCalls, 0);
+});
+
+test('marker 11 WITH legacy rows converts them anyway - the marker is only an optimisation', async () => {
+  // The failure this prevents: one missed writer recreates a '' row after conversion, the
+  // marker says "done", and that row stays invisible to v11 readers forever. Ledger shape is
+  // the invariant; the marker is just a way to skip work when the shape is already right.
+  const db = fakeDb({
+    marker: 11,
+    owned: [owned({ id: 'straggler', variant_slug: '', qty_owned: 2 })],
+    cards: [card('c1', ['004'])],
+  });
+  const res = await run(db);
+  assert.notEqual(res.skipped, true, 'it must NOT skip');
+  assert.equal(db.txCalls, 1, 'the straggler is converted in a transaction');
+  assert.equal(res.inserted, 1);
+  assert.equal(res.deleted, 1);
+});
+
+test('marker 11 with a CLEAN ledger still skips, so the common path stays cheap', async () => {
+  const db = fakeDb({
+    marker: 11,
+    owned: [owned({ variant_slug: 'uncategorised', qty_owned: 1 })],
+  });
+  const res = await run(db);
+  assert.equal(res.skipped, true);
+  assert.equal(res.reason, 'clean');
+  assert.equal(db.txCalls, 0);
 });
 
 test('the marker is written in the SAME transaction as the data', async () => {

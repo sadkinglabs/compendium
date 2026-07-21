@@ -7,7 +7,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  planCard, planLedger, isLegacyKey, V11_UNCATEGORISED, V11_UNCATEGORISED_FOIL,
+  planCard, planLedger, isLegacyKey, UNCATEGORISED as V11_UNCATEGORISED,
+  UNCATEGORISED_FOIL as V11_UNCATEGORISED_FOIL,
 } from './canonicalise.js';
 
 const row = (o) => ({

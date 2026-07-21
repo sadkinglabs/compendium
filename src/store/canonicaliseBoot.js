@@ -22,6 +22,7 @@
 import { query as dbQuery, tx as dbTx } from './db.js';
 import { uuid as newId, nowIso } from './ids.js';
 import { planLedger } from './canonicalise.js';
+import { SQL_IS_LEGACY } from './printings.js';
 
 /** Where the marker lives. `_meta` is app-global and already holds `schema_version`. */
 export const CANONICAL_MARKER_KEY = 'owned_cards_canonical_version';
@@ -39,8 +40,29 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
    *          { planned, inserted, updated, deleted } describing what was committed.
    */
   return async function canonicaliseLedger() {
+    // THE MARKER IS AN OPTIMISATION. THE LEDGER SHAPE IS THE INVARIANT.
+    //
+    // Trusting the marker alone would make one missed writer permanent: a legacy callsite (or an
+    // import) recreates a '' row after conversion, the marker says "done", and that row is never
+    // converted again - invisible to v11 readers forever. That is exactly the failure that
+    // stopped the previous increment, so the check is shape-first.
+    //
+    //   marker > 11              -> skip. Future data; downgrading or reinterpreting it is worse
+    //                               than leaving it alone.
+    //   marker = 11, no legacy   -> skip. The common path, and the only one that saves work.
+    //   marker = 11, legacy rows -> convert them anyway, transactionally.
+    //   marker < 11 or absent    -> convert.
     const marker = (await query('SELECT value FROM _meta WHERE key=?;', [CANONICAL_MARKER_KEY]))[0];
-    if (marker && parseInt(marker.value, 10) >= CANONICAL_VERSION) return { skipped: true };
+    const recorded = marker ? parseInt(marker.value, 10) : 0;
+    if (recorded > CANONICAL_VERSION) return { skipped: true, reason: 'future-marker' };
+    if (recorded === CANONICAL_VERSION) {
+      const stragglers = await query(
+        `SELECT COUNT(*) n FROM owned_cards WHERE ${SQL_IS_LEGACY()};`,
+      );
+      if (!Number(stragglers[0]?.n || 0)) return { skipped: true, reason: 'clean' };
+      // Fall through and convert. A re-run is safe: the planner is idempotent, so rows that are
+      // already canonical are left exactly as they are.
+    }
 
     // EVERY profile, not the active one - this runs before a profile is resolved, and a
     // database with three profiles must not leave two of them in v10 shape under v11 code.
@@ -114,7 +136,7 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
     statements.push([
       `INSERT INTO _meta(key,value)
          SELECT ?, 'legacy-keys-survived-canonicalisation'
-         WHERE EXISTS (SELECT 1 FROM owned_cards WHERE variant_slug='' OR variant_slug='foil');`,
+         WHERE EXISTS (SELECT 1 FROM owned_cards WHERE ${SQL_IS_LEGACY()});`,
       [CANONICAL_MARKER_KEY],
     ]);
 

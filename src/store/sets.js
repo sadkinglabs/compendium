@@ -9,9 +9,9 @@
 //     slots itself in. '' (the Uncategorised ownership bucket) and any non-numeric code
 //     sort LAST.
 import setCatalog from './setCatalog.json';
-import { UNCATEGORISED, UNCATEGORISED_LABEL } from './printings.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL } from './printings.js';
 
-export const SET_LABEL = { ...setCatalog, [UNCATEGORISED]: UNCATEGORISED_LABEL };
+export const SET_LABEL = { ...setCatalog, [UNCATEGORISED_BUCKET]: UNCATEGORISED_LABEL };
 
 // Sort key for a set code. Purely derived - no table to maintain.
 export const setRank = (code) => (code && /^\d+$/.test(code) ? parseInt(code, 10) : Number.MAX_SAFE_INTEGER);

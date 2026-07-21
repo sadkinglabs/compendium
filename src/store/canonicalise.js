@@ -23,17 +23,16 @@
 // the owner ruled both: finish is non-foil (a set is completed in non-foil, so that is the
 // default copy), and the set is inferred ONLY when the card belongs to exactly one set. This is
 // why one v10 row can become two v11 rows - see planCard.
-import { LEGACY_FOIL_PRINTING } from './printings.js';
+// The keys come from printings.js and are NOT redeclared here. They were, once, and the two
+// declarations drifted into a ledger no reader could see - see the block at the top of that file.
+import {
+  LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting,
+} from './printings.js';
 
-/** The v11 key for "I own copies whose set is not established yet", non-foil. */
-export const V11_UNCATEGORISED = 'uncategorised';
-/** The same, foil. */
-export const V11_UNCATEGORISED_FOIL = 'uncategorised:f';
+export { UNCATEGORISED, UNCATEGORISED_FOIL } from './printings.js';
 
 /** True for a v10 key that canonicalisation must rewrite. */
-export function isLegacyKey(slug) {
-  return slug === '' || slug == null || slug === LEGACY_FOIL_PRINTING;
-}
+export const isLegacyKey = isLegacyPrinting;
 
 // ---------------------------------------------------------------------------
 // IDENTITY CONTRACT
@@ -116,7 +115,7 @@ export function planCard(rows, setCodes) {
     // ONE v10 row can become TWO v11 rows. An '' row holding both a want and owned copies
     // splits: the copies keep an unknown set, while the want may be resolvable to a real one.
     // Splitting is why quantities are carried across explicitly instead of copying the row.
-    const ownedKey = slug === LEGACY_FOIL_PRINTING ? V11_UNCATEGORISED_FOIL : V11_UNCATEGORISED;
+    const ownedKey = slug === LEGACY_FOIL ? UNCATEGORISED_FOIL : UNCATEGORISED;
     if (owned > 0) put(ownedKey, { ...row, qty_owned: owned, qty_wanted: 0 });
 
     // EVERY positive legacy want is preserved, whichever legacy row carried it.
@@ -131,7 +130,7 @@ export function planCard(rows, setCodes) {
     // the card has exactly one and parked as uncategorised otherwise. A want carried on a foil
     // row is still a want for a non-foil copy; the row it sat on described its ownership, never
     // its wanted finish.
-    if (wanted > 0) put(soleSet || V11_UNCATEGORISED, { ...row, qty_owned: 0, qty_wanted: wanted });
+    if (wanted > 0) put(soleSet || UNCATEGORISED, { ...row, qty_owned: 0, qty_wanted: wanted });
   }
 
   // Identity, applied once per destination. A source row retains its id only if it already sat

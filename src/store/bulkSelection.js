@@ -1,4 +1,4 @@
-import { UNCATEGORISED, normalizePrinting } from './printings.js';
+import { UNCATEGORISED_BUCKET, normalizePrinting } from './printings.js';
 
 // Selection state for Collection bulk mode.
 //
@@ -25,7 +25,7 @@ export function selectionKey(cardId, set) {
 
 export function parseSelectionKey(key) {
   const i = String(key).indexOf('|');
-  return i < 0 ? { cardId: key, set: UNCATEGORISED } : { cardId: key.slice(0, i), set: key.slice(i + 1) };
+  return i < 0 ? { cardId: key, set: UNCATEGORISED_BUCKET } : { cardId: key.slice(0, i), set: key.slice(i + 1) };
 }
 
 /** Snapshot the given rows. Takes a copy so later mutation of `rows` cannot reach back in. */

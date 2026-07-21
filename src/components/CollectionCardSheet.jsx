@@ -19,7 +19,7 @@ import { activeProfileId } from '../store/profileRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
-import { UNCATEGORISED, UNCATEGORISED_LABEL } from '../store/printings.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL } from '../store/printings.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
 
@@ -259,7 +259,7 @@ function CardBody({ c, onPick, editable, set }) {
       if (((u?.owned || 0) + (u?.foil || 0)) > 0) setShowUnspec(true);
     }
   }, [ownedSets, showUnspec]);
-  const options = [...ranked.map((s) => ({ code: s.code, name: s.name })), ...(showUnspec ? [{ code: UNCATEGORISED, name: UNCATEGORISED_LABEL }] : [])];
+  const options = [...ranked.map((s) => ({ code: s.code, name: s.name })), ...(showUnspec ? [{ code: UNCATEGORISED_BUCKET, name: UNCATEGORISED_LABEL }] : [])];
 
   // The SELECTED set is user state, fixed once - NEVER re-derived from ownership
   // counts. (Deriving it from "the set you own the most of" made reducing one set's
@@ -295,7 +295,7 @@ function CardBody({ c, onPick, editable, set }) {
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
-  const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === UNCATEGORISED ? UNCATEGORISED_LABEL : ranked[0]?.name);
+  const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === UNCATEGORISED_BUCKET ? UNCATEGORISED_LABEL : ranked[0]?.name);
   const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
   const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
   // Meta row: rarity + type sit together (the type moved down off the header),

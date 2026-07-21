@@ -13,6 +13,10 @@
 // as a non-foil copy and set completion stays non-foil. The wishlist is variant-agnostic
 // and lives on the '' row only.
 import { query, run, tx } from './db.js';
+import {
+  LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED_BUCKET,
+  parsePrinting, printingSlugs, SQL_IS_FOIL,
+} from './printings.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
@@ -35,7 +39,7 @@ export function notifyOwnedChanged() { bump(); }
 // '<code>:f' row (e.g. '001:f', written by the set picker). Foil-sensitive
 // aggregates MUST recognise both; matching only 'foil' miscounts a set foil as a
 // regular copy at the card level (the card view and the set view then disagree).
-const isFoil = (col = 'variant_slug') => `(${col}='foil' OR ${col} LIKE '%:f')`;
+const isFoil = SQL_IS_FOIL;
 
 // Map<card_id, totalOwned> - THE aggregation across printings, one indexed GROUP
 // BY. Optionally narrowed to a set of card_ids. This is the only ownership read
@@ -129,17 +133,17 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
    card-level owned (scanner/import/old card sheet, written on '' / 'foil') has
    no set and surfaces under an "Uncategorised" group ('' key) so nothing is lost.
    ownedMap() still SUMs every owned row, so deck buildability is unaffected. */
-const SET_UNSPEC = '';   // group key for owned copies with no recorded set
+const SET_UNSPEC = UNCATEGORISED_BUCKET;   // group key for owned copies with no recorded set
 
-function parseVslug(slug) {
-  if (slug === 'foil') return { set: SET_UNSPEC, foil: true };   // legacy foil
-  const foil = slug.endsWith(':f');
-  return { set: foil ? slug.slice(0, -2) : slug, foil };          // '' stays unspecified
-}
+// Delegated so v10 and v11 keys bucket identically. A ledger mid-migration holds both, and a
+// reader that knew only one would drop the other out of the Collection entirely.
+const parseVslug = parsePrinting;
 // Foil slug: a named set's foil is "<code>:f" (e.g. "001:f"); the Uncategorised
 // bucket's foil is the legacy card-level "foil" row (what setFoil/qtyFor/ownWantMap
 // read), NOT ":f" - so an Uncategorised foil reads and writes the same row everywhere.
-const vslug = (set, foil) => (foil ? (set ? set + ':f' : 'foil') : set);
+// WRITER side, still on the v10 keys on purpose: readers must be able to see canonical rows
+// before anything starts producing them. Flipping this is the activation commit, not this one.
+const vslug = (set, foil) => (foil ? (set ? set + ':f' : LEGACY_FOIL) : (set || LEGACY_UNCATEGORISED));
 
 // Write-queue keys: ONE per persisted row, so key equality === owned_cards /
 // card_list_entries row equality. Built with the canonical vslug so the 'foil' and
@@ -181,7 +185,10 @@ export async function ownedSetsForCard(cardId) {
 
 // One (card, set) breakdown, for the optimistic-step re-read.
 export async function qtyForInSet(cardId, set, pid = activeProfileId()) {
-  const rows = await query('SELECT variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (?,?);', [pid, cardId, vslug(set, false), vslug(set, true)]);
+  // Names EVERY slug the pair can occupy in either schema - a two-slug IN() stopped matching
+  // the moment canonicalisation rewrote the row it was looking for.
+  const slugs = [...printingSlugs(set, false), ...printingSlugs(set, true)];
+  const rows = await query(`SELECT variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${slugs.map(() => '?').join(',')});`, [pid, cardId, ...slugs]);
   let owned = 0, foil = 0;
   for (const r of rows) { if (parseVslug(r.variant_slug).foil) foil += r.qty_owned; else owned += r.qty_owned; }
   return { owned, foil };
