@@ -10,7 +10,7 @@ import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import {
   setWantedForItem, stepWantedForItem, addWantedForItem, wantedItemsForCard, qtyFor,
-  subscribeCollection, wishlistCards, cardWantKey,
+  subscribeCollection, wishlistCards, queueWantWrite,
 } from './ownedRepository.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting,
@@ -24,8 +24,8 @@ const rows = (sql, params = []) => {
   const st = sdb.prepare(sql);
   try { if (params.length) st.bind(params); const r = []; while (st.step()) r.push(st.getAsObject()); return r; } finally { st.free(); }
 };
-const ledger = (cardId = 'c1') =>
-  rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [PID, cardId]);
+const ledger = (cardId = 'c1', pid = PID) =>
+  rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [pid, cardId]);
 const seed = (slug, owned = 0, wanted = 0, cardId = 'c1') =>
   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
     [`seed-${slug}-${cardId}`, PID, cardId, slug, owned, wanted, '', '2026-01-01', '2026-01-01']);
@@ -285,23 +285,53 @@ test('a foil want is its own wishlist row, and says so', async () => {
 
 /* ---------------- one chain per card, across BOTH surfaces ---------------- */
 
-test('two concurrent increments from different surfaces finish at 3, not 2', async () => {
-  // THE LOST UPDATE. The card sheet called the writer directly while Wishlist rows enqueued, so
-  // a step that read 1 could store an absolute 2 over an atomic add that had already made it 2 -
-  // one increment gone, both surfaces reporting success. Both now queue under cardWantKey.
-  const { enqueueWrite, __resetCollectionWritesForTests } = await import('./collectionWrites.js');
+test('two concurrent increments through queueWantWrite finish at 3, not 2', async () => {
+  // THE LOST UPDATE, driven through the PRODUCTION helper both surfaces call. An earlier version
+  // of this test reproduced the key by hand with enqueueWrite(cardWantKey(...)), which proved
+  // the queue works and nothing about the callers - the third time on this branch a test
+  // asserted my assumption instead of the code. If a surface stopped calling queueWantWrite,
+  // this must fail, so it uses queueWantWrite directly.
+  const { __resetCollectionWritesForTests } = await import('./collectionWrites.js');
   __resetCollectionWritesForTests();
   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('cRace','Solo','[{\"code\":\"004\"}]');");
   seed('004', 0, 1, 'cRace');
 
-  const key = cardWantKey(PID, 'cRace');
   await Promise.all([
-    enqueueWrite(key, () => addWantedForItem('cRace', { set: '004', foil: false }, 1, PID)),
-    enqueueWrite(key, () => stepWantedForItem('cRace', { set: '004', foil: false }, 1, PID)),
+    queueWantWrite(PID, 'cRace', (pid) => addWantedForItem('cRace', { set: '004', foil: false }, 1, pid)),
+    queueWantWrite(PID, 'cRace', (pid) => stepWantedForItem('cRace', { set: '004', foil: false }, 1, pid)),
   ]);
 
   assert.deepEqual(ledger('cRace'), [{ variant_slug: '004', qty_owned: 0, qty_wanted: 3 }],
     'both increments landed');
+});
+
+test('a queued want write commits under the PROFILE it was bound to, not the active one', async () => {
+  // The isolation hole Codex found: pid was captured in the key but the writer re-read
+  // activeProfileId() when it ran. The tolerant profile-switch timeout lets the active profile
+  // become B while an A-bound write is parked - so the write must carry A, not read the clock.
+  const { __resetCollectionWritesForTests } = await import('./collectionWrites.js');
+  const { __setActiveIdForTests } = await import('./profileRepository.js');
+  __resetCollectionWritesForTests();
+  sdb.run("INSERT OR IGNORE INTO profiles(id,name,schema_version,created_at) VALUES('A','A',11,'x');");
+  sdb.run("INSERT OR IGNORE INTO profiles(id,name,schema_version,created_at) VALUES('B','B',11,'x');");
+  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('cBind','Solo','[{\"code\":\"004\"}]');");
+
+  __setActiveIdForTests('A');
+  const gate = (() => { let release; const p = new Promise((r) => { release = r; }); return { p, release }; })();
+  // A-bound write that waits, then runs - the window a switch could redirect it.
+  const write = queueWantWrite('A', 'cBind', async (pid) => {
+    await gate.p;
+    return setWantedForItem('cBind', { set: '004', foil: false }, 1, pid);
+  });
+  __setActiveIdForTests('B');   // active profile switches while the write is parked
+  gate.release();
+  await write;
+  __setActiveIdForTests('A');
+
+  const a = ledger('cBind', 'A');
+  const b = ledger('cBind', 'B');
+  assert.deepEqual(a, [{ variant_slug: '004', qty_owned: 0, qty_wanted: 1 }], 'the edit landed in A');
+  assert.deepEqual(b, [], 'nothing leaked into B');
 });
 
 test('COUNTERFACTUAL: bypassing the shared chain loses one of them', async () => {

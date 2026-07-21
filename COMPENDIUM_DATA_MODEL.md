@@ -218,7 +218,9 @@ every `ON CONFLICT` upsert key on that triple.
 | `'uncategorised'` | set not established yet, non-foil |
 | `'uncategorised:f'` | set not established yet, foil |
 
-v11 changed no DDL. The column was already `TEXT NOT NULL DEFAULT ''` inside the unique index
+v11's only DDL is an auxiliary index (`idx_owned_profile_slug` on `(profile_id, variant_slug)`,
+serving profile-scoped triage scans); it changes no table, column or constraint. The column was
+already `TEXT NOT NULL DEFAULT ''` inside the unique index
 `(profile_id, card_id, variant_slug)`; the canonical keys are different *string values* in that
 column, so there was no table to rebuild and no default to change. The `''` DEFAULT is now only
 a DDL artefact for `owned_cards` - no canonical ownership key is the empty string.

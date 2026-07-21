@@ -327,17 +327,19 @@ function CardBody({ c, onPick, editable, set }) {
   // an atomic add that had already made it 2, and one increment vanished with both surfaces
   // reporting success. The exact item lives INSIDE the queued operation; the key is
   // deliberately coarser so any two edits to one card's wants serialise.
-  const queueWant = (fn) => queueWantWrite(activeProfileId(), c.card_id, fn);
-  const addWant = (item) => queueWant(() => addWantedForItem(c.card_id, item, 1));
+  // pid captured at tap time and handed to the writer, so a mid-flight profile switch cannot
+  // redirect a parked edit - see queueWantWrite.
+  const queueWant = (write) => queueWantWrite(activeProfileId(), c.card_id, write);
+  const addWant = (item) => queueWant((pid) => addWantedForItem(c.card_id, item, 1, pid));
 
   // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
   // if migration put it there, and the item writers refuse that key by design - so clearing
   // routes through the card-level writer, which resolves to whichever row actually holds the
   // want instead of naming one. Removing something the user can see must always be possible.
-  const clearWant = () => queueWant(() => (
+  const clearWant = () => queueWant((pid) => (
     effSet && effSet !== UNCATEGORISED_BUCKET
-      ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0)
-      : setWanted(c.card_id, 0)
+      ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0, pid)
+      : setWanted(c.card_id, 0, pid)
   ));
 
   const onHeart = async () => {
@@ -381,7 +383,8 @@ function CardBody({ c, onPick, editable, set }) {
           Opened from INSIDE a set (`set` given) the printing is already decided, so the sheet
           shows a plain pill instead of a chooser: you are adding to the set you are in.
           Single-set cards likewise. Only the name-level entry points (Codex, search, Overview)
-          still need to pick. Wishlist stays card-level. */}
+          still need to pick. The heart itself is per collector item - it reflects and edits
+          the printing the sheet is showing. */}
       {set == null && options.length > 1 ? (
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
           <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
@@ -433,7 +436,7 @@ function CardBody({ c, onPick, editable, set }) {
               <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
             </svg>
           }
-          /* Reflects and toggles THIS collector item, not the card. */
+          /* Per collector item: reflects and toggles the item the sheet is showing, not the card. */
           label="Wishlist" on={wished} disabled={wantedItems === null}
           onClick={onHeart} />
         <ActionButton

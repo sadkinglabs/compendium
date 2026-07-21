@@ -13,6 +13,10 @@ import { isTokenCard } from '../store/tokens.js';
 import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
 import { collectionSurface } from './collectionRoute.js';
 import { triagePile, pendingCount } from '../store/triage.js';
+import {
+  enqueuePick, dequeuePick, headPick, soleExistingItem, batchAddSummary,
+  ADD_APPLIED, ADD_CHOICE_REQUIRED, ADD_REFUSED,
+} from './addPickQueue.js';
 import { wantTarget } from '../store/wantIntent.js';
 import { canonicalPrinting, UNCATEGORISED } from '../store/printings.js';
 import WantPrintingSheet from '../components/WantPrintingSheet.jsx';
@@ -980,7 +984,7 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
 // edits (commits live through onStep(card, delta)), or hit Select to enter
 // multi-select - tap rows to check them, then one "Add N" bar commits them all at
 // +1. Shared by every list and the Wishlist.
-function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
+function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summarise = () => null }) {
   const [q, setQ] = useState('');
   const [pool, setPool] = useState(null);
   const [selectMode, setSelectMode] = useState(false);
@@ -1003,8 +1007,12 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
     const cards = [...selected.values()];
     if (!cards.length) return;
     haptic('light');
-    for (const c of cards) onStep(c, 1);   // distinct ids; each serialises on its own chain
-    toast(`Added ${cards.length} card${cards.length === 1 ? '' : 's'}`);
+    // Count what actually happened. onStep returns a status - a reprint with no existing want
+    // is queued for the picker, not added - so the copy must not claim it. summarise() reserves
+    // "Added N" for cards that applied and reports the rest as choices still to make.
+    const results = cards.map((c) => onStep(c, 1) || 'applied');
+    const msg = summarise(results);
+    if (msg) toast(msg);
     setSelected(new Map());
     setSelectMode(false);
   };
@@ -1446,6 +1454,10 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // so adding a reprint created a phantom card-keyed row and then called the card-level writer -
   // which throws NeedsPrintingChoice when there is no want to resolve to. Resolution happens
   // before any state is touched, so the picker opens instead of a write failing.
+  //
+  // RETURNS a status (see addPickQueue.js), so a batch caller can be honest: applied cards are
+  // counted as added, queued reprints are counted as choices, and nothing is claimed added
+  // while the user still has decisions open.
   const addStep = (card, delta, item = null) => {
     if (!isWishlist) {
       const id = card.card_id;
@@ -1454,28 +1466,26 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       haptic('light');
       applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
       track(persist(id, delta));
-      return;
+      return ADD_APPLIED;
     }
 
     const codes = (() => { try { return (JSON.parse(card.sets || '[]') || []).map((x) => x?.code).filter(Boolean); } catch { return []; } })();
     let target = item;
     if (!target) {
-      // An existing unambiguous want is the obvious target: stepping what is already there
-      // beats asking about a decision the user has already made.
-      // Reused for ANY delta, not just removals. Pressing + on a card the user already wants
-      // exactly one printing of should step THAT printing - asking again would make them
-      // re-answer a question they have already answered, and would then create a second row.
-      const mine = [...qtyRef.current.keys()].filter((k) => String(k).startsWith(`${card.card_id}|`));
-      if (mine.length === 1) {
-        const r = cardIndex.current.get(mine[0]);
+      // An existing unambiguous want is the obvious target - for EITHER sign of delta. Pressing
+      // + or - on a card the user already wants one printing of steps THAT item rather than
+      // re-asking a question already answered. Reuse is by identity, not direction.
+      const sole = soleExistingItem(qtyRef.current.keys(), card.card_id);
+      if (sole) {
+        const r = cardIndex.current.get(sole);
         if (r) target = { set: r.set, foil: !!r.foil };
       }
       if (!target) {
         const t = wantTarget(codes, { set: null });
-        // QUEUED, not assigned. A multi-select can contain several reprints, and overwriting a
-        // pending question with the next one silently dropped the first card.
-        if (t.kind === 'ask') { setAddPick((q) => [...q, { card, codes }]); return; }
-        if (t.kind === 'unknown') { toast('The catalog does not list a printing for this card', { tone: 'warn' }); return; }
+        // QUEUE THE WHOLE OPERATION, delta included. Replaying a deferred pick with a hardcoded
+        // 1 silently changed a reviewed "add 4" into "add 1".
+        if (t.kind === 'ask') { setAddPick((q) => enqueuePick(q, { card, codes, delta })); return ADD_CHOICE_REQUIRED; }
+        if (t.kind === 'unknown') { toast('The catalog does not list a printing for this card', { tone: 'warn' }); return ADD_REFUSED; }
         target = t.item;
       }
     }
@@ -1487,6 +1497,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     haptic('light');
     applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
     track(persist(id, delta));
+    return ADD_APPLIED;
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
@@ -1651,7 +1662,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       <AddCardsSheet open={addOpen} onClose={() => setAddOpen(false)}
         title={isWishlist ? 'ADD TO WISHLIST' : 'ADD CARDS'}
         hint={isWishlist ? 'Search the library and tap + to add cards you want.' : `Search the library and tap + to add to ${meta.name}.`}
-        membership={cardMembership} onStep={addStep} />
+        membership={cardMembership} onStep={addStep} summarise={batchAddSummary} />
 
       {/* The picker, reached when adding a reprint the user has no existing want for. */}
       <WantPrintingSheet
@@ -1659,9 +1670,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         cardId={addPick[0]?.card?.card_id}
         cardName={addPick[0]?.card?.name}
         setCodes={addPick[0]?.codes || []}
-        onPick={(item) => { const p = addPick[0]; setAddPick((q) => q.slice(1)); if (p) addStep(p.card, 1, item); }}
+        onPick={(item) => { const p = headPick(addPick); setAddPick(dequeuePick); if (p) addStep(p.card, p.delta, item); }}
         /* Skipping one card must not abandon the rest of the batch. */
-        onClose={() => setAddPick((q) => q.slice(1))} />
+        onClose={() => setAddPick(dequeuePick)} />
 
       <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
         onApply={(adds) => {
@@ -1675,7 +1686,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           // said one thing and the ledger did another. addStep resolves the collector item
           // first, files what it can, and queues the reprints it cannot for the picker.
           if (isWishlist) {
-            for (const a of adds) addStep(a.card, a.qty);
+            // Same honesty as the tap-add batch: reprints queue for the picker rather than
+            // being announced, so the copy reports applied and pending separately.
+            const results = adds.map((a) => addStep(a.card, a.qty) || ADD_APPLIED);
+            const msg = batchAddSummary(results);
+            if (msg) toast(msg);
             return;
           }
           const m = new Map(qtyRef.current);

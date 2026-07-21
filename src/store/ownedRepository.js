@@ -12,7 +12,7 @@
 // deliberate: they use the three-state taxonomy in store/ownership.js (regular / foilOnly /
 // missing), so a foil-only card is never counted as a non-foil copy and set completion stays
 // non-foil. A WANT belongs to a collector item, not to a card - "I need the Beta one" is the
-// whole point of v11 - so the wishlist is per item, not per collector item.
+// whole point of v11 - so the wishlist is per collector item, not per card name.
 import { query, run, tx } from './db.js';
 import { enqueueWrite } from './collectionWrites.js';
 import {
@@ -321,8 +321,12 @@ export const cardWantKey = (pid, cardId) => `o:${pid}:${cardId}:*want`;
  * The exact collector item lives INSIDE `fn`; the key is deliberately coarser, so any two want
  * edits to one card serialise regardless of which items they touch.
  */
-export function queueWantWrite(pid, cardId, fn) {
-  return enqueueWrite(cardWantKey(pid, cardId), fn);
+export function queueWantWrite(pid, cardId, write) {
+  // The captured profile is passed INTO the write, not only encoded in the key. Encoding it in
+  // the key alone was a real isolation hole: a parked A-bound write that read activeProfileId()
+  // when it finally ran would mutate B if the profile had switched in the meantime. The key
+  // decides which chain serialises; the argument decides which profile is written.
+  return enqueueWrite(cardWantKey(pid, cardId), () => write(pid));
 }
 export const listRowKey = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
 
