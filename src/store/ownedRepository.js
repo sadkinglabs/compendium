@@ -499,12 +499,17 @@ async function addCopies(cardId, col, n) {
   const pid = activeProfileId();
   const now = nowIso();
   // col is an internal constant ('qty_owned' | 'qty_wanted'), never user input.
+  //
+  // Lands on the UNCATEGORISED row: copies whose set the scanner could not establish. That is a
+  // legitimate v11 state for ownership, and the To Be Categorised pile is where it is resolved.
+  // It stays an upsert rather than a read-modify-write because scan events arrive faster than
+  // they can be serialised, and overlapping increments must not lose each other.
   await run(
     `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
      VALUES(?,?,?,?,?,?,'',?,?)
      ON CONFLICT(profile_id,card_id,variant_slug)
      DO UPDATE SET ${col}=${col}+excluded.${col}, updated_at=excluded.updated_at;`,
-    [uuid(), pid, cardId, '', col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]
+    [uuid(), pid, cardId, UNCATEGORISED, col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]
   );
   bump();
 }
@@ -571,7 +576,9 @@ export async function importCollectionResolved(items) {
        VALUES(?,?,?,?,?,0,'',?,?)
        ON CONFLICT(profile_id,card_id,variant_slug)
        DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-      [uuid(), pid, card_id, setCode || '', n, now, now],
+      // A resolved set when the review sheet established one, otherwise the uncategorised row -
+      // never the v10 empty string, which a v11 reader would not recognise as ownership.
+      [uuid(), pid, card_id, setCode ? canonicalPrinting(setCode, false) : UNCATEGORISED, n, now, now],
     ]);
   }
   if (stmts.length) await tx(stmts);
@@ -579,25 +586,57 @@ export async function importCollectionResolved(items) {
   return { copies, names };
 }
 
-// Add a shortfall to the general Wishlist. MAX (not +=) so re-running a deck's
-// "add missing to wishlist" never inflates the want beyond the largest shortfall.
+/**
+ * Add a shortfall to the Wishlist. MAX (not +=) so re-running a deck's "add missing" never
+ * inflates a want beyond the largest shortfall.
+ *
+ * v11: every want it creates names a collector item. It used to write them all to the
+ * empty-string row, which under v11 would be an unresolved want created by ordinary code - the
+ * one thing §2.1 forbids outside migration, import and triage.
+ *
+ * A card printed once resolves on its own. A REPRINT cannot: the deck does not say which
+ * printing the player wants, and guessing is the defect this whole schema change removes. So
+ * those are reported back UNRESOLVED rather than written, and the caller decides - either by
+ * asking, or by telling the user plainly that they were skipped.
+ *
+ * @returns { added, unresolved } - `unresolved` is `[{ card_id, sets }]`, ready to feed a picker.
+ */
 export async function addMissingToWishlist(lines) {
   const pid = activeProfileId();
   const now = nowIso();
   const stmts = [];
-  for (const l of lines) {
-    if (!l.card_id || !(l.missing > 0)) continue;
+  const unresolved = [];
+
+  const wanted = (lines || []).filter((l) => l.card_id && l.missing > 0);
+  if (!wanted.length) return { added: 0, unresolved: [] };
+
+  // One catalog read for the whole batch rather than one per line.
+  const ids = [...new Set(wanted.map((l) => l.card_id))];
+  const catalog = new Map();
+  for (let i = 0; i < ids.length; i += 400) {
+    const slice = ids.slice(i, i + 400);
+    for (const c of await query(`SELECT card_id, sets FROM cards WHERE card_id IN (${slice.map(() => '?').join(',')});`, slice)) {
+      try {
+        const parsed = JSON.parse(c.sets || '[]');
+        catalog.set(c.card_id, Array.isArray(parsed) ? [...new Set(parsed.map((x) => x?.code).filter(Boolean))] : []);
+      } catch { catalog.set(c.card_id, []); }
+    }
+  }
+
+  for (const l of wanted) {
+    const sets = catalog.get(l.card_id) || [];
+    if (sets.length !== 1) { unresolved.push({ card_id: l.card_id, sets }); continue; }
     stmts.push([
       `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
        VALUES(?,?,?,?,0,?,'',?,?)
        ON CONFLICT(profile_id,card_id,variant_slug)
        DO UPDATE SET qty_wanted=MAX(qty_wanted, excluded.qty_wanted), updated_at=excluded.updated_at;`,
-      [uuid(), pid, l.card_id, '', l.missing, now, now],
+      [uuid(), pid, l.card_id, canonicalPrinting(sets[0], false), l.missing, now, now],
     ]);
   }
   if (stmts.length) await tx(stmts);
-  bump();
-  return stmts.length;
+  if (stmts.length) bump();
+  return { added: stmts.length, unresolved };
 }
 
 /* ---------------- lists (one model, kind: 'wanted' | 'custom') ---------------- */

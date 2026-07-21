@@ -43,7 +43,7 @@ import { activeProfileId as realActiveProfileId } from './profileRepository.js';
 import { withExclusiveCollectionWrites } from './collectionWrites.js';
 import { planBulk, planUndo, classifyUndoOutcome } from './bulkPlan.js';
 import { uuid, nowIso } from './ids.js';
-import { normalizePrinting } from './printings.js';
+import { canonicalPrinting, parsePrinting } from './printings.js';
 import { notifyOwnedChanged } from './ownedRepository.js';
 
 // SQLite has a bound-parameter ceiling and a selection can be arbitrarily large.
@@ -58,9 +58,14 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
       const rows = await query(
         `SELECT card_id, variant_slug, qty_owned FROM owned_cards
          WHERE profile_id=? AND (${slice.map(() => '(card_id=? AND variant_slug=?)').join(' OR ')});`,
-        [pid, ...slice.flatMap((t) => [t.cardId, normalizePrinting(t.set)])]
+        // TRANSLATED at the boundary. `t.set` is a UI bucket code ('' for uncategorised, or a
+        // real set); storage keys are canonical. Reading with the raw bucket looked for a row
+        // that no longer exists, so the read reported nothing owned and the write below then
+        // created a legacy twin alongside the real row.
+        [pid, ...slice.flatMap((t) => [t.cardId, canonicalPrinting(t.set, false)])]
       );
-      for (const r of rows) map.set(`${r.card_id}|${r.variant_slug}`, r.qty_owned);
+      // Keyed by the UI bucket the caller asked about, so the plan can look its own targets up.
+      for (const r of rows) map.set(`${r.card_id}|${parsePrinting(r.variant_slug).set}`, r.qty_owned);
     }
     return map;
   }
@@ -74,7 +79,8 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
        VALUES(?,?,?,?,?,0,'',?,?)
        ON CONFLICT(profile_id,card_id,variant_slug)
        DO UPDATE SET qty_owned=excluded.qty_owned, updated_at=excluded.updated_at;`,
-      [uuid(), pid, change.cardId, change.set, change.after, now, now],
+      // Canonical on the way out, for the same reason the read translates on the way in.
+      [uuid(), pid, change.cardId, canonicalPrinting(change.set, false), change.after, now, now],
     ];
   }
 

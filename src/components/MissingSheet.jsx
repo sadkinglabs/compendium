@@ -21,8 +21,19 @@ export default function MissingSheet({ open, report, title, onOpenCard, onClose,
     catch { toast('Copy failed', { tone: 'danger' }); }
   };
   const wish = async () => {
-    const n = await addMissingToWishlist(missing);
-    toast(`Added ${n} card${n === 1 ? '' : 's'} to your Wishlist`);
+    // v11: a want names its collector item, so a REPRINT cannot be wishlisted from here - the
+    // deck does not say which printing the player wants, and guessing is the defect the schema
+    // change removes. Those come back unresolved and are reported honestly rather than being
+    // written to an unresolved row or silently dropped.
+    const { added, unresolved } = await addMissingToWishlist(missing);
+    if (added) toast(`Added ${added} card${added === 1 ? '' : 's'} to your Wishlist`);
+    if (unresolved.length) {
+      toast(
+        `${unresolved.length} reprint${unresolved.length === 1 ? '' : 's'} need a printing chosen - add ${unresolved.length === 1 ? 'it' : 'them'} from the card`,
+        { tone: 'warn' },
+      );
+    }
+    if (!added && !unresolved.length) toast('Nothing to add');
     onChanged?.();
     onClose();
   };
