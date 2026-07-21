@@ -8,6 +8,7 @@ import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
 import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
+import { prepareBundle } from './importBoundary.js';
 import { saveTextFile } from '../native.js';
 import { safeHref } from '../util.js';
 
@@ -70,8 +71,25 @@ export async function duplicateProfile(profileId) {
 }
 
 /** Import a bundle into a brand-new profile. Returns the new profileId. */
-export async function importProfile(bundle, { name } = {}) {
-  if (!bundle || bundle.app !== 'compendium') throw new Error('Not a Compendium profile file.');
+export async function importProfile(rawBundle, { name } = {}) {
+  // THE BOUNDARY, and it runs before anything is created.
+  //
+  // This used to be `if (bundle.app !== 'compendium') throw`, followed immediately by
+  // createProfile(). Two consequences: a bundle from a NEWER build imported as if it were
+  // current, silently, and any later failure left an orphaned half-profile behind.
+  //
+  // Validation and v10 -> v11 normalisation both happen in memory, against no database, so a
+  // rejection leaves the app exactly as it was. The catalog read below is the only query, and
+  // it creates nothing.
+  const setsById = new Map();
+  for (const c of await query('SELECT card_id, sets FROM cards;')) {
+    try {
+      const parsed = JSON.parse(c.sets || '[]');
+      setsById.set(c.card_id, Array.isArray(parsed) ? parsed.map((s) => s?.code).filter(Boolean) : []);
+    } catch { setsById.set(c.card_id, []); }
+  }
+  const { bundle } = prepareBundle(rawBundle, (cardId) => setsById.get(cardId) || []);
+
   // Restore under the original name; only add "(imported)" if that name is already
   // taken (e.g. importing your "Sorcerer" next to the fresh-install "Sorcerer").
   let pname = name || bundle.profile?.name || 'Imported';
@@ -111,7 +129,7 @@ export async function importProfile(bundle, { name } = {}) {
     ins('collection_items', ['id', 'collection_id', 'target_type', 'target_id', 'added_at'], [uuid(), colMap.get(ci.collection_id), ci.target_type, ci.target_id, ci.added_at]);
   for (const o of bundle.owned_cards || [])
     ins('owned_cards', ['id', 'profile_id', 'card_id', 'variant_slug', 'qty_owned', 'qty_wanted', 'notes', 'created_at', 'updated_at'],
-      [uuid(), pid, o.card_id, o.variant_slug || '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
+      [uuid(), pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
   for (const l of bundle.card_lists || [])
     ins('card_lists', ['id', 'profile_id', 'kind', 'name', 'description', 'sort_order', 'created_at', 'updated_at'],
       [listMap.get(l.id), pid, l.kind, l.name, l.description, l.sort_order, l.created_at, l.updated_at]);
