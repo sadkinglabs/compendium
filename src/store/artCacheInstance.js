@@ -15,7 +15,9 @@ import { imagesDisabled, artUrl, legacyUrl } from './cardArt.js';
 const BASE = import.meta.env.BASE_URL;
 const manifest = { objects: {} };
 
-/** Fetch the shipped slim art manifest ({ objects: { slug: {key, legacyKey, bytes} } }) into the holder. */
+/** Fetch the shipped art manifest into the holder. It is the FULL manifest ({ tier, objects: { slug:
+ *  {key, sha256, md5, bytes, srcSha256, recipeId, encoder, legacyKey} } }) - one file serves the app and
+ *  the pipeline's skip oracle - but artCache reads only key/legacyKey/bytes and ignores the rest. */
 export async function loadArtManifest() {
   try {
     const res = await fetch(`${BASE}catalog/art-manifest.json`);

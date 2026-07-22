@@ -81,9 +81,12 @@ vice versa) regresses every card to fallback, so the pieces land together.
   **content key**, `catalogVersion.json` bumps (`{version:5}` today - the reseed trigger read at
   [`catalog.js:29`](../../src/store/catalog.js#L29), fired in the atomic wipe-and-reload at
   [`catalog.js:56`](../../src/store/catalog.js#L56)).
-- **Ship a runtime manifest** so the boundary can resolve `legacyKey` + `validSize` offline: a SLIM
-  `public/catalog/art-manifest.json` (slug -> `{key, legacyKey, bytes}` only - not srcSha256/encoder).
-  This is a new client-read artifact (content data, app-wide, never per-profile).
+- **Ship a runtime manifest** so the boundary can resolve `legacyKey` + `validSize` offline:
+  `public/catalog/art-manifest.json`. **Implementation note:** shipped the FULL manifest (not a slim one)
+  - one file serves both the app (reads only `key`/`legacyKey`/`bytes`, ignores the rest) and the
+  pipeline's skip oracle (needs `srcSha256`/`recipeId`). Full gz 362 KB vs slim 164 KB; the 200 KB delta
+  is negligible against the ~72 MB `public/cards/` bundle Phase 5 removes, and one file avoids dual-manifest
+  drift. Content data, app-wide, never per-profile.
 
 ### 3.6 Android backup exclusion (must CREATE)
 - [`AndroidManifest.xml`](../../android/app/src/main/AndroidManifest.xml): `allowBackup=true`, and NEITHER
