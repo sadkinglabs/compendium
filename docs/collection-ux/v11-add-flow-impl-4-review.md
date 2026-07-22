@@ -1,18 +1,44 @@
-# Codex review - add-flow implementation, increment 4
+# Codex review - add-flow implementation, increment 4 (re-review)
 
-**Branch:** `collection-add-flow`, pushed at `f386113`.
+**Branch:** `collection-add-flow`, pushed at `b874b53`.
 
 **What this is:** the text line grammar and the hardened OWNED text-import writer, against the
-rev-4.1 brief §3.5. No new components - the existing Import to Collection sheet now files annotated
-lines directly and carries foil, because the store layer beneath it changed. Increment 4 is the
-second durable-write increment (the first was the want command).
+rev-4.1 brief §3.5. The existing Import to Collection sheet now files annotated lines directly,
+carries foil, and - after this re-review pass - actually runs the grammar and shows the collector
+item it will file. Increment 4 is the second durable-write increment (the first was the want
+command).
 
-**Review range:**
+## Re-review: your four Majors, addressed
+
+Your review of `f386113` returned Changes required. All four are closed in `b874b53`:
+
+- **Major 1 (production bypassed the grammar).** `previewCollectionText` ran `parseDeckText` +
+  `parseAnnotations` and discarded problems. Added `parseItemText` (the real production entry) which
+  runs every card line through `parseItemLine`; the grammar now distinguishes a bullet (requires a
+  trailing space) from a negative and flags signed/fractional prefixes instead of swallowing them as
+  a card name; preview surfaces problem lines in a `flagged` bucket, never written. Production-path
+  tests drive `previewCollectionText` directly (`-1`, `1.5`, `0` flagged; bare line = qty 1; headers
+  skipped).
+- **Major 2 (valid duplicates merged to a rejected batch).** Preview retains each line's `parts`;
+  `buildImportItems` expands them so the writer receives two 999 items and merges to 1998 itself. The
+  2000-line ceiling is enforced before any catalog query. Tests: two 999s commit 1998; a single 1000
+  stays invalid; 2001 lines rejected before the catalog is touched (spy asserts no query).
+- **Major 3 (shape coercion).** `planOwnedItemBatch` now requires `setCode` to be exactly a string
+  (only `''` is uncategorised; `undefined`/`null`/`false`/`0` rejected). `buildImportItems` throws on
+  a non-boolean `foil` instead of `!!`-coercing it. Tests drive both malformed values through to the
+  writer and prove no row, no broadcast.
+- **Major 4 (review UI showed the wrong item).** Review state keys by collector-item identity
+  (`itemKey`), so two printings of one card get independent choices and React keys. Auto-file rows
+  show the resolved set + a Foil badge, not `sets[0]`. The writer returns `{ items, cards, copies }`
+  and the toast counts distinct cards.
+
+**Re-review range:**
 
 ```
 git fetch origin
-git diff b75e0d1..f386113          # 10 files
-git log --oneline b75e0d1..f386113
+git diff b75e0d1..b874b53          # against the increment-4 base
+git diff f386113..b874b53          # just the review-fix pass
+git log --oneline b75e0d1..b874b53
 ```
 
 New source: `bulkWriteContract.js`, `itemLineGrammar.js`, `ownedImportRepository.js`. Modified:
@@ -68,9 +94,11 @@ extraction faithful (no behavior change) and the re-export sound?
 
 ## Gates (all green)
 
-`test:query` 605, `test:app` 17, `check:cycles` 123 modules, `check:types`, `check:docs`, `build`.
-No control bytes. Native/device evidence stays deferred to increment 8 per the brief (no automated
-gate exercises native SQLite); the end-to-end test drives the real chain against in-memory sql.js.
+`test:query` 623, `test:ui` 148, `test:app` 17, `check:cycles` 123 modules, `check:types`,
+`check:docs`, `build`. No control bytes. The setCode-string and numeric-prefix guards are
+mutation-checked (each fails when removed). Native/device evidence stays deferred to increment 8 per
+the brief (no automated gate exercises native SQLite); the end-to-end test drives the real chain -
+now including `previewCollectionText` running the grammar - against in-memory sql.js.
 
 ## Not in scope
 
