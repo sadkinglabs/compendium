@@ -446,6 +446,18 @@ test('PRODUCTION PATH: 2001 lines are rejected before any catalog query', async 
   await assert.rejects(() => previewCollectionText(text), (e) => e.name === 'ImportTooLarge');
 });
 
+test('PRODUCTION PATH: two set ALIASES resolve to one item; distinct FINISHES stay two', async () => {
+  // Codex Minor: [Beta] and [002] name the same Beta printing - one review row, two copies, not
+  // two printings. [Beta] and [Beta] [Foil] are genuinely different collector items - two rows.
+  const alias = await previewCollectionText('1 Albespine Pikemen [Beta]\n1 Albespine Pikemen [002]');
+  assert.equal(alias.items.length, 1, 'aliases collapse to one collector item');
+  assert.equal(alias.items[0].qty, 2, 'both copies kept');
+  assert.deepEqual(alias.items[0].resolved, { setCode: '002', foil: false });
+
+  const finishes = await previewCollectionText('1 Albespine Pikemen [Beta]\n1 Albespine Pikemen [Beta] [Foil]');
+  assert.equal(finishes.items.length, 2, 'non-foil and foil are distinct items');
+});
+
 test('a non-boolean foil cannot reach the writer through buildImportItems - no row, no broadcast', async () => {
   seedOwn('001', 3);
   const forged = [{ card_id: 'c1', name: 'C', key: 'c||0', qty: 1, parts: [1], sets: [{ code: '001', name: 'Alpha' }], resolved: { setCode: '001', foil: 'false' } }];

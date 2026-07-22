@@ -680,18 +680,29 @@ export async function previewCollectionText(text) {
     else byItem.set(key, { key, name: line.name, setToken: line.setToken, foil: line.foil, parts: [line.qty] });
   }
 
+  // Two lines that resolve to the SAME collector item are one review row and one printing count,
+  // even when they were typed as different aliases (`Card [Beta]` and `Card [002]`). Identity is
+  // canonical - (card_id, resolved setCode, resolved foil) - once resolution succeeds; an
+  // unresolved row keeps its source identity so two genuinely different pending choices stay apart.
   const items = [];
   const unresolved = [];
+  const byResolved = new Map();
   for (const g of byItem.values()) {
     const c = (await query('SELECT card_id, name, sets, variants FROM cards WHERE lower(name)=? LIMIT 1;', [g.name.toLowerCase()]))[0];
     if (!c) { unresolved.push(g.name); continue; }
     let sets = []; try { sets = JSON.parse(c.sets || '[]'); } catch { /* leave empty */ }
     sets = Array.isArray(sets) ? sets : [];
     const resolved = resolveLinePrinting({ sets, setToken: g.setToken, foil: g.foil }, c);
-    items.push({
-      card_id: c.card_id, name: c.name, key: g.key, sets, foil: g.foil, setToken: g.setToken || null,
-      resolved, parts: g.parts, qty: g.parts.reduce((s, x) => s + x, 0),
-    });
+    if (resolved) {
+      const ckey = `${c.card_id}|${resolved.setCode}|${resolved.foil ? 1 : 0}`;
+      const existing = byResolved.get(ckey);
+      if (existing) { existing.parts.push(...g.parts); existing.qty += g.parts.reduce((s, x) => s + x, 0); continue; }
+      const item = { card_id: c.card_id, name: c.name, key: ckey, sets, foil: resolved.foil, setToken: g.setToken || null, resolved, parts: [...g.parts], qty: g.parts.reduce((s, x) => s + x, 0) };
+      byResolved.set(ckey, item);
+      items.push(item);
+    } else {
+      items.push({ card_id: c.card_id, name: c.name, key: g.key, sets, foil: g.foil, setToken: g.setToken || null, resolved: null, parts: [...g.parts], qty: g.parts.reduce((s, x) => s + x, 0) });
+    }
   }
   return { items, unresolved, flagged };
 }
