@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildGeneration, writeStagingJson, validateGeneration, serializeCards, serializeArticles, serializeCodex } from './generation.mjs';
+import { buildGeneration, writeStagingJson, validateGeneration, serializeCards, serializeArticles, serializeCodex, serializeSetCatalog } from './generation.mjs';
 import { regenerateLinkGraph } from './linkGraph.mjs';
 import { promote } from './journal.mjs';
+import { productionPromotionPlan } from './promotionPlan.mjs';
 
 const apiCard = (name, slug, set, setName) => ({
   name, slug: slug.replace(/-b-s$/, ''), type: 'Minion', rarity: 'Ordinary', elements: ['Air'],
@@ -106,29 +107,32 @@ test('the generation hash is UNCHANGED by encoder-only metadata when the content
   assert.equal(plain, richMeta, 'only the published slug+key identity is folded, never encoder provenance');
 });
 
-test('promote installs the staged generation (art dir + JSON + version token last)', () => {
+test('promote installs the staged generation via the PRODUCTION plan (JSON only, no art dir, version last)', () => {
   const gen = buildGeneration(fixture());
   const dir = mkdtempSync(join(tmpdir(), 'cat-promote-'));
   const staging = join(dir, 'staging');
   const cat = join(staging, 'catalog');
-  const cards = join(staging, 'cards');
-  mkdirSync(cards, { recursive: true });
+  mkdirSync(cat, { recursive: true });
   writeStagingJson(gen, cat);
-  for (const o of Object.values(gen.artManifest.objects)) writeFileSync(join(cards, o.key), 'WEBP'); // stand-in for sharp output
+  writeFileSync(join(cat, 'art-manifest.json'), JSON.stringify(gen.artManifest, null, 2));
+  writeFileSync(join(staging, 'setCatalog.json'), serializeSetCatalog(gen.setCatalog));
   writeFileSync(join(staging, 'catalogVersion.json'), JSON.stringify({ version: 3, hash: gen.hash }));
 
   const build = join(dir, 'out');
-  promote({
-    journalPath: join(dir, 'PROMOTE.json'),
-    hash: gen.hash,
-    artDir: { from: cards, to: join(build, 'public', 'cards') },
-    files: [
-      { from: join(cat, 'cards.json'), to: join(build, 'public', 'catalog', 'cards.json') },
-      { from: join(cat, 'codex_documents.json'), to: join(build, 'public', 'catalog', 'codex_documents.json') },
-      { from: join(staging, 'catalogVersion.json'), to: join(build, 'src', 'store', 'catalogVersion.json') },
-    ],
+  const catalog = join(build, 'public', 'catalog');
+  const versionFile = join(build, 'src', 'store', 'catalogVersion.json');
+  const { files } = productionPromotionPlan({
+    stagingCatalog: cat, staging, catalog,
+    manifestFile: join(catalog, 'art-manifest.json'),
+    setCatalogFile: join(build, 'src', 'store', 'setCatalog.json'),
+    versionFile,
   });
-  assert.ok(existsSync(join(build, 'public', 'cards', FOO_KEY)));
-  assert.equal(JSON.parse(readFileSync(join(build, 'src', 'store', 'catalogVersion.json'), 'utf8')).version, 3);
+  promote({ journalPath: join(dir, 'PROMOTE.json'), hash: gen.hash, files });
+
+  // JSON-only Phase 2: the catalog + manifest are repointed; NO public/cards art dir is created.
+  assert.ok(existsSync(join(catalog, 'cards.json')));
+  assert.ok(existsSync(join(catalog, 'art-manifest.json')));
+  assert.ok(!existsSync(join(build, 'public', 'cards')), 'promote must not create a bundled art dir');
+  assert.equal(JSON.parse(readFileSync(versionFile, 'utf8')).version, 3);
   rmSync(dir, { recursive: true, force: true });
 });

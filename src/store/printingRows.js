@@ -182,9 +182,10 @@ export function expandItemRows(cards, setTerms = [], setRank = defaultSetRank) {
 /**
  * The image slug for one collector item (card + set + finish), or null.
  *
- * Returns a SLUG, never a URL - rendering routes it through `cardArt.js`'s `cardImageUrl`, the
- * single seam that decides bundled-vs-CDN and honours zero-image mode. So this is CDN-ready by
- * construction: when card art moves to a CDN, only `cardImageUrl` changes.
+ * Returns a SLUG (a content-addressed art key), never a URL - rendering routes it through the art
+ * boundary (`useArtSource`/`ArtImage`), the single seam that resolves the local -> CDN -> bundled
+ * -> fallback candidate chain and honours zero-image mode. The key names the art; the boundary owns
+ * where the bytes come from.
  *
  * Deterministic fallback chain:
  *   1. a variant of this set in the requested finish, with an image. When `foil` and the set

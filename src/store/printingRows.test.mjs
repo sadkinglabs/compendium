@@ -239,7 +239,7 @@ test('art falls back to the other finish, then the card default, then null', () 
 test('printingArt returns a SLUG, never a URL (CDN-ready seam)', () => {
   const c = cardWith('c', ['001'], [V2('001', 'Standard', '001-s.webp')]);
   const art = printingArt(c, '001', false);
-  assert.ok(!/^https?:|^\//.test(art), 'a bare slug, resolved later by cardImageUrl');
+  assert.ok(!/^https?:|^\//.test(art), 'a bare content key, resolved later by the art boundary');
 });
 
 /* ---------------- printingProducts ---------------- */

@@ -48,6 +48,26 @@ test('re-opening the SAME card keeps the choice, so a re-render does not undo a 
   assert.equal(after.foil, true, 'an idempotent open must not clobber user input');
 });
 
+test('open SEEDS the finish from the sheets active toggle - active Foil survives entry', () => {
+  const after = run(init, { type: 'open', cardId: 'c1', foil: true });
+  assert.equal(after.foil, true, 'a user on Foil reaches the picker already on Foil');
+});
+
+test('the seed is coerced and defaults when absent (null seed -> product default)', () => {
+  assert.equal(run(init, { type: 'open', cardId: 'c1', foil: undefined }).foil, DEFAULT_WANT_FOIL);
+  assert.equal(run(init, { type: 'open', cardId: 'c1', foil: 1 }).foil, true);   // real boolean, not 1
+});
+
+test('the seed applies only on the card TRANSITION, not on a same-card re-open', () => {
+  // Seeded Foil, then the user picks Non-foil; a re-open (same card) with a stale Foil seed must
+  // not clobber that deliberate choice.
+  const after = run(init,
+    { type: 'open', cardId: 'c1', foil: true },
+    { type: 'setFoil', foil: false },
+    { type: 'open', cardId: 'c1', foil: true });
+  assert.equal(after.foil, false, 'a same-card re-open never re-seeds over user input');
+});
+
 test('the finish toggles both ways', () => {
   const on = run(init, { type: 'setFoil', foil: true });
   assert.equal(on.foil, true);

@@ -62,8 +62,11 @@ export function ArtImg({ artKey, alt = '', ...imgProps }) {
  */
 export function ArtImage({ artKey, alt = '', fallback, className, style, imgClassName, imgStyle, loading = 'lazy' }) {
   const { src, gen, onError } = useArtSource(artKey);
-  const [loadedSrc, setLoadedSrc] = useState(null);   // the src whose <img> has actually decoded
-  const shown = src && loadedSrc === src;              // fade in only once painted
+  // Track the loaded IDENTITY as {src, gen}, not src alone: a quarantine re-resolve can remount the
+  // SAME uri under a new gen, and matching on src alone would treat the fresh <img> as already
+  // decoded - suppressing the shimmer and flashing the stale frame. Both must match to fade in.
+  const [loaded, setLoaded] = useState({ src: null, gen: -1 });
+  const shown = src && loaded.src === src && loaded.gen === gen;
   return (
     <div className={className} style={{ position: 'relative', ...style, backgroundImage: fallback, backgroundSize: 'cover', backgroundPosition: 'center' }}>
       {src && !shown && <div className="cx-art-shimmer" aria-hidden="true" />}
@@ -74,7 +77,7 @@ export function ArtImage({ artKey, alt = '', fallback, className, style, imgClas
           alt={alt}
           loading={loading}
           className={imgClassName}
-          onLoad={() => setLoadedSrc(src)}
+          onLoad={() => setLoaded({ src, gen })}
           onError={onError}
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: shown ? 1 : 0, transition: 'opacity .3s ease', ...imgStyle }}
         />

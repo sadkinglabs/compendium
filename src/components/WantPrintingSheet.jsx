@@ -10,28 +10,58 @@
 //
 // Finish is not a question here either, it is a toggle with a default. §7.4 rules that a set is
 // completed in non-foil, so that is what a want means unless the user says otherwise.
-import React, { useReducer, useEffect } from 'react';
+import React, { useReducer, useEffect, useState } from 'react';
 import { BottomSheet, BTN_GOLD } from './ui.jsx';
 import { pickerOptions } from '../store/wantIntent.js';
 import { wantPickerReducer, initialWantPicker } from './wantPickerState.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
+import { getCard } from '../store/codexRepository.js';
+import { printingFinishes } from '../store/printingRows.js';
 
 const setRank = (code) => SET_RANK[code] ?? 99;
 
-export default function WantPrintingSheet({ open, cardId, cardName, setCodes = [], onPick, onClose }) {
+export default function WantPrintingSheet({ open, cardId, cardName, setCodes = [], initialFoil, onPick, onClose }) {
   const [state, dispatch] = useReducer(wantPickerReducer, initialWantPicker);
   const { foil } = state;
   const options = pickerOptions(setCodes, setRank, SET_LABEL);
 
-  // Opening on a new card resets the finish. The reducer treats a repeat open on the SAME card
-  // as a no-op, so a re-render cannot undo a tap the user just made.
-  useEffect(() => { if (open) dispatch({ type: 'open', cardId }); }, [open, cardId]);
+  // Authoritative per-set finish availability, so the picker never offers an impossible pair (a
+  // foil want on a set whose only printing is non-foil). Loaded from the catalog by cardId - the
+  // picker owns this rather than trusting a caller-supplied hint. Until it loads, options stay
+  // enabled and the repository's fail-closed guard is the backstop; once loaded, the UI enforces it.
+  const [finishes, setFinishes] = useState(null);   // Map<setCode, {nonFoil, foil}> | null
+  useEffect(() => {
+    if (!open || !cardId) { setFinishes(null); return; }
+    let alive = true;
+    getCard(cardId).then((card) => {
+      if (!alive) return;
+      const m = new Map();
+      for (const o of pickerOptions(setCodes, setRank, SET_LABEL)) {
+        try { m.set(o.code, printingFinishes(card, o.code)); } catch { /* malformed -> leave unset (treated as unavailable once known) */ }
+      }
+      setFinishes(m);
+    });
+    return () => { alive = false; };
+  }, [open, cardId, setCodes]);
+
+  // A set is choosable in the current finish only when the catalog lists that printing. Unknown
+  // (still loading) is permissive; the repository guard fails closed on a bad write regardless.
+  const available = (code) => {
+    if (finishes == null) return true;
+    const f = finishes.get(code);
+    return !!(f && (foil ? f.foil : f.nonFoil));
+  };
+
+  // Opening on a new card seeds the finish from the sheet's active toggle. The reducer treats a
+  // repeat open on the SAME card as a no-op, so a re-render cannot undo a tap the user just made.
+  useEffect(() => { if (open) dispatch({ type: 'open', cardId, foil: initialFoil }); }, [open, cardId, initialFoil]);
 
   // ONE exit for cancel, backdrop and hardware back. The finish used to be reset only on
   // confirm, so cancelling left it set and the NEXT card's want was silently stored as foil.
   const close = () => { dispatch({ type: 'close' }); onClose?.(); };
 
   const choose = (code) => {
+    if (!available(code)) return;   // guard: a disabled option must never commit
     onPick?.({ set: code, foil });
     close();
   };
@@ -68,23 +98,35 @@ export default function WantPrintingSheet({ open, cardId, cardName, setCodes = [
         ))}
       </div>
 
-      {options.map((o) => (
-        <button
-          key={o.code}
-          onClick={() => choose(o.code)}
-          className="cx-row"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-            width: '100%', padding: '13px 4px', background: 'none', cursor: 'pointer',
-            border: 'none', borderBottom: '1px solid var(--hair-12)', textAlign: 'left',
-          }}
-        >
-          <span style={{ font: "500 15px/1.2 var(--f-read)", color: 'var(--ink-body)' }}>{o.name}</span>
-          <span aria-hidden="true" style={{ font: "600 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>
-            {foil ? 'FOIL' : ''}
-          </span>
-        </button>
-      ))}
+      {options.map((o) => {
+        const ok = available(o.code);
+        return (
+          <button
+            key={o.code}
+            onClick={() => choose(o.code)}
+            disabled={!ok}
+            className="cx-row"
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+              width: '100%', padding: '13px 4px', background: 'none', cursor: ok ? 'pointer' : 'default',
+              border: 'none', borderBottom: '1px solid var(--hair-12)', textAlign: 'left', opacity: ok ? 1 : 0.42,
+            }}
+          >
+            <span style={{ font: "500 15px/1.2 var(--f-read)", color: 'var(--ink-body)' }}>{o.name}</span>
+            <span aria-hidden="true" style={{ font: "600 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>
+              {ok ? (foil ? 'FOIL' : '') : 'No foil'}
+            </span>
+          </button>
+        );
+      })}
+
+      {/* Explanatory copy when the current finish rules some sets out - so a greyed row reads as
+          intentional, not broken. */}
+      {foil && finishes != null && options.some((o) => !available(o.code)) && (
+        <div style={{ font: "400 11.5px/1.4 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'center', padding: '10px 0 0' }}>
+          Greyed sets have no foil printing of this card.
+        </div>
+      )}
 
       {options.length === 0 && (
         <div style={{ font: "400 13px/1.4 var(--f-ui)", color: 'var(--ink-muted)', textAlign: 'center', padding: '18px 0' }}>

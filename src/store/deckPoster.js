@@ -5,6 +5,7 @@
 import { getDeck, getDeckCards } from './deckRepository.js';
 import { slugify } from './ids.js';
 import { shareImage } from '../native.js';
+import { roundRectPath } from './roundRect.js';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -121,7 +122,7 @@ async function _buildDeckPosterCanvas(deck) {
   const x = cv.getContext('2d');
   x.scale(SCALE, SCALE);
   x.textBaseline = 'alphabetic';
-  const rrect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph / 2); x.beginPath(); x.moveTo(px + r, py); x.cx-decksTo(px + pw, py, px + pw, py + ph, r); x.cx-decksTo(px + pw, py + ph, px, py + ph, r); x.cx-decksTo(px, py + ph, px, py, r); x.cx-decksTo(px, py, px + pw, py, r); x.closePath(); };
+  const rrect = (px, py, pw, ph, r) => roundRectPath(x, px, py, pw, ph, r);
   const topRect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph); x.beginPath(); x.moveTo(px, py + ph); x.lineTo(px, py + r); x.quadraticCurveTo(px, py, px + r, py); x.lineTo(px + pw - r, py); x.quadraticCurveTo(px + pw, py, px + pw, py + r); x.lineTo(px + pw, py + ph); x.closePath(); };
   const fit = (t, maxw) => { if (x.measureText(t).width <= maxw) return t; let s = t; while (s.length > 1 && x.measureText(s + '…').width > maxw) s = s.slice(0, -1); return s + '…'; };
   const setLS = (v) => { try { x.letterSpacing = v; } catch (e) { /* noop */ } };

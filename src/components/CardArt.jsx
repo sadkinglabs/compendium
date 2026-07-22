@@ -12,14 +12,17 @@ import { cardFallbackArt } from '../store/cardArt.js';
 // 90° (stored portrait, displayed landscape). Default (undefined) = plain cover.
 export default function CardArt({ card, radius = 8, aspect = '5/7', children, imgStyle }) {
   const { src, gen, onError } = useArtSource(card?.image_slug || null);
-  const [loadedSrc, setLoadedSrc] = useState(null);
-  const shown = src && loadedSrc === src;
+  // Loaded identity is {src, gen}: a quarantine re-resolve remounts the same uri under a new gen,
+  // and matching on src alone would count the fresh <img> as already decoded (stale frame, no
+  // shimmer). Both must match to fade in.
+  const [loaded, setLoaded] = useState({ src: null, gen: -1 });
+  const shown = src && loaded.src === src && loaded.gen === gen;
   return (
     <div style={{ position: 'relative', aspectRatio: aspect, borderRadius: radius, overflow: 'hidden', background: cardFallbackArt(card), border: '1px solid var(--hair-18, rgba(220,184,111,.18))' }}>
       {src && !shown && <div className="cx-art-shimmer" aria-hidden="true" />}
       {src && (
         <img
-          key={gen} src={src} alt={card?.name || ''} loading="lazy" onLoad={() => setLoadedSrc(src)} onError={onError}
+          key={gen} src={src} alt={card?.name || ''} loading="lazy" onLoad={() => setLoaded({ src, gen })} onError={onError}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: shown ? 1 : 0, transition: 'opacity .3s ease', ...imgStyle }}
         />
       )}

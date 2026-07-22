@@ -125,10 +125,14 @@ export function CountRow({ label, foil = false, field, qty, step, editable = tru
 // One action in the sheet's bottom row. `on` fills it with the pillar accent - used by the
 // wishlist, which is a toggle (a heart that fills when the card is wanted) rather than a
 // quantity. Wanting N copies is what a Wanted list's per-card target is for.
-export function ActionButton({ icon, label, on = false, disabled = false, onClick }) {
+// `pressed` (optional) makes this a real toggle for assistive tech: when defined, aria-pressed is
+// emitted for BOTH states, so an OFF wishlist heart announces as an unpressed toggle rather than a
+// plain button. `on` stays the visual-emphasis flag. A non-toggle action ("Add to list") omits
+// `pressed` and gets no aria-pressed at all.
+export function ActionButton({ icon, label, on = false, pressed, disabled = false, onClick }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled} aria-pressed={on || undefined}
+      type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed === undefined ? undefined : pressed}
       style={{
         flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9,
         padding: '15px 0', borderRadius: 16, cursor: disabled ? 'default' : 'pointer',
@@ -363,7 +367,14 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
   // deliberately coarser so any two edits to one card's wants serialise.
   // pid captured at tap time and handed to the writer, so a mid-flight profile switch cannot
   // redirect a parked edit - see queueWantWrite.
-  const queueWant = (write) => queueWantWrite(activeProfileId(), c.card_id, write);
+  // Surface a rejected want honestly. The repository fails closed on a positive write to a printing
+  // the catalog does not list (an impossible foil), so the returned promise can reject - swallowing
+  // it would leave the heart looking like it worked. We toast the known validation error and re-raise
+  // anything else, so a genuine failure is never hidden.
+  const queueWant = (write) => queueWantWrite(activeProfileId(), c.card_id, write).catch((e) => {
+    if (e?.name === 'InvalidPrinting') { toast('That printing does not exist for this card', { tone: 'warn' }); return; }
+    throw e;
+  });
   const addWant = (item) => queueWant((pid) => addWantedForItem(c.card_id, item, 1, pid));
 
   // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
@@ -467,7 +478,7 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
             </svg>
           }
           /* Per collector item: reflects and toggles the item the sheet is showing, not the card. */
-          label="Wishlist" on={wished} disabled={wantedItems === null}
+          label="Wishlist" on={wished} pressed={wished} disabled={wantedItems === null}
           onClick={onHeart} />
         <ActionButton
           icon={
@@ -482,6 +493,7 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
         cardId={c.card_id}
         cardName={c.name}
         setCodes={setCodes}
+        initialFoil={foil}
         onPick={(item) => addWant(item)}
         onClose={() => setPicking(false)} />
     </>

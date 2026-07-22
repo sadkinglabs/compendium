@@ -5,12 +5,14 @@
 //   npm run update:catalog -- --dry-run   build + validate + report; refreshes gitignored staging only
 //   npm run update:catalog -- --recover   finish an interrupted promotion from staging (steady-state)
 //
-// ART-CDN MIGRATION (current): the catalog PROMOTE is dormant. A run converts every scan and
-// atomically stages it to the gitignored CATALOG_DROP/cdn-art/<slug>.webp, and writes the prospective
-// manifest to .catalog-build/art-manifest.json, but NOTHING under public/ or src/ is repointed - the
-// app keeps serving bundled art. Publishing is the additive `cdn-upload.mjs` step; the promote returns
-// with the atomic Phase-2 activation (see docs/proposals/art-cdn-migration.md). This file orchestrates
-// the engines in scripts/catalog/*; each engine is unit-tested.
+// ART-CDN MIGRATION (Phase 2, ACTIVE): a run converts every scan and atomically stages it to the
+// gitignored CATALOG_DROP/cdn-art/<slug>.webp, writes the prospective manifest, and - when the
+// content hash changed - PROMOTES a JSON-only generation: cards.json is repointed to content-
+// addressed art keys, the full manifest ships, setCatalog + the version token are installed. The art
+// itself lives on the CDN (published by the additive cdn-upload.mjs step), so there is NO art dir to
+// promote; public/cards/ stays as the offline bundled-legacy fallback until Phase 5. The exact file
+// plan is scripts/catalog/promotionPlan.mjs, shared with the tests. This file orchestrates the
+// engines in scripts/catalog/*; each engine is unit-tested.
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +23,7 @@ import { buildArtManifest, TIER } from './catalog/artManifest.mjs';
 import { buildGeneration, validateGeneration, writeStagingJson, serializeVersion, serializeSetCatalog } from './catalog/generation.mjs';
 import { formatReport } from './catalog/report.mjs';
 import { isPending, recover, promote } from './catalog/journal.mjs';
+import { productionPromotionPlan } from './catalog/promotionPlan.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DROP = join(ROOT, 'CATALOG_DROP');
@@ -172,20 +175,11 @@ async function main() {
   writeFileSync(join(STAGING, 'catalogVersion.json'), serializeVersion(nextVersion));
   writeFileSync(join(STAGING, 'setCatalog.json'), serializeSetCatalog(gen.setCatalog));
 
-  promote({
-    journalPath: JOURNAL,
-    hash: gen.hash,
-    files: [
-      { from: join(stagingCatalog, 'cards.json'), to: join(CATALOG, 'cards.json') },
-      { from: join(stagingCatalog, 'articles_normalized.json'), to: join(CATALOG, 'articles_normalized.json') },
-      { from: join(stagingCatalog, 'faqs.json'), to: join(CATALOG, 'faqs.json') },
-      { from: join(stagingCatalog, 'link_graph.json'), to: join(CATALOG, 'link_graph.json') },
-      { from: join(stagingCatalog, 'codex_documents.json'), to: join(CATALOG, 'codex_documents.json') },
-      { from: join(stagingCatalog, 'art-manifest.json'), to: MANIFEST_FILE },   // public/catalog/art-manifest.json
-      { from: join(STAGING, 'setCatalog.json'), to: SET_CATALOG_FILE },
-      { from: join(STAGING, 'catalogVersion.json'), to: VERSION_FILE },   // reseed trigger LAST
-    ],
+  const { files } = productionPromotionPlan({
+    stagingCatalog, staging: STAGING, catalog: CATALOG,
+    manifestFile: MANIFEST_FILE, setCatalogFile: SET_CATALOG_FILE, versionFile: VERSION_FILE,
   });
+  promote({ journalPath: JOURNAL, hash: gen.hash, files });   // JSON only - no artDir (art is on the CDN)
 
   console.log(`\nPromoted catalog v${committedVersion.version} -> v${nextVersion.version}: repointed ${artReport.total} printings to content-addressed art keys; art is served from the CDN, public/cards/ kept as the offline legacy fallback.`);
   console.log('Review `git diff`, add a changelog entry, and bump the build on install (see BUILD.md).');
