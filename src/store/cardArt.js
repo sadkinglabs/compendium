@@ -21,7 +21,8 @@ function hash(str) {
 
 // §5 test gate: when on, ALL card images are suppressed so the app must render
 // from data + generated fallbacks alone. Toggle via localStorage['cx-no-images'].
-function imagesDisabled() {
+// Exported so the art boundary (artCache) can enforce the SAME gate on render AND I/O (rev-6 B6).
+export function imagesDisabled() {
   try { return localStorage.getItem('cx-no-images') === '1'; } catch { return false; }
 }
 
@@ -31,6 +32,18 @@ export function cardImageUrl(card) {
   const slug = card?.image_slug;
   return slug ? `${BASE}cards/${slug}` : null;
 }
+
+// --- Art-CDN (Phase 2) config. Inert until the boundary is wired at the render sites. ---
+// The content-addressed card art is served from this CDN base. A compile-time constant so the app
+// needs no runtime config and works offline once cached; overridable for staging via VITE_ART_CDN_BASE.
+export const ART_CDN_BASE = (import.meta.env.VITE_ART_CDN_BASE || 'https://cdn.sadkinglabs.com').replace(/\/+$/, '');
+
+/** The remote URL for a content-addressed art key (the art boundary's remote candidate). */
+export function artUrl(key) { return `${ART_CDN_BASE}/${key}`; }
+
+/** The bundled legacy image URL for a printing-base filename - the ONE sanctioned `${BASE}cards/` path,
+ *  used only by the boundary's offline legacy fallback, deleted with the bundle in Phase 5. */
+export function legacyUrl(legacyKey) { return `${BASE}cards/${legacyKey}`; }
 
 // Set-hero art ships BUNDLED as app assets (public/sets/{code}.webp) - deliberately NOT
 // via the card-image CDN, so the Collection landing works fully offline. Only these codes
