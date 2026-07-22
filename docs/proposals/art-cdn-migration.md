@@ -7,7 +7,7 @@ Owner: Claude Code / Fable (lead engineer) · Reviewer: Codex (principal enginee
 
 High-risk because it touches native/plugin behavior (Filesystem, network), the catalog build pipeline and its promoted artifacts, the release packaging (APK contents), and §3 invariant 6 (graceful asset degradation) directly. Several owner decisions are already ruled and are encoded here as constraints, not options:
 
-- Host is **Cloudflare R2**. The public dev URL `https://pub-52a319c0f5e240eabb76b6a43d355620.r2.dev` is live; all 3090 per-finish 745 px q80 WebP (285 MB) are uploaded and serving `200 image/webp`. A production custom domain is a later one-line base-URL swap.
+- Host is **Cloudflare R2**. All 3090 per-finish 745 px q80 WebP (285 MB) are uploaded and serving `200 image/webp`. **Production base URL is the owner's Cloudflare-registered custom domain `https://cdn.sadkinglabs.com`** (connected to the bucket as an R2 Custom Domain, so it is edge-cached), targeted from the first slim-APK release. The dev URL `https://pub-52a319c0f5e240eabb76b6a43d355620.r2.dev` is the interim build target until the domain shows Active; the switch is the one base-URL constant. Edge-caching from day one means the r2.dev rate-limit risk to the download-all pack is largely retired (owner decision: custom domain now, not deferred).
 - **All card art** moves to the CDN and `public/cards/` stops shipping in the APK (~90 MB → ~18 MB). Set heroes (`public/sets/`) and element icons (`public/icons/`) **stay bundled** deliberately, so the Collection landing works fully offline (`src/store/cardArt.js:35-44` already documents this split).
 - Cache posture is **lazy-cache-on-view (persistent) plus an optional "download all for offline" pack**. Accepted tradeoff, stated honestly: a fresh install with no network shows data-derived placeholder art until the first online session. Card **data** never leaves the device; zero-image degradation (§3.6) is the safety net that makes this shippable.
 - Single art tier: 745 px q80 WebP. A 380 px thumbnail tier is a possible later optimization, out of scope.
@@ -112,7 +112,9 @@ One posture change must be named honestly: this introduces Compendium's **first 
 **Seam (`src/store/cardArt.js`).**
 
 ```js
-const ART_CDN_BASE = 'https://pub-52a319c0f5e240eabb76b6a43d355620.r2.dev'; // custom domain = one-line swap
+// Production: the edge-cached custom domain. r2.dev is the interim value until the R2 Custom
+// Domain shows Active; swapping this one constant is the entire "go to production CDN" step.
+const ART_CDN_BASE = 'https://cdn.sadkinglabs.com';
 
 /** URL for a per-finish art slug, or null when suppressed/absent. THE seam. */
 export function artUrl(slug) {
@@ -150,7 +152,7 @@ export function cardImageUrl(card) { return artUrl(card?.image_slug); }
 
 Ordering rationale: **1 before 2** because R2 keys are per-finish and today's catalog slugs are not - a seam swap first would 404 the entire app. **3 before 5** because unbundling before a persistent cache exists would regress offline users with no recovery path. **4 before 5** so "download all" exists in the same release the bundle disappears. **6** needs 1+2 for per-finish *art* but is otherwise independent and reviewable standalone. Every phase leaves the repo releasable (§4.8): a build from any phase boundary degrades at worst to deterministic fallback art, never to a broken app. The intended **device-install point is after Phase 2** (an install from a Phase-1-only tree shows fallback art broadly; nothing breaks, but do not ship that window - branch discipline, both phases in one release).
 
-- **Phase 0 - preflight (no production code).** Configure the R2 bucket CORS policy (`Access-Control-Allow-Origin: *`, GET/HEAD); run `node scripts/catalog/cdn-upload.mjs --check`; device-verify a remote R2 `<img>` renders in the installed app and that `crossOrigin='anonymous'` canvas draw is untainted. Checkpoint: **CORS-verified**.
+- **Phase 0 - preflight (no production code).** Connect `cdn.sadkinglabs.com` as an R2 Custom Domain (Cloudflare auto-creates the CNAME + cert; wait for Active), then re-point `.env.r2` `R2_PUBLIC_BASE_URL` to it and re-verify serving + edge-cache headers. Configure the R2 bucket CORS policy (`Access-Control-Allow-Origin: *`, GET/HEAD) for the poster canvas + browser dev. Run `node scripts/catalog/cdn-upload.mjs --check`; device-verify a remote `<img>` renders in the installed app and that `crossOrigin='anonymous'` canvas draw is untainted. Checkpoint: **domain-live + CORS-verified**.
 - **Phase 1 - pipeline emits per-finish + repoints + uploads.** `planImages` flip, `convertOne` 745/q80, upload + audit stages in `update-catalog.mjs`, `images.test.mjs` rewrite, README/BUILD pipeline docs. Verification is pure: `npm run test:catalog`, plus a real `npm run update:catalog -- --dry-run` against the current drop. Checkpoint: **pipeline-green** (report shows per-finish counts, audit passes, no upload on dry-run).
 - **Phase 2 - seam swap + centralization.** `ART_CDN_BASE` in `cardArt.js`, `artUrl()` export, all 12 bypass sites through the seam, poster CORS/cache-first handling, seam-guard test. Run `update:catalog` for real (catalog version bumps, `v.image` goes per-finish). Device install: art renders from R2; zero-image gate passes app-wide; poster export works. Checkpoint: **CDN-live**.
 - **Phase 3 - persistent lazy cache.** `src/store/artCache.js`, `Directory.Data`, native download spike (`Filesystem.downloadFile` vs CapacitorHttp), `CardArt.jsx`/`CardArtViewer.jsx` lazy swap, web no-op. Device evidence: view → airplane mode → restart → art persists. Checkpoint: **cache-proven**.
@@ -209,7 +211,7 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
 | Risk | Likelihood | Impact | Mitigation / owner |
 |---|---|---|---|
 | A bypass site missed by the sweep 404s silently against the CDN | Low (grep-verified list + one extra found; guard test closes the class) | Cosmetic - fallback art | Seam-guard test in Phase 2; Codex independent re-sweep requested |
-| r2.dev rate limiting during pack download or tester spike | Medium | Slow/failed art loads (never broken UX - fallbacks) | Resume-capable pack; zip fallback ready; custom domain is the real fix (owner decision on timing) |
+| Rate limiting during pack download or tester spike | Low (custom domain `cdn.sadkinglabs.com` is edge-cached from launch; r2.dev is build-only) | Slow/failed art loads (never broken UX - fallbacks) | Resume-capable pack; zip fallback documented if ever observed |
 | `Filesystem.downloadFile` not available/reliable on 6.0.4 | Medium | Cache falls back to CapacitorHttp path (slower, base64 bridge) | Phase 3 device spike before committing the primitive |
 | Canvas taint breaks poster export | Medium if unhandled | Share feature regression | Cache-first load + `crossOrigin` + R2 CORS; explicit device test |
 | R2 object set incomplete vs catalog variant list | Low | Specific cards fall back to placeholder | Phase 1 publish audit refuses to promote a dangling reference |
@@ -217,7 +219,12 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
 | Fresh-install-offline users see no photography at all | Certain by design | UX expectation risk | Owner-accepted tradeoff; §5 placeholders are "intentional, not broken" (`ARCHITECTURE.md:191`); pack offered on first online session |
 | Pipeline now needs network mid-run | Certain | A drop can fail on upload | Strict convert→upload→audit→promote order; nothing promoted on failure; resumable |
 
-**Open questions - owner:** (1) Custom-domain timing: before or after the first slim-APK alpha? (2) Pack delivery: accept per-file (recommended) or require the single-zip variant up front given r2.dev limits? (3) Cache controls: is "Storage" (download-all + clear + size readout) the right Settings placement, and should the app *prompt* to download the pack on first online session or stay passive? (4) Confirm no cache-size cap / no eviction is acceptable for the alpha. (5) Confirm the Phase 6 finish-default rule: an *explicit* Foil selection makes the heart write foil; a merely-defaulted finish still writes non-foil.
+**Owner decisions (resolved 2026-07-22):**
+1. **Custom domain now.** `cdn.sadkinglabs.com` (Cloudflare-registered) is connected from the first slim-APK release; r2.dev is interim-build only. Edge-cached from day one.
+2. **Per-file pack** (resumable, skip-if-present). Zip stays a documented fallback only if a rate limit is ever observed (unlikely on the edge-cached custom domain).
+3. **"Storage" Settings block confirmed**, and the app **prompts** to download the pack on first online session (dismissible), in addition to the always-on automatic lazy cache. Two mechanisms coexist: lazy-cache-on-view is automatic and silent; download-all is the optional one-tap for full offline.
+4. **No auto-eviction** for the alpha. The device art cache grows only to what is viewed (or the full ~285 MB if the pack is downloaded); the sole removal is the manual "Clear art cache." Accepted.
+5. **Finish follows the toggle.** The sheet's Standard/Foil toggle is the source of truth: heart, stepper, and art all reflect the selected finish, and the heart writes that exact, on-screen (set, finish) collector item. The set is shown in the picker and the finish in the toggle, so the write is always explicit - never a silent guess (v11 doctrine preserved).
 
 **Open questions - Codex:** (a) independently re-sweep for seam bypasses (including dynamic slug construction the grep pattern could miss); (b) challenge the convert→upload→audit→promote ordering for partial-failure holes (e.g. audit passes, promote interrupted, recover path); (c) review the `images.test.mjs` contract flip for lost coverage; (d) probe the `CardArt` lazy-swap for flicker/race (src swap after remote load started); (e) verify the reseed-on-repoint claim against the seeder implementation, not just `DATA_MODEL.md`.
 
