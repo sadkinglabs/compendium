@@ -60,12 +60,14 @@ vice versa) regresses every card to fallback, so the pieces land together.
   honor zero-image mode** (adopting the boundary fixes a latent zero-image leak too): CreateDeckWizard:101;
   AvatarPicker:97,120,137; Decks:28; DeckDashboard:170,339,452; DecksPager:470; Play:138,169;
   Home:185,478,512.
-- **Group 3 - the CORS-critical poster:** [`deckPoster.js:71`](../../src/store/deckPoster.js#L71) loads
-  avatar art into a canvas via `_loadImg` (`:11`, **no `crossOrigin`**) and exports through
-  `toDataURL`/`toBlob` ([`native.js:82`](../../src/native.js#L82)). Today the art is same-origin bundled,
-  so the draw is untainted. A REMOTE CDN URL without `crossOrigin='anonymous'` **taints the canvas and
-  breaks poster export**. The poster must walk the candidate chain directly (it can't use the component)
-  and set `crossOrigin='anonymous'` on the remote candidate.
+- **Group 3 - the poster (RESOLVED by scope decision, owner-approved):** [`deckPoster.js:71`](../../src/store/deckPoster.js#L71)
+  draws avatar card art into an exported canvas, which a remote CDN URL would taint (breaking
+  `toDataURL`/`toBlob`). Rather than make the poster canvas CDN/CORS-aware, **the avatar card art is
+  REMOVED from the poster** (the poster is a chopping-block candidate). Delete the avatar-art load
+  (`_loadImg` at `:71`) and its canvas draw (`:135-149`); keep the bundled, same-origin element icons
+  (`${BASE}icons/*.png`) and the deck text/layout. This eliminates the CORS/canvas-taint risk from Phase 2
+  entirely - the poster never touches card art, so there is nothing to spike or guard. (Product note: the
+  generated poster no longer shows the avatar illustration; icons + deck info remain.)
 
 ### 3.4 Native primitives (net-new - none exist in code today)
 - [`native.js`](../../src/native.js): `isNative()` exists (`:13`); `Filesystem` is imported but only writes
@@ -102,9 +104,9 @@ catalog. The `bundledLegacy` chain means even a botched flip degrades to bundled
 
 - **2a - inert modules + spike (no behavior change).** `native.js` primitives; `artCache.js` +
   `artSource.js` pure cores with DOM-free `node --test`; `ArtImage`/`useArtSource`. Not wired into any
-  render site yet, so the app is unchanged. **Device spike:** confirm `downloadFile` works on 6.0.4 or
-  fall back to `CapacitorHttp`; confirm a `crossOrigin='anonymous'` canvas draw of a real CDN object is
-  untainted (needs R2 bucket CORS `GET/HEAD`, `Access-Control-Allow-Origin: *` - a Phase-0 config step).
+  render site yet, so the app is unchanged. **Device spike (now just ONE unknown):** confirm
+  `downloadFile` works on 6.0.4 or fall back to `CapacitorHttp`. (The canvas/CORS spike is removed - the
+  poster no longer draws card art, §3.3.) Also measure the gzipped slim-manifest size here.
 - **2b - the atomic activation (one reviewed unit).** Flip the seam; adopt the boundary at every site in
   Groups 1-3; ship the slim manifest + backup XML; run `update:catalog` for real (repoint + version bump)
   and `cdn-upload` (publish + audit). Device install is the acceptance gate.
@@ -138,8 +140,8 @@ catalog. The `bundledLegacy` chain means even a botched flip degrades to bundled
   and poster forms - B10.9).
 - **Device (native, the real proof):** art renders from CDN; caches on view; survives an airplane-mode
   restart; an OFFLINE upgrade shows `bundledLegacy`; **zero-image app-wide sweep** (every ex-bypass site);
-  **poster export works cached AND remote** (untainted canvas); the `downloadFile`-vs-`CapacitorHttp`
-  spike result recorded. Web: remote URLs + browser cache + zero-image.
+  **poster export still succeeds** (now without avatar art - icons + text only, no taint possible); the
+  `downloadFile`-vs-`CapacitorHttp` spike result recorded. Web: remote URLs + browser cache + zero-image.
 - **Pipeline:** `cdn-upload` full run publishes all 3,087 and the audit is green; the on-device reseed
   flips the catalog at boot.
 - **Gates:** `test:codex`, `test:query`, `test:app`, `check:types`, `check:cycles`, `build`, `check:docs`,
@@ -150,8 +152,8 @@ catalog. The `bundledLegacy` chain means even a botched flip degrades to bundled
 
 - **`downloadFile` reliability on 6.0.4** - the whole native cache depends on it. Mitigated by the 2a
   device spike + the proven `CapacitorHttp` fallback.
-- **CORS canvas taint (poster)** - needs R2 bucket CORS (`GET/HEAD`, `ACAO:*`) AND `crossOrigin='anonymous'`
-  on the remote candidate. Web dev-proxy hides this, so it MUST be a device test.
+- ~~**CORS canvas taint (poster)**~~ - REMOVED from scope: the poster no longer draws card art (§3.3), so
+  there is no canvas to taint. (Kept here only to record the decision that retired this risk.)
 - **Upload-before-repoint ordering** - if the catalog referencing content keys ships before the objects are
   uploaded+audited, art 404s. The sequence (upload -> audit -> promote) enforces it.
 - **Shipped manifest size** - 3,087 entries; slim to `{key, legacyKey, bytes}` and measure the gzipped
@@ -169,9 +171,11 @@ catalog. The `bundledLegacy` chain means even a botched flip degrades to bundled
   the native cache is in trouble. The spike happens BEFORE the activation commit so we learn early; worst
   case we ship web-style (remote-only) on native too and add the cache in a follow-up (degraded, not
   broken).
-- **Shipping a 3,087-entry manifest to the client is a new runtime dependency and bundle cost** I have not
-  measured yet. If it's heavy even slimmed+gzipped, the fallback options (per-slug endpoint) break offline
-  - so the honest answer is it ships, and 2a must measure it before we commit.
+- **Shipping a 3,087-entry manifest to the client is a new runtime dependency and bundle cost.** MEASURED
+  (2a): the slim `{key, legacyKey, bytes}` form is 497 KB raw / **164.5 KB gzipped** - acceptable for a
+  boot-time artifact fetched once and cached. Further shrinkable if a bundle-size review objects (store the
+  bare `sha256` and reconstruct `key = slug.sha.webp`; derive `legacyKey` from `printingBase(slug)`), but
+  164 KB is fine to start.
 - **Zero-image widening is only as good as the sweep** - miss one of the 14 inline sites and the invariant
   stays broken there. The verification names an explicit app-wide sweep for exactly this reason.
 - **I am reusing an approved design, not re-deriving it** - the risk is that the code discovered this
