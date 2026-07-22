@@ -9,7 +9,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { CATALOG_FINISHES, normalizeFinishLabel, printingFinishes } from './printingRows.js';
+import { CATALOG_FINISHES, normalizeFinishLabel, printingFinishes, selectPrinting, defaultFinish } from './printingRows.js';
 
 const require = createRequire(import.meta.url);
 
@@ -299,4 +299,38 @@ test('the default set rank orders numeric codes and sinks non-numeric ones last'
     sets: JSON.stringify([{ code: 'XX', name: 'Future' }, { code: '999', name: 'Promo' }, { code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]) };
   assert.deepEqual(expandItemRows([card]).map((r) => r.set), ['001', '002', '999', 'XX'],
     'numeric ascending, non-numeric last (not undercutting 999)');
+});
+
+/* ---------------- Phase 6: the sheet's selectPrinting + defaultFinish ---------------- */
+
+test('selectPrinting: Standard and Foil each return their OWN art, from the same variant', () => {
+  const c = card([
+    { set: '001', finish: 'Standard', image: 'a-s.webp', artist: 'Alice', product: 'Booster' },
+    { set: '001', finish: 'Foil', image: 'a-f.webp', artist: 'Alice', product: 'Booster' },
+  ]);
+  assert.equal(selectPrinting(c, '001', false).slug, 'a-s.webp');
+  assert.equal(selectPrinting(c, '001', true).slug, 'a-f.webp', 'foil art is distinct from standard');
+  assert.equal(selectPrinting(c, '001', false).slug, printingArt(c, '001', false), 'slug agrees with printingArt');
+  assert.equal(selectPrinting(c, '001', true).slug, printingArt(c, '001', true));
+});
+
+test('selectPrinting: a dual Foil/Rainbow promo fronts the Rainbow art AND its own artist (never mismatched)', () => {
+  const c = card([
+    { set: '999', finish: 'Foil', image: 'foil.webp', artist: 'FoilArt', product: 'Promo' },
+    { set: '999', finish: 'Rainbow', image: 'rainbow.webp', artist: 'RainbowArt', product: 'Promo' },
+  ]);
+  const f = selectPrinting(c, '999', true);
+  assert.equal(f.slug, 'rainbow.webp', 'Rainbow fronts the collapsed foil promo');
+  assert.equal(f.artist, 'RainbowArt', 'artist comes from the SAME variant as the art, not the Foil one');
+});
+
+test('selectPrinting falls back to the card default when the set has no imaged variant', () => {
+  const c = { card_id: 'c', name: 'C', image_slug: 'default.webp', variants: [] };
+  assert.deepEqual(selectPrinting(c, '001', false), { slug: 'default.webp', artist: null, product: null });
+});
+
+test('defaultFinish: foil-only locks to Foil; both or non-foil default to Standard (foil is explicit)', () => {
+  assert.equal(defaultFinish({ nonFoil: false, foil: true }), true, 'promo / foil-only -> Foil');
+  assert.equal(defaultFinish({ nonFoil: true, foil: true }), false, 'both -> Standard');
+  assert.equal(defaultFinish({ nonFoil: true, foil: false }), false, 'non-foil-only -> Standard');
 });
