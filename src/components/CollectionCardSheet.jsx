@@ -252,7 +252,7 @@ export function SheetArt({ c, width }) {
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
 // `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
 // distinct cards in the collection, so tapping the Alpha row edits only Alpha.
-function CardBody({ c, onPick, editable, set }) {
+function CardBody({ c, onPick, editable, set, foil: initFoil }) {
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
   const runs = thresholdRuns(c);
@@ -313,8 +313,14 @@ function CardBody({ c, onPick, editable, set }) {
   // elsewhere). The toggle shows only when a printing has both; it defaults per printing and resets on
   // a set change, so a foil is always an explicit choice, never a silent guess.
   const finishes = (() => { try { return printingFinishes(c, effSet); } catch { return { nonFoil: true, foil: false }; } })();
-  const [foil, setFoil] = useState(() => defaultFinish(finishes));
-  useEffect(() => { setFoil(defaultFinish(finishes)); }, [effSet]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // A scoped open (a wishlist row carries the exact finish it wants) honors that finish ONCE, so the
+  // sheet lands on the printing the user tapped. Every later set change falls back to the per-set
+  // default - a foil stays an explicit choice, never a silent guess. `initFoil` is consumed on mount
+  // via the ref, so it never overrides a subsequent deliberate set switch.
+  const resolveFoil = (want) => (want != null && (want ? finishes.foil : finishes.nonFoil) ? want : defaultFinish(finishes));
+  const pendingFoil = useRef(initFoil);
+  const [foil, setFoil] = useState(() => resolveFoil(initFoil));
+  useEffect(() => { const w = pendingFoil.current; pendingFoil.current = undefined; setFoil(resolveFoil(w)); }, [effSet]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // THE HEART IS PER COLLECTOR ITEM, not per card.
   //
@@ -482,7 +488,7 @@ function CardBody({ c, onPick, editable, set }) {
   );
 }
 
-export default function CollectionCardSheet({ cardId, onClose, editable = false, set = null }) {
+export default function CollectionCardSheet({ cardId, onClose, editable = false, set = null, foil = undefined }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
@@ -490,7 +496,7 @@ export default function CollectionCardSheet({ cardId, onClose, editable = false,
     <GothicSheet open={!!cardId} onClose={onClose} label="Card">
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-        : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} />}
+        : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} foil={foil} />}
     </GothicSheet>
   );
 }
