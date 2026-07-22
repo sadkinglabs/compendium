@@ -85,7 +85,7 @@ fun RecognitionCard(
     deckMode: Boolean,
     onSearchCodex: () -> Unit,
     onAddCollection: (String?) -> Unit,
-    onAddWishlist: () -> Unit,
+    onAddWishlist: (String?) -> Unit,
     onSaveCollection: (Int, String?) -> Unit,
     onAddToDeck: (Int) -> Unit,
     onSaveDeck: () -> Unit,
@@ -191,6 +191,15 @@ fun RecognitionCard(
                         else -> null
                     }
                     val ready = rec.sets.size <= 1 || selectedSet != null
+                    // WISHLIST NEEDS A REAL SET, ownership does not.
+                    //
+                    // A card the catalog places in no set can still be OWNED - it goes to the
+                    // uncategorised pile and triage resolves it later. It cannot be WANTED:
+                    // a want names a collector item, so with no set there is no honest item to
+                    // record. `ready` allows the zero-set case, so the wishlist button had it
+                    // enabled, showed "Added to your wishlist", and JS then counted the same
+                    // action as a failure - success reported to the user, nothing stored.
+                    val wishlistReady = effectiveSet != null
                     if (collectionMode) {
                         QtyStepper(qty, accent, onDec = { if (qty > 1) qty -= 1 }, onInc = { if (qty < 99) qty += 1 })
                         Spacer(Modifier.height(18.dp))
@@ -207,7 +216,11 @@ fun RecognitionCard(
                                 Spacer(Modifier.width(6.dp))
                                 Text("Collection")
                             }
-                            OutlinedButton(onClick = onAddWishlist, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                            // Wants name a collector item under schema v11, so the wishlist
+                            // action carries the SAME selected printing the collection action
+                            // does - and is disabled for a reprint until one is chosen, rather
+                            // than silently discarding the user's pick.
+                            OutlinedButton(onClick = { onAddWishlist(effectiveSet) }, enabled = wishlistReady, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
                                 Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Wishlist")

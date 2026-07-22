@@ -84,8 +84,8 @@ test('settle is bounded, and a timed-out waiter is not retained', async () => {
 test('row keys are equal iff the persisted rows are equal (incl. foil variants)', () => {
   const P = 'p1', C = 'card1';
   const cases = [
-    { set: '', foil: false, slug: '' },       // unspecified regular / wanted share this row
-    { set: '', foil: true, slug: 'foil' },    // unspecified foil
+    { set: '', foil: false, slug: 'uncategorised' },     // uncategorised regular / wanted share this row
+    { set: '', foil: true, slug: 'uncategorised:f' },    // uncategorised foil
     { set: '001', foil: false, slug: '001' }, // set regular
     { set: '001', foil: true, slug: '001:f' },// set foil
   ];

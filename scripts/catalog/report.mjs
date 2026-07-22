@@ -6,10 +6,10 @@ const list = (arr, n = 12) => {
   return a.slice(0, n).join(', ') + (a.length > n ? ` … (+${a.length - n})` : '');
 };
 
-export function formatReport(r, { dryRun = false } = {}) {
+export function formatReport(r, { dryRun = false, dormant = false } = {}) {
   const L = [];
   L.push('');
-  L.push(dryRun ? '=== Catalog update DRY RUN (nothing written) ===' : '=== Catalog update ===');
+  L.push(dryRun ? '=== Catalog update DRY RUN (no public/ or src/ writes) ===' : '=== Catalog update ===');
   if (r.cards) {
     L.push(`Cards:      ${r.cards.total} total  (+${r.cards.added.length} new, ${r.cards.updated.length} updated, ${r.cards.localOnly.length} local-only)`);
     if (r.cards.added.length) L.push(`  new:      ${list(r.cards.added)}`);
@@ -25,17 +25,28 @@ export function formatReport(r, { dryRun = false } = {}) {
   if (r.linkGraph != null) L.push(`Link graph: ${r.linkGraph} edges (byte-reproduction gate PASSED)${r.newLinkGraphEdges != null ? `; new corpus ${r.newLinkGraphEdges}` : ''}`);
   if (r.codex) L.push(`Codex:      ${r.codex.docs} docs, ${r.codex.blocks} blocks, ${r.codex.faqs} faqs (recompiled, invariants OK)`);
   if (r.images) {
-    L.push(`Images:     ${r.images.converted} webp planned  (${r.images.keptFoilOnly} foil-only kept, ${r.images.droppedFoilDupes} duplicate foils dropped, ${r.images.skippedReverse} reverse faces skipped)`);
-    if (r.images.noScan.length) L.push(`  no scan (will show generated art): ${r.images.noScan.length} - ${list(r.images.noScan, 6)}`);
-    if (r.images.unmatchedScans.length) L.push(`  scans matching no printing: ${r.images.unmatchedScans.length} - ${list(r.images.unmatchedScans, 6)}`);
+    const im = r.images;
+    L.push(`Images:     ${im.total} art objects  (${im.fresh} converted, ${im.kept} kept, ${im.carried} carried)`);
+    L.push(`  assigned: ${im.perFinish} per-finish, ${im.sharedSibling} via a sibling finish; ${im.reverseExcluded} reverse faces excluded`);
+    if (im.noScan?.length) L.push(`  no scan (will show generated art): ${im.noScan.length} - ${list(im.noScan, 6)}`);
+    if (im.unmatchedScans?.length) L.push(`  scans matching no printing: ${im.unmatchedScans.length} - ${list(im.unmatchedScans, 6)}`);
   }
   if (r.warnings?.length) { L.push('Warnings:'); for (const w of r.warnings) L.push(`  ! ${w}`); }
   L.push('');
+  if (r.staging) {
+    L.push(`Staged:     ${r.staging.count} content-tier webp -> ${r.staging.stageDir}`);
+    L.push(`            prospective manifest -> ${r.staging.manifestPath}`);
+  }
   if (dryRun) {
-    L.push('Dry run only: no files were written and no promotion was performed.');
+    L.push('Dry run: no public/ or src/ files written and nothing promoted (staging + prospective');
+    L.push('manifest under the gitignored build dirs are refreshed so the uploader has fresh inputs).');
+  } else if (dormant) {
+    L.push('Phase 1 is dormant: the committed catalog under public/ and src/ is NOT repointed or promoted.');
+    L.push('Publish additively with `node scripts/catalog/cdn-upload.mjs` (uploads missing objects with');
+    L.push('If-None-Match create-only, never overwrites, then audits). Activation into the app is Phase 2.');
   } else {
     L.push('Next: review `git diff`, add a changelog entry, bump the build on install (see BUILD.md).');
   }
-  L.push(r.ok === false ? 'RESULT: STOPPED (see errors above)' : 'RESULT: OK');
+  L.push(r.ok === false ? 'RESULT: STOPPED (see errors above)' : (dormant ? 'RESULT: OK (dormant)' : 'RESULT: OK'));
   return L.join('\n');
 }

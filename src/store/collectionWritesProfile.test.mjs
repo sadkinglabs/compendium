@@ -16,8 +16,9 @@ let sdb;
 
 function defer() { let resolve, reject; const p = new Promise((res, rej) => { resolve = res; reject = rej; }); return { p, resolve, reject }; }
 const tick = () => new Promise((r) => setTimeout(r, 0));
+// Sums across every row: post-v11 a want lives on its collector item, not on one fixed row.
 const wantedOf = async (pid, cardId) =>
-  (await query('SELECT qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, '']))[0]?.qty_wanted ?? 0;
+  (await query('SELECT SUM(qty_wanted) q FROM owned_cards WHERE profile_id=? AND card_id=?;', [pid, cardId]))[0]?.q ?? 0;
 const ownedInRow = async (pid, cardId, slug) =>
   (await query('SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0]?.qty_owned ?? 0;
 const listQty = async (listId, cardId) =>
@@ -52,7 +53,13 @@ before(async () => {
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LA','A','custom','ListA','2026-01-01');");
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LB','B','custom','ListB','2026-01-01');");
   // listCards joins the catalog, so the boundary tests need a real card row.
-  sdb.run("INSERT INTO cards(card_id,name,system) VALUES('c','Test Card','sorcery');");
+  sdb.run("INSERT INTO cards(card_id,name,system,sets) VALUES('c','Test Card','sorcery','[{\"code\":\"001\"}]');");
+  // stepWanted resolves to a collector item now, so every fixture card needs its printings -
+  // a card the catalog does not place in a set has no want row to resolve to.
+  sdb.run("INSERT INTO cards(card_id,name,system,sets) VALUES('cardH','cardH','sorcery','[{\"code\":\"001\"}]');");
+  sdb.run("INSERT INTO cards(card_id,name,system,sets) VALUES('cardX','cardX','sorcery','[{\"code\":\"001\"}]');");
+  sdb.run("INSERT INTO cards(card_id,name,system,sets) VALUES('cardY','cardY','sorcery','[{\"code\":\"001\"}]');");
+
 });
 
 beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
@@ -74,8 +81,8 @@ test('a write bound to A commits under A even if the active profile flips to B m
 // ACTIVE profile is someone else - i.e. none of them silently re-resolves activeProfileId().
 const OWNED_CASES = [
   { name: 'stepWanted',      run: () => stepWanted('c', 1, 'A'),           read: (p) => wantedOf(p, 'c'),          expect: 1 },
-  { name: 'stepOwnedBucket', run: () => stepOwnedBucket('c', 1, 'A'),      read: (p) => ownedInRow(p, 'c', ''),    expect: 1 },
-  { name: 'setFoil',         run: () => setFoil('c', 3, 'A'),              read: (p) => ownedInRow(p, 'c', 'foil'),expect: 3 },
+  { name: 'stepOwnedBucket', run: () => stepOwnedBucket('c', 1, 'A'),      read: (p) => ownedInRow(p, 'c', 'uncategorised'),   expect: 1 },
+  { name: 'setFoil',         run: () => setFoil('c', 3, 'A'),              read: (p) => ownedInRow(p, 'c', 'uncategorised:f'), expect: 3 },
   { name: 'setOwnedInSet',   run: () => setOwnedInSet('c', '001', 2, 'A'), read: (p) => ownedInRow(p, 'c', '001'), expect: 2 },
   { name: 'setFoilInSet',    run: () => setFoilInSet('c', '001', 2, 'A'),  read: (p) => ownedInRow(p, 'c', '001:f'),expect: 2 },
 ];
@@ -105,24 +112,25 @@ test('stepListEntry bound to A steps its own list correctly while the active pro
   assert.equal(await listQty('LA', 'c'), 5);
 });
 
-// Stage B shared-chain properties: the migrated callers key wishlist + unspecified-owned
-// on the SAME '' owned_cards row, and both list-entry surfaces on the same (list,card)
-// row - so serialized re-reads mean neither can clobber the other (races #1 and #3).
-test('wishlist + unspecified-owned share the "" row chain and do not clobber each other', async () => {
+// Post-v11 these are DIFFERENT rows: card-level owned lands on the uncategorised row while a
+// want resolves to its collector item. They no longer share storage, which is the point of the
+// schema change - but they are still stepped through the same queue, and neither may clobber
+// the other's read-modify-write.
+test('wishlist and uncategorised-owned writes do not clobber each other', async () => {
   await stepOwnedBucket('c', 5, 'A');   // '' row owned=5
   await stepWanted('c', 2, 'A');        // '' row wanted=2 (same row)
   __resetCollectionWritesForTests();
-  const key = ownedRowKey('A', 'c', '', false);   // wishlist AND name-level owned land here
+  const key = ownedRowKey('A', 'c', '001', false);
   const d = defer();
   const pWanted = enqueueWrite(key, async () => { await d.p; return stepWanted('c', 1, 'A'); });
   const pOwned = enqueueWrite(key, () => stepOwnedBucket('c', 1, 'A'));
   d.resolve();
   await Promise.all([pWanted, pOwned]);
   assert.equal(await wantedOf('A', 'c'), 3, 'wanted 2 -> 3; the owned write did not restore stale wanted');
-  assert.equal(await ownedInRow('A', 'c', ''), 6, 'owned 5 -> 6; the wanted write did not restore stale owned');
+  assert.equal(await ownedInRow('A', 'c', 'uncategorised'), 6, 'owned 5 -> 6; the wanted write did not restore stale owned');
 });
 
-test('dropping Unspecified owned to 0 preserves a wishlist on the SAME "" row (no data loss)', async () => {
+test('dropping uncategorised owned to 0 preserves the wishlist (no data loss)', async () => {
   // Device-found: a card in the Wishlist (qty_wanted on the '' row) that also has
   // Unspecified owned (bulk multi-set add lands here). Stepping owned to 0 via My
   // Collection must NOT delete the shared row and wipe the wishlist.

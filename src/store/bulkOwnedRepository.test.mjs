@@ -113,9 +113,12 @@ test('one card in two printings is two independent rows', async () => {
   assert.equal(await qtyOf('P', 'a', '002'), 1);
 });
 
-test("the Unspecified printing ('') is a real, writable row", async () => {
+test("the uncategorised bucket ('') is a real, writable row, stored canonically", async () => {
+  // '' is the UI bucket code; the canonical storage key is 'uncategorised'. The bulk commands
+  // translate at the boundary, so a caller passing the bucket still edits the right row.
   await commands().applyBulkOwned('add1', [T('a', '')]);
-  assert.equal(await qtyOf('P', 'a', ''), 1);
+  assert.equal(await qtyOf('P', 'a', 'uncategorised'), 1, 'stored under the canonical key');
+  assert.equal(await qtyOf('P', 'a', ''), 0, 'and NOT under the v10 key');
 });
 
 test('a selection larger than one query chunk is handled whole', async () => {

@@ -35,7 +35,7 @@ export const serializeSetCatalog = (obj) => JSON.stringify(obj, null, 2) + '\n';
  * @returns { cards, articles, faqs, linkGraph, codex, imagePlan, hash, warnings, report }
  */
 export function buildGeneration({
-  currentCards, currentArticles, currentFaqs, committedLinkGraph, apiCards, rulesCsvText, faqCsvText, dropPngNames,
+  currentCards, currentArticles, currentFaqs, committedLinkGraph, apiCards, rulesCsvText, faqCsvText, artManifest,
 }) {
   // Cards
   const merge = mergeCatalog(currentCards, apiCards);
@@ -56,8 +56,9 @@ export function buildGeneration({
   const committedEdges = assertReproducesCommitted(currentArticles, committedLinkGraph);
   const linkGraph = regenerateLinkGraph(rules.articles);
 
-  // Images: plan (annotates cards with per-printing + default image fields).
-  const imagePlan = planImages(merge.cards, dropPngNames);
+  // Images: annotate cards with per-finish content-addressed keys from the art manifest (built
+  // ahead of this pure step by the orchestrator). A missing manifest yields image=null everywhere.
+  const imagePlan = planImages(merge.cards, artManifest);
   const cards = imagePlan.cards;
 
   // Codex documents: recompile from the NEW articles/cards/faqs (pure). This is the
@@ -84,15 +85,19 @@ export function buildGeneration({
   const setCatalog = Object.fromEntries((merge.report.sets || []).map((s) => [s.code, s.name]));
 
   // Deterministic content hash over the exact serialised generation + codex buildHash
-  // + the sorted image manifest. Same inputs -> same hash -> a re-run is a no-op. The
-  // set catalog is NOT hashed: a new/renamed set always arrives with card changes,
-  // which already move the hash, so hashing it too would only risk a spurious bump.
+  // + the art-manifest DIGESTS (slug + content key; the key embeds the sha256 of the output
+  // bytes). Hashing the digests, not filenames, is what makes a corrected scan move the version
+  // token and reseed (rev 4 - the generation.mjs:95 hole). Only the published identity is folded
+  // (slug + key), so an encoder-only metadata change that retains bytes does not spuriously bump.
+  const manifestDigest = Object.entries((artManifest && artManifest.objects) || {})
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([slug, e]) => `${slug}\0${e.key}`).join('\n');
   const hash = createHash('sha256')
     .update(serializeCards(cards)).update('\0')
     .update(serializeArticles(rules.articles)).update('\0')
     .update(faqList ? serializeFaqs(faqList) : '').update('\0')
     .update(serializeLinkGraph(linkGraph)).update('\0')
-    .update(imagePlan.manifest.join('\n')).update('\0')
+    .update(manifestDigest).update('\0')
     .update(String(codexOutput.buildHash))
     .digest('hex');
 
@@ -104,6 +109,7 @@ export function buildGeneration({
     codex: codexOutput,
     setCatalog,
     imagePlan,
+    artManifest: artManifest || { objects: {} },
     hash,
     warnings,
     report: {
@@ -136,7 +142,8 @@ export function writeStagingJson(gen, stagingCatalogDir) {
 export function validateGeneration(gen) {
   const problems = [];
   if (gen.warnings.length) problems.push(`unresolved warnings:\n  - ${gen.warnings.join('\n  - ')}`);
-  const manifest = new Set(gen.imagePlan.manifest);
+  // Every card/variant image must be a key in the art manifest (content-addressed) or null.
+  const manifest = new Set(Object.values((gen.artManifest && gen.artManifest.objects) || {}).map((o) => o.key));
   const allStrings = (a) => Array.isArray(a) && a.every((x) => typeof x === 'string');
   for (const [name, c] of Object.entries(gen.cards)) {
     if (c.image != null && !manifest.has(c.image)) problems.push(`${name}: card image ${c.image} is not in the staged art manifest`);

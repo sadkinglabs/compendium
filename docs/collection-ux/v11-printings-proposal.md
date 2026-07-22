@@ -302,9 +302,11 @@ converted, and says nothing about a bundle that arrived afterwards.
 Tests 4 and 5 assert the *absence* of a profile, not merely that an error was thrown. The
 throw is easy; the cleanliness is the requirement.
 
-**The wishlist gains a set-and-finish picker.** A sheet scoped to a set already knows the set
-but must still identify foil/non-foil. A name-level surface must ask for every unknown
-dimension. It must not create new uncategorised wants.
+**The wishlist gains a SET picker.** A sheet scoped to a set already knows the set.
+Finish is NOT asked - §7.4 later ruled that a bare want defaults to non-foil, since a set is
+completed in non-foil; wanting a foil is a deliberate act made in the picker. A name-level
+surface must ask for the SET when the card is a reprint. It must not create new uncategorised
+wants.
 
 ## 6 · Phasing
 
@@ -395,7 +397,7 @@ The handrails below are the class requirement, not decoration.
 - Completion milestones. Recorded in [`completion-milestones.md`](./completion-milestones.md); v11 only makes them countable.
 - Changing `deck_entries` or `card_list_entries` semantics (§3).
 - Changing the stored SQLite `DEFAULT ''` (§3.2).
-- Any UI redesign beyond the set-and-finish picker and the To Be Categorised surface.
+- Any UI redesign beyond the set picker and the To Be Categorised surface.
 
 ### 9.3 · Point of no return
 

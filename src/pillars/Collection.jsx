@@ -12,21 +12,36 @@ import { parseQuery, cardMatchesQuery } from '../store/cardQuery.js';
 import { isTokenCard } from '../store/tokens.js';
 import { resetCollectionSessionFor, collectionSession } from './collectionSession.js';
 import { collectionSurface } from './collectionRoute.js';
+import { triagePile, pendingCount } from '../store/triage.js';
+import {
+  enqueuePick, dequeuePick, headPick, soleExistingItem, batchAddSummary,
+  ADD_APPLIED, ADD_CHOICE_REQUIRED, ADD_REFUSED,
+} from './addPickQueue.js';
+import { wantTarget } from '../store/wantIntent.js';
+import { canonicalPrinting, UNCATEGORISED } from '../store/printings.js';
+import WantPrintingSheet from '../components/WantPrintingSheet.jsx';
+import TriageSheet from '../components/TriageSheet.jsx';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
-import { soleSetName } from '../store/printings.js';
+import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
+  uncategorisedRows, cardSetsFor,
   ownedBySet, qtyForInSet, setOwnedInSet,
-  deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
+  deckBuildabilityBulk, subscribeCollection, previewCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
-  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey,
+  setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, queueWantWrite,
+  stepWantedForItem, setWantedForItem,
   listProgress, listProgressBulk, listCards, listThumbsBulk,
 } from '../store/ownedRepository.js';
-import { SET_LABEL, SET_RANK } from '../store/sets.js';
+import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
-import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
+import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
+import { importCollectionResolved } from '../store/ownedImportRepository.js';
+import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
+import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
+import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
@@ -171,25 +186,38 @@ function ImportTextSheet({ open, onClose }) {
     if (!text.trim() || busy) return;
     setBusy(true);
     try {
-      const { items, unresolved } = await previewCollectionText(text);
-      if (!items.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
-      const { single, multi, unresolved: bad, choiceDefaults } = planCollectionImport({ items, unresolved });
-      setChoice(choiceDefaults); setPreview({ single, multi, unresolved: bad }); setStep('review'); setBusy(false);
-    } catch { toast("Couldn't read that text.", { tone: 'danger' }); setBusy(false); }
+      const { items, unresolved, flagged } = await previewCollectionText(text);
+      if (!items.length && !flagged.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
+      const { single, multi, unresolved: bad, flagged: bad2, choiceDefaults } = planCollectionImport({ items, unresolved, flagged });
+      setChoice(choiceDefaults); setPreview({ single, multi, unresolved: bad, flagged: bad2 }); setStep('review'); setBusy(false);
+    } catch (e) {
+      toast(e?.name === 'ImportTooLarge' ? e.message : "Couldn't read that text.", { tone: 'danger' }); setBusy(false);
+    }
   };
 
   const confirm = async () => {
     if (busy || !preview) return;
     setBusy(true);
+    // Capture the profile at the gesture, before any await, so the write binds to the profile the
+    // user is looking at even if it changes mid-commit.
+    const pid = activeProfileId();
     try {
       const items = buildImportItems(preview, choice);
-      const r = await importCollectionResolved(items);
-      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}`);
+      const r = await importCollectionResolved(items, pid);
+      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}`);
       onClose();
-    } catch { toast("Couldn't import.", { tone: 'danger' }); setBusy(false); }
+    } catch (e) {
+      // The write-outcome contract: a transaction-phase failure may have landed on device (the web
+      // commit-then-persist hazard), so we must not claim nothing was written and must not retry.
+      const indeterminate = e?.name === 'BulkWriteError' && e.writeState === 'unknown';
+      toast(indeterminate ? "Couldn't confirm the import - check your collection before retrying." : "Couldn't import.", { tone: 'danger' });
+      setBusy(false);
+    }
   };
 
-  const { nSingle, nMulti, nBad, totalCopies } = preview ? importTallies(preview) : { nSingle: 0, nMulti: 0, nBad: 0, totalCopies: 0 };
+  const { nSingle, nMulti, nBad, nFlagged, nItems, totalCopies } = preview
+    ? importTallies(preview)
+    : { nSingle: 0, nMulti: 0, nBad: 0, nFlagged: 0, nItems: 0, totalCopies: 0 };
   const sectionHead = (color, label) => <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color, margin: '2px 0 8px' }}>{label}</div>;
 
   return (
@@ -213,36 +241,60 @@ function ImportTextSheet({ open, onClose }) {
       ) : (
         <>
           <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
-            {totalCopies} cop{totalCopies === 1 ? 'y' : 'ies'} across {nSingle + nMulti} card{nSingle + nMulti === 1 ? '' : 's'}.{nMulti > 0 ? ' Pick a set for the reprinted cards.' : ''}
+            {totalCopies} cop{totalCopies === 1 ? 'y' : 'ies'} across {nItems} printing{nItems === 1 ? '' : 's'}.{nMulti > 0 ? ' Pick a set for the reprinted cards.' : ''}
           </div>
           <div style={{ maxHeight: '46vh', overflowY: 'auto' }} className="cx-scroll">
             {nMulti > 0 && (
-              <div style={{ marginBottom: nSingle || nBad ? 16 : 0 }}>
+              <div style={{ marginBottom: nSingle || nBad || nFlagged ? 16 : 0 }}>
                 {sectionHead('var(--gold-leaf)', 'CHOOSE A SET')}
-                {preview.multi.map((i) => (
-                  <div key={i.card_id} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-                      <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
-                      <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{i.qty}</span>
+                {preview.multi.map((i) => {
+                  const k = itemKey(i);
+                  return (
+                    <div key={k} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                        <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
+                        {i.foil && <span style={{ flex: 'none', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--gold-leaf)', border: '1px solid var(--gold-leaf)', borderRadius: 3, padding: '2px 5px' }}>Foil</span>}
+                        <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{i.qty}</span>
+                      </div>
+                      <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+                        <SegTabs ariaLabel={`Set for ${i.name}${i.foil ? ' foil' : ''}`}
+                          value={choice[k] === '' ? '__unspec__' : choice[k]}
+                          onChange={(key) => setChoice((m) => ({ ...m, [k]: key === '__unspec__' ? '' : key }))}
+                          options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: UNCATEGORISED_LABEL }]} />
+                      </div>
                     </div>
-                    <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
-                      <SegTabs ariaLabel={`Set for ${i.name}`}
-                        value={choice[i.card_id] === '' ? '__unspec__' : choice[i.card_id]}
-                        onChange={(k) => setChoice((m) => ({ ...m, [i.card_id]: k === '__unspec__' ? '' : k }))}
-                        options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: 'Unspecified' }]} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {nSingle > 0 && (
-              <div style={{ marginBottom: nBad ? 16 : 0 }}>
+              <div style={{ marginBottom: nBad || nFlagged ? 16 : 0 }}>
                 {sectionHead('var(--ink-muted)', `FILES AUTOMATICALLY · ${nSingle}`)}
-                {preview.single.map((i) => (
-                  <div key={i.card_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair-12)' }}>
-                    <span style={{ flex: 1, minWidth: 0, font: "500 13px/1.2 var(--f-read)", color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
-                    <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: '#c9b487' }}>{i.sets[0].name}</span>
-                    <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>×{i.qty}</span>
+                {preview.single.map((i) => {
+                  // Show the printing that will actually be FILED - the resolved set + finish, not
+                  // sets[0], which showed Alpha for a Beta row and never showed foil.
+                  const setCode = i.resolved ? i.resolved.setCode : i.sets[0].code;
+                  const foil = i.resolved ? i.resolved.foil : false;
+                  const setName = setCode ? (SET_LABEL[setCode] || setCode) : UNCATEGORISED_LABEL;
+                  return (
+                    <div key={itemKey(i)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair-12)' }}
+                      aria-label={`${i.name}, ${setName}${foil ? ' foil' : ' non-foil'}, ${i.qty} cop${i.qty === 1 ? 'y' : 'ies'}`}>
+                      <span style={{ flex: 1, minWidth: 0, font: "500 13px/1.2 var(--f-read)", color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
+                      {foil && <span style={{ flex: 'none', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.08em', textTransform: 'uppercase', color: '#c9b487', border: '1px solid var(--hair-24)', borderRadius: 3, padding: '2px 5px' }}>Foil</span>}
+                      <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: '#c9b487' }}>{setName}</span>
+                      <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>×{i.qty}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {nFlagged > 0 && (
+              <div style={{ marginBottom: nBad ? 16 : 0 }}>
+                {sectionHead('var(--destructive)', `SKIPPED · CHECK THESE LINES · ${nFlagged}`)}
+                {preview.flagged.map((f, idx) => (
+                  <div key={idx} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', padding: '3px 0' }}>
+                    <span style={{ fontFamily: 'var(--f-mono)' }}>{f.raw.trim()}</span>
+                    <span style={{ fontStyle: 'italic', color: 'var(--destructive)' }}> - {f.problems.join(', ')}</span>
                   </div>
                 ))}
               </div>
@@ -258,7 +310,7 @@ function ImportTextSheet({ open, onClose }) {
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>‹ Back</button>
-            <button onClick={confirm} disabled={busy} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy ? 0.5 : 1 }}>
+            <button onClick={confirm} disabled={busy || nItems === 0} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy || nItems === 0 ? 0.5 : 1 }}>
               {busy ? 'Importing…' : `Import ${totalCopies}`}
             </button>
           </div>
@@ -335,17 +387,234 @@ function ListBulkAddSheet({ open, onClose, onApply, listName }) {
   );
 }
 
+// The whole-paste WISHLIST import (brief §3.2). One draft, one commit boundary (P8).
+//
+// Two exit regimes (Codex increment-5 Major 2). BEFORE Confirm, every exit - Cancel, backdrop,
+// drag, hardware back - abandons the draft and writes ZERO. Once Confirm starts an SQLite
+// transaction there is a point of no return: the sheet becomes non-dismissible and its controls
+// lock, so a gesture can never appear to cancel a write that is still going. `phase` (idle |
+// reading | committing) is mirrored in a ref so a gesture handler reads it synchronously.
+function WishlistImportSheet({ open, onClose, onCommitted }) {
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [phase, setPhaseState] = useState('idle');   // 'idle' | 'reading' | 'committing'
+  const phaseRef = useRef('idle');
+  const reqRef = useRef(0);                            // supersede a resolve that returns after close
+  const [batchFinish, setBatchFinish] = useState('nonFoil');
+  const [choices, setChoices] = useState({});
+  const [overrides, setOverrides] = useState({});
+  const goPhase = (p) => { phaseRef.current = p; setPhaseState(p); };
+  const resetDraft = () => { setChoices({}); setOverrides({}); setBatchFinish('nonFoil'); };
+  useEffect(() => { if (open) { reqRef.current++; setText(''); setDraft(null); goPhase('idle'); resetDraft(); } }, [open]);
+
+  const committing = phase === 'committing';
+
+  // The single close path for Cancel, backdrop, drag and hardware back. Blocked mid-commit; before
+  // that it abandons the draft and reports zero writes.
+  const requestClose = () => {
+    if (phaseRef.current === 'committing') return;
+    reqRef.current++;
+    if (draft) toast('Nothing added');
+    onClose();
+  };
+
+  const review = async () => {
+    if (!text.trim() || phase !== 'idle') return;
+    const id = ++reqRef.current;
+    goPhase('reading');
+    try {
+      const d = await resolveWantList(text);
+      if (id !== reqRef.current) return;                 // superseded or closed
+      if (!hasReviewContent(d)) { toast('No cards recognised in that text.', { tone: 'danger' }); goPhase('idle'); return; }
+      resetDraft(); setDraft(d); goPhase('idle');
+    } catch (e) {
+      if (id !== reqRef.current) return;
+      toast(e?.name === 'ImportTooLarge' ? e.message : "Couldn't read that text.", { tone: 'danger' }); goPhase('idle');
+    }
+  };
+
+  const view = draft ? planWantDraft(draft, { batchFinish, choices, overrides }, catalogSetRank) : null;
+
+  const confirm = async () => {
+    if (phase !== 'idle' || !view?.ready) return;
+    goPhase('committing');
+    const pid = activeProfileId();   // captured at the gesture, before any await
+    try {
+      const r = await addWantedItemsBulk(view.commitItems, pid);
+      haptic('light');
+      toast(`Added ${r.copies} wanted cop${r.copies === 1 ? 'y' : 'ies'} across ${r.items} printing${r.items === 1 ? '' : 's'}`);
+      onCommitted?.();
+      onClose();
+    } catch (e) {
+      // Write-outcome contract: a transaction-phase failure may have landed; do not claim nothing
+      // written, do not retry, keep the sheet state so the user can decide.
+      const indeterminate = e?.name === 'BulkWriteError' && e.writeState === 'unknown';
+      toast(indeterminate ? "Couldn't confirm - check your wishlist before retrying." : "Couldn't add.", { tone: 'danger' });
+      goPhase('idle');
+    }
+  };
+
+  const head = (color, label) => <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color, margin: '2px 0 8px' }}>{label}</div>;
+  const setLbl = (o) => `${SET_LABEL[o.code] || o.code}${o.forced ? ' ✦' : ''}`;
+  const setChoice = (key, code) => setChoices((m) => ({ ...m, [key]: code }));
+  const setOverride = (key, v) => setOverrides((m) => ({ ...m, [key]: v }));
+
+  const lockBtn = (active, label, onClick, aria) => (
+    <button onClick={onClick} disabled={committing} aria-pressed={active} aria-label={aria} style={{ ...BTN_GHOST, flex: 'none', padding: '5px 10px', minHeight: 30,
+      borderColor: active ? 'var(--gold-leaf)' : 'var(--hair-22)', color: active ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}>{label}</button>
+  );
+
+  // One renderer for both fixed and choice rows. A fixed, resolved row shows its computed printing
+  // read-only; a choice row shows a set picker; an impossible [Foil] lock (either kind) shows real
+  // non-foil/skip buttons. contentVisibility keeps a large paste from laying out thousands of
+  // segmented controls at once.
+  const renderRow = (r) => {
+    const impossibleLock = r.lockedFinish === 'foil' && !r.anyFoil;
+    const picker = (aria) => (
+      <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+        <SegTabs ariaLabel={aria} value={choices[r.key] || null}
+          onChange={(code) => setChoice(r.key, code)} options={r.options.map((o) => ({ key: o.code, label: setLbl(o) }))} />
+      </div>
+    );
+    return (
+      <div key={r.key} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)', contentVisibility: 'auto', containIntrinsicSize: '0 60px' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: r.status === 'chosen' && r.fixed ? 0 : (impossibleLock || r.status === 'skipNoFoil' || r.status === 'lockSkip' ? 6 : 8) }}>
+          <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+          {r.forcedFoil && <span style={{ flex: 'none', font: "600 9px/1 var(--f-display)", letterSpacing: '.08em', color: 'var(--gold-leaf)' }}>✦ FOIL ONLY</span>}
+          {/* A fixed, chosen row states its printing inline (read-only) instead of a picker. */}
+          {r.status === 'chosen' && r.fixed && !r.forcedFoil && r.effectiveFoil && <span style={{ flex: 'none', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.08em', color: 'var(--gold-leaf)' }}>FOIL</span>}
+          {r.status === 'chosen' && r.fixed && <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--gold-deep)' }}>{SET_LABEL[r.commit.set] || r.commit.set}</span>}
+          <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{r.qty}</span>
+        </div>
+        {r.status === 'skipNoFoil' ? (
+          <div style={{ font: "500 11px/1.3 var(--f-display)", letterSpacing: '.06em', color: 'var(--destructive)' }}>SKIPPED · NO FOIL PRINTING · change the finish above to include it</div>
+        ) : impossibleLock ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ flex: 'none', font: "400 11.5px/1.3 var(--f-read)", color: 'var(--ink-muted)', fontStyle: 'italic' }}>No foil printing exists -</span>
+            {lockBtn(overrides[r.key] === 'nonFoil', 'Use non-foil', () => setOverride(r.key, 'nonFoil'), `Use non-foil for ${r.name}`)}
+            {lockBtn(overrides[r.key] === 'skip', 'Skip', () => setOverride(r.key, 'skip'), `Skip ${r.name}`)}
+            {overrides[r.key] === 'nonFoil' && !r.fixed && r.options.length > 0 && (
+              <div style={{ flexBasis: '100%', marginTop: 4 }}>{picker(`Set for ${r.name} non-foil`)}</div>
+            )}
+          </div>
+        ) : (!r.fixed && (r.status === 'chosen' || r.status === 'unchosen')) ? (
+          picker(`Set for ${r.name}${r.lockedFinish === 'foil' ? ' foil' : ''}`)
+        ) : null}
+        {r.reason && r.status !== 'skipNoFoil' && <div style={{ font: "400 11px/1.3 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginTop: 4 }}>{r.reason}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <BottomSheet open={open} title="ADD TO WISHLIST" onClose={requestClose} dismissible={!committing} ariaBusy={committing}>
+      {!draft ? (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            Paste a list - one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>3 Wild Boars [Beta]</span>.
+            Add <span style={{ fontFamily: 'var(--f-mono)' }}>[Foil]</span> for foils. Reprints are resolved together before anything is added.
+          </div>
+          <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
+            placeholder={'3 Wild Boars\n2 Albespine Pikemen [Beta]\n1 Winter River [Foil]…'}
+            style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button onClick={requestClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+            <button onClick={review} disabled={!text.trim() || phase !== 'idle'} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text.trim() && phase === 'idle' ? 1 : 0.5 }}>{phase === 'reading' ? 'Reading…' : 'Review'}</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            {view.addCount} printing{view.addCount === 1 ? '' : 's'} ready.{view.blocking > 0 ? ` ${view.blocking} still need a set.` : ''}
+            {view.skipCount > 0 ? ` ${view.skipCount} skipped.` : ''}
+          </div>
+          <div style={{ maxHeight: '48vh', overflowY: 'auto' }} className="cx-scroll">
+            {view.finishGoverns && (view.setForAll.length > 0 || draft.needsChoice.length > 0) && (
+              <div style={{ marginBottom: 14, opacity: committing ? 0.5 : 1, pointerEvents: committing ? 'none' : 'auto' }}>
+                {view.setForAll.length > 0 && <>
+                  {head('var(--ink-muted)', 'SET FOR ALL')}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                    {view.setForAll.map(({ code, pressed }) => (
+                      <button key={code} aria-pressed={pressed} disabled={committing}
+                        onClick={() => setChoices(applySetForAll(draft, { batchFinish, choices, overrides }, code))}
+                        style={{ ...BTN_GHOST, flex: 'none', padding: '5px 12px', minHeight: 30,
+                          borderColor: pressed ? 'var(--gold-leaf)' : 'var(--hair-22)', color: pressed ? 'var(--gold-leaf)' : 'var(--ink-muted)',
+                          background: pressed ? 'var(--gold-dim)' : 'transparent' }}>{SET_LABEL[code] || code}</button>
+                    ))}
+                  </div>
+                </>}
+                {head('var(--ink-muted)', 'FINISH FOR ALL')}
+                <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+                  <SegTabs ariaLabel="Finish for all" value={batchFinish} onChange={setBatchFinish}
+                    options={[{ key: 'nonFoil', label: 'Non-foil' }, { key: 'foil', label: 'Foil' }]} />
+                </div>
+              </div>
+            )}
+            {view.rows.length > 0 && (
+              <div style={{ marginBottom: draft.unknown.length || draft.flagged.length ? 16 : 0, opacity: committing ? 0.5 : 1, pointerEvents: committing ? 'none' : 'auto' }}>
+                {head('var(--gold-leaf)', view.blocking > 0 ? 'CHOOSE PRINTINGS' : 'PRINTINGS')}
+                {view.rows.map(renderRow)}
+              </div>
+            )}
+            {draft.flagged.length > 0 && (
+              <div style={{ marginBottom: draft.unknown.length ? 16 : 0 }}>
+                {head('var(--destructive)', `SKIPPED · CHECK THESE LINES · ${draft.flagged.length}`)}
+                {draft.flagged.map((f, i) => (
+                  <div key={i} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', padding: '3px 0' }}>
+                    <span style={{ fontFamily: 'var(--f-mono)' }}>{f.raw.trim()}</span>
+                    <span style={{ fontStyle: 'italic', color: 'var(--destructive)' }}> - {f.problems.join(', ')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {draft.unknown.length > 0 && (
+              <div>
+                {head('var(--destructive)', `SKIPPED · NOT RECOGNISED · ${draft.unknown.length}`)}
+                {draft.unknown.map((name, i) => (
+                  <div key={i} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '3px 0' }}>{name}</div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button onClick={() => setDraft(null)} disabled={committing} style={{ ...BTN_GHOST, flex: 1, opacity: committing ? 0.5 : 1 }}>‹ Back</button>
+            <button onClick={confirm} disabled={phase !== 'idle' || !view.ready} style={{ ...BTN_GOLD, flex: 1.4, justifyContent: 'center', opacity: phase === 'idle' && view.ready ? 1 : 0.5 }}>
+              {committing ? 'Adding…' : view.ctaLabel}
+            </button>
+          </div>
+        </>
+      )}
+    </BottomSheet>
+  );
+}
+
 function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev }) {
   const [stats, setStats] = useState(null);
   const [recent, setRecent] = useState([]);
   const [deckStat, setDeckStat] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+
+  // THE TO BE CATEGORISED PILE.
+  //
+  // It lives in Overview because the pile is a standing state of the collection rather than a
+  // step in a flow. Read here and passed down, so the sheet owns no query of its own and one
+  // re-read serves both the entry row and the sheet.
+  const [pile, setPile] = useState([]);
+  const [triageOpen, setTriageOpen] = useState(false);
+  const loadPile = React.useCallback(async () => {
+    const rows = await uncategorisedRows();
+    if (!rows.length) { setPile([]); return; }
+    const ids = [...new Set(rows.map((r) => r.card_id))];
+    const sets = await cardSetsFor(ids);
+    setPile(triagePile(rows, (id) => sets.get(id) || []));
+  }, []);
+
   useEffect(() => {
     let alive = true;
     const load = async () => {
       const [s, r, decks] = await Promise.all([collectionStats(), recentlyAdded(10), listDecks()]);
       if (!alive) return;
       setStats(s); setRecent(r);
+      loadPile();
       const reports = await deckBuildabilityBulk(decks.map((d) => d.id));
       let buildable = 0; for (const rep of reports.values()) if (rep.complete && rep.totalRequired > 0) buildable++;
       if (alive) setDeckStat({ buildable, total: decks.length });
@@ -378,11 +647,11 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
             <button onClick={onGoCards} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>All cards ›</button>
           </div>
           {recent.map((c) => {
-            // Label the row with the printing you actually own (owned_slug), not
-            // sets[0] - which mislabelled every Beta (and later) reprint as Alpha.
-            const code = (!c.owned_slug || c.owned_slug === 'foil') ? '' : String(c.owned_slug).split(':')[0];
+            // One row per collector item: recentlyAdded now groups per (card, set), so the row wears
+            // its own set pill and art. The empty bucket is Uncategorised.
+            const code = c.set_code || '';
             return (
-              <LedgerRow key={c.card_id} card={c} set={code} setLabel={SET_LABEL[code] || code}
+              <LedgerRow key={`${c.card_id}|${code}`} card={c} set={code} setLabel={SET_LABEL[code] || code}
                 owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted} onPeek={onPeek} />
             );
           })}
@@ -403,6 +672,35 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
           phone at them. Typed import moved to the header overflow above. */}
       <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
         onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      {/* HONEST BUT QUIET, per the ruling: the count sits on the entry itself rather than as a
+          standing badge. A user with 300 uncategorised imports does not want a permanent 300 on
+          their home screen. An empty pile shows no row at all. */}
+      {pendingCount(pile) > 0 && (
+        <button
+          onClick={() => setTriageOpen(true)}
+          className="cx-row"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            width: '100%', marginTop: 14, padding: '13px 14px', borderRadius: 10,
+            background: 'rgba(18,16,13,.85)', border: '1px solid var(--hair-16)',
+            cursor: 'pointer', textAlign: 'left',
+          }}>
+          <span style={{ font: "500 14px/1.25 var(--f-read)", color: 'var(--ink-body)' }}>
+            To Be Categorised
+          </span>
+          <span style={{ font: "600 12px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>
+            {pendingCount(pile)}
+          </span>
+        </button>
+      )}
+
+      <TriageSheet
+        open={triageOpen}
+        pile={pile}
+        onClose={() => setTriageOpen(false)}
+        onChanged={loadPile}
+        onOpenCard={onPeek} />
+
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   );
@@ -503,7 +801,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
 
   async function loadPool() {
     const parsed = parseQuery(q);
-    // 'Unspecified' is an ownership bucket, not a printed set - keep it out of the
+    // The uncategorised bucket is an ownership state, not a printed set - keep it out of the
     // catalog pool query (it would match no card and empty the pool); grouping applies it.
     // PINNED to the drilled set. This component IS the per-set drill, so a cross-set filter
     // is not a narrowing - it is a contradiction. Selecting Alpha inside Beta used to put
@@ -927,7 +1225,7 @@ function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', 
 // edits (commits live through onStep(card, delta)), or hit Select to enter
 // multi-select - tap rows to check them, then one "Add N" bar commits them all at
 // +1. Shared by every list and the Wishlist.
-function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
+function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summarise = () => null }) {
   const [q, setQ] = useState('');
   const [pool, setPool] = useState(null);
   const [selectMode, setSelectMode] = useState(false);
@@ -950,8 +1248,14 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep }) {
     const cards = [...selected.values()];
     if (!cards.length) return;
     haptic('light');
-    for (const c of cards) onStep(c, 1);   // distinct ids; each serialises on its own chain
-    toast(`Added ${cards.length} card${cards.length === 1 ? '' : 's'}`);
+    // Count what actually happened. onStep returns a status - a reprint with no existing want
+    // is queued for the picker, not added - so the copy must not claim it. summarise() reserves
+    // "Added N" for cards that applied and reports the rest as choices still to make.
+    // No fail-open default. onStep returns a status on every path; if one ever does not,
+    // the card is simply not counted rather than silently reported as added.
+    const results = cards.map((c) => onStep(c, 1));
+    const msg = summarise(results);
+    if (msg) toast(msg);
     setSelected(new Map());
     setSelectMode(false);
   };
@@ -1149,9 +1453,12 @@ const listSetName = (card) => soleSetName(card?.sets);
 // frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
-function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek }) {
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, printing = null }) {
   const { goalMet, ownedAny } = goalRowState({ owned, target, isWanted });
-  const setName = listSetName(card);
+  // A wishlist row states the collector item it wants. `listSetName` is the old name-level
+  // fallback, which only ever showed a set when the card had exactly one - it cannot tell two
+  // wants of one card apart, which is precisely what this row now has to do.
+  const setName = printing ?? listSetName(card);
   return (
     <div
       onClick={onPeek} className="cx-row"
@@ -1242,14 +1549,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
   const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [bulkOpen, setBulkOpen] = useState(false); // paste-a-list bulk add
-  const [ownQty, setOwnQty] = useState(new Map()); // card_id -> owned qty (live)
+  const [ownQty, setOwnQty] = useState(new Map()); // keyed like the goal map: item for the Wishlist, card for lists
+  const [addPick, setAddPick] = useState([]);      // FIFO of reprints still awaiting a printing choice
   const [qty, setQty] = useState(new Map());       // card_id -> goal qty (optimistic)
   const [exportOpen, setExportOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [rename, setRename] = useState(false);
   const [missing, setMissing] = useState(null);    // report for MissingSheet
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
-  const cardIndex = useRef(new Map());             // card_id -> full card row
+  // ROW IDENTITY. The Wishlist is per COLLECTOR ITEM now, so two rows can share a card_id -
+  // an Alpha want and a Beta want are different things to display and to edit. Custom lists
+  // stay card-grain, which is correct: a list entry is about the card, not a copy of it.
+  const rowKey = (r) => (isWishlist ? (r.item_id ?? `${r.card_id}|`) : r.card_id);
+  const cardIndex = useRef(new Map());             // rowKey -> full row
   const qtyRef = useRef(new Map());                // SYNCHRONOUS mirror of `qty` - rapid taps read this, never the stale render closure
   const drainRef = useRef(null);                   // per-open-list goal drain: reconciles from the repo after writes settle
   const goalGenRef = useRef(0);                    // bumped per LOCAL goal edit; guards a slow external refresh
@@ -1257,8 +1569,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // Install an authoritative goal snapshot into the synchronous mirror + visible state
   // (used by the initial load AND the drain reconcile).
   const installGoals = (rows) => {
-    for (const c of rows) cardIndex.current.set(c.card_id, c);
-    const m = new Map(rows.map((r) => [r.card_id, r.quantity]));
+    for (const c of rows) cardIndex.current.set(rowKey(c), c);
+    const m = new Map(rows.map((r) => [rowKey(r), r.quantity]));
     qtyRef.current = m; setQty(m);
   };
   const load = async () => {
@@ -1267,7 +1579,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // regular lists from card_list_entries. Both carry `quantity` = the goal.
     const rows = isWishlist ? await wishlistCards() : await listCards(list.id);
     installGoals(rows);
-    setOwnQty(await ownedMap(rows.map((r) => r.card_id)));
+    setOwnQty(await ownershipFor(rows));
     setLoaded(true);
   };
   useEffect(() => {
@@ -1277,7 +1589,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     // open (the cancel guard), so a slow reconcile can't regress a fresh optimistic edit.
     drainRef.current = createGoalDrain({
       read: () => (isWishlist ? wishlistCards() : listCards(list.id)),
-      apply: installGoals,
+      apply: (rows) => { installGoals(rows); ownershipFor(rows).then(setOwnQty); },
       isAlive: () => !cancelled,
     });
     load();
@@ -1293,6 +1605,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       if (listRowsNeedLedgerRefresh({ isWishlist, pendingGoalWrites: drainRef.current?.pending() || 0 })) {
         const genAtStart = goalGenRef.current;
         wishlistCards().then((rows) => {
+          ownershipFor(rows).then(setOwnQty);
           // Re-check AFTER the await: a local edit may have begun while this read was in
           // flight, and applying the older snapshot would overwrite the newer optimistic state.
           if (canApplyExternalRows({ cancelled, pendingGoalWrites: drainRef.current?.pending() || 0, genAtStart, genNow: goalGenRef.current })) {
@@ -1308,47 +1621,126 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const listRows = useMemo(() => {
     const out = [];
     for (const [id, t] of qty) { if (t > 0) { const c = cardIndex.current.get(id); if (c) out.push(c); } }
-    out.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    // Name first, then printing, so a card's items sit together in a stable order rather than
+    // swapping places between renders.
+    out.sort((a, b) => (a.name || '').localeCompare(b.name || '')
+      || String(a.variant_slug || '').localeCompare(String(b.variant_slug || '')));
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
+  // What a wishlist row is FOR - the set and finish it wants. Without this the surface stores
+  // per item while showing the user nothing to tell two rows of one card apart.
+  const printingLabel = (r) => {
+    if (!r?.set) return UNCATEGORISED_LABEL;
+    return `${SET_LABEL[r.set] || r.set}${r.foil ? ' · Foil' : ''}`;
+  };
   // Persist a goal DELTA on the store-layer queue, bound to the captured profile and
-  // keyed per persisted row: the Wishlist shares the '' owned_cards row (so it commutes
-  // with the card sheet's owned/wanted edits) and a real list writes its card_list_entries
-  // row. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
+  // keyed per persisted row: a real list writes its card_list_entries row, while the Wishlist
+  // uses a CARD-level want chain, because its target row is resolved at write time and cannot
+  // be named up front. Keying it on a guessed row meant this surface and the card sheet could
+  // serialize edits to the same want on different chains. Removal is an EXPLICIT serialized clear (set-to-0), not a delta, so it wins
   // under optimistic-vs-authoritative drift.
-  const persist = (cardId, delta) => {
+  // Writes name the exact collector item the row represents, so an edit can never land on a
+  // sibling printing and never has to ask which one was meant - the row already knows.
+  const itemOf = (key) => {
+    const r = cardIndex.current.get(key);
+    return r ? { cardId: r.card_id, set: r.set, foil: !!r.foil } : { cardId: key, set: null, foil: false };
+  };
+  const persist = (key, delta) => {
     if (!delta) return Promise.resolve();
     const pid = activeProfileId();
-    return isWishlist
-      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => stepWanted(cardId, delta, pid))
-      : enqueueWrite(listRowKey(pid, list.id, cardId), () => stepListEntry(list.id, cardId, delta, pid));
+    if (!isWishlist) return enqueueWrite(listRowKey(pid, list.id, key), () => stepListEntry(list.id, key, delta, pid));
+    const { cardId, set, foil } = itemOf(key);
+    // ONE chain per card, whichever item is edited - bound through queueWantWrite so this
+    // surface cannot pick a different key from the card sheet. A row on a real set steps THAT
+    // item; an uncategorised row (a migration leftover) has no set to name, so it goes through
+    // the card-level writer, which resolves to the row that actually holds the want.
+    return queueWantWrite(pid, cardId, () => (
+      set ? stepWantedForItem(cardId, { set, foil }, delta, pid) : stepWanted(cardId, delta, pid)
+    ));
   };
-  const clearEntry = (cardId) => {
+  const clearEntry = (key) => {
     const pid = activeProfileId();
-    return isWishlist
-      ? enqueueWrite(ownedRowKey(pid, cardId, '', false), () => setWanted(cardId, 0, pid))
-      : enqueueWrite(listRowKey(pid, list.id, cardId), () => setListEntry(list.id, cardId, 0, pid));
+    if (!isWishlist) return enqueueWrite(listRowKey(pid, list.id, key), () => setListEntry(list.id, key, 0, pid));
+    const { cardId, set, foil } = itemOf(key);
+    return queueWantWrite(pid, cardId, () => (
+      set ? setWantedForItem(cardId, { set, foil }, 0, pid) : setWanted(cardId, 0, pid)
+    ));
   };
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
   // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
   // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
   // Every LOCAL goal edit bumps a generation, so an external refresh that started earlier can
   // tell on arrival that it is now stale (see canApplyExternalRows).
+  // Ownership keyed the SAME way as the goal map, or the comparison silently finds nothing.
+  //
+  // Wishlist goals are per collector item, so ownership must be too - and it must be that
+  // item's own count. Owning an Alpha copy does not satisfy a Beta want, and a non-foil copy
+  // does not satisfy a foil want: they are different collector items, which is the premise of
+  // the whole schema change. Custom lists stay card-level, where a card-level sum is right.
+  const ownershipFor = async (rows) => (
+    isWishlist
+      ? new Map(rows.map((r) => [rowKey(r), r.owned || 0]))
+      : await ownedMap(rows.map((r) => r.card_id))
+  );
+
   const applyGoal = (mutate) => { goalGenRef.current += 1; const m = new Map(qtyRef.current); mutate(m); qtyRef.current = m; setQty(m); };
   const track = (p) => drainRef.current?.track(p);
   // The in-list picker's add/step - stashes the full card row so a brand-new card
   // renders immediately, and (unlike the row stepper) a step to 0 just removes it,
   // no confirm, since you're actively curating.
-  const addStep = (card, delta) => {
-    const id = card.card_id;
-    cardIndex.current.set(id, card);
+  // ADDING RESOLVES THE COLLECTOR ITEM FIRST.
+  //
+  // It used to key optimistic state on card_id while existing Wishlist rows are keyed by item,
+  // so adding a reprint created a phantom card-keyed row and then called the card-level writer -
+  // which throws NeedsPrintingChoice when there is no want to resolve to. Resolution happens
+  // before any state is touched, so the picker opens instead of a write failing.
+  //
+  // RETURNS a status (see addPickQueue.js), so a batch caller can be honest: applied cards are
+  // counted as added, queued reprints are counted as choices, and nothing is claimed added
+  // while the user still has decisions open.
+  const addStep = (card, delta, item = null) => {
+    if (!isWishlist) {
+      const id = card.card_id;
+      cardIndex.current.set(id, card);
+      const next = Math.max(0, (qtyRef.current.get(id) || 0) + delta);
+      haptic('light');
+      applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
+      track(persist(id, delta));
+      return ADD_APPLIED;
+    }
+
+    const codes = (() => { try { return (JSON.parse(card.sets || '[]') || []).map((x) => x?.code).filter(Boolean); } catch { return []; } })();
+    let target = item;
+    if (!target) {
+      // An existing unambiguous want is the obvious target - for EITHER sign of delta. Pressing
+      // + or - on a card the user already wants one printing of steps THAT item rather than
+      // re-asking a question already answered. Reuse is by identity, not direction.
+      const sole = soleExistingItem(qtyRef.current.keys(), card.card_id);
+      if (sole) {
+        const r = cardIndex.current.get(sole);
+        if (r) target = { set: r.set, foil: !!r.foil };
+      }
+      if (!target) {
+        const t = wantTarget(codes, { set: null });
+        // QUEUE THE WHOLE OPERATION, delta included. Replaying a deferred pick with a hardcoded
+        // 1 silently changed a reviewed "add 4" into "add 1".
+        if (t.kind === 'ask') { setAddPick((q) => enqueuePick(q, { card, codes, delta })); return ADD_CHOICE_REQUIRED; }
+        if (t.kind === 'unknown') { toast('The catalog does not list a printing for this card', { tone: 'warn' }); return ADD_REFUSED; }
+        target = t.item;
+      }
+    }
+
+    const slug = target.set ? canonicalPrinting(target.set, !!target.foil) : UNCATEGORISED;
+    const id = `${card.card_id}|${slug}`;
+    cardIndex.current.set(id, { ...card, item_id: id, variant_slug: slug, set: target.set, foil: !!target.foil });
     const next = Math.max(0, (qtyRef.current.get(id) || 0) + delta);
     haptic('light');
     applyGoal((m) => { if (next <= 0) m.delete(id); else m.set(id, next); });
     track(persist(id, delta));
+    return ADD_APPLIED;
   };
   // Steppers edit the GOAL (wanted qty), never the owned count. The goal floors at
   // 1; a step past it removes the card from the list, and that always confirms.
@@ -1372,6 +1764,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   }
 
   const totals = useMemo(() => goalTotals(qty, ownQty), [qty, ownQty]);
+
+  // AddCardsSheet asks "is this card already in the list", which is a CARD question. Handing it
+  // the item-keyed goal map meant every membership check missed, so an already-wanted reprint
+  // looked absent.
+  const cardMembership = useMemo(() => {
+    if (!isWishlist) return qty;
+    const m = new Map();
+    for (const [k, v] of qty) {
+      const cardId = String(k).split('|')[0];
+      m.set(cardId, (m.get(cardId) || 0) + v);
+    }
+    return m;
+  }, [qty, isWishlist]);
 
   const openMissing = async () => setMissing(await listProgress(list.id));
   const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
@@ -1451,8 +1856,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             </button>
           </div>
           {listRows.map((c) => (
-            <ListCardRow key={c.card_id} card={c} owned={ownQty.get(c.card_id) || 0} target={targetOf(c.card_id)}
-              isWanted={showProgress} editable={editing} onStep={(d) => step(c.card_id, d)} onPeek={() => onPeek(c.card_id)} />
+            // Keyed and stepped by ROW identity, not card_id: two wishlist rows can share a
+            // card, and a card_id key would collapse them in React and send both edits to one.
+            <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
+              printing={isWishlist ? printingLabel(c) : null}
+              isWanted={showProgress} editable={editing} onStep={(d) => step(rowKey(c), d)} onPeek={() => onPeek(c.card_id)} />
           ))}
         </>
       )}
@@ -1497,19 +1905,36 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       <AddCardsSheet open={addOpen} onClose={() => setAddOpen(false)}
         title={isWishlist ? 'ADD TO WISHLIST' : 'ADD CARDS'}
         hint={isWishlist ? 'Search the library and tap + to add cards you want.' : `Search the library and tap + to add to ${meta.name}.`}
-        membership={qty} onStep={addStep} />
+        membership={cardMembership} onStep={addStep} summarise={batchAddSummary} />
 
-      <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
-        onApply={(adds) => {
-          // ADD each resolved qty onto the list in one state write; persist each as a
-          // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
-          haptic('light');
-          const m = new Map(qtyRef.current);
-          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
-          qtyRef.current = m; setQty(m);
-          const copies = adds.reduce((s, a) => s + a.qty, 0);
-          toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
-        }} />
+      {/* The picker, reached when adding a reprint the user has no existing want for. */}
+      <WantPrintingSheet
+        open={addPick.length > 0}
+        cardId={addPick[0]?.card?.card_id}
+        cardName={addPick[0]?.card?.name}
+        setCodes={addPick[0]?.codes || []}
+        onPick={(item) => { const p = headPick(addPick); setAddPick(dequeuePick); if (p) addStep(p.card, p.delta, item); }}
+        /* Skipping one card must not abandon the rest of the batch. */
+        onClose={() => setAddPick(dequeuePick)} />
+
+      {/* The wishlist paste is per collector item, so it goes through the whole-paste draft
+          (resolve reprints together, one atomic commit). A card list is card-grain and keeps the
+          simpler resolveCardList path. */}
+      {isWishlist ? (
+        <WishlistImportSheet open={bulkOpen} onClose={() => setBulkOpen(false)} onCommitted={load} />
+      ) : (
+        <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
+          onApply={(adds) => {
+            // ADD each resolved qty onto the list in one state write; persist each as a
+            // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
+            haptic('light');
+            const m = new Map(qtyRef.current);
+            for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
+            qtyRef.current = m; setQty(m);
+            const copies = adds.reduce((s, a) => s + a.qty, 0);
+            toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
+          }} />
+      )}
 
       <MissingSheet open={!!missing} report={missing} title={`Missing for ${meta.name}`}
         onOpenCard={(id) => onOpen('card', id)} onClose={() => setMissing(null)} onChanged={() => onChanged?.()} />

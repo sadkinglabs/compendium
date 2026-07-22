@@ -9,7 +9,7 @@
 //   - completion counts NON-FOIL ownership only. Foils are not chased by most collectors,
 //     so a foil-only card does NOT count toward a set's completion. (A per-set non-foil /
 //     foil / playset breakdown lives inside the set page, not here.)
-//   - the '' Unspecified ownership bucket is never a set (cards list only real sets),
+//   - the '' Uncategorised ownership bucket is never a set (cards list only real sets),
 //     so it is inherently excluded from every denominator.
 import { ownershipOf, countsTowardCompletion } from './ownership.js';
 
@@ -17,7 +17,7 @@ import { isTokenCard } from './tokens.js';
 
 // Set order is derived from the numeric set code (same rule as sets.js:setRank, inlined
 // here so this pure model has no JSON-import dependency and runs under bare `node --test`).
-// Non-numeric codes (e.g. the '' Unspecified bucket) sort last.
+// Non-numeric codes (e.g. the '' Uncategorised bucket) sort last.
 const setRank = (code) => (code && /^\d+$/.test(code) ? parseInt(code, 10) : Number.MAX_SAFE_INTEGER);
 
 /**
@@ -40,7 +40,7 @@ export function buildSetCompletion(catalogCards, ownedBySet, setCatalog) {
   };
 
   // Seed every set the catalog names, so an in-catalog set with no cards still renders.
-  // Skip the '' Unspecified ownership bucket (SET_LABEL carries it) — it is not a set.
+  // Skip the '' Uncategorised ownership bucket (SET_LABEL carries it) — it is not a set.
   for (const code of Object.keys(setCatalog || {})) { if (!code) continue; ensure(code, setCatalog[code]); }
 
   for (const card of catalogCards || []) {

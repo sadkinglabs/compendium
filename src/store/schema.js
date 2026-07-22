@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 10;
+export const SCHEMA_VERSION = 11;
 
 export const MIGRATIONS = [
   {
@@ -353,5 +353,25 @@ export const MIGRATIONS = [
     DELETE FROM dashboard_blocks WHERE type='highlights';
     DELETE FROM catalog_meta WHERE key='highlights_migrated';
     `,
+  },
+  {
+    version: 11,
+    // v11 has NO DDL. `owned_cards.variant_slug` is already TEXT NOT NULL DEFAULT '' and the
+    // unique index is already (profile_id, card_id, variant_slug); the canonical keys are just
+    // different STRING VALUES in that column, so there is no table to rebuild and no default to
+    // change. The whole of v11 is data plus code.
+    //
+    // The entry exists so SCHEMA_VERSION advances and profile exports stamp 11, which is what
+    // the import boundary reads.
+    //
+    // It was `SELECT 1;` and that BROKE BOOT ON DEVICE. exec() maps to Android's execSQL(),
+    // which refuses queries outright - "Queries cannot be performed using execSQL()". It ran
+    // fine in every test because the web backend is sql.js, whose run() accepts a SELECT
+    // happily. Migrations must contain DDL only; see schemaExec.test.mjs.
+    //
+    // So rather than hunt for a no-op that both backends tolerate, this does something real and
+    // idempotent. The index serves the two v11 reads that scan by key: canonicalisation's
+    // straggler probe (does any legacy row remain?) and the To Be Categorised pile.
+    sql: `CREATE INDEX IF NOT EXISTS idx_owned_profile_slug ON owned_cards(profile_id, variant_slug);`,
   },
 ];

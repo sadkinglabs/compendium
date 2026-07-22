@@ -6,19 +6,24 @@
 // (wishlist heart · add-to-list). No rule text; no decorative
 // glyphs but the Foil ✦. Behaviour (open/close, hardware-back, drag-to-dismiss,
 // the ledger writes) is unchanged - this is a presentational restructure.
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useReducer } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import CardArtViewer from './CardArtViewer.jsx';
 import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
 import { getCard } from '../store/codexRepository.js';
-import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey } from '../store/ownedRepository.js';
-import { enqueueWrite } from '../store/collectionWrites.js';
-import { activeProfileId } from '../store/profileRepository.js';
+import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted, queueWantWrite } from '../store/ownedRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, canonicalPrinting } from '../store/printings.js';
+import { wantTarget } from '../store/wantIntent.js';
+import { cardSheetSetReducer, initialSetState, explicitSetOf, displaySetOf } from './cardSheetSetState.js';
+import { enqueueWrite } from '../store/collectionWrites.js';
+import { activeProfileId } from '../store/profileRepository.js';
+import WantPrintingSheet from './WantPrintingSheet.jsx';
+import { toast } from '../feedback.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
 
@@ -242,7 +247,7 @@ function CardBody({ c, onPick, editable, set }) {
     return () => { alive = false; unsub(); };
   }, [c.card_id]);
 
-  // Options: the card's real sets (rank order) + an "Unspecified" segment ONLY when
+  // Options: the card's real sets (rank order) + an "Uncategorised" segment ONLY when
   // set-less copies exist (legacy adds / multi-set bulk imports the backfill leaves).
   const ranked = [...sets].sort((a, b) => (SET_RANK[a.code] ?? 4.5) - (SET_RANK[b.code] ?? 4.5));
 
@@ -258,26 +263,92 @@ function CardBody({ c, onPick, editable, set }) {
       if (((u?.owned || 0) + (u?.foil || 0)) > 0) setShowUnspec(true);
     }
   }, [ownedSets, showUnspec]);
-  const options = [...ranked.map((s) => ({ code: s.code, name: s.name })), ...(showUnspec ? [{ code: '', name: 'Unspecified' }] : [])];
+  const options = [...ranked.map((s) => ({ code: s.code, name: s.name })), ...(showUnspec ? [{ code: UNCATEGORISED_BUCKET, name: UNCATEGORISED_LABEL }] : [])];
 
   // The SELECTED set is user state, fixed once - NEVER re-derived from ownership
   // counts. (Deriving it from "the set you own the most of" made reducing one set's
   // count flip the selection to whatever set now had the most copies - a snap
   // mid-edit.) Start from the set the sheet opened on; if it opened without one
   // (Codex/search), pick a smart default ONCE when ownership first loads.
-  const [sel, setSel] = useState(set ?? null);
-  const inited = useRef(sel != null);
+  // DISPLAY and INTENT are separate state - see cardSheetSetState.js. The smart default below
+  // fills display only; writing it into intent made every automatic pick look like a choice.
+  const [setState, dispatchSet] = useReducer(cardSheetSetReducer, set, initialSetState);
+  const setSel = (code) => dispatchSet({ type: 'select', set: code });
+  const inited = useRef(false);
   useEffect(() => {
     if (inited.current || ownedSets == null) return;
     inited.current = true;
     let best = null, n = 0;
     for (const [code, v] of ownedSets) { const t = (v.owned || 0) + (v.foil || 0); if (t > n) { n = t; best = code; } }
-    setSel(best ?? ranked[0]?.code ?? '');
+    dispatchSet({ type: 'default', set: best ?? ranked[0]?.code ?? '' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownedSets]);
-  const effSet = sel ?? ranked[0]?.code ?? '';
-  const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Unspecified) is a real bucket - do NOT `|| null`
-  const wished = (qty?.wanted || 0) > 0;
+  const sel = setState.display;
+  const effSet = displaySetOf(setState, ranked[0]?.code ?? '');
+  const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
+
+  // THE HEART IS PER COLLECTOR ITEM, not per card.
+  //
+  // It used to read the card-level want total, so with Alpha wanted and Beta selected the Beta
+  // heart rendered filled - and tapping it cleared Alpha. Storage has been per collector item
+  // since v11; the UI was still asserting card-level meaning over it.
+  const setCodes = sets.map((x) => x?.code).filter(Boolean);
+  const [wantedItems, setWantedItems] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const load = () => wantedItemsForCard(c.card_id).then((m) => { if (alive) setWantedItems(m); });
+    load();
+    const unsub = subscribeCollection(load);
+    return () => { alive = false; unsub(); };
+  }, [c.card_id]);
+
+  // Non-foil is what a bare heart means (§7.4), so that is the item it reflects and toggles.
+  // An AUTOMATIC display default is not a user choice.
+  //
+  // `effSet` falls back to ranked[0] so the sheet always has art and counts to show. Treating
+  // that as context meant opening an Alpha/Beta card from a name-level surface silently made
+  // Alpha "the" printing, and the heart wrote Alpha without ever asking - the exact guess this
+  // schema change exists to remove. Only an explicit selection counts: the set the sheet was
+  // opened at, or a segment the user tapped.
+  const explicitSet = explicitSetOf(setState);
+  const heartItem = { set: effSet, foil: false };
+  const heartSlug = effSet ? canonicalPrinting(effSet, false) : null;
+  const heartWanted = heartSlug ? (wantedItems?.get(heartSlug) || 0) : 0;
+  const wished = heartWanted > 0;
+
+  const [picking, setPicking] = useState(false);
+
+  // Resolution happens BEFORE the write, never as a rescue afterwards. The optimistic
+  // controller converts a rejection into failure state, so a want that needs a choice has to be
+  // answered while the gesture is still a gesture.
+  // SHARED CHAIN. Every interactive want edit for this card - here and in the Wishlist list -
+  // queues under cardWantKey. They used to use different paths: this sheet called the writer
+  // directly while Wishlist rows enqueued, so a step that read 1 could store an absolute 2 over
+  // an atomic add that had already made it 2, and one increment vanished with both surfaces
+  // reporting success. The exact item lives INSIDE the queued operation; the key is
+  // deliberately coarser so any two edits to one card's wants serialise.
+  // pid captured at tap time and handed to the writer, so a mid-flight profile switch cannot
+  // redirect a parked edit - see queueWantWrite.
+  const queueWant = (write) => queueWantWrite(activeProfileId(), c.card_id, write);
+  const addWant = (item) => queueWant((pid) => addWantedForItem(c.card_id, item, 1, pid));
+
+  // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
+  // if migration put it there, and the item writers refuse that key by design - so clearing
+  // routes through the card-level writer, which resolves to whichever row actually holds the
+  // want instead of naming one. Removing something the user can see must always be possible.
+  const clearWant = () => queueWant((pid) => (
+    effSet && effSet !== UNCATEGORISED_BUCKET
+      ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0, pid)
+      : setWanted(c.card_id, 0, pid)
+  ));
+
+  const onHeart = async () => {
+    if (wished) return clearWant();                          // clearing never needs a choice
+    const t = wantTarget(setCodes, { set: explicitSet });
+    if (t.kind === 'item') return addWant(t.item);
+    if (t.kind === 'ask') { setPicking(true); return; }
+    toast('The catalog does not list a printing for this card', { tone: 'warn' });
+  };
 
   // Art follows the active printing (Unspecified -> the card's default art).
   const imageForSet = (code) => {
@@ -294,7 +365,7 @@ function CardBody({ c, onPick, editable, set }) {
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
-  const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === '' ? 'Unspecified' : ranked[0]?.name);
+  const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === UNCATEGORISED_BUCKET ? UNCATEGORISED_LABEL : ranked[0]?.name);
   const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
   const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
   // Meta row: rarity + type sit together (the type moved down off the header),
@@ -312,7 +383,8 @@ function CardBody({ c, onPick, editable, set }) {
           Opened from INSIDE a set (`set` given) the printing is already decided, so the sheet
           shows a plain pill instead of a chooser: you are adding to the set you are in.
           Single-set cards likewise. Only the name-level entry points (Codex, search, Overview)
-          still need to pick. Wishlist stays card-level. */}
+          still need to pick. The heart itself is per collector item - it reflects and edits
+          the printing the sheet is showing. */}
       {set == null && options.length > 1 ? (
         <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
           <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
@@ -364,8 +436,9 @@ function CardBody({ c, onPick, editable, set }) {
               <path d="M20.8 8.6c0 4.5-8.8 10.2-8.8 10.2S3.2 13.1 3.2 8.6a4.6 4.6 0 0 1 8.8-1.8 4.6 4.6 0 0 1 8.8 1.8z" />
             </svg>
           }
-          label="Wishlist" on={wished} disabled={qty === null}
-          onClick={() => step('wanted', wished ? -(qty.wanted || 0) : 1)} />
+          /* Per collector item: reflects and toggles the item the sheet is showing, not the card. */
+          label="Wishlist" on={wished} disabled={wantedItems === null}
+          onClick={onHeart} />
         <ActionButton
           icon={
             <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -374,6 +447,13 @@ function CardBody({ c, onPick, editable, set }) {
           }
           label="Add to list" onClick={onPick} />
       </div>
+      <WantPrintingSheet
+        open={picking}
+        cardId={c.card_id}
+        cardName={c.name}
+        setCodes={setCodes}
+        onPick={(item) => addWant(item)}
+        onClose={() => setPicking(false)} />
     </>
   );
 }

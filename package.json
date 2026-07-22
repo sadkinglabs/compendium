@@ -1,7 +1,7 @@
 {
   "name": "compendium",
   "version": "1.0.2-alpha",
-  "build": 139,
+  "build": 144,
   "private": true,
   "type": "module",
   "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
@@ -16,7 +16,7 @@
     "compile:codex": "node scripts/compile-codex.mjs",
     "test:codex": "node --test \"scripts/codex/**/*.test.mjs\"",
     "test:query": "node --test \"src/store/**/*.test.mjs\"",
-    "test:ui": "node --test \"src/pillars/**/*.test.mjs\"",
+    "test:ui": "node --test \"src/pillars/**/*.test.mjs\" \"src/components/**/*.test.mjs\"",
     "test:app": "node --test \"src/*.test.mjs\"",
     "check:types": "node --test scripts/check-types.test.mjs && node scripts/check-types.mjs",
     "check:cycles": "node --test scripts/check-cycles.test.mjs && node scripts/check-cycles.mjs",
@@ -54,8 +54,9 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^6.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "aws4fetch": "^1.0.20",
     "firebase-tools": "^15.23.0",
-    "sharp": "^0.32.6",
+    "sharp": "0.32.6",
     "typescript": "6.0.3",
     "vite": "^6.0.7",
     "vite-plugin-static-copy": "^2.2.0"

@@ -13,6 +13,11 @@ const apiCard = (name, slug, set, setName) => ({
   rulesText: 'Charge', variants: [{ slug, finish: 'Standard', product: 'Booster', flavorText: '', artist: { name: 'A' }, setCard: { set: { code: set, name: setName } } }],
 });
 
+// Content-addressed key for the Foo Card standard scan: <slug>.<sha256-of-output-bytes>.webp.
+// The 64-hex digest is a fixture stand-in; the real one is the sha256 of the converted webp.
+const FOO_SHA = 'a'.repeat(64);
+const FOO_KEY = `001-foo_card-b-s.${FOO_SHA}.webp`;
+
 function fixture(rulesText = 'Play a [[Foo Card]] to start.') {
   const currentArticles = [{ id: 'basics', title: 'Basics', content: rulesText, subentries: [] }];
   return {
@@ -23,15 +28,17 @@ function fixture(rulesText = 'Play a [[Foo Card]] to start.') {
     apiCards: [apiCard('Foo Card', '001-foo_card-b-s', '001', 'Alpha')],
     rulesCsvText: `title,content,subcodexes\r\n"Basics","${rulesText}",""\r\n`,
     faqCsvText: 'card name,question,answer\r\n"Foo Card","Q?","A"\r\n',
-    dropPngNames: ['001-foo_card-b-s.png'],
+    // The art manifest is built ahead of buildGeneration by the orchestrator; here a single
+    // committed standard scan, so planImages annotates the printing with its content key.
+    artManifest: { tier: { width: 745, quality: 80, format: 'webp' }, objects: { '001-foo_card-b-s': { key: FOO_KEY, sha256: FOO_SHA, md5: '0'.repeat(32), bytes: 4 } } },
   };
 }
 
 test('buildGeneration assembles cards, rules, faqs, link graph, and a recompiled codex', () => {
   const gen = buildGeneration(fixture());
   assert.deepEqual(gen.report.cards.added, ['Foo Card']);
-  assert.equal(gen.cards['Foo Card'].image, '001-foo_card-b.webp');       // per-printing art wired
-  assert.equal(gen.cards['Foo Card'].variants[0].image, '001-foo_card-b.webp');
+  assert.equal(gen.cards['Foo Card'].image, FOO_KEY);       // content-addressed per-printing art wired
+  assert.equal(gen.cards['Foo Card'].variants[0].image, FOO_KEY);
   assert.equal(gen.faqs.length, 1);
   assert.ok(gen.report.codex.docs >= 1, 'codex recompiled');
   assert.match(gen.hash, /^[0-9a-f]{64}$/);
@@ -84,6 +91,21 @@ test('the content hash is deterministic and changes only when content changes', 
   assert.notEqual(buildGeneration(fixture()).hash, buildGeneration(fixture('Different [[Foo Card]] text.')).hash);
 });
 
+const mfWith = (objects) => ({ tier: { width: 745, quality: 80, format: 'webp', recipeId: 'webp:w745:q80:v1' }, objects });
+
+test('the generation hash changes when an art key changes (a corrected scan reseeds the version)', () => {
+  const base = buildGeneration(fixture()).hash;
+  const otherSha = 'b'.repeat(64);
+  const changed = buildGeneration({ ...fixture(), artManifest: mfWith({ '001-foo_card-b-s': { key: `001-foo_card-b-s.${otherSha}.webp`, sha256: otherSha, md5: '0'.repeat(32), bytes: 4 } }) }).hash;
+  assert.notEqual(base, changed);
+});
+
+test('the generation hash is UNCHANGED by encoder-only metadata when the content key is identical', () => {
+  const plain = buildGeneration({ ...fixture(), artManifest: mfWith({ '001-foo_card-b-s': { key: FOO_KEY, sha256: FOO_SHA, md5: '0'.repeat(32), bytes: 4 } }) }).hash;
+  const richMeta = buildGeneration({ ...fixture(), artManifest: mfWith({ '001-foo_card-b-s': { key: FOO_KEY, sha256: FOO_SHA, md5: '0'.repeat(32), bytes: 4, srcSha256: 'c'.repeat(64), encoder: { sharp: '9.9.9', vips: '9.9.9' } } }) }).hash;
+  assert.equal(plain, richMeta, 'only the published slug+key identity is folded, never encoder provenance');
+});
+
 test('promote installs the staged generation (art dir + JSON + version token last)', () => {
   const gen = buildGeneration(fixture());
   const dir = mkdtempSync(join(tmpdir(), 'cat-promote-'));
@@ -92,7 +114,7 @@ test('promote installs the staged generation (art dir + JSON + version token las
   const cards = join(staging, 'cards');
   mkdirSync(cards, { recursive: true });
   writeStagingJson(gen, cat);
-  for (const webp of gen.imagePlan.manifest) writeFileSync(join(cards, webp), 'WEBP'); // stand-in for sharp output
+  for (const o of Object.values(gen.artManifest.objects)) writeFileSync(join(cards, o.key), 'WEBP'); // stand-in for sharp output
   writeFileSync(join(staging, 'catalogVersion.json'), JSON.stringify({ version: 3, hash: gen.hash }));
 
   const build = join(dir, 'out');
@@ -106,7 +128,7 @@ test('promote installs the staged generation (art dir + JSON + version token las
       { from: join(staging, 'catalogVersion.json'), to: join(build, 'src', 'store', 'catalogVersion.json') },
     ],
   });
-  assert.ok(existsSync(join(build, 'public', 'cards', '001-foo_card-b.webp')));
+  assert.ok(existsSync(join(build, 'public', 'cards', FOO_KEY)));
   assert.equal(JSON.parse(readFileSync(join(build, 'src', 'store', 'catalogVersion.json'), 'utf8')).version, 3);
   rmSync(dir, { recursive: true, force: true });
 });

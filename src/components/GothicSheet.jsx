@@ -10,12 +10,21 @@ import { useFocusTrap } from './useFocusTrap.js';   // leaf module - importing u
 import { useSheetDrag } from './useSheetDrag.js';
 import { registerBackConsumer } from '../back.js';
 
-export default function GothicSheet({ open, onClose, label = 'Dialog', children }) {
+// `dismissible` (default true) gates every soft exit - backdrop tap, drag-to-dismiss, and hardware
+// back. A sheet in the middle of a committed transaction (the wishlist import mid-write) sets it
+// false so a gesture cannot appear to cancel a write that is still going. Hardware back is still
+// CONSUMED (returns true) while locked, so it does not fall through and close the app.
+export default function GothicSheet({ open, onClose, label = 'Dialog', dismissible = true, ariaBusy, children }) {
   const trapRef = useFocusTrap(open);
-  const { handleProps, style: dragStyle } = useSheetDrag(onClose);
+  const NOOP = () => {};
+  const drag = useSheetDrag(dismissible ? onClose : NOOP);
   const closeRef = useRef(onClose); closeRef.current = onClose;
-  useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
+  const dismissRef = useRef(dismissible); dismissRef.current = dismissible;
+  const guardedClose = () => { if (dismissRef.current) closeRef.current?.(); };
+  useEffect(() => { if (open) return registerBackConsumer(() => { if (dismissRef.current) closeRef.current?.(); return true; }); }, [open]);
   if (!open) return null;
+  const handleProps = dismissible ? drag.handleProps : {};
+  const dragStyle = dismissible ? drag.style : {};
 
   const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
   // Two DELIBERATELY separate elements (mirrors the working wizard .ob-overlay/
@@ -28,11 +37,11 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', children 
   // that a single combined element re-introduces (the Refine sheet symptom).
   const tree = (
     <div
-      onClick={onClose}
+      onClick={guardedClose}
       style={{ position: 'fixed', inset: 0, background: 'var(--scrim)', zIndex: 200, animation: 'cxfade .2s ease', display: 'flex', flexDirection: 'column' }}
     >
       <div
-        ref={trapRef} role="dialog" aria-modal="true" aria-label={label}
+        ref={trapRef} role="dialog" aria-modal="true" aria-label={label} aria-busy={ariaBusy || undefined}
         onClick={(e) => e.stopPropagation()}
         style={{
           position: 'relative', marginTop: 'auto', marginBottom: 'calc(var(--kb,0px) / var(--ui-scale,1))',

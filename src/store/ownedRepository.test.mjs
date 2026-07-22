@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
-import { qtyFor, ownWantMap, recentlyAdded, backfillSingleSetOwned } from './ownedRepository.js';
+import { qtyFor, ownWantMap, recentlyAdded, setOwnedInSet } from './ownedRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'test-profile';
@@ -63,42 +63,33 @@ test('foil classification: recentlyAdded splits set foils correctly', async () =
   assert.equal(r.qty_foil, 3);
 });
 
-test('backfill: single-set Unspecified moves to its set row; total conserved; idempotent on retry', async () => {
-  card('c1', [{ code: '001', name: 'Alpha' }]);
-  own('c1', '', 3);
-  const before = totalOwned('c1');
-  assert.equal(await backfillSingleSetOwned(), 1);
-  assert.equal(rowQty('c1', '001'), 3);
-  assert.equal(rowQty('c1', ''), 0, 'Unspecified row deleted');
-  assert.equal(totalOwned('c1'), before, 'no copies gained or lost');
-  // A retry (as after an interrupted boot) must not re-add - the move is one tx, so
-  // an interruption leaves '' intact; here the successful move drained it, so retry is a no-op.
-  assert.equal(await backfillSingleSetOwned(), 0);
-  assert.equal(totalOwned('c1'), before, 'retry does not inflate');
+test('recentlyAdded splits ONE card owned across sets into ONE ROW PER PRINTING', async () => {
+  // The Apprentice Wizard defect: a card owned in Beta and Promotional collapsed into one row
+  // stamped with the last-touched pill over the wrong art. Each printing is now its own row with
+  // its own set bucket and foil sub-count; the uncategorised keys fold to the '' bucket.
+  card('aw', [{ code: '002', name: 'Beta' }, { code: '999', name: 'Promotional' }]);
+  own('aw', '002', 2);            // Beta, non-foil
+  own('aw', '999', 1);            // Promotional, non-foil
+  own('aw', '999:f', 2);         // Promotional, foil
+  own('aw', 'uncategorised', 1); // a stray uncategorised copy -> the '' bucket
+  const rows = (await recentlyAdded(20)).filter((x) => x.card_id === 'aw');
+  const bySet = new Map(rows.map((x) => [x.set_code, x]));
+  assert.deepEqual([...bySet.keys()].sort(), ['', '002', '999']);
+  assert.deepEqual({ o: bySet.get('002').qty_owned, f: bySet.get('002').qty_foil }, { o: 2, f: 0 }, 'Beta row');
+  assert.deepEqual({ o: bySet.get('999').qty_owned, f: bySet.get('999').qty_foil }, { o: 1, f: 2 }, 'Promotional row, foil as a sub-count');
+  assert.equal(bySet.get('').qty_owned, 1, 'uncategorised bucket');
+  assert.ok('variants' in rows[0], 'variants selected so the row can resolve its per-set art');
 });
 
-test('backfill: multi-set card stays in Unspecified (printing is unknowable)', async () => {
-  card('c2', [{ code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]);
-  own('c2', '', 4);
-  await backfillSingleSetOwned();
-  assert.equal(rowQty('c2', ''), 4);
-  assert.equal(rowQty('c2', '001'), 0);
-});
 
-test('backfill: preserves wishlist on the Unspecified row, drains only owned', async () => {
-  card('c3', [{ code: '001', name: 'Alpha' }]);
-  own('c3', '', 2, 5);
-  await backfillSingleSetOwned();
-  assert.equal(rowQty('c3', '001'), 2);
-  assert.equal(rowQty('c3', ''), 0, 'owned drained');
-  assert.equal(rowWanted('c3', ''), 5, 'wishlist preserved');
-});
-
-test('backfill: adds onto an existing set row instead of overwriting it', async () => {
-  card('c4', [{ code: '001', name: 'Alpha' }]);
-  own('c4', '001', 1);
-  own('c4', '', 2);
-  await backfillSingleSetOwned();
-  assert.equal(rowQty('c4', '001'), 3, '1 existing + 2 moved');
-  assert.equal(totalOwned('c4'), 3);
+test('v11 regression: emptying UNCATEGORISED owned preserves a migrated want on that row', async () => {
+  // The guard that protects this row compared against the literal '' and went dead the moment
+  // writers became canonical - vslug returns 'uncategorised' now, so every uncategorised
+  // reduction fell through to a delete that took the want with it. Migration produces exactly
+  // this row shape for an ambiguous reprint, so the loss would have landed on real data.
+  card('cU', [{ code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]);
+  own('cU', 'uncategorised', 2, 1);
+  await setOwnedInSet('cU', '', 0);
+  assert.equal(rowQty('cU', 'uncategorised'), 0, 'the copies are gone');
+  assert.equal(rowWanted('cU', 'uncategorised'), 1, 'the want survives');
 });

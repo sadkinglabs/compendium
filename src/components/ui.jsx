@@ -222,9 +222,9 @@ export { useFocusTrap };
 /* Titled bottom sheet - a thin adapter over the canonical GothicSheet chassis
    (portal, drag-to-dismiss, gold hairline, grab handle), with an optional
    centered Cinzel title. One chassis app-wide; Sheet.jsx is the same adapter. */
-export function BottomSheet({ open, title, onClose, children }) {
+export function BottomSheet({ open, title, onClose, dismissible = true, ariaBusy, children }) {
   return (
-    <GothicSheet open={open} onClose={onClose} label={title || 'Dialog'}>
+    <GothicSheet open={open} onClose={onClose} label={title || 'Dialog'} dismissible={dismissible} ariaBusy={ariaBusy}>
       {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', margin: '0 0 16px' }}>{title}</div>}
       {children}
     </GothicSheet>

@@ -92,7 +92,7 @@ test('output is sorted by numeric set code', () => {
 });
 
 test("the '' Unspecified bucket in setCatalog (SET_LABEL) is never a set plate", () => {
-  const withUnspec = { ...SET_CATALOG, '': 'Unspecified' };
+  const withUnspec = { ...SET_CATALOG, '': 'Uncategorised' };
   const rows = buildSetCompletion(CARDS, OWNED, withUnspec);
   assert.equal(rows.some((r) => r.code === ''), false, "'' must not appear as a set");
 });

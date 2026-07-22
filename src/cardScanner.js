@@ -5,7 +5,7 @@
 // drives Codex navigation. On web / in the preview it degrades to a graceful stub.
 import { registerPlugin } from '@capacitor/core';
 import { query } from './store/db.js';
-import { addOwnedCopies, addOwnedCopiesInSet, addWantedCopies } from './store/ownedRepository.js';
+import { addOwnedCopies, addOwnedCopiesInSet, addWantedForItem } from './store/ownedRepository.js';
 import { parseDeckShare } from './store/deckShare.js';
 import { importDeckShare, addScannedToDeck, copyLimit } from './store/deckRepository.js';
 import { toast } from './feedback.js';
@@ -98,7 +98,15 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
         const set = ev.set || soleSet(ev.cardId);
         if (set) await addOwnedCopiesInSet(ev.cardId, set, n);
         else await addOwnedCopies(ev.cardId, n);   // multi-set + no pick -> Unspecified
-      } else if (ev.action === 'wishlist') await addWantedCopies(ev.cardId, n);
+      } else if (ev.action === 'wishlist') {
+        // A want names its collector item. The sheet sends the chosen set (auto for a single-set
+        // card, picked for a reprint, and the button is disabled until one exists), so this
+        // never has to guess. Without a set the card is not in the catalog, and there is no
+        // honest item to want - so it counts as a failure rather than reporting success.
+        const wset = ev.set || soleSet(ev.cardId);
+        if (wset) await addWantedForItem(ev.cardId, { set: wset, foil: false }, n);
+        else failed += 1;
+      }
     } catch { failed += 1; }
   });
 

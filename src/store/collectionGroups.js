@@ -1,20 +1,21 @@
 // The Collection card grouping - pure over its inputs so it is node-testable. (A
-// pure test would have caught the "Unspecified" filter bug where the pseudo-set
+// pure test would have caught the "Uncategorised" filter bug where the pseudo-set
 // reached the catalog pool query and emptied it.)
 //
 // It groups the pool's printings by set, applies the ownership lens/chips, and
-// recovers the set-less '' owned rows into an "Unspecified" group.
+// recovers the set-less '' owned rows into an "Uncategorised" group.
 //
-// CALLER CONTRACT for the "Unspecified" set filter:
-//   - `sets` may include the pseudo-value 'Unspecified'. No printed set is ever named
+// CALLER CONTRACT for the "Uncategorised" set filter:
+//   - `sets` may include the pseudo-value UNCATEGORISED_LABEL. Import it - do NOT spell it
+//     as a literal, or a wording change breaks filtering silently. No printed set is named
 //     that, so here it ONLY gates the '' recovery.
-//   - The caller must NOT pass 'Unspecified' to the catalog pool query (getPool filters
+//   - The caller must NOT pass it to the catalog pool query (getPool filters
 //     by printed set name, so it would return an empty pool).
-//   - Whenever 'Unspecified' is selected, the caller must provide a pool that is NOT
+//   - Whenever it is selected, the caller must provide a pool that is NOT
 //     narrowed by set (other filters are fine), so the set-less owned cards - which can
 //     belong to any printed set - are present in the pool to be recovered here.
 import { ownershipOf } from './ownership.js';
-import { UNSPECIFIED_PRINTING, isUnspecified } from './printings.js';
+import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, isUncategorised } from './printings.js';
 
 export function groupCollection({
   pool, owBySet, wishSet, sets = [], viewMode = 'all',
@@ -27,9 +28,9 @@ export function groupCollection({
     x.rows.push(row);
   };
 
-  // ONE ownership test, applied identically to printed rows and to the Unspecified pile.
-  // They used to diverge - printed rows counted non-foil, Unspecified counted foil too - so
-  // {owned:0, foil:1} was "not owned" in a set and "owned" under Unspecified. See ownership.js.
+  // ONE ownership test, applied identically to printed rows and to the Uncategorised pile.
+  // They used to diverge - printed rows counted non-foil, Uncategorised counted foil too - so
+  // {owned:0, foil:1} was "not owned" in a set and "owned" under Uncategorised. See ownership.js.
   const chip = (state, isWish) => ownScope.includes(state)
     || (ownScope.includes('wishlist') && isWish);
   const matches = (state, isWish) => {
@@ -44,7 +45,7 @@ export function groupCollection({
     const isWish = wishSet.has(c.card_id);
     for (const s of (c._sets || [])) {
       if (!s.code) continue;
-      // Per-printing set filter (a real set name; 'Unspecified' never matches a printing).
+      // Per-printing set filter (a real set name; 'Uncategorised' never matches a printing).
       if (sets.length && !sets.includes(s.name)) continue;
       const oc = owBySet.get(c.card_id + '|' + s.code);
       const owned = oc?.owned || 0, foil = oc?.foil || 0;
@@ -53,29 +54,29 @@ export function groupCollection({
     }
   }
 
-  // Set-less ('' ) owned rows recovered into an "Unspecified" group. The SET gate is the only
+  // Set-less ('' ) owned rows recovered into an "Uncategorised" group. The SET gate is the only
   // special case left: they belong to no printed set, so they appear under no set filter or
-  // under the explicit "Unspecified" chip. Their OWNERSHIP is judged by the same `matches`
-  // as everything else, so a foil-only Unspecified row is foilOnly here too.
-  if (sets.length === 0 || sets.includes('Unspecified')) {
+  // under the explicit "Uncategorised" chip. Their OWNERSHIP is judged by the same `matches`
+  // as everything else, so a foil-only Uncategorised row is foilOnly here too.
+  if (sets.length === 0 || sets.includes(UNCATEGORISED_LABEL)) {
     const byId = new Map((pool || []).map((c) => [c.card_id, c]));
     for (const [k, v] of owBySet) {
       const i = k.lastIndexOf('|');
-      if (!isUnspecified(k.slice(i + 1))) continue;                  // only the unspecified bucket
+      if (!isUncategorised(k.slice(i + 1))) continue;                // only the uncategorised bucket
       const owned = v.owned || 0, foil = v.foil || 0;
       if (owned + foil === 0) continue;                             // no row to recover
       const card = byId.get(k.slice(0, i));
       if (!card) continue;
       if (!matches(ownershipOf(owned, foil), wishSet.has(card.card_id))) continue;
-      push(UNSPECIFIED_PRINTING, 'Unspecified', { card, set: UNSPECIFIED_PRINTING, owned, foil });
+      push(UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, { card, set: UNCATEGORISED_BUCKET, owned, foil });
     }
   }
   return [...g.values()].sort((a, b) => setRank(a.code) - setRank(b.code));
 }
 
-// The set list to pass to the catalog pool query: strip the 'Unspecified' pseudo-set,
+// The set list to pass to the catalog pool query: strip the uncategorised pseudo-set,
 // and when it is selected drop set narrowing entirely (other filters still apply) so the
 // set-less owned cards are present in the pool for groupCollection to recover.
 export function poolSetFilter(sets = []) {
-  return sets.includes('Unspecified') ? [] : sets;
+  return sets.includes(UNCATEGORISED_LABEL) ? [] : sets;
 }
