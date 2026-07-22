@@ -38,46 +38,61 @@ function nativeHttp() {
   return native ? (window.CapacitorHttp || window.Capacitor?.Plugins?.CapacitorHttp || null) : null;
 }
 
-const ensureParent = async (p) => {
-  const dir = p.replace(/\/[^/]+$/, '');
-  if (dir && dir !== p) { try { await Filesystem.mkdir({ path: dir, directory: DIR, recursive: true }); } catch { /* exists */ } }
-};
+/**
+ * The io adapter passed to createArtCache. Paths are Directory.Data-relative ('art/<key>', 'art-tmp/…').
+ * `fs`/`getHttp` are injectable so the download ORCHESTRATION (the real fallback decision, not a replica)
+ * is unit-tested with fakes; production uses the imported Filesystem and the window CapacitorHttp.
+ */
+export function makeArtIo({ fs = Filesystem, getHttp = nativeHttp, dir = DIR } = {}) {
+  const ensureParent = async (p) => {
+    const parent = p.replace(/\/[^/]+$/, '');
+    if (parent && parent !== p) { try { await fs.mkdir({ path: parent, directory: dir, recursive: true }); } catch { /* exists */ } }
+  };
+  const hasExactSize = async (path, bytes) => {
+    try { const s = await fs.stat({ path, directory: dir }); return (s.size || 0) === bytes; } catch { return false; }
+  };
+  const deleteIfPresent = async (path) => { try { await fs.deleteFile({ path, directory: dir }); } catch { /* gone */ } };
 
-/** The io adapter passed to createArtCache. Paths are Directory.Data-relative ('art/<key>', 'art-tmp/…'). */
-export function makeArtIo() {
   return {
     stat: async (path) => {
-      try { const s = await Filesystem.stat({ path, directory: DIR }); return { size: s.size }; }
+      try { const s = await fs.stat({ path, directory: dir }); return { size: s.size }; }
       catch { return null; }
     },
     size: async (path) => {
-      try { const s = await Filesystem.stat({ path, directory: DIR }); return s.size || 0; }
+      try { const s = await fs.stat({ path, directory: dir }); return s.size || 0; }
       catch { return 0; }
     },
-    download: async (url, path) => {
+    // Fetch `url` into `path`, returning true ONLY when the file ends at EXACTLY expectedBytes. Validation
+    // decides when to fall back: a truncated (or 404/500-body) downloadFile fails the exact-size check, so
+    // CapacitorHttp is really attempted; an HTTP non-2xx or wrong-decoded-size result is rejected, never
+    // promoted. (Codex Phase-2a Major 1.)
+    download: async (url, path, expectedBytes) => {
       await ensureParent(path);
       // Preferred: native downloadFile straight to disk.
       try {
-        await Filesystem.downloadFile({ url, path, directory: DIR });
-        const s = await Filesystem.stat({ path, directory: DIR }).catch(() => null);
-        if (s && s.size > 0) return true;
-      } catch { /* fall through to the CapacitorHttp fallback */ }
-      // Fallback: CapacitorHttp (CORS-immune on device) -> base64 -> writeFile.
-      const http = nativeHttp();
+        await fs.downloadFile({ url, path, directory: dir });
+        if (await hasExactSize(path, expectedBytes)) return true;
+      } catch { /* fall through */ }
+      await deleteIfPresent(path);   // clear a truncated/partial write before the fallback
+
+      // Fallback: CapacitorHttp (CORS-immune on device) -> base64 -> writeFile, then re-validate.
+      const http = getHttp();
       if (!http) return false;
       try {
         const res = await http.get({ url, responseType: 'blob' });   // base64 string on native
-        const data = res?.data;
-        if (typeof data !== 'string' || !data) return false;
-        await Filesystem.writeFile({ path, data, directory: DIR });
-        return true;
-      } catch { return false; }
+        if (!res || res.status < 200 || res.status >= 300) return false;   // a 404/500 body is not an image
+        if (typeof res.data !== 'string' || !res.data) return false;
+        await fs.writeFile({ path, data: res.data, directory: dir });
+        if (await hasExactSize(path, expectedBytes)) return true;
+        await deleteIfPresent(path);   // wrong decoded size: do not leave the partial behind
+        return false;
+      } catch { await deleteIfPresent(path); return false; }
     },
-    rename: async (from, to) => { await ensureParent(to); await Filesystem.rename({ from, to, directory: DIR, toDirectory: DIR }); },
-    delete: async (path) => { try { await Filesystem.deleteFile({ path, directory: DIR }); } catch { /* already gone */ } },
-    deleteTree: async (dir) => { try { await Filesystem.rmdir({ path: dir, directory: DIR, recursive: true }); } catch { /* already gone */ } },
-    list: async (dir) => {
-      try { const r = await Filesystem.readdir({ path: dir, directory: DIR }); return (r.files || []).map((f) => ({ name: f.name, size: f.size || 0 })); }
+    rename: async (from, to) => { await ensureParent(to); await fs.rename({ from, to, directory: dir, toDirectory: dir }); },
+    delete: async (path) => { await deleteIfPresent(path); },
+    deleteTree: async (path) => { try { await fs.rmdir({ path, directory: dir, recursive: true }); } catch { /* already gone */ } },
+    list: async (path) => {
+      try { const r = await fs.readdir({ path, directory: dir }); return (r.files || []).map((f) => ({ name: f.name, size: f.size || 0 })); }
       catch { return []; }
     },
   };

@@ -3,9 +3,10 @@
 // the useArtSource hook import in Phase 2b. Inert until then.
 //
 // The manifest is a MUTABLE holder filled by loadArtManifest() at boot, so the singleton can be created
-// at import time (before the manifest is fetched) and the core's later reads see the loaded entries. An
-// absent manifest (not yet shipped, or offline first-run) degrades safely: unknown keys resolve to the
-// remote candidate / bundled legacy, never a crash.
+// at import time (before the manifest is fetched) and the core's later reads see the loaded entries.
+// With an absent manifest (not yet shipped, or an offline first-run) a key has no entry, so it degrades
+// to the REMOTE candidate and then the deterministic fallback - legacy is NOT reachable without the
+// manifest's legacyKey. Once the manifest loads, the full local -> remote -> legacy -> fallback chain applies.
 import { createArtCache } from './artCache.js';
 import { makeArtIo, artConvertFileSrc, initArtIo } from './artCacheAdapter.js';
 import { isNative } from '../native.js';
@@ -19,7 +20,7 @@ export async function loadArtManifest() {
   try {
     const res = await fetch(`${BASE}catalog/art-manifest.json`);
     if (res.ok) { const m = await res.json(); if (m && m.objects) manifest.objects = m.objects; }
-  } catch { /* not shipped yet / offline: empty holder -> remote or legacy fallback, never a crash */ }
+  } catch { /* not shipped yet / offline: empty holder -> remote then deterministic fallback, never a crash */ }
   return manifest;
 }
 

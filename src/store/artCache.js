@@ -101,8 +101,15 @@ export function createArtCache(deps) {
         if (st) await withPromotionLock(() => (reqEpoch === epoch ? io.delete(`art/${key}`) : null));
         if (reqEpoch !== epoch) return staleResult(key);                 // cleared while awaiting the delete
 
+        const entry = entryOf(key);
+        if (!entry) return staleResult(key);                            // unknown key: any bad cached file is now
+                                                                        // deleted; NEVER download or promote it
+
         tmp = `art-tmp/${key}.${rand()}`;                                // unique temp in the SCRATCH sibling
-        const ok = await io.download(remoteUrl(key), tmp);
+        // Pass the expected byte count so the adapter validates the fetched bytes and DECIDES when to fall
+        // back (a truncated downloadFile must trigger CapacitorHttp, not report success). The core still
+        // re-checks validSize against the manifest - defence in depth, never trusting the boolean alone.
+        const ok = await io.download(remoteUrl(key), tmp, entry.bytes);
         const good = ok && validSize(key, await io.size(tmp));
         promoted = good && await withPromotionLock(async () => {
           if (reqEpoch !== epoch) return false;                         // THE linearization point
@@ -168,6 +175,10 @@ export function createArtCache(deps) {
     resolved.clear();
     retried.clear();
     await withPromotionLock(() => io.deleteTree('art').catch(noop));
+    // Best-effort scratch sweep: remove ordinary orphaned temps too (a stale flight that lands after
+    // this stays safe - its own finally deletes its unique temp). Not under the lock: art-tmp is never
+    // the promotion target. The pack stamp stays deferred to Phase 3.
+    await io.deleteTree('art-tmp').catch(noop);
   }
 
   /** files/bytes count art/ alone; scratchBytes reports art-tmp/ so Settings never claims "empty" while
