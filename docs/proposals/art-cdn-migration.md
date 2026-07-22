@@ -2,14 +2,15 @@
 
 ## Status and classification
 
-**Status: Draft rev 5** (2026-07-22) · Risk: **High**
+**Status: Draft rev 6** (2026-07-22) · Risk: **High**
 Owner: Claude Code / Fable (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 
-**Rev 1-3: Changes required** (progressively cleared). **Rev 4: Changes required, narrow** - Codex cleared all six rev-3 findings and flagged one final cache-integrity gap (same-key repair can't heal poisoned device caches) + two small guards; "not another architectural round." Rev 5 folds those in and is the version submitted for approval.
+**Rev 1-4: Changes required** (progressively cleared). **Rev 5: Changes required, narrow** - Codex confirmed the rev-4 findings closed, then flagged that the conflict repair was "not yet executable or retry-deterministic" (its publication-history oracle could misjudge a shallow/rebased checkout; incident-key `<n>` allocation was unspecified). Rev 6 adopts Codex's simpler fix and is the version submitted for approval. "Only the conflict-repair algorithm and stale text remained; once expressed as executable, fail-closed rules, Phase 1 can proceed."
 
-### Rev-4 disposition -> rev-5 resolutions
+### Rev-5 disposition -> rev-6 resolution
 
-- **Major - conflict repair split published vs unpublished:** a *published* content key must **never** be overwritten in place (a device may have cached a different-but-valid WebP of the exact byte count, which passes `validSize` AND decode, so it self-heals nowhere while the URL is fixed). An `unpublished` conflict (key never in a committed manifest) may re-PUT under the same key with an **executable, mandatory** edge purge + canonical-public-URL verification (purge/verify failure = run failure). A `published` conflict republishes under a **new incident key** `<slug>.<sha256>.repair-<n>.webp` + repoint + version-bump + audit + promote - the new URL invalidates Filesystem/WebView/edge together (companion A3).
+- **Major - conflict repair now NEVER overwrites any object:** a conflict (a key materialized with wrong bytes) allocates a fresh incident key by a deterministic loop - `<slug>.<sha256>.repair-<n>.webp` for the first `n` that is **absent** (PUT the correct bytes) or **already holds the correct bytes** (reuse - interrupted-run recovery); a present-but-conflicting `n` only advances, never overwrites. The catalog repoints to that new URL. This eliminates the publication-history oracle (no false-unpublished on a shallow checkout), the purge credentials, the manual-purge acknowledgement, and the canonical-URL re-verify; it converges deterministically after an interrupted run; and because correcting a conflict ALWAYS changes the URL, the poisoned-device-cache defect cannot recur (companion A3).
+- **Minor - doc contradictions** (companion "rev 3" label, the Phase-3 `art-tmp/` backup omission, the review brief still at rev 4, the same-key test) reconciled here and in the companion.
 - **Minor - post-clear download guard:** `resolve()` rechecks the epoch after the awaited wrong-size delete (before any download); the scratch temp is cleaned in a `finally`; `art-tmp/` is added to both Android backup-exclusion files (companion B3/B8).
 - **Minor - no lost mismatched-frame error:** `visibleCandidate(state, propKey)` returns **null** on a key mismatch (not the peeked memo), so a later `KEY(B)` mounts B's memo fresh and its `onError` reaches quarantine (companion B4).
 
@@ -18,8 +19,8 @@ Owner: Claude Code / Fable (lead engineer) · Reviewer: Codex (principal enginee
 - **Blocker - stale converted bytes:** the manifest predicate (`srcSha256` + `recipeId`) is the ONLY skip oracle; a failed predicate ALWAYS runs a fresh convert (unique temp -> validate -> atomic replace), so a staging file carries zero evidentiary weight and a corrected source can never reuse old bytes. The existence-based `cdn-convert.mjs` is retired; the initial migration reconverts all 3,090 (companion A4/A7).
 - **Major - pre-clear repopulation:** an epoch-mismatched in-flight request returns a NON-caching `staleResult()` (remote/null, never downloads/memoizes) instead of a recursive `resolve()`, so it cannot refill a just-cleared cache; temps move to a sibling `art-tmp/` scratch with per-flight + startup + clear-time cleanup, and `stats().scratchBytes` keeps the Settings readout honest (companion B3/B7).
 - **Major - one-frame wrong-card paint:** the reducer is genuinely pure (events carry `peeked`/`legacy`); a pure `visibleCandidate(state, propKey, peeked)` returns the old candidate ONLY when `state.key === propKey`, and the `<img>` is keyed on `artKey#gen`, so a recycled tile never shows the previous card (companion B4).
-- **Major - unrecoverable remote conflict:** upload planning classifies each object `valid`/`missing`/`conflicting` by the full key+size+ETag tuple; a `conflicting` object (present but wrong bytes) refuses with an actionable `--repair-conflicts` re-PUT + single-URL edge purge (documented as exceptional incident recovery, not normal invalidation), not an endless rerun (companion A3/A6).
-- **Minors:** Phase 5's `normalizeTransitional()` strips `legacyKey` from EVERY retained entry (companion A4); and the rev-3 doc contradictions are reconciled (this doc + a clean-rewritten review brief; the obsolete `${v.slug}.webp` key claim removed everywhere). The two architectural redesigns are specified in full in the companion **`art-cdn-rev2-architecture.md`** (kept that filename; content is rev 3 - see its finding-to-resolution table at the top); this document is updated to match.
+- **Major - unrecoverable remote conflict:** upload planning classifies each object `valid`/`missing`/`conflicting` by the full key+size+ETag tuple; a `conflicting` object (present but wrong bytes) refuses without `--repair-conflicts`, which (rev 6) allocates a new `repair-<n>` URL by a never-overwrite deterministic loop and repoints the catalog - so it converges after interruption with no purge or history oracle (companion A3/A6).
+- **Minors:** Phase 5's `normalizeTransitional()` strips `legacyKey` from EVERY retained entry (companion A4); the doc contradictions are reconciled (this doc + a clean-rewritten review brief; the obsolete `${v.slug}.webp` key claim removed everywhere). The two architectural redesigns are specified in full in the companion **`art-cdn-rev2-architecture.md`** (kept that filename; content is **rev 6** - see its finding-to-resolution table at the top); this document is updated to match.
 
 ### Rev-2 disposition -> rev-3 resolutions
 
@@ -227,11 +228,11 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
   rename**, so a truncated or wrong output never serves. **Upload planning classifies each object
   by the full key+size+ETag tuple** (rev 4): `valid` (matches -> skip), `missing` (absent -> upload),
   `conflicting` (present but wrong bytes -> refuse). A `conflicting` object is not silently skipped
-  and does not loop forever: `--repair-conflicts` repairs it, **split by whether the key was ever
-  published** (rev 5): an `unpublished` key (never in a committed manifest) re-PUTs in place with a
-  mandatory edge purge + canonical-public-URL verification; a `published` key is **never overwritten**
-  (a device could hold a same-size valid-but-wrong file that self-heals nowhere) - it republishes
-  under a new incident key `<slug>.<sha256>.repair-<n>.webp` so the URL itself changes (companion A3). Evidence is
+  and does not loop forever: `--repair-conflicts` **never overwrites any object** (rev 6) - it
+  allocates a fresh incident key `<slug>.<sha256>.repair-<n>.webp` by a deterministic loop (first `n`
+  absent -> PUT; first `n` already correct -> reuse for interrupted-run recovery; present-but-wrong ->
+  advance) and repoints `v.image` to that new URL. No purge, no publication-history oracle; converges
+  after interruption; correcting a conflict always changes the URL (companion A3). Evidence is
   the R2-documented `Content-MD5`/`ETag` (Phase-0 canary verifies `ETag == MD5` for single-part
   PUTs; signed-HEAD fallback), never a local ledger. The **publish audit** confirms every distinct
   `v.image` is a manifest key AND present remotely with matching **bytes + ETag** (one listing) and
@@ -293,7 +294,8 @@ the per-finish art of Phases 1-2 but is otherwise standalone.
   now covered); poster export works both paths. Checkpoint: **CDN-live + cached**.
 - **Phase 3 - download-all pack + backup exclusion.** Settings "Storage" block (download w/
   progress+cancel, clear cache serialized via the epoch gate, `stats()` completeness = files-vs-
-  manifest); Android `backup_rules.xml` + `data_extraction_rules.xml` excluding `art/`. Device
+  manifest); Android `backup_rules.xml` + `data_extraction_rules.xml` excluding `art/` **and
+  `art-tmp/`**. Device
   evidence: full download, restart, airplane full-app sweep; re-run skips existing; clear mid-pack;
   `adb bmgr` backup/restore confirms `art/` absent + profile data intact. Checkpoint: **pack-proven**.
 - **Phase 5 - stop bundling + doc reconciliation.** (No Phase 4 - the cache landed with activation in
@@ -334,10 +336,10 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
     creation/promotion; `--recover` re-audits remote; `--dry-run` records zero network mutations
     (injected seam); a recipe (`recipeId`) change forces reconversion while an unchanged source alone
     does not; **a valid OLD staging webp + a CHANGED source must run a fresh convert and move the key**
-    (the rev-4 blocker); a same-size **wrong-ETag object classifies `conflicting` (not skipped)**; **an `unpublished`
-    conflict repairs same-key to green while a `published` conflict refuses same-key overwrite and
-    yields a different URL + catalog version** (rev 5); **a purge failure or public-URL-verify
-    failure fails the run**; **Phase 5 strips `legacyKey` from every retained entry**
+    (the rev-4 blocker); a same-size **wrong-ETag object classifies `conflicting` (not skipped)**; **a conflict allocates a new
+    `repair-<n>` URL and NEVER overwrites; an interrupted repair converges** (a `repair-1` already
+    holding the correct bytes is reused, not overwritten, and does not skip to `repair-2`) (rev 6);
+    **Phase 5 strips `legacyKey` from every retained entry**
     (legacyKey manifest + empty bundled dir -> zero legacy fields); per-finish standard/foil/rainbow,
     foil-only, missing-scan fallback, reverse exclusion, unmatched scans, historical incremental art.
   - *Cache boundary (Phase 2/3, `test:query`/`test:ui` over the pure `artCache` core + fake `io`):*
@@ -437,5 +439,8 @@ of this proposal is taken to include that dependency.
   cleared. 1 major (same-key repair can't heal poisoned device caches) + 2 minors (post-clear
   download guard, lost mismatched-frame error). "Not another architectural round; after this the
   design is approvable."
-- **Rev 5** - Reviewer disposition: *pending re-review* (expected approvable). Owner has authorized
-  proceeding to Phase-1 implementation once rev 5 is in. Human decision: - · Date: -
+- **Rev 5** - Reviewer disposition: **Changes required, narrow** (2026-07-22), rev-4 findings closed;
+  conflict repair "not yet executable or retry-deterministic" (history oracle + unspecified `<n>`).
+- **Rev 6** - Reviewer disposition: *pending re-review* (expected approvable). Conflict repair now a
+  never-overwrite deterministic `repair-<n>` loop. Owner authorized Phase-1 implementation. Human
+  decision: - · Date: -
