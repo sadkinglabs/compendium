@@ -1,7 +1,7 @@
-# Art CDN architecture redesigns - rev 4
+# Art CDN architecture redesigns - rev 5
 
 Companion to `docs/proposals/art-cdn-migration.md`. (Filename kept as
-`art-cdn-rev2-architecture.md` because the main proposal links it; the content is rev 4.)
+`art-cdn-rev2-architecture.md` because the main proposal links it; the content is rev 5.)
 This document is design only - no production code exists for either piece.
 
 - **Section A** resolves the rev-1 **Blocker**: mutable slugs under an immutable cache header
@@ -9,6 +9,26 @@ This document is design only - no production code exists for either piece.
 - **Section B** resolves the rev-1 **Major** (and the zero-image **Minor**): a partial cache
   boundary that double-fetches, races, and leaves ~14 render sites remote-only. Redesign: one
   shared `artCache` / `useArtSource` / `ArtImage` boundary for every card-art pixel in the app.
+
+**Rev 5 (2026-07-22).** Codex cleared the six rev-3 findings and flagged one final integrity gap
+plus two guards (disposition: Changes required, narrow):
+- **Major - same-key repair can't heal poisoned device caches.** A *published* key might be
+  serving a different-but-valid WebP of the exact expected byte count, which passes both `validSize`
+  and decode, so a device that cached it never self-heals while the URL is fixed. Conflict repair now
+  splits **`unpublished`** (key never in a committed manifest -> same-key re-PUT allowed, with an
+  **executable, mandatory** edge purge + canonical-public-URL verification, purge/verify failure =
+  run failure) vs **`published`** (key in any committed manifest -> **never overwrite**; republish
+  correct bytes under a new incident key `<slug>.<sha256>.repair-<n>.webp`, repoint + version-bump +
+  audit + promote, so the NEW URL invalidates Filesystem + WebView + edge together). Manifest validator
+  allows the `.repair-<n>` segment + records `incidentOf`. (Section A3.)
+- **Minor - a stale flight could still start a post-clear download.** `resolve()` now rechecks the
+  epoch *after* the awaited wrong-size delete (before any download), and the scratch temp is cleaned
+  in a `finally` so an exception can't leak it; `art-tmp/` is added to both Android backup rules.
+  (B3/B8.)
+- **Minor - a mismatched-frame image error could be lost.** `visibleCandidate(state, propKey)`
+  returns **null** on a key mismatch (not the peeked memo), so the deterministic fallback shows for
+  at most one frame and the later `KEY(B)` mounts B's memo fresh - its `onError` reaches quarantine.
+  (B4.)
 
 **Rev 4 (2026-07-22).** Codex re-reviewed rev 3: all ten prior resolutions **cleared** and
 the direction **approved**, with one new Blocker, three Majors, and one Minor - each a defect
@@ -226,21 +246,35 @@ planUpload(manifest, remote):                  # remote: Map key -> { size, etag
   return plan
 ```
 
-- A non-empty `plan.conflicts` **refuses the run**, printing each conflict (key, expected
-  `bytes`/`md5`, found size/ETag), unless `--repair-conflicts` is passed. The repair:
-  **re-PUT the correct local bytes under the SAME key** (with `Content-MD5`, so R2 rejects
-  another bad body), **purge exactly that URL from the Cloudflare edge cache** (single-URL
-  purge, never a zone flush), re-list, and re-audit. The promote still refuses until the
-  audit is green - the repair is a path to green, not a bypass.
+A non-empty `plan.conflicts` **refuses the run** (printing key, expected `bytes`/`md5`, found
+size/ETag) unless `--repair-conflicts` is passed. Repair depends on whether the key was ever
+**published** (rev 5, per Codex - a same-key re-PUT cannot heal already-poisoned device caches):
+
+- **`unpublished` conflict** - the key is absent from every committed/published manifest (current
+  and historical): a fresh key that took a bad write before it was ever referenced. No device can
+  hold it, so a **same-key re-PUT is allowed**: PUT the correct bytes under the same key (with
+  `Content-MD5`), **purge exactly that one edge URL**, then **verify the canonical PUBLIC URL**
+  (`GET cdn.sadkinglabs.com/<key>` returns the expected `ETag`/bytes), not merely the R2 listing.
+  The edge purge is **executable and mandatory**: it uses `CLOUDFLARE_ZONE_ID` + a least-privilege
+  Cache-Purge API token (in `.env.r2`), or the run requires an explicit `--manual-purge-done`
+  acknowledgement of a dashboard purge. **A purge failure or a public-URL mismatch fails the run** -
+  the listing being green is not sufficient, because R2 documents that overwriting an object leaves
+  the old edge bytes served until eviction or purge.
+- **`published` conflict** - the key appears in the current OR any historical committed manifest.
+  It **must never be overwritten or reused**: a device may have cached a *different but valid* WebP
+  of the exact expected byte count, which passes both `validSize` (size matches) and decode
+  quarantine (it decodes), so it would self-heal *nowhere* while the URL stays fixed. Instead,
+  publish the correct bytes under a **new incident-versioned key** `<slug>.<sha256>.repair-<n>.webp`
+  (still content-addressed - the key still names those exact bytes), repoint the catalog `v.image`,
+  bump the content version, audit, and promote. The **new URL** invalidates the Filesystem cache,
+  the WebView cache, and the edge together, with no per-device action. The manifest key validator
+  is extended to allow the exceptional `.repair-<n>` segment and records an `incidentOf` note (the
+  key it replaces) so the history is auditable.
 - **Overwriting a content-addressed key is exceptional incident recovery, never routine
-  invalidation.** The immutable-header promise (A6) concerns corrected *content*, which is
-  always a NEW key. A conflict means the store materialized a key whose bytes are not the
-  bytes the key names - a corrupted write under the right key, which R2's own `Content-MD5`
-  enforcement should normally prevent, so this state is rare-to-never by construction. The
-  single-URL purge exists because edge caches may have absorbed the bad bytes before repair.
-- Devices that cached the corrupt object need no action: a wrong-size copy fails `validSize`
-  and is quarantined (B3); a same-size corruption fails decode and hits the quarantine path
-  (B3). Repair is entirely build-side.
+  invalidation** (A6). A conflict means the store materialized a key whose bytes are not the bytes
+  the key names - which R2's `Content-MD5` enforcement should normally prevent, so this state is
+  rare by construction. The distinction above is the difference between "no one has this yet"
+  (repair in place) and "someone might" (new identity).
 
 ### A4. Pipeline restructure (stage order and pseudocode)
 
@@ -584,6 +618,8 @@ resolve(key):
                                                        # a post-clear request never joins an
                                                        # obsolete promise
   reqEpoch = epoch                                     # captured BEFORE the first await
+  let tmp = null, promoted = false                     # rev 5: hoisted to resolve()'s scope so
+                                                       # the .finally() can clean the scratch temp
   ent = { epoch: reqEpoch, promise: null }
   ent.promise = (async () => {
     try:
@@ -596,6 +632,11 @@ resolve(key):
         resolved.set(key, out); return out             # reached only with epoch intact
       if (st) await withPromotionLock(() =>            # wrong-size file: delete under the
         reqEpoch === epoch ? io.delete(`art/${key}`) : null)   # lock, epoch re-checked
+      if (reqEpoch !== epoch) return staleResult(key)  # rev 5, Codex minor: cleared WHILE
+                                                       # awaiting the locked delete -> the delete
+                                                       # no-op'd; do NOT start a download. Recheck
+                                                       # the epoch after EVERY awaited pre-download
+                                                       # step, not just at the promote.
       tmp = `art-tmp/${key}.${rand()}`                 # unique temp per attempt, in the
                                                        # SCRATCH sibling - NEVER under art/
                                                        # (B7): deleteTree('art') is final
@@ -608,9 +649,9 @@ resolve(key):
         return true                                    # step with respect to clear()
       })
       if (!promoted):
-        await io.delete(tmp).catch(noop)               # the flight cleans its OWN temp -
-                                                       # failed download and stale epoch alike
-        return staleResult(key)                        # NON-CACHING, both cases. For a plain
+        return staleResult(key)                        # NON-CACHING (the .finally cleans tmp
+                                                       # for every exit, exception included).
+                                                       # For a plain
                                                        # download failure this is the rev-3
                                                        # remote last resort (the WebView HTTP
                                                        # cache may hold it; nothing cached,
@@ -624,7 +665,10 @@ resolve(key):
       return staleResult(key)                          # adapter failure caught INSIDE: the
                                                        # Promise contract never unhandled-
                                                        # rejects; same non-caching degrade
-  })().finally(() => {
+  })().finally(async () => {
+    if (tmp && !promoted) await io.delete(tmp).catch(noop)  # rev 5: temp cleanup in FINALLY, so
+                                                            # an exception from download/size/
+                                                            # promote can't leak a scratch temp
     if (inflight.get(key) === ent) inflight.delete(key)  # delete only OUR entry - an old
   })                                                     # promise's finally cannot evict a
   inflight.set(key, ent); return ent.promise             # newer request's entry
@@ -756,14 +800,19 @@ reduce(state, ev):        # GENUINELY pure (rev 4, per Codex Major 2): artSource
                                     : { phase:'broken' }
     cand.kind == 'legacy' -> { phase:'broken' }
 
-# The no-stale-paint selector (rev 4, per Codex Major 2) - pure and total. React runs
-# effects AFTER the render that observes a changed prop, so on the first commit after a
-# recycled tile flips A -> B the reducer state still describes A; painting state.cand on
-# that frame shows the PREVIOUS card for one frame. On a key mismatch the selector returns
-# the NEW key's memo (flash-free when cached) or null (the fallback paints) - NEVER the old
-# candidate. A's art is unreachable by construction.
-visibleCandidate(state, propKey, peeked):
-  return state.key === propKey ? state.cand : (peeked ?? null)
+# The no-stale-paint selector (rev 4/5, per Codex Major 2 + rev-5 minor) - pure and total.
+# React runs effects AFTER the render that observes a changed prop, so on the first commit
+# after a recycled tile flips A -> B the reducer state still describes A; painting state.cand
+# on that frame shows the PREVIOUS card. On a key mismatch the selector returns NULL - not the
+# new key's peeked memo - for two reasons: A's art is unreachable (no stale paint), AND a
+# mismatched-frame IMG_ERROR can never be lost. If the selector returned B's peeked memo while
+# reducer state was still A, an error on it would be dropped, and the later KEY(B) would leave
+# the <img> key at B#0 so React need not remount and the browser need not re-emit the error -
+# a corrupt cached B could stay broken without quarantining. Returning null shows the
+# deterministic fallback for at most ONE frame; KEY(B) then mounts B's memo fresh (reducer
+# bound to B), and its onError reaches the quarantine path.
+visibleCandidate(state, propKey):
+  return state.key === propKey ? state.cand : null
 ```
 
 **Hook** (for bespoke markup: `CardArtViewer`'s rotated layout, `SiteArt`, `LifeCounter` -
@@ -782,7 +831,7 @@ export function useArtSource(key) {
     if (st.phase === 'quarantining')
       artCache.quarantine(st.key).then((cand) => dispatch({ type: 'RESOLVED', key: st.key, cand }));
   }, [st.key, st.phase, st.gen]);
-  const cand = visibleCandidate(st, key, artCache.peek(key));  // pure - the one-frame guard
+  const cand = visibleCandidate(st, key);           // pure - null on key mismatch (rev 5)
   const onError = useCallback(
     () => dispatch({ type: 'IMG_ERROR', key, legacy: artCache.legacySrc(key) }), [key]);
   return { src: cand?.src ?? null, gen: st.gen, onError };
@@ -984,6 +1033,7 @@ New `android/app/src/main/res/xml/backup_rules.xml` (API <= 30 path):
 ```xml
 <full-backup-content>
     <exclude domain="file" path="art/" />
+    <exclude domain="file" path="art-tmp/" />   <!-- rev 5: scratch temps too -->
 </full-backup-content>
 ```
 
@@ -991,8 +1041,8 @@ New `android/app/src/main/res/xml/data_extraction_rules.xml` (API 31+):
 
 ```xml
 <data-extraction-rules>
-    <cloud-backup>     <exclude domain="file" path="art/" /> </cloud-backup>
-    <device-transfer>  <exclude domain="file" path="art/" /> </device-transfer>
+    <cloud-backup>     <exclude domain="file" path="art/" /> <exclude domain="file" path="art-tmp/" /> </cloud-backup>
+    <device-transfer>  <exclude domain="file" path="art/" /> <exclude domain="file" path="art-tmp/" /> </device-transfer>
 </data-extraction-rules>
 ```
 
@@ -1048,14 +1098,18 @@ generation-guard test; that guard is now a reducer transition - testable without
    to `broken` - legacy is consulted nowhere else. **Purity is structural (rev 4, Major 2):
    `artSource.js` has no imports at all**, so the tests construct every event by hand -
    there is nothing to mock and nothing to stub.
-3. **No-stale-paint tests** (rev 4, Major 2):
-   - **selector**: with state `shown` for key A, `visibleCandidate(state, 'B', peekedB)`
-     returns B's memo, and with a null peek returns null - A's candidate is unreachable on
-     a mismatched frame, proven by exhaustive case over the state shapes;
+3. **No-stale-paint + no-lost-error tests** (rev 4 Major 2 + rev-5 minor):
+   - **selector**: with state `shown` for key A, `visibleCandidate(state, 'B')` returns
+     **null** (not B's memo) - A's candidate is unreachable on a mismatched frame, proven by
+     exhaustive case over the state shapes;
+   - **mismatched-frame error is not lost**: sequence A shown -> prop B (with a corrupt cached
+     B memo) -> the mismatched frame paints the fallback (selector null, no error emitted) ->
+     `KEY(B)` mounts B's memo fresh -> its `IMG_ERROR` reaches `quarantining`; assert the
+     quarantine ran (the `CardArt.jsx:11`-adjacent lost-error hole is pinned);
    - **commit-order sequence (the production-wiring test at the hook boundary)**: a
      `node --test` harness replays React's documented ordering over the exported pure
      pieces - `initial(A)` -> `RESOLVED(A)` shown -> the prop flips to B -> the pre-effect
-     frame calls `visibleCandidate(stateA, 'B', peek)` -> `KEY(B, peeked)` dispatches -> the
+     frame calls `visibleCandidate(stateA, 'B')` -> `KEY(B, peeked)` dispatches -> the
      post-effect frame - asserting NO frame ever outputs A's src. This stands in for a DOM
      harness because `useArtSource` is a zero-logic shell (B4): it contains exactly these
      calls in exactly this order, so the sequence test plus the recycled-list device check

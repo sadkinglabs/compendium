@@ -2,10 +2,16 @@
 
 ## Status and classification
 
-**Status: Draft rev 4** (2026-07-22) · Risk: **High**
+**Status: Draft rev 5** (2026-07-22) · Risk: **High**
 Owner: Claude Code / Fable (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 
-**Rev 1: Changes required** (blocker + 3 majors). **Rev 2: Changes required, direction approved** (4 majors + 3 minors). **Rev 3: Changes required** - Codex cleared all ten prior resolutions and approved the direction, then found 1 new blocker + 3 majors + 2 minors inside the rev-3 machinery. Rev 4 resolves those.
+**Rev 1-3: Changes required** (progressively cleared). **Rev 4: Changes required, narrow** - Codex cleared all six rev-3 findings and flagged one final cache-integrity gap (same-key repair can't heal poisoned device caches) + two small guards; "not another architectural round." Rev 5 folds those in and is the version submitted for approval.
+
+### Rev-4 disposition -> rev-5 resolutions
+
+- **Major - conflict repair split published vs unpublished:** a *published* content key must **never** be overwritten in place (a device may have cached a different-but-valid WebP of the exact byte count, which passes `validSize` AND decode, so it self-heals nowhere while the URL is fixed). An `unpublished` conflict (key never in a committed manifest) may re-PUT under the same key with an **executable, mandatory** edge purge + canonical-public-URL verification (purge/verify failure = run failure). A `published` conflict republishes under a **new incident key** `<slug>.<sha256>.repair-<n>.webp` + repoint + version-bump + audit + promote - the new URL invalidates Filesystem/WebView/edge together (companion A3).
+- **Minor - post-clear download guard:** `resolve()` rechecks the epoch after the awaited wrong-size delete (before any download); the scratch temp is cleaned in a `finally`; `art-tmp/` is added to both Android backup-exclusion files (companion B3/B8).
+- **Minor - no lost mismatched-frame error:** `visibleCandidate(state, propKey)` returns **null** on a key mismatch (not the peeked memo), so a later `KEY(B)` mounts B's memo fresh and its `onError` reaches quarantine (companion B4).
 
 ### Rev-3 disposition -> rev-4 resolutions
 
@@ -221,8 +227,11 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
   rename**, so a truncated or wrong output never serves. **Upload planning classifies each object
   by the full key+size+ETag tuple** (rev 4): `valid` (matches -> skip), `missing` (absent -> upload),
   `conflicting` (present but wrong bytes -> refuse). A `conflicting` object is not silently skipped
-  and does not loop forever: `--repair-conflicts` re-PUTs the correct bytes and purges that single
-  URL (documented as exceptional incident recovery, not normal invalidation - see A6). Evidence is
+  and does not loop forever: `--repair-conflicts` repairs it, **split by whether the key was ever
+  published** (rev 5): an `unpublished` key (never in a committed manifest) re-PUTs in place with a
+  mandatory edge purge + canonical-public-URL verification; a `published` key is **never overwritten**
+  (a device could hold a same-size valid-but-wrong file that self-heals nowhere) - it republishes
+  under a new incident key `<slug>.<sha256>.repair-<n>.webp` so the URL itself changes (companion A3). Evidence is
   the R2-documented `Content-MD5`/`ETag` (Phase-0 canary verifies `ETag == MD5` for single-part
   PUTs; signed-HEAD fallback), never a local ledger. The **publish audit** confirms every distinct
   `v.image` is a manifest key AND present remotely with matching **bytes + ETag** (one listing) and
@@ -325,18 +334,22 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
     creation/promotion; `--recover` re-audits remote; `--dry-run` records zero network mutations
     (injected seam); a recipe (`recipeId`) change forces reconversion while an unchanged source alone
     does not; **a valid OLD staging webp + a CHANGED source must run a fresh convert and move the key**
-    (the rev-4 blocker); a same-size **wrong-ETag object classifies `conflicting` (not skipped) and
-    `--repair-conflicts` re-PUTs to green**; **Phase 5 strips `legacyKey` from every retained entry**
+    (the rev-4 blocker); a same-size **wrong-ETag object classifies `conflicting` (not skipped)**; **an `unpublished`
+    conflict repairs same-key to green while a `published` conflict refuses same-key overwrite and
+    yields a different URL + catalog version** (rev 5); **a purge failure or public-URL-verify
+    failure fails the run**; **Phase 5 strips `legacyKey` from every retained entry**
     (legacyKey manifest + empty bundled dir -> zero legacy fields); per-finish standard/foil/rainbow,
     foil-only, missing-scan fallback, reverse exclusion, unmatched scans, historical incremental art.
   - *Cache boundary (Phase 2/3, `test:query`/`test:ui` over the pure `artCache` core + fake `io`):*
     one native request for multiple simultaneous consumers (single-flight); a stale component
     resolution cannot win (generation guard); **`visibleCandidate` never returns card A's art on card
-    B's frame** (default-A -> prop-B-before-effect); a corrupt cached file is evicted and recovered
-    once, then falls back; zero-image mode performs zero art network/filesystem writes; **an in-flight
-    pre-`clear()` request returns a non-caching `staleResult` and does NOT repopulate** (cache stays
-    empty with no later resolve), while a NEW post-clear resolve refills; no scratch temp survives
-    `clear()`; a 404 is never cached; `stats()` completeness reflects files-vs-manifest even when the
+    B's frame** (default-A -> prop-B-before-effect), and a **mismatched-frame `IMG_ERROR` still
+    reaches quarantine** after `KEY(B)` remounts (rev 5); a corrupt cached file is evicted and
+    recovered once, then falls back; zero-image mode performs zero art network/filesystem writes;
+    **an in-flight pre-`clear()` request returns a non-caching `staleResult` and does NOT repopulate**
+    (cache stays empty with no later resolve), including a **`clear()` landing during the awaited
+    wrong-size delete** (no download starts), while a NEW post-clear resolve refills; no scratch temp
+    survives `clear()` or an exception (temp cleaned in `finally`); a 404 is never cached; `stats()` completeness reflects files-vs-manifest even when the
     stamp claims done; the extended seam-guard (`printingRows.test.mjs:242` slug contract still green;
     no `${BASE}cards/` and no `artUrl`/`cardImageUrl` outside the boundary in `src/**`).
   - *Offline boundary:* the executable candidate chain reaches `bundledLegacy` at the Phase-2
@@ -420,4 +433,9 @@ of this proposal is taken to include that dependency.
 - **Rev 3** - Reviewer disposition: **Changes required** (2026-07-22), ten prior resolutions cleared,
   direction approved. 1 blocker (stale converted bytes) + 3 majors (pre-clear repopulation, one-frame
   paint, unrecoverable conflict) + 2 minors (Phase-5 legacyKey, doc contradictions).
-- **Rev 4** - Reviewer disposition: *pending re-review*. Required revisions: - · Human decision: - · Date: -
+- **Rev 4** - Reviewer disposition: **Changes required, narrow** (2026-07-22), six rev-3 findings
+  cleared. 1 major (same-key repair can't heal poisoned device caches) + 2 minors (post-clear
+  download guard, lost mismatched-frame error). "Not another architectural round; after this the
+  design is approvable."
+- **Rev 5** - Reviewer disposition: *pending re-review* (expected approvable). Owner has authorized
+  proceeding to Phase-1 implementation once rev 5 is in. Human decision: - · Date: -
