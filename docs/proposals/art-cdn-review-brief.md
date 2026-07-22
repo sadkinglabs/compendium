@@ -3,7 +3,33 @@
 **Branch:** `art-cdn`. **Still a proposal, no production app code.** Rev 1 disposition was Changes
 required (Blocker + 3 Majors + Minors); rev 2 resolves all of them.
 
-## Rev 2 - how each rev-1 finding is resolved
+## Rev 3 - how each rev-2 finding is resolved
+
+Rev 2 was **Changes required, direction approved** (4 implementation majors + 3 minors). Rev 3 fixes
+all, in the companion `art-cdn-rev2-architecture.md` (now rev 3; see its finding-to-resolution table)
+and reconciled in `art-cdn-migration.md` (the "Rev-2 disposition -> rev-3 resolutions" block):
+
+- **Legacy fallback executable** - build-side `legacyKey` + candidate chain
+  `local -> remote -> bundledLegacy -> deterministicFallback`, shared by `ArtImage` + `deckPoster`,
+  deleted in Phase 5 (companion B3.5/A3).
+- **`clear()` linearized** - promotion lock around every `art/` write (never the download), epoch
+  before first await + re-checked in the lock, `{epoch,promise}` inflight, non-rejecting `resolve()`,
+  retry-generation rerender (B3/B7).
+- **R2-documented integrity** - `Content-MD5` + `ETag`, Phase-0 `ETag==MD5` canary, audit by
+  key+bytes+ETag, signed-HEAD fallback (A3).
+- **Recipe-aware reuse** - `recipeId` + encoder provenance; skip only on `srcSha256` AND `recipeId`;
+  `--approve-rekey`; `sharp` pinned (A2-A4).
+- **Minors** - full 64-hex key (prefix machinery deleted); seam inventory adds `LifeCounter` +
+  `CollectionCardSheet` `SiteArt`; `validSize()` fail-closed; pure reducer, no RTL.
+
+**Attack rev 3 at:** the Phase-0 `ETag==MD5` canary assumption (does single-part R2 PUT ETag really
+equal the MD5?); the promotion-lock linearization (any write path into `art/` not under the lock; the
+retry-generation rerender when the URI is identical); the candidate-chain offline-upgrade behavior +
+its deletion in Phase 5; and whether the recipe/encoder policy actually prevents a silent mislabel.
+
+---
+
+## Rev 2 - how each rev-1 finding is resolved (superseded by rev 3 above)
 
 Read the **"Response to the rev-1 disposition" table** at the top of `art-cdn-migration.md`, then the
 **companion `art-cdn-rev2-architecture.md`** (Section A content-addressed identity, Section B the
@@ -42,9 +68,9 @@ would for a §8 proposal.
 
 ```
 git fetch origin
-git diff c787585..art-cdn          # tooling + proposal + rev-2 companion; no src/** app code
+git diff c787585..art-cdn          # tooling + proposal + companion; no src/** app code
 git log --oneline c787585..art-cdn
-# rev-2 delta only:  git diff 69f5b4b..art-cdn
+# rev-3 delta only:  git diff 0338670..art-cdn
 ```
 
 ## Context already VERIFIED (please don't re-litigate; challenge if you think a check was wrong)
