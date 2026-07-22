@@ -207,6 +207,17 @@ non-foil and Beta foil are four distinct items for a card printed in both sets. 
 `variants[]` may hold several art or product records inside one set; those are NOT additional
 ownership identities.
 
+**Finish is binary, but the catalog has three finish labels.** `variants[].finish` is one of
+`Standard`, `Foil`, or `Rainbow`. Rainbow appears only in the Promotional set (999) and is a
+flavour of foil, so it normalises into the binary the ledger stores: `Standard` -> non-foil,
+`Foil` or `Rainbow` -> foil (`normalizeFinishLabel` in `src/store/printingRows.js`). The
+normaliser is exhaustive and fail-closed - an unknown label throws, and a catalog-contract test
+fails the build if a fourth label ever appears. Consequence: a printing that carries both a
+regular Foil and a Rainbow variant (4 promo cards - Druid, Witch, Sorcerer, Spellslinger)
+collapses into ONE foil collector item; the 17 Rainbow-only promos become foil-only items,
+handled like any foil-only printing. Rainbow is catalog metadata only and is never stored, so
+this involves no migration.
+
 `owned_cards.variant_slug` stores that identity, and a card's copies are spread across one row
 per item it is owned or wanted on. The `UNIQUE(profile_id, card_id, variant_slug)` constraint and
 every `ON CONFLICT` upsert key on that triple.
