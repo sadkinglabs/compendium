@@ -1,106 +1,139 @@
 // The content-addressed art manifest engine (scripts/catalog/artManifest.mjs).
-// Real hashing (node:crypto), faked conversion/source-hash/bundle so the skip predicate and the
-// fresh-convert contract are provable without sharp or disk. Run: npm run test:catalog
+// Real hashing (node:crypto), faked/ASYNC conversion so the skip predicate and the fresh-convert
+// contract are provable without sharp or disk. Run: npm run test:catalog
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { buildArtManifest, normalizeTransitional, assertManifestShape, RECIPE_ID, artKey } from './artManifest.mjs';
+import {
+  buildArtManifest, normalizeTransitional, assertManifest, contentMd5, RECIPE_ID, TIER, artKey,
+} from './artManifest.mjs';
 
-// Fake deps. convertFresh returns bytes derived from a per-path "content" token, so a changed source
-// yields different output bytes (and thus a different digest/key). Every convert is recorded.
-function deps({ srcHashes = {}, contents = {}, bundled = new Set() } = {}) {
+const sha = (s) => createHash('sha256').update(s).digest('hex');   // 64 hex
+const md5 = (s) => createHash('md5').update(s).digest('hex');      // 32 hex
+
+// Fake deps. hashFile/convertFresh/hashBytes are ASYNC (return promises), matching sharp's real API.
+// convertFresh returns bytes derived from a per-path token, so a changed source yields new bytes
+// (and a new digest/key). Every convert is recorded.
+function deps({ srcHashes = {}, contents = {}, bundled = new Set(), slow = false } = {}) {
   const converted = [];
+  const tick = (v) => (slow ? new Promise((r) => setTimeout(() => r(v), 0)) : Promise.resolve(v));
   return {
     converted,
-    hashFile: (p) => srcHashes[p] ?? `srch-${p}`,
-    convertFresh: (p) => { converted.push(p); return Buffer.from(contents[p] ?? `webp-bytes-for-${p}`); },
-    hashBytes: (buf) => ({ sha256: createHash('sha256').update(buf).digest('hex'), md5: createHash('md5').update(buf).digest('base64') }),
+    hashFile: (p) => tick(srcHashes[p] ?? `srch-${p}`),
+    convertFresh: (p) => { converted.push(p); return tick(Buffer.from(contents[p] ?? `webp-bytes-for-${p}`)); },
+    hashBytes: (buf) => tick({ sha256: sha(buf), md5: md5(buf) }),   // HEX md5 (rev 6)
     bundledExists: (name) => bundled.has(name),
     encoder: { sharp: '0.32.6', vips: '8.14.5' },
   };
 }
 const slugs = (obj) => new Map(Object.entries(obj));
+// A complete, valid entry for assertManifest tests.
+const entry = (slug, over = {}) => {
+  const s = sha(slug);
+  return { key: artKey(slug, s), sha256: s, md5: md5(slug), bytes: 100, srcSha256: `src-${slug}`, recipeId: RECIPE_ID, ...over };
+};
 
-test('a fresh slug converts and gets a content-addressed key', () => {
+test('a fresh slug converts and gets a content-addressed key; tier carries recipeId', async () => {
   const d = deps();
-  const { manifest, report } = buildArtManifest(null, slugs({ '001-abundance-b-s': 'p1.png' }), d);
+  const { manifest, report } = await buildArtManifest(null, slugs({ '001-abundance-b-s': 'p1.png' }), d);
   const e = manifest.objects['001-abundance-b-s'];
-  assert.equal(d.converted.length, 1, 'converted once');
+  assert.equal(d.converted.length, 1);
   assert.match(e.key, /^001-abundance-b-s\.[0-9a-f]{64}\.webp$/);
+  assert.match(e.md5, /^[0-9a-f]{32}$/, 'md5 is hex, not base64');
   assert.equal(e.recipeId, RECIPE_ID);
-  assert.equal(e.srcSha256, 'srch-p1.png');
-  assert.ok(e.md5 && e.bytes > 0);
-  assert.deepEqual(e.encoder, { sharp: '0.32.6', vips: '8.14.5' });
+  assert.ok(e.bytes > 0);
+  assert.deepEqual(manifest.tier, { ...TIER, recipeId: RECIPE_ID }, 'tier includes recipeId');
   assert.equal(report.fresh, 1);
 });
 
-test('an unchanged source + recipe is KEPT without converting', () => {
-  const first = buildArtManifest(null, slugs({ s: 'p.png' }), deps()).manifest;
+test('works with genuinely ASYNC (promise-returning) deps', async () => {
+  const d = deps({ slow: true });   // hashFile/convertFresh/hashBytes resolve on a macrotask
+  const { manifest } = await buildArtManifest(null, slugs({ a: 'a.png', b: 'b.png' }), d);
+  assert.equal(Object.keys(manifest.objects).length, 2);
+  assert.equal(d.converted.length, 2);
+});
+
+test('md5 is stored as lowercase hex; contentMd5 derives the base64 PUT header', async () => {
+  const h = md5('webp');
+  assert.equal(h, '6a294358579240936bf4d66151e6e720', 'Codex known-answer (hex)');
+  assert.equal(contentMd5(h), 'ailDWFeSQJNr9NZhUebnIA==', 'base64 PUT header, never hex-as-MD5');
+  const d = deps({ contents: { 'p.png': 'webp' } });
+  const { manifest } = await buildArtManifest(null, slugs({ s: 'p.png' }), d);
+  assert.equal(manifest.objects.s.md5, h, 'the engine stores hex md5');
+});
+
+test('an unchanged source + recipe is KEPT without converting', async () => {
+  const first = (await buildArtManifest(null, slugs({ s: 'p.png' }), deps())).manifest;
   const d = deps();
-  const { report } = buildArtManifest(first, slugs({ s: 'p.png' }), d);
-  assert.equal(d.converted.length, 0, 'no reconversion on a predicate match');
+  const { report } = await buildArtManifest(first, slugs({ s: 'p.png' }), d);
+  assert.equal(d.converted.length, 0);
   assert.equal(report.kept, 1);
 });
 
-test('BLOCKER: a CHANGED source always converts fresh and moves the key (never existence-skips)', () => {
-  const first = buildArtManifest(null, slugs({ s: 'p.png' }), deps({ srcHashes: { 'p.png': 'A' }, contents: { 'p.png': 'old-bytes' } })).manifest;
+test('BLOCKER: a CHANGED source always converts fresh and moves the key (never existence-skips)', async () => {
+  const first = (await buildArtManifest(null, slugs({ s: 'p.png' }), deps({ srcHashes: { 'p.png': 'A' }, contents: { 'p.png': 'old' } }))).manifest;
   const oldKey = first.objects.s.key;
-  // Same slug + same staging path, but the SOURCE changed (new srcHash + new content).
-  const d = deps({ srcHashes: { 'p.png': 'B' }, contents: { 'p.png': 'corrected-bytes' } });
-  const { manifest } = buildArtManifest(first, slugs({ s: 'p.png' }), d);
+  const d = deps({ srcHashes: { 'p.png': 'B' }, contents: { 'p.png': 'corrected' } });
+  const { manifest } = await buildArtManifest(first, slugs({ s: 'p.png' }), d);
   assert.equal(d.converted.length, 1, 'a changed source MUST run the production converter');
-  assert.notEqual(manifest.objects.s.key, oldKey, 'the output key moved');
+  assert.notEqual(manifest.objects.s.key, oldKey);
   assert.equal(manifest.objects.s.srcSha256, 'B');
 });
 
-test('a RECIPE change reconverts even when the source is unchanged', () => {
-  const first = buildArtManifest(null, slugs({ s: 'p.png' }), deps()).manifest;
-  first.objects.s.recipeId = 'webp:w380:q78:v0';   // a prior entry made by a different recipe
+test('a RECIPE change reconverts even when the source is unchanged', async () => {
+  const first = (await buildArtManifest(null, slugs({ s: 'p.png' }), deps())).manifest;
+  first.objects.s.recipeId = 'webp:w380:q78:v0';
   const d = deps();
-  buildArtManifest(first, slugs({ s: 'p.png' }), d);
-  assert.equal(d.converted.length, 1, 'recipe mismatch forces reconversion');
-});
-
-test('--reconvert forces a fresh convert on a full predicate match', () => {
-  const first = buildArtManifest(null, slugs({ s: 'p.png' }), deps()).manifest;
-  const d = deps();
-  buildArtManifest(first, slugs({ s: 'p.png' }), d, { reconvert: true });
+  await buildArtManifest(first, slugs({ s: 'p.png' }), d);
   assert.equal(d.converted.length, 1);
 });
 
-test('an incremental drop carries a committed entry with no source PNG present', () => {
-  const first = buildArtManifest(null, slugs({ a: 'a.png', b: 'b.png' }), deps()).manifest;
+test('--reconvert forces a fresh convert on a full predicate match', async () => {
+  const first = (await buildArtManifest(null, slugs({ s: 'p.png' }), deps())).manifest;
   const d = deps();
-  const { manifest, report } = buildArtManifest(first, slugs({ a: 'a.png' }), d);   // b absent this drop
-  assert.equal(d.converted.length, 0, 'a unchanged, b carried - nothing converts');
-  assert.equal(manifest.objects.b.key, first.objects.b.key, 'b keeps its key');
+  await buildArtManifest(first, slugs({ s: 'p.png' }), d, { reconvert: true });
+  assert.equal(d.converted.length, 1);
+});
+
+test('an incremental drop carries a committed entry with no source PNG present', async () => {
+  const first = (await buildArtManifest(null, slugs({ a: 'a.png', b: 'b.png' }), deps())).manifest;
+  const d = deps();
+  const { manifest, report } = await buildArtManifest(first, slugs({ a: 'a.png' }), d);
+  assert.equal(d.converted.length, 0);
+  assert.equal(manifest.objects.b.key, first.objects.b.key);
   assert.equal(report.carried, 1);
 });
 
-test('normalizeTransitional / Phase 5: legacyKey present when bundled, stripped when not', () => {
+test('normalizeTransitional / Phase 5: legacyKey present when bundled, stripped when not', async () => {
   const bundled = new Set(['001-abundance-b.webp']);
-  const withBundle = buildArtManifest(null, slugs({ '001-abundance-b-s': 'p.png' }), deps({ bundled })).manifest;
-  assert.equal(withBundle.objects['001-abundance-b-s'].legacyKey, '001-abundance-b.webp', 'legacyKey while bundled');
-  // Phase 5: rebuild with an EMPTY bundled dir - every retained entry loses legacyKey.
-  const phase5 = buildArtManifest(withBundle, slugs({ '001-abundance-b-s': 'p.png' }), deps({ bundled: new Set() })).manifest;
-  assert.ok(!('legacyKey' in phase5.objects['001-abundance-b-s']), 'legacyKey stripped with no bundled dir');
+  const withBundle = (await buildArtManifest(null, slugs({ '001-abundance-b-s': 'p.png' }), deps({ bundled }))).manifest;
+  assert.equal(withBundle.objects['001-abundance-b-s'].legacyKey, '001-abundance-b.webp');
+  const phase5 = (await buildArtManifest(withBundle, slugs({ '001-abundance-b-s': 'p.png' }), deps({ bundled: new Set() }))).manifest;
+  assert.ok(!('legacyKey' in phase5.objects['001-abundance-b-s']), 'stripped with no bundled dir');
 });
 
-test('normalizeTransitional strips transitional fields from a stale entry directly', () => {
-  const e = { key: 'x', sha256: 'y', legacyKey: 'old.webp' };
-  assert.ok(!('legacyKey' in normalizeTransitional('s', e, () => false)));
+test('a malformed COMMITTED manifest is rejected before the skip predicate is trusted', async () => {
+  const bad = { tier: TIER, objects: { s: { key: 's.zz.webp', sha256: 'zz', md5: 'yy', bytes: 1, srcSha256: 'x', recipeId: RECIPE_ID } } };
+  await assert.rejects(() => buildArtManifest(bad, slugs({ s: 'p.png' }), deps()), /sha256 must be 64/);
 });
 
-test('assertManifestShape accepts valid + repair keys, rejects a digest mismatch', () => {
-  const good = createHash('sha256').update('x').digest('hex');
-  assert.doesNotThrow(() => assertManifestShape({ objects: { s: { key: artKey('s', good), sha256: good } } }));
-  assert.doesNotThrow(() => assertManifestShape({ objects: { s: { key: `s.${good}.repair-1.webp`, sha256: good } } }));
-  assert.throws(() => assertManifestShape({ objects: { s: { key: 's.deadbeef.webp', sha256: good } } }), /malformed key/);
-  const other = createHash('sha256').update('z').digest('hex');
-  assert.throws(() => assertManifestShape({ objects: { s: { key: artKey('s', other), sha256: good } } }), /key digest/);
+test('assertManifest: full-field validation, incident-key contract, no repair-0', () => {
+  assert.doesNotThrow(() => assertManifest({ objects: { s: entry('s') } }));
+  // md5 as base64 is rejected (the exact Codex bug):
+  assert.throws(() => assertManifest({ objects: { s: entry('s', { md5: 'ailDWFeSQJNr9NZhUebnIA==' }) } }), /md5 must be 32/);
+  // key digest must equal sha256:
+  assert.throws(() => assertManifest({ objects: { s: entry('s', { key: artKey('s', sha('other')) }) } }), /key digest/);
+  // a repair (incident) key REQUIRES incidentOf:
+  const s = sha('s');
+  assert.throws(() => assertManifest({ objects: { s: { ...entry('s'), key: `s.${s}.repair-1.webp` } } }), /incidentOf/);
+  assert.doesNotThrow(() => assertManifest({ objects: { s: { ...entry('s'), key: `s.${s}.repair-1.webp`, incidentOf: `s.${s}.webp` } } }));
+  // repair-0 is not a valid incident number:
+  assert.throws(() => assertManifest({ objects: { s: { ...entry('s'), key: `s.${s}.repair-0.webp`, incidentOf: `s.${s}.webp` } } }), /malformed key/);
+  // a non-incident key must not carry incidentOf:
+  assert.throws(() => assertManifest({ objects: { s: entry('s', { incidentOf: 'x' }) } }), /must not carry incidentOf/);
 });
 
-test('objects are sorted by slug for a stable, diffable manifest', () => {
-  const { manifest } = buildArtManifest(null, slugs({ z: 'z.png', a: 'a.png', m: 'm.png' }), deps());
+test('objects are sorted by slug for a stable, diffable manifest', async () => {
+  const { manifest } = await buildArtManifest(null, slugs({ z: 'z.png', a: 'a.png', m: 'm.png' }), deps());
   assert.deepEqual(Object.keys(manifest.objects), ['a', 'm', 'z']);
 });
