@@ -647,11 +647,11 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
             <button onClick={onGoCards} style={{ background: 'none', border: 'none', color: 'var(--ink-muted)', font: "600 12px/1 var(--f-ui)", cursor: 'pointer' }}>All cards ›</button>
           </div>
           {recent.map((c) => {
-            // Label the row with the printing you actually own (owned_slug), not
-            // sets[0] - which mislabelled every Beta (and later) reprint as Alpha.
-            const code = (!c.owned_slug || c.owned_slug === 'foil') ? '' : String(c.owned_slug).split(':')[0];
+            // One row per collector item: recentlyAdded now groups per (card, set), so the row wears
+            // its own set pill and art. The empty bucket is Uncategorised.
+            const code = c.set_code || '';
             return (
-              <LedgerRow key={c.card_id} card={c} set={code} setLabel={SET_LABEL[code] || code}
+              <LedgerRow key={`${c.card_id}|${code}`} card={c} set={code} setLabel={SET_LABEL[code] || code}
                 owned={c.qty_owned} foil={c.qty_foil || 0} wanted={c.qty_wanted} onPeek={onPeek} />
             );
           })}

@@ -1022,20 +1022,28 @@ export async function cardNames(ids) {
 // Grouped by card so a card's regular + foil rows read as ONE entry, with the
 // regular/foil split the binder row's pill rail renders (rules_text rides along
 // for the playset check's any-number-of exemption).
+// One row per COLLECTOR ITEM (card + set), not per card. v11 stores ownership per printing, so a
+// card owned across several sets is several rows here, each wearing THAT set's pill, art, and
+// counts. Grouping by card_id collapsed them into one row stamped with whichever printing was
+// touched last (the Promotional pill over Beta art defect). The set bucket folds the four
+// uncategorised keys and both finishes of a set together; foil is a per-row sub-count, not a
+// separate row. `variants` is selected so the row can resolve its per-set art.
 export async function recentlyAdded(limit = 8) {
   const pid = activeProfileId();
+  const SET_BUCKET = `CASE
+      WHEN o.variant_slug IN ('', 'foil', 'uncategorised', 'uncategorised:f') THEN ''
+      WHEN o.variant_slug LIKE '%:f' THEN substr(o.variant_slug, 1, length(o.variant_slug) - 2)
+      ELSE o.variant_slug END`;
   return query(
     `SELECT o.card_id,
+            ${SET_BUCKET} AS set_code,
             SUM(CASE WHEN ${isFoil('o.variant_slug')} THEN 0 ELSE o.qty_owned END) qty_owned,
             SUM(CASE WHEN ${isFoil('o.variant_slug')} THEN o.qty_owned ELSE 0 END) qty_foil,
             SUM(o.qty_wanted) qty_wanted,
-            (SELECT o2.variant_slug FROM owned_cards o2
-             WHERE o2.profile_id=o.profile_id AND o2.card_id=o.card_id AND o2.qty_owned>0
-             ORDER BY o2.updated_at DESC LIMIT 1) owned_slug,
-            c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets, c.rules_text
+            c.name, c.type, c.cost, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.sets, c.rules_text, c.variants
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=?
-     GROUP BY o.card_id HAVING SUM(o.qty_owned)>0
+     GROUP BY o.card_id, set_code HAVING SUM(o.qty_owned)>0
      ORDER BY MAX(o.updated_at) DESC LIMIT ?;`,
     [pid, limit]
   );

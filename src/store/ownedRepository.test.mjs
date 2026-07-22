@@ -63,6 +63,24 @@ test('foil classification: recentlyAdded splits set foils correctly', async () =
   assert.equal(r.qty_foil, 3);
 });
 
+test('recentlyAdded splits ONE card owned across sets into ONE ROW PER PRINTING', async () => {
+  // The Apprentice Wizard defect: a card owned in Beta and Promotional collapsed into one row
+  // stamped with the last-touched pill over the wrong art. Each printing is now its own row with
+  // its own set bucket and foil sub-count; the uncategorised keys fold to the '' bucket.
+  card('aw', [{ code: '002', name: 'Beta' }, { code: '999', name: 'Promotional' }]);
+  own('aw', '002', 2);            // Beta, non-foil
+  own('aw', '999', 1);            // Promotional, non-foil
+  own('aw', '999:f', 2);         // Promotional, foil
+  own('aw', 'uncategorised', 1); // a stray uncategorised copy -> the '' bucket
+  const rows = (await recentlyAdded(20)).filter((x) => x.card_id === 'aw');
+  const bySet = new Map(rows.map((x) => [x.set_code, x]));
+  assert.deepEqual([...bySet.keys()].sort(), ['', '002', '999']);
+  assert.deepEqual({ o: bySet.get('002').qty_owned, f: bySet.get('002').qty_foil }, { o: 2, f: 0 }, 'Beta row');
+  assert.deepEqual({ o: bySet.get('999').qty_owned, f: bySet.get('999').qty_foil }, { o: 1, f: 2 }, 'Promotional row, foil as a sub-count');
+  assert.equal(bySet.get('').qty_owned, 1, 'uncategorised bucket');
+  assert.ok('variants' in rows[0], 'variants selected so the row can resolve its per-set art');
+});
+
 
 test('v11 regression: emptying UNCATEGORISED owned preserves a migrated want on that row', async () => {
   // The guard that protects this row compared against the literal '' and went dead the moment
