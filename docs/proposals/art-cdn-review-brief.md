@@ -1,18 +1,47 @@
-# Codex review request - art-CDN Phase 1 IMPLEMENTATION (combined checkpoint)
+# Codex review request - art-CDN Phase 1 IMPLEMENTATION (post-corrective)
 
-**Branch:** `art-cdn`. **Tip:** `5d7c662`. The rev-6 DESIGN is approved (do not reopen); this is the
-combined Phase-1 code review Codex asked for at the planned checkpoint (not per-increment). Phase 1 is
-**dormant**: it builds/tests the engines but writes NOTHING to `public/` or `src/`, promotes no
-catalog, and changes no app behavior.
+**Branch:** `art-cdn`. **Tip:** `fb33ddc`. The rev-6 DESIGN is approved (do not reopen). This adds the
+Phase-1 completion increment that closes your Changes-required disposition. Phase 1 is **dormant**: it
+converts + durably stages + can upload objects additively, but promotes no catalog and changes no app
+behavior.
 
 ## Range
 
 ```
-git fetch origin && git checkout art-cdn      # tip 5d7c662
-git diff acc16f4..5d7c662                      # the whole Phase-1 implementation
+git fetch origin && git checkout art-cdn      # tip fb33ddc
+git diff 5d7c662..fb33ddc                      # the corrective increment (review this)
+git diff acc16f4..fb33ddc                      # the whole Phase-1 implementation, for context
 ```
 
-`acc16f4` is the rev-6 proposal commit (design, already approved). Everything after it is Phase-1 code.
+## How the disposition was addressed (all in fb33ddc)
+
+- **Blocker (never-overwrite not enforced by R2):** every create is now a conditional PUT with
+  `If-None-Match: *`; a 412 is decided by an authoritative HEAD. The pure repair seam changed from
+  `remoteLookup`/`putObject` to a single atomic `claimObject` outcome (`created|reused|conflict|retry`),
+  so no stale/incomplete listing or racing run can clobber an immutable object. New `claimOutcome` +
+  a **race test** (listing thought the slot absent, the atomic claim reports conflict -> advances).
+- **Major (staging deferred):** durable staging finished in Phase 1 - `convertFresh` writes through a
+  per-slug temp, validates the webp, atomically replaces `cdn-art/<slug>.webp`; the prospective
+  manifest is written to `.catalog-build/art-manifest.json` (never `public/catalog`). The uploader
+  reads staged bytes by slug and re-verifies byte count + sha256 + md5 immediately before every PUT.
+- **Major (real dry run broken):** `report.mjs` read the retired image-report shape. One combined
+  images contract now carries manifest conversion + assignment + reverse exclusions + unmatched scans;
+  `report.test.mjs` runs a real `buildGeneration` report through `formatReport`. **Real `--dry-run`
+  passes: 3087 objects, 5 no-scan, 4 unmatched, 3 reverse faces excluded** (matches your run).
+- **Major (--check exits 0 on failure):** `--check` is fail-closed - throws unless PUT ETag==MD5, the
+  listing matches size+ETag, a public base is configured, the public GET succeeds, and content-type +
+  immutable cache header + body all match. The unreachable signed-HEAD fallback claim is removed.
+- **Minors:** canonical `setRank` (`Number.MAX_SAFE_INTEGER`, numeric-vs-promotional test); the named
+  hash tests (art-key-change reseeds; encoder-only does not); `assertManifest` now validates tier,
+  64-hex `srcSha256`, encoder provenance, and `incidentOf` as a real same-slug/digest predecessor;
+  `listRemote` decodes the continuation token and fails closed on a truncated page with no token; the
+  dormant completion message updated; `package-lock.json` synced to the sharp 0.32.6 pin.
+
+## Not pushed
+
+Local tip `fb33ddc`; `origin/art-cdn` remains behind pending this review, per your instruction.
+
+## Original checkpoint context (the five prior commits)
 
 ## What landed (five commits)
 
