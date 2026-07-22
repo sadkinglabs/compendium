@@ -158,23 +158,27 @@ async function main() {
   if (failed) process.exit(1);
 
   // Repair conflicts (never overwrites): PUT a repair key per conflict and print the repoint the
-  // promote must apply to cards.json. The catalog rewrite itself is the promote's job, not this tool's.
+  // promote must apply to cards.json, then STOP. The manifest still names the conflicted originals
+  // until the promote repoints v.image to the repair keys, so a manifest-key audit cannot pass yet -
+  // that consistency is the promote's job (Phase 2), not this standalone tool's.
   if (repairConflicts && plan.conflicts.length) {
     const repoints = [];
     for (const { entry } of plan.conflicts) {
       const key = await repairKey({
         slug: entry.key.split('.')[0], sha256: entry.sha256, bytes: entry.bytes, expectedIntegrity: entry.md5,
         correctBytes: await stageBytes(entry),
-        remoteLookup: async (k) => { const r = remote.get(k); return r; },
+        remoteLookup: async (k) => remote.get(k),
         putObject: async (k, b) => { await put(k, b, { md5: entry.md5 }); },
       });
       repoints.push([entry.key, key]);
       console.log(`  REPAIR ${entry.key} -> ${key}`);
     }
-    console.log(`\n${repoints.length} repair key(s) uploaded. Repoint these in cards.json via the promote, then re-audit.`);
+    console.log(`\n${repoints.length} repair key(s) uploaded. Repoint these in cards.json via the promote, then re-run to audit.`);
+    return;
   }
 
-  // Audit: re-list and prove every manifest key is published with the right size + ETag.
+  // Audit (clean path only): re-list and prove every manifest key is published with the right size +
+  // ETag. Reached only when there were no conflicts, so the manifest and the remote agree by key.
   console.log('auditing…');
   const after = await listRemote();
   const audit = auditPublish(Object.values(manifest.objects).map((e) => e.key), manifest, after);
