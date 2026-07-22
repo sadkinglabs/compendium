@@ -12,7 +12,7 @@
 // with the atomic Phase-2 activation (see docs/proposals/art-cdn-migration.md). This file orchestrates
 // the engines in scripts/catalog/*; each engine is unit-tested.
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, openSync, writeSync, closeSync, rmSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 import { discover } from './catalog/discover.mjs';
@@ -95,14 +95,10 @@ async function main() {
       const meta = await sharp(buf).metadata();
       if (meta.format !== TIER.format || !meta.width) throw new Error(`convert produced an invalid ${TIER.format} for ${slug}`);
       const tmp = join(TMP_DIR, `${slug}.${process.pid}.${tmpSeq++}.tmp`);
-      let handle;
       try {
-        handle = openSync(tmp, 'wx');   // exclusive create: never clobber another attempt's temp
-        writeSync(handle, buf);
-        closeSync(handle); handle = undefined;
+        writeFileSync(tmp, buf, { flag: 'wx' });            // exclusive create + full-buffer write
         renameSync(tmp, join(STAGE_DIR, `${slug}.webp`));   // atomic publish of the verified bytes
       } finally {
-        if (handle !== undefined) { try { closeSync(handle); } catch { /* already closed */ } }
         if (existsSync(tmp)) { try { rmSync(tmp); } catch { /* best-effort temp cleanup */ } }
       }
       return buf;

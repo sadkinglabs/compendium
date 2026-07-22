@@ -62,55 +62,78 @@ function makeReadStaged(stageDir) {
   };
 }
 
-export async function main(argv = process.argv.slice(2)) {
-  const env = loadEnv();
-  const endpoint = (env.R2_ENDPOINT || '').replace(/\/+$/, '');
+// Strict positive-integer parse: parseInt('1.5', 10) would silently accept it as 1.
+export function parseLimit(raw) {
+  if (raw == null) return Infinity;
+  if (!/^[1-9]\d*$/.test(String(raw))) throw new Error(`--limit must be a positive integer (got ${raw})`);
+  return parseInt(raw, 10);
+}
+
+/**
+ * The full CLI COMPOSITION over injected seams - the one place args, the client, manifest/staging
+ * reads, and runUpload/runCheck are wired together. main() supplies the real network + disk seams; a
+ * test supplies fakes and asserts an upload actually flows through runUpload and the conditional-PUT
+ * client. Swapping runUpload for a bypass, or dropping the conditional header, makes that test fail.
+ */
+export async function runCli({ argv, env, signedFetch, plainFetch, readManifest, makeReadStaged: makeStaged, hashMd5, log = () => {} }) {
+  if (!(env.R2_ENDPOINT || '').replace(/\/+$/, '')) throw new Error('.env.r2 missing R2_ENDPOINT');
+  if (!env.R2_BUCKET) throw new Error('.env.r2 missing R2_BUCKET');
   const publicBase = (env.R2_PUBLIC_BASE_URL || '').replace(/\/+$/, '');
-  for (const [k, v] of [['R2_ENDPOINT', endpoint], ['R2_BUCKET', env.R2_BUCKET], ['R2_ACCESS_KEY_ID', env.R2_ACCESS_KEY_ID], ['R2_SECRET_ACCESS_KEY', env.R2_SECRET_ACCESS_KEY]]) {
-    if (!v) throw new Error(`.env.r2 missing ${k}`);
-  }
-  const aws = new AwsClient({ accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, region: 'auto', service: 's3' });
-  const client = buildClient({ env, signedFetch: (url, opts) => aws.fetch(url, opts), plainFetch: (url) => fetch(url) });
+  const client = buildClient({ env, signedFetch, plainFetch });
 
   if (argv.includes('--check')) {
-    await runCheck({ client, publicBase, cacheControl: CACHE_CONTROL, hashMd5: (b) => createHash('md5').update(b).digest('hex'), log: console.log });
+    await runCheck({ client, publicBase, cacheControl: CACHE_CONTROL, hashMd5, log });
     return;
   }
 
   const manifestPath = arg(argv, '--manifest') || DEFAULT_MANIFEST;
   const stageDir = arg(argv, '--stage') || DEFAULT_STAGE;
-  if (!existsSync(manifestPath)) throw new Error(`No ${manifestPath} - run the catalog update to build the prospective manifest first`);
-  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const manifest = readManifest(manifestPath);
   assertManifest(manifest, 'cdn-upload manifest');
-
-  const limitArg = arg(argv, '--limit');
-  const limit = limitArg == null ? Infinity : parseInt(limitArg, 10);
-  if (Number.isFinite(limit) && (!Number.isInteger(limit) || limit <= 0)) throw new Error(`--limit must be a positive integer (got ${limitArg})`);
+  const limit = parseLimit(arg(argv, '--limit'));
 
   const res = await runUpload({
-    manifest, client, readStaged: makeReadStaged(stageDir),
+    manifest, client, readStaged: makeStaged(stageDir),
     repairConflicts: argv.includes('--repair-conflicts'), dryRun: argv.includes('--dry-run'),
-    limit, concurrency: CONCURRENCY, log: console.log,
+    limit, concurrency: CONCURRENCY, log,
   });
 
   if (res.refusedConflicts) {
-    for (const { entry, remote } of res.refusedConflicts.slice(0, 20)) console.error(`  CONFLICT ${entry.key}: expected ${entry.bytes}B/${entry.md5}, found ${remote.size}B`);
+    for (const { entry, remote } of res.refusedConflicts.slice(0, 20)) log(`  CONFLICT ${entry.key}: expected ${entry.bytes}B/${entry.md5}, found ${remote.size}B`);
     throw new Error(`${res.refusedConflicts.length} conflicting object(s). Rerun with --repair-conflicts (never overwrites).`);
   }
-  if (res.dryRun) { console.log('dry run: nothing uploaded.'); return; }
-  console.log(`published: ${res.counts.created} created, ${res.counts.reused} reused, ${res.counts.repaired} repaired · failures: ${res.counts.failed}`);
+  if (res.dryRun) { log('dry run: nothing uploaded.'); return; }
+  log(`published: ${res.counts.created} created, ${res.counts.reused} reused, ${res.counts.repaired} repaired · failures: ${res.counts.failed}`);
   if (res.counts.failed) throw new Error('some uploads failed');
-  if (res.remaining > 0) { console.log(`${res.remaining} object(s) still pending (--limit); re-run to continue. Whole-manifest audit deferred to the final run.`); return; }
+  if (res.remaining > 0) { log(`${res.remaining} object(s) still pending (--limit); re-run to continue. Whole-manifest audit deferred to the final run.`); return; }
   if (res.auditDeferred === 'repoints') {
-    for (const [from, to] of res.repoints) console.log(`  repoint ${from} -> ${to}`);
-    console.log('Repoint these in cards.json via the promote, then re-run to audit (Phase 2).');
+    for (const [from, to] of res.repoints) log(`  repoint ${from} -> ${to}`);
+    log('Repoint these in cards.json via the promote, then re-run to audit (Phase 2).');
     return;
   }
   if (!res.audit.ok) {
-    for (const p of res.audit.problems.slice(0, 20)) console.error(`  AUDIT ${p}`);
+    for (const p of res.audit.problems.slice(0, 20)) log(`  AUDIT ${p}`);
     throw new Error(`audit failed: ${res.audit.problems.length} problem(s).`);
   }
-  console.log('audit OK: every manifest object is published with matching size and ETag.');
+  log('audit OK: every manifest object is published with matching size and ETag.');
+}
+
+// main() supplies ONLY the real dependencies; all composition lives in runCli (above).
+export async function main(argv = process.argv.slice(2)) {
+  const env = loadEnv();
+  for (const k of ['R2_ENDPOINT', 'R2_BUCKET', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']) {
+    if (!env[k]) throw new Error(`.env.r2 missing ${k}`);
+  }
+  const aws = new AwsClient({ accessKeyId: env.R2_ACCESS_KEY_ID, secretAccessKey: env.R2_SECRET_ACCESS_KEY, region: 'auto', service: 's3' });
+  await runCli({
+    argv, env,
+    signedFetch: (url, opts) => aws.fetch(url, opts),
+    plainFetch: (url) => fetch(url),
+    readManifest: (p) => { if (!existsSync(p)) throw new Error(`No ${p} - run the catalog update to build the prospective manifest first`); return JSON.parse(readFileSync(p, 'utf8')); },
+    makeReadStaged,
+    hashMd5: (b) => createHash('md5').update(b).digest('hex'),
+    log: console.log,
+  });
 }
 
 // Auto-run only when invoked directly as the CLI (so the module stays importable by tests).

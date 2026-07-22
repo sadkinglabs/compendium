@@ -47,13 +47,14 @@ test('headObject returns size+etag, and null on 404', async () => {
 });
 
 test('list paginates, DECODES the continuation token, and fails closed on truncation without a token', async () => {
-  const page1 = '<ListBucketResult><Contents><Key>a.webp</Key><Size>10</Size><ETag>"m1"</ETag></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>tok&amp;2</NextContinuationToken></ListBucketResult>';
-  const page2 = '<ListBucketResult><Contents><Key>b.webp</Key><Size>20</Size><ETag>"m2"</ETag></Contents><IsTruncated>false</IsTruncated></ListBucketResult>';
+  // Real R2 entity-encodes the ETag quotes as &quot; in the listing XML - the client must decode them.
+  const page1 = '<ListBucketResult><Contents><Key>a.webp</Key><Size>10</Size><ETag>&quot;m1&quot;</ETag></Contents><IsTruncated>true</IsTruncated><NextContinuationToken>tok&amp;2</NextContinuationToken></ListBucketResult>';
+  const page2 = '<ListBucketResult><Contents><Key>b.webp</Key><Size>20</Size><ETag>&quot;m2&quot;</ETag></Contents><IsTruncated>false</IsTruncated></ListBucketResult>';
   const seen = [];
   const c = client(async (url) => { seen.push(url); return resp(200, { body: url.includes('continuation-token') ? page2 : page1 }); });
   const map = await c.list();
   assert.equal(map.size, 2);
-  assert.deepEqual(map.get('a.webp'), { size: 10, etag: '"m1"' });
+  assert.deepEqual(map.get('a.webp'), { size: 10, etag: '"m1"' }, 'the &quot;-encoded ETag is decoded to bare quotes');
   assert.deepEqual(map.get('b.webp'), { size: 20, etag: '"m2"' });
   assert.match(seen[1], /continuation-token=tok%262/, 'the &-decoded token is re-encoded once by URLSearchParams');
 

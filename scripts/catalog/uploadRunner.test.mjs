@@ -86,6 +86,20 @@ test('a conflict WITH --repair-conflicts allocates a repair key (never overwrite
   assert.equal(client.ops.some((o) => o.op === 'put' && o.key === e0.key), false, 'the conflicting original key was never PUT');
 });
 
+test('--limit + --repair-conflicts with conflicts is REFUSED before any staging read or PUT (no orphaned repair)', async () => {
+  const e0 = entry('a'), e1 = entry('b');
+  const client = fakeClient({ store: [[e0.key, { size: 9, etag: '"x"' }], [e1.key, { size: 9, etag: '"y"' }]] });   // two conflicts
+  let readCalls = 0;
+  const readStaged = () => { readCalls++; return Buffer.from('x'); };
+  await assert.rejects(
+    () => runUpload({ manifest: manifest({ a: e0, b: e1 }), client, readStaged, repairConflicts: true, limit: 1 }),
+    /--limit cannot be combined with --repair-conflicts/,
+  );
+  assert.equal(readCalls, 0, 'staging was never read');
+  assert.deepEqual(client.ops.map((o) => o.op), ['list'], 'only the plan listing happened - no PUT, no HEAD');
+  assert.equal(client.bucket.size, 2, 'no repair object was created; the originals are untouched');
+});
+
 test('an object that disappears after LIST (412 -> 404) retries the SAME key and creates it', async () => {
   const e0 = entry('a');
   // first PUT 412, first HEAD null (vanished) -> retry -> second PUT falls through to a real create.

@@ -57,7 +57,9 @@ export function createR2Client({ signedFetch, plainFetch, endpoint, bucket, cach
         const key = (block.match(/<Key>([\s\S]*?)<\/Key>/) || [])[1];
         const size = parseInt((block.match(/<Size>(\d+)<\/Size>/) || [])[1], 10);
         const etag = (block.match(/<ETag>([\s\S]*?)<\/ETag>/) || [])[1];
-        if (key) map.set(decodeXml(key), { size, etag });
+        // R2's ListObjectsV2 XML entity-encodes the ETag's quotes (&quot;hex&quot;) - decode it, or the
+        // audit's hex comparison fails on a phantom mismatch (caught by the live --check canary).
+        if (key) map.set(decodeXml(key), { size, etag: decodeXml(etag) });
       }
       const truncated = /<IsTruncated>\s*true\s*<\/IsTruncated>/.test(xml);
       const raw = (xml.match(/<NextContinuationToken>([\s\S]*?)<\/NextContinuationToken>/) || [])[1];

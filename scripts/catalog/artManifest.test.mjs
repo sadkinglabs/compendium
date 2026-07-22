@@ -173,6 +173,26 @@ test('a worker failure rejects the build only AFTER started workers settle - no 
   for (const later of ['c', 'd', 'e', 'f']) assert.ok(!started.includes(later), `no conversion started for ${later} after the failure`);
 });
 
+test('the pool AWAITS a started sibling to settlement before rejecting (counterfactual: fail-fast would leave it running)', async () => {
+  let active = 0, siblingSettled = false;
+  const d = {
+    hashFile: (p) => Promise.resolve(sha(p)),
+    // 'b' rejects on a microtask; 'a' is a SLOW macrotask that flips siblingSettled only on completion.
+    // With allSettled the pool rejects AFTER 'a' finishes (settled=true, active=0). Reverting to
+    // fail-fast Promise.all would surface the rejection while 'a' is still running (settled=false).
+    convertFresh: (p, slug) => {
+      if (slug === 'b') return Promise.reject(new Error('convert boom'));
+      active++;
+      return new Promise((res) => setTimeout(() => { siblingSettled = true; active--; res(Buffer.from('x')); }, 20));
+    },
+    hashBytes: (buf) => Promise.resolve({ sha256: sha(buf), md5: md5(buf) }),
+    bundledExists: () => false, encoder: { sharp: '0.32.6', vips: '8.14.5' }, concurrency: 2,
+  };
+  await assert.rejects(() => buildArtManifest(null, slugs({ a: 'a.png', b: 'b.png' }), d), /convert boom/);
+  assert.equal(active, 0, 'no worker was still running when the rejection surfaced');
+  assert.equal(siblingSettled, true, 'the started sibling FINISHED before the pool rejected');
+});
+
 test('objects are sorted by slug for a stable, diffable manifest', async () => {
   const { manifest } = await buildArtManifest(null, slugs({ z: 'z.png', a: 'a.png', m: 'm.png' }), deps());
   assert.deepEqual(Object.keys(manifest.objects), ['a', 'm', 'z']);

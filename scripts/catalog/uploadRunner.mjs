@@ -45,6 +45,14 @@ export async function runUpload({ manifest, client, readStaged, repairConflicts 
   const plan = planUpload(manifest, remote);
   log(`plan: ${plan.put.length} to upload, ${plan.skip.length} already valid, ${plan.conflicts.length} conflicting (of ${Object.keys(manifest.objects).length} objects)`);
 
+  // A finite --limit cannot coexist with conflict repair: a limited batch could create repair-1 for
+  // one conflict but never surface (or record) its repoint, so every rerun re-selects the same conflict
+  // and the second never converges - an orphaned repair object and a non-converging command. Refuse
+  // BEFORE any staging read or PUT; repoints must be produced as one complete set (Codex).
+  if (repairConflicts && Number.isFinite(limit) && plan.conflicts.length) {
+    throw new Error('--limit cannot be combined with --repair-conflicts when there are conflicts; repair repoints must be produced as one complete set');
+  }
+
   if (plan.conflicts.length && !repairConflicts && !dryRun) return { ok: false, refusedConflicts: plan.conflicts, plan };
   if (dryRun) return { ok: true, dryRun: true, plan };   // a dry run issues ZERO mutations
 

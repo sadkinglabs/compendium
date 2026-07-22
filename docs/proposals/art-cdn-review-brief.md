@@ -1,20 +1,47 @@
-# Codex review request - art-CDN Phase 1 (orchestration + evidence increment)
+# Codex review request - art-CDN Phase 1 (narrow final correction)
 
-**Branch:** `art-cdn` (tip = latest commit). The rev-6 DESIGN is approved (do not reopen). This
-increment closes your latest Changes-required disposition: the uploader now executes its plan, the
-production R2 path is executable-tested, staging uses a unique-temp lifecycle, and the docs are
-reconciled. Phase 1 stays **dormant**: it converts + durably stages + can publish objects additively,
-but promotes no catalog and changes no app behavior.
+**Branch:** `art-cdn` (tip = latest commit). The rev-6 DESIGN is approved (do not reopen). This is the
+narrow final correction to your "should move directly to approval" disposition: the `--limit`/repair
+recovery bug is fixed, the CLI composition seam and worker-settlement are now mutation-checked, the
+small hardenings are in, and **the live mutating `--check` canary was run and passes**. Phase 1 stays
+**dormant** (stages + can publish additively; no catalog promote, no app change).
+
+## Live canary result (the specific ask)
+
+`node scripts/catalog/cdn-upload.mjs --check` **PASSES against real R2**: PUT ETag==MD5, a conflicting
+conditional PUT (`If-None-Match: *`) **412s and the original survives** (overwrite protection is truly
+enforced by the bucket), listing matches, public GET + content-type + immutable cache + body verified.
+It also **caught a real bug** first: R2's ListObjectsV2 XML entity-encodes the ETag (`&quot;`), which
+`list()` was not decoding - the audit would have failed on a phantom mismatch. Fixed and regression-tested
+(`r2Client.test.mjs` now uses `&quot;`-encoded ETags). Real uploader dry run: `3087 to upload, 0 conflicting`.
 
 ## Range
 
 ```
 git fetch origin && git checkout art-cdn
-git diff fb33ddc..art-cdn                 # this increment (review this)
+git diff 1b4d451..art-cdn                 # this correction (review this)
 git diff acc16f4..art-cdn                 # the whole Phase-1 implementation, for context
 ```
 
-## How the disposition was addressed
+## How this disposition was addressed
+
+- **Major (`--limit` strands repair):** `runUpload` now refuses a finite `--limit` combined with
+  `--repair-conflicts` when there are conflicts, **before any staging read or PUT** - repoints must be
+  produced as one complete set. Two-conflict regression asserts rejection, no `readStaged`, only the
+  plan listing (no PUT/HEAD), and no repair object created.
+- **Minor (wiring test one layer early):** extracted `runCli({argv,env,signedFetch,plainFetch,
+  readManifest,makeReadStaged,hashMd5,log})`; `main()` supplies only real deps. A composition test
+  drives `runCli` with one manifest entry and asserts the observed request carries `If-None-Match: *` -
+  so replacing `runUpload` with a bypass, or dropping the header, fails it.
+- **Minor (settlement not proven):** the new counterfactual starts a slow sibling that flips
+  `settled=true` only on completion and a second worker that rejects immediately, then asserts
+  `activeWorkers===0` and `settled===true` after rejection. **Mutation-verified**: reverting `mapPool`
+  to fail-fast `Promise.all` makes this test fail (checked, then restored).
+- **Hardening:** staging uses `writeFileSync(tmp, buf, {flag:'wx'})` (exclusive create, full-buffer
+  write, `finally` cleanup - no handle bookkeeping); `--limit` is parsed with `/^[1-9]\d*$/` so `1.5`
+  is rejected, not silently truncated to 1.
+
+## Previous increment (orchestration + evidence, for context)
 
 - **Major (uploader ignored its plan):** the orchestration now executes **only `plan.put`** (plus
   `plan.conflicts` when `--repair-conflicts`) and **never reads staging or claims for a valid skip** -
@@ -42,7 +69,7 @@ git diff acc16f4..art-cdn                 # the whole Phase-1 implementation, fo
 
 ## Gates
 
-`npm run test:catalog` **104 pass**, `check:cycles`, `check:types`, `check:docs`, production build, and
+`npm run test:catalog` **107 pass**, `check:cycles`, `check:types`, `check:docs`, production build, and
 the **real `npm run update:catalog -- --dry-run`** (3087 objects; 5 no-scan; 4 unmatched; 3 reverse
 faces) all green. No `src/` app code touched.
 
