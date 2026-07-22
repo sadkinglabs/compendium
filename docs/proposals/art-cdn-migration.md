@@ -2,20 +2,27 @@
 
 ## Status and classification
 
-**Status: Draft rev 2** (2026-07-22) · Risk: **High**
+**Status: Draft rev 3** (2026-07-22) · Risk: **High**
 Owner: Claude Code / Fable (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 
-**Rev 1 disposition: Changes required.** Rev 2 resolves every blocker/major/minor. The two
-architectural redesigns are specified in full in the companion **`art-cdn-rev2-architecture.md`**
-(Section A content-addressed identity, Section B the shared `artCache`/`ArtImage` boundary); this
-document is updated to match and to fix the tooling, phasing, and doc-consistency findings.
+**Rev 1 disposition: Changes required** (blocker + 3 majors). **Rev 2 disposition: Changes required, direction approved** (4 implementation-bearing majors + 3 minors). Rev 3 resolves those. The two architectural redesigns are specified in full in the companion **`art-cdn-rev2-architecture.md`** (kept that filename; content is rev 3 - see its finding-to-resolution table at the top); this document is updated to match.
+
+### Rev-2 disposition -> rev-3 resolutions
+
+Codex approved the rev-2 direction (content-addressing, dormant Phase 1, atomic activation, one shared cache boundary) and required four implementation fixes + three minors, all resolved in the companion and reflected here:
+
+- **Legacy offline fallback made executable** (was prose-only): a build-side `legacyKey` per manifest entry + an ordered candidate chain `local -> remote -> bundledLegacy -> deterministicFallback`, shared by `ArtImage` and `deckPoster`, deleted in Phase 5 (companion B3.5/A3).
+- **`clear()` linearized**: a promotion lock around every write into `art/` (never the download), epoch captured before the first await and re-checked inside the lock, epoch-tagged in-flight entries, a non-rejecting `resolve()`, and a retry-generation rerender (companion B3/B7).
+- **R2-documented integrity**: the `x-amz-checksum-sha256` premise is retracted; PUTs carry **`Content-MD5`** (R2-documented), a **Phase-0 canary** verifies `ETag == MD5` for single-part PUTs, and the audit compares **key + bytes + ETag** (signed-HEAD fallback) (companion A3).
+- **Recipe-aware reuse**: manifest entries carry `recipeId` + `encoder` provenance; conversion skips only when `srcSha256` **and** `recipeId` match; a source-unchanged re-key needs `--approve-rekey`; **`sharp` is pinned** (was `^0.32.6`) (companion A2-A4).
+- **Minors**: full 64-hex sha256 in the key (the prefix collision machinery is deleted); the seam inventory adds the real `cardImageUrl` consumers **`LifeCounter`** and **`CollectionCardSheet` `SiteArt`** (my "LifeCounter is only a comment" was wrong); `validSize()` fails closed on a manifest miss; the cache retry logic is a **pure reducer tested under `node --test`** (no React Testing Library - not installed, not approved).
 
 ### Response to the rev-1 disposition
 
 | Finding | Resolution (rev 2) |
 |---|---|
-| **Blocker - immutable URLs not content-addressed** (corrected art stays stale) | **Content-addressed keys** `<slug>.<sha256-12>.webp` + a committed `public/catalog/art-manifest.json` (`{key, sha256, bytes, srcSha256}`) that is the single source of truth for conversion-skip, upload-diff, publish-audit, the catalog hash, and rollback. New bytes -> new key -> new URL at every layer -> reseed, with **no purge concept anywhere**. Full design: companion **Section A**. |
-| **Major - prep tooling + recovery fail open** | Convert/upload become importable **engines** with CLI wrappers that exit non-zero on any failure; write-through unique temp then validate (size vs manifest) then rename; upload-skip only on **authoritative remote evidence** (`ListObjectsV2` + server-side `x-amz-checksum-sha256`), never a local ledger; the publish audit checks the real remote object set; the promotion journal records the manifest digest and `--recover` **re-audits remote** before completing; `--dry-run` proves zero PUT/DELETE via an injected network seam; `--check` fails on absent base / non-2xx / wrong body / content-type / cache header. Detailed in *Pipeline (rev 2)* below. Also acknowledged: 3,088 catalog slugs vs 3,090 files - 5 variants legitimately `image:null`, 7 extras (reverse faces) - so completeness is proven by the manifest-vs-catalog audit, never by a file count. |
+| **Blocker - immutable URLs not content-addressed** (corrected art stays stale) | **Content-addressed keys** `<slug>.<full-sha256>.webp` (full 64-hex digest of the output bytes - the prefix scheme was dropped per rev-2 Codex Minor since a one-entry-per-slug manifest can't collision-check a prefix) + a committed `public/catalog/art-manifest.json` (`{key, sha256, md5, bytes, srcSha256, recipeId, encoder, legacyKey}`) that is the single source of truth for conversion-skip, upload-diff, publish-audit, the catalog hash, and rollback. New bytes -> new key -> new URL at every layer -> reseed, with **no purge concept anywhere**. Full design: companion **Section A**. |
+| **Major - prep tooling + recovery fail open** | Convert/upload become importable **engines** with CLI wrappers that exit non-zero on any failure; write-through unique temp then validate (size vs manifest) then rename; upload-skip only on **authoritative remote evidence** (`ListObjectsV2` + `ETag`/`Content-MD5`, the R2-documented mechanism - rev 2's `x-amz-checksum-sha256` premise is retracted), never a local ledger; the publish audit checks the real remote object set by key + bytes + ETag; the promotion journal records the manifest digest and `--recover` **re-audits remote** before completing; `--dry-run` proves zero PUT/DELETE via an injected network seam; `--check` fails on absent base / non-2xx / wrong body / content-type / cache header. Detailed in *Pipeline (rev 2)* below. Also acknowledged: 3,088 catalog slugs vs 3,090 files - 5 variants legitimately `image:null`, 7 extras (reverse faces) - so completeness is proven by the manifest-vs-catalog audit, never by a file count. |
 | **Major - Phase 1 an unsafe activation boundary** | Phase 1 builds/tests/uploads a **dormant** engine and does **not** promote the committed catalog. **Activation is one atomic step** (Phase 2) combining runtime seam + catalog repoint + remote audit + version bump. A **legacy printing-base fallback** covers offline upgrades until Phase 5 removes bundled art (a finish-specific remote miss falls back to the old bundled base image). The "every phase separately releasable" claim is withdrawn; see *Implementation plan (rev 2)*. |
 | **Major - cache neither app-wide nor race-safe** | One shared **`artCache`/`useArtSource`/`ArtImage`** boundary used by **every** card-art site (all 14 inline + CardArt/Viewer + poster): native local-first, single-flight per key, epoch-guarded atomic promote, quarantine-on-decode-failure, no parallel remote `<img>`, zero-image prohibits render **and** I/O, Clear serialized against downloads, and `Directory.Data/art` **excluded from Android backup** (`allowBackup="true"` today). Full design: companion **Section B**. |
 | **Minor - seam count + guard + facts** | Corrected to **14 inline `<img>` sites + the poster canvas** (the 15th grep hit is the `LifeCounter` comment). The guard test strips comments, bans `${BASE}cards/` **and** `artUrl`/`cardImageUrl` use outside the boundary, asserts no `dist/cards` after Phase 5, and manual zero-image coverage is retained (source scanning can't prove `<img src={null}>` shows the fallback - the `ArtImage` `bare` mode is the structural fix). Doc contradictions reconciled (custom domain is **now**, not deferred; Phase 0 connects the already-live domain; `.env.r2.example` updated). `aws4fetch` was added as a devDependency - called out for explicit approval. |
@@ -62,7 +69,7 @@ High-risk because it touches native/plugin behavior (Filesystem, network), the c
 
 **The art resolution seam.** `src/store/cardArt.js:29-33` `cardImageUrl(card)` returns `${BASE}cards/${card.image_slug}`, honoring zero-image mode via `imagesDisabled()` (`cardArt.js:24-26`, key `cx-no-images`). `src/components/CardArt.jsx:10-24` paints `cardFallbackArt` underneath, layers the `<img>` on top, and removes it on error - the §5 progressive-enhancement contract. `printingArt(card, setCode, foil)` (`src/store/printingRows.js:198-211`) returns a **bare slug, never a URL**, pinned by `src/store/printingRows.test.mjs:242` ("a bare slug, resolved later by cardImageUrl") and by its own doc comment (`printingRows.js:185-187`): "when card art moves to a CDN, only `cardImageUrl` changes."
 
-**Seam bypasses (verified by grep, 14 inline `<img>` render sites in 8 files + one canvas loader; the 15th `${BASE}cards/` grep hit is the `LifeCounter.jsx:594` comment).** These build `${BASE}cards/${slug}` inline, so they would 404 against the CDN and already ignore zero-image mode. Rev 2 routes ALL of them through the shared `ArtImage` boundary (companion Section B, adoption map B5), not merely through a URL formatter:
+**Art consumers (two classes).** (1) **Inline `${BASE}cards/` bypasses** - 14 `<img>` sites in 8 files + the poster canvas (the 15th `${BASE}cards/` grep hit is the `LifeCounter.jsx:594` comment). (2) **Direct `cardImageUrl` consumers that go THROUGH the seam but are NOT in the bypass grep** - `CardArt`/`CardArtViewer`, and (corrected in rev 3, per Codex) **`LifeCounter.jsx`** (half art + its grayscale DD twin + end-screen pills) and **`CollectionCardSheet.jsx` `SiteArt`** (rotated Site layout). ALL of both classes adopt the shared `ArtImage`/`useArtSource` boundary (companion adoption map B5) - because after rev 2, `cardImageUrl`/`artUrl` become private to `artCache`, a direct caller is as much a leak as an inline `${BASE}cards/`. The inline bypasses:
 
 - `src/pillars/AvatarPicker.jsx:97,120,137`
 - `src/pillars/DeckDashboard.jsx:170,339,452`
@@ -148,7 +155,7 @@ directly. The `bare` mode renders an `<img>` only when the boundary yields a rea
 fallback node - so zero-image mode can never produce an empty `<img>` (Codex's Minor). `setHeroUrl`/
 `elementIconUrl` are untouched (bundled by rule).
 
-**Cache - rev 2, full design in companion Section B.** One `src/store/artCache.js` (pure core over an
+**Cache - rev 3, full design in companion Section B.** One `src/store/artCache.js` (pure core over an
 injected `io` adapter) owns every art byte: native **local-first** (validate a cached file by exact
 size-vs-manifest, no parallel remote `<img>`), **single-flight** per content key, **epoch-guarded**
 atomic temp->rename promote, **quarantine + one retry** on decode failure, failures never memoized;
@@ -168,14 +175,14 @@ the fallback; the `ArtImage` structure guarantees it.
 canvas taint entirely); a remote-only first view sets `crossOrigin='anonymous'` (needs the R2 CORS
 policy from Phase 0). Both paths require dedicated device taint evidence.
 
-**Pipeline (rev 2 - content-addressed; full design in companion Section A).** Stage order becomes
+**Pipeline (rev 3 - content-addressed; full design in companion Section A).** Stage order becomes
 `discover -> convert+digest -> build art-manifest (pure) -> buildGeneration({artManifest}) ->
 validateGeneration -> [real run only] upload diff -> publish audit -> journaled promote`.
 
 - **Content-addressed keys.** Conversion moves in FRONT of `buildGeneration` (resolving the
   chicken-and-egg: a content key is unknowable until bytes exist). A new engine
   `scripts/catalog/artManifest.mjs` produces `public/catalog/art-manifest.json` -
-  `{ slug -> { key: `<slug>.<sha256(outputBytes)[:12]>.webp`, sha256, bytes, srcSha256 } }` - and
+  `{ slug -> { key: `<slug>.<sha256(outputBytes)>.webp`, sha256, md5, bytes, srcSha256, recipeId, encoder, legacyKey } }` - and
   `planImages` sets `v.image = manifest.objects[v.slug]?.key ?? keyOfSiblingFinish(...) ?? null`
   (`images.mjs:71`). The catalog content hash (`generation.mjs:95`) folds in the **serialized
   manifest (keys + full digests)**, not filenames - closing the exact stale-art hole. `convertOne`
@@ -183,18 +190,25 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
   standard fallback; foil-only; reverse-face exclusion; **corrected-bytes-under-same-slug -> new
   key**; no `droppedFoilDupes`). `printingArt`'s "returns a slug, never a URL" contract survives -
   the slug is simply the content key now.
+- **Recipe-aware reuse (rev 3).** Conversion skips a slug only when **both** `srcSha256` and
+  `recipeId` (`webp:w745:q80:v1`) match, so a tier change (e.g. width/quality) forces reconversion
+  rather than silently keeping bytes the manifest now mislabels; entries also record `encoder`
+  provenance (`sharp`/`vips`). An encoder-version-only change retains bytes unless `--reconvert`; a
+  source-unchanged mass re-key needs `--approve-rekey` after the printed diff. **`sharp` is pinned**
+  to an exact version (was `^0.32.6`) so output is reproducible.
 - **Hardened tooling (no fail-open).** `cdn-convert`/`cdn-upload` become importable **engines**;
   their CLI wrappers **exit non-zero on any failure** (today `cdn-convert` counts failures but exits
   0 - `cdn-convert.mjs:66`). Every write is **temp -> validate (size vs manifest / magic / digest)
   -> atomic rename**, so a truncated or wrong output never serves. Upload skips a key **only on
-  authoritative remote evidence** (`ListObjectsV2` + `x-amz-checksum-sha256` on PUT so R2 rejects
-  corrupt writes), never a local ledger. The **publish audit** confirms every distinct `v.image` is
-  a manifest key AND present remotely with matching size (one listing, not 3090 HEADs) and **refuses
-  the promote on any miss**. `--dry-run` proves **zero PUT/DELETE** through an injected network seam.
-  `--check` fails (non-zero) on absent public base, non-2xx GET, wrong body, wrong content-type, or
-  wrong cache header. Note: `--dry-run` may now encode new scans into the gitignored
-  `CATALOG_DROP/cdn-art/` staging (nothing under `public/`/`src/` is touched) - a deliberate,
-  documented change to the "writes nothing" wording at `update-catalog.mjs:4`.
+  authoritative remote evidence** (`ListObjectsV2` + `Content-MD5`/`ETag`, the R2-documented path;
+  a Phase-0 canary verifies `ETag == MD5` for single-part PUTs; signed-HEAD fallback), never a local
+  ledger. The **publish audit** confirms every distinct `v.image` is a manifest key AND present
+  remotely with matching **bytes + ETag** (one listing, not 3090 HEADs) and **refuses the promote on
+  any miss** (a same-size wrong object is caught by the ETag). `--dry-run` proves **zero PUT/DELETE**
+  through an injected network seam. `--check` fails (non-zero) on absent public base, non-2xx GET,
+  wrong body, wrong content-type, or wrong cache header. Note: `--dry-run` may now encode new scans
+  into the gitignored `CATALOG_DROP/cdn-art/` staging (nothing under `public/`/`src/` is touched) -
+  a deliberate, documented change to the "writes nothing" wording at `update-catalog.mjs:4`.
 - **Recovery re-audits remote.** The promotion journal records the manifest digest; `--recover`
   **re-runs the publish audit against R2** before completing the catalog/version promote, so a
   green *local* recovery can never publish references to missing/stale remote objects.
@@ -220,9 +234,11 @@ uploads objects, but **does not promote the committed catalog** - the shipped `c
 points at bundled base-named files, so the tree stays fully releasable. **Phase 2 is the single
 atomic activation**: it lands the runtime seam/`artCache`, promotes the repointed catalog, runs the
 remote audit, and bumps the version - all in one release. Until Phase 5 removes bundled art, the
-resolver keeps a **legacy fallback**: a content-addressed remote miss for a slug whose old
-printing-base file is still bundled falls back to that bundled image, so an offline *upgrade* to a
-Phase-2 build never loses photography before the cache is populated. `3 before 5` (persistent cache
+resolver runs an **executable candidate chain** `local -> remote -> bundledLegacy -> deterministicFallback`
+(companion B3.5), shared by `ArtImage` and `deckPoster`, where `bundledLegacy` is the per-entry
+build-side `legacyKey` (`<printingBase>.webp`, the file still in `public/cards/`). So an offline
+*upgrade* to a Phase-2 build that can reach neither cache nor CDN still advances to the bundled image
+rather than a placeholder - the window atomic activation was meant to close is actually closed. `3 before 5` (persistent cache
 before un-bundling) and `4 before 5` (pack before the bundle disappears) still hold. Phase 6 needs
 the per-finish art of Phases 1-2 but is otherwise standalone.
 
@@ -285,7 +301,7 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
     upload-diff uploads exactly the absent keys and a re-run uploads zero (half-upload resume against
     a mocked remote listing); `--check` failure exits non-zero; audit failure prevents journal
     creation/promotion; `--recover` re-audits remote; `--dry-run` records zero network mutations
-    (injected seam); prefix-collision throws; per-finish standard/foil/rainbow, foil-only,
+    (injected seam); a recipe (`recipeId`) change forces reconversion while an unchanged source alone does not; a same-size wrong-object refusal (wrong ETag); per-finish standard/foil/rainbow, foil-only,
     missing-scan fallback, reverse exclusion, unmatched scans, historical incremental art.
   - *Cache boundary (Phase 2/3, `test:query`/`test:ui` over the pure `artCache` core + fake `io`):*
     one native request for multiple simultaneous consumers (single-flight); a stale component
@@ -354,11 +370,11 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
 5. **Failure most likely to escape the test plan.** A slow-network cell connection (not offline, not fast): images neither load promptly nor error, so fallbacks never trigger and rows show empty boxes during long pending fetches. Airplane-mode tests (instant error) and Wi-Fi tests (instant success) both miss it. Mitigation to carry into Phase 3: verify `CardArt`'s fallback is painted *underneath* from first paint (it is - `CardArt.jsx:14`), so "pending" already looks intentional; test once with throttled network anyway.
 6. **Evidence that would change direction.** (i) Phase 0 finding that WebView canvas taints even from `convertFileSrc`, or that R2 CORS cannot be made to work from `https://localhost` - the poster and web-dev stories would need redesign. (ii) A Phase 3 spike showing native downloads are unreliable on the device fleet (WebView/plugin quirks) - would push toward the zip-pack-first posture or reopen option 2 at 380 px. (iii) Real tester feedback that placeholder-first fresh installs read as broken - would promote the "prompt to download pack on first launch" from open question to requirement, or revisit bundling a low-res starter subset.
 
-**Rev-2 addendum - residual risks introduced by the redesign itself.**
-- **`x-amz-checksum-sha256` on R2.** The upload's server-side corrupt-write rejection assumes R2 honours the S3 checksum header. R2's S3 compatibility is partial; if it ignores the header, integrity degrades to the client-side digest + the size-match audit (still sound, just not server-enforced). Verify in Phase 1; the design does not depend on it for correctness.
-- **Sharp/libwebp encoder drift re-keys the corpus.** A `sharp` upgrade could change output bytes for all 3090 objects and mass-re-key them. Contained by convert-skip on unchanged source + a loud "N keys changed" diff before upload (Section A2), but a careless upgrade is a 285 MB re-push. Pin `sharp` and treat an upgrade as a deliberate re-key event.
-- **The legacy bundled fallback adds transient complexity.** It exists only between Phase 2 and Phase 5 and is deleted with the bundle. Its risk is that it masks a genuine CDN miss as "fine, fell back to bundled" during that window - so the Phase-2 device evidence must confirm art comes from the CDN/cache, not the bundle (check with the bundle temporarily emptied, or via the cache-file presence).
-- **`--dry-run` now writes to gitignored staging.** A deliberate semantics change (Section A4) from the old "writes nothing." Documented and bounded to `CATALOG_DROP/cdn-art/`, but a reviewer expecting a truly side-effect-free dry run should see it flagged.
+**Rev-3 addendum - residual risks after the rev-2 fixes.**
+- **R2 integrity via ETag/MD5 (resolved, canary-gated).** Rev 2's `x-amz-checksum-sha256` premise was wrong; rev 3 uses `Content-MD5` + `ETag` (R2-documented) with a **Phase-0 canary** that verifies `ETag == MD5` for single-part PUTs before the design relies on it, and a signed-HEAD fallback if the canary fails. Residual: the canary must actually pass on R2 (verified in Phase 0, not assumed).
+- **Encoder drift (resolved via recipeId).** A `sharp` upgrade no longer silently mass-re-keys: conversion skips on `srcSha256` **and** `recipeId`, encoder-only changes retain bytes unless `--reconvert`, and any source-unchanged re-key needs `--approve-rekey` after a printed diff. `sharp` is pinned. Residual: a deliberate recipe change is a real (approved) 285 MB re-push.
+- **The legacy candidate chain adds transient complexity.** It exists only between Phase 2 and Phase 5 and is deleted with the bundle. Risk: it could mask a genuine CDN/cache miss as "fine, fell back to bundled" during that window - so Phase-2 device evidence must confirm art comes from CDN/cache (test with the bundle temporarily emptied, or assert cache-file presence).
+- **`--dry-run` now writes to gitignored staging.** A deliberate semantics change (companion A4) from "writes nothing," bounded to `CATALOG_DROP/cdn-art/` (nothing under `public/`/`src/`) - flagged so a reviewer expecting a side-effect-free dry run is not surprised.
 
 ## Approval record
 
@@ -368,4 +384,7 @@ of this proposal is taken to include that dependency.
 
 - **Rev 1** - Reviewer disposition: **Changes required** (2026-07-22). Blocker (content-addressing) +
   3 Majors (fail-open tooling, unsafe Phase-1 activation, non-app-wide cache) + Minors.
-- **Rev 2** - Reviewer disposition: *pending re-review*. Required revisions: - · Human decision: - · Date: -
+- **Rev 2** - Reviewer disposition: **Changes required, direction approved** (2026-07-22). 4 majors
+  (legacy fallback prose-only, `clear()` not linearizable, R2 checksum premise, recipe-blind reuse)
+  + 3 minors (missed consumers, unworkable prefix collision-check, test contracts).
+- **Rev 3** - Reviewer disposition: *pending re-review*. Required revisions: - · Human decision: - · Date: -
