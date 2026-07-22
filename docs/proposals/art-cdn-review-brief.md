@@ -1,9 +1,34 @@
-# Codex review request - art-CDN migration PROPOSAL (design review, pre-implementation)
+# Codex RE-REVIEW request - art-CDN migration PROPOSAL rev 2 (design review, pre-implementation)
 
-**Branch:** `art-cdn`. **This is a proposal, not an implementation.** No production app code has changed;
-approval of this design is the gate before Phase 1. Please review the design for soundness and the two
-prep scripts for correctness, and return a disposition (Approve / Approve-with-conditions / Changes
-required) as you would for a §8 proposal.
+**Branch:** `art-cdn`. **Still a proposal, no production app code.** Rev 1 disposition was Changes
+required (Blocker + 3 Majors + Minors); rev 2 resolves all of them.
+
+## Rev 2 - how each rev-1 finding is resolved
+
+Read the **"Response to the rev-1 disposition" table** at the top of `art-cdn-migration.md`, then the
+**companion `art-cdn-rev2-architecture.md`** (Section A content-addressed identity, Section B the
+shared `artCache`/`ArtImage` boundary) for the interface-level designs + pseudocode + the tests each
+enables. Summary:
+
+- **Blocker (stale art)** -> content-addressed keys `<slug>.<sha256-12>.webp` + committed
+  `art-manifest.json`; catalog hash folds the manifest digest not filenames; no purge concept.
+- **Major (fail-open tooling)** -> importable engines, non-zero CLIs, temp->validate->rename,
+  authoritative remote-checksum skip, real publish audit, `--recover` re-audits R2, dry-run seam.
+- **Major (unsafe Phase 1)** -> dormant Phase 1 (no promote) + single atomic Phase-2 activation +
+  legacy bundled fallback until Phase 5.
+- **Major (cache)** -> one shared boundary, every site, local-first single-flight epoch-guarded, zero-
+  image prohibits I/O, Android backup exclusion.
+- **Minors** -> count 14+poster, comment-stripped guard banning `artUrl`/`cardImageUrl` outside the
+  boundary, doc contradictions fixed, `aws4fetch` disclosed, one `selectPrinting()` for Phase 6.
+
+**Where to attack rev 2:** the content-addressing edge cases (encoder drift, prefix-collision, the
+`x-amz-checksum-sha256` R2-support assumption); whether the atomic Phase-2 activation + legacy fallback
+truly closes the offline-upgrade window; the `artCache` pure-core/`io`-adapter testability and the
+epoch/clear-vs-download serialization; and any resubmission-evidence test still missing.
+
+## (rev 1, retained for context) Please review the design for soundness and the two prep scripts for
+correctness, and return a disposition (Approve / Approve-with-conditions / Changes required) as you
+would for a §8 proposal.
 
 ## What to read
 
@@ -17,8 +42,9 @@ required) as you would for a §8 proposal.
 
 ```
 git fetch origin
-git diff c787585..art-cdn          # 7 files, +436, no src/** app code
+git diff c787585..art-cdn          # tooling + proposal + rev-2 companion; no src/** app code
 git log --oneline c787585..art-cdn
+# rev-2 delta only:  git diff 69f5b4b..art-cdn
 ```
 
 ## Context already VERIFIED (please don't re-litigate; challenge if you think a check was wrong)
