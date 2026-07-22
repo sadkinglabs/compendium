@@ -39,12 +39,12 @@ test('empty items produce empty buckets and defaults', () => {
 
 // --- buildImportItems: write-item assembly --------------------------------------
 
-test('single files to its sole set; multi files to the chosen set', () => {
+test('single files to its sole set; multi files to the chosen set - every item carries foil', () => {
   const p = planCollectionImport({ items: [oneSet, twoSet], unresolved: [] });
   const items = buildImportItems(p, { b: 'alp' });
   assert.deepEqual(items, [
-    { card_id: 'a', qty: 4, setCode: 'bet' },
-    { card_id: 'b', qty: 2, setCode: 'alp' },
+    { card_id: 'a', qty: 4, setCode: 'bet', foil: false },
+    { card_id: 'b', qty: 2, setCode: 'alp', foil: false },
   ]);
 });
 
@@ -53,14 +53,41 @@ test('a multi card with no/Unspecified choice files to "" (Unspecified)', () => 
   // b: explicit '' (Unspecified), c: choice omitted entirely -> also ''
   const items = buildImportItems(p, { b: '' });
   assert.deepEqual(items, [
-    { card_id: 'b', qty: 2, setCode: '' },
-    { card_id: 'c', qty: 1, setCode: '' },
+    { card_id: 'b', qty: 2, setCode: '', foil: false },
+    { card_id: 'c', qty: 1, setCode: '', foil: false },
   ]);
 });
 
 test('buildImportItems tolerates an omitted choice map', () => {
   const p = planCollectionImport({ items: [twoSet], unresolved: [] });
-  assert.deepEqual(buildImportItems(p), [{ card_id: 'b', qty: 2, setCode: '' }]);
+  assert.deepEqual(buildImportItems(p), [{ card_id: 'b', qty: 2, setCode: '', foil: false }]);
+});
+
+// --- annotation-resolved routing (v11 add-flow) ---------------------------------
+
+// A line previewCollectionText DETERMINED carries `resolved: { setCode, foil }` and files directly
+// - even a multi-set card, because the annotation named the printing. A line it could not
+// determine carries `resolved: null` and falls to review even if the card has one set.
+const resolvedFoil = { card_id: 'd', name: 'Druid', qty: 2, sets: [{ code: '999', name: 'Promotional' }, { code: '001', name: 'Alpha' }], foil: true, resolved: { setCode: '999', foil: true } };
+const unresolvedFoil = { card_id: 'e', name: 'Winter River', qty: 1, sets: [{ code: '001', name: 'Alpha' }], foil: true, resolved: null };
+
+test('an annotation-resolved multi-set line files directly, not to review', () => {
+  const p = planCollectionImport({ items: [resolvedFoil, twoSet], unresolved: [] });
+  assert.deepEqual(p.single.map((i) => i.card_id), ['d'], 'resolved multi-set card auto-files');
+  assert.deepEqual(p.multi.map((i) => i.card_id), ['b'], 'the unannotated 2-set card still needs a choice');
+});
+
+test('resolved lines file their exact setCode + foil; foil is a real boolean', () => {
+  const p = planCollectionImport({ items: [resolvedFoil], unresolved: [] });
+  assert.deepEqual(buildImportItems(p), [{ card_id: 'd', qty: 2, setCode: '999', foil: true }]);
+});
+
+test('a single-set line preview could NOT determine (resolved:null) falls to review and keeps its foil intent', () => {
+  const p = planCollectionImport({ items: [unresolvedFoil], unresolved: [] });
+  assert.deepEqual(p.single.map((i) => i.card_id), [], 'resolved:null is not auto-filed despite one set');
+  assert.deepEqual(p.multi.map((i) => i.card_id), ['e']);
+  // Left Unspecified -> uncategorised, but the foil intent survives to the writer.
+  assert.deepEqual(buildImportItems(p, {}), [{ card_id: 'e', qty: 1, setCode: '', foil: true }]);
 });
 
 // --- importTallies --------------------------------------------------------------

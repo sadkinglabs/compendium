@@ -32,22 +32,12 @@ import { notifyOwnedChanged } from './ownedRepository.js';
 import { canonicalPrinting } from './printings.js';
 import { printingFinishes } from './printingRows.js';
 import { uuid as newId, nowIso as newNow } from './ids.js';
+import { bulkWriteError, MAX_ITEM_QTY, MAX_BATCH_ITEMS } from './bulkWriteContract.js';
 
-// Codex's naming: 'prewrite' describes a validation/barrier failure more honestly than 'barrier',
-// since a validation throw is also before any write. `writeState` is the safety-bearing field.
-export function bulkWriteError(phase, writeState, message) {
-  const e = new Error(message);
-  e.name = 'BulkWriteError';
-  e.phase = phase;
-  e.writeState = writeState;
-  return e;
-}
-
-/** Per-item quantity ceiling (§7.5 input bounds). A single line may not want more than this. */
-export const MAX_ITEM_QTY = 999;
-/** Per-batch item ceiling (§7.5). With MAX_ITEM_QTY this also makes merged totals safe by
- *  construction (2000 x 999 is far below Number.MAX_SAFE_INTEGER), so an overflow cannot arise. */
-export const MAX_BATCH_ITEMS = 2000;
+// The write-outcome contract is shared with the owned import (bulkWriteContract.js) so the two
+// commands cannot drift on the safety-bearing `writeState` field. Re-exported for the callers and
+// tests that reach these through this module.
+export { bulkWriteError, MAX_ITEM_QTY, MAX_BATCH_ITEMS };
 
 function setCodesOf(cardRow) {
   let raw = cardRow?.sets;

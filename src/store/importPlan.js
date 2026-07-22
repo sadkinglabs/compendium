@@ -8,34 +8,44 @@
 // import specifically (cards carry a `sets` list); the list bulk-add sheet has a different shape
 // ({adds, unresolved}, no printing choice) and keeps its own local tally.
 
+// A line files automatically (no review) when previewCollectionText DETERMINED its printing -
+// `resolved` is a { setCode, foil } object - OR, for a hand-built/legacy item that predates
+// annotation resolution, when the card is printed in exactly one set. A line preview explicitly
+// could not determine carries `resolved: null` (a single-set [Foil] whose set has no foil, say)
+// and falls to review despite having one set.
+const autoFiles = (i) => !!i.resolved || (i.resolved === undefined && i.sets.length === 1);
+
 /**
  * Partition previewCollectionText output into the review model:
- *   - single : cards printed in exactly one set - filed automatically to that set.
- *   - multi  : cards printed in 0 or 2+ sets - need a set choice (default Unspecified).
+ *   - single : lines whose printing is determined - filed automatically (annotation-resolved, or
+ *              a single-set card). Each carries its own { setCode, foil }.
+ *   - multi  : lines that need a set choice (0/2+ sets, or an annotation that did not resolve).
+ *              They still carry the intended `foil` so an uncategorised item can land foil.
  *   - unresolved : names that matched no card - skipped.
  * choiceDefaults seeds every multi card's choice to '' (Unspecified).
- * @param {{ items: Array<{card_id:string, qty:number, sets:Array<{code:string,name:string}>}>, unresolved?: string[] }} preview
  * @returns {{ single: any[], multi: any[], unresolved: string[], choiceDefaults: Record<string,string> }}
  */
 export function planCollectionImport({ items, unresolved }) {
-  const single = items.filter((i) => i.sets.length === 1);
-  const multi = items.filter((i) => i.sets.length !== 1);   // 0 or 2+ sets need a choice
+  const single = items.filter(autoFiles);
+  const multi = items.filter((i) => !autoFiles(i));
   const choiceDefaults = /** @type {Record<string, string>} */ ({});
   for (const i of multi) choiceDefaults[i.card_id] = '';      // '' = Unspecified
   return { single, multi, unresolved: unresolved || [], choiceDefaults };
 }
 
 /**
- * Assemble importCollectionResolved's write items from the reviewed plan + the user's set
- * choices: single files to its sole set; multi files to the chosen set (or '' = Unspecified).
- * @param {{ single: any[], multi: any[] }} plan
- * @param {Record<string,string>} choice  card_id -> setCode ('' = Unspecified)
- * @returns {Array<{card_id:string, qty:number, setCode:string}>}
+ * Assemble importCollectionResolved's write items from the reviewed plan + the user's set choices.
+ * A determined line files its resolved (setCode, foil); a legacy single-set line files its sole
+ * set non-foil; a multi line files the chosen set (or '' = Uncategorised) at its intended finish.
+ * Every item carries an explicit boolean `foil` - the hardened writer rejects a non-boolean.
+ * @returns {Array<{card_id:string, qty:number, setCode:string, foil:boolean}>}
  */
 export function buildImportItems({ single, multi }, choice = {}) {
   return [
-    ...single.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: i.sets[0].code })),
-    ...multi.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: choice[i.card_id] || '' })),
+    ...single.map((i) => (i.resolved
+      ? { card_id: i.card_id, qty: i.qty, setCode: i.resolved.setCode, foil: !!i.resolved.foil }
+      : { card_id: i.card_id, qty: i.qty, setCode: i.sets[0].code, foil: false })),
+    ...multi.map((i) => ({ card_id: i.card_id, qty: i.qty, setCode: choice[i.card_id] || '', foil: !!i.foil })),
   ];
 }
 

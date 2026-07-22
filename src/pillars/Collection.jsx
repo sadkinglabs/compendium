@@ -29,7 +29,7 @@ import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
   ownedBySet, qtyForInSet, setOwnedInSet,
-  deckBuildabilityBulk, subscribeCollection, previewCollectionText, importCollectionResolved, exportListText,
+  deckBuildabilityBulk, subscribeCollection, previewCollectionText, exportListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, queueWantWrite,
   stepWantedForItem, setWantedForItem,
@@ -38,6 +38,7 @@ import {
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
+import { importCollectionResolved } from '../store/ownedImportRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
@@ -192,12 +193,21 @@ function ImportTextSheet({ open, onClose }) {
   const confirm = async () => {
     if (busy || !preview) return;
     setBusy(true);
+    // Capture the profile at the gesture, before any await, so the write binds to the profile the
+    // user is looking at even if it changes mid-commit.
+    const pid = activeProfileId();
     try {
       const items = buildImportItems(preview, choice);
-      const r = await importCollectionResolved(items);
+      const r = await importCollectionResolved(items, pid);
       toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}`);
       onClose();
-    } catch { toast("Couldn't import.", { tone: 'danger' }); setBusy(false); }
+    } catch (e) {
+      // The write-outcome contract: a transaction-phase failure may have landed on device (the web
+      // commit-then-persist hazard), so we must not claim nothing was written and must not retry.
+      const indeterminate = e?.name === 'BulkWriteError' && e.writeState === 'unknown';
+      toast(indeterminate ? "Couldn't confirm the import - check your collection before retrying." : "Couldn't import.", { tone: 'danger' });
+      setBusy(false);
+    }
   };
 
   const { nSingle, nMulti, nBad, totalCopies } = preview ? importTallies(preview) : { nSingle: 0, nMulti: 0, nBad: 0, totalCopies: 0 };

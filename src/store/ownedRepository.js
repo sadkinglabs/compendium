@@ -23,6 +23,8 @@ import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
 import { deckRequirements, deckRequirementsBulk, parseDeckText } from './deckRepository.js';
+import { parseAnnotations } from './itemLineGrammar.js';
+import { printingFinishes } from './printingRows.js';
 
 /* ---------------- freshness (in-memory revision) ---------------- */
 let _rev = 0;
@@ -602,55 +604,87 @@ export async function addOwnedCopiesInSet(cardId, set, n = 1) {
 // contradict the approved triage model, which requires the user to be present when previously
 // recorded copies are moved. Removed rather than rewritten.
 
-// PREVIEW a bulk import without writing: resolve each "qty name" line to a card and
-// its sets, merging duplicate names. The import review sheet uses this to let the
-// user pick a printing for multi-set cards before committing. Returns
-// { items: [{ card_id, name, qty, sets:[{code,name}] }], unresolved: [name] }.
+// Match a set annotation token against a card's own sets, by numeric code or full name,
+// case-insensitively. Returns the real set code or null. The token is raw user text; matching it
+// to the catalog is the caller's job (the grammar stays catalog-free).
+function matchSetToken(setToken, sets) {
+  if (!setToken) return null;
+  const t = String(setToken).trim().toLowerCase();
+  for (const s of sets) {
+    if (String(s?.code || '').toLowerCase() === t) return s.code;
+    if (String(s?.name || '').toLowerCase() === t) return s.code;
+  }
+  return null;
+}
+
+// Decide whether a line's printing is fully DETERMINED (files directly, no review) or must fall to
+// the review step. A determined line returns { setCode, foil }; anything ambiguous returns null.
+//   - annotated valid set + available finish -> determined at that printing;
+//   - single-set card -> determined by P6: a bare line takes non-foil, or foil where the sole
+//     printing is FOIL-ONLY (Winter River in Alpha); an explicit [Foil] resolves only if that
+//     printing has foil;
+//   - unknown set, a set the card lacks, a finish the printing lacks, or a multi/zero-set bare
+//     line -> null (falls to review, carrying the intended finish so it can still land foil).
+// printingFinishes is strict (throws on malformed catalog variants); a throw here reads as "not
+// determined" (fall to review) rather than crashing this read.
+function resolveLinePrinting({ sets, setToken, foil }, card) {
+  const finishesOf = (setCode) => { try { return printingFinishes(card, setCode); } catch { return null; } };
+  if (setToken) {
+    const setCode = matchSetToken(setToken, sets);
+    if (!setCode) return null;                                   // unknown / absent set -> review
+    const f = finishesOf(setCode);
+    if (f && (foil ? f.foil : f.nonFoil)) return { setCode, foil };
+    return null;                                                 // the requested finish does not exist
+  }
+  if (sets.length !== 1) return null;                            // multi/zero-set bare line -> review
+  const setCode = sets[0].code;
+  const f = finishesOf(setCode);
+  if (!f) return null;
+  if (foil) return f.foil ? { setCode, foil: true } : null;     // explicit [Foil], single set
+  if (f.nonFoil) return { setCode, foil: false };               // bare: non-foil where it exists
+  if (f.foil) return { setCode, foil: true };                   // P6: a foil-only sole printing
+  return null;
+}
+
+// PREVIEW a bulk import without writing: resolve each line to a card, peel any [Set]/[Foil]
+// annotations, and decide whether the printing is determined (files directly) or needs the review
+// step. Merges by (card, set annotation, finish) so `2 Card [Beta]` and `1 Card [Beta] [Foil]`
+// stay distinct collector items. Returns
+//   { items: [{ card_id, name, qty, sets, foil, setToken, resolved:{setCode,foil}|null }],
+//     unresolved: [name] }.
 export async function previewCollectionText(text) {
   const { avatar, zones } = parseDeckText(text);
-  const lines = [...zones.spellbook, ...zones.atlas, ...zones.collection];
-  if (avatar) lines.push({ name: avatar, qty: 1 });
-  const byName = new Map();   // lower(name) -> { name, qty }
-  for (const { name, qty } of lines) {
-    const key = String(name).toLowerCase();
-    byName.set(key, { name, qty: (byName.get(key)?.qty || 0) + Math.max(1, qty | 0) });
+  const rawLines = [...zones.spellbook, ...zones.atlas, ...zones.collection];
+  if (avatar) rawLines.push({ name: avatar, qty: 1 });
+
+  // Peel annotations first, then merge by the COLLECTOR-ITEM key so distinct printings of one card
+  // do not collapse into a single line the way a name-only merge would.
+  const byItem = new Map();
+  for (const { name, qty } of rawLines) {
+    const { name: clean, setToken, foil } = parseAnnotations(name);
+    const key = `${clean.toLowerCase()}|${(setToken || '').toLowerCase()}|${foil ? 1 : 0}`;
+    const prev = byItem.get(key);
+    byItem.set(key, { name: clean, setToken, foil, qty: (prev?.qty || 0) + Math.max(1, qty | 0) });
   }
+
   const items = [];
   const unresolved = [];
-  for (const { name, qty } of byName.values()) {
-    const c = (await query('SELECT card_id, name, sets FROM cards WHERE lower(name)=? LIMIT 1;', [name.toLowerCase()]))[0];
+  for (const { name, setToken, foil, qty } of byItem.values()) {
+    const c = (await query('SELECT card_id, name, sets, variants FROM cards WHERE lower(name)=? LIMIT 1;', [name.toLowerCase()]))[0];
     if (!c) { unresolved.push(name); continue; }
     let sets = []; try { sets = JSON.parse(c.sets || '[]'); } catch { /* leave empty */ }
-    items.push({ card_id: c.card_id, name: c.name, qty, sets: Array.isArray(sets) ? sets : [] });
+    sets = Array.isArray(sets) ? sets : [];
+    const resolved = resolveLinePrinting({ sets, setToken, foil }, c);
+    items.push({ card_id: c.card_id, name: c.name, qty, sets, foil, setToken: setToken || null, resolved });
   }
   return { items, unresolved };
 }
 
-// Commit a reviewed import: each item files its copies into a chosen bucket. setCode
-// '' (or falsy) = the Uncategorised bucket; a set code files that printing. One tx.
-export async function importCollectionResolved(items) {
-  const pid = activeProfileId();
-  const now = nowIso();
-  const stmts = [];
-  let copies = 0, names = 0;
-  for (const { card_id, qty, setCode } of items || []) {
-    const n = Math.max(0, qty | 0);
-    if (!card_id || n <= 0) continue;
-    names++; copies += n;
-    stmts.push([
-      `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
-       VALUES(?,?,?,?,?,0,'',?,?)
-       ON CONFLICT(profile_id,card_id,variant_slug)
-       DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-      // A resolved set when the review sheet established one, otherwise the uncategorised row -
-      // never the v10 empty string, which a v11 reader would not recognise as ownership.
-      [uuid(), pid, card_id, setCode ? canonicalPrinting(setCode, false) : UNCATEGORISED, n, now, now],
-    ]);
-  }
-  if (stmts.length) await tx(stmts);
-  bump();
-  return { copies, names };
-}
+// The reviewed-import WRITE moved to ownedImportRepository.js (importCollectionResolved), where it
+// gained the barrier, authoritative catalog validation, the foil term, and the write-outcome
+// contract - the same hardening the want command carries. It could not stay a bare one-tx writer:
+// it accepted only { card_id, qty, setCode }, dropped finish, and wrote without validation. This
+// module keeps only the READ side (previewCollectionText) and the pure planner is in importPlan.js.
 
 /**
  * Add a shortfall to the Wishlist. MAX (not +=) so re-running a deck's "add missing" never
