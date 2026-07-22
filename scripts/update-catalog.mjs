@@ -7,24 +7,23 @@
 // Every stage builds into a staging tree; nothing under public/ or src/ is touched
 // until the whole generation validates and the journaled promote runs. This file
 // orchestrates the engines in scripts/catalog/*; each engine is unit-tested.
-import { readFileSync, existsSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { discover } from './catalog/discover.mjs';
 import { fetchAllCards } from './catalog/curiosa.mjs';
-import { buildGeneration, writeStagingJson, validateGeneration, serializeVersion, serializeSetCatalog } from './catalog/generation.mjs';
-import { convertOne } from './catalog/images.mjs';
+import { buildArtManifest, TIER } from './catalog/artManifest.mjs';
+import { buildGeneration, validateGeneration } from './catalog/generation.mjs';
 import { formatReport } from './catalog/report.mjs';
-import { isPending, recover, promote } from './catalog/journal.mjs';
+import { isPending, recover } from './catalog/journal.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DROP = join(ROOT, 'CATALOG_DROP');
 const CATALOG = join(ROOT, 'public', 'catalog');
 const CARDS_DIR = join(ROOT, 'public', 'cards');
-const VERSION_FILE = join(ROOT, 'src', 'store', 'catalogVersion.json');
-const SET_CATALOG_FILE = join(ROOT, 'src', 'store', 'setCatalog.json');
+const MANIFEST_FILE = join(CATALOG, 'art-manifest.json');   // committed content-addressed art manifest (absent on first run)
 const BUILD_DIR = join(ROOT, '.catalog-build');
-const STAGING = join(BUILD_DIR, 'staging');
 const JOURNAL = join(BUILD_DIR, 'PROMOTE.json');
 const readJson = (f) => JSON.parse(readFileSync(join(CATALOG, f), 'utf8'));
 
@@ -58,11 +57,37 @@ async function main() {
   const apiCards = await fetchAllCards({ onProgress: (n, p) => process.stdout.write(`\r  ${n} cards (page ${p})…`) });
   process.stdout.write('\n');
 
+  // Content-addressed art manifest: convert + digest every finish-suffixed drop scan
+  // (avatar-back reverse faces excluded) BEFORE the pure generation. Each object key is
+  // `<slug>.<sha256-of-webp-bytes>.webp`, so a changed scan yields a new key and reseeds.
+  // The manifest is the single source planImages reads; conversion is in-memory (Buffers),
+  // so a dry run still writes nothing. The skip predicate (srcSha256 + recipeId) makes a
+  // re-run with an unchanged drop cheap once a committed manifest exists.
+  console.log('Building the art manifest (convert + digest)…');
+  const sharp = (await import('sharp')).default;
+  const encoder = { sharp: sharp.versions?.sharp ?? null, vips: sharp.versions?.vips ?? null };
+  const isReverseFace = (slug) => /-(s|f)-r$/.test(slug);   // -s-r / -f-r avatar backs are never published
+  const dropSlugs = new Map();
+  for (const p of drop.pngPaths) {
+    const slug = p.replace(/^.*[\\/]/, '').replace(/\.png$/i, '');
+    if (!isReverseFace(slug)) dropSlugs.set(slug, p);
+  }
+  const committedManifest = existsSync(MANIFEST_FILE) ? JSON.parse(readFileSync(MANIFEST_FILE, 'utf8')) : null;
+  const artDeps = {
+    hashFile: async (path) => createHash('sha256').update(readFileSync(path)).digest('hex'),
+    convertFresh: async (pngPath) => sharp(pngPath).resize({ width: TIER.width, withoutEnlargement: true }).webp({ quality: TIER.quality }).toBuffer(),
+    hashBytes: async (buf) => ({ sha256: createHash('sha256').update(buf).digest('hex'), md5: createHash('md5').update(buf).digest('hex') }),
+    bundledExists: (name) => existsSync(join(CARDS_DIR, name)),
+    encoder,
+  };
+  const { manifest: artManifest, report: artReport } = await buildArtManifest(committedManifest, dropSlugs, artDeps, {});
+  console.log(`  manifest: ${artReport.fresh} converted, ${artReport.kept} kept, ${artReport.carried} carried (${artReport.total} objects).`);
+
   const gen = buildGeneration({
     currentCards, currentArticles, currentFaqs, committedLinkGraph, apiCards,
     rulesCsvText: drop.rulesCsv ? readFileSync(drop.rulesCsv, 'utf8') : null,
     faqCsvText: drop.faqCsv ? readFileSync(drop.faqCsv, 'utf8') : null,
-    dropPngNames: drop.pngNames,
+    artManifest,
   });
 
   const report = { ...gen.report, ok: gen.warnings.length === 0, warnings: gen.warnings };
@@ -76,56 +101,14 @@ async function main() {
 
   if (dryRun) return;
 
-  // ---- Real promotion (staging -> journaled promote) ----
-  const committedVersion = JSON.parse(readFileSync(VERSION_FILE, 'utf8'));
-  if (gen.hash === committedVersion.hash) {
-    console.log('\nNo changes: the catalog is already current (content hash unchanged). Nothing written.');
-    return;
-  }
-  const nextVersion = { version: committedVersion.version + 1, hash: gen.hash };
-
-  console.log('\nBuilding the staging generation…');
-  rmSync(STAGING, { recursive: true, force: true });
-  const stagingCatalog = join(STAGING, 'catalog');
-  const stagingCards = join(STAGING, 'cards');
-  mkdirSync(stagingCards, { recursive: true });
-  writeStagingJson(gen, stagingCatalog);
-  writeFileSync(join(STAGING, 'catalogVersion.json'), serializeVersion(nextVersion));
-  writeFileSync(join(STAGING, 'setCatalog.json'), serializeSetCatalog(gen.setCatalog));
-
-  // Convert every planned scan to WebP (this is where sharp runs).
-  const pathByName = new Map(drop.pngPaths.map((p) => [p.replace(/^.*[\\/]/, ''), p]));
-  const webps = gen.imagePlan.manifest;
-  let n = 0;
-  for (const webp of webps) {
-    const srcName = gen.imagePlan.sources[webp];
-    const srcPath = pathByName.get(srcName);
-    if (!srcPath) throw new Error(`source scan ${srcName} for ${webp} not found in the drop`);
-    await convertOne(srcPath, join(stagingCards, webp));
-    if (++n % 200 === 0) process.stdout.write(`\r  converted ${n}/${webps.length} images…`);
-  }
-  process.stdout.write(`\r  converted ${webps.length}/${webps.length} images.\n`);
-
-  // Promote under the journal: art dir FIRST (wholesale replace, dropping the old
-  // alp-* files), then the catalog JSON, then the version token LAST.
-  promote({
-    journalPath: JOURNAL,
-    hash: gen.hash,
-    artDir: { from: stagingCards, to: CARDS_DIR },
-    files: [
-      { from: join(stagingCatalog, 'cards.json'), to: join(CATALOG, 'cards.json') },
-      { from: join(stagingCatalog, 'articles_normalized.json'), to: join(CATALOG, 'articles_normalized.json') },
-      { from: join(stagingCatalog, 'faqs.json'), to: join(CATALOG, 'faqs.json') },
-      { from: join(stagingCatalog, 'link_graph.json'), to: join(CATALOG, 'link_graph.json') },
-      { from: join(stagingCatalog, 'codex_documents.json'), to: join(CATALOG, 'codex_documents.json') },
-      { from: join(STAGING, 'setCatalog.json'), to: SET_CATALOG_FILE },   // set names (data-derived), before the token
-      { from: join(STAGING, 'catalogVersion.json'), to: VERSION_FILE },   // reseed trigger LAST
-    ],
-  });
-
-  console.log(`\nPromoted catalog v${committedVersion.version} -> v${nextVersion.version} (${webps.length} images).`);
-  console.log('Review `git diff`, add a changelog entry, bump the build on install (see BUILD.md).');
-  console.log('RESULT: OK');
+  // ---- Phase 1 (art-cdn), dormant ----
+  // The manifest is built, content-hashed, and validated, but catalog promotion and the
+  // CDN upload are wired in later phases. A real run writes NOTHING to public/ or src/ yet:
+  // this is the deliberate Phase-1 stopping point, not a failure. Re-enabling promotion
+  // happens with the uploader/audit engine and the atomic activation (see the proposal).
+  console.log('\nPhase 1 (art-cdn): manifest built and validated. Catalog promotion and CDN');
+  console.log('upload are disabled until the uploader engine lands - nothing was written.');
+  console.log('RESULT: OK (dormant)');
 }
 
 main().catch((e) => {
