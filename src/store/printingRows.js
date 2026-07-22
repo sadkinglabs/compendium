@@ -55,17 +55,36 @@ function variantsOf(card) {
  * A durable writer must never authorise a collector item on the basis of catalog metadata it
  * could not actually read - corrupt metadata that reads as `[]` would otherwise be interpreted
  * as a valid non-foil-only printing and let an item the catalog never established slip through.
+ *
+ * Validating only the OUTER array is not enough: `finishesFrom` filters entries by set and
+ * silently ignores the rest, so a malformed but array-shaped record (`['bad']`, an entry with a
+ * numeric set, an entry with an unknown finish for a DIFFERENT set) reads as "no variant for this
+ * set" and falls through to the standard-only fallback - authorising a phantom item. So EVERY
+ * entry is validated here: an object with a non-empty string `set` and a KNOWN finish label,
+ * anywhere in the record, or the whole card is rejected. The approved fallback survives - a valid
+ * array with no entry for the requested set is still standard-only - because that array now
+ * passes entry validation.
+ *
  * Display and authorisation deliberately have different failure policies; this is the strict one.
  */
 export function authoritativeVariantsOf(card) {
   const raw = card?.variants;
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === 'string') {
-    let parsed;
-    try { parsed = JSON.parse(raw); } catch { throw new Error('authoritativeVariantsOf: malformed variants JSON'); }
-    if (Array.isArray(parsed)) return parsed;
+  let variants;
+  if (Array.isArray(raw)) {
+    variants = raw;
+  } else if (typeof raw === 'string') {
+    try { variants = JSON.parse(raw); } catch { throw new Error('authoritativeVariantsOf: malformed variants JSON'); }
   }
-  throw new Error('authoritativeVariantsOf: variants must be an array');
+  if (!Array.isArray(variants)) throw new Error('authoritativeVariantsOf: variants must be an array');
+
+  for (const [index, variant] of variants.entries()) {
+    if (!variant || typeof variant !== 'object' || Array.isArray(variant)
+        || typeof variant.set !== 'string' || !variant.set.trim()) {
+      throw new Error(`authoritativeVariantsOf: invalid variant at ${index}`);
+    }
+    normalizeFinishLabel(variant.finish);   // throws on an unknown / missing finish label
+  }
+  return variants;
 }
 
 // Pure core: `{ nonFoil, foil }` from a variants ARRAY. A valid array with NO entry for this set

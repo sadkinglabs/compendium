@@ -101,9 +101,33 @@ test('authoritativeVariantsOf accepts arrays and valid JSON, throws on the rest'
   const { authoritativeVariantsOf } = await import('./printingRows.js');
   assert.deepEqual(authoritativeVariantsOf({ variants: [V('001', 'Standard')] }), [V('001', 'Standard')]);
   assert.deepEqual(authoritativeVariantsOf({ variants: '[{"set":"001","finish":"Standard"}]' }), [{ set: '001', finish: 'Standard' }]);
+  assert.deepEqual(authoritativeVariantsOf({ variants: [] }), [], 'a valid empty array is fine - the standard-only fallback');
   assert.throws(() => authoritativeVariantsOf({ variants: '{not json' }), /malformed variants JSON/);
   assert.throws(() => authoritativeVariantsOf({ variants: '{}' }), /variants must be an array/);
   assert.throws(() => authoritativeVariantsOf({ variants: 42 }), /variants must be an array/);
+});
+
+test('authoritativeVariantsOf validates EVERY entry, not just the outer array', async () => {
+  // The gap Codex found: `finishesFrom` filters entries by set and silently ignores the rest, so
+  // a malformed but array-shaped record read as "no variant for this set" and fell through to the
+  // standard-only fallback - authorising a phantom item. Every entry must be a well-shaped object
+  // with a string set and a KNOWN finish, or the whole card is rejected.
+  const { authoritativeVariantsOf } = await import('./printingRows.js');
+  assert.throws(() => authoritativeVariantsOf({ variants: ['bad'] }), /invalid variant at 0/);
+  assert.throws(() => authoritativeVariantsOf({ variants: [null] }), /invalid variant at 0/);
+  assert.throws(() => authoritativeVariantsOf({ variants: [[]] }), /invalid variant at 0/, 'a nested array is not a variant object');
+  assert.throws(() => authoritativeVariantsOf({ variants: [{ set: 123, finish: 'Foil' }] }), /invalid variant at 0/, 'a numeric set is not a string set');
+  assert.throws(() => authoritativeVariantsOf({ variants: [{ set: '  ', finish: 'Foil' }] }), /invalid variant at 0/, 'a blank set is rejected');
+  assert.throws(() => authoritativeVariantsOf({ variants: [{ set: '001' }] }), /unknown catalog finish/, 'a missing finish is rejected via the normaliser');
+  assert.throws(() => authoritativeVariantsOf({ variants: [{ set: '002', finish: 'Future' }] }), /unknown catalog finish/, 'an unknown finish for ANOTHER set still rejects the whole card');
+});
+
+test('printingFinishes rejects the phantom-item cases, does not fall through to standard', () => {
+  // The consequence of the gap, at the durable boundary: each of these once produced a standard
+  // item for set 001; now each throws instead of authorising nothing the catalog established.
+  assert.throws(() => printingFinishes({ variants: ['bad'] }, '001'), /invalid variant at 0/);
+  assert.throws(() => printingFinishes({ variants: [{ set: 123, finish: 'Foil' }] }, '001'), /invalid variant at 0/);
+  assert.throws(() => printingFinishes({ variants: [{ set: '002', finish: 'Future' }] }, '001'), /unknown catalog finish/);
 });
 
 /* ---------------- the catalog contract ---------------- */
@@ -129,6 +153,17 @@ test('CATALOG CONTRACT: printingFinishes never throws across the entire catalog'
   const cards = Object.values(require('../../public/catalog/cards.json'));
   for (const c of cards) for (const s of (c.sets || [])) {
     assert.doesNotThrow(() => printingFinishes(c, s.code), `${c.name} / ${s.code}`);
+  }
+});
+
+test('CATALOG CONTRACT: every bundled card passes strict entry validation', async () => {
+  // The finish enumeration above skips entries with a null finish, so it would not catch a
+  // structurally-malformed entry like ['bad']. This runs the strict schema check over every card
+  // so a future drop that ships a wrongly-shaped variant entry stops the build here.
+  const { authoritativeVariantsOf } = await import('./printingRows.js');
+  const cards = Object.values(require('../../public/catalog/cards.json'));
+  for (const c of cards) {
+    assert.doesNotThrow(() => authoritativeVariantsOf(c), `${c.name} (${c.card_id}) has a malformed variant entry`);
   }
 });
 
