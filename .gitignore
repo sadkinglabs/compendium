@@ -24,6 +24,12 @@ CATALOG_DROP/*
 # Catalog pipeline staging + promotion journal (build-time scratch).
 .catalog-build/
 
+# Local secrets - R2 upload credentials, etc. NEVER commit. The .example template is tracked.
+.env
+.env.local
+.env.r2
+!.env.r2.example
+
 # Distribution screenshots (generated, not tracked)
 dist-shots/
 
