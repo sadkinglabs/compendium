@@ -1,8 +1,8 @@
 # Collection v11 - Add and Wishlist surfaces think in collector items
 
-**Status:** Design + implementation brief, rev 2. Core model approved by the owner; this
-revision folds in the finish-availability correction and three owner rulings, and goes back
-to Codex for adversarial review.
+**Status:** Design + implementation brief, rev 3. Core model and rev 2 approved by the
+owner; this revision folds in the final two rulings (owned-import annotations, the
+1,000-row cap) and goes to Codex for adversarial review. No open questions remain.
 **Branch:** `collection-add-flow`, off the schema v11 work.
 **Scope:** UI and pure-helper layers, plus **one repository addition** - the transactional
 bulk want writer `addWantedItemsBulk` (owner ruling, §3.6). No schema change; every other
@@ -214,6 +214,15 @@ set-scoped workflow (the 402 case) is untouched; only broad or empty queries hit
 and a 2,000-want single tap is a footgun, not a workflow. No virtualization library; the
 scrolling container stays transform-free (the sheet's animated element never carries the
 scroll - Android WebView rule).
+
+**Acceptance criterion (owner ruling): the cap is never silent.** Whenever the result
+exceeds 1,000 printings, ALL THREE signals must be present and testable: (a) the count
+line shows both numbers (`2,431 printings · showing 1,000`), (b) the
+`Refine the search to see the rest` footer row renders after the last shown row, and
+(c) Select all is disabled with that same reason. A truncated list with any of the three
+missing is a defect, not a styling choice; the pure row-capping helper returns
+`{ shown, total, capped }` so a unit test can assert the state, and the UI test asserts
+the three signals render from it.
 
 #### What `set:beta -> Select all -> Add` now does, end to end
 
@@ -464,6 +473,43 @@ returns `{ adds: [{ card, qty, item | null, lockedFinish | null }], unknown: [..
 Compendium-origin pastes therefore carry their printings with them, and §3.2's resolver
 becomes a rarity reserved for foreign or hand-typed lists.
 
+#### Owned import (owner ruling on rev 2's OQ1: yes, optional, pickers as fallback)
+
+The same grammar extends to the OWNED text import (Overview's `ImportTextSheet` ->
+`previewCollectionText` -> `planCollectionImport` review). Annotations are OPTIONAL:
+
+- A line with a valid `[Set]` annotation - the set is one of the card's catalog sets, and
+  the line's finish exists for that printing (P6) - files that exact owned printing
+  directly (`canonicalPrinting(set, foil)`), skipping the review step for that line.
+  `[Foil]` files the foil ownership row.
+- A BARE line, or one with an unknown set, a set the card is not printed in, or a finish
+  the printing does not have, falls through to the EXISTING owned review step and its
+  per-card set pickers - never dropped, never silently resolved. The picker confirms it,
+  exactly as today.
+
+**The asymmetry with wants, stated because the two grains genuinely differ:**
+uncategorised OWNED copies are a legitimate, first-class state (the To Be Categorised
+pile; a scan with no set pick already lands there). So the owned-import fallback may
+legitimately END uncategorised if the user leaves a line unresolved in the review step -
+that is allowed and is already how owned import behaves. Wants are the opposite: an
+uncategorised want may never be created by a normal writer, so the wishlist fallback
+(`ResolvePrintingsSheet`) forces a choice. Two fallbacks for two grains:
+
+| Grain | Incomplete line falls to | May end uncategorised? |
+|---|---|---|
+| Want (wishlist paste) | `ResolvePrintingsSheet` - must resolve | Never |
+| Owned (collection paste) | Existing review step with pickers | Yes - legitimate state |
+
+Do not port the wishlist's "resolver forces resolution" rule onto owned import, and do
+not port owned import's uncategorised default onto wants.
+
+The combined win: a Compendium wishlist export re-imports losslessly, ANY annotated
+collection list files its owned copies to exact printings through the same one grammar,
+and hand-typed lines still work with the pickers filling the gaps. (No owned-side export
+emits annotations today - the per-set missing export stays Curiosa-bare, above - so a
+future "export collection as text" surface inherits the grammar for free rather than
+being invented here.)
+
 ### 3.6 The transactional bulk want writer (repository addition)
 
 Owner ruling: built this round. New writer in `src/store/ownedRepository.js`:
@@ -566,8 +612,14 @@ Store-layer changes are flagged.
 6. **Text grammar + symmetric import/export.** [store, new file]
    `src/store/itemLineGrammar.js` (format + parse, shared); `resolveWantList` beside the
    existing resolvers; `wishlistExportText` emits per-item lines; `ListBulkAddSheet`'s
-   apply path consumes resolved items. Unit tests: grammar cases from §3.5, unknown-set
-   and wrong-finish flagging, and the lossless round-trip contract.
+   apply path consumes resolved items. Also the OWNED import extension (§3.5, owner
+   ruling): `previewCollectionText` parses annotations per line; `planCollectionImport`
+   partitions annotated-and-valid lines into the direct-file bucket, everything else into
+   the existing review/picker buckets unchanged; `importCollectionResolved` is untouched
+   (it already files `(card, set)` and the uncategorised fallback). Unit tests: grammar
+   cases from §3.5, unknown-set and wrong-finish flagging, the lossless wishlist
+   round-trip contract, and the owned partition (annotated files directly; bare and
+   invalid reach the pickers; unresolved may end uncategorised - owned only).
 7. **Wishlist rows.** [store, new file] `src/store/wishlistRows.js`:
    `groupWishlistDisplayRows`. `ListCardRow` gains the twin-finish status line and the
    per-existing-finish steppers; `ListDetail` keys rows by group, maps stepper callbacks
@@ -585,14 +637,16 @@ Dependencies: 4 needs 1, 2, 3; 5 needs 2, 3; 6 needs 2 (finish validation) and f
 locked-finish rows; 7 and 8 are independent of each other. Increments 1-3 are pure/store
 and land without visible change.
 
-## 6. Open questions for the owner
+## 6. Resolved decisions
 
-1. **Owned import annotations.** The line grammar (§3.5) now exists app-wide. Should the
-   OWNED text import (Overview's `ImportTextSheet` -> `previewCollectionText`) also parse
-   `[Set]` / `[Foil]` annotations this round, filing annotated owned copies directly
-   instead of asking in its review step? Recommended yes (the parser is shared and the
-   review step already handles the bare remainder), but it widens scope beyond the
-   wishlist surfaces, so it is called out rather than assumed.
-2. **The render/select cap.** 1,000 printings (§3.1) is chosen so every single-set
-   workflow fits with heavy margin. Confirm the number, or name a different one - it is a
-   constant, not an architecture.
+No open questions remain. For the record, the two from rev 2 were ruled:
+
+1. **Owned import annotations - YES, optional, pickers as fallback.** The shared grammar
+   extends to the owned text import; annotated-and-valid lines file exact printings
+   directly, everything else falls to the existing review step and its pickers, which may
+   legitimately end uncategorised (owned only - the want side must always resolve).
+   Specified in §3.5, built in increment 6.
+2. **The render/select cap - 1,000, confirmed, and the limit must be clearly
+   communicated.** Never a silent truncation: both numbers on the count line, the
+   refine footer, and Select-all disabled with the reason are a mandatory trio, stated as
+   a testable acceptance criterion in §3.1.
