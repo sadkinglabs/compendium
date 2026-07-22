@@ -1,8 +1,10 @@
 # Collection v11 - Add and Wishlist surfaces think in collector items
 
-**Status:** Design + implementation brief, rev 4. Rev 3 was reviewed by Codex (one blocker,
-six majors) and re-ruled by the owner (Rainbow finish, per-item art, printing origins).
-This revision resolves all of them and returns to Codex.
+**Status:** Design + implementation brief, rev 4.1. Rev 4 was approved-in-model by Codex
+with two durable-boundary majors and small plan corrections; this revision folds those in
+(the web-`tx()` write-outcome contract, the barrier-hardened owned-import writer, the
+production-wiring test seam, the increment reorder and full gate list) and returns to Codex
+for the final disposition. UX direction unchanged.
 **Branch:** `collection-add-flow`, off the schema v11 work.
 **Change class: HIGH-RISK** (reclassified from Standard per Codex Major 8). This work
 changes profile-owned durable writes, transactional behaviour, the text import/export
@@ -13,8 +15,14 @@ documentation impact, Self-Critique, approval record) is §7.
 **Repository surface touched** (rev 3's "one repository addition" was an undercount):
 - `addWantedItemsBulk` - NEW bulk want command, barrier-protected (§3.6).
 - `planWantedItemBatch` - NEW pure batch validator used inside the command (§3.6).
-- `importCollectionResolved` - CONTRACT EXTENSION: items gain `foil` (§3.5, Codex Major 4).
+- `importCollectionResolved` - CONTRACT EXTENSION: items gain `foil`, AND the writer is
+  barrier-protected + catalog-validating like the want command (§3.5, Codex Majors).
+- `planOwnedItemBatch` - NEW pure validator for the owned import boundary (§3.5).
 - `parseQuery` - restructured output, back-compatible `clauses` retained (§3.1, Major 7).
+Both bulk commands are built through factories (`createWantedBulkCommand`, and the owned
+equivalent) so their barrier tests run production code, and both carry the `phase` /
+`writeState` write-outcome contract (§3.6) so a web persist failure after commit is
+reported as indeterminate, never as "nothing written".
 **Invariants touched:** durable offline-first writes, transactional user-data operations,
 cross-runtime integrity (web sql.js vs native executeSet). How each still holds is
 specified in §3.6 and §7.
@@ -447,11 +455,17 @@ key - two finishes of one printing are ONE row; two sets of one card remain two 
   buttons are named `Want Beta non-foil, one more` / `Want Beta non-foil, one fewer` /
   `Want Beta foil, one more` etc. - TalkBack must distinguish the four buttons on a
   two-finish row.
-- The NF stepper (labeled WANT, ruby label as today) edits the NF item:
-  `stepWantedForItem(cardId, { set, foil: false }, delta)` through `queueWantWrite` -
-  exactly the current `persist` path with the item taken from the group, not from a
-  card-level guess. The foil stepper (labeled `FOIL ✦`, gold label, visually secondary)
-  does the same with `foil: true`.
+- **The group carries EXACT item objects, not a key to reconstruct from** (Codex
+  guidance). `groupWishlistDisplayRows` returns `nf: { itemId, item: { cardId, set, foil:
+  false }, want, owned } | null` and the matching `foil: {...foil: true} | null`; the
+  stepper callbacks receive `group.nf.item` / `group.foil.item` DIRECTLY. Nothing
+  re-derives the item from the group key at write time - that is where a finish-targeting
+  regression would hide. A test seeds both finishes, steps ONE through the production
+  helper, and asserts the sibling slug's row is byte-for-byte unchanged.
+- The NF stepper (labeled WANT, ruby label as today) edits `group.nf.item`:
+  `stepWantedForItem(cardId, group.nf.item, delta)` through `queueWantWrite` - the current
+  `persist` path with the exact item from the group, not a card-level guess. The foil
+  stepper (labeled `FOIL ✦`, gold label, visually secondary) edits `group.foil.item`.
 - Stepping a finish to 0 removes that finish from the group. The remove-confirm rule
   applies per row: the last step below 1 on the LAST remaining finish of the row asks the
   existing confirm sheet.
@@ -603,26 +617,47 @@ The same grammar extends to the OWNED text import (Overview's `ImportTextSheet` 
   the printing does not have, falls through to the EXISTING owned review step and its
   per-card set pickers - never dropped, never silently resolved.
 
-**Writer contract fix (Codex Major 4 - rev 3's "importCollectionResolved is untouched"
-was wrong and is withdrawn).** `importCollectionResolved` accepts only
-`{card_id, qty, setCode}` and hardcodes `canonicalPrinting(setCode, false)` - under rev 3
-a `2 Card [Beta] [Foil]` line would have persisted as Beta NON-foil, a ledger lie. The
-contract extends:
+**Writer contract fix (Codex Majors - rev 3's "importCollectionResolved is untouched" was
+wrong AND the writer must be hardened like the want command).** `importCollectionResolved`
+accepts only `{card_id, qty, setCode}`, hardcodes `canonicalPrinting(setCode, false)`, and
+writes WITHOUT the barrier or catalog validation. Three holes: `2 Card [Beta] [Foil]`
+would persist as Beta NON-foil (a ledger lie); a forged or regressed caller could write a
+nonexistent item (a non-foil Winter River) because plan-time UI validation is bypassable;
+and a concurrent queued ownership step could clobber the bulk increment (the same
+lost-update the want barrier prevents). It is hardened exactly like §3.6:
 
 ```
-importCollectionResolved(items)
-  items: [{ card_id, qty, setCode, foil = false }]
-  writes canonicalPrinting(setCode, foil) when setCode is present,
-         else UNCATEGORISED_FOIL when foil, else UNCATEGORISED
+importCollectionResolved(items, pid)   // pid captured by the CALLER before any await
+  -> withExclusiveCollectionWrites(async () => {
+       // authoritative catalog read INSIDE the holder
+       // planOwnedItemBatch: pure validate + merge, whole-batch reject before SQL
+       // one tx of canonicalPrinting(setCode, foil) upserts
+       // one broadcast after commit
+     })
 ```
 
-Same one-transaction discipline as today. Annotated direct-file items are validated
-against the catalog at plan time (set belongs to the card, finish available under the
-normalizer); the uncategorised fallback remains ONLY for lines the user leaves unresolved
-in the review step. A REQUIRED end-to-end repository test drives the real chain -
-grammar -> `previewCollectionText` -> `planCollectionImport` -> `importCollectionResolved`
--> read the ledger back - and asserts exact stored slugs (`002`, `002:f`,
-`uncategorised:f`), not just the pure plan.
+Validation (whole batch rejected before any SQL):
+- the card exists;
+- a NONEMPTY `setCode` belongs to that card's `sets`;
+- the requested finish exists for that printing under `printingFinishes` (P6);
+- an EMPTY `setCode` stays valid FOR OWNED ONLY, writing the canonical uncategorised key
+  for the finish (`UNCATEGORISED` / `UNCATEGORISED_FOIL`) - the owned grain may be
+  uncategorised, the want grain may not;
+- qty is a bounded positive safe integer; merged totals stay safe integers.
+
+It carries the SAME write-outcome contract as §3.6 (`phase` barrier/transaction,
+`writeState` none/unknown) and is built through a factory for the same production-wiring
+guarantee. This is more than "one repository addition" - the scope header lists both
+commands.
+
+Tests: a forged non-foil Winter River REJECTION; a valid foil Winter River acceptance;
+valid `uncategorised` and `uncategorised:f` owned outcomes from bare and annotated lines;
+an A->B profile-switch isolation (writes land on the captured pid); transaction-failure
+and indeterminate-web-failure coverage; a lost-update counterfactual against a queued
+absolute owned edit (guarded 3 / control 2, exact). Plus a REQUIRED end-to-end repository
+test driving the real chain - grammar -> `previewCollectionText` -> `planCollectionImport`
+-> `importCollectionResolved` -> ledger readback asserting exact stored slugs (`002`,
+`002:f`, `uncategorised:f`), not just the pure plan.
 
 **The owned/wanted asymmetry, restated because the two grains genuinely differ:**
 uncategorised OWNED copies are a legitimate, first-class state (the To Be Categorised
@@ -704,22 +739,59 @@ addWantedItemsBulk(items, pid)
   admits the additive semantics everywhere (§3.1).
 - **Callers:** the AddCardsSheet batch commit (§3.1) and the draft Confirm (§3.2).
   Single-item gestures stay on their per-card `queueWantWrite` chains.
-- **UI contract:** callers AWAIT the command before any past-tense copy; on rejection
-  they reconcile optimistic state from an authoritative read, RETAIN the user's
-  selection/sheet state, and show the failure toast. The goal drain reconciles; it is
-  never the error surface.
+- **Write-outcome contract (Codex Major - a rejected WEB tx does not prove nothing was
+  written).** The web backend commits the sql.js transaction and THEN awaits IndexedDB
+  persistence (`db.js`), so a persist failure (quota) rejects `tx()` AFTER the in-memory
+  SQL already changed. "Nothing was written" would then be a lie, and a retry would double
+  the quantities - the optimistic-certainty defect this work keeps guarding against. So a
+  rejection carries WHERE it failed:
+
+  ```
+  on reject -> Error with { phase: 'barrier' | 'transaction', writeState: 'none' | 'unknown' }
+  ```
+
+  - Rejection BEFORE `tx()` is invoked (barrier timeout, validation throw): `phase:
+    'barrier'`, `writeState: 'none'`. Copy `Nothing was added` is safe; no broadcast.
+  - Rejection AT or AFTER `tx()` is invoked (commit or persist failure): `phase:
+    'transaction'`, `writeState: 'unknown'`. The command broadcasts / invalidates the
+    cache REGARDLESS of the rejection (web memory may have changed); the caller reconciles
+    optimistic state from an authoritative read, RETAINS the user's selection/sheet state,
+    shows `Couldn't confirm the add - check the refreshed counts before retrying`, and
+    NEVER automatically retries. The goal drain reconciles; it is never the error surface.
+
+  A DB-layer rollback-on-persist-failure would be stronger but is materially broader than
+  this branch; the result/error contract is the sufficient, conservative fix. It applies
+  IDENTICALLY to the owned bulk command (§3.5).
+- **Construction seam (so the barrier test uses PRODUCTION code, not a hand-built
+  imitation - the exact trap this branch hit twice).** The command is built by a factory,
+  `createWantedBulkCommand({ exclusive, query, tx, notify, uuid, nowIso })`, mirroring
+  `createBulkOwnedCommands`. The counterfactual runs the IDENTICAL factory with
+  `exclusive = (fn) => fn()` (control) and `exclusive = withExclusiveCollectionWrites`
+  (guarded). A SEPARATE production-wiring test asserts the exported `addWantedItemsBulk` is
+  wired to the real barrier - otherwise the factory tests could pass while production runs
+  pass-through exclusivity.
 
 **Tests (node, deterministic, no sleeps):**
 
-- **The counterfactual barrier test (required):** one rendezvous, run twice. Fixture: an
-  item with want = 1; a queued absolute write (read-1-then-set-2, the stepper shape) and
-  the bulk +1 command are interleaved through explicit promise gates (injected write
-  fns - no timers). WITH the barrier: the absolute write drains first (2), the bulk
-  increment lands on it - final **3**. WITHOUT the barrier (same rendezvous, barrier
-  bypassed as the control arm): the bulk increment lands mid-flight and the absolute
-  write clobbers it - final **2**, one increment lost. The test asserts BOTH exact
-  finals; it fails if the guarded arm ever reports 2 or the control arm ever reports 3
-  (which would mean the rendezvous no longer exercises the race).
+- **The counterfactual barrier test (required):** the SAME `createWantedBulkCommand`
+  factory, run twice with only the `exclusive` arg swapped. Milestone rendezvous through
+  explicit promise gates, no timers and no `settleTurns`: (1) the queued absolute write
+  (read-1-then-set-2, the stepper shape) has read 1; (2) the bulk command has entered and
+  waits at the barrier; (3) release the queued write; (4) the guarded command commits
+  after. WITH the barrier (`withExclusiveCollectionWrites`): the absolute write drains
+  first (2), the bulk increment lands on it - final **3**. WITHOUT (control,
+  `(fn) => fn()`): the increment lands mid-flight and the absolute write clobbers it -
+  final **2**. The test asserts BOTH exact finals; it fails if the guarded arm ever
+  reports 2 or the control arm ever reports 3 (the rendezvous no longer exercising the
+  race).
+- **Production-wiring test (required):** assert the exported `addWantedItemsBulk` rejects/
+  serializes under a real concurrent write, proving it is wired to the actual barrier and
+  not a pass-through - the factory tests alone cannot catch a mis-wired production instance.
+- **Indeterminate-web-failure test (required):** a test backend whose `tx()` APPLIES its
+  statements and THEN rejects (the sql.js-commit-then-persist-fails shape). Assert: the
+  result contract reports `phase: 'transaction'`, `writeState: 'unknown'` (never
+  nothing-written); an authoritative reconciliation observes the applied quantities; no
+  success toast; no automatic retry; the cache was invalidated despite the rejection.
 - Whole-batch rejection: card unknown to the catalog; set not on the card; foil where
   `printingFinishes` says none (a non-foil Winter River); Rainbow-only promo accepts foil
   and rejects non-foil; qty 0, negative, fractional, > 999, and a merged overflow.
@@ -834,15 +906,18 @@ the increment where the UI lands, not deferred to the end.**
    `withExclusiveCollectionWrites`, per the §3.6 protocol, with the full test list
    INCLUDING the counterfactual rendezvous test (guarded 3 / control 2, exact). Evidence:
    tests; `npm run test:query` green.
-4. **Owned-import writer contract.** [store] `importCollectionResolved` gains `foil`;
-   `planCollectionImport` partitions annotated-and-valid lines into the direct-file
-   bucket with catalog validation; the END-TO-END repository test (grammar -> preview ->
-   plan -> writer -> ledger readback asserting exact slugs). Evidence: tests; the
-   `2 Card [Beta] [Foil]` case stores `002:f`.
-5. **One whole-paste plan.** [store + component] `itemLineGrammar.js`,
-   `resolveWantList`, `batchWantPlan.js` (draft model, locked-finish validity, skip
-   accounting), `ResolvePrintingsSheet` with atomic Cancel/Confirm (P8);
-   `ListBulkAddSheet` becomes the draft's entry. Evidence: malformed-grammar cases
+4. **Text grammar + owned-import writer contract.** [store] `itemLineGrammar.js` (the pure
+   format + parse module, moved here so increment 4's end-to-end test is not circular -
+   Codex) with its grammar-case tests; `importCollectionResolved` gains `foil` and the
+   barrier + `planOwnedItemBatch` validation (§3.5); `planCollectionImport` partitions
+   annotated-and-valid lines into the direct-file bucket; the END-TO-END repository test
+   (grammar -> preview -> plan -> writer -> ledger readback asserting exact slugs) and the
+   owned lost-update counterfactual. Evidence: tests; the `2 Card [Beta] [Foil]` case
+   stores `002:f`; a forged non-foil Winter River is rejected.
+5. **One whole-paste plan.** [store + component] `resolveWantList`,
+   `batchWantPlan.js` (draft model, locked-finish validity, skip accounting),
+   `ResolvePrintingsSheet` with atomic Cancel/Confirm (P8); `ListBulkAddSheet` becomes the
+   draft's entry. Evidence: malformed-grammar cases
    (duplicate `[Foil]`, two set annotations, empty/unmatched brackets, 64-char token,
    qty 0/1000/fractional, unknown future annotation); round-trip test; exit parity
    (Cancel = backdrop = hardware Back = zero writes, verified in the component test);
@@ -864,16 +939,22 @@ the increment where the UI lands, not deferred to the end.**
    (`Want Beta non-foil, one more` / `Want Beta foil, one more`; origin line reads as a
    sentence); 44px targets on both capsule segments; focus entry/restoration on sheet
    open/close; hardware Back and backdrop parity; zero-image stable heights.
-8. **Docs, native, sweep.** `COMPENDIUM_FEATURE_MATRIX.md`, `COMPENDIUM_DATA_MODEL.md`
-   (writers, grammar, Rainbow normalization, art resolver); full gate run
-   (`test:codex`, `test:query`, `test:app`, `check:types`, `check:cycles`, `build`,
-   `check:docs`); **native verification on device** (no automated gate exercises native
-   SQLite): run the bulk command at 402 scale, the annotated owned import, and a paste
-   Cancel on the installed release APK; `check:smoke` before merge.
+8. **Docs, native, sweep.** Source-of-truth docs: `COMPENDIUM_FEATURE_MATRIX.md` and
+   `COMPENDIUM_DATA_MODEL.md` UPDATED (the two commands, the line grammar, Rainbow
+   normalization + the catalog finish contract, the single art resolver, the export
+   format); `DESIGN_SYSTEM.md` UPDATED if the split-capsule / `FOIL ONLY` tag are accepted
+   as reusable primitives; `COMPENDIUM_ARCHITECTURE.md`, `BUILD.md`, and the
+   engineering-process docs (`ENGINEERING_CONSTITUTION.md`, `AGENTS.md`) classified as
+   REVIEWED with a concrete no-change reason (no pillar/boundary, build-command, or process
+   change) unless a change is found. Full gate run - **the complete list, `test:ui`
+   included** (it was omitted in rev 4 despite substantial pure UI-state and component
+   work): `test:codex`, `test:query`, `test:ui`, `test:app`, `check:types`, `check:cycles`,
+   `check:docs`, `build`. **Native verification on device** (no automated gate exercises
+   native SQLite): run the bulk command at 402 scale, the annotated owned import, and a
+   paste Cancel on the installed release APK; `check:smoke` before merge.
 
-Dependencies: 5 needs 1-3 (and 4 for the owned path); 6 needs 1-3; 7 needs 1-2 (its
-writes stay on per-card chains). Increments 1-4 are pure/store and land without visible
-change.
+Dependencies: 5 needs 1-4; 6 needs 1-3; 7 needs 1-2 (its writes stay on per-card chains).
+Increments 1-4 are pure/store and land without visible change.
 
 ## 6. Resolved decisions
 
@@ -1029,5 +1110,9 @@ No open questions remain. Rulings on record:
 - Rev 4 rulings (2026-07-22): Rainbow normalizes to foil with fail-closed normalizer and
   catalog-contract test; art follows the collector item; printing origins on the card
   sheet. High-risk reclassification per Codex review.
-- PENDING: Codex adversarial review of rev 4; owner sign-off on the final disposition
-  before any implementation begins.
+- Rev 4.1 (2026-07-22): Codex approved the model with two durable-boundary majors -
+  the web-`tx()` write-outcome contract (`phase` / `writeState`, commit-then-persist-fail
+  reported indeterminate, never auto-retried) and the barrier-hardened owned-import writer
+  - plus the factory-seam production-wiring test, the grammar-into-increment-4 reorder, and
+  the restored full gate list. UX direction unchanged.
+- PENDING: Codex final disposition on rev 4.1; owner sign-off before any implementation.
