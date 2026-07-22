@@ -11,7 +11,8 @@ import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import CardArtViewer from './CardArtViewer.jsx';
-import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
+import { thresholdRuns, cardFallbackArt } from '../store/cardArt.js';
+import { useArtSource } from './ArtImage.jsx';
 import { getCard } from '../store/codexRepository.js';
 import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted, queueWantWrite } from '../store/ownedRepository.js';
 import { SET_RANK } from '../store/sets.js';
@@ -191,12 +192,11 @@ export function SetPill({ name }) {
 // the real card ratio) and the image is sized to the swapped dimensions then
 // counter-rotated to fill it upright - the canonical .sheet-site-wrap technique.
 function SiteArt({ c }) {
-  const [broken, setBroken] = useState(false);
-  const url = cardImageUrl(c);
+  const { src, gen, onError } = useArtSource(c?.image_slug || null);
   return (
     <div style={{ position: 'relative', width: '100%', aspectRatio: '531 / 380', borderRadius: 11, overflow: 'hidden', background: cardFallbackArt(c) }}>
-      {url && !broken && (
-        <img src={url} alt={c.name || ''} loading="lazy" onError={() => setBroken(true)}
+      {src && (
+        <img key={gen} src={src} alt={c.name || ''} loading="lazy" onError={onError}
           style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', objectFit: 'cover', transform: 'translate(-50%,-50%) rotate(90deg)', display: 'block' }} />
       )}
     </div>

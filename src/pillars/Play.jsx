@@ -7,12 +7,12 @@ import { listAvatarCards, listDecks } from '../store/deckRepository.js';
 import { computeMatchStats, normalizeDurationSec, validDurationMinutes, MAX_DURATION_MINUTES, DURATION_RANGE_ERR } from '../store/matchStats.js';
 import { IconButton, Chip, ChipRow, Loading, BlankState, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import { ArtImg } from '../components/ArtImage.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { toast, confirmAction } from '../feedback.js';
 import { haptic } from '../native.js';
 import '../theme/playhistory.css';
 
-const BASE = import.meta.env.BASE_URL;
 
 // "1h 25m" / "5m 21s" / "12s" - Play pillar's _fmtSpan (seconds precision under an hour).
 function fmtSpan(secs) {
@@ -135,7 +135,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
           {/* hero - gilt-framed donut win-rate + record + streak */}
           <div className="rec-hero-frame">
             <div className="rec-hero">
-              {mostPlayed?.img && <img className="rec-hero-bg" src={`${BASE}cards/${mostPlayed.img}`} alt="" aria-hidden="true" />}
+              {mostPlayed?.img && <ArtImg className="rec-hero-bg" artKey={mostPlayed.img} alt="" aria-hidden="true" />}
               <div className="rec-ring" style={{ background: ring }}>
                 <div className="rec-ring-inner">
                   <span className="rec-ring-pct">{pct}%</span>
@@ -166,7 +166,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
               <div className="rec-bars">
                 {avatarStats.map((s) => (
                   <div key={s.name} className="rec-bar">
-                    <div className="rec-bar-art">{s.img && <img src={`${BASE}cards/${s.img}`} alt="" />}</div>
+                    <div className="rec-bar-art">{s.img && <ArtImg artKey={s.img} alt="" />}</div>
                     <span className="rec-bar-name">{s.name}</span>
                     <div className="rec-bar-track"><div className="rec-bar-fill" style={{ width: `${s.pct}%` }} /></div>
                     <span className="rec-bar-rec">{s.record}</span>

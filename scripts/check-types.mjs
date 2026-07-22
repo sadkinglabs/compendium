@@ -11,8 +11,10 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // The gate's OWNERSHIP. Adding to OWNED is a deliberate edit. TRANSITIVE is the measured
-// 23-file closure minus the owned seven (tsc --listFiles). A file in NEITHER set -> fail closed
-// (closure drift: a human must classify it, not have it silently absorbed).
+// 28-file closure minus the owned seven (tsc --listFiles). A file in NEITHER set -> fail closed
+// (closure drift: a human must classify it, not have it silently absorbed). The five art-boundary
+// files entered the closure via LifeCounter's useArtSource (Phase 2); they are store-layer infra like
+// cardArt/db/native and use the same import.meta.env / window.Capacitor patterns, so TRANSITIVE.
 export const OWNED = [
   'src/pillars/LifeCounter.jsx',
   'src/pillars/matchLife.js', 'src/pillars/matchRoll.js', 'src/navBack.js',
@@ -25,6 +27,8 @@ export const TRANSITIVE = [
   'src/store/collectionWrites.js', 'src/store/db.js', 'src/store/deckRepository.js',
   'src/store/ids.js', 'src/store/matchShare.js', 'src/store/matchStats.js',
   'src/store/playRepository.js', 'src/store/profileRepository.js', 'src/store/schema.js',
+  'src/store/artSource.js', 'src/store/artCache.js', 'src/store/artCacheInstance.js',
+  'src/store/artCacheAdapter.js', 'src/components/ArtImage.jsx',
 ];
 
 const norm = (root, p) => path.relative(root, p).split(path.sep).join('/');

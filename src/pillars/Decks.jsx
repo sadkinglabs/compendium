@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import Sheet from '../components/Sheet.jsx';
 import { BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import { ChevronIcon } from '../components/icons.jsx';
+import { ArtImg } from '../components/ArtImage.jsx';
 import { planImportText, commitImportText } from '../store/deckRepository.js';
 import { toast } from '../feedback.js';
 import '../theme/decks.css';
@@ -25,7 +26,7 @@ export function DeckCard({ deck, build, onClick }) {
   const elPips = (deck.elems || []).map((e) => e.el).filter((e) => VALID_ELS.has(e));
   return (
     <div className="dli" onClick={onClick}>
-      {hero && <img className="dli-hero" src={`${BASE}cards/${hero}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
+      {hero && <ArtImg className="dli-hero" artKey={hero} alt="" />}
       <div className="dli-hero-grad" />
       <div className="dli-content">
         <div className="dli-name-row" style={{ cursor: 'pointer' }}>

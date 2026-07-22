@@ -15,6 +15,7 @@ import { safeHref } from '../util.js';
 import { createPortal } from 'react-dom';
 import { Chip, ChipRow, IconButton, Loading, BlankState, EmptyCta, useSwipe, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import { ArtImg } from '../components/ArtImage.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import { CodexGlyph } from './Codex.jsx';
 import { haptic } from '../native.js';
@@ -182,7 +183,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
           <div className="cx-deck-carousel">
             {d.decks.items.map((dk) => (
               <div key={dk.id} className="cx-deck-card" onClick={() => onOpen('deck', dk.id, dk.name)}>
-                {dk.avatar?.image_slug && <img className="cx-deck-card-bg" src={`${BASE}cards/${dk.avatar.image_slug}`} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}
+                {dk.avatar?.image_slug && <ArtImg className="cx-deck-card-bg" artKey={dk.avatar.image_slug} alt="" />}
                 <div className="cx-deck-card-grad" />
                 <div className="cx-deck-card-info">
                   <div className="cx-deck-card-name">{dk.name}</div>
@@ -475,7 +476,7 @@ function ArtHero({ image, name, sub, badge, onClick, tall, deck }) {
   return (
     <div className={`dw-hero${tall ? ' tall' : ''}`} onClick={onClick} role={onClick ? 'button' : undefined} style={{ cursor: onClick ? 'pointer' : 'default' }}>
       <div className="dw-cardph" />
-      {image && <img className="dw-hero-img" src={`${BASE}cards/${image}`} alt="" loading="lazy" onError={hideImg} />}
+      {image && <ArtImg className="dw-hero-img" artKey={image} alt="" loading="lazy" />}
       <div className="dw-hero-grad" />
       {badge && <span className="dw-hero-badge">{badge}</span>}
       <div className="dw-hero-info">
@@ -509,7 +510,7 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
   if (k === 'yourDecks') return data.decks?.length
     ? <div className="dw-decks">{data.decks.map((d, i) => (
         <div key={i} className="dw-deckcard" onClick={() => open('deck', d.id, d.name)}>
-          {!preview && d.image ? <img src={`${BASE}cards/${d.image}`} alt="" loading="lazy" onError={hideImg} /> : <div className="dw-deckph" />}
+          {!preview && d.image ? <ArtImg artKey={d.image} alt="" loading="lazy" /> : <div className="dw-deckph" />}
           <div className="g" /><div className="n">{d.name}</div><div className="r">{d.record}</div>
         </div>))}</div>
     : empty(data.empty);

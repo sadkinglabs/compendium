@@ -41,7 +41,6 @@ async function deckShim(deckId) {
   return {
     name: d.name,
     avatar: d.avatar?.name || 'custom',
-    avatarSlug: d.avatar?.image_slug || null,   // full 'x-y-b-s.webp' (no extra .webp appended below)
     spellbook: (zones.spellbook || []).map(entry),
     atlas: (zones.atlas || []).map(entry),
     collection: (zones.collection || []).map(entry),
@@ -66,10 +65,11 @@ async function _buildDeckPosterCanvas(deck) {
     "400 12px 'IBM Plex Mono'", "400 13px 'IBM Plex Mono'", "400 15px 'IBM Plex Mono'",
   ].map((f) => document.fonts.load(f).catch(() => {}))); } catch (e) { /* noop */ }
 
-  const [icons, hero] = await Promise.all([
-    Promise.all(ELS.map((k) => _loadImg(`${BASE}icons/${k}.png`))).then((a) => Object.fromEntries(ELS.map((k, i) => [k, a[i]]))),
-    deck.avatarSlug ? _loadImg(`${BASE}cards/${deck.avatarSlug}`) : Promise.resolve(null),
-  ]);
+  // The poster no longer draws the avatar's CARD art (Phase 2 owner decision) - that art now lives on
+  // the CDN, and compositing a remote image into an exported canvas would taint it (breaking toDataURL/
+  // toBlob). Only the bundled, same-origin element icons are drawn; the header is the gilt gradient.
+  const icons = await Promise.all(ELS.map((k) => _loadImg(`${BASE}icons/${k}.png`)))
+    .then((a) => Object.fromEntries(ELS.map((k, i) => [k, a[i]])));
 
   const cardMeta = {};
   for (const e of [...deck.spellbook, ...deck.atlas, ...deck.collection]) cardMeta[e.name] = { cost: e._cost, th: e._thresholds || {} };
@@ -132,21 +132,6 @@ async function _buildDeckPosterCanvas(deck) {
   rg.addColorStop(0, '#1a1206'); rg.addColorStop(0.55, '#120d07'); rg.addColorStop(1, INK);
   x.fillStyle = rg; x.fillRect(-W, 0, W * 2, H * 2); x.restore();
 
-  if (hero) {
-    const oc = document.createElement('canvas'); oc.width = W * SCALE; oc.height = HERO_H * SCALE;
-    const ox = oc.getContext('2d'); ox.scale(SCALE, SCALE);
-    const ir = hero.width / hero.height, rr = W / HERO_H; let sw, sh, sx, sy;
-    if (ir > rr) { sh = hero.height; sw = sh * rr; sx = (hero.width - sw) / 2; sy = 0; }
-    else { sw = hero.width; sh = sw / rr; sx = 0; sy = (hero.height - sh) * 0.16; }
-    ox.filter = 'blur(46px) saturate(1.2) brightness(0.92)';
-    ox.drawImage(hero, sx, sy, sw, sh, -64, -64, W + 128, HERO_H + 128);
-    ox.filter = 'none';
-    ox.globalCompositeOperation = 'destination-out';
-    const mg = ox.createLinearGradient(0, 0, 0, HERO_H);
-    mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.5, 'rgba(0,0,0,0)'); mg.addColorStop(1, 'rgba(0,0,0,1)');
-    ox.fillStyle = mg; ox.fillRect(0, 0, W, HERO_H);
-    x.drawImage(oc, 0, 0, W, HERO_H);
-  }
   const hgrad = x.createLinearGradient(0, 0, 0, HERO_H);
   hgrad.addColorStop(0, 'rgba(11,8,6,.10)'); hgrad.addColorStop(0.62, 'rgba(11,8,6,.30)'); hgrad.addColorStop(1, 'rgba(11,8,6,0)');
   x.fillStyle = hgrad; x.fillRect(0, 0, W, HERO_H);

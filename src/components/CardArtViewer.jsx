@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
+import { cardFallbackArt } from '../store/cardArt.js';
+import { useArtSource } from './ArtImage.jsx';
 import { registerBackConsumer } from '../back.js';
 import { setImmersive } from '../native.js';
 
@@ -27,7 +28,6 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export default function CardArtViewer({ card, origin, onClose }) {
   const reduce = typeof document !== 'undefined' && document.body.classList.contains('reduce-motion');
   const [tilt, setTilt] = useState({ x: 0, y: 0, gx: 50, gy: 50, active: false });
-  const [broken, setBroken] = useState(false);   // a failed image must reveal the fallback, not cover it
   const [flipT, setFlipT] = useState(null);   // transform that maps the stage back onto the sheet frame
   const [armed, setArmed] = useState(false);  // transitions enabled (skipped on the first frame)
   const [open, setOpen] = useState(false);
@@ -137,7 +137,7 @@ export default function CardArtViewer({ card, origin, onClose }) {
     setTilt({ x: -(py - 0.5) * 2 * MAX_TILT, y: (px - 0.5) * 2 * MAX_TILT, gx: px * 100, gy: py * 100, active: true });
   };
 
-  const url = cardImageUrl(card);
+  const { src, gen, onError } = useArtSource(card?.image_slug || null);
   const site = !!card?.is_site;
   const artist = card?._artist || null;
   const popT = open ? 'none' : (flipT || 'scale(.94)');
@@ -181,8 +181,8 @@ export default function CardArtViewer({ card, origin, onClose }) {
               painted on the layer behind; without this a 404 or corrupt asset renders a broken
               image ON TOP of it, so real image failure looked different from zero-image mode
               even though both should degrade to the same engraved ground. */}
-          {url && !broken && (
-            <img src={url} alt={card?.name || ''} draggable="false" onError={() => setBroken(true)}
+          {src && (
+            <img key={gen} src={src} alt={card?.name || ''} draggable="false" onError={onError}
               style={{
                 position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                 ...(site ? { width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', top: '50%', left: '50%', inset: 'auto', transform: 'translate(-50%,-50%) rotate(90deg)' } : {}),

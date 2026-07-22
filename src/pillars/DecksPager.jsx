@@ -14,6 +14,7 @@ import { deckMatchCount } from '../store/playRepository.js';
 import { DeckCard } from './Decks.jsx';
 import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
 import { ShuffleIcon } from '../components/icons.jsx';
+import { ArtImg } from '../components/ArtImage.jsx';
 import { haptic, shareLink } from '../native.js';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
@@ -26,7 +27,6 @@ import { toast, confirmAction } from '../feedback.js';
 import DeckDashboard from './DeckDashboard.jsx';
 import '../theme/deckpager.css';
 
-const BASE = import.meta.env.BASE_URL;
 
 // Library FAB menu iconography: build a deck (the app's stacked-cards glyph),
 // import from a Curiosa URL (a link), or import from pasted text (a document).
@@ -467,8 +467,7 @@ function DeckSpreadSheet({ open, deckId, onClose }) {
 
   const tile = (e, i) => (
     <div key={e.card_id + '-' + i} className="ds-tile" style={{ aspectRatio: e.is_site ? '4.1 / 3' : '3 / 4.1' }}>
-      {e.image_slug && <img src={`${BASE}cards/${e.image_slug}`} loading="lazy" alt=""
-        onError={(ev) => { ev.currentTarget.style.display = 'none'; }}
+      {e.image_slug && <ArtImg artKey={e.image_slug} loading="lazy" alt=""
         style={e.is_site ? { position: 'absolute', top: '50%', left: '50%', width: 'calc(100% * 3 / 4.1)', height: 'calc(100% * 4.1 / 3)', objectFit: 'cover', transform: 'translate(-50%,-50%) rotate(90deg)' } : undefined} />}
       {e.quantity > 1 && <span className="ds-qty">×{e.quantity}</span>}
     </div>

@@ -41,6 +41,21 @@ export function useArtSource(key) {
 }
 
 /**
+ * The BARE form: just the resolved <img>, no frame - a drop-in for the inline avatar/hero thumbnails
+ * that render a plain <img> and hide it on error. Renders NOTHING when there is no art (zero-image, or
+ * the candidate chain reached its terminal fallback), matching the old onError-hide behavior. Safe
+ * inside .map() (it is a component, so the hook is called once per instance). `artKey` is the
+ * content-addressed key (a printing/card `image_slug` after the Phase-2 repoint).
+ */
+export function ArtImg({ artKey, alt = '', ...imgProps }) {
+  const { src, gen, onError } = useArtSource(artKey || null);
+  if (!src) return null;
+  // imgProps (className/style/loading/aria-hidden/...) pass through; src + onError are the boundary's,
+  // placed last so a stray caller prop can never override the candidate-chain error handling.
+  return <img key={gen} alt={alt} {...imgProps} src={src} onError={onError} />;
+}
+
+/**
  * The common framed card-art thumbnail: a container that always paints `fallback` (the deterministic
  * gradient) with the resolved art layered on top, self-removing on error via the candidate chain. Card
  * art is never drawn into a canvas here, so no crossOrigin is needed.
