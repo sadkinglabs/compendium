@@ -178,9 +178,37 @@ test('a HISTORICAL malformed item can still be cleared, and stepped DOWN even to
   assert.deepEqual(ledger('occult'), [{ variant_slug: '999:f', qty_owned: 0, qty_wanted: 2 }]);
 });
 
-test('foil is coerced to a real boolean - a truthy non-boolean cannot smuggle a foil want', async () => {
+// STRICT boolean finish - the mutation sentinel for requireBooleanFinish. c1/001 genuinely has BOTH
+// finishes, so the old `!!foil` coercion would turn 'false' into true, PASS the catalog check, and
+// store a non-foil intent as foil. Remove requireBooleanFinish and this test fails: the malformed
+// value coerces, canonicalises to '001:f', and writes instead of rejecting.
+test('every positive writer rejects a NON-boolean finish outright, even on a card that has foil', async () => {
+  let fired = 0; const unsub = subscribeCollection(() => { fired++; });
+  for (const bad of ['false', 'true', 0, 1, null, undefined]) {
+    for (const call of [
+      () => addWantedForItem('c1', { set: '001', foil: bad }, 1),
+      () => setWantedForItem('c1', { set: '001', foil: bad }, 1),
+      () => stepWantedForItem('c1', { set: '001', foil: bad }, 1),
+    ]) await assert.rejects(call, /foil must be an exact boolean/, `accepted ${JSON.stringify(bad)}`);
+  }
+  unsub();
+  assert.deepEqual(ledger(), [], 'no malformed write reached the ledger');
+  assert.equal(fired, 0, 'no rejected write signalled a change');
+});
+
+test('an EXACT boolean finish writes the right slug: false -> standard key, true -> foil key', async () => {
+  await addWantedForItem('c1', { set: '001', foil: false }, 1);
+  await addWantedForItem('c1', { set: '001', foil: true }, 1);
+  assert.deepEqual(ledger().map((r) => r.variant_slug).sort(), ['001', '001:f']);
+});
+
+test('the public validate-bypass is gone: a stray 5th argument cannot skip catalog validation', async () => {
+  // Before the fix, setWantedForItem(..., {validate:false}) persisted a phantom. The option no longer
+  // exists, so the extra arg is inert and the catalog check still fires.
   seedMixed();
-  await assert.rejects(() => addWantedForItem('occult', { set: '999', foil: 'yes' }, 1), /no foil printing/);
+  await assert.rejects(
+    () => setWantedForItem('occult', { set: '999', foil: true }, 1, PID, { validate: false }),
+    /no foil printing/, 'the removed option must not resurrect the bypass');
   assert.deepEqual(ledger('occult'), []);
 });
 
@@ -196,13 +224,13 @@ test('setting a want to zero does NOT delete owned copies on the same row', asyn
   // This is the exact shape of the defect that made dropping '' rows destructive: ownership
   // and the wishlist share a row, so a careless delete takes both.
   seed('001', 3, 2);
-  await setWantedForItem('c1', { set: '001' }, 0);
+  await setWantedForItem('c1', { set: '001', foil: false }, 0);
   assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 3, qty_wanted: 0 }]);
 });
 
 test('the row IS removed once both quantities reach zero', async () => {
   seed('001', 0, 1);
-  await setWantedForItem('c1', { set: '001' }, 0);
+  await setWantedForItem('c1', { set: '001', foil: false }, 0);
   assert.deepEqual(ledger(), [], 'no 0/0 tombstone is left behind');
 });
 
@@ -213,7 +241,7 @@ test('editing a want on a per-set row updates it rather than duplicating it', as
   // collector item, and the two would drift apart. Uncategorised rows are no longer reachable
   // from these writers at all - only triage may resolve those.
   seed('001', 2, 1);
-  await setWantedForItem('c1', { set: '001' }, 5);
+  await setWantedForItem('c1', { set: '001', foil: false }, 5);
   assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 2, qty_wanted: 5 }],
     'one row, owned copies preserved');
 });
@@ -221,15 +249,15 @@ test('editing a want on a per-set row updates it rather than duplicating it', as
 /* ---------------- stepping and atomic adds ---------------- */
 
 test('stepping floors at zero rather than going negative', async () => {
-  await setWantedForItem('c1', { set: '001' }, 1);
-  await stepWantedForItem('c1', { set: '001' }, -5);
+  await setWantedForItem('c1', { set: '001', foil: false }, 1);
+  await stepWantedForItem('c1', { set: '001', foil: false }, -5);
   assert.deepEqual(ledger(), []);
 });
 
 test('stepping composes across separate collector items', async () => {
-  await stepWantedForItem('c1', { set: '001' }, 2);
-  await stepWantedForItem('c1', { set: '002' }, 3);
-  await stepWantedForItem('c1', { set: '001' }, 1);
+  await stepWantedForItem('c1', { set: '001', foil: false }, 2);
+  await stepWantedForItem('c1', { set: '002', foil: false }, 3);
+  await stepWantedForItem('c1', { set: '001', foil: false }, 1);
   assert.deepEqual(ledger(), [
     { variant_slug: '001', qty_owned: 0, qty_wanted: 3 },
     { variant_slug: '002', qty_owned: 0, qty_wanted: 3 },
@@ -238,9 +266,9 @@ test('stepping composes across separate collector items', async () => {
 
 test('atomic adds accumulate without a read-modify-write', async () => {
   await Promise.all([
-    addWantedForItem('c1', { set: '002' }, 1),
-    addWantedForItem('c1', { set: '002' }, 1),
-    addWantedForItem('c1', { set: '002' }, 1),
+    addWantedForItem('c1', { set: '002', foil: false }, 1),
+    addWantedForItem('c1', { set: '002', foil: false }, 1),
+    addWantedForItem('c1', { set: '002', foil: false }, 1),
   ]);
   assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 0, qty_wanted: 3 }],
     'overlapping increments do not lose each other');
@@ -248,7 +276,7 @@ test('atomic adds accumulate without a read-modify-write', async () => {
 
 test('an atomic add never disturbs owned copies on the same row', async () => {
   seed('002', 4, 0);
-  await addWantedForItem('c1', { set: '002' }, 2);
+  await addWantedForItem('c1', { set: '002', foil: false }, 2);
   assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 4, qty_wanted: 2 }]);
 });
 
@@ -256,7 +284,7 @@ test('an atomic add never disturbs owned copies on the same row', async () => {
 
 test('wantedItemsForCard reports every collector item, in canonical terms', async () => {
   seed(LEGACY_UNCATEGORISED, 0, 1);
-  await setWantedForItem('c1', { set: '002' }, 2);
+  await setWantedForItem('c1', { set: '002', foil: false }, 2);
   await setWantedForItem('c1', { set: '002', foil: true }, 3);
   const m = await wantedItemsForCard('c1');
   assert.equal(m.get(UNCATEGORISED), 1, 'a legacy row is reported under its canonical name');
@@ -266,8 +294,8 @@ test('wantedItemsForCard reports every collector item, in canonical terms', asyn
 
 test('card-level totals still sum across every collector item', async () => {
   // qtyFor is the existing card-level read; per-item wants must not break it.
-  await setWantedForItem('c1', { set: '001' }, 1);
-  await setWantedForItem('c1', { set: '002' }, 2);
+  await setWantedForItem('c1', { set: '001', foil: false }, 1);
+  await setWantedForItem('c1', { set: '002', foil: false }, 2);
   const { wanted } = await qtyFor('c1');
   assert.equal(wanted, 3);
 });

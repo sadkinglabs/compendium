@@ -25,29 +25,33 @@ export default function WantPrintingSheet({ open, cardId, cardName, setCodes = [
   const { foil } = state;
   const options = pickerOptions(setCodes, setRank, SET_LABEL);
 
-  // Authoritative per-set finish availability, so the picker never offers an impossible pair (a
-  // foil want on a set whose only printing is non-foil). Loaded from the catalog by cardId - the
-  // picker owns this rather than trusting a caller-supplied hint. Until it loads, options stay
-  // enabled and the repository's fail-closed guard is the backstop; once loaded, the UI enforces it.
-  const [finishes, setFinishes] = useState(null);   // Map<setCode, {nonFoil, foil}> | null
+  // Authoritative per-set finish availability, so the picker never offers an impossible pair (a foil
+  // want on a set whose only printing is non-foil). Loaded from the catalog by cardId - the picker
+  // owns this rather than trusting a caller-supplied hint. While it loads, choices are DISABLED (a
+  // fast tap must not commit an unchecked pair the repository would then refuse); a getCard failure
+  // fails closed to an empty map (everything unavailable), never an unhandled rejection.
+  const [finishes, setFinishes] = useState(null);   // Map<setCode, {nonFoil, foil}> | null (null = loading)
   useEffect(() => {
     if (!open || !cardId) { setFinishes(null); return; }
     let alive = true;
+    setFinishes(null);   // re-checking: disable until this card's availability resolves
     getCard(cardId).then((card) => {
       if (!alive) return;
       const m = new Map();
       for (const o of pickerOptions(setCodes, setRank, SET_LABEL)) {
-        try { m.set(o.code, printingFinishes(card, o.code)); } catch { /* malformed -> leave unset (treated as unavailable once known) */ }
+        try { m.set(o.code, printingFinishes(card, o.code)); } catch { /* malformed -> unavailable */ }
       }
       setFinishes(m);
-    });
+    }).catch(() => { if (alive) setFinishes(new Map()); });   // fail closed, no unhandled promise
     return () => { alive = false; };
   }, [open, cardId, setCodes]);
 
-  // A set is choosable in the current finish only when the catalog lists that printing. Unknown
-  // (still loading) is permissive; the repository guard fails closed on a bad write regardless.
+  const loading = finishes == null;
+  // A set is choosable only once availability has loaded AND the catalog lists that printing in the
+  // current finish. While loading, nothing is choosable - the repository guard is the backstop, but
+  // the UI must not present an option it has not verified.
   const available = (code) => {
-    if (finishes == null) return true;
+    if (loading) return false;
     const f = finishes.get(code);
     return !!(f && (foil ? f.foil : f.nonFoil));
   };
@@ -114,15 +118,22 @@ export default function WantPrintingSheet({ open, cardId, cardName, setCodes = [
           >
             <span style={{ font: "500 15px/1.2 var(--f-read)", color: 'var(--ink-body)' }}>{o.name}</span>
             <span aria-hidden="true" style={{ font: "600 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>
-              {ok ? (foil ? 'FOIL' : '') : 'No foil'}
+              {loading ? '' : (ok ? (foil ? 'FOIL' : '') : 'No foil')}
             </span>
           </button>
         );
       })}
 
+      {/* While availability loads every set is disabled, so say why a tap does nothing yet. */}
+      {loading && options.length > 0 && (
+        <div style={{ font: "400 11.5px/1.4 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'center', padding: '10px 0 0' }}>
+          Checking printings…
+        </div>
+      )}
+
       {/* Explanatory copy when the current finish rules some sets out - so a greyed row reads as
           intentional, not broken. */}
-      {foil && finishes != null && options.some((o) => !available(o.code)) && (
+      {!loading && foil && options.some((o) => !available(o.code)) && (
         <div style={{ font: "400 11.5px/1.4 var(--f-ui)", color: 'var(--ink-faint)', textAlign: 'center', padding: '10px 0 0' }}>
           Greyed sets have no foil printing of this card.
         </div>
