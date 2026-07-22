@@ -19,7 +19,7 @@ import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
 import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, canonicalPrinting } from '../store/printings.js';
-import { selectPrinting, defaultFinish, printingFinishes } from '../store/printingRows.js';
+import { selectPrinting, defaultFinish, printingFinishes, printingProducts } from '../store/printingRows.js';
 import { wantTarget } from '../store/wantIntent.js';
 import { cardSheetSetReducer, initialSetState, explicitSetOf, displaySetOf } from './cardSheetSetState.js';
 import { enqueueWrite } from '../store/collectionWrites.js';
@@ -206,7 +206,7 @@ function SiteArt({ c }) {
 
 // The glowing card frame - portrait for cards, flipped landscape for Sites. Tapping it raises
 // the card onto its own full-screen stage (CardArtViewer).
-export function SheetArt({ c }) {
+export function SheetArt({ c, width }) {
   const site = !!c.is_site;
   const [zoom, setZoom] = useState(null);   // the frame we popped FROM, so we can return to it
   const frameRef = useRef(null);
@@ -215,7 +215,7 @@ export function SheetArt({ c }) {
     setZoom(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : {});
   };
   return (
-    <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
+    <div style={{ position: 'relative', width: width ?? (site ? 244 : 172), margin: width ? 0 : '14px auto 0' }}>
       <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
       <button ref={frameRef} type="button" onClick={raise} aria-label={`View ${c.name || 'card'} artwork`}
         style={{ position: 'relative', zIndex: 1, display: 'block', width: '100%', padding: 1, border: 'none', cursor: 'pointer',
@@ -361,71 +361,64 @@ function CardBody({ c, onPick, editable, set }) {
   // Art, artist, and origin follow the active printing AND finish through ONE selector, so a dual
   // Foil/Rainbow promo can never show Rainbow art credited to another variant's artist (Phase 6).
   const printing = selectPrinting(c, effSet, foil);
+  const products = printingProducts(c, effSet, foil);   // origin labels for the active printing+finish
   const artCard = { ...c, image_slug: printing.slug ?? c.image_slug, _artist: printing.artist };
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
   const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === UNCATEGORISED_BUCKET ? UNCATEGORISED_LABEL : ranked[0]?.name);
-  const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
-  const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
-  // Meta row: rarity + type sit together (the type moved down off the header),
-  // then subtype(s), then threshold icons. Hairline-separated, wraps if tight.
-  const meta = [];
-  if (c.rarity) meta.push(<span key="r" style={smallCaps(RARITY_HUE[c.rarity] || 'var(--ink-muted)')}>{c.rarity}</span>);
-  meta.push(<span key="ty" style={smallCaps('#cba75f')}>{typeLabel(c)}</span>);
-  if (subs.length) meta.push(<span key="s" style={{ font: "italic 500 17.5px/1 var(--f-read)", color: '#a99a80' }}>{subs.join(', ')}</span>);
-  if (runs.length) meta.push(<ThresholdPips key="t" runs={runs} size={20} />);
-  const metaRow = meta.flatMap((node, i) => (i === 0 ? [node] : [React.cloneElement(hair, { key: `h${i}` }), node]));
+  const smallCaps = (color) => ({ font: "600 12px/1 var(--f-display)", letterSpacing: '.18em', color, textTransform: 'uppercase' });
 
   return (
     <>
-      {/* Set picker - drives the art AND which set the Owned/Foil steppers edit.
-          Opened from INSIDE a set (`set` given) the printing is already decided, so the sheet
-          shows a plain pill instead of a chooser: you are adding to the set you are in.
-          Single-set cards likewise. Only the name-level entry points (Codex, search, Overview)
-          still need to pick. The heart itself is per collector item - it reflects and edits
-          the printing the sheet is showing. */}
-      {set == null && options.length > 1 ? (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
-          <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
-            <SegTabs ariaLabel="Printing"
-              value={KEY(effSet)} onChange={(k) => setSel(k === '__unspec__' ? '' : k)}
-              options={options.map((o) => {
-                const t = (ownedSets?.get(o.code)?.owned || 0) + (ownedSets?.get(o.code)?.foil || 0);
-                return { key: KEY(o.code), label: t > 0 ? `${o.name} ·${t}` : o.name };
-              })} />
+      {/* Two columns (Phase 6): the card image on the LEFT; on the RIGHT the identity - set, name,
+          type, artist, product/origin - and, beneath it, the active-finish stepper. Far tighter than
+          the old full-width stack. The set picker/pill and the Standard/Foil toggle live in the right
+          column; a printing with one finish shows no toggle (promos/foil-only lock to Foil). */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginTop: 8 }}>
+        <div style={{ flex: '0 0 44%', maxWidth: 176 }}>
+          <SheetArt c={artCard} width="100%" />
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {set == null && options.length > 1 ? (
+            <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+              <SegTabs ariaLabel="Printing"
+                value={KEY(effSet)} onChange={(k) => setSel(k === '__unspec__' ? '' : k)}
+                options={options.map((o) => {
+                  const t = (ownedSets?.get(o.code)?.owned || 0) + (ownedSets?.get(o.code)?.foil || 0);
+                  return { key: KEY(o.code), label: t > 0 ? `${o.name} ·${t}` : o.name };
+                })} />
+            </div>
+          ) : setName ? <div><SetPill name={setName} /></div> : null}
+
+          <div style={{ font: "700 21px/1.15 var(--f-display)", color: '#efe7d8' }}>{c.name}</div>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            {c.rarity && <span style={smallCaps(RARITY_HUE[c.rarity] || 'var(--ink-muted)')}>{c.rarity}</span>}
+            <span style={smallCaps('#cba75f')}>{typeLabel(c)}</span>
+            {subs.length > 0 && <span style={{ font: "italic 500 14.5px/1 var(--f-read)", color: '#a99a80' }}>{subs.join(', ')}</span>}
+          </div>
+          {runs.length > 0 && <ThresholdPips runs={runs} size={16} />}
+
+          {printing.artist && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#a99a80' }}>Art · {printing.artist}</div>}
+          {products.length > 0 && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#8a7a55' }}>{products.join(' · ')}</div>}
+
+          {finishes.nonFoil && finishes.foil && (
+            <div style={{ marginTop: 2, maxWidth: '100%', overflowX: 'auto' }}>
+              <SegTabs ariaLabel="Finish"
+                value={foil ? 'foil' : 'std'} onChange={(k) => setFoil(k === 'foil')}
+                options={[{ key: 'std', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
+            </div>
+          )}
+          <div style={{ marginTop: 4 }}>
+            <CountCol label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
           </div>
         </div>
-      ) : setName ? (
-        <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>
-      ) : null}
-
-      <SheetArt c={artCard} />
-
-      <div style={{ font: "700 27px/1.1 var(--f-display)", color: '#efe7d8', textAlign: 'center', marginTop: 20 }}>{c.name}</div>
-
-      {metaRow.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>{metaRow}</div>
-      )}
-
-      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
-
-      {/* ONE collector item at a time (Phase 6): a Standard/Foil toggle (only when a printing offers
-          both) drives a single stepper - the count for the active finish. A printing with just one
-          finish locks to it (promos/foil-only -> Foil). The stepper edits real owned quantities; the
-          wishlist heart below is a binary INTENT for the same active item, not a quantity. */}
-      {finishes.nonFoil && finishes.foil && (
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-          <SegTabs ariaLabel="Finish"
-            value={foil ? 'foil' : 'std'} onChange={(k) => setFoil(k === 'foil')}
-            options={[{ key: 'std', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
-        </div>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'center' }}>
-        <CountCol label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
       </div>
+
       {!editable && (
-        <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 10 }}>
+        <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 12 }}>
           Edit owned copies in My Collection.
         </div>
       )}
