@@ -1,7 +1,7 @@
-# Art CDN architecture redesigns - rev 3
+# Art CDN architecture redesigns - rev 4
 
 Companion to `docs/proposals/art-cdn-migration.md`. (Filename kept as
-`art-cdn-rev2-architecture.md` because the main proposal links it; the content is rev 3.)
+`art-cdn-rev2-architecture.md` because the main proposal links it; the content is rev 4.)
 This document is design only - no production code exists for either piece.
 
 - **Section A** resolves the rev-1 **Blocker**: mutable slugs under an immutable cache header
@@ -10,9 +10,25 @@ This document is design only - no production code exists for either piece.
   boundary that double-fetches, races, and leaves ~14 render sites remote-only. Redesign: one
   shared `artCache` / `useArtSource` / `ArtImage` boundary for every card-art pixel in the app.
 
-**Rev 3 (2026-07-22).** Codex re-reviewed rev 2: direction **approved**, with four
-implementation-bearing Majors and three Minors. Everything Codex approved is preserved; the
-findings are resolved in place:
+**Rev 4 (2026-07-22).** Codex re-reviewed rev 3: all ten prior resolutions **cleared** and
+the direction **approved**, with one new Blocker, three Majors, and one Minor - each a defect
+inside rev 3's own machinery. All five are resolved in place; everything cleared is preserved
+untouched (full-digest keys, Content-MD5/ETag + the Phase-0 canary, recipeId/encoder
+provenance, the ordered candidate chain, the promotion lock, epoch-tagged inflight, the retry
+generation, fail-closed `validSize`, the LifeCounter/SiteArt adoption, DOM-free reducer
+testing):
+
+| Finding | Resolution | Where |
+|---|---|---|
+| **Blocker** - a changed source could reuse STALE converted bytes: "idempotent" `ensureConverted` and A7's staging reuse were existence-skips, so a corrected PNG could pair its new `srcSha256` with the OLD output digest and then skip forever | The manifest predicate is the ONLY skip oracle; a failed predicate ALWAYS runs `convertFresh` (unique temp -> validate -> atomic replace); staging files carry zero evidentiary weight; the migration reconverts all 3,090; `cdn-convert.mjs` and the "idempotent" framing are retired | A2, A4, A7, A9.8 |
+| **Major 1** - `resolve()`'s epoch-mismatch recursion ran under the NEW epoch and could repopulate a just-cleared cache; temps under `art/.tmp` could outlive `deleteTree('art')` | Stale flights terminate in a NON-CACHING `staleResult()` - the recursion is deleted; scratch moves to the sibling `art-tmp/` namespace with per-flight cleanup + a startup orphan sweep; `stats().scratchBytes` keeps the Settings readout honest | B3, B7, B10.6 |
+| **Major 2** - a recycled tile A -> B painted A's art for one frame (effects run after the render that sees the new prop), and the reducer called `peek()`/`legacySrc()` internally, so it was not pure | Events carry ALL inputs (`peeked`, `legacy`) from the dispatch sites - `artSource.js` imports nothing; the pure `visibleCandidate()` selector makes the old candidate unreachable on a mismatched frame; the `<img>` is keyed on `artKey#gen` | B4, B10.2-3 |
+| **Major 3** - a present-but-corrupt remote object was skipped by upload (key exists) yet rejected by the audit: fail-closed with NO recovery, on every rerun | Upload planning classifies `valid` / `missing` / `conflicting` by the full key+size+ETag tuple; a conflict refuses with an actionable `--repair-conflicts` re-PUT + single-URL edge purge, documented as exceptional incident recovery, never invalidation | A3, A6, A9.3-4 |
+| **Minor** - retained entries kept `legacyKey` forever: A4 cloned prior entries and `continue`d, so Phase 5 never mechanically stripped the transitional field | `normalizeTransitional()` recomputes transition-only fields for EVERY entry (retained or fresh) on every build; an empty bundled dir yields zero legacy fields with no manual sweep | A3, A4, A9.7 |
+
+**Rev 3 history (2026-07-22 - all seven findings below were cleared by Codex's rev-3
+review).** Codex re-reviewed rev 2: direction **approved**, with four implementation-bearing
+Majors and three Minors, resolved in place:
 
 | Finding | Resolution | Where |
 |---|---|---|
@@ -86,6 +102,9 @@ now:
   (`{ sharp, vips }` versions, from sharp's package version + `sharp.versions.vips`).
 - **Skip conversion iff `srcSha256` matches AND `recipeId` matches.** A recipe change forces
   reconversion of every affected entry (and therefore a re-key - new bytes, new digest).
+  **The manifest predicate is the ONLY skip oracle (rev 4, the Blocker): when it fails,
+  conversion produces fresh bytes unconditionally** - the presence of a WebP in staging is
+  never evidence of anything, in either direction (A4).
 - **Encoder-version-only change** (sharp upgraded; source and recipe unchanged): existing
   bytes and keys are **retained** - no silent corpus re-key - unless `--reconvert` is passed.
   Newly converted entries always record the encoder that actually produced them, so the
@@ -147,16 +166,20 @@ Map-by-slug (not an array) makes "exactly one current object per slug" structura
   gets no `legacyKey`. Sibling finishes of one printing share a `legacyKey` by design - that
   IS the pre-content-addressing collapse, and exactly what the bundled APK contains.
   **`legacyKey` and everything that reads it are deleted in Phase 5 with the bundle**: once
-  `public/cards/` stops existing, the build records no `legacyKey`, Phase 5 strips the field
-  from surviving entries, and the runtime `bundledLegacy` branch (B3.5) is removed in the
-  same change.
+  `public/cards/` stops existing, the build records no `legacyKey` - and not only on fresh
+  conversions. Every build pass runs `normalizeTransitional()` (A4) over EVERY entry,
+  retained or reconverted, recomputing the transition-only fields against the current
+  bundled tree; with an empty bundled dir the field is stripped from all entries
+  mechanically, no manual sweep and no way to forget one (rev 4 Minor - rev 3 cloned prior
+  entries and `continue`d, so retained entries kept `legacyKey` indefinitely). The runtime
+  `bundledLegacy` branch (B3.5) is removed in the same change.
 
 **The manifest is the single source of truth for these consumers:**
 
 | Consumer | Rule |
 |---|---|
-| Conversion | Skip a slug iff `srcSha256` AND `recipeId` both match (A2). Source changed, recipe changed, or slug new -> convert, hash output, write a new entry (recording the current encoder). No source PNG in the drop and an entry exists -> keep the entry (incremental drops stay legal). |
-| Upload diff | Upload exactly `manifest keys − remote keys` (S3 `ListObjectsV2` on the bucket, ~4 pages). Every PUT carries **`Content-MD5`** (base64 of the entry's raw MD5 digest) - the mechanism Cloudflare R2 documents for PutObject write integrity; R2 refuses a body that does not match. **`x-amz-checksum-sha256` is NOT used**: R2 documents Content-MD5, and full-object SHA-256 checksums are unsupported - rev 2's premise was wrong. |
+| Conversion | Skip a slug iff `srcSha256` AND `recipeId` both match (A2). Source changed, recipe changed, or slug new -> **convert fresh** (never adopt an existing staging file - rev 4 Blocker, A4), hash the fresh output, write a new entry (recording the current encoder). No source PNG in the drop and an entry exists -> keep the entry (incremental drops stay legal). |
+| Upload plan | Classify every manifest entry against the remote listing (S3 `ListObjectsV2` on the bucket, ~4 pages) by the FULL tuple: `valid` (key present, `size === bytes`, `etag === md5` -> skip), `missing` (key absent -> PUT), `conflicting` (key present, evidence differs -> refuse with a repair path; rev 4, Major 3 - see below). Every PUT carries **`Content-MD5`** (base64 of the entry's raw MD5 digest) - the mechanism Cloudflare R2 documents for PutObject write integrity; R2 refuses a body that does not match. **`x-amz-checksum-sha256` is NOT used**: R2 documents Content-MD5, and full-object SHA-256 checksums are unsupported - rev 2's premise was wrong. |
 | Publish audit | Every distinct `v.image` in the staged `cards.json` must be a `manifest.objects[*].key` AND present in the remote listing with `size === bytes` **AND `etag === md5`** (quotes stripped; hex compare). `ListObjectsV2` returns ETag and Size - it does **not** return checksum values, so the ETag is the only integrity evidence the listing actually exposes. Any miss refuses the promote. One listing call, not 3090 HEADs. |
 | Catalog hash | `generation.mjs:90-97` replaces `imagePlan.manifest.join('\n')` with the serialized art manifest (keys + full sha256). Corrected bytes -> new digest -> new hash -> version token bump -> reseed. (Belt and suspenders: `serializeCards` already moves too, because `v.image` embeds the digest.) This closes the exact hole Codex found at `generation.mjs:95`. |
 | Runtime | `key` -> URL/cache path; `bytes` -> `validSize` + pack progress; `legacyKey` -> the bundledLegacy candidate during the Phase 2->5 transition (B3.5). |
@@ -179,16 +202,72 @@ Either branch, the audit's counterfactual is tested: a mocked remote listing con
 right key with the **right size but a wrong ETag** must refuse the promote - size match alone
 is not an integrity check (A9.4).
 
+**Conflicting remote objects get an actionable repair, not an endless rerun (rev 4, per
+Codex Major 3).** Rev 3 uploaded `manifest keys − remote keys` and audited afterwards, so a
+key that was PRESENT but WRONG - a corrupt or interrupted prior PUT that still materialized
+the key - was skipped by the upload (key exists), rejected by the audit (ETag/size differ),
+and skipped again on every rerun: correctly fail-closed, but with no exit. Upload planning
+now classifies each entry, and a conflict is a first-class outcome:
+
+```
+planUpload(manifest, remote):                  # remote: Map key -> { size, etag } from the
+                                               # listing (or Content-Length + x-amz-meta-
+                                               # sha256 via signed HEAD in the canary-failed
+                                               # branch - same classification, different
+                                               # evidence)
+  plan = { put: [], skip: [], conflicts: [] }
+  for entry of manifest.objects:
+    r = remote.get(entry.key)
+    if (!r):                 plan.put.push(entry)                    # missing -> upload
+    else if (r.size === entry.bytes
+          && stripQuotes(r.etag) === entry.md5):
+                             plan.skip.push(entry)                   # valid -> skip
+    else:                    plan.conflicts.push({ entry, remote: r })  # conflicting
+  return plan
+```
+
+- A non-empty `plan.conflicts` **refuses the run**, printing each conflict (key, expected
+  `bytes`/`md5`, found size/ETag), unless `--repair-conflicts` is passed. The repair:
+  **re-PUT the correct local bytes under the SAME key** (with `Content-MD5`, so R2 rejects
+  another bad body), **purge exactly that URL from the Cloudflare edge cache** (single-URL
+  purge, never a zone flush), re-list, and re-audit. The promote still refuses until the
+  audit is green - the repair is a path to green, not a bypass.
+- **Overwriting a content-addressed key is exceptional incident recovery, never routine
+  invalidation.** The immutable-header promise (A6) concerns corrected *content*, which is
+  always a NEW key. A conflict means the store materialized a key whose bytes are not the
+  bytes the key names - a corrupted write under the right key, which R2's own `Content-MD5`
+  enforcement should normally prevent, so this state is rare-to-never by construction. The
+  single-URL purge exists because edge caches may have absorbed the bad bytes before repair.
+- Devices that cached the corrupt object need no action: a wrong-size copy fails `validSize`
+  and is quarantined (B3); a same-size corruption fails decode and hits the quarantine path
+  (B3). Repair is entirely build-side.
+
 ### A4. Pipeline restructure (stage order and pseudocode)
 
 The chicken-and-egg to resolve: `planImages` runs inside `buildGeneration`
 (`generation.mjs:60`) and must be pure/dry-runnable, but a content-addressed key is unknowable
 until conversion produces bytes. Resolution: **move conversion (with digesting) in front of
 generation build**, feeding the finished manifest into `buildGeneration` as a pure input.
-Conversion writes only to the gitignored `CATALOG_DROP/cdn-art/` staging and is idempotent, so
-running it on `--dry-run` violates nothing the dry run promises (nothing under `public/` or
-`src/` is touched); the dry-run report becomes *exact* instead of "digest pending." This is a
-stated behavior change: dry runs may encode new scans into gitignored staging.
+Conversion writes only to the gitignored `CATALOG_DROP/cdn-art/` staging, so running it on
+`--dry-run` violates nothing the dry run promises (nothing under `public/` or `src/` is
+touched); the dry-run report becomes *exact* instead of "digest pending." This is a stated
+behavior change: dry runs may encode new scans into gitignored staging.
+
+**Conversion never existence-skips (rev 4, the Blocker).** Rev 3 called `ensureConverted`
+"idempotent," and `cdn-convert.mjs:38` shows what that word was hiding: `if (existsSync(out))
+{ skipped++; continue; }`. An existence check is the rev-1 stale-bytes Blocker relocated into
+the conversion cache. The failure it permits: a source PNG changes while `cdn-art/<slug>.webp`
+still holds the PREVIOUS valid output; `srcSha256` no longer matches, so the predicate
+correctly demands conversion - but an existence-skipping converter reuses the old file; the
+manifest then records the NEW `srcSha256` beside the OLD output digest; every later run sees
+source+recipe matching and skips; the corrected art is stale FOREVER, and nothing downstream
+can tell, because the ledger itself is lying. The rev-4 contract: **whenever the skip
+predicate fails, conversion produces fresh bytes regardless of what exists in staging** -
+unique temp, encode, validate, atomic replace (pseudocode below). `ensureConverted`, its
+"idempotent" framing, and A7's "reuse existing staging webp" allowance are all retired. So is
+`scripts/catalog/cdn-convert.mjs` itself: Phase 1 absorbs conversion into the manifest
+engine, and the standalone script - whose entire skip model is the trap - is deleted rather
+than left around as an attractive nuisance.
 
 New stage order in `scripts/update-catalog.mjs` (replacing the convert loop at `:96-107`):
 
@@ -198,33 +277,57 @@ buildGeneration({ ..., artManifest }) -> validateGeneration ->
 [real run only] upload diff -> publish audit -> journaled promote
 ```
 
-`scripts/catalog/artManifest.mjs` (new engine, unit-tested like its siblings):
+`scripts/catalog/artManifest.mjs` (new engine, unit-tested like its siblings; `hashFile`,
+`convertFresh`, `validateWebp`, `atomicReplace`, and `uniqueTemp` are injected, so every
+skip-vs-convert decision is provable against a fake filesystem):
 
 ```
 RECIPE = { width: 745, quality: 80, format: 'webp' }
 RECIPE_ID = 'webp:w745:q80:v1'
+TRANSITIONAL = ['legacyKey']                     # transition-only manifest fields - ONE
+                                                 # registry, so Phase 5 cannot miss a stray
 
-buildArtManifest({ committed, dropSources, bundledDir, convertedDir, hashFile,
-                   encoderVersions, flags }):
-  next = clone(committed.objects)
+normalizeTransitional(slug, entry, bundledDir):  # runs on EVERY entry, retained or fresh
+  base = omit(entry, TRANSITIONAL)
+  legacy = `${printingBase(slug)}.webp`          # curiosa.mjs printingBase - BUILD-side only
+  return existsIn(bundledDir, legacy) ? { ...base, legacyKey: legacy } : base
+
+buildArtManifest({ committed, dropSources, bundledDir, stagingDir, hashFile, convertFresh,
+                   validateWebp, atomicReplace, uniqueTemp, encoderVersions, flags }):
+  next = mapValues(committed.objects, (e, slug) =>
+           normalizeTransitional(slug, e, bundledDir))   # rev 4 Minor: RETAINED entries are
+                                                         # normalized too - Phase 5's empty
+                                                         # bundledDir strips legacyKey from
+                                                         # every entry, not just fresh ones
   rekeyedSourceUnchanged = []
   for (slug, pngPath) of dropSources:            # finish-suffixed slugs, reverse faces excluded
     srcSha = hashFile(pngPath)
     prior = next[slug]
     if prior && prior.srcSha256 === srcSha
              && prior.recipeId === RECIPE_ID
-             && !flags.reconvert: continue        # source AND recipe unchanged: keep bytes+key
-    webpBytes = ensureConverted(pngPath, convertedDir, RECIPE)   # sharp, idempotent
+             && !flags.reconvert: continue        # keep(prior): trusted because the entry was
+                                                  # RECORDED against this source+recipe -
+                                                  # never because a staging file exists
+    # skip predicate FAILED -> fresh bytes, unconditionally (rev 4, the Blocker):
+    tmp = uniqueTemp(stagingDir, slug)            # cdn-art/.tmp/<slug>.<rand>.webp
+    await convertFresh(pngPath, tmp, RECIPE)      # sharp encode; NEVER existence-skips
+    await validateWebp(tmp, RECIPE)               # RIFF/WEBP magic + decoded width check -
+                                                  # refuse a bad encode BEFORE it can be
+                                                  # staged, hashed, or uploaded
+    await atomicReplace(tmp, stagingPath(stagingDir, slug))  # plain-slug staging name; a
+                                                  # crash mid-encode can never leave a half-
+                                                  # written file under the real name
+    webpBytes = readFile(stagingPath(stagingDir, slug))
     sha = sha256(webpBytes)
-    legacy = `${printingBase(slug)}.webp`         # curiosa.mjs printingBase - BUILD-side only
-    next[slug] = { key: `${slug}.${sha}.webp`,    # FULL 64-hex digest (A2) - no prefix,
+    next[slug] = normalizeTransitional(slug, {
+                   key: `${slug}.${sha}.webp`,    # FULL 64-hex digest (A2) - no prefix,
                    sha256: sha,                   # no assertNoPrefixCollisions, machinery gone
                    md5: md5(webpBytes),
                    bytes: webpBytes.length,
                    srcSha256: srcSha,
                    recipeId: RECIPE_ID,
-                   encoder: encoderVersions,      # { sharp, vips } - provenance, not identity
-                   ...(existsIn(bundledDir, legacy) ? { legacyKey: legacy } : {}) }
+                   encoder: encoderVersions       # { sharp, vips } - provenance, not identity
+                 }, bundledDir)
     if prior && prior.srcSha256 === srcSha && next[slug].key !== prior.key:
       rekeyedSourceUnchanged.push(slug)
   printDiff(committed, next)                      # "N new, M re-keyed, K removed" - always
@@ -234,10 +337,12 @@ buildArtManifest({ committed, dropSources, bundledDir, convertedDir, hashFile,
 ```
 
 Staging file naming stays **plain-slug** (`cdn-art/001-abundance-b-s.webp`) - the
-content-addressed name exists only in the manifest, on R2, and on devices. The staging file is
-re-hashed cheaply whenever needed; if it is deleted but `srcSha256` and `recipeId` both match,
-no reconversion is needed either, because the object already exists remotely (verified by the
-audit). A routine no-image drop therefore still needs neither sharp nor `.env.r2`.
+content-addressed name exists only in the manifest, on R2, and on devices - but the staging
+file carries **no evidentiary weight in either direction**. When the predicate fails, the
+staging file is ignored as evidence and overwritten as output (unique temp + `atomicReplace`
+above). When the predicate passes, the entry is kept even if the staging file was deleted:
+the object already exists remotely (verified by the audit) and the recorded digests are the
+ledger. A routine no-image drop therefore still needs neither sharp nor `.env.r2`.
 
 ### A5. `v.image` assignment and validation adaptation
 
@@ -272,8 +377,11 @@ every manifest entry's `key` must equal `` `${slug}.${sha256}.webp` `` with the 
   slugs; the pack download sweeps `art/<slug>.*.webp` files whose key is no longer in the
   manifest).
 - The WebView HTTP cache and the Cloudflare edge both key on the URL; a new key is a new URL.
-  The year-long immutable header is now literally true, so **no Cloudflare purge API, no purge
-  tooling, no purge documentation** - the concept does not exist in this design.
+  The year-long immutable header is now literally true, so **purge does not exist as an
+  invalidation mechanism** - corrected content is always a new key. (The single-URL purge in
+  A3's conflict repair is incident recovery for a corrupted write under the RIGHT key - the
+  store failing to hold what the key names - not invalidation of superseded content; rev 4,
+  Major 3.)
 - Rev 1's Phase-order constraint is unchanged: pipeline repoint before seam swap, shipped as
   one release.
 
@@ -284,12 +392,20 @@ everything under content-addressed keys and leave the old objects as orphans.**
 
 - Cost of orphans: ~285 MB duplicate storage ≈ $0.004/month extra. Zero egress fees. Not worth
   a deletion pass while any historical pointer might exist.
-- The first `buildArtManifest` run needs the full high-res drop present once (to record
-  `srcSha256`, `md5`, `recipeId`, `encoder`, and `legacyKey` for all 3090 sources);
-  `CATALOG_DROP/Card Images high res` is on disk today. If `cdn-art/` staging still holds the
-  converted WebP, no re-encode happens - the builder hashes the existing outputs; otherwise it
-  reconverts (one-time ~cost of `cdn-convert.mjs`). `public/cards/` still exists at Phase 1,
-  so `legacyKey` presence is checkable directly against the committed bundled tree.
+- **The migration reconverts all 3,090 sources from scratch (rev 4, the Blocker's migration
+  arm).** A bare WebP already sitting in `cdn-art/` staging is NOT evidence that it was
+  produced from the current PNG under the current recipe - it predates the ledger, so
+  adopting it would seed the manifest with unverifiable provenance and reopen the stale-bytes
+  hole on day one. The considered alternative - an independently verified provenance sidecar
+  per staging file - is rejected: it moves the same trust problem one file over and costs
+  more machinery than the one-time re-encode it would save, and every object is being
+  re-uploaded under full-hash keys regardless. Enforcement is mechanically free: the initial
+  run has NO committed manifest entries, so the skip predicate fails for every slug and
+  `convertFresh` runs for all 3,090 (roughly the cost of the original `cdn-convert.mjs`
+  pass). The run needs the full high-res drop present once, to record `srcSha256`, `md5`,
+  `recipeId`, and `encoder`; `CATALOG_DROP/Card Images high res` is on disk today.
+  `public/cards/` still exists at Phase 1, so `legacyKey` presence is checkable directly
+  against the committed bundled tree.
 - Never derive the manifest by downloading and hashing R2 objects: the build machine's bytes
   are the source of truth; the remote is the thing being audited.
 - Optional cleanup (delete un-suffixed keys) is a follow-up allowed only after the slim APK is
@@ -312,29 +428,46 @@ sequence was produced with.
 2. **Hash-moves-on-bytes test** (`generation` tests): two generations with identical
    filenames but different manifest digests produce different content hashes - the exact
    defect at `generation.mjs:95`, pinned.
-3. **Upload-diff test**: manifest vs a mocked remote listing uploads exactly the absent keys,
-   each PUT carrying `Content-MD5`; a re-run uploads zero.
+3. **Upload-planning classification tests** (rev 4, Major 3): against a mocked remote
+   listing, absent keys plan as `missing` (each PUT carrying `Content-MD5`; a re-run uploads
+   zero), matching keys as `valid`, and **a present key with the right size but a wrong ETag
+   plans as `conflicting` - never skipped**; a conflicted plan refuses without
+   `--repair-conflicts`; with the flag, the repair re-PUTs the manifest bytes under the same
+   key, records the single-URL purge, and the re-run classifies the object `valid` and the
+   audit goes green - the fail-closed loop has an exit.
 4. **Audit-refusal tests**: staged catalog referencing (a) a key missing from the mocked
    remote listing, (b) a size-mismatched object, or (c) **a same-size object with a wrong
-   ETag** refuses to promote. (c) is the new counterfactual: size match alone is not
-   integrity evidence.
-5. **Recipe-skip tests** (Major 4): unchanged `srcSha256` + unchanged `recipeId` -> entry
+   ETag** refuses to promote. (c) pins that size match alone is not integrity evidence - and
+   pairs with test 3: the exact object the audit refuses is the one the planner now
+   classifies as repairable.
+5. **Recipe-skip tests** (rev-3 Major 4): unchanged `srcSha256` + unchanged `recipeId` -> entry
    untouched, zero conversions; unchanged `srcSha256` + **changed `recipeId`** -> reconverted
    and re-keyed (under `--approve-rekey`), new `recipeId` recorded; unchanged source + recipe
    but a **new encoder version** -> bytes and key retained, no reconversion, and a
    `--reconvert` run re-keys with the new `encoder` recorded.
 6. **Re-key refusal test**: a run that would re-key source-unchanged entries throws without
    `--approve-rekey`, after printing the diff; with the flag it proceeds.
-7. **legacyKey tests** (Major 1): every recorded `legacyKey` equals
+7. **legacyKey tests** (rev-3 Major 1 + rev-4 Minor): every recorded `legacyKey` equals
    `` `${printingBase(slug)}.webp` `` and corresponds to a file present in the bundled tree
-   fixture; a slug with no bundled file gets no `legacyKey`; a post-Phase-5 build (empty
-   bundled dir) records none.
-8. **ETag canary** (Phase 0, scripted): PUT one object with `Content-MD5` -> response ETag ==
+   fixture; a slug with no bundled file gets no `legacyKey`; and the Phase-5 counterfactual:
+   **a committed manifest whose entries carry `legacyKey`, with unchanged sources and an
+   EMPTY bundled dir, builds to a manifest with ZERO legacy fields** - retained entries are
+   normalized, not only freshly converted ones.
+8. **Conversion-freshness sensitivity tests** (rev 4, the Blocker): (a) **a VALID old WebP
+   already at the slug's staging path plus a CHANGED source PNG -> the injected
+   `convertFresh` is invoked (its call is recorded by the fake), the staging bytes change,
+   and the entry's `key`/`sha256`/`md5` all move with the fresh output** - the new
+   `srcSha256` is never recorded beside the old output digest; (b) predicate pass with the
+   staging file DELETED -> zero `convertFresh` calls and the entry retained unchanged
+   (staging carries no evidence in either direction); (c) the migration case: an empty
+   committed manifest plus a fully pre-populated staging dir -> `convertFresh` runs for
+   every drop source, zero adoptions.
+9. **ETag canary** (Phase 0, scripted): PUT one object with `Content-MD5` -> response ETag ==
    listed ETag == manifest `md5`. On failure, the signed-HEAD fallback path is exercised and
    its evidence recorded instead.
-9. **Device evidence** (manual, phase checkpoint): view a card, republish corrected bytes for
-   its slug, update catalog, reinstall/reseed -> the new art renders with no cache clear and
-   no purge, while airplane-mode still serves the previously cached keys.
+10. **Device evidence** (manual, phase checkpoint): view a card, republish corrected bytes
+    for its slug, update catalog, reinstall/reseed -> the new art renders with no cache clear
+    and no purge, while airplane-mode still serves the previously cached keys.
 
 *(Deleted with the prefix scheme: the rev-2 prefix-collision test - there are no prefixes.)*
 
@@ -395,8 +528,11 @@ downloadAll(keys, { onProgress, shouldStop })   // the pack; concurrency 6; epoc
 // -- lifecycle --
 clear()        // Promise<void>: bump epoch, detach inflight, drop memos, delete
                // Directory.Data/art under the promotion lock, clear the pack stamp (B7).
-stats()        // Promise<{ files, bytes, complete }>: complete is computed by comparing
-               // the art/ listing against the manifest keys - NEVER read from the stamp.
+stats()        // Promise<{ files, bytes, scratchBytes, complete }>: complete is computed by
+               // comparing the art/ listing against the manifest keys - NEVER read from the
+               // stamp. files/bytes count art/ alone; scratchBytes reports the art-tmp/
+               // scratch dir (B7), so Settings copy never claims "empty" while an in-flight
+               // temp still exists.
 ```
 
 Internal state:
@@ -408,6 +544,10 @@ const resolved = new Map();   // key -> {kind,src}          (session memo; feeds
 const retried  = new Set();   // keys quarantined+retried once this session
 let   epoch    = 0;           // cache generation counter; clear() increments it
 let   promotionLock = Promise.resolve();   // serializes rename/delete ONLY - B3
+
+// SCRATCH = 'art-tmp' - download temps live in a SIBLING of art/, never inside it (B7,
+// rev 4): deleteTree('art') cannot be undone by a late temp write. Module init sweeps
+// SCRATCH once (crash-orphan cleanup) before the first resolve.
 ```
 
 ### B3. Resolution algorithm
@@ -426,6 +566,16 @@ withPromotionLock(fn):                       # a promise-chain mutex; held for t
   promotionLock = run.catch(() => {})
   return run
 
+staleResult(key):                            # rev 4, Major 1: the terminal answer for a
+  return imagesDisabled() ? null             # flight whose epoch was invalidated mid-air.
+       : { kind:'remote', src: remoteUrl(key) }
+                                             # A DISPLAY-ONLY candidate: never memoized,
+                                             # never downloads, never re-enters resolve() -
+                                             # so a request that predates clear() can NEVER
+                                             # repopulate the cleared cache. Only a genuinely
+                                             # NEW resolve() call, made under the new epoch,
+                                             # may refill it.
+
 resolve(key):
   if (!key || imagesDisabled()) return null            # zero-image: no render, no I/O (B6)
   if (resolved.has(key)) return resolved.get(key)
@@ -438,14 +588,17 @@ resolve(key):
   ent.promise = (async () => {
     try:
       st = await io.stat(`art/${key}`)                 # Directory.Data
-      if (reqEpoch !== epoch) return resolve(key)      # cleared mid-stat: the file the stat
-                                                       # saw may already be gone - redo fresh
+      if (reqEpoch !== epoch) return staleResult(key)  # cleared mid-stat: do NOT retry, do
+                                                       # NOT memoize - degrade to the
+                                                       # display-only candidate
       if (st && validSize(key, st.size)):
         out = { kind:'local', src: convertFileSrc(st.uri) }
         resolved.set(key, out); return out             # reached only with epoch intact
       if (st) await withPromotionLock(() =>            # wrong-size file: delete under the
         reqEpoch === epoch ? io.delete(`art/${key}`) : null)   # lock, epoch re-checked
-      tmp = `art/.tmp/${key}.${rand()}`                # unique temp per attempt - no races
+      tmp = `art-tmp/${key}.${rand()}`                 # unique temp per attempt, in the
+                                                       # SCRATCH sibling - NEVER under art/
+                                                       # (B7): deleteTree('art') is final
       ok = await io.download(remoteUrl(key), tmp)      # Filesystem.downloadFile, else
                                                        # CapacitorHttp -> writeFile. NOT locked.
       good = ok && validSize(key, await io.size(tmp))
@@ -455,28 +608,37 @@ resolve(key):
         return true                                    # step with respect to clear()
       })
       if (!promoted):
-        await io.delete(tmp).catch(noop)               # NEVER persist a failure or a stale-
-        if (reqEpoch !== epoch) return resolve(key)    # epoch download; a cleared-mid-flight
-                                                       # request redoes itself fresh
-        return { kind:'remote', src: remoteUrl(key) }  # sequential last resort: let the <img>
-                                                       # try (WebView HTTP cache may hold it);
-                                                       # nothing was cached, nothing races
+        await io.delete(tmp).catch(noop)               # the flight cleans its OWN temp -
+                                                       # failed download and stale epoch alike
+        return staleResult(key)                        # NON-CACHING, both cases. For a plain
+                                                       # download failure this is the rev-3
+                                                       # remote last resort (the WebView HTTP
+                                                       # cache may hold it; nothing cached,
+                                                       # nothing races). For a stale epoch it
+                                                       # additionally guarantees the cleared
+                                                       # cache stays empty - no recursion.
       out = { kind:'local', src: convertFileSrc(...) }
       if (reqEpoch === epoch) resolved.set(key, out)   # every memo write is epoch-guarded
       return out
     catch (e):
-      return { kind:'remote', src: remoteUrl(key) }    # adapter failure caught INSIDE: the
-                                                       # Promise contract never
-                                                       # unhandled-rejects
+      return staleResult(key)                          # adapter failure caught INSIDE: the
+                                                       # Promise contract never unhandled-
+                                                       # rejects; same non-caching degrade
   })().finally(() => {
     if (inflight.get(key) === ent) inflight.delete(key)  # delete only OUR entry - an old
   })                                                     # promise's finally cannot evict a
   inflight.set(key, ent); return ent.promise             # newer request's entry
 ```
 
-Failures are still never memoized: a 404/offline miss retries on next view. The `resolve(key)`
-re-entries on epoch mismatch are bounded - each re-entry reads the *current* epoch, and
-`clear()` is a rare, user-initiated action, so the recursion terminates after the clears stop.
+Failures are still never memoized: a 404/offline miss retries on next view. **There is no
+recursion anywhere in `resolve()` (rev 4, per Codex Major 1).** Rev 3 re-entered
+`resolve(key)` on an epoch mismatch - and that re-entry ran under the NEW epoch, so a request
+that predated `clear()` could legally download and promote moments after the user emptied the
+cache: B7's "cache ends empty" was false even though the promotion lock was correct. A stale
+flight now terminates in `staleResult(key)`: its caller gets a usable display candidate
+(remote URL, or null under the zero-image gate), and the cache is touched by nobody until a
+genuinely new consumer request - a later `resolve()` call under the new epoch, from a mount
+or re-render that actually wants the art - chooses to fill it.
 
 **Validation is exact-size-against-the-manifest, and it FAILS CLOSED (rev 3, Codex Minor 3).**
 
@@ -503,7 +665,10 @@ a *local* candidate fires `onError`, the source machine (B4) enters `quarantinin
 `artCache.quarantine(key)`: delete the file (under the promotion lock, epoch-checked), drop
 the memo, and - if `!retried.has(key)` - add to `retried`, `resolve(key)` again (fresh
 download), and return the new candidate. A repeat offence returns the remote candidate
-instead (no further downloads). The returned candidate feeds the machine as a `RESOLVED`
+instead (no further downloads). Quarantine's internal `resolve()` is a sanctioned refill -
+it is driven by a live consumer's decode error, i.e. a genuinely new request - but the same
+epoch rule applies (rev 4, Major 1): quarantine captures the epoch on entry, and if `clear()`
+lands before its locked delete, it returns `staleResult(key)` without re-resolving. The returned candidate feeds the machine as a `RESOLVED`
 event **with a bumped retry generation**, and `ArtImage` keys the `<img>` on that generation -
 so even when the re-resolved local URI is byte-identical to the failed one, React remounts
 and re-decodes it. (Rev 2 ignored the quarantine result and relied on a `src` change that
@@ -530,9 +695,11 @@ same chain for rendering and for the poster canvas:
   Phase-2 build; `resolve()` finds no cached file, the native download fails, so it returns
   the `remote` candidate; the remote `<img>` errors (offline); the machine advances to
   `bundledLegacy` and the bundled base image renders. Photography survives the upgrade.
-  This exact sequence is a required test, in both render and poster variants (B10.8).
+  This exact sequence is a required test, in both render and poster variants (B10.9).
 - `legacySrc` is **sync** (one manifest lookup, no I/O), gated by `imagesDisabled()` like
-  everything else (B6), and returns null for keys whose entry has no `legacyKey`.
+  everything else (B6), and returns null for keys whose entry has no `legacyKey`. It is
+  called at the hook's `IMG_ERROR` dispatch site and by the poster walk (B9) - **never
+  inside the reducer**, which is pure and imports nothing (rev 4, Major 2; B4).
 - `bundledLegacy` is **transition-only**: Phase 5 deletes the bundle, the `legacyKey` field
   (A3), the `legacySrc` function, and the machine's legacy arm in one change; the chain
   becomes `local -> remote -> fallback`. The seam-guard's `${BASE}cards/` ban has exactly one
@@ -544,10 +711,17 @@ same chain for rendering and for the poster canvas:
 ### B4. `useArtSource` and `ArtImage` - the two consumption forms
 
 **The source machine is a pure reducer, owned by the hook, tested DOM-free** (rev 3, per
-Codex Majors 1-2 and Minor 3). `src/store/artSource.js` follows the UI-state extraction
-pattern (pure core, no DOM, `node --test` - the `matchLife.js` precedent): it owns the
-candidate chain, the quarantine retry, and the stale-resolution guard as *tested transitions*
-rather than component-local `useState` conventions.
+Codex Majors 1-2 and Minor 3; hardened in rev 4 per Codex Major 2). `src/store/artSource.js`
+follows the UI-state extraction pattern (pure core, no DOM, `node --test` - the
+`matchLife.js` precedent): it owns the candidate chain, the quarantine retry, the
+stale-resolution guard, and - rev 4 - the no-stale-paint frame selector as *tested
+transitions and selectors* rather than component-local `useState` conventions. Rev 3 fell
+short of its own claim twice: the reducer called `artCache.peek()`/`legacySrc()` internally
+(so it was not actually pure), and because effects run AFTER the render that observes a
+changed prop, a recycled tile flipping A -> B still returned A's candidate for one frame -
+the exact lazy-swap class this design exists to eliminate. Both are structural fixes below:
+every input a transition needs now rides ON THE EVENT, and a pure selector decides what a
+mismatched frame may paint.
 
 ```
 state = { key, phase, cand, gen }
@@ -558,12 +732,15 @@ state = { key, phase, cand, gen }
 initial(key, peeked) = peeked ? { key, phase:'shown', cand: peeked, gen: 0 }
                               : { key, phase: key ? 'resolving' : 'broken', cand: null, gen: 0 }
 
-reduce(state, ev):                       # every event carries the key it was produced for;
+reduce(state, ev):        # GENUINELY pure (rev 4, per Codex Major 2): artSource.js imports
+                          # NOTHING - every input a transition needs rides ON THE EVENT
+                          # (`peeked`, `legacy`), captured by the hook's dispatch sites.
+                          # Every event carries the key it was produced for:
   if (ev.key !== state.key && ev.type !== 'KEY') return state   # stale async results from a
                                                                 # superseded key are DROPPED -
                                                                 # the generation guard, now
                                                                 # inside the tested core
-  KEY(k)         -> initial(k, peek(k))               # also resets 'broken': the CardArt.jsx:11
+  KEY(k, peeked) -> initial(k, peeked)                # also resets 'broken': the CardArt.jsx:11
                                                       # retention defect stays pinned
   RESOLVED(cand) if phase in {resolving, quarantining}:
     cand == null -> { phase:'broken' }                # zero-image / falsy key: fallback only;
@@ -571,35 +748,57 @@ reduce(state, ev):                       # every event carries the key it was pr
     cand.kind == 'local' && phase == 'quarantining'
                  -> { phase:'shown', cand, gen: gen+1 }   # identical URI still remounts
     else         -> { phase:'shown', cand }
-  IMG_ERROR      if phase == 'shown':
-    cand.kind == 'local'  -> { phase:'quarantining' }     # effect: artCache.quarantine(key)
-    cand.kind == 'remote' -> legacySrc(key) ? { phase:'shown', cand: legacy }
-                                            : { phase:'broken' }
+  IMG_ERROR(legacy) if phase == 'shown':              # legacy = artCache.legacySrc(key),
+                                                      # captured AT THE DISPATCH SITE - null
+                                                      # under the zero-image gate, so B6 holds
+    cand.kind == 'local'  -> { phase:'quarantining' } # effect: artCache.quarantine(key)
+    cand.kind == 'remote' -> legacy ? { phase:'shown', cand: legacy }
+                                    : { phase:'broken' }
     cand.kind == 'legacy' -> { phase:'broken' }
+
+# The no-stale-paint selector (rev 4, per Codex Major 2) - pure and total. React runs
+# effects AFTER the render that observes a changed prop, so on the first commit after a
+# recycled tile flips A -> B the reducer state still describes A; painting state.cand on
+# that frame shows the PREVIOUS card for one frame. On a key mismatch the selector returns
+# the NEW key's memo (flash-free when cached) or null (the fallback paints) - NEVER the old
+# candidate. A's art is unreachable by construction.
+visibleCandidate(state, propKey, peeked):
+  return state.key === propKey ? state.cand : (peeked ?? null)
 ```
 
 **Hook** (for bespoke markup: `CardArtViewer`'s rotated layout, `SiteArt`, `LifeCounter` -
-and any future custom `<img>`):
+and any future custom `<img>`). The hook is a **zero-logic shell**: it captures the impure
+inputs at the dispatch sites and calls the two tested pure functions in React's documented
+order - nothing else lives here, which is what lets a `node --test` sequence test stand in
+for a DOM harness (B10.3):
 
 ```jsx
 export function useArtSource(key) {
   const [st, dispatch] = useReducer(reduce, key, (k) => initial(k, artCache.peek(k)));
-  useEffect(() => { dispatch({ type: 'KEY', key }); }, [key]);
+  useEffect(() => { dispatch({ type: 'KEY', key, peeked: artCache.peek(key) }); }, [key]);
   useEffect(() => {              // one resolution attempt per (key, phase, gen)
     if (st.phase === 'resolving')
       artCache.resolve(st.key).then((cand) => dispatch({ type: 'RESOLVED', key: st.key, cand }));
     if (st.phase === 'quarantining')
       artCache.quarantine(st.key).then((cand) => dispatch({ type: 'RESOLVED', key: st.key, cand }));
   }, [st.key, st.phase, st.gen]);
-  const onError = useCallback(() => dispatch({ type: 'IMG_ERROR', key: st.key }), [st.key]);
-  return { src: st.cand?.src ?? null, gen: st.gen, onError };
+  const cand = visibleCandidate(st, key, artCache.peek(key));  // pure - the one-frame guard
+  const onError = useCallback(
+    () => dispatch({ type: 'IMG_ERROR', key, legacy: artCache.legacySrc(key) }), [key]);
+  return { src: cand?.src ?? null, gen: st.gen, onError };
   // src null => render nothing over the fallback (never an empty <img>)
 }
 ```
 
-A resolution settling after the key moved on dispatches with the *old* key and is dropped by
-the reducer's key match - the stale-write guard is a reducer test, not a closure flag.
-(`artCache.resolve`/`quarantine` never reject, so no `.catch` wiring is needed here - B3.)
+Two boundary details, both consequences of the selector:
+
+- An `IMG_ERROR` fired during the mismatched frame carries the NEW prop key; the reducer's
+  key guard drops it (state still holds the old key), and the queued `KEY` dispatch then
+  resets the machine, whose own error handling takes over - no transition is lost, none is
+  misattributed to the wrong key.
+- A resolution settling after the key moved on dispatches with the *old* key and is dropped
+  by the same guard - the stale-write guard is a reducer test, not a closure flag.
+  (`artCache.resolve`/`quarantine` never reject, so no `.catch` wiring is needed here - B3.)
 
 **Component** (everything else). Two modes, so both current markup shapes are drop-in:
 
@@ -617,9 +816,10 @@ Internals:
 ```jsx
 export default function ArtImage({ artKey, card, bare, fallbackNode = null, ...frame }) {
   const { src, gen, onError } = useArtSource(artKey);
-  const img = src ? <img key={gen} src={src} onError={onError} ... /> : null;   // key={gen}:
-  if (bare) return img ?? fallbackNode;                 // a quarantine retry that re-resolves
-  return (                                              // to the SAME URI still remounts
+  const img = src ? <img key={`${artKey}#${gen}`} src={src} onError={onError} ... /> : null;
+  if (bare) return img ?? fallbackNode;   // keyed on artKey#gen: a prop-key change AND a
+  return (                                // quarantine retry to the SAME URI both remount -
+                                          // a recycled tile never re-decodes into a stale node
     <div style={{ background: cardFallbackArt(card), ... }}>{img}{frame.children}</div>
   );
 }
@@ -714,18 +914,41 @@ mechanism (specified in B3, argued here):
                                      # longer be joined; their promotions will be refused
                                      # inside the lock; their finally cannot evict newer
                                      # entries (identity check, B3)
-    await withPromotionLock(() => io.deleteTree('art'))   # temps live in art/.tmp, so they
-    clear the Preferences pack stamp                      # go too
+    await withPromotionLock(() => io.deleteTree('art'))
+    await io.deleteTree('art-tmp').catch(noop)   # best-effort scratch sweep - see below
+    clear the Preferences pack stamp
   ```
+
+- **Scratch lives OUTSIDE `art/` (rev 4, per Codex Major 1).** Rev 3 put download temps
+  under `art/.tmp` and relied on `deleteTree('art')` to sweep them - but `io.download()`
+  runs OUTSIDE the lock by design, so a download completing after `deleteTree` returned
+  could re-materialize temp bytes inside the directory the user was just told is empty.
+  Temps now live in the sibling scratch dir `art-tmp/`, so `deleteTree('art')` is final for
+  the cache proper, and the scratch has its own two-layer hygiene: (1) **every flight
+  deletes its OWN temp when its promotion is refused** (the `!promoted` path in B3), so a
+  mid-clear download's bytes outlive `clear()` by at most that flight's cleanup step; (2)
+  **module init sweeps `art-tmp/` once at startup**, so a temp orphaned by a crash never
+  survives a launch. The `clear()`-time sweep above is a courtesy for the common case, not
+  the guarantee.
+- **The Settings readout stays honest.** `stats()` reports `{ files, bytes, scratchBytes,
+  complete }`: `files`/`bytes` count `art/` alone - what "Clear art cache" actually
+  reclaims - and a nonzero `scratchBytes` (bounded by inflight concurrency: the pack's 6
+  plus lazy flights) is surfaced as "in-flight temp, removed automatically" rather than
+  silently folded into a claim of empty storage.
 
 - **Why a cleared file cannot reappear:** `epoch++` happens-before `deleteTree` acquires the
   lock. Any promotion that acquires the lock *after* `deleteTree` re-reads the epoch inside
   the lock, sees the bump, and refuses (temp deleted, nothing written). Any promotion already
   *holding* the lock completes first - and its file is then removed by `deleteTree`, which is
-  queued behind it. Either interleaving ends with `art/` empty.
+  queued behind it. Either interleaving ends with `art/` empty - **and it STAYS empty**
+  (rev 4, Major 1): a refused stale flight returns the non-caching `staleResult()` and never
+  re-enters `resolve()` (B3), so after `clear()` returns there are ZERO downloads and ZERO
+  promotions until a new consumer request arrives under the new epoch. Rev 3's
+  epoch-mismatch recursion violated exactly this - the recursive call ran under the new
+  epoch and could legally refill the cache right after the user emptied it.
 - **Why a deleted URI cannot be memoized or returned:** the epoch is captured before the
   first `await` (`stat` included), every `resolved.set()` and every local-URI return is
-  epoch-guarded, and a mismatch re-enters `resolve()` fresh under the new epoch.
+  epoch-guarded, and a mismatch degrades to the display-only `staleResult()`.
 - **Why a new request cannot join a dead flight:** `inflight` entries carry their epoch; the
   join requires `entry.epoch === epoch`; `clear()` empties the map besides. An old promise's
   `finally` deletes its entry only if the map still holds *that* entry, so it cannot race
@@ -801,7 +1024,7 @@ via the app scheme, no taint, **device evidence still required**: export a poste
 cached avatar and confirm `toDataURL` does not throw); **remote** (first-ever view:
 `corsSrc` sets `img.crossOrigin='anonymous'`, which requires the R2 CORS policy from rev 1
 Phase 0 - device evidence again); **bundledLegacy** (offline Phase-2 upgrade: bundled asset,
-same-origin, no taint - this is the poster variant of the Major-1 test, B10.8); **null**
+same-origin, no taint - this is the poster variant of the rev-3 Major-1 test, B10.9); **null**
 (zero-image or no avatar: poster renders without a hero, current behavior). The poster is the
 one consumer where the chain's local-first order is not just performance but correctness,
 because the local file sidesteps taint entirely.
@@ -819,55 +1042,87 @@ generation-guard test; that guard is now a reducer transition - testable without
 2. **Reducer tests** (`artSource.js`, replacing the rev-2 RTL test):
    stale-resolution guard (a `RESOLVED` carrying a superseded key is dropped); broken-reset
    (KEY transition re-arms after a prior error - the `CardArt.jsx:11` defect, pinned); the
-   full candidate walk `local -> quarantining -> remote -> legacy -> broken`, each arm;
-   zero-image `RESOLVED(null)` goes straight to `broken` without consulting legacy.
-3. **Quarantine tests**: local decode failure deletes the file, re-downloads once, and a
+   full candidate walk `local -> quarantining -> remote -> legacy -> broken`, each arm, with
+   the legacy candidate supplied ON the `IMG_ERROR` event; zero-image `RESOLVED(null)` goes
+   straight to `broken`, and `IMG_ERROR` with `legacy: null` (the gated dispatch site) goes
+   to `broken` - legacy is consulted nowhere else. **Purity is structural (rev 4, Major 2):
+   `artSource.js` has no imports at all**, so the tests construct every event by hand -
+   there is nothing to mock and nothing to stub.
+3. **No-stale-paint tests** (rev 4, Major 2):
+   - **selector**: with state `shown` for key A, `visibleCandidate(state, 'B', peekedB)`
+     returns B's memo, and with a null peek returns null - A's candidate is unreachable on
+     a mismatched frame, proven by exhaustive case over the state shapes;
+   - **commit-order sequence (the production-wiring test at the hook boundary)**: a
+     `node --test` harness replays React's documented ordering over the exported pure
+     pieces - `initial(A)` -> `RESOLVED(A)` shown -> the prop flips to B -> the pre-effect
+     frame calls `visibleCandidate(stateA, 'B', peek)` -> `KEY(B, peeked)` dispatches -> the
+     post-effect frame - asserting NO frame ever outputs A's src. This stands in for a DOM
+     harness because `useArtSource` is a zero-logic shell (B4): it contains exactly these
+     calls in exactly this order, so the sequence test plus the recycled-list device check
+     (item 13) covers the real tile-recycling A -> B swap;
+   - an `IMG_ERROR` raised during the mismatched frame (carrying the new prop key) is
+     dropped by the reducer's key guard, and the queued `KEY` reset re-arms cleanly.
+4. **Quarantine tests**: local decode failure deletes the file, re-downloads once, and a
    second failure yields the remote candidate with no further downloads (`retried`
    respected); **a successful quarantine that re-resolves to the byte-identical local URI
-   still produces a state change** - `gen` bumps, so the keyed `<img>` remounts (Codex
-   Major 2's rerender counterfactual).
-4. **Zero-image I/O test**: with the gate on, `resolve`/`download`/`downloadAll`/
+   still produces a state change** - `gen` bumps, so the keyed `<img>` remounts (rev-3
+   Major 2's rerender counterfactual); a `clear()` landing mid-quarantine yields
+   `staleResult` with no re-resolve (rev 4, Major 1).
+5. **Zero-image I/O test**: with the gate on, `resolve`/`download`/`downloadAll`/
    `quarantine`/`legacySrc` return null/no-op and the fake `io` records zero calls -
    download prohibition, not just render prohibition.
-5. **Clear counterfactuals** (Codex Major 2, each against the fake `io` with controllable
-   promise ordering):
+6. **Clear counterfactuals** (rev-3 Major 2 + rev-4 Major 1, each against the fake `io`
+   with controllable promise ordering):
+   - **no auto-repopulation** (rev 4): a request in flight when `clear()` lands, with NO
+     later explicit `resolve()` - the stale flight settles to `staleResult` (a display-only
+     remote candidate), and the fake `io` log records ZERO post-clear downloads, renames,
+     or memo writes; `stats()` reports the cache empty;
+   - **sanctioned refill** (rev 4): an explicit NEW `resolve()` after `clear()` downloads,
+     promotes, and memoizes normally - only a new consumer request refills the cache;
    - clear during an existing-file `stat`: the stale attempt neither memoizes nor returns
-     the deleted URI; the caller's promise settles from a fresh attempt under the new epoch;
-   - clear between download completion and promotion: the rename is refused inside the lock,
-     the temp is deleted, `art/` ends empty - a cleared file cannot reappear;
+     the deleted URI - it settles to the non-caching `staleResult`;
+   - clear between download completion and promotion: the rename is refused inside the
+     lock, the flight deletes its own temp (in `art-tmp/`, outside the cache), `art/` ends
+     and STAYS empty - a cleared file cannot reappear;
    - a promotion already holding the lock when `clear()` runs: the rename completes, then
      `deleteTree` (queued behind it) removes the file - `art/` still ends empty;
    - an inflight request, then `clear()`, then a new same-key request: the new request does
      NOT join the obsolete promise (epoch-tagged entries) and triggers its own download;
    - the old promise's `finally` racing the new entry: the newer inflight registration
-     survives (entry-identity check).
-6. **Non-rejecting-resolve test**: the fake `io` throwing at each adapter call site in turn
+     survives (entry-identity check);
+   - **scratch hygiene** (rev 4): a temp orphaned by a simulated crash is swept by the
+     startup init; a download landing in `art-tmp/` after `clear()`'s sweep is deleted by
+     its own flight's `!promoted` cleanup; `stats().scratchBytes` reports any interim
+     residue instead of folding it into "empty".
+7. **Non-rejecting-resolve test**: the fake `io` throwing at each adapter call site in turn
    still settles `resolve()`'s promise (remote candidate or null) - the `Promise` contract
    never unhandled-rejects.
-7. **Failure-not-cached test**: a 404 download persists nothing and a later `resolve`
+8. **Failure-not-cached test**: a 404 download persists nothing and a later `resolve`
    retries.
-8. **Legacy-fallback production-path tests** (Codex Major 1): with the fake `io`, native
+9. **Legacy-fallback production-path tests** (rev-3 Major 1): with the fake `io`, native
    download fails AND the remote candidate is error'd by the consumer - the machine lands on
    `bundledLegacy` and its `src` is the bundled `legacyKey` path (render variant, via the
-   reducer); the poster walk under the same double failure loads the bundled candidate
-   (poster variant, `_loadImg` faked). Both assert the bundled path is used, not the
-   deterministic fallback.
-9. **validSize fail-closed test** (Codex Minor 3): a key absent from the manifest validates
-   false - the cached file is quarantined and nothing is promoted; the rev-2 `n > 0` branch
-   does not exist.
-10. **Seam-guard test (extended + sensitivity)**: no `${BASE}cards/` template and no
+   reducer, with `legacy` riding the `IMG_ERROR` event); the poster walk under the same
+   double failure loads the bundled candidate (poster variant, `_loadImg` faked). Both
+   assert the bundled path is used, not the deterministic fallback.
+10. **validSize fail-closed test** (rev-3 Minor 3): a key absent from the manifest validates
+    false - the cached file is quarantined and nothing is promoted; the rev-2 `n > 0` branch
+    does not exist.
+11. **Seam-guard test (extended + sensitivity)**: no `${BASE}cards/` template and no
     `artUrl`/`cardImageUrl` import outside `cardArt.js`/`artCache.js` anywhere in `src/**`;
     the guard's own fixtures prove it detects both offence classes; and the recorded
     red-first run against the pre-adoption tree names `CardArt.jsx`, `CardArtViewer.jsx`,
     `CollectionCardSheet.jsx`, and `LifeCounter.jsx` (B5).
-11. **Stats-vs-stamp test**: `stats().complete` reflects files-vs-manifest even when the
+12. **Stats-vs-stamp test**: `stats().complete` reflects files-vs-manifest even when the
     stamp claims completion (stamp is reporting only).
-12. **Device evidence**: lazy view -> airplane -> restart persistence; pack download + clear
-    mid-pack; zero-image full-route sweep now covering the ex-bypass sites AND LifeCounter +
-    SiteArt; poster taint on the local, remote, and bundledLegacy paths; **offline-upgrade
-    check**: install a Phase-2 build over a Phase-1 build with the network off - card and
-    Site photography renders from the bundle (Major 1's scenario on hardware); backup
-    exclusion per B8.
+13. **Device evidence**: lazy view -> airplane -> restart persistence; pack download + clear
+    mid-pack, confirming the cache stays empty afterwards with no spontaneous downloads
+    (Major 1 on hardware); **fast-scroll a long recycled list and confirm no tile ever
+    flashes the previous card's art** (Major 2 on hardware); zero-image full-route sweep now
+    covering the ex-bypass sites AND LifeCounter + SiteArt; poster taint on the local,
+    remote, and bundledLegacy paths; **offline-upgrade check**: install a Phase-2 build over
+    a Phase-1 build with the network off - card and Site photography renders from the bundle
+    (rev-3 Major 1's scenario on hardware); backup exclusion per B8.
 
 ---
 

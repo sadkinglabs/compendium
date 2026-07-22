@@ -1,126 +1,80 @@
-# Codex RE-REVIEW request - art-CDN migration PROPOSAL rev 2 (design review, pre-implementation)
+# Codex RE-REVIEW request - art-CDN migration PROPOSAL rev 4 (design review, pre-implementation)
 
-**Branch:** `art-cdn`. **Still a proposal, no production app code.** Rev 1 disposition was Changes
-required (Blocker + 3 Majors + Minors); rev 2 resolves all of them.
+**Branch:** `art-cdn`. **Still a proposal, no production app code.** Approval of this design gates
+Phase 1. This brief is rewritten clean for rev 4 (prior stacked rev-1/2/3 layers removed - stale
+instructions caused a version mix-up in the last round).
 
-## Rev 3 - how each rev-2 finding is resolved
+## Where we are
 
-Rev 2 was **Changes required, direction approved** (4 implementation majors + 3 minors). Rev 3 fixes
-all, in the companion `art-cdn-rev2-architecture.md` (now rev 3; see its finding-to-resolution table)
-and reconciled in `art-cdn-migration.md` (the "Rev-2 disposition -> rev-3 resolutions" block):
+- **Rev 1** (Changes required): blocker + 3 majors - all resolved.
+- **Rev 2** (Changes required, direction approved): 4 impl majors + 3 minors - all resolved.
+- **Rev 3** (Changes required): Codex cleared all ten prior resolutions and approved the direction,
+  then found 1 new Blocker + 3 Majors + 2 Minors in the rev-3 design itself.
+- **Rev 4** resolves those six. Architecture fixes are in the companion
+  `art-cdn-rev2-architecture.md` (content is rev 4; finding-to-resolution table at its top);
+  reconciled in `art-cdn-migration.md`.
 
-- **Legacy fallback executable** - build-side `legacyKey` + candidate chain
-  `local -> remote -> bundledLegacy -> deterministicFallback`, shared by `ArtImage` + `deckPoster`,
-  deleted in Phase 5 (companion B3.5/A3).
-- **`clear()` linearized** - promotion lock around every `art/` write (never the download), epoch
-  before first await + re-checked in the lock, `{epoch,promise}` inflight, non-rejecting `resolve()`,
-  retry-generation rerender (B3/B7).
-- **R2-documented integrity** - `Content-MD5` + `ETag`, Phase-0 `ETag==MD5` canary, audit by
-  key+bytes+ETag, signed-HEAD fallback (A3).
-- **Recipe-aware reuse** - `recipeId` + encoder provenance; skip only on `srcSha256` AND `recipeId`;
-  `--approve-rekey`; `sharp` pinned (A2-A4).
-- **Minors** - full 64-hex key (prefix machinery deleted); seam inventory adds `LifeCounter` +
-  `CollectionCardSheet` `SiteArt`; `validSize()` fail-closed; pure reducer, no RTL.
+## Rev 4 - how each rev-3 finding is resolved
 
-**Attack rev 3 at:** the Phase-0 `ETag==MD5` canary assumption (does single-part R2 PUT ETag really
-equal the MD5?); the promotion-lock linearization (any write path into `art/` not under the lock; the
-retry-generation rerender when the URI is identical); the candidate-chain offline-upgrade behavior +
-its deletion in Phase 5; and whether the recipe/encoder policy actually prevents a silent mislabel.
-
----
-
-## Rev 2 - how each rev-1 finding is resolved (superseded by rev 3 above)
-
-Read the **"Response to the rev-1 disposition" table** at the top of `art-cdn-migration.md`, then the
-**companion `art-cdn-rev2-architecture.md`** (Section A content-addressed identity, Section B the
-shared `artCache`/`ArtImage` boundary) for the interface-level designs + pseudocode + the tests each
-enables. Summary:
-
-- **Blocker (stale art)** -> content-addressed keys `<slug>.<sha256-12>.webp` + committed
-  `art-manifest.json`; catalog hash folds the manifest digest not filenames; no purge concept.
-- **Major (fail-open tooling)** -> importable engines, non-zero CLIs, temp->validate->rename,
-  authoritative remote-checksum skip, real publish audit, `--recover` re-audits R2, dry-run seam.
-- **Major (unsafe Phase 1)** -> dormant Phase 1 (no promote) + single atomic Phase-2 activation +
-  legacy bundled fallback until Phase 5.
-- **Major (cache)** -> one shared boundary, every site, local-first single-flight epoch-guarded, zero-
-  image prohibits I/O, Android backup exclusion.
-- **Minors** -> count 14+poster, comment-stripped guard banning `artUrl`/`cardImageUrl` outside the
-  boundary, doc contradictions fixed, `aws4fetch` disclosed, one `selectPrinting()` for Phase 6.
-
-**Where to attack rev 2:** the content-addressing edge cases (encoder drift, prefix-collision, the
-`x-amz-checksum-sha256` R2-support assumption); whether the atomic Phase-2 activation + legacy fallback
-truly closes the offline-upgrade window; the `artCache` pure-core/`io`-adapter testability and the
-epoch/clear-vs-download serialization; and any resubmission-evidence test still missing.
-
-## (rev 1, retained for context) Please review the design for soundness and the two prep scripts for
-correctness, and return a disposition (Approve / Approve-with-conditions / Changes required) as you
-would for a §8 proposal.
+- **Blocker (stale converted bytes):** conversion never existence-skips. When `srcSha256` OR
+  `recipeId` fails the skip predicate it produces FRESH bytes (unique temp -> convertFresh ->
+  validate -> atomic replace -> describe), so a changed source can't reuse an old staging webp. The
+  initial migration reconverts all 3,090 (no bare-file provenance trust). (Companion A4/A7.)
+- **Major (pre-clear repopulation):** on an epoch mismatch the resolver returns a NON-CACHING
+  candidate (remote/legacy/null), never a recursive `resolve()`, so an in-flight pre-clear request
+  cannot refill the cache; temp writes use a scratch namespace with orphan cleanup so no temp
+  survives `clear()`. (B3/B7.)
+- **Major (one-frame wrong-card paint):** the reducer is genuinely pure (events carry `peeked`/
+  `legacy`), and a pure `visibleCandidate(state, propKey, peeked)` returns the OLD candidate only
+  when `state.key === propKey` - a mismatch yields the new key's memo or null, never card A's art on
+  card B. (B4.)
+- **Major (unrecoverable remote conflict):** upload planning classifies each object by the full
+  tuple - `valid` (skip), `missing` (upload), `conflicting` (present but wrong size/ETag -> explicit
+  actionable re-PUT repair, documented as exceptional edge-cache incident recovery, not normal
+  invalidation). (A3.)
+- **Minor (Phase-5 legacyKey):** Phase 5 normalizes transitional fields for EVERY retained entry,
+  not just newly converted ones, so no `legacyKey` survives the un-bundling. (A4.)
+- **Minor (doc contradictions):** this brief rewritten; the main proposal's stale LifeCounter row and
+  the error-summary (now includes `bundledLegacy`) corrected; the `${v.slug}.webp` key claim removed
+  everywhere (keys are full-hash content-addressed).
 
 ## What to read
 
-- **Primary:** `docs/proposals/art-cdn-migration.md` - the full §8 proposal (Fable-authored,
-  Claude-verified). Classification High-risk; all eight §3 invariants dispositioned; 6 phases.
-- **Prep tooling (will be wired into the pipeline in Phase 1, review for correctness now):**
-  `scripts/catalog/cdn-convert.mjs` (PNG->745px q80 webp) and `scripts/catalog/cdn-upload.mjs`
-  (R2 S3-PUT via aws4fetch, creds from gitignored `.env.r2`, `--check` healthcheck).
+- **Primary:** `docs/proposals/art-cdn-migration.md` (the §8 proposal) + companion
+  `docs/proposals/art-cdn-rev2-architecture.md` (rev-4 interface-level design + pseudocode + the
+  counterfactual tests each fix enables).
+- Prep tooling to be wired in Phase 1: `scripts/catalog/cdn-convert.mjs`, `cdn-upload.mjs`.
 
 **Range:**
 
 ```
-git fetch origin
-git diff c787585..art-cdn          # tooling + proposal + companion; no src/** app code
-git log --oneline c787585..art-cdn
-# rev-3 delta only:  git diff 0338670..art-cdn
+git fetch origin && git checkout art-cdn      # HEAD must be the rev-4 tip, not 5c7abd6
+git diff c787585..art-cdn                     # full tooling + proposal + companion; no src/** app code
+# rev-4 delta only:  git diff 5c7abd6..art-cdn
 ```
 
-## Context already VERIFIED (please don't re-litigate; challenge if you think a check was wrong)
+## Already verified (challenge only if you think a check is wrong)
 
-- **The library is live.** 3090 per-finish webp (285 MB) uploaded to R2 and serving `200 image/webp`
-  through the owner's edge-cached custom domain `https://cdn.sadkinglabs.com` (verified `cf-cache-status`
-  MISS then HIT). `ART_CDN_BASE` targets it; r2.dev is interim-build only.
-- **CORS (empirically):** r2.dev/R2 sends no `Access-Control-Allow-Origin` and 403s the preflight, so a
-  WebView `window.fetch()` of bytes is blocked -> the cache byte-fetch MUST be native. `<img>` display
-  needs no CORS (verified 200 with `Origin: https://localhost`).
-- **Native download is available:** `Filesystem.downloadFile` is present in the installed
-  `@capacitor/filesystem` 6.0.4; `CapacitorHttp` is already used for CORS-bypass in
-  `src/store/deckRepository.js:529-538`.
-- **Key simplification (verified):** the per-finish CDN key is exactly `${variant.slug}.webp` (the
-  Curiosa slug already carries the finish token and equals the drop PNG basename), so the catalog
-  repoint is `v.image = v.slug + '.webp'`, not a mapping layer.
-- **Hard ordering (verified):** current catalog slugs are finish-stripped, R2 keys are finish-suffixed,
-  so a seam swap before the pipeline repoint would 404 the whole app - this drives Phase 1-before-2.
+- **CDN live + edge-cached:** 3,090 webp (285 MB) serve `200 image/webp` via `cdn.sadkinglabs.com`
+  (`cf-cache-status` MISS then HIT). Keys will be RE-UPLOADED under full-hash content-addressed names
+  in Phase 1 (the current slug-named objects become orphans).
+- **CORS:** R2 sends no `Access-Control-Allow-Origin` + 403s preflight, so the cache byte-fetch is
+  native (`Filesystem.downloadFile` present in `@capacitor/filesystem` 6.0.4; `CapacitorHttp` already
+  used in `deckRepository.js:529-538`). `<img>` display needs no CORS.
+- **Content-MD5/ETag** is the R2-documented integrity path (Codex confirmed), gated behind a Phase-0
+  `ETag == MD5` canary.
+- **Hard ordering:** pipeline repoint before the seam swap (dormant Phase 1, atomic Phase 2).
 
-## Where to attack hardest (the proposal's own open questions to you, plus)
+## Where to attack rev 4
 
-1. **Independent seam-bypass re-sweep.** The proposal centralizes ~12 inline `${BASE}cards/${slug}`
-   sites behind a new `artUrl()` seam + a mechanical guard test. Re-sweep independently for any the grep
-   missed, especially DYNAMIC slug construction (string-built paths, template concatenation) the guard
-   regex could miss. A missed site silently 404s against the CDN and bypasses zero-image mode.
-2. **Pipeline partial-failure holes.** The new integrity order is `convert -> upload -> audit ->
-   journaled promote`. Probe the seams: audit passes then the promote is interrupted (recovery path via
-   the existing promote journal?); upload half-completes then the run dies; a re-run's upload-skip ledger
-   vs a truly-missing object; `--dry-run` guarantees no network writes; a no-art (rules/FAQ-only) drop
-   must still work with no `.env.r2`.
-3. **`images.test.mjs` contract flip.** The proposal rewrites the test that currently asserts the
-   foil-collapse (`droppedFoilDupes===1`). Confirm the new assertions don't lose coverage the old ones
-   held (foil-only printings, missing-finish standard-fallback, reverse-face exclusion, unmatched scans,
-   incremental drop against historical slugs).
-4. **`CardArt` lazy-swap race/flicker.** Phase 3 swaps `<img src>` from remote URL to the local cached
-   URI via `useEffect` after mount. Probe for: a swap landing after a remote load already started (double
-   fetch / flicker), a swap after unmount, and whether the always-painted `cardFallbackArt` truly hides
-   any pending/blank window.
-5. **Reseed-on-repoint claim.** The proposal asserts the `variants[].image` repoint rides the existing
-   content-hash reseed with no migration and cannot orphan user data (owned/wanted key on
-   `canonicalPrinting(set,foil)`, independent of image slugs). Validate against the ACTUAL seeder
-   implementation, not just `COMPENDIUM_DATA_MODEL.md`.
-6. **Phase ordering vs an offline-regression window.** Is `3-before-5` (persistent cache before
-   un-bundling) sufficient, and does the "Phases 1+2 ship as one release" discipline actually close the
-   fallback-art window, or is there a device-state where an installed build regresses offline?
-7. **The strongest objection in the Self-Critique** (fresh-install-offline shows placeholder art). Is the
-   mitigation (zero-image invariant + first-online download prompt) adequate, or should a low-res starter
-   subset be bundled? Owner has ruled the tradeoff; challenge whether the design honours it safely.
+The convert-fresh contract (any residual existence-skip path in `ensureConverted`/`convertFresh`);
+the pre-clear non-caching return + scratch-namespace temp cleanup (any write into `art/` still
+reachable post-clear); the `visibleCandidate` selector + its production wiring (any render path that
+can still return a stale candidate); the conflict-repair path (does re-PUT + re-audit actually
+converge, and is the edge-purge incident procedure sound); and whether any rev-3-cleared item
+regressed.
 
-## Not in scope for this review
+## Not in scope
 
-Implementation. No Phase-1 code is written; this reviews the DESIGN + the two prep scripts. Phase-by-phase
-code reviews follow approval, one phase at a time.
+Implementation. No Phase-1 code is written; this reviews the DESIGN + the two prep scripts.
+Phase-by-phase code review follows approval.

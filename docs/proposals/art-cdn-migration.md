@@ -2,10 +2,18 @@
 
 ## Status and classification
 
-**Status: Draft rev 3** (2026-07-22) · Risk: **High**
+**Status: Draft rev 4** (2026-07-22) · Risk: **High**
 Owner: Claude Code / Fable (lead engineer) · Reviewer: Codex (principal engineer) · Approver: human project owner
 
-**Rev 1 disposition: Changes required** (blocker + 3 majors). **Rev 2 disposition: Changes required, direction approved** (4 implementation-bearing majors + 3 minors). Rev 3 resolves those. The two architectural redesigns are specified in full in the companion **`art-cdn-rev2-architecture.md`** (kept that filename; content is rev 3 - see its finding-to-resolution table at the top); this document is updated to match.
+**Rev 1: Changes required** (blocker + 3 majors). **Rev 2: Changes required, direction approved** (4 majors + 3 minors). **Rev 3: Changes required** - Codex cleared all ten prior resolutions and approved the direction, then found 1 new blocker + 3 majors + 2 minors inside the rev-3 machinery. Rev 4 resolves those.
+
+### Rev-3 disposition -> rev-4 resolutions
+
+- **Blocker - stale converted bytes:** the manifest predicate (`srcSha256` + `recipeId`) is the ONLY skip oracle; a failed predicate ALWAYS runs a fresh convert (unique temp -> validate -> atomic replace), so a staging file carries zero evidentiary weight and a corrected source can never reuse old bytes. The existence-based `cdn-convert.mjs` is retired; the initial migration reconverts all 3,090 (companion A4/A7).
+- **Major - pre-clear repopulation:** an epoch-mismatched in-flight request returns a NON-caching `staleResult()` (remote/null, never downloads/memoizes) instead of a recursive `resolve()`, so it cannot refill a just-cleared cache; temps move to a sibling `art-tmp/` scratch with per-flight + startup + clear-time cleanup, and `stats().scratchBytes` keeps the Settings readout honest (companion B3/B7).
+- **Major - one-frame wrong-card paint:** the reducer is genuinely pure (events carry `peeked`/`legacy`); a pure `visibleCandidate(state, propKey, peeked)` returns the old candidate ONLY when `state.key === propKey`, and the `<img>` is keyed on `artKey#gen`, so a recycled tile never shows the previous card (companion B4).
+- **Major - unrecoverable remote conflict:** upload planning classifies each object `valid`/`missing`/`conflicting` by the full key+size+ETag tuple; a `conflicting` object (present but wrong bytes) refuses with an actionable `--repair-conflicts` re-PUT + single-URL edge purge (documented as exceptional incident recovery, not normal invalidation), not an endless rerun (companion A3/A6).
+- **Minors:** Phase 5's `normalizeTransitional()` strips `legacyKey` from EVERY retained entry (companion A4); and the rev-3 doc contradictions are reconciled (this doc + a clean-rewritten review brief; the obsolete `${v.slug}.webp` key claim removed everywhere). The two architectural redesigns are specified in full in the companion **`art-cdn-rev2-architecture.md`** (kept that filename; content is rev 3 - see its finding-to-resolution table at the top); this document is updated to match.
 
 ### Rev-2 disposition -> rev-3 resolutions
 
@@ -25,7 +33,7 @@ Codex approved the rev-2 direction (content-addressing, dormant Phase 1, atomic 
 | **Major - prep tooling + recovery fail open** | Convert/upload become importable **engines** with CLI wrappers that exit non-zero on any failure; write-through unique temp then validate (size vs manifest) then rename; upload-skip only on **authoritative remote evidence** (`ListObjectsV2` + `ETag`/`Content-MD5`, the R2-documented mechanism - rev 2's `x-amz-checksum-sha256` premise is retracted), never a local ledger; the publish audit checks the real remote object set by key + bytes + ETag; the promotion journal records the manifest digest and `--recover` **re-audits remote** before completing; `--dry-run` proves zero PUT/DELETE via an injected network seam; `--check` fails on absent base / non-2xx / wrong body / content-type / cache header. Detailed in *Pipeline (rev 2)* below. Also acknowledged: 3,088 catalog slugs vs 3,090 files - 5 variants legitimately `image:null`, 7 extras (reverse faces) - so completeness is proven by the manifest-vs-catalog audit, never by a file count. |
 | **Major - Phase 1 an unsafe activation boundary** | Phase 1 builds/tests/uploads a **dormant** engine and does **not** promote the committed catalog. **Activation is one atomic step** (Phase 2) combining runtime seam + catalog repoint + remote audit + version bump. A **legacy printing-base fallback** covers offline upgrades until Phase 5 removes bundled art (a finish-specific remote miss falls back to the old bundled base image). The "every phase separately releasable" claim is withdrawn; see *Implementation plan (rev 2)*. |
 | **Major - cache neither app-wide nor race-safe** | One shared **`artCache`/`useArtSource`/`ArtImage`** boundary used by **every** card-art site (all 14 inline + CardArt/Viewer + poster): native local-first, single-flight per key, epoch-guarded atomic promote, quarantine-on-decode-failure, no parallel remote `<img>`, zero-image prohibits render **and** I/O, Clear serialized against downloads, and `Directory.Data/art` **excluded from Android backup** (`allowBackup="true"` today). Full design: companion **Section B**. |
-| **Minor - seam count + guard + facts** | Corrected to **14 inline `<img>` sites + the poster canvas** (the 15th grep hit is the `LifeCounter` comment). The guard test strips comments, bans `${BASE}cards/` **and** `artUrl`/`cardImageUrl` use outside the boundary, asserts no `dist/cards` after Phase 5, and manual zero-image coverage is retained (source scanning can't prove `<img src={null}>` shows the fallback - the `ArtImage` `bare` mode is the structural fix). Doc contradictions reconciled (custom domain is **now**, not deferred; Phase 0 connects the already-live domain; `.env.r2.example` updated). `aws4fetch` was added as a devDependency - called out for explicit approval. |
+| **Minor - seam count + guard + facts** | Corrected to **14 inline `<img>` bypass sites + the poster canvas**, PLUS the direct `cardImageUrl` consumers that go through the seam and must also adopt the boundary: `CardArt`/`CardArtViewer` and (per rev-3 Codex) **`LifeCounter`** and **`CollectionCardSheet` `SiteArt`** - the earlier "`LifeCounter` is only a comment" was wrong (see the Art-consumers section). The guard test strips comments, bans `${BASE}cards/` **and** `artUrl`/`cardImageUrl` use outside the boundary, asserts no `dist/cards` after Phase 5, and manual zero-image coverage is retained (source scanning can't prove `<img src={null}>` shows the fallback - the `ArtImage` `bare` mode is the structural fix). Doc contradictions reconciled (custom domain is **now**, not deferred; Phase 0 connects the already-live domain; `.env.r2.example` updated). `aws4fetch` was added as a devDependency - called out for explicit approval. |
 | **Suggestion - one selector for art + credit** | Phase 6 uses **one pure selector** returning the chosen variant's `{ slug, artist, product }`, so a dual Foil/Rainbow promo never shows Rainbow art with another variant's credit. |
 | **Confirmed by Codex (no change)** | The reseed-on-repoint claim (holds given the version token actually moves - content-addressing guarantees it does); the fresh-install-offline tradeoff (owner-ruled, not reopened). |
 
@@ -86,7 +94,11 @@ High-risk because it touches native/plugin behavior (Filesystem, network), the c
 
 **Catalog pipeline.** `scripts/update-catalog.mjs` orchestrates pure engines in `scripts/catalog/`; art conversion happens at `update-catalog.mjs:96-107` via `convertOne` (`images.mjs:107-110`, **380 px q78** - diverging from the CDN converter's **745 px q80**, `scripts/catalog/cdn-convert.mjs:20-21`), then a journaled promote replaces `public/cards` wholesale (`update-catalog.mjs:109-124`). `cdn-convert.mjs` and `cdn-upload.mjs` are orphan tooling - correct in behavior (finish suffix preserved, `cdn-convert.mjs:5-8`; immutable cache headers, `cdn-upload.mjs:16`; `--check` healthcheck, `cdn-upload.mjs:48-58`) but not wired into the drop flow. Staging validation requires every `v.image` to be in the image manifest (`scripts/catalog/generation.mjs:142-144`), and the content hash folds in the sorted manifest, so a repoint auto-bumps the catalog version (`COMPENDIUM_DATA_MODEL.md:114-118`). `scripts/catalog/images.test.mjs:7-13` asserts the old collapse (`droppedFoilDupes === 1`, shared webp) and marks the exact contract to flip.
 
-**Key simplification (verified).** The Curiosa variant `slug` already carries the finish token (`001-abundance-b-f`) and equals the drop PNG basename, which `cdn-convert.mjs` preserves as the WebP name. So the per-finish CDN key is exactly `${v.slug}.webp`, and the repoint is a lookup, not a mapping layer.
+**Key derivation (rev 4).** The Curiosa variant `slug` already carries the finish token
+(`001-abundance-b-f`) and equals the drop PNG basename, so per-finish mapping needs no lookup table.
+The published CDN key is the **content-addressed** `<slug>.<full-sha256-of-output-bytes>.webp` (rev-1
+`${v.slug}.webp` was retracted for the stale-art blocker); `v.image` is the manifest's `key` for that
+slug, and a corrected scan yields a new digest -> new key -> reseed.
 
 **Ordering constraint discovered in verification.** Today's catalog slugs are finish-stripped (`001-abundance-b.webp`, `images.mjs:59`) while R2 holds only finish-suffixed keys (`001-abundance-b-s.webp`, `-f.webp`). **The seam swap therefore hard-depends on the pipeline repoint**: swapping `cardImageUrl` to R2 first would 404 every single card. This drives the phase order below.
 
@@ -155,15 +167,21 @@ directly. The `bare` mode renders an `<img>` only when the boundary yields a rea
 fallback node - so zero-image mode can never produce an empty `<img>` (Codex's Minor). `setHeroUrl`/
 `elementIconUrl` are untouched (bundled by rule).
 
-**Cache - rev 3, full design in companion Section B.** One `src/store/artCache.js` (pure core over an
+**Cache - rev 3/4, full design in companion Section B.** One `src/store/artCache.js` (pure core over an
 injected `io` adapter) owns every art byte: native **local-first** (validate a cached file by exact
 size-vs-manifest, no parallel remote `<img>`), **single-flight** per content key, **epoch-guarded**
 atomic temp->rename promote, **quarantine + one retry** on decode failure, failures never memoized;
-web returns the remote URL. Zero-image mode prohibits render **and** I/O at the same line. Files live
-at `art/<content-key>` in `Directory.Data`, **excluded from Android backup** (B8). "Clear cache" is
-serialized against downloads by the epoch gate; the pack's Preferences stamp is reporting-only
-(completeness = files-vs-manifest, never the stamp). Because keys are content-addressed (Section A),
-the cache needs no TTL, no revalidation, and no purge.
+web returns the remote URL. **On an epoch mismatch an in-flight request returns a non-caching
+`staleResult()`** (remote/null - never a recursive `resolve()`), so a request that began before a
+`clear()` cannot repopulate the cleared cache (rev 4); only a genuinely new request under the new
+epoch refills. Temps live in a sibling **`art-tmp/`** scratch namespace with per-flight + startup +
+clear-time cleanup, and `stats().scratchBytes` keeps the Settings readout honest. Rendering is driven
+by a pure `visibleCandidate(state, propKey, peeked)` selector + an `artKey#gen`-keyed `<img>`, so a
+recycled tile never paints the previous card for a frame (rev 4). Zero-image mode prohibits render
+**and** I/O at the same line. Files live at `art/<content-key>` in `Directory.Data`, **excluded from
+Android backup** (B8). The pack's Preferences stamp is reporting-only (completeness = files-vs-
+manifest). Because keys are content-addressed (Section A), the cache needs no TTL, no revalidation,
+and no purge (the one purge exception is `--repair-conflicts` incident recovery, Section A6).
 
 **Seam-guard test (extended):** scans `src/**` and fails on any `${BASE}cards/` template AND on any
 `artUrl`/`cardImageUrl` use outside `cardArt.js`/`artCache.js` (comments stripped first, so the
@@ -175,7 +193,7 @@ the fallback; the `ArtImage` structure guarantees it.
 canvas taint entirely); a remote-only first view sets `crossOrigin='anonymous'` (needs the R2 CORS
 policy from Phase 0). Both paths require dedicated device taint evidence.
 
-**Pipeline (rev 3 - content-addressed; full design in companion Section A).** Stage order becomes
+**Pipeline (rev 3/4 - content-addressed; full design in companion Section A).** Stage order becomes
 `discover -> convert+digest -> build art-manifest (pure) -> buildGeneration({artManifest}) ->
 validateGeneration -> [real run only] upload diff -> publish audit -> journaled promote`.
 
@@ -190,25 +208,29 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
   standard fallback; foil-only; reverse-face exclusion; **corrected-bytes-under-same-slug -> new
   key**; no `droppedFoilDupes`). `printingArt`'s "returns a slug, never a URL" contract survives -
   the slug is simply the content key now.
-- **Recipe-aware reuse (rev 3).** Conversion skips a slug only when **both** `srcSha256` and
-  `recipeId` (`webp:w745:q80:v1`) match, so a tier change (e.g. width/quality) forces reconversion
-  rather than silently keeping bytes the manifest now mislabels; entries also record `encoder`
-  provenance (`sharp`/`vips`). An encoder-version-only change retains bytes unless `--reconvert`; a
+- **Recipe-aware reuse + FRESH convert (rev 3/4).** The manifest predicate (`srcSha256` **and**
+  `recipeId` `webp:w745:q80:v1`) is the ONLY skip oracle. On a predicate miss, conversion ALWAYS
+  produces fresh bytes (unique temp -> `validateWebp` -> atomic replace) - it **never existence-skips**,
+  so a changed source can't reuse a stale `cdn-art/<slug>.webp` (the rev-4 blocker). The
+  existence-based `cdn-convert.mjs` is **retired**. Entries record `encoder` provenance
+  (`sharp`/`vips`); an encoder-version-only change retains bytes unless `--reconvert`; a
   source-unchanged mass re-key needs `--approve-rekey` after the printed diff. **`sharp` is pinned**
-  to an exact version (was `^0.32.6`) so output is reproducible.
+  (was `^0.32.6`). The initial migration **reconverts all 3,090** (no bare-file provenance trust).
 - **Hardened tooling (no fail-open).** `cdn-convert`/`cdn-upload` become importable **engines**;
-  their CLI wrappers **exit non-zero on any failure** (today `cdn-convert` counts failures but exits
-  0 - `cdn-convert.mjs:66`). Every write is **temp -> validate (size vs manifest / magic / digest)
-  -> atomic rename**, so a truncated or wrong output never serves. Upload skips a key **only on
-  authoritative remote evidence** (`ListObjectsV2` + `Content-MD5`/`ETag`, the R2-documented path;
-  a Phase-0 canary verifies `ETag == MD5` for single-part PUTs; signed-HEAD fallback), never a local
-  ledger. The **publish audit** confirms every distinct `v.image` is a manifest key AND present
-  remotely with matching **bytes + ETag** (one listing, not 3090 HEADs) and **refuses the promote on
-  any miss** (a same-size wrong object is caught by the ETag). `--dry-run` proves **zero PUT/DELETE**
-  through an injected network seam. `--check` fails (non-zero) on absent public base, non-2xx GET,
-  wrong body, wrong content-type, or wrong cache header. Note: `--dry-run` may now encode new scans
-  into the gitignored `CATALOG_DROP/cdn-art/` staging (nothing under `public/`/`src/` is touched) -
-  a deliberate, documented change to the "writes nothing" wording at `update-catalog.mjs:4`.
+  their CLI wrappers **exit non-zero on any failure**. Every write is **temp -> validate -> atomic
+  rename**, so a truncated or wrong output never serves. **Upload planning classifies each object
+  by the full key+size+ETag tuple** (rev 4): `valid` (matches -> skip), `missing` (absent -> upload),
+  `conflicting` (present but wrong bytes -> refuse). A `conflicting` object is not silently skipped
+  and does not loop forever: `--repair-conflicts` re-PUTs the correct bytes and purges that single
+  URL (documented as exceptional incident recovery, not normal invalidation - see A6). Evidence is
+  the R2-documented `Content-MD5`/`ETag` (Phase-0 canary verifies `ETag == MD5` for single-part
+  PUTs; signed-HEAD fallback), never a local ledger. The **publish audit** confirms every distinct
+  `v.image` is a manifest key AND present remotely with matching **bytes + ETag** (one listing) and
+  **refuses the promote on any miss** (a same-size wrong object is caught by the ETag). `--dry-run`
+  proves **zero PUT/DELETE** through an injected network seam. `--check` fails on absent public base,
+  non-2xx GET, wrong body, wrong content-type, or wrong cache header. Note: `--dry-run` may encode
+  new scans into the gitignored `CATALOG_DROP/cdn-art/` staging (nothing under `public/`/`src/`) - a
+  documented change to the "writes nothing" wording at `update-catalog.mjs:4`.
 - **Recovery re-audits remote.** The promotion journal records the manifest digest; `--recover`
   **re-runs the publish audit against R2** before completing the catalog/version promote, so a
   green *local* recovery can never publish references to missing/stale remote objects.
@@ -222,7 +244,7 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
 
 **Card sheet (Phase 6, all inside `CollectionCardSheet.jsx`).** Add `finish` state (boolean foil), defaulted per printing: compute `finishesFrom(variantsOf(c), effSet)`; show a Standard/Foil `SegTabs` control (existing primitive, no new vocabulary per `DESIGN_SYSTEM.md`) only when both exist; lock to the sole finish otherwise (promos/foil-only lock to Foil). Replace the two always-on steppers (`:417-420`) with one stepper bound to the active finish via the existing `useOwnedLedger` fields (`:288`). Heart reads/writes use `canonicalPrinting(effSet, foil)` instead of hardcoded `foil:false` (`:314-317`, `:339-343`, `:347`). Art, artist, and origin follow the finish through **one pure selector** `selectPrinting(c, effSet, foil) -> { slug, artist, product }` (Codex suggestion), replacing the separate `imageForSet`/`artistForSet` (`:354-364`) so a dual Foil/Rainbow promo can never show Rainbow art with another variant's artist credit; the resolved `slug` renders through the `ArtImage` boundary. Store layer: zero changes. The heart's "bare heart means non-foil" doctrine (`:305-306`) is superseded *only* when the user has explicitly selected Foil - an automatic finish default still writes non-foil, preserving the v11 "no silent guessing" rule.
 
-**Error behavior.** Remote 404/timeout → `onError` → deterministic fallback (unchanged contract). Cache write failure → image still renders from remote; cache retries on next view. Pipeline upload failure → hard stop before promote, nothing published, re-run resumes. Pack download failure → partial cache is valid (every file independently useful), resume on next attempt.
+**Error behavior.** Each render advances the candidate chain on error: **local → remote → bundledLegacy → deterministicFallback** (companion B3.5). A remote 404/timeout does not jump straight to the placeholder - it first tries the bundled printing-base image (until Phase 5 removes it), so an offline upgrade keeps photography. Cache write failure → image still renders from the next candidate; the cache retries on a later view. Pipeline upload failure → hard stop before promote, nothing published, re-run resumes; a remote object present with wrong bytes is a `conflicting` classification with an explicit re-PUT repair (companion A3), not an endless rerun. Pack download failure → partial cache is valid (every file independently useful), resume on next attempt.
 
 ## Implementation plan
 
@@ -278,7 +300,7 @@ Each checkpoint uses the constitution §12 report format. Change ledger maintain
 
 ## Data migration and compatibility
 
-**Not a schema migration.** `SCHEMA_VERSION` untouched; no table, repository, or export format changes. The catalog repoint rides the existing reseed mechanism: content hash changes → version token bumps → atomic reseed of catalog tables on next boot (`COMPENDIUM_DATA_MODEL.md:112-118`); profile tables are never touched by reseed, and `card_id` stability keeps `owned_cards`, `deck_entries`, and marginalia resolving with no migration. Owned/wanted keys are `canonicalPrinting(set, foil)` - independent of image slugs - so the repoint cannot orphan user data by construction. Old profile exports import unchanged (they carry no image URLs). Idempotency: re-running `update:catalog` with the same drop is a no-op (hash gate, `update-catalog.mjs:81-84`); re-running uploads skips existing objects; re-running the pack download skips existing files.
+**Not a schema migration.** `SCHEMA_VERSION` untouched; no table, repository, or export format changes. The catalog repoint rides the existing reseed mechanism: content hash changes → version token bumps → atomic reseed of catalog tables on next boot (`COMPENDIUM_DATA_MODEL.md:112-118`); profile tables are never touched by reseed, and `card_id` stability keeps `owned_cards`, `deck_entries`, and marginalia resolving with no migration. Owned/wanted keys are `canonicalPrinting(set, foil)` - independent of image slugs - so the repoint cannot orphan user data by construction. Old profile exports import unchanged (they carry no image URLs). Idempotency: re-running `update:catalog` with the same drop is a no-op (hash gate, `update-catalog.mjs:81-84`); re-running uploads only `missing` keys (skips `valid`, flags `conflicting`); re-running the pack download skips existing files.
 
 ## Rollback and recovery
 
@@ -301,17 +323,25 @@ Per phase; native claims require device evidence with device/OS/WebView/build na
     upload-diff uploads exactly the absent keys and a re-run uploads zero (half-upload resume against
     a mocked remote listing); `--check` failure exits non-zero; audit failure prevents journal
     creation/promotion; `--recover` re-audits remote; `--dry-run` records zero network mutations
-    (injected seam); a recipe (`recipeId`) change forces reconversion while an unchanged source alone does not; a same-size wrong-object refusal (wrong ETag); per-finish standard/foil/rainbow, foil-only,
-    missing-scan fallback, reverse exclusion, unmatched scans, historical incremental art.
+    (injected seam); a recipe (`recipeId`) change forces reconversion while an unchanged source alone
+    does not; **a valid OLD staging webp + a CHANGED source must run a fresh convert and move the key**
+    (the rev-4 blocker); a same-size **wrong-ETag object classifies `conflicting` (not skipped) and
+    `--repair-conflicts` re-PUTs to green**; **Phase 5 strips `legacyKey` from every retained entry**
+    (legacyKey manifest + empty bundled dir -> zero legacy fields); per-finish standard/foil/rainbow,
+    foil-only, missing-scan fallback, reverse exclusion, unmatched scans, historical incremental art.
   - *Cache boundary (Phase 2/3, `test:query`/`test:ui` over the pure `artCache` core + fake `io`):*
     one native request for multiple simultaneous consumers (single-flight); a stale component
-    resolution cannot win (generation guard); a corrupt cached file is evicted and recovered once,
-    then falls back; zero-image mode performs zero art network/filesystem writes; `clear()` between a
-    download's start and promote leaves `art/` empty (no reappear); a 404 is never cached; `stats()`
-    completeness reflects files-vs-manifest even when the stamp claims done; the extended seam-guard
-    (`printingRows.test.mjs:242` slug contract still green; no `${BASE}cards/` and no
-    `artUrl`/`cardImageUrl` outside the boundary in `src/**`).
-  - *Offline boundary:* the legacy bundled fallback works at the Phase-2 offline-upgrade boundary.
+    resolution cannot win (generation guard); **`visibleCandidate` never returns card A's art on card
+    B's frame** (default-A -> prop-B-before-effect); a corrupt cached file is evicted and recovered
+    once, then falls back; zero-image mode performs zero art network/filesystem writes; **an in-flight
+    pre-`clear()` request returns a non-caching `staleResult` and does NOT repopulate** (cache stays
+    empty with no later resolve), while a NEW post-clear resolve refills; no scratch temp survives
+    `clear()`; a 404 is never cached; `stats()` completeness reflects files-vs-manifest even when the
+    stamp claims done; the extended seam-guard (`printingRows.test.mjs:242` slug contract still green;
+    no `${BASE}cards/` and no `artUrl`/`cardImageUrl` outside the boundary in `src/**`).
+  - *Offline boundary:* the executable candidate chain reaches `bundledLegacy` at the Phase-2
+    offline-upgrade boundary (native download AND remote both fail -> bundled art succeeds; render +
+    poster).
 - **Standard gates each phase:** `check:cycles`, `check:types`, `build` (any `src/**`); `check:docs`
   (Phases 1, 5).
 - **Device (each of Phases 2, 3, 5, 6):** zero-image gate (`cx-no-images=1`) full-route sweep - now covering the ex-bypass sites; art renders from the CDN on Wi-Fi and caches on view (Phase 2); airplane-mode after viewing (Phase 2) and after pack download (Phase 3) - art persists across force-stop and restart; **fresh-install + airplane-mode manual check** (Phase 5): every pillar usable, placeholders everywhere, no spinner deadlocks, no layout shift; poster export with remote-only and with cached avatar (taint check); `npm run check:smoke` before any release; APK size measured before/after Phase 5.
@@ -387,4 +417,7 @@ of this proposal is taken to include that dependency.
 - **Rev 2** - Reviewer disposition: **Changes required, direction approved** (2026-07-22). 4 majors
   (legacy fallback prose-only, `clear()` not linearizable, R2 checksum premise, recipe-blind reuse)
   + 3 minors (missed consumers, unworkable prefix collision-check, test contracts).
-- **Rev 3** - Reviewer disposition: *pending re-review*. Required revisions: - · Human decision: - · Date: -
+- **Rev 3** - Reviewer disposition: **Changes required** (2026-07-22), ten prior resolutions cleared,
+  direction approved. 1 blocker (stale converted bytes) + 3 majors (pre-clear repopulation, one-frame
+  paint, unrecoverable conflict) + 2 minors (Phase-5 legacyKey, doc contradictions).
+- **Rev 4** - Reviewer disposition: *pending re-review*. Required revisions: - · Human decision: - · Date: -
