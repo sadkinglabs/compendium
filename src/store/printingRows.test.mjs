@@ -83,9 +83,27 @@ test('variants parse from a JSON string exactly as from an array', () => {
   assert.deepEqual(asStr, asArr);
 });
 
-test('malformed variants read as none rather than throwing', () => {
-  assert.deepEqual(printingFinishes({ variants: '{not json' }, '001'), { nonFoil: true, foil: false });
-  assert.deepEqual(printingFinishes({ variants: null }, '001'), { nonFoil: true, foil: false });
+test('printingFinishes THROWS on malformed variants - the durable boundary fails closed', () => {
+  // Corrupt catalog metadata must not be read as a valid non-foil-only printing and authorise
+  // an item the catalog never established. Display degrades; authorisation rejects.
+  assert.throws(() => printingFinishes({ variants: '{not json' }, '001'), /malformed variants JSON/);
+  assert.throws(() => printingFinishes({ variants: '{"broken":true}' }, '001'), /variants must be an array/);
+  assert.throws(() => printingFinishes({ variants: { broken: true } }, '001'), /variants must be an array/);
+  assert.throws(() => printingFinishes({ variants: null }, '001'), /variants must be an array/);
+});
+
+test('a VALID array with no entry for the set is still non-foil-only (the blessed fallback)', () => {
+  assert.deepEqual(printingFinishes(card([V('002', 'Standard')]), '001'), { nonFoil: true, foil: false });
+  assert.deepEqual(printingFinishes(card([]), '001'), { nonFoil: true, foil: false });
+});
+
+test('authoritativeVariantsOf accepts arrays and valid JSON, throws on the rest', async () => {
+  const { authoritativeVariantsOf } = await import('./printingRows.js');
+  assert.deepEqual(authoritativeVariantsOf({ variants: [V('001', 'Standard')] }), [V('001', 'Standard')]);
+  assert.deepEqual(authoritativeVariantsOf({ variants: '[{"set":"001","finish":"Standard"}]' }), [{ set: '001', finish: 'Standard' }]);
+  assert.throws(() => authoritativeVariantsOf({ variants: '{not json' }), /malformed variants JSON/);
+  assert.throws(() => authoritativeVariantsOf({ variants: '{}' }), /variants must be an array/);
+  assert.throws(() => authoritativeVariantsOf({ variants: 42 }), /variants must be an array/);
 });
 
 /* ---------------- the catalog contract ---------------- */
@@ -218,4 +236,32 @@ test('CATALOG CORPUS: expansion + art + products never throw over the whole cata
       printingProducts(r.card, r.set, false); printingProducts(r.card, r.set, true);
     }
   });
+});
+
+/* ---------------- display degrades where authorisation would reject ---------------- */
+
+test('expandItemRows DEGRADES on malformed variants - a display row, not a crash', () => {
+  // The strict/permissive split: the sheet keeps rendering; the durable writer re-checks and
+  // rejects. A malformed card shows as a non-foil row rather than taking down the sheet.
+  const bad = { card_id: 'c', name: 'c', sets: JSON.stringify([{ code: '001', name: 'Alpha' }]), variants: '{not json' };
+  const rows = expandItemRows([bad]);
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].finishes, { nonFoil: true, foil: false }, 'degraded, not thrown');
+});
+
+test('printingArt and printingProducts stay permissive on malformed variants', () => {
+  const bad = { card_id: 'c', name: 'c', image_slug: 'c-default.webp', variants: '{not json' };
+  assert.equal(printingArt(bad, '001', false), 'c-default.webp', 'falls back to the card default');
+  assert.deepEqual(printingProducts(bad, '001', false), [], 'no origins, no throw');
+});
+
+/* ---------------- defaultSetRank matches the canonical contract ---------------- */
+
+test('the default set rank orders numeric codes and sinks non-numeric ones last', () => {
+  // Exercised via expandItemRows with no injected setRank (the default). Numeric order, and a
+  // non-numeric code sorts AFTER Promotional (999) - matching sets.js's MAX_SAFE_INTEGER, not 99.
+  const card = { card_id: 'c', name: 'c', variants: '[]',
+    sets: JSON.stringify([{ code: 'XX', name: 'Future' }, { code: '999', name: 'Promo' }, { code: '001', name: 'Alpha' }, { code: '002', name: 'Beta' }]) };
+  assert.deepEqual(expandItemRows([card]).map((r) => r.set), ['001', '002', '999', 'XX'],
+    'numeric ascending, non-numeric last (not undercutting 999)');
 });

@@ -45,6 +45,9 @@ export function bulkWriteError(phase, writeState, message) {
 
 /** Per-item quantity ceiling (§7.5 input bounds). A single line may not want more than this. */
 export const MAX_ITEM_QTY = 999;
+/** Per-batch item ceiling (§7.5). With MAX_ITEM_QTY this also makes merged totals safe by
+ *  construction (2000 x 999 is far below Number.MAX_SAFE_INTEGER), so an overflow cannot arise. */
+export const MAX_BATCH_ITEMS = 2000;
 
 function setCodesOf(cardRow) {
   let raw = cardRow?.sets;
@@ -64,11 +67,18 @@ function setCodesOf(cardRow) {
  * @returns [{ cardId, slug, qty }]
  */
 export function planWantedItemBatch(items, catalogById) {
+  if (!Array.isArray(items)) throw new Error('planWantedItemBatch: items must be an array');
+  if (items.length > MAX_BATCH_ITEMS) throw new Error(`planWantedItemBatch: batch exceeds ${MAX_BATCH_ITEMS} items`);
   const merged = new Map();
-  for (const it of items || []) {
+  for (const it of items) {
     const cardId = it?.cardId;
     const set = it?.set;
-    const foil = !!it?.foil;
+    // A real boolean, not a coercion. `!!"false"` is true, which would file the wrong item; the
+    // durable boundary must reject malformed input, not silently reinterpret it.
+    if (typeof it?.foil !== 'boolean') {
+      throw new Error(`planWantedItemBatch: foil must be a boolean for ${cardId}, got ${JSON.stringify(it?.foil)}`);
+    }
+    const foil = it.foil;
     const qty = it?.qty;
 
     if (!Number.isSafeInteger(qty) || qty <= 0 || qty > MAX_ITEM_QTY) {
@@ -112,8 +122,11 @@ export function createWantedBulkCommand({ exclusive, query, tx, notify, uuid = n
    */
   async function addWantedItemsBulk(items, pid = activeProfileId()) {
     if (!pid) throw bulkWriteError('prewrite', 'none', 'addWantedItemsBulk: no active profile.');
+    if (items != null && !Array.isArray(items)) throw bulkWriteError('prewrite', 'none', 'addWantedItemsBulk: items must be an array.');
     const list = items || [];
     if (!list.length) return { items: 0, copies: 0 };
+    // Reject an oversized batch BEFORE taking the barrier - a bounds failure need not cost a holder.
+    if (list.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `addWantedItemsBulk: batch exceeds ${MAX_BATCH_ITEMS} items.`);
 
     let ranTransaction = false;
     try {

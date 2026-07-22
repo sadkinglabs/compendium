@@ -720,9 +720,14 @@ addWantedItemsBulk(items, pid)
    - the card exists in the catalog;
    - the set belongs to THAT card's `sets`;
    - the requested finish exists for that printing under the Rainbow normalizer
-     (`printingFinishes`, P6);
+     (`printingFinishes`, P6), which reads variants via `authoritativeVariantsOf` - malformed
+     or wrongly-shaped catalog variants THROW here rather than degrading to a phantom non-foil
+     item (display keeps a separate permissive reader; the two failure policies are deliberate);
    - qty is a positive safe integer within the input bound (1..999 per item);
-   - merged per-item totals remain safe integers.
+   - the batch holds at most `MAX_BATCH_ITEMS` (2000) items, which - with the 1..999 per-item
+     bound - makes merged totals safe by construction rather than by an unreachable overflow
+     check (2000 x 999 is far below `Number.MAX_SAFE_INTEGER`);
+   - `foil` is a real boolean, rejected (not coerced) if not - `!!"false"` would file `:f`.
    It merges duplicates by `(cardId, canonicalPrinting(set, foil))` (qtys summed) and
    returns the statement plan. ANY violation throws with the offending item named -
    the WHOLE batch is rejected BEFORE any SQL is built. This is what makes "an impossible
@@ -794,13 +799,18 @@ addWantedItemsBulk(items, pid)
   success toast; no automatic retry; the cache was invalidated despite the rejection.
 - Whole-batch rejection: card unknown to the catalog; set not on the card; foil where
   `printingFinishes` says none (a non-foil Winter River); Rainbow-only promo accepts foil
-  and rejects non-foil; qty 0, negative, fractional, > 999, and a merged overflow.
+  and rejects non-foil; qty 0, negative, fractional, > 999; a non-boolean `foil`; malformed
+  catalog variants (rejected, not read as a phantom item); and the 2000 / 2001 batch boundary
+  (in place of an unreachable merged-overflow test).
 - Conservation: sum of input qtys equals the sum of applied row deltas.
 - Merge: duplicates within one batch collapse before writing; existing rows accumulate.
 - Transaction failure (injected failing statement) leaves ZERO rows changed.
 - Profile scope: writes land only on the passed pid; a profile switch racing the command
   serializes behind the exclusive tail (holders are serialized against each other).
-- Barrier timeout: a never-draining admitted write rejects the command; nothing written.
+- Barrier timeout: covered COMPOSITIONALLY, not duplicated here. The real 4-second drain
+  timeout is proven in `collectionWritesExclusive.test`; this module proves the command
+  CLASSIFIES a barrier rejection as `prewrite`/`none` (nothing written) via an injected failing
+  barrier, so no slow 4s duplicate is added.
 
 ### 3.7 Per-item art and origins - one resolver, replacing the slug heuristics
 

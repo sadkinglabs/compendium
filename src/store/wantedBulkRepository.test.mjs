@@ -247,3 +247,71 @@ test('PRODUCTION WIRING: the exported addWantedItemsBulk BLOCKS behind a held ba
   await Promise.all([held, bulk]);
   assert.equal(wantOf('001'), 2, 'and it applies once the barrier frees');
 });
+
+/* ================= Codex increment-3 acceptance matrix ================= */
+import { MAX_BATCH_ITEMS } from './wantedBulkRepository.js';
+
+test('foil must be a real boolean - coercion is rejected, not silently reinterpreted', () => {
+  const cat = catalog([{ set: '001', finish: 'Standard' }]);
+  for (const foil of ['false', 'true', 0, 1, null, undefined]) {
+    assert.throws(() => planWantedItemBatch([{ cardId: 'c1', set: '001', foil, qty: 1 }], cat), /foil must be a boolean/, JSON.stringify(foil));
+  }
+  assert.throws(() => planWantedItemBatch([{ cardId: 'c1', set: '001', qty: 1 }], cat), /foil must be a boolean/, 'omitted foil');
+});
+
+test('malformed catalog variants reject the batch (authoritative), never authorise a phantom item', () => {
+  const bad = new Map([['c1', { sets: '[{"code":"001","name":"Alpha"}]', variants: '{not json' }]]);
+  assert.throws(() => planWantedItemBatch([{ cardId: 'c1', set: '001', foil: false, qty: 1 }], bad), /malformed variants JSON/);
+  const badShape = new Map([['c1', { sets: '[{"code":"001","name":"Alpha"}]', variants: '{"broken":true}' }]]);
+  assert.throws(() => planWantedItemBatch([{ cardId: 'c1', set: '001', foil: false, qty: 1 }], badShape), /variants must be an array/);
+});
+
+test('a Rainbow-only promo accepts foil and rejects non-foil THROUGH planWantedItemBatch', () => {
+  const rainbow = new Map([['c1', { sets: '[{"code":"999","name":"Promotional"}]', variants: '[{"set":"999","finish":"Rainbow"}]' }]]);
+  assert.deepEqual(planWantedItemBatch([{ cardId: 'c1', set: '999', foil: true, qty: 1 }], rainbow), [{ cardId: 'c1', slug: '999:f', qty: 1 }]);
+  assert.throws(() => planWantedItemBatch([{ cardId: 'c1', set: '999', foil: false, qty: 1 }], rainbow), /non-foil is not a printing/);
+});
+
+test('the 2000-item batch ceiling is enforced at the durable boundary', () => {
+  const cat = catalog([{ set: '001', finish: 'Standard' }]);
+  const batch = (nn) => Array.from({ length: nn }, () => ({ cardId: 'c1', set: '001', foil: false, qty: 1 }));
+  assert.doesNotThrow(() => planWantedItemBatch(batch(MAX_BATCH_ITEMS), cat), '2000 is allowed');
+  assert.throws(() => planWantedItemBatch(batch(MAX_BATCH_ITEMS + 1), cat), /exceeds 2000/);
+  assert.throws(() => planWantedItemBatch('nope', cat), /must be an array/);
+});
+
+test('a transaction that fails AFTER earlier statements leaves ZERO rows changed', async () => {
+  // Append an invalid statement to the command's transaction: the earlier upserts must all roll
+  // back, the outcome is transaction/unknown, and exactly one invalidation fires.
+  seedWant('001', 5);
+  const appendBad = (stmts) => runTx([...stmts, ['THIS IS NOT VALID SQL;', []]]);
+  await assert.rejects(
+    () => cmd((fn) => fn(), { tx: appendBad })([
+      { cardId: 'c1', set: '001', foil: false, qty: 1 },
+      { cardId: 'c1', set: '002', foil: false, qty: 1 },
+    ]),
+    (e) => e.phase === 'transaction' && e.writeState === 'unknown',
+  );
+  assert.equal(wantOf('001'), 5, 'the earlier upsert rolled back');
+  assert.equal(wantOf('002'), 0, 'no partial write survived');
+  assert.equal(notifyCount, 1, 'one invalidation - a transaction was attempted');
+});
+
+test('A->B profile switch while the PRODUCTION command is parked writes only A', async () => {
+  // Exercises addWantedItemsBulk (not an injected imitation): pid is captured at the call, so a
+  // switch to B while it waits behind the barrier cannot redirect it.
+  __setActiveIdForTests('p1');
+  const started = deferred();
+  const release = deferred();
+  const held = enqueueWrite(cardWantKey('p1', 'c1'), async () => { started.resolve(); await release.promise; });
+  await started.promise;
+
+  const bulk = addWantedItemsBulk([{ cardId: 'c1', set: '001', foil: false, qty: 2 }]);   // captures p1
+  __setActiveIdForTests('p2');                                                             // active switches to B
+  release.resolve();
+  await Promise.all([held, bulk]);
+  __setActiveIdForTests('p1');
+
+  assert.equal(wantOf('001', 'c1', 'p1'), 2, 'landed in the captured profile A');
+  assert.equal(wantOf('001', 'c1', 'p2'), 0, 'nothing leaked into B');
+});

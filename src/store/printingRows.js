@@ -38,9 +38,9 @@ export function normalizeFinishLabel(label) {
   return cat;
 }
 
-// `card.variants` is a JSON string in the DB (TEXT column) but an array when it arrives already
-// parsed. Accept either; a malformed value reads as no variants rather than throwing, because a
-// display helper must never take down a render.
+// PERMISSIVE reader, for DISPLAY. `card.variants` is a JSON string in the DB (TEXT column) but an
+// array when already parsed. A malformed value reads as no variants rather than throwing, because
+// a picture must never take down a render.
 function variantsOf(card) {
   const v = card?.variants;
   if (Array.isArray(v)) return v;
@@ -49,17 +49,30 @@ function variantsOf(card) {
 }
 
 /**
- * Which finishes a card's printing in one set actually has: `{ nonFoil, foil }`.
+ * STRICT reader, for the AUTHORISATION boundary. Unlike `variantsOf`, an unparseable or
+ * wrongly-shaped variants field THROWS instead of degrading to `[]`.
  *
- * Read from the variants of that set, each label run through the normaliser. A set the card is
- * listed in but for which the catalog carries NO variant data reads as non-foil-only - the
- * conservative default that matches the product rule and cannot invent a foil that may not
- * exist. So a foil-only printing (Winter River in Alpha) is `{ nonFoil: false, foil: true }`,
- * a rainbow-only promo is likewise foil-only, and a promo with both Foil and Rainbow collapses
- * to one available foil.
+ * A durable writer must never authorise a collector item on the basis of catalog metadata it
+ * could not actually read - corrupt metadata that reads as `[]` would otherwise be interpreted
+ * as a valid non-foil-only printing and let an item the catalog never established slip through.
+ * Display and authorisation deliberately have different failure policies; this is the strict one.
  */
-export function printingFinishes(card, setCode) {
-  const mine = variantsOf(card).filter((v) => v && v.set === setCode);
+export function authoritativeVariantsOf(card) {
+  const raw = card?.variants;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { throw new Error('authoritativeVariantsOf: malformed variants JSON'); }
+    if (Array.isArray(parsed)) return parsed;
+  }
+  throw new Error('authoritativeVariantsOf: variants must be an array');
+}
+
+// Pure core: `{ nonFoil, foil }` from a variants ARRAY. A valid array with NO entry for this set
+// is non-foil-only - the blessed fallback. Never throws on shape; the CALLER chooses strict vs
+// permissive by which reader feeds it. Still fail-closed on an unknown finish LABEL.
+function finishesFrom(variants, setCode) {
+  const mine = variants.filter((v) => v && v.set === setCode);
   if (!mine.length) return { nonFoil: true, foil: false };
   let nonFoil = false;
   let foil = false;
@@ -69,6 +82,18 @@ export function printingFinishes(card, setCode) {
     else foil = true;
   }
   return { nonFoil, foil };
+}
+
+/**
+ * STRICT finish availability, for the durable authorisation boundary: `{ nonFoil, foil }`.
+ *
+ * Throws on malformed variants (via `authoritativeVariantsOf`) AND on an unknown finish label.
+ * A foil-only printing (Winter River in Alpha) is `{ nonFoil: false, foil: true }`; a
+ * rainbow-only promo is likewise foil-only; a promo with both Foil and Rainbow collapses to one
+ * available foil. Display code uses the permissive path in `expandItemRows` instead.
+ */
+export function printingFinishes(card, setCode) {
+  return finishesFrom(authoritativeVariantsOf(card), setCode);
 }
 
 // A card's sets ([{ code, name }]), parsed and DEDUPED by code. A catalog entry that lists the
@@ -89,10 +114,12 @@ function setsOf(card) {
 }
 
 // Default printing order: numeric set code (001 Alpha < 002 Beta < ... < 999 Promo), which
-// equals the app's canonical SET_RANK for every current set. Production injects SET_RANK so the
-// two never drift; keeping the default here lets this module stay free of the set-catalog JSON
-// (and its non-DB test import). A non-numeric code sorts last, deterministically.
-const defaultSetRank = (code) => { const n = Number(code); return Number.isFinite(n) ? n : 99; };
+// equals the app's canonical SET_RANK for every current set. Production injects the real SET_RANK
+// so the two never drift; keeping the default here lets this module stay free of the set-catalog
+// JSON (and its non-DB test import). A non-numeric code sorts LAST via MAX_SAFE_INTEGER - exactly
+// as `sets.js` ranks it - so the default matches the canonical contract even for a future
+// non-numeric code, rather than the 99 an Arthurian-shaped 4-digit code could undercut.
+const defaultSetRank = (code) => (code && /^\d+$/.test(code) ? parseInt(code, 10) : Number.MAX_SAFE_INTEGER);
 
 /** True when this expanded row has no real printing to file - a catalog-unknown card. */
 export const isRefusalRow = (row) => !!row?.refusal;
@@ -123,7 +150,9 @@ export function expandItemRows(cards, setTerms = [], setRank = defaultSetRank) {
         card,
         set: s.code,
         setName: s.name,
-        finishes: printingFinishes(card, s.code),
+        // DISPLAY finishes use the permissive reader: a malformed card degrades to a non-foil row
+        // rather than crashing the sheet. The durable writer re-checks strictly via printingFinishes.
+        finishes: finishesFrom(variantsOf(card), s.code),
         key: `${card.card_id}|${s.code}`,
       });
     }
