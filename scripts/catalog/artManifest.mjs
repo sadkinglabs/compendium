@@ -69,9 +69,10 @@ async function mapPool(items, n, fn) {
  *
  * @param committed   prior manifest `{ tier, objects }` (or null on first run)
  * @param dropSlugs   Map<slug, pngPath> - finish-suffixed slugs in the drop (reverse faces excluded)
- * @param deps        { hashFile(path)->srcSha256(hex), convertFresh(pngPath)->Buffer,
+ * @param deps        { hashFile(path)->srcSha256(hex), convertFresh(pngPath, slug)->Buffer,
  *                      hashBytes(buf)->{sha256(hex), md5(hex)}, bundledExists(name)->bool,
  *                      encoder->{sharp,vips}, concurrency? }
+ *                      convertFresh receives the slug so the adapter can durably stage the bytes.
  * @param flags       { reconvert }
  * @returns { manifest: { tier, objects }, report }
  */
@@ -90,7 +91,7 @@ export async function buildArtManifest(committed, dropSlugs, deps, flags = {}) {
       report.kept++;
       return;
     }
-    const bytes = await convertFresh(pngPath);                           // ALWAYS fresh on a miss
+    const bytes = await convertFresh(pngPath, slug);                     // ALWAYS fresh on a miss (durably staged)
     const { sha256, md5 } = await hashBytes(bytes);
     entries.set(slug, normalizeTransitional(slug, {
       key: artKey(slug, sha256), sha256, md5, bytes: bytes.length, srcSha256,
@@ -119,14 +120,24 @@ const HEX32 = /^[0-9a-f]{32}$/;
 // A key is `<slug>.<64hex>.webp` or `<slug>.<64hex>.repair-<n>.webp` with n >= 1 (never repair-0).
 const KEY_RE = /^(.+)\.([0-9a-f]{64})(\.repair-[1-9]\d*)?\.webp$/;
 const isStr = (v) => typeof v === 'string' && v.length > 0;
+// The incident number a key names: 0 for the canonical `<slug>.<sha>.webp`, n for `.repair-<n>`.
+const incidentNumOf = (m) => (m[3] ? parseInt(m[3].replace('.repair-', ''), 10) : 0);
 
-/** Fail closed on any malformed manifest: field types, digest formats, key<->digest agreement, and
- *  the incident-key contract (only repair-[1-9]..., and an incident key MUST carry a valid
- *  incidentOf). Used on both the committed input and the built output. */
+/** Fail closed on any malformed manifest: tier, field types + digest FORMATS (sha256/srcSha256 64-hex,
+ *  md5 32-hex), encoder provenance, key<->digest agreement, and the incident-key contract (only
+ *  repair-[1-9]..., and an incident key MUST carry an incidentOf that is a real same-slug/same-digest
+ *  PREDECESSOR - a lower incident number, not merely a non-empty string). Used on the committed input
+ *  AND the built output. */
 export function assertManifest(manifest, where = 'manifest') {
   if (!manifest || typeof manifest !== 'object' || !manifest.objects || typeof manifest.objects !== 'object') {
     throw new Error(`artManifest(${where}): missing objects map`);
   }
+  const t = manifest.tier;
+  if (!t || typeof t !== 'object') throw new Error(`artManifest(${where}): missing tier`);
+  if (!Number.isInteger(t.width) || t.width <= 0) throw new Error(`artManifest(${where}): tier.width must be a positive integer`);
+  if (!Number.isInteger(t.quality) || t.quality <= 0 || t.quality > 100) throw new Error(`artManifest(${where}): tier.quality must be 1..100`);
+  if (!isStr(t.format)) throw new Error(`artManifest(${where}): tier.format must be a string`);
+  if (!isStr(t.recipeId)) throw new Error(`artManifest(${where}): tier.recipeId must be a string`);
   for (const [slug, e] of Object.entries(manifest.objects)) {
     const at = `${where} ${slug}`;
     if (!e || typeof e !== 'object') throw new Error(`artManifest(${at}): entry not an object`);
@@ -134,16 +145,25 @@ export function assertManifest(manifest, where = 'manifest') {
     if (!HEX64.test(e.sha256 || '')) throw new Error(`artManifest(${at}): sha256 must be 64 lowercase hex`);
     if (!HEX32.test(e.md5 || '')) throw new Error(`artManifest(${at}): md5 must be 32 lowercase hex (not base64)`);
     if (!Number.isInteger(e.bytes) || e.bytes <= 0) throw new Error(`artManifest(${at}): bytes must be a positive integer`);
-    if (!isStr(e.srcSha256)) throw new Error(`artManifest(${at}): missing srcSha256`);
+    if (!HEX64.test(e.srcSha256 || '')) throw new Error(`artManifest(${at}): srcSha256 must be 64 lowercase hex`);
     if (!isStr(e.recipeId)) throw new Error(`artManifest(${at}): missing recipeId`);
+    if (!e.encoder || typeof e.encoder !== 'object') throw new Error(`artManifest(${at}): missing encoder provenance`);
+    if (!isStr(e.encoder.sharp) || !isStr(e.encoder.vips)) throw new Error(`artManifest(${at}): encoder.sharp and encoder.vips must be strings`);
     if ('legacyKey' in e && !isStr(e.legacyKey)) throw new Error(`artManifest(${at}): legacyKey must be a string`);
     const m = String(e.key).match(KEY_RE);
     if (!m) throw new Error(`artManifest(${at}): malformed key ${e.key}`);
     if (m[1] !== slug) throw new Error(`artManifest(${at}): key slug ${m[1]} != entry slug ${slug}`);
     if (m[2] !== e.sha256) throw new Error(`artManifest(${at}): key digest != sha256`);
-    const isIncident = !!m[3];
-    if (isIncident && !isStr(e.incidentOf)) throw new Error(`artManifest(${at}): incident key requires a valid incidentOf`);
-    if (!isIncident && 'incidentOf' in e) throw new Error(`artManifest(${at}): non-incident key must not carry incidentOf`);
+    const isIncident = incidentNumOf(m) > 0;
+    if (isIncident) {
+      // incidentOf must be a REAL predecessor: a valid key, same slug + same digest, lower incident.
+      const mi = isStr(e.incidentOf) ? String(e.incidentOf).match(KEY_RE) : null;
+      if (!mi) throw new Error(`artManifest(${at}): incident key requires a valid incidentOf key`);
+      if (mi[1] !== slug || mi[2] !== e.sha256) throw new Error(`artManifest(${at}): incidentOf must name the same slug and digest`);
+      if (incidentNumOf(mi) >= incidentNumOf(m)) throw new Error(`artManifest(${at}): incidentOf must be an earlier incident (a predecessor)`);
+    } else if ('incidentOf' in e) {
+      throw new Error(`artManifest(${at}): non-incident key must not carry incidentOf`);
+    }
   }
 }
 

@@ -91,6 +91,21 @@ test('the content hash is deterministic and changes only when content changes', 
   assert.notEqual(buildGeneration(fixture()).hash, buildGeneration(fixture('Different [[Foo Card]] text.')).hash);
 });
 
+const mfWith = (objects) => ({ tier: { width: 745, quality: 80, format: 'webp', recipeId: 'webp:w745:q80:v1' }, objects });
+
+test('the generation hash changes when an art key changes (a corrected scan reseeds the version)', () => {
+  const base = buildGeneration(fixture()).hash;
+  const otherSha = 'b'.repeat(64);
+  const changed = buildGeneration({ ...fixture(), artManifest: mfWith({ '001-foo_card-b-s': { key: `001-foo_card-b-s.${otherSha}.webp`, sha256: otherSha, md5: '0'.repeat(32), bytes: 4 } }) }).hash;
+  assert.notEqual(base, changed);
+});
+
+test('the generation hash is UNCHANGED by encoder-only metadata when the content key is identical', () => {
+  const plain = buildGeneration({ ...fixture(), artManifest: mfWith({ '001-foo_card-b-s': { key: FOO_KEY, sha256: FOO_SHA, md5: '0'.repeat(32), bytes: 4 } }) }).hash;
+  const richMeta = buildGeneration({ ...fixture(), artManifest: mfWith({ '001-foo_card-b-s': { key: FOO_KEY, sha256: FOO_SHA, md5: '0'.repeat(32), bytes: 4, srcSha256: 'c'.repeat(64), encoder: { sharp: '9.9.9', vips: '9.9.9' } } }) }).hash;
+  assert.equal(plain, richMeta, 'only the published slug+key identity is folded, never encoder provenance');
+});
+
 test('promote installs the staged generation (art dir + JSON + version token last)', () => {
   const gen = buildGeneration(fixture());
   const dir = mkdtempSync(join(tmpdir(), 'cat-promote-'));

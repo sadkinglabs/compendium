@@ -52,6 +52,16 @@ test('card default image is the lowest set rank, standard-preferred', () => {
   assert.equal(out['Multi'].image, 'alpha.aa.webp', 'default follows lowest set rank');
 });
 
+test('card default prefers a numeric set over a promotional (non-numeric) set - canonical MAX_SAFE rank', () => {
+  const cards = { Dual: { name: 'Dual', variants: [
+    { slug: 'promo-x-b-s', set: 'pmo', finish: 'Standard' },   // non-numeric set -> ranks LAST
+    { slug: '002-x-b-s', set: '002', finish: 'Standard' },     // numeric set -> ranks by code
+  ] } };
+  const mf = manifest({ 'promo-x-b-s': 'promo.pp.webp', '002-x-b-s': 'beta.bb.webp' });
+  const { cards: out } = planImages(cards, mf);
+  assert.equal(out.Dual.image, 'beta.bb.webp', 'the numeric 002 outranks the promotional set');
+});
+
 test('a null/absent manifest yields image=null everywhere (dry-run before conversion)', () => {
   const cards = card('X', ['001-x-b-s', '001-x-b-f']);
   const { cards: out } = planImages(cards, null);

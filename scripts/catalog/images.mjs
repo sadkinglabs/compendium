@@ -6,8 +6,9 @@
 // this stage is a pure lookup over the finished manifest, so buildGeneration stays dry-runnable.
 import { printingBase } from './curiosa.mjs';
 
-// Set order is DERIVED from the numeric set code; mirrors src/store/sets.js. Non-numeric mid-pack.
-const setRank = (code) => (/^\d+$/.test(code) ? parseInt(code, 10) : 4.5);
+// Set order is DERIVED from the numeric set code; mirrors src/store/sets.js EXACTLY: numeric codes
+// ascending are release order, and '' plus any non-numeric (promotional) code sort LAST.
+const setRank = (code) => (code && /^\d+$/.test(code) ? parseInt(code, 10) : Number.MAX_SAFE_INTEGER);
 const FINISH_RANK = { Standard: 0, Foil: 1, Rainbow: 2 };
 
 /**

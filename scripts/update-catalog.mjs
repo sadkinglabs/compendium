@@ -8,9 +8,9 @@
 // until the whole generation validates and the journaled promote runs. This file
 // orchestrates the engines in scripts/catalog/*; each engine is unit-tested.
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { discover } from './catalog/discover.mjs';
 import { fetchAllCards } from './catalog/curiosa.mjs';
 import { buildArtManifest, TIER } from './catalog/artManifest.mjs';
@@ -23,7 +23,9 @@ const DROP = join(ROOT, 'CATALOG_DROP');
 const CATALOG = join(ROOT, 'public', 'catalog');
 const CARDS_DIR = join(ROOT, 'public', 'cards');
 const MANIFEST_FILE = join(CATALOG, 'art-manifest.json');   // committed content-addressed art manifest (absent on first run)
+const STAGE_DIR = join(ROOT, 'CATALOG_DROP', 'cdn-art');    // durable content-tier webp staging (gitignored), one <slug>.webp per scan
 const BUILD_DIR = join(ROOT, '.catalog-build');
+const BUILD_MANIFEST = join(BUILD_DIR, 'art-manifest.json'); // the PROSPECTIVE manifest the uploader consumes (never public/catalog in Phase 1)
 const JOURNAL = join(BUILD_DIR, 'PROMOTE.json');
 const readJson = (f) => JSON.parse(readFileSync(join(CATALOG, f), 'utf8'));
 
@@ -72,16 +74,34 @@ async function main() {
     const slug = p.replace(/^.*[\\/]/, '').replace(/\.png$/i, '');
     if (!isReverseFace(slug)) dropSlugs.set(slug, p);
   }
+  mkdirSync(STAGE_DIR, { recursive: true });
   const committedManifest = existsSync(MANIFEST_FILE) ? JSON.parse(readFileSync(MANIFEST_FILE, 'utf8')) : null;
   const artDeps = {
     hashFile: async (path) => createHash('sha256').update(readFileSync(path)).digest('hex'),
-    convertFresh: async (pngPath) => sharp(pngPath).resize({ width: TIER.width, withoutEnlargement: true }).webp({ quality: TIER.quality }).toBuffer(),
+    // Fresh conversion writes THROUGH a per-slug temp, validates the webp decodes, then atomically
+    // replaces the durable staging file cdn-art/<slug>.webp - so the uploader reads a byte-verified
+    // scan, and an interrupted convert never leaves a half-written staging file. Also returns the
+    // buffer so the engine can digest it.
+    convertFresh: async (pngPath, slug) => {
+      const buf = await sharp(pngPath).resize({ width: TIER.width, withoutEnlargement: true }).webp({ quality: TIER.quality }).toBuffer();
+      const meta = await sharp(buf).metadata();
+      if (meta.format !== TIER.format || !meta.width) throw new Error(`convert produced an invalid ${TIER.format} for ${slug}`);
+      const tmp = join(STAGE_DIR, `.${slug}.tmp`);   // per-slug temp: mapPool workers convert distinct slugs, so no collision
+      writeFileSync(tmp, buf);
+      renameSync(tmp, join(STAGE_DIR, `${slug}.webp`));
+      return buf;
+    },
     hashBytes: async (buf) => ({ sha256: createHash('sha256').update(buf).digest('hex'), md5: createHash('md5').update(buf).digest('hex') }),
     bundledExists: (name) => existsSync(join(CARDS_DIR, name)),
     encoder,
   };
   const { manifest: artManifest, report: artReport } = await buildArtManifest(committedManifest, dropSlugs, artDeps, {});
   console.log(`  manifest: ${artReport.fresh} converted, ${artReport.kept} kept, ${artReport.carried} carried (${artReport.total} objects).`);
+
+  // The PROSPECTIVE manifest the uploader consumes. Written to the gitignored build dir, never to
+  // public/catalog - Phase 1 does not repoint the committed catalog.
+  mkdirSync(BUILD_DIR, { recursive: true });
+  writeFileSync(BUILD_MANIFEST, JSON.stringify(artManifest, null, 2) + '\n');
 
   const gen = buildGeneration({
     currentCards, currentArticles, currentFaqs, committedLinkGraph, apiCards,
@@ -90,8 +110,19 @@ async function main() {
     artManifest,
   });
 
-  const report = { ...gen.report, ok: gen.warnings.length === 0, warnings: gen.warnings };
-  console.log(formatReport(report, { dryRun }));
+  // One combined image report: manifest conversion (fresh/kept/carried), per-finish assignment
+  // (from planImages), reverse-face exclusions, and drop scans that match no catalog printing.
+  const referenced = new Set();
+  for (const c of Object.values(gen.cards)) for (const v of (c.variants || [])) if (artManifest.objects[v.slug]) referenced.add(v.slug);
+  const images = {
+    total: artReport.total, fresh: artReport.fresh, kept: artReport.kept, carried: artReport.carried,
+    perFinish: gen.report.images.perFinish, sharedSibling: gen.report.images.sharedSibling, noScan: gen.report.images.noScan,
+    reverseExcluded: drop.pngNames.length - dropSlugs.size,
+    unmatchedScans: Object.keys(artManifest.objects).filter((s) => !referenced.has(s)),
+  };
+  const staging = { stageDir: relative(ROOT, STAGE_DIR), manifestPath: relative(ROOT, BUILD_MANIFEST), count: artReport.total };
+  const report = { ...gen.report, images, staging, ok: gen.warnings.length === 0, warnings: gen.warnings };
+  console.log(formatReport(report, { dryRun, dormant: !dryRun }));
 
   // The advertised "build + validate" preflight must run the SAME guards the real
   // promote does (no warnings; every card/variant image present; elements/subTypes
@@ -99,16 +130,10 @@ async function main() {
   // regressions. So validate BEFORE the dry-run returns, not only on a real run.
   validateGeneration(gen);
 
-  if (dryRun) return;
-
-  // ---- Phase 1 (art-cdn), dormant ----
-  // The manifest is built, content-hashed, and validated, but catalog promotion and the
-  // CDN upload are wired in later phases. A real run writes NOTHING to public/ or src/ yet:
-  // this is the deliberate Phase-1 stopping point, not a failure. Re-enabling promotion
-  // happens with the uploader/audit engine and the atomic activation (see the proposal).
-  console.log('\nPhase 1 (art-cdn): manifest built and validated. Catalog promotion and CDN');
-  console.log('upload are disabled until the uploader engine lands - nothing was written.');
-  console.log('RESULT: OK (dormant)');
+  // Phase 1 is dormant: staging + the prospective manifest are written to gitignored build dirs
+  // (above), but the committed catalog under public/ and src/ is NEVER repointed or promoted here.
+  // Publishing is the additive `cdn-upload.mjs` step; activation into the app is Phase 2. The report
+  // footer (formatReport, dormant) states this; there is nothing further to do on either run.
 }
 
 main().catch((e) => {

@@ -3,7 +3,7 @@
 // so a planner that ignored either field would fail. Run: npm run test:catalog
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planUpload, repairKey, auditPublish, stripQuotes } from './cdnUpload.mjs';
+import { planUpload, repairKey, auditPublish, stripQuotes, claimOutcome } from './cdnUpload.mjs';
 import { incidentKey } from './artManifest.mjs';
 
 const SHA = { a: 'a'.repeat(64), b: 'b'.repeat(64), c: 'c'.repeat(64) };
@@ -12,7 +12,8 @@ const MD5 = { a: '1'.repeat(32), b: '2'.repeat(32), c: '3'.repeat(32) };
 // A valid manifest entry (assertManifest requires key<->sha256 agreement, hex digests, positive bytes,
 // srcSha256 + recipeId). The key is content-addressed: <slug>.<sha256>.webp.
 const entry = (slug, sha, md5, bytes) => ({
-  key: `${slug}.${sha}.webp`, sha256: sha, md5, bytes, srcSha256: `src-${sha}`, recipeId: 'webp:w745:q80:v1',
+  key: `${slug}.${sha}.webp`, sha256: sha, md5, bytes, srcSha256: 'e'.repeat(64), recipeId: 'webp:w745:q80:v1',
+  encoder: { sharp: '0.32.6', vips: '8.14.5' },
 });
 const manifest = (...entries) => ({
   tier: { width: 745, quality: 80, format: 'webp', recipeId: 'webp:w745:q80:v1' },
@@ -58,53 +59,58 @@ test('planUpload skip requires BOTH size and etag (mutation: flip either -> conf
   assert.equal(both.conflicts.length, 0);
 });
 
-test('repairKey: an absent slot is PUT under repair-1 and returned (never overwrites)', async () => {
-  const puts = [];
-  const key = await repairKey({
-    slug: 'alpha', sha256: SHA.a, bytes: 100, expectedIntegrity: MD5.a, correctBytes: Buffer.alloc(100),
-    remoteLookup: async () => undefined,
-    putObject: async (k, b) => puts.push([k, b.length]),
-  });
-  assert.equal(key, incidentKey('alpha', SHA.a, 1));
-  assert.deepEqual(puts, [[incidentKey('alpha', SHA.a, 1), 100]]);
+// claimOutcome is the atomic classifier: created wins the race outright; a 412 is decided by an
+// authoritative HEAD, never by a prior listing.
+test('claimOutcome: created -> created; 412+matching HEAD -> reused; 412+wrong HEAD -> conflict; 412+no HEAD -> retry', () => {
+  const e = entry('alpha', SHA.a, MD5.a, 100);
+  assert.equal(claimOutcome(true, null, e), 'created');
+  assert.equal(claimOutcome(false, { size: 100, etag: `"${MD5.a}"` }, e), 'reused');
+  assert.equal(claimOutcome(false, { size: 100, etag: `"${MD5.b}"` }, e), 'conflict');   // right size, wrong bytes
+  assert.equal(claimOutcome(false, { size: 101, etag: `"${MD5.a}"` }, e), 'conflict');   // wrong size
+  assert.equal(claimOutcome(false, null, e), 'retry');                                    // vanished mid-race
 });
 
-test('repairKey: a present-and-correct repair slot is REUSED, with NO put (interrupted-run recovery)', async () => {
-  const puts = [];
-  const store = remote([[incidentKey('alpha', SHA.a, 1), 100, `"${MD5.a}"`]]);
-  const key = await repairKey({
-    slug: 'alpha', sha256: SHA.a, bytes: 100, expectedIntegrity: MD5.a, correctBytes: Buffer.alloc(100),
-    remoteLookup: async (k) => store.get(k),
-    putObject: async (k, b) => puts.push([k, b.length]),
-  });
-  assert.equal(key, incidentKey('alpha', SHA.a, 1));
-  assert.equal(puts.length, 0, 'a correct repair-1 must be reused, never re-PUT');
+// repairKey now drives an ATOMIC claim seam; it never trusts a prior listing.
+const claims = (script) => {
+  const calls = [];
+  let i = 0;
+  return { calls, claimObject: async (k) => { calls.push(k); return script[i++]; } };
+};
+
+test('repairKey: an absent slot claims repair-1 (created) and returns it', async () => {
+  const c = claims(['created']);
+  const res = await repairKey({ slug: 'alpha', sha256: SHA.a, claimObject: c.claimObject });
+  assert.deepEqual(res, { key: incidentKey('alpha', SHA.a, 1), outcome: 'created' });
+  assert.deepEqual(c.calls, [incidentKey('alpha', SHA.a, 1)]);
 });
 
-test('repairKey: a present-but-WRONG slot is never overwritten; the loop advances to the next slot', async () => {
-  const puts = [];
-  const store = remote([[incidentKey('alpha', SHA.a, 1), 100, `"${MD5.b}"`]]);  // repair-1 exists but wrong bytes
-  const key = await repairKey({
-    slug: 'alpha', sha256: SHA.a, bytes: 100, expectedIntegrity: MD5.a, correctBytes: Buffer.alloc(100),
-    remoteLookup: async (k) => store.get(k),
-    putObject: async (k, b) => puts.push([k, b.length]),
-  });
-  assert.equal(key, incidentKey('alpha', SHA.a, 2), 'advanced past the poisoned repair-1');
-  assert.deepEqual(puts, [[incidentKey('alpha', SHA.a, 2), 100]], 'repair-1 was NOT overwritten');
+test('repairKey: a present-and-correct repair slot is REUSED (interrupted-run recovery)', async () => {
+  const c = claims(['reused']);
+  const res = await repairKey({ slug: 'alpha', sha256: SHA.a, claimObject: c.claimObject });
+  assert.deepEqual(res, { key: incidentKey('alpha', SHA.a, 1), outcome: 'reused' });
 });
 
-test('repairKey is retry-stable: rerun after a correct PUT reuses the same key with no new PUT', async () => {
-  const puts = [];
-  const store = new Map();
-  const args = () => ({
-    slug: 'alpha', sha256: SHA.a, bytes: 100, expectedIntegrity: MD5.a, correctBytes: Buffer.alloc(100),
-    remoteLookup: async (k) => store.get(k),
-    putObject: async (k, b) => { puts.push(k); store.set(k, { size: b.length, etag: `"${MD5.a}"` }); },
-  });
-  const first = await repairKey(args());
-  const second = await repairKey(args());   // remote now holds the correct repair-1
-  assert.equal(first, second);
-  assert.deepEqual(puts, [incidentKey('alpha', SHA.a, 1)], 'the second run reuses repair-1, no second PUT');
+test('repairKey: a present-but-WRONG slot is never overwritten; the loop advances (conflict -> next n)', async () => {
+  const c = claims(['conflict', 'created']);   // repair-1 conflicting, repair-2 free
+  const res = await repairKey({ slug: 'alpha', sha256: SHA.a, claimObject: c.claimObject });
+  assert.equal(res.key, incidentKey('alpha', SHA.a, 2), 'advanced past the poisoned repair-1');
+  assert.deepEqual(c.calls, [incidentKey('alpha', SHA.a, 1), incidentKey('alpha', SHA.a, 2)]);
+});
+
+test('repairKey RACE: a slot the plan thought absent claims as conflict; the loop still converges', async () => {
+  // The listing said repair-1 was absent, but the atomic create loses to an intervening run that put
+  // conflicting bytes there. Because the claim is authoritative, repairKey advances rather than
+  // overwriting - the Blocker's exact scenario.
+  const c = claims(['conflict', 'created']);
+  const res = await repairKey({ slug: 'alpha', sha256: SHA.a, claimObject: c.claimObject });
+  assert.equal(res.key, incidentKey('alpha', SHA.a, 2));
+});
+
+test('repairKey: a vanished slot (retry) re-attempts the SAME n before advancing', async () => {
+  const c = claims(['retry', 'created']);   // repair-1 vanished mid-race, then created on re-attempt
+  const res = await repairKey({ slug: 'alpha', sha256: SHA.a, claimObject: c.claimObject });
+  assert.equal(res.key, incidentKey('alpha', SHA.a, 1), 'retry stays on repair-1');
+  assert.deepEqual(c.calls, [incidentKey('alpha', SHA.a, 1), incidentKey('alpha', SHA.a, 1)]);
 });
 
 test('auditPublish passes only when every needed key is published with the right size AND etag', () => {

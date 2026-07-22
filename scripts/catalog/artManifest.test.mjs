@@ -19,7 +19,7 @@ function deps({ srcHashes = {}, contents = {}, bundled = new Set(), slow = false
   const tick = (v) => (slow ? new Promise((r) => setTimeout(() => r(v), 0)) : Promise.resolve(v));
   return {
     converted,
-    hashFile: (p) => tick(srcHashes[p] ?? `srch-${p}`),
+    hashFile: (p) => tick(srcHashes[p] ?? sha(p)),   // srcSha256 is a real 64-hex digest (validator enforces it)
     convertFresh: (p) => { converted.push(p); return tick(Buffer.from(contents[p] ?? `webp-bytes-for-${p}`)); },
     hashBytes: (buf) => tick({ sha256: sha(buf), md5: md5(buf) }),   // HEX md5 (rev 6)
     bundledExists: (name) => bundled.has(name),
@@ -27,10 +27,12 @@ function deps({ srcHashes = {}, contents = {}, bundled = new Set(), slow = false
   };
 }
 const slugs = (obj) => new Map(Object.entries(obj));
-// A complete, valid entry for assertManifest tests.
+const T = { ...TIER, recipeId: RECIPE_ID };
+const mf = (objects) => ({ tier: T, objects });
+// A complete, valid entry for assertManifest tests (hex srcSha256, encoder provenance).
 const entry = (slug, over = {}) => {
   const s = sha(slug);
-  return { key: artKey(slug, s), sha256: s, md5: md5(slug), bytes: 100, srcSha256: `src-${slug}`, recipeId: RECIPE_ID, ...over };
+  return { key: artKey(slug, s), sha256: s, md5: md5(slug), bytes: 100, srcSha256: sha(`src-${slug}`), recipeId: RECIPE_ID, encoder: { sharp: '0.32.6', vips: '8.14.5' }, ...over };
 };
 
 test('a fresh slug converts and gets a content-addressed key; tier carries recipeId', async () => {
@@ -71,13 +73,13 @@ test('an unchanged source + recipe is KEPT without converting', async () => {
 });
 
 test('BLOCKER: a CHANGED source always converts fresh and moves the key (never existence-skips)', async () => {
-  const first = (await buildArtManifest(null, slugs({ s: 'p.png' }), deps({ srcHashes: { 'p.png': 'A' }, contents: { 'p.png': 'old' } }))).manifest;
+  const first = (await buildArtManifest(null, slugs({ s: 'p.png' }), deps({ srcHashes: { 'p.png': sha('A') }, contents: { 'p.png': 'old' } }))).manifest;
   const oldKey = first.objects.s.key;
-  const d = deps({ srcHashes: { 'p.png': 'B' }, contents: { 'p.png': 'corrected' } });
+  const d = deps({ srcHashes: { 'p.png': sha('B') }, contents: { 'p.png': 'corrected' } });
   const { manifest } = await buildArtManifest(first, slugs({ s: 'p.png' }), d);
   assert.equal(d.converted.length, 1, 'a changed source MUST run the production converter');
   assert.notEqual(manifest.objects.s.key, oldKey);
-  assert.equal(manifest.objects.s.srcSha256, 'B');
+  assert.equal(manifest.objects.s.srcSha256, sha('B'));
 });
 
 test('a RECIPE change reconverts even when the source is unchanged', async () => {
@@ -113,24 +115,36 @@ test('normalizeTransitional / Phase 5: legacyKey present when bundled, stripped 
 });
 
 test('a malformed COMMITTED manifest is rejected before the skip predicate is trusted', async () => {
-  const bad = { tier: TIER, objects: { s: { key: 's.zz.webp', sha256: 'zz', md5: 'yy', bytes: 1, srcSha256: 'x', recipeId: RECIPE_ID } } };
+  const bad = { tier: T, objects: { s: { key: 's.zz.webp', sha256: 'zz', md5: 'yy', bytes: 1, srcSha256: sha('x'), recipeId: RECIPE_ID, encoder: { sharp: 'x', vips: 'y' } } } };
   await assert.rejects(() => buildArtManifest(bad, slugs({ s: 'p.png' }), deps()), /sha256 must be 64/);
 });
 
 test('assertManifest: full-field validation, incident-key contract, no repair-0', () => {
-  assert.doesNotThrow(() => assertManifest({ objects: { s: entry('s') } }));
-  // md5 as base64 is rejected (the exact Codex bug):
-  assert.throws(() => assertManifest({ objects: { s: entry('s', { md5: 'ailDWFeSQJNr9NZhUebnIA==' }) } }), /md5 must be 32/);
-  // key digest must equal sha256:
-  assert.throws(() => assertManifest({ objects: { s: entry('s', { key: artKey('s', sha('other')) }) } }), /key digest/);
-  // a repair (incident) key REQUIRES incidentOf:
   const s = sha('s');
-  assert.throws(() => assertManifest({ objects: { s: { ...entry('s'), key: `s.${s}.repair-1.webp` } } }), /incidentOf/);
-  assert.doesNotThrow(() => assertManifest({ objects: { s: { ...entry('s'), key: `s.${s}.repair-1.webp`, incidentOf: `s.${s}.webp` } } }));
+  assert.doesNotThrow(() => assertManifest(mf({ s: entry('s') })));
+  // a missing/invalid tier is rejected:
+  assert.throws(() => assertManifest({ objects: { s: entry('s') } }), /missing tier/);
+  // md5 as base64 is rejected (the exact Codex bug):
+  assert.throws(() => assertManifest(mf({ s: entry('s', { md5: 'ailDWFeSQJNr9NZhUebnIA==' }) })), /md5 must be 32/);
+  // srcSha256 must be 64-hex, not an opaque token:
+  assert.throws(() => assertManifest(mf({ s: entry('s', { srcSha256: 'x' }) })), /srcSha256 must be 64/);
+  // encoder provenance is required and typed:
+  assert.throws(() => assertManifest(mf({ s: entry('s', { encoder: undefined }) })), /missing encoder/);
+  assert.throws(() => assertManifest(mf({ s: entry('s', { encoder: { sharp: '0.32.6' } }) })), /encoder\.sharp and encoder\.vips/);
+  // key digest must equal sha256:
+  assert.throws(() => assertManifest(mf({ s: entry('s', { key: artKey('s', sha('other')) }) })), /key digest/);
+  // a repair (incident) key REQUIRES a valid predecessor incidentOf:
+  assert.throws(() => assertManifest(mf({ s: { ...entry('s'), key: `s.${s}.repair-1.webp` } })), /valid incidentOf/);
+  assert.doesNotThrow(() => assertManifest(mf({ s: { ...entry('s'), key: `s.${s}.repair-1.webp`, incidentOf: `s.${s}.webp` } })));
+  // incidentOf naming a DIFFERENT digest is rejected (not a real predecessor):
+  assert.throws(() => assertManifest(mf({ s: { ...entry('s'), key: `s.${s}.repair-1.webp`, incidentOf: `s.${sha('other')}.webp` } })), /same slug and digest/);
+  // incidentOf must be an EARLIER incident (repair-2 -> repair-1 ok; repair-1 -> repair-2 rejected):
+  assert.doesNotThrow(() => assertManifest(mf({ s: { ...entry('s'), key: `s.${s}.repair-2.webp`, incidentOf: `s.${s}.repair-1.webp` } })));
+  assert.throws(() => assertManifest(mf({ s: { ...entry('s'), key: `s.${s}.repair-1.webp`, incidentOf: `s.${s}.repair-2.webp` } })), /earlier incident/);
   // repair-0 is not a valid incident number:
-  assert.throws(() => assertManifest({ objects: { s: { ...entry('s'), key: `s.${s}.repair-0.webp`, incidentOf: `s.${s}.webp` } } }), /malformed key/);
+  assert.throws(() => assertManifest(mf({ s: { ...entry('s'), key: `s.${s}.repair-0.webp`, incidentOf: `s.${s}.webp` } })), /malformed key/);
   // a non-incident key must not carry incidentOf:
-  assert.throws(() => assertManifest({ objects: { s: entry('s', { incidentOf: 'x' }) } }), /must not carry incidentOf/);
+  assert.throws(() => assertManifest(mf({ s: entry('s', { incidentOf: `s.${s}.webp` }) })), /must not carry incidentOf/);
 });
 
 test('objects are sorted by slug for a stable, diffable manifest', async () => {
