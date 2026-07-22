@@ -92,9 +92,26 @@ function cqClause(key, op, val) {
 }
 
 const SCOPE_KEYS = new Set(['has', 'is']);
+const SET_KEYS = new Set(['set', 's']);
+
+/**
+ * Match ONE printing's set label ("001 Alpha") against a query's `set:` terms.
+ *
+ * Used by item-grain expansion, where each row is a single printing. Empty terms match
+ * everything. OR across separate `set:` tokens - a printing is exactly one set, so
+ * `set:alpha set:beta` means "Alpha rows OR Beta rows". A comma inside one value keeps the
+ * cqText AND semantics on that single label (which, for distinct sets, only a single-set
+ * label could ever satisfy - a printing cannot be both Alpha and Beta).
+ */
+export function matchesSetTerms(setLabel, setTerms) {
+  if (!setTerms || !setTerms.length) return true;
+  return setTerms.some((term) => cqText(term)(setLabel));
+}
 
 export function parseQuery(raw) {
-  const clauses = [];
+  const clauses = [];        // ALL attribute predicates (back-compat; existing consumers unchanged)
+  const itemClauses = [];    // non-set predicates, for per-card filtering at printing grain
+  const setTerms = [];       // raw `set:`/`s:` values, for row-grain set filtering (Codex Major 7)
   const words = [];
   const scopes = { has: [], is: [] };
   const tokens = (raw || '').match(/[a-z]+(?:>=|<=|[:=><])"[^"]*"|[a-z]+(?:>=|<=|[:=><])\S+|"[^"]*"|\S+/gi) || [];
@@ -108,11 +125,20 @@ export function parseQuery(raw) {
       // become clauses, and never leak into the needle. Inert in the deckbuilder.
       if (SCOPE_KEYS.has(key) && op === ':') { scopes[key].push(val.toLowerCase()); continue; }
       const clause = cqClause(key, op, val);
-      if (clause) { clauses.push(clause); continue; }
+      if (clause) {
+        clauses.push(clause);
+        // The set clause stays in `clauses` for card-grain consumers, but item grain filters
+        // printings by `setTerms` instead, so it is NOT an itemClause - otherwise a card that
+        // is in Beta would keep ALL its printing rows (the card-level predicate is true) rather
+        // than only the Beta one.
+        if (SET_KEYS.has(key)) setTerms.push(val.toLowerCase());
+        else itemClauses.push(clause);
+        continue;
+      }
     }
     words.push(t.replace(/^"|"$/g, ''));
   }
-  return { name: words.join(' ').trim(), clauses, scopes };
+  return { name: words.join(' ').trim(), clauses, scopes, itemClauses, setTerms };
 }
 
 // Back-compat alias - parseCardQuery IS parseQuery. Deckbuilder callers read

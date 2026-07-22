@@ -112,3 +112,57 @@ test('set matches the code+name haystack', () => {
   assert.ok(matches('set:gothic', card({ sets: '[{"code":"got","name":"Gothic"}]' })));
   assert.ok(!matches('s:got', card({ sets: '[{"code":"alp","name":"Alpha"}]' })));
 });
+
+/* ============ item-grain structured output (Codex Major 7) ============ */
+import { matchesSetTerms } from './cardQuery.js';
+
+test('parseQuery exposes setTerms and itemClauses without disturbing clauses', () => {
+  const q = parseQuery('water set:beta t:mortal');
+  assert.deepEqual(q.setTerms, ['beta'], 'raw set value captured');
+  assert.equal(q.name, 'water', 'the needle is untouched');
+  // clauses keeps ALL predicates (back-compat); itemClauses drops the set one.
+  assert.equal(q.clauses.length, 2, 'set + type in clauses');
+  assert.equal(q.itemClauses.length, 1, 'only the non-set predicate in itemClauses');
+});
+
+test('setTerms collects codes and names, and the s: alias', () => {
+  assert.deepEqual(parseQuery('set:alpha').setTerms, ['alpha']);
+  assert.deepEqual(parseQuery('s:002').setTerms, ['002']);
+  assert.deepEqual(parseQuery('set:art').setTerms, ['art']);
+});
+
+test('a query with no set token has empty setTerms and matches every printing', () => {
+  const q = parseQuery('e:water');
+  assert.deepEqual(q.setTerms, []);
+  assert.equal(matchesSetTerms('001 Alpha', q.setTerms), true, 'no set filter -> all rows pass');
+});
+
+test('matchesSetTerms: OR across separate set tokens', () => {
+  const q = parseQuery('set:alpha set:beta');
+  assert.deepEqual(q.setTerms, ['alpha', 'beta']);
+  assert.equal(matchesSetTerms('001 Alpha', q.setTerms), true);
+  assert.equal(matchesSetTerms('002 Beta', q.setTerms), true);
+  assert.equal(matchesSetTerms('006 Gothic', q.setTerms), false);
+});
+
+test('matchesSetTerms: a code term matches the label', () => {
+  assert.equal(matchesSetTerms('002 Beta', parseQuery('set:002').setTerms), true);
+  assert.equal(matchesSetTerms('001 Alpha', parseQuery('set:002').setTerms), false);
+});
+
+test('matchesSetTerms: comma within one value ANDs on a single printing label', () => {
+  // A printing is one set, so alpha,beta can never both appear in one label - correct: a
+  // printing cannot be Alpha AND Beta.
+  const terms = parseQuery('set:alpha,beta').setTerms;
+  assert.equal(matchesSetTerms('001 Alpha', terms), false);
+  assert.equal(matchesSetTerms('002 Beta', terms), false);
+});
+
+test('the existing set clause still works for card-grain consumers (back-compat)', () => {
+  // clauses[] unchanged: a card in Beta still matches set:beta via cardMatchesQuery.
+  const q = parseQuery('set:beta');
+  const betaCard = { sets: JSON.stringify([{ code: '002', name: 'Beta' }]) };
+  const alphaCard = { sets: JSON.stringify([{ code: '001', name: 'Alpha' }]) };
+  assert.equal(cardMatchesQuery(betaCard, q), true);
+  assert.equal(cardMatchesQuery(alphaCard, q), false);
+});

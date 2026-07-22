@@ -20,6 +20,8 @@ const card = (variants, { asString = false } = {}) => ({
   variants: asString ? JSON.stringify(variants) : variants,
 });
 const V = (set, finish) => ({ set, finish });
+const V2 = (set, finish, image) => ({ set, finish, image });
+const P = (set, finish, product) => ({ set, finish, product });
 
 /* ---------------- the normaliser ---------------- */
 
@@ -110,4 +112,110 @@ test('CATALOG CONTRACT: printingFinishes never throws across the entire catalog'
   for (const c of cards) for (const s of (c.sets || [])) {
     assert.doesNotThrow(() => printingFinishes(c, s.code), `${c.name} / ${s.code}`);
   }
+});
+
+/* ================= increment 2: expansion, art, origins ================= */
+import {
+  expandItemRows, isRefusalRow, printingArt, printingProducts,
+} from './printingRows.js';
+
+const cardWith = (id, sets, variants) => ({
+  card_id: id, name: id, image_slug: `${id}-default.webp`,
+  sets: JSON.stringify(sets.map((c) => ({ code: c, name: { '001': 'Alpha', '002': 'Beta', '999': 'Promotional' }[c] || c }))),
+  variants,
+});
+
+/* ---------------- expandItemRows ---------------- */
+
+test('a multi-set card unpacks into one row per printing, in set-rank order', () => {
+  const rows = expandItemRows([cardWith('c', ['002', '001'], [])]);
+  assert.deepEqual(rows.map((r) => r.set), ['001', '002'], 'Alpha before Beta by rank, not input order');
+  assert.deepEqual(rows.map((r) => r.key), ['c|001', 'c|002']);
+});
+
+test('setTerms filter the PRINTINGS, not the card - only the matching rows survive', () => {
+  const rows = expandItemRows([cardWith('c', ['001', '002'], [])], ['beta']);
+  assert.deepEqual(rows.map((r) => r.set), ['002'], 'set:beta leaves only the Beta row');
+});
+
+test('multiple set terms OR across tokens', () => {
+  const rows = expandItemRows([cardWith('c', ['001', '002', '999'], [])], ['alpha', 'beta']);
+  assert.deepEqual(rows.map((r) => r.set).sort(), ['001', '002']);
+});
+
+test('a doubled catalog set entry becomes ONE row', () => {
+  const card = { card_id: 'c', name: 'c', sets: JSON.stringify([{ code: '001', name: 'Alpha' }, { code: '001', name: 'Alpha' }]), variants: [] };
+  assert.equal(expandItemRows([card]).length, 1);
+});
+
+test('a card with no sets is a single refusal row, listed but unfileable', () => {
+  const card = { card_id: 'c', name: 'c', sets: '[]', variants: [] };
+  const rows = expandItemRows([card]);
+  assert.equal(rows.length, 1);
+  assert.equal(isRefusalRow(rows[0]), true);
+  assert.equal(rows[0].key, 'c|');
+});
+
+test('each row carries its finish availability', () => {
+  const rows = expandItemRows([cardWith('c', ['001'], [V('001', 'Foil')])]);
+  assert.deepEqual(rows[0].finishes, { nonFoil: false, foil: true });
+});
+
+/* ---------------- printingArt ---------------- */
+
+test('art follows set and finish', () => {
+  const c = cardWith('c', ['001'], [V2('001', 'Standard', '001-s.webp'), V2('001', 'Foil', '001-f.webp')]);
+  assert.equal(printingArt(c, '001', false), '001-s.webp');
+  assert.equal(printingArt(c, '001', true), '001-f.webp');
+});
+
+test('a collapsed foil item prefers the Rainbow art', () => {
+  const c = cardWith('d', ['999'], [V2('999', 'Foil', '999-d.webp'), V2('999', 'Rainbow', '999-op.webp')]);
+  assert.equal(printingArt(c, '999', true), '999-op.webp', 'the premium face fronts the foil item');
+});
+
+test('art falls back to the other finish, then the card default, then null', () => {
+  const otherFinish = cardWith('c', ['001'], [V2('001', 'Foil', '001-f.webp')]);
+  assert.equal(printingArt(otherFinish, '001', false), '001-f.webp', 'no NF art -> show the foil art rather than Alpha default');
+  const noneForSet = cardWith('c', ['001'], [V2('002', 'Standard', '002-s.webp')]);
+  assert.equal(printingArt(noneForSet, '001', false), 'c-default.webp', 'no variant art for the set -> card default');
+  const noDefault = { card_id: 'c', name: 'c', image_slug: null, sets: '[]', variants: [] };
+  assert.equal(printingArt(noDefault, '001', false), null, 'nothing -> null, caller draws the placeholder');
+});
+
+test('printingArt returns a SLUG, never a URL (CDN-ready seam)', () => {
+  const c = cardWith('c', ['001'], [V2('001', 'Standard', '001-s.webp')]);
+  const art = printingArt(c, '001', false);
+  assert.ok(!/^https?:|^\//.test(art), 'a bare slug, resolved later by cardImageUrl');
+});
+
+/* ---------------- printingProducts ---------------- */
+
+test('origins are the distinct human-readable products for the item', () => {
+  const c = cardWith('d', ['999'], [
+    P('999', 'Foil', 'Dust'), P('999', 'Rainbow', 'Organized_Play'), P('999', 'Standard', 'Booster'),
+  ]);
+  assert.deepEqual(printingProducts(c, '999', true), ['Dust', 'Organized Play'], 'foil item aggregates Foil + Rainbow origins, humanized');
+  assert.deepEqual(printingProducts(c, '999', false), ['Booster'], 'non-foil item shows its own origin');
+});
+
+test('origins dedupe and keep first-appearance order', () => {
+  const c = cardWith('c', ['001'], [P('001', 'Foil', 'Box_Topper'), P('001', 'Rainbow', 'Box_Topper')]);
+  assert.deepEqual(printingProducts(c, '001', true), ['Box Topper']);
+});
+
+/* ---------------- corpus ---------------- */
+
+test('CATALOG CORPUS: expansion + art + products never throw over the whole catalog', () => {
+  const cards = Object.values(require('../../public/catalog/cards.json')).map((c) => ({
+    ...c, sets: JSON.stringify(c.sets || []), variants: c.variants || [],
+  }));
+  assert.doesNotThrow(() => {
+    const rows = expandItemRows(cards);
+    for (const r of rows) {
+      if (isRefusalRow(r)) continue;
+      printingArt(r.card, r.set, false); printingArt(r.card, r.set, true);
+      printingProducts(r.card, r.set, false); printingProducts(r.card, r.set, true);
+    }
+  });
 });
