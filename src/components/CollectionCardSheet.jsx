@@ -19,6 +19,7 @@ import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
 import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, canonicalPrinting } from '../store/printings.js';
+import { selectPrinting, defaultFinish, printingFinishes } from '../store/printingRows.js';
 import { wantTarget } from '../store/wantIntent.js';
 import { cardSheetSetReducer, initialSetState, explicitSetOf, displaySetOf } from './cardSheetSetState.js';
 import { enqueueWrite } from '../store/collectionWrites.js';
@@ -234,7 +235,6 @@ export function SheetArt({ c }) {
 function CardBody({ c, onPick, editable, set }) {
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
-  const variants = jp(c.variants, []) || [];
   const runs = thresholdRuns(c);
 
   // Per-set ownership (incl '' Unspecified) for the picker's counts + smart default.
@@ -287,6 +287,15 @@ function CardBody({ c, onPick, editable, set }) {
   const effSet = displaySetOf(setState, ranked[0]?.code ?? '');
   const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
 
+  // THE ACTIVE FINISH (Phase 6). One collector item at a time: a Standard/Foil toggle drives the
+  // stepper, the heart, and the art together. `finishes` is display-safe - malformed variant metadata
+  // degrades to standard-only rather than crashing the sheet (authorisation still fails closed
+  // elsewhere). The toggle shows only when a printing has both; it defaults per printing and resets on
+  // a set change, so a foil is always an explicit choice, never a silent guess.
+  const finishes = (() => { try { return printingFinishes(c, effSet); } catch { return { nonFoil: true, foil: false }; } })();
+  const [foil, setFoil] = useState(() => defaultFinish(finishes));
+  useEffect(() => { setFoil(defaultFinish(finishes)); }, [effSet]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // THE HEART IS PER COLLECTOR ITEM, not per card.
   //
   // It used to read the card-level want total, so with Alpha wanted and Beta selected the Beta
@@ -311,8 +320,7 @@ function CardBody({ c, onPick, editable, set }) {
   // schema change exists to remove. Only an explicit selection counts: the set the sheet was
   // opened at, or a segment the user tapped.
   const explicitSet = explicitSetOf(setState);
-  const heartItem = { set: effSet, foil: false };
-  const heartSlug = effSet ? canonicalPrinting(effSet, false) : null;
+  const heartSlug = effSet ? canonicalPrinting(effSet, foil) : null;
   const heartWanted = heartSlug ? (wantedItems?.get(heartSlug) || 0) : 0;
   const wished = heartWanted > 0;
 
@@ -338,30 +346,22 @@ function CardBody({ c, onPick, editable, set }) {
   // want instead of naming one. Removing something the user can see must always be possible.
   const clearWant = () => queueWant((pid) => (
     effSet && effSet !== UNCATEGORISED_BUCKET
-      ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0, pid)
+      ? setWantedForItem(c.card_id, { set: effSet, foil }, 0, pid)
       : setWanted(c.card_id, 0, pid)
   ));
 
   const onHeart = async () => {
     if (wished) return clearWant();                          // clearing never needs a choice
     const t = wantTarget(setCodes, { set: explicitSet });
-    if (t.kind === 'item') return addWant(t.item);
+    if (t.kind === 'item') return addWant({ ...t.item, foil });   // the active finish, not a hardcoded non-foil
     if (t.kind === 'ask') { setPicking(true); return; }
     toast('The catalog does not list a printing for this card', { tone: 'warn' });
   };
 
-  // Art follows the active printing (Unspecified -> the card's default art).
-  const imageForSet = (code) => {
-    if (!code) return c.image_slug;
-    const vs = variants.filter((v) => v.set === code && v.image);
-    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.image ?? c.image_slug;
-  };
-  // The credited artist follows the printing on show - a reprint is often a different artist.
-  const artistForSet = (code) => {
-    const vs = (code ? variants.filter((v) => v.set === code) : variants).filter((v) => v.artist);
-    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.artist || null;
-  };
-  const artCard = { ...c, image_slug: imageForSet(effSet), _artist: artistForSet(effSet) };
+  // Art, artist, and origin follow the active printing AND finish through ONE selector, so a dual
+  // Foil/Rainbow promo can never show Rainbow art credited to another variant's artist (Phase 6).
+  const printing = selectPrinting(c, effSet, foil);
+  const artCard = { ...c, image_slug: printing.slug ?? c.image_slug, _artist: printing.artist };
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
@@ -410,13 +410,19 @@ function CardBody({ c, onPick, editable, set }) {
 
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
 
-      {/* Owned + Foil are the collection ledger - real quantities, so they get steppers.
-          The wishlist is a binary INTENT ("I want this"), not a quantity: wanting three
-          copies is what a Wanted list's per-card target is for. So it is a toggle, and it
-          stays available everywhere (it is a list, not the owned collection). */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-        <CountCol label="Owned" field="owned" qty={qty} step={step} editable={editable} />
-        <CountCol label="Foil" foil field="foil" qty={qty} step={step} editable={editable} />
+      {/* ONE collector item at a time (Phase 6): a Standard/Foil toggle (only when a printing offers
+          both) drives a single stepper - the count for the active finish. A printing with just one
+          finish locks to it (promos/foil-only -> Foil). The stepper edits real owned quantities; the
+          wishlist heart below is a binary INTENT for the same active item, not a quantity. */}
+      {finishes.nonFoil && finishes.foil && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+          <SegTabs ariaLabel="Finish"
+            value={foil ? 'foil' : 'std'} onChange={(k) => setFoil(k === 'foil')}
+            options={[{ key: 'std', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
+        </div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'center' }}>
+        <CountCol label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
       </div>
       {!editable && (
         <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 10 }}>
