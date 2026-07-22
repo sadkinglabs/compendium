@@ -102,6 +102,26 @@ export function CountCol({ label, foil = false, field, qty, step, editable = tru
   );
 }
 
+// The card sheet's horizontal count (Phase 6, Fable): [-] N [+] with the finish name captioned under
+// the number - a full-width "ownership console" band. CountCol (stacked) stays untouched for the
+// deckbuilder's paired columns (CardSheet.jsx); this is a sibling, not a replacement.
+export function CountRow({ label, foil = false, field, qty, step, editable = true }) {
+  const v = qty?.[field] || 0;
+  const loading = qty === null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 26 }}>
+      {editable && <StepBtn dir={-1} disabled={loading || v === 0} onClick={() => step(field, -1)} />}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 64 }}>
+        <span style={{ font: "500 34px/1 var(--f-display)", color: '#efe7d8', fontVariantNumeric: 'tabular-nums' }}>{v}</span>
+        <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.22em', color: '#a99a80', textTransform: 'uppercase' }}>
+          {label}{foil && <span style={{ color: '#e3c589', marginLeft: 4, textShadow: '0 0 8px rgba(227,197,137,.5)' }}>✦</span>}
+        </span>
+      </div>
+      {editable && <StepBtn dir={1} disabled={loading} onClick={() => step(field, 1)} />}
+    </div>
+  );
+}
+
 // One action in the sheet's bottom row. `on` fills it with the pillar accent - used by the
 // wishlist, which is a toggle (a heart that fills when the card is wanted) rather than a
 // quantity. Wanting N copies is what a Wanted list's per-card target is for.
@@ -375,7 +395,7 @@ function CardBody({ c, onPick, editable, set }) {
           type, artist, product/origin - and, beneath it, the active-finish stepper. Far tighter than
           the old full-width stack. The set picker/pill and the Standard/Foil toggle live in the right
           column; a printing with one finish shows no toggle (promos/foil-only lock to Foil). */}
-      <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start', marginTop: 8 }}>
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 8 }}>
         <div style={{ flex: '0 0 44%', maxWidth: 176 }}>
           <SheetArt c={artCard} width="100%" />
         </div>
@@ -404,17 +424,22 @@ function CardBody({ c, onPick, editable, set }) {
           {printing.artist && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#a99a80' }}>Art · {printing.artist}</div>}
           {products.length > 0 && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#8a7a55' }}>{products.join(' · ')}</div>}
 
-          {finishes.nonFoil && finishes.foil && (
-            <div style={{ marginTop: 2, maxWidth: '100%', overflowX: 'auto' }}>
-              <SegTabs ariaLabel="Finish"
-                value={foil ? 'foil' : 'std'} onChange={(k) => setFoil(k === 'foil')}
-                options={[{ key: 'std', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
-            </div>
-          )}
-          <div style={{ marginTop: 4 }}>
-            <CountCol label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
-          </div>
         </div>
+      </div>
+
+      {/* The ownership console (Fable): a hairline-separated full-width band. The Standard/Foil toggle
+          (only when both finishes exist) sits above the horizontal [-] N [+] stepper. Moving ownership
+          out of the right column lets the columns center, so a short landscape site no longer pools
+          empty space beside its identity. */}
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--hair-12, rgba(220,184,111,.12))' }}>
+        {finishes.nonFoil && finishes.foil && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <SegTabs ariaLabel="Finish"
+              value={foil ? 'foil' : 'std'} onChange={(k) => setFoil(k === 'foil')}
+              options={[{ key: 'std', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
+          </div>
+        )}
+        <CountRow label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
       </div>
 
       {!editable && (
@@ -426,7 +451,7 @@ function CardBody({ c, onPick, editable, set }) {
       {/* One action row: wishlist (a heart that fills when on) and add-to-list (a plus).
           There is deliberately no "Open in Codex" hand-off - this sheet is about OWNING the
           card, and the Codex page is reached from Codex/search. */}
-      <div style={{ display: 'flex', gap: 12, marginTop: 26 }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
         <ActionButton
           icon={
             <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"
