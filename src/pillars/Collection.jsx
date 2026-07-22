@@ -39,6 +39,9 @@ import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
 import { importCollectionResolved } from '../store/ownedImportRepository.js';
+import { resolveWantList } from '../store/wantImport.js';
+import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
+import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
@@ -377,6 +380,185 @@ function ListBulkAddSheet({ open, onClose, onApply, listName }) {
           <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
             <button onClick={() => setPlan(null)} style={{ ...BTN_GHOST, flex: 1 }}>Back</button>
             <button onClick={apply} disabled={!plan.adds.length} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: plan.adds.length ? 1 : 0.5 }}>Add {totalQ} card{totalQ === 1 ? '' : 's'}</button>
+          </div>
+        </>
+      )}
+    </BottomSheet>
+  );
+}
+
+// The whole-paste WISHLIST import (brief §3.2). One draft, one commit boundary (P8): nothing is
+// written until Confirm, and every exit - Cancel, backdrop, hardware back - writes ZERO. Unlike a
+// card list, a want names a collector item, so an ambiguous line is resolved here, in one sheet
+// over the whole draft, rather than one modal per card.
+function WishlistImportSheet({ open, onClose, onCommitted }) {
+  const [text, setText] = useState('');
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [batchFinish, setBatchFinish] = useState('nonFoil');
+  const [choices, setChoices] = useState({});
+  const [overrides, setOverrides] = useState({});
+  useEffect(() => { if (open) { setText(''); setDraft(null); setBusy(false); setBatchFinish('nonFoil'); setChoices({}); setOverrides({}); } }, [open]);
+
+  const review = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    try {
+      const d = await resolveWantList(text);
+      if (!d.resolved.length && !d.needsChoice.length && !d.flagged.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
+      setChoices({}); setOverrides({}); setBatchFinish('nonFoil'); setDraft(d); setBusy(false);
+    } catch (e) { toast(e?.name === 'ImportTooLarge' ? e.message : "Couldn't read that text.", { tone: 'danger' }); setBusy(false); }
+  };
+
+  const view = draft ? planWantDraft(draft, { batchFinish, choices, overrides }) : null;
+
+  const confirm = async () => {
+    if (busy || !view?.ready) return;
+    setBusy(true);
+    const pid = activeProfileId();   // captured at the gesture, before any await
+    try {
+      const r = await addWantedItemsBulk(view.commitItems, pid);
+      haptic('light');
+      toast(`Added ${r.copies} wanted cop${r.copies === 1 ? 'y' : 'ies'} across ${r.items} printing${r.items === 1 ? '' : 's'}`);
+      onCommitted?.();
+      onClose();
+    } catch (e) {
+      // Write-outcome contract: a transaction-phase failure may have landed; do not claim nothing
+      // written, do not retry, keep the sheet state so the user can decide.
+      const indeterminate = e?.name === 'BulkWriteError' && e.writeState === 'unknown';
+      toast(indeterminate ? "Couldn't confirm - check your wishlist before retrying." : "Couldn't add.", { tone: 'danger' });
+      setBusy(false);
+    }
+  };
+
+  const head = (color, label) => <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color, margin: '2px 0 8px' }}>{label}</div>;
+  const setLbl = (o) => `${SET_LABEL[o.code] || o.code}${o.forced ? ' ✦' : ''}`;
+
+  const setChoice = (key, code) => setChoices((m) => ({ ...m, [key]: code }));
+  const setOverride = (key, v) => setOverrides((m) => ({ ...m, [key]: v }));
+
+  const lockBtn = (active, label, onClick, aria) => (
+    <button onClick={onClick} aria-pressed={active} aria-label={aria} style={{ ...BTN_GHOST, flex: 'none', padding: '5px 10px', minHeight: 30,
+      borderColor: active ? 'var(--gold-leaf)' : 'var(--hair-22)', color: active ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}>{label}</button>
+  );
+
+  const renderRow = (r) => {
+    const impossibleLock = r.lockedFinish === 'foil' && !r.anyFoil;
+    return (
+      <div key={r.key} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: impossibleLock || r.status === 'skipNoFoil' ? 6 : 8 }}>
+          <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+          {r.forcedFoil && <span style={{ flex: 'none', font: "600 9px/1 var(--f-display)", letterSpacing: '.08em', color: 'var(--gold-leaf)' }}>✦ FOIL ONLY</span>}
+          <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{r.qty}</span>
+        </div>
+        {r.status === 'skipNoFoil' ? (
+          <div style={{ font: "500 11px/1.3 var(--f-display)", letterSpacing: '.06em', color: 'var(--destructive)' }}>SKIPPED · NO FOIL PRINTING · change the finish above to include it</div>
+        ) : impossibleLock ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ flex: 'none', font: "400 11.5px/1.3 var(--f-read)", color: 'var(--ink-muted)', fontStyle: 'italic' }}>No foil printing exists -</span>
+            {lockBtn(overrides[r.key] === 'nonFoil', 'Use non-foil', () => setOverride(r.key, 'nonFoil'), `Use non-foil for ${r.name}`)}
+            {lockBtn(overrides[r.key] === 'skip', 'Skip', () => setOverride(r.key, 'skip'), `Skip ${r.name}`)}
+            {overrides[r.key] === 'nonFoil' && r.options.length > 0 && (
+              <div style={{ flexBasis: '100%', maxWidth: '100%', overflowX: 'auto', padding: 1, marginTop: 4 }}>
+                <SegTabs ariaLabel={`Set for ${r.name} non-foil`} value={choices[r.key] || null}
+                  onChange={(code) => setChoice(r.key, code)} options={r.options.map((o) => ({ key: o.code, label: setLbl(o) }))} />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+            <SegTabs ariaLabel={`Set for ${r.name}${r.lockedFinish === 'foil' ? ' foil' : ''}`} value={choices[r.key] || null}
+              onChange={(code) => setChoice(r.key, code)} options={r.options.map((o) => ({ key: o.code, label: setLbl(o) }))} />
+          </div>
+        )}
+        {r.reason && r.status !== 'skipNoFoil' && <div style={{ font: "400 11px/1.3 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginTop: 4 }}>{r.reason}</div>}
+      </div>
+    );
+  };
+
+  return (
+    <BottomSheet open={open} title="ADD TO WISHLIST" onClose={onClose}>
+      {!draft ? (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            Paste a list - one per line, like <span style={{ color: 'var(--ink-body)', fontFamily: 'var(--f-mono)' }}>3 Wild Boars [Beta]</span>.
+            Add <span style={{ fontFamily: 'var(--f-mono)' }}>[Foil]</span> for foils. Reprints are resolved together before anything is added.
+          </div>
+          <textarea value={text} autoFocus onChange={(e) => setText(e.target.value)} rows={7}
+            placeholder={'3 Wild Boars\n2 Albespine Pikemen [Beta]\n1 Winter River [Foil]…'}
+            style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
+          <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+            <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+            <button onClick={review} disabled={!text.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: text.trim() && !busy ? 1 : 0.5 }}>{busy ? 'Reading…' : 'Review'}</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
+            {view.addCount} printing{view.addCount === 1 ? '' : 's'} ready.{view.blocking > 0 ? ` ${view.blocking} still need a set.` : ''}
+            {draft.resolved.length > 0 && view.rows.length > 0 ? ` ${draft.resolved.length} already resolved.` : ''}
+          </div>
+          <div style={{ maxHeight: '48vh', overflowY: 'auto' }} className="cx-scroll">
+            {view.rows.length > 0 && view.setForAllOptions.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                {head('var(--ink-muted)', 'SET FOR ALL')}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {view.setForAllOptions.map((code) => (
+                    <button key={code} onClick={() => setChoices(applySetForAll(draft, { batchFinish, choices, overrides }, code))}
+                      style={{ ...BTN_GHOST, flex: 'none', padding: '5px 12px', minHeight: 30 }}>{SET_LABEL[code] || code}</button>
+                  ))}
+                </div>
+                {head('var(--ink-muted)', 'FINISH FOR ALL')}
+                <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+                  <SegTabs ariaLabel="Finish for all" value={batchFinish} onChange={setBatchFinish}
+                    options={[{ key: 'nonFoil', label: 'Non-foil' }, { key: 'foil', label: 'Foil' }]} />
+                </div>
+              </div>
+            )}
+            {view.rows.length > 0 && (
+              <div style={{ marginBottom: draft.unknown.length || draft.flagged.length ? 16 : 0 }}>
+                {head('var(--gold-leaf)', 'CHOOSE PRINTINGS')}
+                {view.rows.map(renderRow)}
+              </div>
+            )}
+            {draft.resolved.length > 0 && view.rows.length === 0 && (
+              <div style={{ marginBottom: draft.unknown.length || draft.flagged.length ? 16 : 0 }}>
+                {head('var(--ink-muted)', `READY · ${draft.resolved.length}`)}
+                {draft.resolved.map((r) => (
+                  <div key={`${r.cardId}|${r.setCode}|${r.foil ? 1 : 0}`} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair-12)' }}>
+                    <span style={{ flex: 1, minWidth: 0, font: "500 13px/1.2 var(--f-read)", color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                    {r.foil && <span style={{ flex: 'none', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.08em', color: '#c9b487' }}>FOIL</span>}
+                    <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: '#c9b487' }}>{SET_LABEL[r.setCode] || r.setCode}</span>
+                    <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>×{r.qty}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {draft.flagged.length > 0 && (
+              <div style={{ marginBottom: draft.unknown.length ? 16 : 0 }}>
+                {head('var(--destructive)', `SKIPPED · CHECK THESE LINES · ${draft.flagged.length}`)}
+                {draft.flagged.map((f, i) => (
+                  <div key={i} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', padding: '3px 0' }}>
+                    <span style={{ fontFamily: 'var(--f-mono)' }}>{f.raw.trim()}</span>
+                    <span style={{ fontStyle: 'italic', color: 'var(--destructive)' }}> - {f.problems.join(', ')}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {draft.unknown.length > 0 && (
+              <div>
+                {head('var(--destructive)', `SKIPPED · NOT RECOGNISED · ${draft.unknown.length}`)}
+                {draft.unknown.map((name, i) => (
+                  <div key={i} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', padding: '3px 0' }}>{name}</div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+            <button onClick={() => setDraft(null)} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>‹ Back</button>
+            <button onClick={confirm} disabled={busy || !view.ready} style={{ ...BTN_GOLD, flex: 1.4, justifyContent: 'center', opacity: busy || !view.ready ? 0.5 : 1 }}>
+              {busy ? 'Adding…' : view.ctaLabel}
+            </button>
           </div>
         </>
       )}
@@ -1714,31 +1896,24 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         /* Skipping one card must not abandon the rest of the batch. */
         onClose={() => setAddPick(dequeuePick)} />
 
-      <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
-        onApply={(adds) => {
-          // ADD each resolved qty onto the list in one state write; persist each as a
-          // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
-          haptic('light');
-          // ADD FROM TEXT, routed through the same resolution as every other add.
-          //
-          // It used to write optimistic state under card_id and call the card-level persist
-          // path, so an ambiguous reprint was announced as added and then failed - the surface
-          // said one thing and the ledger did another. addStep resolves the collector item
-          // first, files what it can, and queues the reprints it cannot for the picker.
-          if (isWishlist) {
-            // Same honesty as the tap-add batch: reprints queue for the picker rather than
-            // being announced, so the copy reports applied and pending separately.
-            const results = adds.map((a) => addStep(a.card, a.qty));
-            const msg = batchAddSummary(results);
-            if (msg) toast(msg);
-            return;
-          }
-          const m = new Map(qtyRef.current);
-          for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
-          qtyRef.current = m; setQty(m);
-          const copies = adds.reduce((s, a) => s + a.qty, 0);
-          toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
-        }} />
+      {/* The wishlist paste is per collector item, so it goes through the whole-paste draft
+          (resolve reprints together, one atomic commit). A card list is card-grain and keeps the
+          simpler resolveCardList path. */}
+      {isWishlist ? (
+        <WishlistImportSheet open={bulkOpen} onClose={() => setBulkOpen(false)} onCommitted={load} />
+      ) : (
+        <ListBulkAddSheet open={bulkOpen} onClose={() => setBulkOpen(false)} listName={meta.name}
+          onApply={(adds) => {
+            // ADD each resolved qty onto the list in one state write; persist each as a
+            // DELTA (a.qty) on the queue so overlapping/bulk adds accumulate correctly.
+            haptic('light');
+            const m = new Map(qtyRef.current);
+            for (const a of adds) { cardIndex.current.set(a.card.card_id, a.card); m.set(a.card.card_id, (m.get(a.card.card_id) || 0) + a.qty); track(persist(a.card.card_id, a.qty)); }
+            qtyRef.current = m; setQty(m);
+            const copies = adds.reduce((s, a) => s + a.qty, 0);
+            toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
+          }} />
+      )}
 
       <MissingSheet open={!!missing} report={missing} title={`Missing for ${meta.name}`}
         onOpenCard={(id) => onOpen('card', id)} onClose={() => setMissing(null)} onChanged={() => onChanged?.()} />
