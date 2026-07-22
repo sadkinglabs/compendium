@@ -72,10 +72,16 @@ export function planOwnedItemBatch(items, catalogById) {
     const card = catalogById.get(cardId);
     if (!card) throw new Error(`planOwnedItemBatch: unknown card ${JSON.stringify(cardId)}`);
 
-    // An empty setCode is the uncategorised owned bucket - valid, no set or finish check (the
-    // owned grain may legitimately be uncategorised). A nonempty setCode must be a real set of
-    // THIS card AND carry the requested finish (printingFinishes is strict - it throws on
-    // malformed catalog variants rather than authorising a phantom item).
+    // setCode must be EXACTLY a string. Only the empty string means uncategorised; undefined, null,
+    // false, and 0 are malformed input, not a shorthand the writer is allowed to reinterpret as a
+    // valid uncategorised item.
+    if (typeof setCode !== 'string') {
+      throw new Error(`planOwnedItemBatch: setCode must be a string for ${cardId}, got ${JSON.stringify(setCode)}`);
+    }
+    // A nonempty setCode must be a real set of THIS card AND carry the requested finish
+    // (printingFinishes is strict - it throws on malformed catalog variants rather than authorising
+    // a phantom item). An empty setCode is the uncategorised owned bucket - no set or finish check,
+    // because the owned grain may legitimately be uncategorised.
     if (setCode) {
       if (!setCodesOf(card).includes(setCode)) {
         throw new Error(`planOwnedItemBatch: ${JSON.stringify(setCode)} is not a set of ${cardId}`);
@@ -86,7 +92,7 @@ export function planOwnedItemBatch(items, catalogById) {
       }
     }
 
-    const slug = canonicalPrinting(setCode || '', foil);
+    const slug = canonicalPrinting(setCode, foil);
     const key = `${cardId}|${slug}`;
     const nextQty = (merged.get(key)?.qty || 0) + qty;
     if (!Number.isSafeInteger(nextQty)) throw new Error(`planOwnedItemBatch: merged qty overflow for ${key}`);
@@ -111,13 +117,15 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
   /**
    * Commit a reviewed owned import. `pid` is captured by the CALLER at the gesture, before any
    * await, so the write binds to the profile the user was looking at.
-   * @returns { names, copies } on success; throws a BulkWriteError otherwise.
+   * @returns { items, cards, copies } on success; throws a BulkWriteError otherwise. `items` is the
+   *          number of collector items (printings) filed; `cards` is the DISTINCT card count, so
+   *          two printings of one card do not read as two cards in the confirmation.
    */
   async function importCollectionResolved(items, pid = activeProfileId()) {
     if (!pid) throw bulkWriteError('prewrite', 'none', 'importCollectionResolved: no active profile.');
     if (items != null && !Array.isArray(items)) throw bulkWriteError('prewrite', 'none', 'importCollectionResolved: items must be an array.');
     const list = items || [];
-    if (!list.length) return { names: 0, copies: 0 };
+    if (!list.length) return { items: 0, cards: 0, copies: 0 };
     if (list.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `importCollectionResolved: batch exceeds ${MAX_BATCH_ITEMS} items.`);
 
     let ranTransaction = false;
@@ -125,7 +133,7 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
       const result = await exclusive(async () => {
         const catalog = await readCatalog(list.map((i) => i?.card_id));
         const plan = planOwnedItemBatch(list, catalog);   // throws (prewrite) on any impossible item
-        if (!plan.length) return { names: 0, copies: 0, noop: true };
+        if (!plan.length) return { items: 0, cards: 0, copies: 0, noop: true };
 
         const now = nowIso();
         const stmts = plan.map((p) => ([
@@ -138,10 +146,10 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
 
         ranTransaction = true;   // from here the database may differ, confirmed or not
         await tx(stmts);         // resolving means committed AND persisted; rejecting is indeterminate
-        return { names: plan.length, copies: plan.reduce((s, p) => s + p.qty, 0) };
+        return { items: plan.length, cards: new Set(plan.map((p) => p.card_id)).size, copies: plan.reduce((s, p) => s + p.qty, 0) };
       });
       if (ranTransaction && !result.noop) notify();
-      return result.noop ? { names: 0, copies: 0 } : result;
+      return result.noop ? { items: 0, cards: 0, copies: 0 } : result;
     } catch (e) {
       if (ranTransaction) notify();   // memory may have changed even on a rejected tx - invalidate
       if (e && e.name === 'BulkWriteError') throw e;   // already classified

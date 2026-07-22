@@ -22,9 +22,10 @@ import {
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
-import { deckRequirements, deckRequirementsBulk, parseDeckText } from './deckRepository.js';
-import { parseAnnotations } from './itemLineGrammar.js';
+import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
+import { parseItemText } from './itemLineGrammar.js';
 import { printingFinishes } from './printingRows.js';
+import { MAX_BATCH_ITEMS } from './bulkWriteContract.js';
 
 /* ---------------- freshness (in-memory revision) ---------------- */
 let _rev = 0;
@@ -646,38 +647,53 @@ function resolveLinePrinting({ sets, setToken, foil }, card) {
   return null;
 }
 
-// PREVIEW a bulk import without writing: resolve each line to a card, peel any [Set]/[Foil]
-// annotations, and decide whether the printing is determined (files directly) or needs the review
-// step. Merges by (card, set annotation, finish) so `2 Card [Beta]` and `1 Card [Beta] [Foil]`
-// stay distinct collector items. Returns
-//   { items: [{ card_id, name, qty, sets, foil, setToken, resolved:{setCode,foil}|null }],
-//     unresolved: [name] }.
+// PREVIEW a bulk import without writing. Every card line runs through the real line grammar
+// (parseItemText), so grammar problems reach the review model rather than being discarded:
+//   - flagged : lines with a grammar problem (bad quantity, duplicate finish, two sets, ...).
+//               Surfaced, NEVER written - "flag, never clamp or drop".
+//   - items   : recognised, writable collector items. Grouped by (card, set annotation, finish)
+//               for display, but each groups its per-line quantities as `parts` and does NOT
+//               pre-sum them into one item that could exceed the per-line 999 bound - the durable
+//               writer owns the merge, and a legitimate `999 x + 999 x` paste must reach it as two
+//               contributions that merge to 1998, not one item it would reject.
+//   - unresolved : names that matched no card.
+// The 2000-line paste ceiling is enforced BEFORE any catalog query, so 2001 duplicate lines cannot
+// slip past by merging down to a smaller item count.
 export async function previewCollectionText(text) {
-  const { avatar, zones } = parseDeckText(text);
-  const rawLines = [...zones.spellbook, ...zones.atlas, ...zones.collection];
-  if (avatar) rawLines.push({ name: avatar, qty: 1 });
+  const parsed = parseItemText(text);
+  if (parsed.length > MAX_BATCH_ITEMS) {
+    const e = new Error(`Too many lines to import (max ${MAX_BATCH_ITEMS}).`);
+    e.name = 'ImportTooLarge';
+    throw e;
+  }
 
-  // Peel annotations first, then merge by the COLLECTOR-ITEM key so distinct printings of one card
-  // do not collapse into a single line the way a name-only merge would.
-  const byItem = new Map();
-  for (const { name, qty } of rawLines) {
-    const { name: clean, setToken, foil } = parseAnnotations(name);
-    const key = `${clean.toLowerCase()}|${(setToken || '').toLowerCase()}|${foil ? 1 : 0}`;
+  const flagged = [];
+  const byItem = new Map();   // collector-item key -> { key, name, setToken, foil, parts:[qty] }
+  for (const line of parsed) {
+    if (line.problems.length) {
+      flagged.push({ raw: line.raw, name: line.name, qty: line.qty, problems: line.problems });
+      continue;   // never resolved, never written
+    }
+    const key = `${line.name.toLowerCase()}|${(line.setToken || '').toLowerCase()}|${line.foil ? 1 : 0}`;
     const prev = byItem.get(key);
-    byItem.set(key, { name: clean, setToken, foil, qty: (prev?.qty || 0) + Math.max(1, qty | 0) });
+    if (prev) prev.parts.push(line.qty);
+    else byItem.set(key, { key, name: line.name, setToken: line.setToken, foil: line.foil, parts: [line.qty] });
   }
 
   const items = [];
   const unresolved = [];
-  for (const { name, setToken, foil, qty } of byItem.values()) {
-    const c = (await query('SELECT card_id, name, sets, variants FROM cards WHERE lower(name)=? LIMIT 1;', [name.toLowerCase()]))[0];
-    if (!c) { unresolved.push(name); continue; }
+  for (const g of byItem.values()) {
+    const c = (await query('SELECT card_id, name, sets, variants FROM cards WHERE lower(name)=? LIMIT 1;', [g.name.toLowerCase()]))[0];
+    if (!c) { unresolved.push(g.name); continue; }
     let sets = []; try { sets = JSON.parse(c.sets || '[]'); } catch { /* leave empty */ }
     sets = Array.isArray(sets) ? sets : [];
-    const resolved = resolveLinePrinting({ sets, setToken, foil }, c);
-    items.push({ card_id: c.card_id, name: c.name, qty, sets, foil, setToken: setToken || null, resolved });
+    const resolved = resolveLinePrinting({ sets, setToken: g.setToken, foil: g.foil }, c);
+    items.push({
+      card_id: c.card_id, name: c.name, key: g.key, sets, foil: g.foil, setToken: g.setToken || null,
+      resolved, parts: g.parts, qty: g.parts.reduce((s, x) => s + x, 0),
+    });
   }
-  return { items, unresolved };
+  return { items, unresolved, flagged };
 }
 
 // The reviewed-import WRITE moved to ownedImportRepository.js (importCollectionResolved), where it

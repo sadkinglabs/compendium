@@ -7,7 +7,7 @@
 // Run: npm run test:query
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAnnotations, parseItemLine, formatItemLine, FOIL_TOKEN, MAX_ANNOTATION_LEN } from './itemLineGrammar.js';
+import { parseAnnotations, parseItemLine, parseItemText, isKnownHeader, formatItemLine, FOIL_TOKEN, MAX_ANNOTATION_LEN } from './itemLineGrammar.js';
 
 /* ---------------- parseAnnotations ---------------- */
 
@@ -85,6 +85,39 @@ test('a quantity out of range is flagged, never clamped', () => {
   assert.deepEqual(parseItemLine('0 Wild Boars').problems, ['quantity out of range']);
   assert.deepEqual(parseItemLine('1000 Wild Boars').problems, ['quantity out of range']);
   assert.equal(parseItemLine('1000 Wild Boars').qty, 1000, 'returned as typed, not clamped');
+});
+
+test('a negative, signed, or fractional prefix is FLAGGED, not swallowed into the name', () => {
+  // Codex Major 1: these must be detected as bad quantities, not treated as bare card names.
+  for (const [line, name] of [['-1 Wild Boars', 'Wild Boars'], ['+2 Wild Boars', 'Wild Boars'], ['1.5 Wild Boars', 'Wild Boars']]) {
+    const r = parseItemLine(line);
+    assert.deepEqual(r.problems, ['quantity out of range'], line);
+    assert.equal(r.name, name, `${line} -> name is the card, not the whole line`);
+  }
+});
+
+test('a bullet needs whitespace, so -1 is a negative quantity and - Card is a bulleted name', () => {
+  assert.deepEqual(parseItemLine('- Wild Boars'), { qty: 1, name: 'Wild Boars', setToken: null, foil: false, problems: [] });
+  assert.equal(parseItemLine('-1 Wild Boars').problems[0], 'quantity out of range', 'not a bullet + qty 1');
+});
+
+/* ---------------- isKnownHeader + parseItemText (production entry) ---------------- */
+
+test('isKnownHeader recognises comment, markdown, and bare zone lines', () => {
+  for (const h of ['# Spellbook', '## Avatar', '### Minions', '// a comment', 'Spellbook', 'atlas', 'SIDEBOARD', 'Collection']) {
+    assert.equal(isKnownHeader(h), true, h);
+  }
+  for (const n of ['4 Wild Boars', 'Wild Boars', 'Collection Agent']) {
+    assert.equal(isKnownHeader(n), false, n);
+  }
+});
+
+test('parseItemText runs every card line through the grammar and skips headers/blanks', () => {
+  const lines = parseItemText('## Spellbook\n2 Albespine Pikemen [Beta]\n\n// note\n4 Wild Boars\n0 Bad Line');
+  assert.deepEqual(lines.map((l) => l.name), ['Albespine Pikemen', 'Wild Boars', 'Bad Line']);
+  assert.deepEqual(lines.map((l) => l.qty), [2, 4, 0]);
+  assert.deepEqual(lines[0], { lineNumber: 2, raw: '2 Albespine Pikemen [Beta]', qty: 2, name: 'Albespine Pikemen', setToken: 'Beta', foil: false, problems: [] });
+  assert.deepEqual(lines[2].problems, ['quantity out of range'], 'the flag survives into the production line');
 });
 
 /* ---------------- formatItemLine + round trip ---------------- */

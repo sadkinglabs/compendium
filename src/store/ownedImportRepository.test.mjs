@@ -132,6 +132,15 @@ test('foil must be a real boolean - coercion rejected', () => {
   }
 });
 
+test('setCode must be exactly a STRING - only "" means uncategorised, not undefined/null/false/0', () => {
+  // Codex Major 3a: every falsy setCode once wrote uncategorised. A non-string is now malformed.
+  for (const setCode of [undefined, null, false, 0]) {
+    assert.throws(() => planOwnedItemBatch([{ card_id: 'c1', setCode, foil: true, qty: 1 }], catalog(CV)), /setCode must be a string/, JSON.stringify(setCode));
+  }
+  // The empty string is the ONE valid falsy setCode.
+  assert.deepEqual(planOwnedItemBatch([{ card_id: 'c1', setCode: '', foil: true, qty: 1 }], catalog(CV)), [{ card_id: 'c1', slug: 'uncategorised:f', qty: 1 }]);
+});
+
 test('quantity bounds are enforced', () => {
   for (const qty of [0, -1, 1.5, NaN, MAX_ITEM_QTY + 1]) {
     assert.throws(() => planOwnedItemBatch([{ card_id: 'c1', setCode: '001', foil: false, qty }], catalog(CV)), /out of range/, String(qty));
@@ -173,7 +182,7 @@ test('a batch is filed at the right slugs, foil carried, total conserved', async
     { card_id: 'c1', setCode: '001', foil: true, qty: 3 },
     { card_id: 'c1', setCode: '', foil: true, qty: 4 },
   ]);
-  assert.deepEqual(res, { names: 4, copies: 10 });
+  assert.deepEqual(res, { items: 4, cards: 1, copies: 10 });
   assert.equal(ownOf('001'), 2);
   assert.equal(ownOf('002'), 1);
   assert.equal(ownOf('001:f'), 3);
@@ -198,7 +207,36 @@ test('an impossible item rejects the WHOLE batch - nothing written, no broadcast
 });
 
 test('an empty batch is a no-op, no transaction, no broadcast', async () => {
-  assert.deepEqual(await cmd()([]), { names: 0, copies: 0 });
+  assert.deepEqual(await cmd()([]), { items: 0, cards: 0, copies: 0 });
+  assert.equal(notifyCount, 0);
+});
+
+test('two 999 contributions for one item COMMIT 1998 (each is within the per-line bound)', async () => {
+  // Codex Major 2: preview must not pre-merge to a 1998 item the writer rejects. Passed as two
+  // 999 contributions, planOwnedItemBatch merges them to 1998, which is legitimate ownership.
+  const res = await cmd()([
+    { card_id: 'c1', setCode: '002', foil: false, qty: 999 },
+    { card_id: 'c1', setCode: '002', foil: false, qty: 999 },
+  ]);
+  assert.deepEqual(res, { items: 1, cards: 1, copies: 1998 });
+  assert.equal(ownOf('002'), 1998);
+});
+
+test('a single 1000 contribution is still invalid', async () => {
+  await assert.rejects(() => cmd()([{ card_id: 'c1', setCode: '002', foil: false, qty: 1000 }]),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none');
+  assert.equal(ownOf('002'), 0);
+});
+
+test('2001 contributions are rejected before catalog read or write', async () => {
+  seedOwn('001', 7);
+  let queried = false;
+  const spyQuery = (s, p = []) => { if (/FROM cards/.test(s)) queried = true; return Promise.resolve(rows(s, p)); };
+  const batch = Array.from({ length: MAX_BATCH_ITEMS + 1 }, () => ({ card_id: 'c1', setCode: '001', foil: false, qty: 1 }));
+  await assert.rejects(() => cmd((fn) => fn(), { query: spyQuery })(batch),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /exceeds 2000/.test(e.message));
+  assert.equal(queried, false, 'no catalog query for an over-ceiling batch');
+  assert.equal(ownOf('001'), 7, 'nothing written');
   assert.equal(notifyCount, 0);
 });
 
@@ -352,7 +390,8 @@ test('END-TO-END: annotated text files 002, 002:f, and an unresolved [Foil] land
 
   const writeItems = buildImportItems(plan, {});   // no set chosen for wb -> '' -> uncategorised
   const res = await importCollectionResolved(writeItems, PID);
-  assert.equal(res.names, 3);
+  assert.equal(res.items, 3, 'three collector items');
+  assert.equal(res.cards, 2, 'two distinct cards (ap x2, wb)');
   assert.equal(res.copies, 6);
 
   assert.equal(ownOf('002', 'ap'), 2, '[Beta] -> 002');
@@ -368,7 +407,49 @@ test('END-TO-END: a bare line for a foil-only single-set card resolves to 001:f 
   const plan = planCollectionImport({ items, unresolved });
   assert.deepEqual(plan.single.map((i) => i.card_id), ['wr'], 'auto-files, does not fall to review');
   const res = await importCollectionResolved(buildImportItems(plan, {}), PID);
-  assert.equal(res.names, 1);
+  assert.equal(res.items, 1);
   assert.equal(ownOf('001:f', 'wr'), 1, 'the sole foil printing, not a rejected non-foil phantom');
   assert.equal(ownOf('001', 'wr'), 0);
+});
+
+/* ================= production grammar path through previewCollectionText ================= */
+//
+// Codex Major 1: the production path must run the real line grammar (parseItemText), preserving
+// problems into the review model, not clamp/drop. These drive previewCollectionText itself.
+
+test('PRODUCTION PATH: malformed quantities are FLAGGED, not clamped or dropped or written', async () => {
+  const { items, flagged } = await previewCollectionText('0 Wild Boars\n-1 Wild Boars\n1.5 Wild Boars');
+  assert.equal(items.length, 0, 'no writable item from a malformed-quantity line');
+  assert.deepEqual(flagged.map((f) => f.raw.trim()), ['0 Wild Boars', '-1 Wild Boars', '1.5 Wild Boars']);
+  for (const f of flagged) assert.ok(f.problems.includes('quantity out of range'), f.raw);
+});
+
+test('PRODUCTION PATH: a bare line is quantity 1, headers are skipped', async () => {
+  const { items } = await previewCollectionText('## Spellbook\nWild Boars\n// comment');
+  assert.equal(items.length, 1);
+  assert.equal(items[0].card_id, 'wb');
+  assert.equal(items[0].qty, 1, 'a bare name is one copy, not dropped');
+});
+
+test('PRODUCTION PATH: two 999 lines survive as parts [999,999] and commit 1998 through the writer', async () => {
+  const { items } = await previewCollectionText('999 Albespine Pikemen [Beta]\n999 Albespine Pikemen [Beta]');
+  assert.equal(items.length, 1, 'one collector item...');
+  assert.deepEqual(items[0].parts, [999, 999], '...but two contributions retained');
+  assert.equal(items[0].qty, 1998);
+  const res = await importCollectionResolved(buildImportItems(planCollectionImport({ items, unresolved: [], flagged: [] }), {}), PID);
+  assert.equal(res.copies, 1998);
+  assert.equal(ownOf('002', 'ap'), 1998, 'the paste preview and the durable writer agree');
+});
+
+test('PRODUCTION PATH: 2001 lines are rejected before any catalog query', async () => {
+  const text = Array.from({ length: MAX_BATCH_ITEMS + 1 }, () => '1 Wild Boars').join('\n');
+  await assert.rejects(() => previewCollectionText(text), (e) => e.name === 'ImportTooLarge');
+});
+
+test('a non-boolean foil cannot reach the writer through buildImportItems - no row, no broadcast', async () => {
+  seedOwn('001', 3);
+  const forged = [{ card_id: 'c1', name: 'C', key: 'c||0', qty: 1, parts: [1], sets: [{ code: '001', name: 'Alpha' }], resolved: { setCode: '001', foil: 'false' } }];
+  assert.throws(() => buildImportItems(planCollectionImport({ items: forged, unresolved: [], flagged: [] })), /foil must be a boolean/);
+  assert.equal(ownOf('001'), 3, 'nothing written');
+  assert.equal(notifyCount, 0, 'no broadcast');
 });

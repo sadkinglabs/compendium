@@ -27,8 +27,16 @@ export const MAX_ANNOTATION_LEN = 64;
 // A single well-formed, NON-EMPTY bracket token at the very end of the string. An empty `[]` and
 // an unmatched `[` do not match, so they stay in the name by construction.
 const TRAILING_ANNOTATION = /\s*\[([^[\]]*)\]\s*$/;
-// A leading quantity: optional list bullet, digits, optional x/multiplier, then the name.
-const LEADING_QTY = /^\s*(?:[-*]\s*)?(\d+)\s*[x×]?\s+(.+)$/i;
+// A list bullet is a `-`/`*` FOLLOWED BY WHITESPACE, so `-1` reads as a signed quantity, not a
+// bullet plus 1. A bare `-` bullet is stripped before the quantity is read.
+const BULLET = /^[-*]\s+(.*)$/;
+// A numeric-looking quantity prefix: an optional sign, digits, an optional decimal, an optional
+// x/× multiplier, then the name. The sign/decimal are captured so a NEGATIVE, SIGNED, or
+// FRACTIONAL quantity is detected and flagged rather than swallowed into the card name.
+const QTY_PREFIX = /^([+\-]?\d+(?:\.\d+)?)(?:\s*[x×])?\s+(.+)$/i;
+// Header / zone lines the owned import skips, mirroring parseDeckText so deck exports stay
+// importable: a `#`/`//` line, or a bare zone word.
+const ZONE_WORD = /^(avatar|spellbook|atlas|sideboard|collection)$/i;
 
 /**
  * Peel trailing `[...]` annotations off a NAME string.
@@ -73,25 +81,71 @@ export function parseAnnotations(rawName) {
 /**
  * Parse a full grammar line: `qty name [annotation]*`.
  *
- * A missing leading quantity defaults to 1 (a bare name line). A quantity outside 1..999 is
- * FLAGGED ('quantity out of range') and returned as parsed - never silently clamped, so the
- * resolver can show the user exactly what they typed.
+ * A missing leading quantity defaults to 1 (a bare name line). A numeric-looking prefix that is
+ * NOT a clean positive integer 1..999 - negative, signed, fractional, zero, or over 999 - is
+ * FLAGGED ('quantity out of range') and returned as parsed, never silently clamped and never
+ * swallowed into the card name, so the resolver shows the user exactly what they typed.
  *
  * @returns { qty, name, setToken, foil, problems }
  */
 export function parseItemLine(rawLine) {
   const line = String(rawLine == null ? '' : rawLine).trim();
-  const m = line.match(LEADING_QTY);
+  const problems = [];
   let qty = 1;
   let body = line;
-  const problems = [];
+
+  const bullet = line.match(BULLET);
+  const afterBullet = bullet ? bullet[1] : line;
+  const m = afterBullet.match(QTY_PREFIX);
   if (m) {
-    qty = parseInt(m[1], 10);
+    const numStr = m[1];
     body = m[2];
-    if (!Number.isSafeInteger(qty) || qty < 1 || qty > 999) problems.push('quantity out of range');
+    if (/^\d+$/.test(numStr)) {
+      qty = parseInt(numStr, 10);
+      if (!Number.isSafeInteger(qty) || qty < 1 || qty > 999) problems.push('quantity out of range');
+    } else {
+      // A signed or fractional prefix (-1, +2, 1.5): a quantity the user clearly intended, but not
+      // a valid one. Flag it; do not treat the whole line as a bare card name.
+      qty = Number(numStr);
+      problems.push('quantity out of range');
+    }
+  } else {
+    body = afterBullet;   // no numeric prefix at all: a bare name line, quantity 1
   }
+
   const ann = parseAnnotations(body);
   return { qty, name: ann.name, setToken: ann.setToken, foil: ann.foil, problems: [...problems, ...ann.problems] };
+}
+
+/** True for a header / zone line the owned import skips (mirrors parseDeckText's own rules). */
+export function isKnownHeader(rawLine) {
+  const line = String(rawLine == null ? '' : rawLine).trim();
+  if (!line) return false;
+  if (/^(#|\/\/)/.test(line)) return true;                     // markdown / comment header
+  const hdr = line.replace(/^#+\s*/, '').replace(/^\/\/\s*/, '');
+  return ZONE_WORD.test(hdr);                                   // a bare zone word
+}
+
+/**
+ * The PRODUCTION entry point: parse pasted text into per-line grammar results.
+ *
+ * Every card line runs through `parseItemLine` (not parseDeckText), so the grammar's flags reach
+ * the caller instead of being discarded. Blank lines and headers are skipped; deck exports stay
+ * importable because the same headers parseDeckText knew are skipped here. Each returned line
+ * carries its `lineNumber`, `raw` text, and `problems`.
+ *
+ * @returns Array<{ lineNumber, raw, qty, name, setToken, foil, problems }>
+ */
+export function parseItemText(text) {
+  const out = [];
+  const lines = String(text == null ? '' : text).split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const trimmed = raw.trim();
+    if (!trimmed || isKnownHeader(trimmed)) continue;
+    out.push({ lineNumber: i + 1, raw, ...parseItemLine(raw) });
+  }
+  return out;
 }
 
 /**

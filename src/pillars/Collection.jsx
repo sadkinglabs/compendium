@@ -37,7 +37,7 @@ import {
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
-import { planCollectionImport, buildImportItems, importTallies } from '../store/importPlan.js';
+import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
 import { importCollectionResolved } from '../store/ownedImportRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
@@ -183,11 +183,13 @@ function ImportTextSheet({ open, onClose }) {
     if (!text.trim() || busy) return;
     setBusy(true);
     try {
-      const { items, unresolved } = await previewCollectionText(text);
-      if (!items.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
-      const { single, multi, unresolved: bad, choiceDefaults } = planCollectionImport({ items, unresolved });
-      setChoice(choiceDefaults); setPreview({ single, multi, unresolved: bad }); setStep('review'); setBusy(false);
-    } catch { toast("Couldn't read that text.", { tone: 'danger' }); setBusy(false); }
+      const { items, unresolved, flagged } = await previewCollectionText(text);
+      if (!items.length && !flagged.length) { toast('No cards recognised in that text.', { tone: 'danger' }); setBusy(false); return; }
+      const { single, multi, unresolved: bad, flagged: bad2, choiceDefaults } = planCollectionImport({ items, unresolved, flagged });
+      setChoice(choiceDefaults); setPreview({ single, multi, unresolved: bad, flagged: bad2 }); setStep('review'); setBusy(false);
+    } catch (e) {
+      toast(e?.name === 'ImportTooLarge' ? e.message : "Couldn't read that text.", { tone: 'danger' }); setBusy(false);
+    }
   };
 
   const confirm = async () => {
@@ -199,7 +201,7 @@ function ImportTextSheet({ open, onClose }) {
     try {
       const items = buildImportItems(preview, choice);
       const r = await importCollectionResolved(items, pid);
-      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} of ${r.names} card${r.names === 1 ? '' : 's'}`);
+      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}`);
       onClose();
     } catch (e) {
       // The write-outcome contract: a transaction-phase failure may have landed on device (the web
@@ -210,7 +212,9 @@ function ImportTextSheet({ open, onClose }) {
     }
   };
 
-  const { nSingle, nMulti, nBad, totalCopies } = preview ? importTallies(preview) : { nSingle: 0, nMulti: 0, nBad: 0, totalCopies: 0 };
+  const { nSingle, nMulti, nBad, nFlagged, nItems, totalCopies } = preview
+    ? importTallies(preview)
+    : { nSingle: 0, nMulti: 0, nBad: 0, nFlagged: 0, nItems: 0, totalCopies: 0 };
   const sectionHead = (color, label) => <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color, margin: '2px 0 8px' }}>{label}</div>;
 
   return (
@@ -234,36 +238,60 @@ function ImportTextSheet({ open, onClose }) {
       ) : (
         <>
           <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
-            {totalCopies} cop{totalCopies === 1 ? 'y' : 'ies'} across {nSingle + nMulti} card{nSingle + nMulti === 1 ? '' : 's'}.{nMulti > 0 ? ' Pick a set for the reprinted cards.' : ''}
+            {totalCopies} cop{totalCopies === 1 ? 'y' : 'ies'} across {nItems} printing{nItems === 1 ? '' : 's'}.{nMulti > 0 ? ' Pick a set for the reprinted cards.' : ''}
           </div>
           <div style={{ maxHeight: '46vh', overflowY: 'auto' }} className="cx-scroll">
             {nMulti > 0 && (
-              <div style={{ marginBottom: nSingle || nBad ? 16 : 0 }}>
+              <div style={{ marginBottom: nSingle || nBad || nFlagged ? 16 : 0 }}>
                 {sectionHead('var(--gold-leaf)', 'CHOOSE A SET')}
-                {preview.multi.map((i) => (
-                  <div key={i.card_id} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
-                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
-                      <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
-                      <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{i.qty}</span>
+                {preview.multi.map((i) => {
+                  const k = itemKey(i);
+                  return (
+                    <div key={k} style={{ padding: '10px 0', borderBottom: '1px solid var(--hair-12)' }}>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+                        <span style={{ flex: 1, minWidth: 0, font: "600 14px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
+                        {i.foil && <span style={{ flex: 'none', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--gold-leaf)', border: '1px solid var(--gold-leaf)', borderRadius: 3, padding: '2px 5px' }}>Foil</span>}
+                        <span style={{ flex: 'none', font: "700 13px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>×{i.qty}</span>
+                      </div>
+                      <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+                        <SegTabs ariaLabel={`Set for ${i.name}${i.foil ? ' foil' : ''}`}
+                          value={choice[k] === '' ? '__unspec__' : choice[k]}
+                          onChange={(key) => setChoice((m) => ({ ...m, [k]: key === '__unspec__' ? '' : key }))}
+                          options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: UNCATEGORISED_LABEL }]} />
+                      </div>
                     </div>
-                    <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
-                      <SegTabs ariaLabel={`Set for ${i.name}`}
-                        value={choice[i.card_id] === '' ? '__unspec__' : choice[i.card_id]}
-                        onChange={(k) => setChoice((m) => ({ ...m, [i.card_id]: k === '__unspec__' ? '' : k }))}
-                        options={[...i.sets.map((s) => ({ key: s.code, label: s.name })), { key: '__unspec__', label: UNCATEGORISED_LABEL }]} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {nSingle > 0 && (
-              <div style={{ marginBottom: nBad ? 16 : 0 }}>
+              <div style={{ marginBottom: nBad || nFlagged ? 16 : 0 }}>
                 {sectionHead('var(--ink-muted)', `FILES AUTOMATICALLY · ${nSingle}`)}
-                {preview.single.map((i) => (
-                  <div key={i.card_id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair-12)' }}>
-                    <span style={{ flex: 1, minWidth: 0, font: "500 13px/1.2 var(--f-read)", color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
-                    <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: '#c9b487' }}>{i.sets[0].name}</span>
-                    <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>×{i.qty}</span>
+                {preview.single.map((i) => {
+                  // Show the printing that will actually be FILED - the resolved set + finish, not
+                  // sets[0], which showed Alpha for a Beta row and never showed foil.
+                  const setCode = i.resolved ? i.resolved.setCode : i.sets[0].code;
+                  const foil = i.resolved ? i.resolved.foil : false;
+                  const setName = setCode ? (SET_LABEL[setCode] || setCode) : UNCATEGORISED_LABEL;
+                  return (
+                    <div key={itemKey(i)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0', borderBottom: '1px solid var(--hair-12)' }}
+                      aria-label={`${i.name}, ${setName}${foil ? ' foil' : ' non-foil'}, ${i.qty} cop${i.qty === 1 ? 'y' : 'ies'}`}>
+                      <span style={{ flex: 1, minWidth: 0, font: "500 13px/1.2 var(--f-read)", color: 'var(--ink-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{i.name}</span>
+                      {foil && <span style={{ flex: 'none', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.08em', textTransform: 'uppercase', color: '#c9b487', border: '1px solid var(--hair-24)', borderRadius: 3, padding: '2px 5px' }}>Foil</span>}
+                      <span style={{ flex: 'none', font: "500 11px/1 var(--f-display)", letterSpacing: '.06em', textTransform: 'uppercase', color: '#c9b487' }}>{setName}</span>
+                      <span style={{ flex: 'none', font: "700 12px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>×{i.qty}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {nFlagged > 0 && (
+              <div style={{ marginBottom: nBad ? 16 : 0 }}>
+                {sectionHead('var(--destructive)', `SKIPPED · CHECK THESE LINES · ${nFlagged}`)}
+                {preview.flagged.map((f, idx) => (
+                  <div key={idx} style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', padding: '3px 0' }}>
+                    <span style={{ fontFamily: 'var(--f-mono)' }}>{f.raw.trim()}</span>
+                    <span style={{ fontStyle: 'italic', color: 'var(--destructive)' }}> - {f.problems.join(', ')}</span>
                   </div>
                 ))}
               </div>
@@ -279,7 +307,7 @@ function ImportTextSheet({ open, onClose }) {
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
             <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>‹ Back</button>
-            <button onClick={confirm} disabled={busy} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy ? 0.5 : 1 }}>
+            <button onClick={confirm} disabled={busy || nItems === 0} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy || nItems === 0 ? 0.5 : 1 }}>
               {busy ? 'Importing…' : `Import ${totalCopies}`}
             </button>
           </div>
