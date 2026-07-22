@@ -49,7 +49,7 @@ async function deckShim(deckId) {
 
 // ── Deckbuilder poster ──
 async function _buildDeckPosterCanvas(deck) {
-  const SCALE = 2, W = 990, pad = 44;
+  const SCALE = 3, W = 990, pad = 44;   // 3x device-pixel render for a crisp shared poster
   const INK = '#0b0806', GOLD = '#dcb86f';
   const ELS = ['air', 'earth', 'fire', 'water'];
   const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
@@ -211,11 +211,11 @@ async function _buildDeckPosterCanvas(deck) {
     const bodyTop = py + 26, rowH = (STATS_H - 26 - 26) / 2, Ro = 46, Ri = 30;
     const drawDonut = (ccx, ccy, slices, total, label) => {
       x.lineWidth = Ro - Ri; const r = (Ro + Ri) / 2;
-      if (total) { let ang = -Math.PI / 2; for (const s of slices) { if (!s.value) continue; const a = s.value / total * 2 * Math.PI; x.strokeStyle = s.color; x.beginPath(); x.cx-decks(ccx, ccy, r, ang, ang + a); x.stroke(); ang += a; } }
-      else { x.strokeStyle = 'rgba(74,60,34,.5)'; x.beginPath(); x.cx-decks(ccx, ccy, r, 0, 7); x.stroke(); }
-      x.strokeStyle = 'rgba(220,184,111,.3)'; x.lineWidth = 1; x.beginPath(); x.cx-decks(ccx, ccy, Ro, 0, 7); x.stroke();
+      if (total) { let ang = -Math.PI / 2; for (const s of slices) { if (!s.value) continue; const a = s.value / total * 2 * Math.PI; x.strokeStyle = s.color; x.beginPath(); x.arc(ccx, ccy, r, ang, ang + a); x.stroke(); ang += a; } }
+      else { x.strokeStyle = 'rgba(74,60,34,.5)'; x.beginPath(); x.arc(ccx, ccy, r, 0, 7); x.stroke(); }
+      x.strokeStyle = 'rgba(220,184,111,.3)'; x.lineWidth = 1; x.beginPath(); x.arc(ccx, ccy, Ro, 0, 7); x.stroke();
       const ig = x.createRadialGradient(ccx, ccy - Ri * 0.4, 1, ccx, ccy, Ri); ig.addColorStop(0, '#1a1206'); ig.addColorStop(1, '#0b0806');
-      x.fillStyle = ig; x.beginPath(); x.cx-decks(ccx, ccy, Ri, 0, 7); x.fill();
+      x.fillStyle = ig; x.beginPath(); x.arc(ccx, ccy, Ri, 0, 7); x.fill();
       x.fillStyle = '#f0e9d8'; x.font = "700 22px 'Cinzel', Georgia, serif"; x.textAlign = 'center'; x.fillText(total, ccx, ccy + 1);
       x.fillStyle = '#8a8175'; x.font = "600 7.5px 'Hanken Grotesk', sans-serif"; setLS('0.05em'); x.fillText(label, ccx, ccy + 14); setLS('0px'); x.textAlign = 'left';
     };
