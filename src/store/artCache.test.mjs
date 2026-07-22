@@ -17,16 +17,24 @@ const MF = {
     '002-b-b-s': { key: KEY2, bytes: 200 },
   },
 };
-const tick = () => new Promise((r) => setTimeout(r, 0));
-
 // `art`: preseeded cached files {relpath:size}. `remote`: mutable per-URL download spec {ok,size,lie?}.
-// `gates`: per-op promise (or 0-arg function returning one) awaited before the op completes - for
-// interleaving clear() against stat/download/rename.
+// MILESTONE gates (per Codex): `fake.gate(op)` installs a one-shot gate for the NEXT call to that op and
+// returns { entered, release() }. A test awaits `gate.entered` (the op is provably in-flight) before it
+// interleaves clear(), then calls release() - no timers, so a test named "clear DURING op" cannot drift
+// into "clear before op". Multiple gate(op) calls queue FIFO (one per invocation).
 function fakeIo({ art = {}, remote = {} } = {}) {
   const files = new Map(Object.entries(art).map(([p, size]) => [p, { size }]));
   const ops = [];
-  const gates = {};
-  const wait = async (op) => { const g = gates[op]; if (g) await (typeof g === 'function' ? g() : g); };
+  const gateQueues = {};
+  const wait = async (op) => { const q = gateQueues[op]; if (q && q.length) return q.shift().wait(); };
+  const gate = (op) => {
+    let markEntered, release;
+    const entered = new Promise((r) => { markEntered = r; });
+    const blocked = new Promise((r) => { release = r; });
+    const g = { entered, release: () => release(), wait() { markEntered(); return blocked; } };
+    (gateQueues[op] ||= []).push(g);
+    return g;
+  };
   const io = {
     stat: async (p) => { ops.push(`stat ${p}`); await wait('stat'); const f = files.get(p); return f ? { size: f.size } : null; },
     size: async (p) => { ops.push(`size ${p}`); return files.get(p)?.size ?? 0; },
@@ -42,7 +50,7 @@ function fakeIo({ art = {}, remote = {} } = {}) {
     deleteTree: async (dir) => { ops.push(`deleteTree ${dir}`); for (const k of [...files.keys()]) if (k === dir || k.startsWith(dir + '/')) files.delete(k); },
     list: async (dir) => [...files.entries()].filter(([k]) => k.startsWith(dir + '/')).map(([k, v]) => ({ name: k.slice(dir.length + 1), size: v.size })),
   };
-  return { io, files, ops, remote, setGate: (op, g) => { gates[op] = g; } };
+  return { io, files, ops, remote, gate };
 }
 
 let seq = 0;
@@ -129,12 +137,12 @@ test('single-flight: two concurrent resolves for one key share ONE download', as
 
 test('LINEARIZATION: clear() during a DOWNLOAD leaves the cache empty (staleResult, no repopulation)', async () => {
   const fake = fakeIo({ remote: { [REMOTE(KEY)]: { ok: true, size: 100 } } });
-  let release; fake.setGate('download', new Promise((r) => { release = r; }));
+  const g = fake.gate('download');
   const { cache } = make({ fake });
   const p = cache.resolve(KEY);
-  await tick();
+  await g.entered;                // the download is provably in-flight
   await cache.clear();
-  release();
+  g.release();
   assert.deepEqual(await p, remoteCand(KEY));
   assert.ok(!fake.files.has(`art/${KEY}`), 'the promote no-opped: cleared cache stays empty');
   assert.equal(cache._debug.resolved.size, 0);
@@ -142,25 +150,24 @@ test('LINEARIZATION: clear() during a DOWNLOAD leaves the cache empty (staleResu
 
 test('clear() during an existing-file STAT cannot return or memoize the deleted local uri', async () => {
   const fake = fakeIo({ art: { [`art/${KEY}`]: 100 } });   // a valid cached file
-  let release; fake.setGate('stat', new Promise((r) => { release = r; }));
+  const g = fake.gate('stat');
   const { cache } = make({ fake });
-  const p = cache.resolve(KEY);   // parks in stat
-  await tick();
+  const p = cache.resolve(KEY);
+  await g.entered;                // parked in stat
   await cache.clear();            // deletes art/KEY and bumps epoch while stat is parked
-  release();
+  g.release();
   assert.deepEqual(await p, remoteCand(KEY), 'the cleared flight degrades to remote, not the stale local');
   assert.equal(cache._debug.resolved.size, 0, 'never memoized');
 });
 
 test('a promotion holding the lock completes first, THEN clear() removes the file; no stale memo', async () => {
   const fake = fakeIo({ remote: { [REMOTE(KEY)]: { ok: true, size: 100 } } });
-  let release; fake.setGate('rename', new Promise((r) => { release = r; }));
+  const g = fake.gate('rename');
   const { cache } = make({ fake });
-  const p = cache.resolve(KEY);   // downloads, then parks in rename holding the promotion lock
-  await tick();
+  const p = cache.resolve(KEY);
+  await g.entered;                // parked in rename, holding the promotion lock
   const clearP = cache.clear();   // epoch++, its deleteTree queues behind the held lock
-  await tick();
-  release();                      // rename completes -> lock releases -> clear's deleteTree runs
+  g.release();                    // rename completes -> lock releases -> clear's deleteTree runs
   await clearP; await p;
   assert.ok(!fake.files.has(`art/${KEY}`), 'clear removed the file AFTER the promote completed');
   assert.equal(cache._debug.resolved.size, 0, 'a stale-epoch promote did not memoize');
@@ -168,15 +175,18 @@ test('a promotion holding the lock completes first, THEN clear() removes the fil
 
 test("an old flight's finally cannot evict a newer same-key inflight entry", async () => {
   const fake = fakeIo({ remote: { [REMOTE(KEY)]: { ok: true, size: 100 } } });
-  let r1, r2; const g1 = new Promise((r) => { r1 = r; }); const g2 = new Promise((r) => { r2 = r; });
-  let n = 0; fake.setGate('download', () => (n++ === 0 ? g1 : g2));
+  const g1 = fake.gate('download'); const g2 = fake.gate('download');   // one per flight, FIFO
   const { cache } = make({ fake });
-  const p1 = cache.resolve(KEY); await tick();   // flight1 parks in download
-  await cache.clear();                            // epoch++, inflight.clear()
-  const p2 = cache.resolve(KEY); await tick();   // flight2 (new epoch) parks in download
-  r1(); await tick();                             // flight1 finishes: stale-epoch, its finally must NOT delete flight2's entry
+  const p1 = cache.resolve(KEY);
+  await g1.entered;               // flight1 parked in download
+  await cache.clear();            // epoch++, inflight.clear()
+  const p2 = cache.resolve(KEY);
+  await g2.entered;               // flight2 (new epoch) parked in download
+  g1.release();
+  await p1;                       // flight1 fully settles (stale-epoch); its finally must NOT delete flight2's entry
   assert.equal(cache._debug.inflight.has(KEY), true, 'flight2 inflight entry survived flight1 finally');
-  r2(); await Promise.all([p1, p2]);
+  g2.release();
+  await Promise.all([p1, p2]);
   assert.equal(cache._debug.inflight.has(KEY), false, 'both flights cleaned up their OWN entries');
 });
 

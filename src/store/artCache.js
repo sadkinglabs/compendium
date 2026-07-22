@@ -22,8 +22,10 @@
 const noop = () => {};
 
 /**
- * @param deps.io          { stat(path)->{size}|null, download(url,path)->bool, size(path)->number,
- *                            rename(from,to), delete(path), deleteTree(path), list(dir)->[{name,size}] }
+ * @param deps.io          { stat(path)->{size}|null, download(url,path,expectedBytes)->bool (true iff the
+ *                            fetched file is EXACTLY expectedBytes - the adapter decides fallback on it),
+ *                            size(path)->number, rename(from,to), delete(path), deleteTree(path),
+ *                            list(dir)->[{name,size}] }
  *                          paths are relative to Directory.Data ('art/<key>', 'art-tmp/<key>.<rand>').
  * @param deps.manifest    { objects: { <slug>: { key, legacyKey?, bytes } } } - the shipped slim manifest
  * @param deps.isNative    () => boolean

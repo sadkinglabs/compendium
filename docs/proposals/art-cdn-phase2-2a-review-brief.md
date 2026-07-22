@@ -48,10 +48,15 @@ Commits: `e1ecc67`/`e4b5ab9` (proposal), `8e01684` (pure cores + tests), `a027fc
 
 ## What's here (all inert - nothing imports it yet)
 
+> The corrective (opening section) supersedes the pre-corrective counts below: the cache-core suite is
+> now **19 tests** plus a **7-test `artCacheAdapter.test.mjs`**; the spike files are **removed** after a
+> passing device run; and an absent manifest degrades to **remote then the deterministic fallback** (not
+> legacy - legacy needs the manifest's `legacyKey`).
+
 - **`src/store/artSource.js`** (+ test, 10) - the pure reducer + `visibleCandidate`, imports NOTHING.
   Implements B4: stale-key drop, KEY resets `broken`, `visibleCandidate` returns null on a key mismatch
   (no stale paint), quarantine re-resolve bumps `gen`.
-- **`src/store/artCache.js`** (+ test, 13) - `createArtCache(deps)`, a pure core over an injected `io`
+- **`src/store/artCache.js`** (+ test, 19; + `artCacheAdapter.test.mjs`, 7) - `createArtCache(deps)`, a pure core over an injected `io`
   adapter. Implements B2/B3/B6: single-flight joinable only within one epoch; the promotion-lock
   linearization (epoch re-checked inside the lock around every rename/delete; download never locked);
   the non-repopulating `staleResult`; exact-size fail-closed `validSize` (a manifest-miss key is never
@@ -62,18 +67,19 @@ Commits: `e1ecc67`/`e4b5ab9` (proposal), `8e01684` (pure cores + tests), `a027fc
   `CapacitorHttp -> writeFile` (the deckRepository.js:532 pattern). `rename`/`download` ensure the parent
   dir exists (so a promote after `clear()` re-creates `art/`).
 - **`src/store/artCacheInstance.js`** - the singleton wiring + a MUTABLE manifest holder filled by
-  `loadArtManifest()` at boot (created-at-import, filled-later; absent/offline degrades to remote/legacy).
+  `loadArtManifest()` at boot (created-at-import, filled-later; absent/offline degrades to remote then
+  the deterministic fallback).
 - **`src/components/ArtImage.jsx`** - `useArtSource` hook + `ArtImage`, zero-logic shells calling the
   tested pure functions in React's effect order; `<img>` keyed on `gen`. No canvas, no crossOrigin.
 - **`src/store/cardArt.js`** - export `imagesDisabled`; add `ART_CDN_BASE`, `artUrl`, `legacyUrl`.
   `cardImageUrl` is UNTOUCHED (the seam flip is 2b).
-- **`src/store/artCacheSpike.js`** - a debug-build `window.__artSpike` probe (release has no console).
+- ~~`artCacheSpike.js`~~ - the debug probe was REMOVED after the passing device run (commit c9d8a6c).
 
 ## Gates
 
-`test:query` 674 (23 new), `check:cycles` (131 modules, no cycles), `check:types`, `build` (bundle
-byte-identical - proof of inertness). The native adapter / ArtImage are device/React glue, not unit-tested
-here (they carry no branching logic; all logic is in the two tested pure cores).
+`test:query` 687, `test:ui` 148, `test:app` 17, `check:cycles` (130 modules, no cycles), `check:types`,
+`check:docs`, `build`. The pure cores AND the adapter orchestration are unit-tested (`artCacheAdapter.test.mjs`
+drives the real download helper); `ArtImage`/`useArtSource` are zero-logic React shells over the tested cores.
 
 ## Where to attack
 
@@ -81,9 +87,10 @@ here (they carry no branching logic; all logic is in the two tested pure cores).
   memoize or promote; any missing epoch re-check after an awaited step; single-flight join across epochs.
 - **Fail-closed validation:** can an object the manifest can't describe ever be served `local`, or a
   wrong-size file trusted?
-- **Adapter correctness (by inspection - untested):** the sync `convertFileSrc` after `clear()`+re-init;
-  `rename`/`download` parent-ensure vs `deleteTree('art')`; the `downloadFile`->`CapacitorHttp` fallback
-  and base64 write; does `readdir` return `size` on 6.0.4 for `stats()`?
+- **Adapter correctness (now unit-tested + device-proven):** `artCacheAdapter.test.mjs` drives the real
+  download orchestration (exact-size decides fallback, HTTP 2xx, partial cleanup); the device spike proved
+  `downloadFile`, the `CapacitorHttp` fallback, and `convertFileSrc` on a Pixel 9 Pro XL. Remaining by
+  inspection: the sync `convertFileSrc` after `clear()`+re-init; `readdir` returning `size` for `stats()`.
 - **Reducer purity:** does `artSource.js` truly import nothing and is every impure input on the event?
 - **Zero-image widening:** every entry point (`resolve/download/peek/legacySrc`) gated; no I/O when off.
 
@@ -91,6 +98,7 @@ here (they carry no branching logic; all logic is in the two tested pure cores).
 
 The `cardImageUrl` seam flip; adopting `ArtImage`/`useArtSource` at the 5 resolver sites + 14 inline
 `${BASE}cards/` sites; DELETING the poster's avatar-art draw; the catalog repoint (`image_slug` ->
-content key) + version bump + shipped slim manifest; the Android backup-exclusion XML; the real R2 upload.
-All land together (a half-land regresses every card to fallback). `downloadFile` reliability is covered by
-the adapter fallback and verified at the 2b device render.
+content key) + version bump + shipped slim manifest; the Android backup-exclusion XML. (The real R2 upload
+is already DONE - all 3,087 content-addressed objects published + audited.) All the app-side changes land
+together (a half-land regresses every card to fallback). `downloadFile` reliability is no longer an open
+question: covered by the adapter fallback and PROVEN by the 2a device spike on a Pixel 9 Pro XL.
