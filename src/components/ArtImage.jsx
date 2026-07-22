@@ -5,7 +5,7 @@
 // All the "which candidate paints this frame" rules live in artSource.js (unit-tested, DOM-free); all
 // the caching/downloading/validating lives in artCache (unit-tested core). Inert until Phase 2b adopts
 // it at the render sites. See docs/proposals/art-cdn-rev2-architecture.md Section B4.
-import { useReducer, useEffect, useCallback } from 'react';
+import { useReducer, useEffect, useCallback, useState } from 'react';
 import { reduce, initial, visibleCandidate } from '../store/artSource.js';
 import { artCache } from '../store/artCacheInstance.js';
 
@@ -62,8 +62,11 @@ export function ArtImg({ artKey, alt = '', ...imgProps }) {
  */
 export function ArtImage({ artKey, alt = '', fallback, className, style, imgClassName, imgStyle, loading = 'lazy' }) {
   const { src, gen, onError } = useArtSource(artKey);
+  const [loadedSrc, setLoadedSrc] = useState(null);   // the src whose <img> has actually decoded
+  const shown = src && loadedSrc === src;              // fade in only once painted
   return (
-    <div className={className} style={{ ...style, backgroundImage: fallback, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+    <div className={className} style={{ position: 'relative', ...style, backgroundImage: fallback, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      {src && !shown && <div className="cx-art-shimmer" aria-hidden="true" />}
       {src && (
         <img
           key={gen}                 /* remount on a quarantine re-resolve even if the uri is unchanged */
@@ -71,8 +74,9 @@ export function ArtImage({ artKey, alt = '', fallback, className, style, imgClas
           alt={alt}
           loading={loading}
           className={imgClassName}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', ...imgStyle }}
+          onLoad={() => setLoadedSrc(src)}
           onError={onError}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: shown ? 1 : 0, transition: 'opacity .3s ease', ...imgStyle }}
         />
       )}
     </div>

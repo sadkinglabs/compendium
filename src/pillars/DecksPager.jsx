@@ -111,7 +111,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
     flash('Building image…', 8000);
     // The poster renderer (canvas + wrap/glyph code) is a cold path - load on tap.
     try { const { shareDeckPoster } = await import('../store/deckPoster.js'); await shareDeckPoster(deckOpen.id); flash('Image ready'); }
-    catch { flash('Could not build image'); }
+    catch (e) { flash('Poster failed: ' + (e?.message || String(e)), 8000); }
   }
   async function actClearLog() {
     const n = await historyCount(deckOpen.id);

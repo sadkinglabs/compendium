@@ -3,7 +3,7 @@
 // (architecture §5). Phase 2: the image now resolves through the shared art boundary (useArtSource) -
 // CDN + on-device cache + the local -> remote -> bundled-legacy -> fallback candidate chain - keyed on
 // the content-addressed `card.image_slug`. Every CardArt consumer is migrated by this one change.
-import React from 'react';
+import React, { useState } from 'react';
 import { useArtSource } from './ArtImage.jsx';
 import { cardFallbackArt } from '../store/cardArt.js';
 
@@ -12,12 +12,15 @@ import { cardFallbackArt } from '../store/cardArt.js';
 // 90° (stored portrait, displayed landscape). Default (undefined) = plain cover.
 export default function CardArt({ card, radius = 8, aspect = '5/7', children, imgStyle }) {
   const { src, gen, onError } = useArtSource(card?.image_slug || null);
+  const [loadedSrc, setLoadedSrc] = useState(null);
+  const shown = src && loadedSrc === src;
   return (
     <div style={{ position: 'relative', aspectRatio: aspect, borderRadius: radius, overflow: 'hidden', background: cardFallbackArt(card), border: '1px solid var(--hair-18, rgba(220,184,111,.18))' }}>
+      {src && !shown && <div className="cx-art-shimmer" aria-hidden="true" />}
       {src && (
         <img
-          key={gen} src={src} alt={card?.name || ''} loading="lazy" onError={onError}
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', ...imgStyle }}
+          key={gen} src={src} alt={card?.name || ''} loading="lazy" onLoad={() => setLoadedSrc(src)} onError={onError}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: shown ? 1 : 0, transition: 'opacity .3s ease', ...imgStyle }}
         />
       )}
       {children}
