@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+ data-extraction rules (cloud backup + device-to-device transfer). Exclude the
+     re-downloadable card-art cache (files/art, files/art-tmp) from both, for the same reason as the
+     legacy full-backup rules: it is derived, content-hashed, and re-validated on use. Profile/user data
+     stays included. See docs/proposals/art-cdn-phase2-activation.md. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="art/" />
+        <exclude domain="file" path="art-tmp/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="art/" />
+        <exclude domain="file" path="art-tmp/" />
+    </device-transfer>
+</data-extraction-rules>

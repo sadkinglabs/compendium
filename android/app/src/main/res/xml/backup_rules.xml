@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android <= 11 full-backup rules. The card-art cache under Directory.Data (files/art, files/art-tmp)
+     is a re-downloadable derived cache keyed by the catalog's content hashes - it must NOT consume the
+     user's backup quota, and a restored stale cache would be re-validated anyway. Profile/user data
+     (the SQLite database) is intentionally left included. See docs/proposals/art-cdn-phase2-activation.md. -->
+<full-backup-content>
+    <exclude domain="file" path="art/" />
+    <exclude domain="file" path="art-tmp/" />
+</full-backup-content>
