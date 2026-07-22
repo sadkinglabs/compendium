@@ -1,5 +1,32 @@
 # Codex review request - art-CDN Phase 2a (the INERT boundary foundation)
 
+## Corrective (commit 2d14dbe) + device-spike RESULT - read first
+
+The 2a Changes-required disposition is addressed in `2d14dbe` (diff `git diff 3b30e15..2d14dbe`):
+reliable HTTP fallback (validation decides fallback, not non-emptiness; injectable fs/http; exact-size +
+HTTP 2xx; new `artCacheAdapter.test.mjs`, 7 tests); the vacuous `|| true` replaced + all named
+counterfactuals added and MUTATION-CHECKED by removing the guard (epoch-check -> LINEARIZATION fails,
+lock -> promote-then-clear fails, delete -> FAIL-CLOSED fails; restored); `clear()` sweeps `art-tmp`;
+comment + spike-field minors. Gates: test:query 687, test:ui 148, test:app 17, cycles 132, types, docs,
+both build modes.
+
+**Device spike RAN (isolated, before 2b) and PASSED on a Pixel 9 Pro XL / Android 17 / WebView Chrome
+150 / @capacitor/filesystem 6.0.4**, against a real uploaded object (`001-abundance-b-f.<sha>.webp`,
+46094 bytes):
+- `downloadFile`: ok, **exact 46094**, 291 ms - the primary native path works on 6.0.4.
+- `capacitorHttp` (fallback), independently: **status 200**, ok, **exact 46094**, 26 ms.
+- `orchestrated`: ok; the cached `convertFileSrc` uri **loaded into a real `<img>` ("LOADED OK")** and
+  the card art rendered. The full chain download -> cache -> convertFileSrc -> render is proven on device.
+- The forced-primary-failure -> fallback path is proven by `artCacheAdapter.test.mjs` (a truncated/thrown
+  downloadFile really invokes HTTP); on device both paths independently succeeded.
+
+The full 3,087-object CDN upload is also done (create-only, audit green), so 2b's upload is banked. The
+spike code (`artCacheSpike.js`, `ArtSpikePanel.jsx`, the `App.jsx` flag wiring) is REMOVED after
+recording; the normal build was re-verified free of `__artSpike`.
+
+---
+
+
 **Branch:** `art-cdn-phase2` (off `main`, tip = latest). This is the Phase-2 checkpoint BEFORE the atomic
 activation: the runtime art boundary is fully built but **inert** - nothing imports the new render/native
 modules, so the production bundle is byte-identical and app behavior is unchanged. Reviewing it now

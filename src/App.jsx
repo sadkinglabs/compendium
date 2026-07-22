@@ -52,9 +52,6 @@ const AvatarPicker = lazy(() => import('./pillars/AvatarPicker.jsx'));
 const CreateDeckWizard = lazy(() => import('./components/CreateDeckWizard.jsx'));
 const ChangelogModal = lazy(() => import('./components/ChangelogModal.jsx'));
 const TelemetryDisclosure = lazy(() => import('./components/TelemetryDisclosure.jsx'));
-// Phase-2a device spike (temporary): only built when VITE_ART_SPIKE=1, so it is absent - chunk and all -
-// from every normal build. Remove once the download-path result is recorded. See the 2a review brief.
-const ArtSpikePanel = import.meta.env.VITE_ART_SPIKE === '1' ? lazy(() => import('./components/ArtSpikePanel.jsx')) : null;
 
 // Bottom-nav pillars. Icons come from <NavIcon icon={key} /> (inline SVG); only
 // key + label are read (glyph/eyebrow/accent fields were retired in the sweep).
@@ -406,7 +403,6 @@ export default function App() {
 
   return (
     <div className="cx-app" style={{ ...S.app, '--wash': WASH[tab] || WASH.home, '--list-accent': list.a, '--list-glow': list.g }}>
-      {ArtSpikePanel && <Suspense fallback={null}><ArtSpikePanel /></Suspense>}
       {/* BRAND BAR */}
       <div style={S.brandBar}>
         {/* Wordmark = the app's home button (platform convention). Only when
