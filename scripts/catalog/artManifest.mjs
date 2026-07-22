@@ -34,6 +34,11 @@ const TRANSITIONAL = ['legacyKey'];
 /** The content-addressed object key for a slug + output digest. */
 export const artKey = (slug, sha256) => `${slug}.${sha256}.webp`;
 
+/** The incident (repair) key for the n-th conflict-repair of a slug+digest (n >= 1). Kept here so
+ *  key construction has ONE home: the uploader's repair loop and assertManifest's KEY_RE agree by
+ *  construction, never by two independently-maintained string templates. */
+export const incidentKey = (slug, sha256, n) => `${slug}.${sha256}.repair-${n}.webp`;
+
 /** The bundled printing-base filename for a slug's legacy fallback, or undefined when not bundled. */
 function legacyKeyFor(slug, bundledExists) {
   const name = `${printingBase(slug)}.webp`;
