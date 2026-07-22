@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 // The one command a non-engineer runs to update the catalog from CATALOG_DROP.
-//   npm run update:catalog                real run (fetch, build, validate, promote)
-//   npm run update:catalog -- --dry-run   build + validate + report; write NOTHING
-//   npm run update:catalog -- --recover   finish an interrupted promotion from staging
+//   npm run update:catalog                fetch, build, validate; convert + durably stage the CDN art
+//                                         and write the prospective content-addressed manifest
+//   npm run update:catalog -- --dry-run   build + validate + report; refreshes gitignored staging only
+//   npm run update:catalog -- --recover   finish an interrupted promotion from staging (steady-state)
 //
-// Every stage builds into a staging tree; nothing under public/ or src/ is touched
-// until the whole generation validates and the journaled promote runs. This file
-// orchestrates the engines in scripts/catalog/*; each engine is unit-tested.
+// ART-CDN MIGRATION (current): the catalog PROMOTE is dormant. A run converts every scan and
+// atomically stages it to the gitignored CATALOG_DROP/cdn-art/<slug>.webp, and writes the prospective
+// manifest to .catalog-build/art-manifest.json, but NOTHING under public/ or src/ is repointed - the
+// app keeps serving bundled art. Publishing is the additive `cdn-upload.mjs` step; the promote returns
+// with the atomic Phase-2 activation (see docs/proposals/art-cdn-migration.md). This file orchestrates
+// the engines in scripts/catalog/*; each engine is unit-tested.
 import { createHash } from 'node:crypto';
-import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, openSync, writeSync, closeSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 import { discover } from './catalog/discover.mjs';
@@ -74,21 +78,33 @@ async function main() {
     const slug = p.replace(/^.*[\\/]/, '').replace(/\.png$/i, '');
     if (!isReverseFace(slug)) dropSlugs.set(slug, p);
   }
+  const TMP_DIR = join(STAGE_DIR, '.tmp');   // attempt-unique temps live here, never beside the published webp
   mkdirSync(STAGE_DIR, { recursive: true });
+  mkdirSync(TMP_DIR, { recursive: true });
+  let tmpSeq = 0;
   const committedManifest = existsSync(MANIFEST_FILE) ? JSON.parse(readFileSync(MANIFEST_FILE, 'utf8')) : null;
   const artDeps = {
     hashFile: async (path) => createHash('sha256').update(readFileSync(path)).digest('hex'),
-    // Fresh conversion writes THROUGH a per-slug temp, validates the webp decodes, then atomically
-    // replaces the durable staging file cdn-art/<slug>.webp - so the uploader reads a byte-verified
-    // scan, and an interrupted convert never leaves a half-written staging file. Also returns the
-    // buffer so the engine can digest it.
+    // Fresh conversion writes THROUGH an attempt-unique temp created EXCLUSIVELY (wx) under cdn-art/.tmp,
+    // validates the webp decodes, then atomically replaces the durable staging file cdn-art/<slug>.webp.
+    // The pid+seq name makes two concurrent update runs never share a temp, and the temp is removed in
+    // `finally` on any failure - so an interrupted convert never leaves a half-written or orphaned file.
+    // Also returns the buffer so the engine can digest it.
     convertFresh: async (pngPath, slug) => {
       const buf = await sharp(pngPath).resize({ width: TIER.width, withoutEnlargement: true }).webp({ quality: TIER.quality }).toBuffer();
       const meta = await sharp(buf).metadata();
       if (meta.format !== TIER.format || !meta.width) throw new Error(`convert produced an invalid ${TIER.format} for ${slug}`);
-      const tmp = join(STAGE_DIR, `.${slug}.tmp`);   // per-slug temp: mapPool workers convert distinct slugs, so no collision
-      writeFileSync(tmp, buf);
-      renameSync(tmp, join(STAGE_DIR, `${slug}.webp`));
+      const tmp = join(TMP_DIR, `${slug}.${process.pid}.${tmpSeq++}.tmp`);
+      let handle;
+      try {
+        handle = openSync(tmp, 'wx');   // exclusive create: never clobber another attempt's temp
+        writeSync(handle, buf);
+        closeSync(handle); handle = undefined;
+        renameSync(tmp, join(STAGE_DIR, `${slug}.webp`));   // atomic publish of the verified bytes
+      } finally {
+        if (handle !== undefined) { try { closeSync(handle); } catch { /* already closed */ } }
+        if (existsSync(tmp)) { try { rmSync(tmp); } catch { /* best-effort temp cleanup */ } }
+      }
       return buf;
     },
     hashBytes: async (buf) => ({ sha256: createHash('sha256').update(buf).digest('hex'), md5: createHash('md5').update(buf).digest('hex') }),

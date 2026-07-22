@@ -147,6 +147,32 @@ test('assertManifest: full-field validation, incident-key contract, no repair-0'
   assert.throws(() => assertManifest(mf({ s: entry('s', { incidentOf: `s.${s}.webp` }) })), /must not carry incidentOf/);
 });
 
+test('mapPool bounds conversion concurrency to the configured width', async () => {
+  let inFlight = 0, maxInFlight = 0;
+  const d = {
+    hashFile: (p) => Promise.resolve(sha(p)),
+    convertFresh: async () => { inFlight++; maxInFlight = Math.max(maxInFlight, inFlight); await new Promise((r) => setTimeout(r, 0)); inFlight--; return Buffer.from('x'); },
+    hashBytes: (buf) => Promise.resolve({ sha256: sha(buf), md5: md5(buf) }),
+    bundledExists: () => false, encoder: { sharp: '0.32.6', vips: '8.14.5' }, concurrency: 3,
+  };
+  await buildArtManifest(null, slugs({ a: 'a', b: 'b', c: 'c', d: 'd', e: 'e', f: 'f' }), d);
+  assert.ok(maxInFlight >= 2 && maxInFlight <= 3, `expected 2..3 concurrent, saw ${maxInFlight}`);
+});
+
+test('a worker failure rejects the build only AFTER started workers settle - no new conversion begins', async () => {
+  const started = [];
+  const d = {
+    hashFile: (p) => Promise.resolve(sha(p)),
+    // 'b' rejects on a microtask; the others resolve on a macrotask, so 'b' fails BEFORE any sibling
+    // finishes and the pool must not start 'c'/'d'/'e'/'f'.
+    convertFresh: (p, slug) => { started.push(slug); return slug === 'b' ? Promise.reject(new Error('convert boom')) : new Promise((r) => setTimeout(() => r(Buffer.from(`x-${slug}`)), 0)); },
+    hashBytes: (buf) => Promise.resolve({ sha256: sha(buf), md5: md5(buf) }),
+    bundledExists: () => false, encoder: { sharp: '0.32.6', vips: '8.14.5' }, concurrency: 2,
+  };
+  await assert.rejects(() => buildArtManifest(null, slugs({ a: 'a', b: 'b', c: 'c', d: 'd', e: 'e', f: 'f' }), d), /convert boom/);
+  for (const later of ['c', 'd', 'e', 'f']) assert.ok(!started.includes(later), `no conversion started for ${later} after the failure`);
+});
+
 test('objects are sorted by slug for a stable, diffable manifest', async () => {
   const { manifest } = await buildArtManifest(null, slugs({ z: 'z.png', a: 'a.png', m: 'm.png' }), deps());
   assert.deepEqual(Object.keys(manifest.objects), ['a', 'm', 'z']);

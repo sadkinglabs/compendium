@@ -39,21 +39,22 @@ export function claimOutcome(created, head, entry, { integrity = 'md5' } = {}) {
 }
 
 /**
- * Classify each manifest object against the remote listing.
+ * Classify each manifest object against the remote listing. Rows carry the slug so the runner never
+ * has to reconstruct identity from the key later (Codex).
  * @param manifest  { tier, objects } - the built art manifest (validated here, fail-closed)
  * @param remote    Map<key, { size, etag }> from ListObjectsV2 (or signed-HEAD evidence)
  * @param integrity manifest field to compare the remote etag against ('md5' default, 'sha256' in the
  *                  canary-failed branch)
- * @returns { put: entry[], skip: entry[], conflicts: [{ entry, remote }] }
+ * @returns { put: [{slug,entry}], skip: [{slug,entry}], conflicts: [{slug,entry,remote}] }
  */
 export function planUpload(manifest, remote, { integrity = 'md5' } = {}) {
   assertManifest(manifest, 'planUpload input');
   const plan = { put: [], skip: [], conflicts: [] };
-  for (const entry of Object.values(manifest.objects)) {
+  for (const [slug, entry] of Object.entries(manifest.objects)) {
     const r = remote.get(entry.key);
-    if (!r) plan.put.push(entry);                                   // missing -> upload
-    else if (matches(r, entry.bytes, entry[integrity])) plan.skip.push(entry); // valid -> skip
-    else plan.conflicts.push({ entry, remote: r });                 // conflicting -> repair or refuse
+    if (!r) plan.put.push({ slug, entry });                                    // missing -> upload
+    else if (matches(r, entry.bytes, entry[integrity])) plan.skip.push({ slug, entry }); // valid -> skip
+    else plan.conflicts.push({ slug, entry, remote: r });                      // conflicting -> repair or refuse
   }
   return plan;
 }

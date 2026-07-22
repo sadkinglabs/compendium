@@ -55,13 +55,22 @@ export function normalizeTransitional(slug, entry, bundledExists) {
 }
 
 // Run an async fn over items with at most `n` in flight - so the production convertFresh (sharp) is
-// parallel and bounded, never serial across 3,090 images.
+// parallel and bounded, never serial across 3,090 images. On the FIRST failure, no worker starts new
+// work, but EVERY started worker is awaited to settlement before the pool rejects - so a rejection is
+// never observed while other workers are still mutating staging (Codex). The first error is rethrown.
 async function mapPool(items, n, fn) {
   const iter = items[Symbol.iterator]();
   const width = Math.max(1, Math.min(n, items.length || 1));
-  await Promise.all(Array.from({ length: width }, async () => {
-    for (let r = iter.next(); !r.done; r = iter.next()) await fn(r.value);
-  }));
+  let firstError;
+  const worker = async () => {
+    for (let r = iter.next(); !r.done; r = iter.next()) {
+      if (firstError) return;                              // a sibling failed: stop pulling new work
+      try { await fn(r.value); }
+      catch (e) { if (!firstError) firstError = e; return; }
+    }
+  };
+  await Promise.allSettled(Array.from({ length: width }, worker));   // all started workers settle first
+  if (firstError) throw firstError;
 }
 
 /**

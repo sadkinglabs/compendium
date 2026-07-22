@@ -36,6 +36,12 @@ Set codes: `001` Alpha, `002` Beta, `004` Arthurian Legends, `005` Dragonlord,
 
 Running it twice with the same files changes nothing, so it is always safe to re-run.
 
+> **While the card-art move to the CDN is in progress:** the command *prepares* the update -
+> it converts and stages the card art and builds the art manifest - but it does not yet flip the
+> committed catalog, so `git diff` will not show catalog data changing. A developer finishes
+> publishing the art and turns the update on in one step. Routine one-command updates resume once
+> that move is complete.
+
 ## 3. If it stops with an error
 
 The tool never leaves a half-updated catalog. It tells you what went wrong and what to

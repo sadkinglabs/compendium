@@ -118,10 +118,19 @@ The bundled catalog - cards, rules, FAQs, and card art - is regenerated from a d
 folder by **one command**. A routine content update needs no code edit.
 
 ```bash
-npm run update:catalog              # fetch, build, validate, promote from CATALOG_DROP/
-npm run update:catalog -- --dry-run # build + validate + report, write NOTHING
-npm run update:catalog -- --recover # finish an interrupted promotion from staging
+npm run update:catalog              # fetch, build, validate; stage CDN art + prospective manifest (promotion dormant - see the migration note)
+npm run update:catalog -- --dry-run # build + validate + report; refreshes gitignored staging, writes nothing under public/ or src/
+npm run update:catalog -- --recover # finish an interrupted promotion from staging (steady-state)
 ```
+
+> **Art-CDN migration status (current).** While the art-CDN migration is in progress this
+> command runs in a **dormant** mode: it converts and durably stages the card art to the
+> gitignored `CATALOG_DROP/cdn-art/` and writes a prospective content-addressed manifest to
+> `.catalog-build/art-manifest.json`, but it does **not** promote the committed catalog - nothing
+> under `public/` or `src/` changes and the app keeps serving bundled art. Publish the staged
+> objects additively with `node scripts/catalog/cdn-upload.mjs` (create-only conditional PUTs that
+> never overwrite, then an audit). The catalog promotion returns as the single atomic art-CDN
+> Phase-2 activation. See `docs/proposals/art-cdn-migration.md`.
 
 Drop the Curiosa exports into `CATALOG_DROP/` first: the high-res card PNGs, the Codex
 rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header
@@ -129,8 +138,9 @@ rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header
 nothing in that folder is committed except the README. The command fetches card stats
 from the Curiosa tRPC API and merges them, compiles the two CSVs, converts each
 per-printing PNG to WebP with `sharp`, regenerates `link_graph.json` and the compiled
-Codex documents, and writes `public/catalog/*.json`, the art in `public/cards/`, and the
-seed token `src/store/catalogVersion.json`.
+Codex documents, and - in steady state - promotes `public/catalog/*.json`, the art in
+`public/cards/`, and the seed token `src/store/catalogVersion.json` (currently dormant; see
+the migration note above).
 
 **It is idempotent.** Every stage builds into a staging tree; nothing under `public/` or
 `src/` is touched until the whole generation validates and a journaled promote runs. The

@@ -38,9 +38,10 @@ test('planUpload: missing -> put, valid -> skip, conflicting -> conflicts', () =
     [e1.key, 200, `"${MD5.b}"`],
     [e2.key, 300, `"${'9'.repeat(32)}"`],   // right size, WRONG etag
   ]));
-  assert.deepEqual(plan.put.map((e) => e.key), [e0.key]);
-  assert.deepEqual(plan.skip.map((e) => e.key), [e1.key]);
-  assert.deepEqual(plan.conflicts.map((c) => c.entry.key), [e2.key]);
+  assert.deepEqual(plan.put.map((r) => r.entry.key), [e0.key]);
+  assert.deepEqual(plan.skip.map((r) => r.entry.key), [e1.key]);
+  assert.deepEqual(plan.conflicts.map((r) => r.entry.key), [e2.key]);
+  assert.equal(plan.put[0].slug, 'alpha', 'rows carry the slug so the runner never re-derives identity');
 });
 
 test('planUpload skip requires BOTH size and etag (mutation: flip either -> conflict, never skip)', () => {
