@@ -1,17 +1,42 @@
-# Codex review - add-flow implementation, increments 1-3
+# Codex review - add-flow implementation, increments 1-3 (re-review)
 
-**Branch:** `collection-add-flow`, pushed at `2403329`.
+**Branch:** `collection-add-flow`, pushed at `9a469ae`.
 
 **What this is:** the first three (pure/store) increments of the add-flow build, against the
 rev-4.1 brief you approved. No UI, no visible change yet - these land the data primitives the
 surfaces will sit on. Increment 3 is the durable-write one.
 
+## Re-review: your "Changes required" disposition, addressed
+
+Your review of `2403329` returned Changes required. All four points are closed in `9a469ae`:
+
+- **Major 1a (foil coercion).** `planWantedItemBatch` took `const foil = !!it?.foil`, so
+  `{ foil: "false" }` filed a foil. Now `typeof it?.foil !== 'boolean'` throws; rejection tests
+  cover `"false"`, `"true"`, `0`, `1`, `null`, and an omitted key.
+- **Major 1b (malformed variants fail open).** The durable path read variants permissively, so a
+  malformed card degraded to `[]` and was interpreted as a valid non-foil-only printing. Split by
+  failure policy into two named readers: `authoritativeVariantsOf` THROWS and backs
+  `printingFinishes` (durable); `variantsOf` stays permissive for `printingArt` /
+  `printingProducts` / the display finishes in `expandItemRows`. A malformed card is now rejected
+  at the write boundary and rendered as a plain row.
+- **Major 2 (missing tests).** Added: a Rainbow-only fixture through `planWantedItemBatch`;
+  transaction-partial-rollback asserting `transaction`/`unknown` + one invalidation; an A->B
+  profile switch through the PRODUCTION `addWantedItemsBulk`; and the 2000/2001 batch boundary in
+  place of the unreachable merged-overflow test you flagged.
+- **Minor (defaultSetRank drift).** `99` -> `Number.MAX_SAFE_INTEGER`, matching `sets.js`; tested
+  numeric / promo / non-numeric ordering.
+
+The brief is revised to record the 2000-item bound (merged totals safe by construction) and that
+the 4s barrier timeout is proven compositionally in `collectionWritesExclusive.test`, not
+duplicated here.
+
 **Review range:**
 
 ```
 git fetch origin
-git diff d9d2201..2403329          # 7 files, +910 / -3
-git log --oneline d9d2201..2403329
+git diff d9d2201..9a469ae          # against the increment-1 base
+git diff 2403329..9a469ae          # just the corrective pass
+git log --oneline d9d2201..9a469ae
 ```
 
 Three commits: increment 1 (Rainbow finish semantics), increment 2 (structured query +
@@ -66,9 +91,9 @@ correctly NOT weakening the availability path (which must stay fail-closed)?
 
 ## Gates (all green)
 
-`test:query` 545, `check:cycles` 120 modules, `check:types`, `build`. No control bytes. `test:ui`
-/ `test:app` unaffected (no UI yet). Native/device evidence is deferred to increment 8 per the
-brief, since no automated gate exercises native SQLite.
+`test:query` 556, `check:cycles` 120 modules, `check:types`, `check:docs`, `build`. No control
+bytes. `test:ui` / `test:app` unaffected (no UI yet). Native/device evidence is deferred to
+increment 8 per the brief, since no automated gate exercises native SQLite.
 
 ## Not in scope
 
