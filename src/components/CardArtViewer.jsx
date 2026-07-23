@@ -11,7 +11,7 @@ import { setImmersive } from '../native.js';
 //
 // Motion (both finishes): a SINGLE requestAnimationFrame spring loop lerps six values from their
 // targets and writes them as CSS variables. Pointer down/move sets targets and tracks tightly
-// (k=0.3); on release the loop eases (k=0.05) into a slow lissajous IDLE DRIFT, so the card is always
+// (k=0.3); on release the loop eases (k=0.14) into a slow lissajous IDLE DRIFT, so the card is always
 // gently alive and glides back toward centre without any CSS keyframes or transitions. The gyroscope
 // parallax this view used to have was dropped - it read janky, and finger tracking is the interaction.
 //
@@ -127,6 +127,7 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     my: { c: 50, t: 50 }, o: { c: 0, t: 0 }, hyp: { c: 0, t: 0 },
   });
   const active = useRef(false);
+  const dragId = useRef(null);   // the captured pointer id for the active drag, or null
   useEffect(() => {
     if (reduce) return undefined;   // static sheen instead - see the reduced-motion effect below
     let running = true;
@@ -169,11 +170,17 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     return () => { running = false; cancelAnimationFrame(id); };
   }, [reduce]);
 
-  // Pointer (touch + mouse). Position → tilt + light targets; the loop springs toward them.
-  const onPointer = (e) => {
-    if (reduce) return;
-    const el = tiltRef.current; if (!el) return;
-    const r = el.getBoundingClientRect();
+  // INPUT is handled on the fixed, untransformed dialog ROOT, never on the tilt element. Hit-testing
+  // against an element whose own 3D transform (rotateX/rotateY) changes every frame inside a
+  // perspective + preserve-3d context is unreliable in Android WebView - most pointerdowns landed
+  // beside the projected surface, so ~4 of 5 drags never started. The full-screen root cannot be
+  // missed; the FLAT cardRef rectangle is used only as a geometric admission boundary, and all six
+  // CSS variables are still written to the (pointer-inert) tilt element by the loop.
+  //
+  // Coordinates always map against cardRef (the untransformed pop layer), NOT the rotated inner box.
+  const updatePointer = (e) => {
+    const r = cardRef.current?.getBoundingClientRect();
+    if (!r?.width || !r?.height) return;
     const px = clamp((e.clientX - r.left) / r.width * 100, 0, 100);
     const py = clamp((e.clientY - r.top) / r.height * 100, 0, 100);
     const v = vals.current;
@@ -183,16 +190,25 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     v.mx.t = px; v.my.t = py; v.o.t = 1;
     v.hyp.t = Math.min(1, Math.hypot(px - 50, py - 50) / 50);
   };
-  // CAPTURE the pointer on touch-down so the drag keeps tracking even when the finger moves off the
-  // card or fast - without this, move events stop the instant the pointer leaves the element and the
-  // tilt only caught SOME of the drag. Capture also suppresses the boundary leave mid-drag, so a
-  // release only happens on a real lift/cancel.
-  const onDown = (e) => {
-    if (reduce) return;
-    try { tiltRef.current?.setPointerCapture(e.pointerId); } catch { /* some pointers are not capturable */ }
-    onPointer(e);
+  const onStageDown = (e) => {
+    if (reduce || !e.isPrimary) return;                       // ignore secondary fingers
+    if (e.pointerType === 'mouse' && e.button !== 0) return;  // left button only
+    const r = cardRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    if (!inside) return;                                       // taps off the card (close X, name) pass through
+    e.preventDefault();
+    dragId.current = e.pointerId;
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not all pointers are capturable */ }
+    updatePointer(e);
   };
-  const release = () => { active.current = false; };   // loop eases back into the idle drift
+  const onStageMove = (e) => { if (dragId.current === e.pointerId) updatePointer(e); };
+  // Captured-pointer lifetime ends ONLY on up, cancel, or lost capture - never on a boundary leave.
+  const finishDrag = (e) => {
+    if (dragId.current !== e.pointerId) return;
+    dragId.current = null;
+    active.current = false;   // loop eases back into the idle drift
+  };
 
   const { src, gen, onError } = useArtSource(card?.image_slug || null);
   const site = !!card?.is_site;
@@ -213,11 +229,13 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     <div
       ref={rootRef}
       role="dialog" aria-modal="true" aria-label={`${card?.name || 'Card'} artwork`}
+      onPointerDown={onStageDown} onPointerMove={onStageMove}
+      onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
       style={{
         position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 26, padding: 20,
         background: 'rgba(6,4,3,.94)', opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease`,
-        perspective: 1100, WebkitTapHighlightColor: 'transparent',
+        perspective: 1100, WebkitTapHighlightColor: 'transparent', touchAction: 'none',
       }}
     >
       {/* pop layer */}
@@ -226,6 +244,9 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
           position: 'relative', width: 'min(88vw, 420px)', aspectRatio: site ? '531 / 380' : '5 / 7',
           transform: popT, transition: armed ? `transform ${POP_MS}ms cubic-bezier(.2,.9,.3,1)` : 'none',
           transformStyle: 'preserve-3d',
+          // The whole 3D card subtree is pointer-inert: input is handled on the untransformed root so
+          // hit-testing never depends on the rotating element. cardRef's rect is still the drag boundary.
+          pointerEvents: 'none',
         }}>
         {/* cast shadow - sits BEHIND and below, and slides opposite the tilt so the card reads as
             lifted off the backdrop rather than pasted to it. Driven by the loop (shadowRef). */}
@@ -235,14 +256,12 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
           filter: 'blur(14px)',
         }} />
         {/* tilt + foil layer - the CSS-var target */}
-        <div ref={tiltRef} onPointerMove={onPointer} onPointerDown={onDown}
-          onPointerUp={release} onPointerLeave={release} onPointerCancel={release}
+        <div ref={tiltRef}
           style={{
             position: 'absolute', inset: 0, borderRadius: 14, overflow: 'hidden', isolation: 'isolate',
             background: cardFallbackArt(card), border: '1px solid rgba(203,167,95,.45)',
             boxShadow: '0 34px 60px -18px rgba(0,0,0,.9), 0 6px 18px rgba(0,0,0,.6)',
             transform: 'rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))',
-            touchAction: 'none', WebkitTapHighlightColor: 'transparent',
           }}>
           {/* Self-removing on error, matching CardArt. The deterministic fallback is already painted
               on this layer's background; without this a 404 renders a broken image ON TOP of it. */}
