@@ -57,8 +57,21 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
   const restoreRef = useRef(null);
   const active = useRef(false);      // a pointer drag is tracking
   const dragId = useRef(null);       // the captured pointer id for the active drag, or null
+  const closeRequested = useRef(false);   // close is one-way; guard a double onClose under reduced motion
+  const closePointerId = useRef(null);    // the pointer that began on the X, so only it can close
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+
+  // Release the captured pointer AND clear drag state at ONE boundary, so hardware Back/Escape during a
+  // drag never leaves the root holding the pointer. Both requestClose and ordinary drag completion use it.
+  const stopDrag = () => {
+    const id = dragId.current;
+    dragId.current = null;
+    active.current = false;
+    if (id != null) {
+      try { if (rootRef.current?.hasPointerCapture?.(id)) rootRef.current.releasePointerCapture(id); } catch { /* noop */ }
+    }
+  };
 
   // Hide the status bar for the duration - this is a full-bleed, immersive moment.
   useEffect(() => { setImmersive(true); return () => { setImmersive(false); }; }, []);
@@ -100,8 +113,12 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     if (reduce || !origin) return;
     const el = cardRef.current; if (!el) return;
     const f = el.getBoundingClientRect();
-    if (!f.width || !origin.w) return;
-    const s = origin.w / f.width;
+    // Scale from the UNTRANSFORMED layout width - during `preparing` the card renders at scale(.94),
+    // and getBoundingClientRect() includes that, which would inflate the origin scale ~6.4%. The rect
+    // CENTRE is still correct because the transform origin is centred.
+    const layoutWidth = el.offsetWidth;
+    if (!layoutWidth || !origin.w) return;
+    const s = origin.w / layoutWidth;
     const dx = (origin.x + origin.w / 2) - (f.left + f.width / 2);
     const dy = (origin.y + origin.h / 2) - (f.top + f.height / 2);
     setFlipT(`translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${s.toFixed(4)})`);
@@ -134,8 +151,9 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
   // The one way out. Terminates any in-flight drag, then heads to exiting (or straight out under
   // reduced motion). Idempotent - the reducer ignores a repeat CLOSE.
   const requestClose = () => {
-    dragId.current = null;
-    active.current = false;
+    if (closeRequested.current) return;   // one-way; stops a reduced-motion pointer-up + click double onClose
+    closeRequested.current = true;
+    stopDrag();                           // clear state AND release any held capture
     if (reduce) { onCloseRef.current(); return; }
     dispatch({ type: 'CLOSE' });
   };
@@ -228,8 +246,7 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
   const onStageMove = (e) => { if (dragId.current === e.pointerId) updatePointer(e); };
   const finishDrag = (e) => {
     if (dragId.current !== e.pointerId) return;
-    dragId.current = null;
-    active.current = false;
+    stopDrag();
   };
 
   // ---- Close button (captures its own pointer, immune to the drag logic) ---------------------------
@@ -237,18 +254,34 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
   const closePointerDown = (e) => {
     e.stopPropagation();
     if (!e.isPrimary) return;
+    closePointerId.current = e.pointerId;   // remember which pointer began on the X
     setClosePressed(true);
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
   };
-  const closePointerUp = (e) => { e.stopPropagation(); setClosePressed(false); requestClose(); };
-  const closePointerCancel = (e) => { e.stopPropagation(); setClosePressed(false); };
+  const closePointerUp = (e) => {
+    e.stopPropagation();
+    if (closePointerId.current !== e.pointerId) return;   // only the pointer that began on the X closes
+    closePointerId.current = null;
+    setClosePressed(false);
+    requestClose();
+  };
+  const closePointerCancel = (e) => {
+    e.stopPropagation();
+    if (closePointerId.current === e.pointerId) closePointerId.current = null;
+    setClosePressed(false);
+  };
 
   // ---- Render --------------------------------------------------------------------------------------
 
   const { src, gen, onError } = useArtSource(card?.image_slug || null);
   const site = !!card?.is_site;
   const artist = card?._artist || null;
-  const showFx = !!src;   // no foil/glare over the deterministic fallback (zero-image safe)
+  // Effects gate on the DECODED candidate identity {src, gen}, NOT URL availability: a URL can be
+  // present while the image is still loading, corrupt, or advancing through failed candidates, with the
+  // deterministic gradient still showing underneath - foil/glare must never ignite over the fallback.
+  // Matching gen too returns to fallback-only on a quarantine re-resolve to the same URI.
+  const [decoded, setDecoded] = useState({ src: null, gen: -1 });
+  const showFx = !!src && decoded.src === src && decoded.gen === gen;
 
   // Reduced motion: no loop, so seed a STATIC low-key foil sheen on the ref. Non-foil rests plain.
   useEffect(() => {
@@ -303,7 +336,9 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
             transform: 'rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))',
           }}>
           {src && (
-            <img key={gen} src={src} alt={card?.name || ''} draggable="false" onError={onError}
+            <img key={gen} src={src} alt={card?.name || ''} draggable="false"
+              onLoad={() => setDecoded({ src, gen })}
+              onError={(e) => { setDecoded({ src: null, gen: -1 }); onError(e); }}
               style={{
                 position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block',
                 ...(site ? { width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', top: '50%', left: '50%', inset: 'auto', transform: 'translate(-50%,-50%) rotate(90deg)' } : {}),
