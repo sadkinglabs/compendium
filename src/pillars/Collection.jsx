@@ -1122,12 +1122,17 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
-          {/* Overflow = manage: "Edit" enters multi-select (empty) over the CURRENT (scoped) grid;
-              the action bar then offers Select-all or per-tile tapping, so a single card is one tap. */}
+          {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
+              overflow. It enters multi-select (empty) over the CURRENT (scoped) grid; the action bar
+              then offers Select-all or per-tile tapping, so a single card is one tap. */}
           {!selectMode && totalRows > 0 && (
-            <OverflowMenu label="Set actions" items={[
-              { label: 'Edit', icon: <MenuGlyph kind="select" />, onClick: enterSelectMode },
-            ]} />
+            <button onClick={enterSelectMode} aria-label="Select cards" style={{
+              flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+            }}>
+              <MenuGlyph kind="select" />Select
+            </button>
           )}
         </div>
       </div>
