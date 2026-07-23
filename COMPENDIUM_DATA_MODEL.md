@@ -96,7 +96,7 @@ cards(
 
 `card_id` is the durable identity used by profile data. Display names are searchable and import-friendly but are not durable foreign keys.
 
-`variants` holds one entry per physical printing: `{ slug, set, setName, finish, product, artist, flavorText, image }`. `image` is the bundled per-printing WebP (the finish-stripped base name), or `null` for a printing with no bundled art. No external image URL is stored - art is bundled for the offline-first constraint. `sets` is the card-level distinct-set list, each `{ name, code }`. Set codes: `001` Alpha, `002` Beta, `004` Arthurian Legends, `005` Dragonlord, `006` Gothic, `999` Promotional (there is no `003`). **Set metadata is data-derived, not hardcoded:** the pipeline writes the code-to-name map to `src/store/setCatalog.json`, and `src/store/sets.js` reads those names while deriving display order from the numeric code (sequential by design). A new set therefore needs no source edit - its name arrives with its cards and its order slots in by code.
+`variants` holds one entry per physical printing: `{ slug, set, setName, finish, product, artist, flavorText, image }`. `image` is the per-printing art KEY (a content-addressed `<slug>.<sha256>.webp` name), or `null` for a printing with no art. The key names the art, never a URL; the art boundary (`useArtSource`/`ArtImage`) resolves it through the on-device cache + the Cloudflare R2 CDN, with the bundled legacy art as the offline fallback, and honours zero-image mode - so offline-first holds via the cache and fallback rather than by bundling every printing. `sets` is the card-level distinct-set list, each `{ name, code }`. Set codes: `001` Alpha, `002` Beta, `004` Arthurian Legends, `005` Dragonlord, `006` Gothic, `999` Promotional (there is no `003`). **Set metadata is data-derived, not hardcoded:** the pipeline writes the code-to-name map to `src/store/setCatalog.json`, and `src/store/sets.js` reads those names while deriving display order from the numeric code (sequential by design). A new set therefore needs no source edit - its name arrives with its cards and its order slots in by code.
 
 ### Rules and relationships
 
@@ -490,6 +490,32 @@ Dashboard blocks store type-specific JSON configuration and ordering. Named layo
 - Deck exports are derived from authoritative `deck_entries` and catalog data.
 - Collection/list exports are derived from the ownership and list repositories.
 - Deck posters and share payloads are derived artifacts, never authoritative stores.
+
+### Collection text import and bulk commands
+
+Collection accepts pasted text in an **item-grain line grammar** (`src/store/itemLineGrammar.js`,
+production entry `parseItemText`): `N Name [set] [finish]` — a leading quantity, the card name, and
+optional bracketed set and finish annotations (`2 Winter River [Beta] [Foil]`). Annotations resolve
+against catalog reality; a line whose printing is fully determined files directly, a genuinely
+ambiguous line falls to review, and an unrecognised name is surfaced and skipped, never guessed. The
+finish annotation obeys the same normalizer as the ledger (`Rainbow` → foil).
+
+Two durable bulk commands consume that grammar. Both take the **exclusive collection-write barrier**
+(`withExclusiveCollectionWrites`) and both validate the whole batch against the catalog BEFORE any
+SQL — an impossible printing (a foil on a set with no foil) **rejects the batch** rather than seeding
+a phantom item:
+
+- **Owned import** — `ownedImportRepository.js` (`importCollectionResolved` / `planOwnedItemBatch`)
+  files pasted copies into `owned_cards`. An owned line may legitimately end uncategorised.
+- **Bulk wants** — `wantImport.js` (`resolveWantList`) + `batchWantPlan.js` (the draft model) +
+  `wantedBulkRepository.js` turn a whole paste into ONE draft with ONE atomic Cancel/Confirm boundary;
+  a batch finish governs unannotated lines, and a want may never be uncategorised. Nothing is written
+  until Confirm; Cancel, backdrop and hardware Back are all zero writes.
+
+Collection and list exports serialise their items back to text lines through the same ownership and
+list repositories. Per-item art is never part of the data: `printingRows.js` (`printingArt` /
+`selectPrinting`) returns a content-addressed **slug**, never a URL — the art boundary
+(`useArtSource`/`ArtImage`) decides bundled-vs-CDN and honours zero-image mode.
 
 ### Profile bundles
 
