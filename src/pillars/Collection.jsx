@@ -40,7 +40,7 @@ import {
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
-import { importCollectionResolved, setOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
+import { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
 import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
 import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
@@ -748,42 +748,52 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
   );
 }
 
-// A stepper modal for bulk-editing owned copies of the selected cards. TWO modes: ADD (+N to what
-// you own) and SET (make the owned count exactly N - and N=0 REMOVES them, the bulk delete). A finish
-// toggle picks Standard vs Foil; a card without the chosen finish (a non-foil-only card when adding
-// foils, or Winter River when adding standard) is skipped and reported, so one impossible pairing
-// never sinks the batch. Set-to-0 keeps any wishlist want (see the store command).
+// A stepper modal for bulk-editing owned copies of the selected cards. TWO modes:
+//   ADJUST - raise OR lower each card by N against its PRESENT count (an Add/Remove direction picks
+//            the sign). Removing floors at 0, never negative; it can't target 0 outright.
+//   SET    - make the owned count exactly N regardless of what it was; N=0 REMOVES (bulk delete),
+//            keeping any wishlist want.
+// A finish toggle picks Standard vs Foil; a card without the chosen finish (a non-foil-only card when
+// touching foils, or Winter River when touching standard) is skipped and reported, so one impossible
+// pairing never sinks the batch. `onConfirm({ mode, qty, foil, dir })`.
 function AddCopiesSheet({ open, count, onClose, onConfirm }) {
-  const [mode, setMode] = useState('add');   // 'add' | 'set'
+  const [mode, setMode] = useState('adjust');   // 'adjust' | 'set'
+  const [dir, setDir] = useState('add');        // 'add' | 'remove' (adjust only)
   const [qty, setQty] = useState(1);
   const [foil, setFoil] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setMode('add'); setQty(1); setFoil(false); setBusy(false); } }, [open]);
-  const min = mode === 'set' ? 0 : 1;
-  const setModeSafe = (m) => { setMode(m); if (m === 'add' && qty < 1) setQty(1); };
+  useEffect(() => { if (open) { setMode('adjust'); setDir('add'); setQty(1); setFoil(false); setBusy(false); } }, [open]);
+  const min = mode === 'adjust' ? 1 : 0;   // Adjust magnitude is >=1 (a 0 delta is a no-op); Set allows 0 (= clear)
+  const setModeSafe = (m) => { setMode(m); if (m === 'adjust' && qty < 1) setQty(1); };
+  const removing = mode === 'adjust' && dir === 'remove';
+  const f = foil ? 'foil ' : '';
   const cta = mode === 'set'
-    ? (qty === 0 ? `Remove ${foil ? 'foil ' : ''}from collection` : `Set each to ${qty}${foil ? ' foil' : ''}`)
-    : `Add ${qty} ${foil ? 'foil ' : ''}of each`;
-  const dangerCta = mode === 'set' && qty === 0;
+    ? (qty === 0 ? `Remove ${f}from collection` : `Set each to ${qty}${foil ? ' foil' : ''}`)
+    : (removing ? `Remove ${qty} ${f}from each` : `Add ${qty} ${f}to each`);
+  const dangerCta = (mode === 'set' && qty === 0) || removing;
   return (
     <BottomSheet open={open} title="EDIT COPIES" onClose={onClose}>
       <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 16 }}>
         {mode === 'set'
-          ? <>Set your owned count for each of the {count} selected card{count === 1 ? '' : 's'}. <strong style={{ color: 'var(--ink-body)' }}>0 removes them.</strong></>
-          : <>How many copies of each of the {count} selected card{count === 1 ? '' : 's'} do you own? They are added to your collection.</>}
+          ? <>Set the owned count of each of the {count} selected card{count === 1 ? '' : 's'} to a fixed number. <strong style={{ color: 'var(--ink-body)' }}>0 removes them</strong> (any wishlist want is kept).</>
+          : <>Raise or lower the owned count of each of the {count} selected card{count === 1 ? '' : 's'} by this many. <strong style={{ color: 'var(--ink-body)' }}>Removing never goes below 0.</strong></>}
       </div>
       <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <SegTabs ariaLabel="Mode" value={mode} onChange={setModeSafe}
-          options={[{ key: 'add', label: 'Add' }, { key: 'set', label: 'Set' }]} />
+          options={[{ key: 'adjust', label: 'Adjust' }, { key: 'set', label: 'Set' }]} />
+        {mode === 'adjust' && (
+          <SegTabs ariaLabel="Direction" value={dir} onChange={setDir}
+            options={[{ key: 'add', label: 'Add' }, { key: 'remove', label: 'Remove' }]} />
+        )}
         <SegTabs ariaLabel="Finish" value={foil ? 'foil' : 'standard'} onChange={(k) => setFoil(k === 'foil')}
           options={[{ key: 'standard', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 22 }}>
         <StepBtn dir={-1} disabled={qty <= min} onClick={() => setQty((q) => Math.max(min, q - 1))} />
-        <span style={{ font: "500 36px/1 var(--f-display)", color: dangerCta ? 'var(--destructive)' : '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{qty}</span>
+        <span style={{ font: "500 36px/1 var(--f-display)", color: dangerCta ? 'var(--destructive)' : '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{removing ? `-${qty}` : qty}</span>
         <StepBtn dir={1} disabled={qty >= 99} onClick={() => setQty((q) => Math.min(99, q + 1))} />
       </div>
-      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm(qty, foil, mode); }} disabled={busy}
+      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm({ mode, qty, foil, dir }); }} disabled={busy}
         style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1,
           ...(dangerCta ? { background: 'rgba(60,20,20,.6)', color: 'var(--destructive)', border: '1px solid rgba(168,88,74,.5)' } : null) }}>
         {busy ? 'Working…' : cta}
@@ -1004,16 +1014,20 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     if (!selectMode) return undefined;
     return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
   }, [selectMode]);
-  // Bulk-edit owned copies of the selection through the barrier-guarded commands. The toast is driven
-  // by the REPOSITORY result (actual changes), never the selection count - so a no-op reads honestly.
-  const bulkEditCopies = async (qty, foil, mode) => {
+  // Bulk-edit owned copies of the selection through the barrier-guarded commands. ADJUST raises/lowers
+  // by a signed delta (Remove floors at 0); SET writes an absolute count (0 clears, keeping any want).
+  // The toast is driven by the REPOSITORY result (actual changes), never the selection count - so a
+  // no-op reads honestly.
+  const bulkEditCopies = async ({ mode, qty, foil, dir }) => {
     // Only cards that actually have the chosen finish are touched; the rest are skipped and counted (a
     // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
     // standard). This keeps one impossible pairing from rejecting the whole strict batch.
+    const adjust = mode === 'adjust';
+    const delta = dir === 'remove' ? -qty : qty;
     const items = []; let skipped = 0;
     for (const { card, set } of selected.values()) {
       let fin; try { fin = printingFinishes(card, set); } catch { fin = { nonFoil: true, foil: false }; }
-      if (foil ? fin.foil : fin.nonFoil) items.push({ card_id: card.card_id, qty, setCode: set, foil });
+      if (foil ? fin.foil : fin.nonFoil) items.push(adjust ? { card_id: card.card_id, setCode: set, foil, delta } : { card_id: card.card_id, setCode: set, foil, qty });
       else skipped += 1;
     }
     if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
@@ -1021,15 +1035,19 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     const f = foil ? 'foil ' : '';
     const cnt = (nn) => `${nn} card${nn === 1 ? '' : 's'}`;
     try {
-      if (mode === 'set') {
+      if (adjust) {
+        const r = await adjustOwnedItemsBulk(items);   // one atomic write; Remove floors at 0, keeping any want
+        const raised = r.set, lowered = r.removed + r.cleared;
+        const changed = raised + lowered;
+        toast(changed === 0
+          ? `No change - ${cnt(r.unchanged)} already at the limit${skipTail}`
+          : (dir === 'remove' ? `Removed ${qty} ${f}from ${cnt(changed)}` : `Added ${qty} ${f}to ${cnt(changed)}`) + skipTail);
+      } else {
         const r = await setOwnedItemsBulk(items);   // one atomic write; 0 removes, keeping any wishlist want
         const changed = qty === 0 ? (r.removed + r.cleared) : r.set;
         toast(changed === 0
           ? `No change - ${cnt(r.unchanged)} already ${qty === 0 ? 'empty' : `at ${qty}${foil ? ' foil' : ''}`}${skipTail}`
           : (qty === 0 ? `Removed ${f}from ${cnt(changed)}` : `Set ${cnt(changed)} to ${qty}${foil ? ' foil' : ''}`) + skipTail);
-      } else {
-        const r = await importCollectionResolved(items);
-        toast(`Added ${r.copies} ${f}cop${r.copies === 1 ? 'y' : 'ies'} across ${cnt(r.cards)}${skipTail}`);
       }
       setQtyOpen(false); cancelSelect();
     } catch (e) {
