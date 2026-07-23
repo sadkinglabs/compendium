@@ -145,42 +145,69 @@ test('setCode must be exactly a STRING - only "" means uncategorised, not undefi
 
 const setArgs = { pid: 'p1', uuid: () => 'ID', now: 'T' };
 
-test('set: positive UPDATEs an existing row, INSERTs a missing one', () => {
-  const cur = new Map([['c1|001', { id: 'row1', qty_wanted: 0 }]]);
+test('set: positive UPDATEs a CHANGED row, INSERTs a missing one', () => {
+  const cur = new Map([['c1|001', { id: 'row1', qty_owned: 1, qty_wanted: 0 }]]);
   const plan = planOwnedSetBatch([
     { card_id: 'c1', setCode: '001', foil: false, qty: 3 },
     { card_id: 'c1', setCode: '002', foil: false, qty: 2 },
   ], catalog(CV), cur, setArgs);
-  assert.equal(plan.setN, 2); assert.equal(plan.removed, 0); assert.equal(plan.cards, 1);
+  assert.equal(plan.set, 2); assert.equal(plan.removed, 0); assert.equal(plan.unchanged, 0); assert.equal(plan.cards, 1);
   assert.match(plan.statements[0].sql, /UPDATE owned_cards SET qty_owned=\?/);
   assert.deepEqual(plan.statements[0].params, [3, 'T', 'row1']);
   assert.match(plan.statements[1].sql, /INSERT INTO owned_cards/);
 });
 
-test('set 0 DELETEs an owned-only row, but ZEROES (keeps) a row that also has a want', () => {
+test('set to the value a row ALREADY holds is a true no-op (no statement, counted unchanged)', () => {
+  const cur = new Map([['c1|001', { id: 'row1', qty_owned: 3, qty_wanted: 0 }]]);
+  const plan = planOwnedSetBatch([{ card_id: 'c1', setCode: '001', foil: false, qty: 3 }], catalog(CV), cur, setArgs);
+  assert.deepEqual(plan.statements, []); assert.equal(plan.set, 0); assert.equal(plan.unchanged, 1);
+});
+
+test('set 0 DELETEs an owned-only row, ZEROES a wanted row, and NO-OPs an already-empty one', () => {
   const cur = new Map([
-    ['c1|001', { id: 'owned-only', qty_wanted: 0 }],
-    ['c1|002', { id: 'also-wanted', qty_wanted: 2 }],
+    ['c1|001', { id: 'owned-only', qty_owned: 2, qty_wanted: 0 }],
+    ['c1|002', { id: 'also-wanted', qty_owned: 1, qty_wanted: 2 }],
+    ['c1|001:f', { id: 'want-only', qty_owned: 0, qty_wanted: 1 }],   // owned already 0
   ]);
   const plan = planOwnedSetBatch([
     { card_id: 'c1', setCode: '001', foil: false, qty: 0 },
     { card_id: 'c1', setCode: '002', foil: false, qty: 0 },
+    { card_id: 'c1', setCode: '001', foil: true, qty: 0 },
   ], catalog(CV), cur, setArgs);
-  assert.equal(plan.removed, 1);
+  assert.equal(plan.removed, 1); assert.equal(plan.cleared, 1); assert.equal(plan.unchanged, 1);
+  assert.equal(plan.statements.length, 2, 'the already-empty row wrote nothing');
   assert.match(plan.statements[0].sql, /DELETE FROM owned_cards/);
   assert.deepEqual(plan.statements[0].params, ['owned-only']);
   assert.match(plan.statements[1].sql, /UPDATE owned_cards SET qty_owned=0/);   // want preserved
   assert.deepEqual(plan.statements[1].params, ['T', 'also-wanted']);
 });
 
-test('set 0 on a row that does not exist is a no-op', () => {
-  const plan = planOwnedSetBatch([{ card_id: 'c1', setCode: '001', foil: false, qty: 0 }], catalog(CV), new Map(), setArgs);
-  assert.deepEqual(plan.statements, []); assert.equal(plan.removed, 0);
+test('CONFLICTING duplicate targets are REJECTED order-independently; identical ones coalesce', () => {
+  // The exact defect Codex found: [{0},{5}] must not be silent first-wins.
+  for (const pair of [[0, 5], [5, 0]]) {
+    assert.throws(() => planOwnedSetBatch([
+      { card_id: 'c1', setCode: '001', foil: false, qty: pair[0] },
+      { card_id: 'c1', setCode: '001', foil: false, qty: pair[1] },
+    ], catalog(CV), new Map(), setArgs), /conflicting targets/, `order ${pair}`);
+  }
+  const cur = new Map([['c1|001', { id: 'r', qty_owned: 1, qty_wanted: 0 }]]);
+  const plan = planOwnedSetBatch([
+    { card_id: 'c1', setCode: '001', foil: false, qty: 4 },
+    { card_id: 'c1', setCode: '001', foil: false, qty: 4 },   // identical -> one target
+  ], catalog(CV), cur, setArgs);
+  assert.equal(plan.statements.length, 1); assert.equal(plan.set, 1);
+});
+
+test('every item is validated BEFORE the fold - an impossible later item still throws', () => {
+  assert.throws(() => planOwnedSetBatch([
+    { card_id: 'c1', setCode: '001', foil: false, qty: 1 },
+    { card_id: 'c1', setCode: '002', foil: true, qty: 1 },   // 002 is standard-only
+  ], catalog(CV), new Map(), setArgs), /foil is not a printing/);
 });
 
 test('a POSITIVE set validates the printing; ZERO clearing an impossible pair is exempt', () => {
   assert.throws(() => planOwnedSetBatch([{ card_id: 'c1', setCode: '002', foil: true, qty: 1 }], catalog(CV), new Map(), setArgs), /foil is not a printing/);
-  const cur = new Map([['c1|002:f', { id: 'phantom', qty_wanted: 0 }]]);
+  const cur = new Map([['c1|002:f', { id: 'phantom', qty_owned: 3, qty_wanted: 0 }]]);
   const plan = planOwnedSetBatch([{ card_id: 'c1', setCode: '002', foil: true, qty: 0 }], catalog(CV), cur, setArgs);
   assert.equal(plan.removed, 1);   // a historical malformed row can always be cleared
 });
@@ -205,11 +232,101 @@ test('setOwnedItemsBulk end-to-end: sets, deletes owned-only, keeps a wanted row
   ]);
   unsub();
   assert.equal(fired, 1, 'exactly ONE broadcast for the whole batch');
-  assert.deepEqual(r, { set: 1, removed: 0, cards: 1 });
+  assert.deepEqual(r, { set: 1, removed: 0, cleared: 1, unchanged: 0, cards: 1 });
   const c1 = rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [PID, 'c1']);
   assert.equal(c1.find((x) => x.variant_slug === '001')?.qty_owned, 5);
   const beta = c1.find((x) => x.variant_slug === '002');
   assert.equal(beta?.qty_owned, 0, 'owned cleared'); assert.equal(beta?.qty_wanted, 1, 'want kept');
+});
+
+/* ---------------- setOwnedItemsBulk: barrier + write-outcome contract (direct) ---------------- */
+
+const cmdSet = (exclusive = (fn) => fn(), over = {}) => createOwnedImportCommand(deps(exclusive, over)).setOwnedItemsBulk;
+
+test('setOwnedItemsBulk: a barrier failure before tx is prewrite/none, no broadcast', async () => {
+  const failBarrier = () => Promise.reject(new Error('drain timeout'));
+  await assert.rejects(() => cmdSet(failBarrier)([{ card_id: 'c1', setCode: '001', foil: false, qty: 5 }]),
+    (e) => e.name === 'BulkWriteError' && e.phase === 'prewrite' && e.writeState === 'none');
+  assert.equal(notifyCount, 0);
+});
+
+test('setOwnedItemsBulk: apply-then-reject -> transaction/unknown, the write LANDED, one broadcast', async () => {
+  seedOwn('001', 1);
+  const applyThenReject = async (stmts) => { await runTx(stmts); throw new Error('IndexedDB quota exceeded'); };
+  await assert.rejects(() => cmdSet((fn) => fn(), { tx: applyThenReject })([{ card_id: 'c1', setCode: '001', foil: false, qty: 9 }]),
+    (e) => e.phase === 'transaction' && e.writeState === 'unknown');
+  assert.equal(ownOf('001'), 9, 'the absolute set actually landed - "nothing written" would be a lie');
+  assert.equal(notifyCount, 1);
+});
+
+test('setOwnedItemsBulk: an all-no-op batch runs no transaction and does not broadcast', async () => {
+  seedOwn('001', 3);
+  const r = await cmdSet()([{ card_id: 'c1', setCode: '001', foil: false, qty: 3 }]);   // already 3
+  assert.deepEqual(r, { set: 0, removed: 0, cleared: 0, unchanged: 1, cards: 1 });
+  assert.equal(notifyCount, 0, 'no change -> no broadcast');
+});
+
+test('setOwnedItemsBulk: writes under the CAPTURED profile even if active switches mid-flight', async () => {
+  const gate = deferred();
+  let active = PID;
+  const cmd2 = createOwnedImportCommand(deps((fn) => fn(), { activeProfileId: () => active, tx: async (s) => { await gate.promise; return runTx(s); } })).setOwnedItemsBulk;
+  const p = cmd2([{ card_id: 'c1', setCode: '001', foil: false, qty: 4 }], PID);   // pid captured = p1
+  active = 'p2';                       // active flips while the tx is parked
+  gate.resolve();
+  await p;
+  assert.equal(ownOf('001', 'c1', PID), 4, 'landed in the captured profile');
+  assert.equal(ownOf('001', 'c1', 'p2'), 0, 'nothing leaked into the switched-to profile');
+});
+
+test('PRODUCTION WIRING: exported setOwnedItemsBulk BLOCKS behind a held barrier write', async () => {
+  __resetCollectionWritesForTests();
+  const held = deferred();
+  const first = enqueueWrite(ownedRowKey(PID, 'c1', '001'), async () => { await held.promise; });
+  let ran = false;
+  const bulk = setOwnedItemsBulk([{ card_id: 'c1', setCode: '001', foil: false, qty: 2 }]).then(() => { ran = true; });
+  await settleTurns();
+  assert.equal(ran, false, 'the bulk set waited for the in-flight write to drain');
+  held.resolve(); await first; await bulk;
+  assert.equal(ran, true);
+});
+
+/* ---------------- createListWithEntries: one transaction, contract ---------------- */
+
+const cmdList = (exclusive = (fn) => fn(), over = {}) => createOwnedImportCommand(deps(exclusive, over)).createListWithEntries;
+const listRows = (pid = PID) => rows('SELECT id, kind, name FROM card_lists WHERE profile_id=?;', [pid]);
+const entryCards = (listId) => rows('SELECT card_id FROM card_list_entries WHERE list_id=? ORDER BY card_id;', [listId]).map((r) => r.card_id);
+
+test('createListWithEntries: list + entries commit together, de-duplicated, one broadcast', async () => {
+  const r = await cmdList()({ kind: 'wanted', name: 'Buy list', cardIds: ['c1', 'c1', 'ap', 'wb'] });
+  assert.equal(r.entries, 3);   // c1 de-duplicated
+  assert.equal(notifyCount, 1);
+  assert.deepEqual(entryCards(r.id).sort(), ['ap', 'c1', 'wb']);
+  assert.equal(listRows().find((l) => l.id === r.id)?.kind, 'wanted');
+});
+
+test('createListWithEntries: a mid-transaction failure rolls BOTH the list and its entries back', async () => {
+  const appendBad = (stmts) => runTx([...stmts, ['THIS IS NOT VALID SQL;', []]]);
+  await assert.rejects(() => cmdList((fn) => fn(), { tx: appendBad })({ kind: 'custom', name: 'Doomed', cardIds: ['c1', 'ap'] }),
+    (e) => e.phase === 'transaction' && e.writeState === 'unknown');
+  assert.equal(listRows().find((l) => l.name === 'Doomed'), undefined, 'no half-populated list survives');
+});
+
+test('createListWithEntries: an empty name is prewrite/none, nothing written', async () => {
+  await assert.rejects(() => cmdList()({ kind: 'custom', name: '   ', cardIds: ['c1'] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none');
+  assert.equal(notifyCount, 0);
+});
+
+test('createListWithEntries: writes under the CAPTURED profile even if active switches mid-flight', async () => {
+  const gate = deferred();
+  let active = PID;
+  const cmd2 = createOwnedImportCommand(deps((fn) => fn(), { activeProfileId: () => active, tx: async (s) => { await gate.promise; return runTx(s); } })).createListWithEntries;
+  const p = cmd2({ kind: 'custom', name: 'Captured', cardIds: ['c1'] }, PID);
+  active = 'p2';
+  gate.resolve();
+  const r = await p;
+  assert.equal(listRows(PID).find((l) => l.id === r.id)?.name, 'Captured', 'created under the captured profile');
+  assert.equal(listRows('p2').find((l) => l.id === r.id), undefined, 'nothing under the switched-to profile');
 });
 
 test('quantity bounds are enforced', () => {

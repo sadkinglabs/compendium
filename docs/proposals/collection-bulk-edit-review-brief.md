@@ -1,8 +1,46 @@
 # Codex review request - Collection FAB/overflow pass + bulk edit (durable writes)
 
-**Branch:** `collection-menu-consistency` (off `main`). **Range:** `git diff main..HEAD` (7 commits).
-Device: built + owner-exercised on a Pixel 9 Pro XL (build 169). **The highest-risk surface is the new
+**Branch:** `collection-menu-consistency` (off `main`). **Range:** `git diff main..HEAD`.
+Device: built + owner-exercised on a Pixel 9 Pro XL. **The highest-risk surface is the new
 durable bulk-owned-SET command - please attack it first.**
+
+## Corrective increment - all six findings addressed (please re-check)
+
+Following the "Changes required" disposition (4 Majors + 2 Minors), this commit lands the fixes.
+None changed the write contract; they hardened the planner, added an atomic list-create command, and
+made the failure/toast/a11y surfaces honest.
+
+- **Major 1 - indeterminate writes are no longer reported as definite.** New pure helper
+  `src/store/bulkWriteOutcome.js` (`bulkWriteFailure`): a `BulkWriteError` with
+  `writeState==='unknown'` (web tx applied THEN persistence rejected) yields `indeterminate:true`, a
+  warn tone, "check the refreshed counts" copy, and `keepSelection:false` (an indeterminate write must
+  not read as a retry invitation); any definite/non-bulk failure keeps the selection for a safe retry.
+  Wired into both `bulkEditCopies` and `createListFromSelection` catch paths. Unit-tested incl. a
+  property that ONLY `unknown` is ever indeterminate (`bulkWriteOutcome.test.mjs`).
+- **Major 2 - list-from-selection is now one atomic write.** New factory command
+  `createListWithEntries` (`ownedImportRepository.js`): list row + entries in a single `tx()` under
+  the exclusive barrier, ONE broadcast, card-ids deduped, pid captured at the gesture, full
+  write-outcome contract. Replaces the old `createList` + per-card `setListEntry` loop (N broadcasts,
+  no atomicity). `ListNameSheet` now awaits submission and locks the button while busy, so a
+  double-tap can't create two lists.
+- **Major 3 - `planOwnedSetBatch` validates before it folds.** Two passes: pass 1 validates EVERY
+  item (foil boolean, set string, qty bounds, positive-set catalog printing) and folds into a target
+  map, throwing on a conflicting duplicate qty for one `(card,slug)` and coalescing identical ones;
+  pass 2 emits statements and OMITS no-ops (reads `qty_owned`). Result carries
+  `{set, removed, cleared, unchanged, cards}`.
+- **Major 4 - selection a11y + touch targets.** `BinderTile` in select mode is a real
+  `role="button"` with `aria-pressed`, a "Select/Deselect {name}" label, and Enter/Space keyboard
+  toggle (QuickAdd stays un-nested, only rendered out of select mode). `SelectionBar` cancel is 44x44
+  and both actions are `minHeight:44`.
+- **Minor 1 - toasts read from the repository result**, not the selection count: "No change - N
+  already at X" when nothing moved, real changed-count otherwise.
+- **Minor 2 - docs reconciled.** `DESIGN_SYSTEM.md` §4 Header-overflow now states the
+  manage-only-overflow / `+`-FAB-for-all-adding boundary and drops set-level Export Missing;
+  `COMPENDIUM_FEATURE_MATRIX.md` gains a "Bulk selection (scoped)" row.
+
+Gates after the corrective: `test:query` 735, `test:ui` 162, `test:app` 17, `test:codex` 10,
+store suites 55 (`ownedImportRepository` + `bulkWriteOutcome`), `check:types`, `check:cycles` (134),
+`check:source`, `check:docs`, `build` - all green. Device re-exercise + build/install pending owner.
 
 ## What's here, riskiest first
 

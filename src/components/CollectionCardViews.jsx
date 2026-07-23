@@ -240,8 +240,16 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
   const { complete } = playsetOf(card, total);
   const missing = total === 0;
   const setName = setLabel || firstSetName(card);
+  const act = () => (selectMode ? onToggle?.(card.card_id, set) : onPeek(card.card_id, set));
+  // In select mode the tile IS the checkbox - expose it to assistive tech as a pressable toggle with
+  // its state and a spoken name, and make it keyboard-operable. (Out of select mode the QuickAdd
+  // button lives inside, so the tile stays a plain div to avoid nesting one button in another.)
+  const a11y = selectMode
+    ? { role: 'button', tabIndex: 0, 'aria-pressed': checked, 'aria-label': `${checked ? 'Deselect' : 'Select'} ${card.name}`,
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } } }
+    : null;
   return (
-    <div onClick={() => (selectMode ? onToggle?.(card.card_id, set) : onPeek(card.card_id, set))}
+    <div onClick={act} {...a11y}
       style={{ position: 'relative', cursor: 'pointer', contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
       {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. In select mode a
           checked tile wears a gold ring. */}

@@ -26,7 +26,7 @@ import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
 import { registerBackConsumer } from '../back.js';
-import { printingFinishes, defaultFinish } from '../store/printingRows.js';
+import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
@@ -40,7 +40,8 @@ import {
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
-import { importCollectionResolved, setOwnedItemsBulk } from '../store/ownedImportRepository.js';
+import { importCollectionResolved, setOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
+import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
 import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
@@ -730,13 +731,13 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
   const btn = {
-    flex: 'none', padding: '8px 13px', borderRadius: 18, whiteSpace: 'nowrap',
+    flex: 'none', minHeight: 44, padding: '0 15px', borderRadius: 18, whiteSpace: 'nowrap',
     border: '1px solid rgba(203,167,95,.45)', background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)',
     font: "600 12.5px/1 var(--f-ui)", cursor: count ? 'pointer' : 'default', opacity: count ? 1 : 0.4,
   };
   return createPortal(
     <div className="cx-search-pill" style={{ gap: 8 }}>
-      <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+      <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
       <span style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
@@ -1003,7 +1004,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     if (!selectMode) return undefined;
     return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
   }, [selectMode]);
-  // Add N copies of each selected printing to the collection through the barrier-guarded bulk writer.
+  // Bulk-edit owned copies of the selection through the barrier-guarded commands. The toast is driven
+  // by the REPOSITORY result (actual changes), never the selection count - so a no-op reads honestly.
   const bulkEditCopies = async (qty, foil, mode) => {
     // Only cards that actually have the chosen finish are touched; the rest are skipped and counted (a
     // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
@@ -1015,31 +1017,44 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       else skipped += 1;
     }
     if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
-    const tail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
-    const n = items.length, s = n === 1 ? '' : 's';
+    const skipTail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
+    const f = foil ? 'foil ' : '';
+    const cnt = (nn) => `${nn} card${nn === 1 ? '' : 's'}`;
     try {
       if (mode === 'set') {
-        await setOwnedItemsBulk(items);   // one atomic write; qty 0 removes, keeping any wishlist want
-        toast((qty === 0 ? `Removed ${foil ? 'foil ' : ''}from ${n} card${s}` : `Set ${n} card${s} to ${qty}${foil ? ' foil' : ''}`) + tail);
+        const r = await setOwnedItemsBulk(items);   // one atomic write; 0 removes, keeping any wishlist want
+        const changed = qty === 0 ? (r.removed + r.cleared) : r.set;
+        toast(changed === 0
+          ? `No change - ${cnt(r.unchanged)} already ${qty === 0 ? 'empty' : `at ${qty}${foil ? ' foil' : ''}`}${skipTail}`
+          : (qty === 0 ? `Removed ${f}from ${cnt(changed)}` : `Set ${cnt(changed)} to ${qty}${foil ? ' foil' : ''}`) + skipTail);
       } else {
         const r = await importCollectionResolved(items);
-        toast(`Added ${r.copies} ${foil ? 'foil ' : ''}cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}${tail}`);
+        toast(`Added ${r.copies} ${f}cop${r.copies === 1 ? 'y' : 'ies'} across ${cnt(r.cards)}${skipTail}`);
       }
       setQtyOpen(false); cancelSelect();
     } catch (e) {
       console.error('bulkEditCopies failed', e);
-      toast("Couldn't update those cards.", { tone: 'danger' });
+      const o = bulkWriteFailure(e);
+      toast(o.copy, { tone: o.tone });
       setQtyOpen(false);
+      if (!o.keepSelection) cancelSelect();   // indeterminate: clear so it can't read as a retry invite
     }
   };
-  // Create a new list (name + type chosen in the sheet) holding the selected cards - CARD-grain, so
-  // multiple printings of one card become one entry. The user then opens it from Lists to export.
+  // Create a new list holding the selected cards - CARD-grain, so multiple printings of one card
+  // become one entry. ONE atomic write (list + entries), pid captured at the submit gesture.
   const createListFromSelection = async (name, desc, kind) => {
-    const id = await createList(kind, name, desc);
     const cardIds = [...new Set([...selected.values()].map(({ card }) => card.card_id))];
-    for (const cid of cardIds) await setListEntry(id, cid, 1);
-    toast(`Created “${name}” with ${cardIds.length} card${cardIds.length === 1 ? '' : 's'}`);
-    setCreateOpen(false); cancelSelect();
+    try {
+      const r = await createListWithEntries({ kind, name, description: desc, cardIds }, activeProfileId());
+      toast(`Created “${r.name}” with ${r.entries} card${r.entries === 1 ? '' : 's'}`);
+      setCreateOpen(false); cancelSelect();
+    } catch (e) {
+      console.error('createListFromSelection failed', e);
+      const o = bulkWriteFailure(e);
+      toast(o.indeterminate ? "Couldn't confirm the list - check Lists before trying again." : "Couldn't create the list.", { tone: o.tone });
+      setCreateOpen(false);
+      if (!o.keepSelection) cancelSelect();
+    }
   };
 
   const richComp =['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
@@ -1335,9 +1350,12 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
   const [name, setName] = useState(initialName);
   const [desc, setDesc] = useState(initialDesc);
   const [k, setK] = useState(kind || 'wanted');   // only used when chooseKind
-  useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); setK(kind || 'wanted'); } /* eslint-disable-next-line */ }, [open]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); setK(kind || 'wanted'); setBusy(false); } /* eslint-disable-next-line */ }, [open]);
   const effKind = chooseKind ? k : kind;
-  const go = () => { const nm = name.trim(); if (!nm) return; onSubmit(nm, desc.trim(), effKind); };
+  // Await the submission and lock the button while it runs, so a rapid double-tap can't create two
+  // lists (createListWithEntries is one transaction, but the SHEET must not fire it twice).
+  const go = async () => { const nm = name.trim(); if (!nm || busy) return; setBusy(true); try { await onSubmit(nm, desc.trim(), effKind); } finally { setBusy(false); } };
   const hint = effKind === 'wanted'
     ? 'A named goal - Collection tracks how close you are as you record the cards you own.'
     : effKind === 'custom' ? 'A custom grouping - a trade binder, a cube, cards to sell.' : '';
@@ -1355,8 +1373,8 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
       <input value={desc} onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
         placeholder="Description (optional)…" style={{ ...SHEET_INPUT, marginTop: 10, font: "400 13.5px/1 var(--f-read)" }} />
       <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-        <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
-        <button onClick={go} disabled={!name.trim()} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() ? 1 : 0.5 }}>{submitLabel}</button>
+        <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+        <button onClick={go} disabled={!name.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() && !busy ? 1 : 0.5 }}>{busy ? 'Creating…' : submitLabel}</button>
       </div>
     </BottomSheet>
   );
