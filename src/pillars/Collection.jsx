@@ -726,7 +726,7 @@ const OWN_LABEL = { regular: 'Owned', foilOnly: 'Foil only', missing: 'Missing',
 // While cards are being multi-selected the docked search bar becomes a selection action bar. It
 // portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
 // shift, one keyboard-aware container.
-function SelectionBar({ count, total, allSelected, onToggleAll, onAdd, onCreate, onCancel }) {
+function SelectionBar({ count, onAdd, onCreate, onCancel }) {
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
@@ -740,10 +740,8 @@ function SelectionBar({ count, total, allSelected, onToggleAll, onAdd, onCreate,
       <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
-      {/* The count IS the select-all toggle - enter Edit empty, then grab everything or tap tiles. */}
-      <button onClick={onToggleAll} style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', border: 'none', background: 'transparent', font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
-        {allSelected ? `Deselect all · ${count}` : `Select all · ${total}`}
-      </button>
+      {/* Just the running count - Select all / Deselect all lives on the header pill now. */}
+      <span aria-live="polite" style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
       <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
       <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
     </div>,
@@ -1123,17 +1121,22 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
           {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
-              overflow. It enters multi-select (empty) over the CURRENT (scoped) grid; the action bar
-              then offers Select-all or per-tile tapping, so a single card is one tap. */}
-          {!selectMode && totalRows > 0 && (
-            <button onClick={enterSelectMode} aria-label="Select cards" style={{
-              flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
-              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
-              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
-            }}>
-              <MenuGlyph kind="select" />Select
-            </button>
-          )}
+              overflow. "Select" enters multi-select (empty) over the CURRENT (scoped) grid; once in,
+              the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
+              the running count). A single card is one tap on its tile. */}
+          {totalRows > 0 && (() => {
+            const allSel = selected.size > 0 && selected.size === drillRows.length;
+            const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
+            return (
+              <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
+                flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+                borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+                color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+              }}>
+                <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+              </button>
+            );
+          })()}
         </div>
       </div>
 
@@ -1180,9 +1183,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
           portal into the same #cx-dock-search slot, so it swaps in place). */}
       {selectMode ? (
-        <SelectionBar count={selected.size} total={drillRows.length}
-          allSelected={selected.size > 0 && selected.size === drillRows.length}
-          onToggleAll={selected.size === drillRows.length ? deselectAll : selectAll}
+        <SelectionBar count={selected.size}
           onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
