@@ -101,6 +101,68 @@ export function planOwnedItemBatch(items, catalogById) {
   return [...merged.values()];
 }
 
+/**
+ * Plan an ABSOLUTE owned-set batch: each item SETS `qty_owned` for its collector item, rather than
+ * adding. `qty: 0` clears the copies - deleting the row, UNLESS it also carries a want, in which case
+ * only the owned count is zeroed so a bulk owned cleanup never wipes a wishlist goal. PURE.
+ *
+ * A POSITIVE set validates the printing against the catalog (a foil-only set can't take a non-foil,
+ * etc.), like the add path. A ZERO is exempt - clearing a historical or malformed row must always be
+ * possible, exactly as the want writers treat zero.
+ *
+ * @param items       [{ card_id, setCode, foil, qty }]  qty 0 = clear
+ * @param catalogById Map<card_id, { sets, variants }>  (positive items only need be present)
+ * @param currentByKey Map<`card_id|slug`, { id, qty_wanted }>  the owned rows already on file
+ * @returns { statements:[{sql,params}], setN, removed, cards }
+ */
+export function planOwnedSetBatch(items, catalogById, currentByKey, { pid, uuid, now }) {
+  if (!Array.isArray(items)) throw new Error('planOwnedSetBatch: items must be an array');
+  if (items.length > MAX_BATCH_ITEMS) throw new Error(`planOwnedSetBatch: batch exceeds ${MAX_BATCH_ITEMS} items`);
+  const statements = [];
+  const seen = new Set();
+  const cards = new Set();
+  let setN = 0, removed = 0;
+  for (const it of items) {
+    const cardId = it?.card_id;
+    if (typeof it?.foil !== 'boolean') throw new Error(`planOwnedSetBatch: foil must be a boolean for ${cardId}, got ${JSON.stringify(it?.foil)}`);
+    const foil = it.foil;
+    const setCode = it?.setCode;
+    if (typeof setCode !== 'string') throw new Error(`planOwnedSetBatch: setCode must be a string for ${cardId}, got ${JSON.stringify(setCode)}`);
+    const qty = it?.qty;
+    if (!Number.isSafeInteger(qty) || qty < 0 || qty > MAX_ITEM_QTY) throw new Error(`planOwnedSetBatch: qty ${JSON.stringify(qty)} out of range (0..${MAX_ITEM_QTY}) for ${cardId}`);
+    const slug = canonicalPrinting(setCode, foil);
+    const key = `${cardId}|${slug}`;
+    if (seen.has(key)) continue;   // one row per collector item; the selection keys are already unique
+    seen.add(key);
+    cards.add(cardId);
+
+    if (qty > 0) {   // a positive set must name a real printing (zero is exempt - see the doc above)
+      const card = catalogById.get(cardId);
+      if (!card) throw new Error(`planOwnedSetBatch: unknown card ${JSON.stringify(cardId)}`);
+      if (setCode) {
+        if (!setCodesOf(card).includes(setCode)) throw new Error(`planOwnedSetBatch: ${JSON.stringify(setCode)} is not a set of ${cardId}`);
+        const fin = printingFinishes(card, setCode);
+        if (foil ? !fin.foil : !fin.nonFoil) throw new Error(`planOwnedSetBatch: ${foil ? 'foil' : 'non-foil'} is not a printing of ${cardId} in ${setCode}`);
+      }
+    }
+
+    const existing = currentByKey.get(key);
+    if (qty === 0) {
+      if (existing) {
+        if ((existing.qty_wanted || 0) > 0) statements.push({ sql: 'UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE id=?;', params: [now, existing.id] });
+        else { statements.push({ sql: 'DELETE FROM owned_cards WHERE id=?;', params: [existing.id] }); removed += 1; }
+      }
+    } else if (existing) {
+      statements.push({ sql: 'UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', params: [qty, now, existing.id] });
+      setN += 1;
+    } else {
+      statements.push({ sql: 'INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', params: [uuid(), pid, cardId, slug, qty, '', now, now] });
+      setN += 1;
+    }
+  }
+  return { statements, setN, removed, cards: cards.size };
+}
+
 /** Build the command over injected primitives so the barrier tests run PRODUCTION code. */
 export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = newId, nowIso = newNow, activeProfileId = realActiveProfileId }) {
   async function readCatalog(ids) {
@@ -159,7 +221,47 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
     }
   }
 
-  return { importCollectionResolved };
+  /**
+   * Commit an absolute owned-SET batch (bulk edit / bulk delete). One transaction, ONE broadcast.
+   * @returns { set, removed, cards } - printings set to a positive qty, rows removed, distinct cards.
+   */
+  async function setOwnedItemsBulk(items, pid = activeProfileId()) {
+    if (!pid) throw bulkWriteError('prewrite', 'none', 'setOwnedItemsBulk: no active profile.');
+    if (items != null && !Array.isArray(items)) throw bulkWriteError('prewrite', 'none', 'setOwnedItemsBulk: items must be an array.');
+    const list = items || [];
+    if (!list.length) return { set: 0, removed: 0, cards: 0 };
+    if (list.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `setOwnedItemsBulk: batch exceeds ${MAX_BATCH_ITEMS} items.`);
+
+    let ranTransaction = false;
+    try {
+      const result = await exclusive(async () => {
+        const catalog = await readCatalog(list.filter((i) => (i?.qty | 0) > 0).map((i) => i?.card_id));
+        // Current owned rows for these cards, so a zero can delete-or-keep-want and a set can update-or-insert.
+        const cardIds = [...new Set(list.map((i) => i?.card_id).filter(Boolean))];
+        const currentByKey = new Map();
+        for (let i = 0; i < cardIds.length; i += 400) {
+          const chunk = cardIds.slice(i, i + 400);
+          const rows = await query(`SELECT id, card_id, variant_slug, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id IN (${chunk.map(() => '?').join(',')});`, [pid, ...chunk]);
+          for (const r of rows) currentByKey.set(`${r.card_id}|${r.variant_slug}`, r);
+        }
+        const plan = planOwnedSetBatch(list, catalog, currentByKey, { pid, uuid, now: nowIso() });   // throws (prewrite) on an impossible positive item
+        if (!plan.statements.length) return { set: 0, removed: 0, cards: 0, noop: true };
+        ranTransaction = true;
+        await tx(plan.statements.map((s) => [s.sql, s.params]));
+        return { set: plan.setN, removed: plan.removed, cards: plan.cards, noop: false };
+      });
+      if (ranTransaction && !result.noop) notify();
+      return { set: result.set, removed: result.removed, cards: result.cards };
+    } catch (e) {
+      if (ranTransaction) notify();
+      if (e && e.name === 'BulkWriteError') throw e;
+      throw ranTransaction
+        ? bulkWriteError('transaction', 'unknown', e?.message || String(e))
+        : bulkWriteError('prewrite', 'none', e?.message || String(e));
+    }
+  }
+
+  return { importCollectionResolved, setOwnedItemsBulk };
 }
 
 /** Production instance, wired to the REAL barrier. */
@@ -171,3 +273,4 @@ const production = createOwnedImportCommand({
 });
 
 export const importCollectionResolved = production.importCollectionResolved;
+export const setOwnedItemsBulk = production.setOwnedItemsBulk;

@@ -40,7 +40,7 @@ import {
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
-import { importCollectionResolved } from '../store/ownedImportRepository.js';
+import { importCollectionResolved, setOwnedItemsBulk } from '../store/ownedImportRepository.js';
 import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
@@ -740,39 +740,52 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
       <span style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
-      <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Add copies</button>
+      <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
       <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
     </div>,
     slot,
   );
 }
 
-// "Add copies" is intentional, not one-tap: a stepper modal confirms how many of EACH selected card,
-// and which FINISH, go into the collection. A card without the chosen finish (a non-foil-only card
-// when adding foils, or Winter River when adding standard) is skipped and reported, so one impossible
-// pairing never sinks the whole batch.
+// A stepper modal for bulk-editing owned copies of the selected cards. TWO modes: ADD (+N to what
+// you own) and SET (make the owned count exactly N - and N=0 REMOVES them, the bulk delete). A finish
+// toggle picks Standard vs Foil; a card without the chosen finish (a non-foil-only card when adding
+// foils, or Winter River when adding standard) is skipped and reported, so one impossible pairing
+// never sinks the batch. Set-to-0 keeps any wishlist want (see the store command).
 function AddCopiesSheet({ open, count, onClose, onConfirm }) {
+  const [mode, setMode] = useState('add');   // 'add' | 'set'
   const [qty, setQty] = useState(1);
   const [foil, setFoil] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setQty(1); setFoil(false); setBusy(false); } }, [open]);
+  useEffect(() => { if (open) { setMode('add'); setQty(1); setFoil(false); setBusy(false); } }, [open]);
+  const min = mode === 'set' ? 0 : 1;
+  const setModeSafe = (m) => { setMode(m); if (m === 'add' && qty < 1) setQty(1); };
+  const cta = mode === 'set'
+    ? (qty === 0 ? `Remove ${foil ? 'foil ' : ''}from collection` : `Set each to ${qty}${foil ? ' foil' : ''}`)
+    : `Add ${qty} ${foil ? 'foil ' : ''}of each`;
+  const dangerCta = mode === 'set' && qty === 0;
   return (
-    <BottomSheet open={open} title="ADD COPIES" onClose={onClose}>
+    <BottomSheet open={open} title="EDIT COPIES" onClose={onClose}>
       <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 16 }}>
-        How many copies of each of the {count} selected card{count === 1 ? '' : 's'} do you own? They are added to your collection.
+        {mode === 'set'
+          ? <>Set your owned count for each of the {count} selected card{count === 1 ? '' : 's'}. <strong style={{ color: 'var(--ink-body)' }}>0 removes them.</strong></>
+          : <>How many copies of each of the {count} selected card{count === 1 ? '' : 's'} do you own? They are added to your collection.</>}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <SegTabs ariaLabel="Mode" value={mode} onChange={setModeSafe}
+          options={[{ key: 'add', label: 'Add' }, { key: 'set', label: 'Set' }]} />
         <SegTabs ariaLabel="Finish" value={foil ? 'foil' : 'standard'} onChange={(k) => setFoil(k === 'foil')}
           options={[{ key: 'standard', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 22 }}>
-        <StepBtn dir={-1} disabled={qty <= 1} onClick={() => setQty((q) => Math.max(1, q - 1))} />
-        <span style={{ font: "500 36px/1 var(--f-display)", color: '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{qty}</span>
+        <StepBtn dir={-1} disabled={qty <= min} onClick={() => setQty((q) => Math.max(min, q - 1))} />
+        <span style={{ font: "500 36px/1 var(--f-display)", color: dangerCta ? 'var(--destructive)' : '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{qty}</span>
         <StepBtn dir={1} disabled={qty >= 99} onClick={() => setQty((q) => Math.min(99, q + 1))} />
       </div>
-      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm(qty, foil); }} disabled={busy}
-        style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}>
-        {busy ? 'Adding…' : `Add ${qty} ${foil ? 'foil ' : ''}of each to collection`}
+      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm(qty, foil, mode); }} disabled={busy}
+        style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1,
+          ...(dangerCta ? { background: 'rgba(60,20,20,.6)', color: 'var(--destructive)', border: '1px solid rgba(168,88,74,.5)' } : null) }}>
+        {busy ? 'Working…' : cta}
       </button>
     </BottomSheet>
   );
@@ -991,8 +1004,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
   }, [selectMode]);
   // Add N copies of each selected printing to the collection through the barrier-guarded bulk writer.
-  const bulkAddCopies = async (qty, foil) => {
-    // Only cards that actually have the chosen finish are added; the rest are skipped and counted (a
+  const bulkEditCopies = async (qty, foil, mode) => {
+    // Only cards that actually have the chosen finish are touched; the rest are skipped and counted (a
     // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
     // standard). This keeps one impossible pairing from rejecting the whole strict batch.
     const items = []; let skipped = 0;
@@ -1002,14 +1015,20 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       else skipped += 1;
     }
     if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
+    const tail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
+    const n = items.length, s = n === 1 ? '' : 's';
     try {
-      const r = await importCollectionResolved(items);
-      const tail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
-      toast(`Added ${r.copies} ${foil ? 'foil ' : ''}cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}${tail}`);
+      if (mode === 'set') {
+        await setOwnedItemsBulk(items);   // one atomic write; qty 0 removes, keeping any wishlist want
+        toast((qty === 0 ? `Removed ${foil ? 'foil ' : ''}from ${n} card${s}` : `Set ${n} card${s} to ${qty}${foil ? ' foil' : ''}`) + tail);
+      } else {
+        const r = await importCollectionResolved(items);
+        toast(`Added ${r.copies} ${foil ? 'foil ' : ''}cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}${tail}`);
+      }
       setQtyOpen(false); cancelSelect();
     } catch (e) {
-      console.error('bulkAddCopies failed', e);
-      toast("Couldn't add those cards.", { tone: 'danger' });
+      console.error('bulkEditCopies failed', e);
+      toast("Couldn't update those cards.", { tone: 'danger' });
       setQtyOpen(false);
     }
   };
@@ -1117,7 +1136,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
       )}
-      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkAddCopies} />
+      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkEditCopies} />
       <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
 

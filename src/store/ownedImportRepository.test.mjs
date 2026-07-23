@@ -19,7 +19,7 @@ import { __setActiveIdForTests } from './profileRepository.js';
 import { enqueueWrite, withExclusiveCollectionWrites, __resetCollectionWritesForTests } from './collectionWrites.js';
 import { ownedRowKey, previewCollectionText } from './ownedRepository.js';
 import {
-  createOwnedImportCommand, planOwnedItemBatch, importCollectionResolved, MAX_ITEM_QTY, MAX_BATCH_ITEMS,
+  createOwnedImportCommand, planOwnedItemBatch, planOwnedSetBatch, importCollectionResolved, setOwnedItemsBulk, MAX_ITEM_QTY, MAX_BATCH_ITEMS,
 } from './ownedImportRepository.js';
 import { planCollectionImport, buildImportItems } from './importPlan.js';
 
@@ -139,6 +139,77 @@ test('setCode must be exactly a STRING - only "" means uncategorised, not undefi
   }
   // The empty string is the ONE valid falsy setCode.
   assert.deepEqual(planOwnedItemBatch([{ card_id: 'c1', setCode: '', foil: true, qty: 1 }], catalog(CV)), [{ card_id: 'c1', slug: 'uncategorised:f', qty: 1 }]);
+});
+
+/* ---------------- planOwnedSetBatch (pure, absolute set / delete) ---------------- */
+
+const setArgs = { pid: 'p1', uuid: () => 'ID', now: 'T' };
+
+test('set: positive UPDATEs an existing row, INSERTs a missing one', () => {
+  const cur = new Map([['c1|001', { id: 'row1', qty_wanted: 0 }]]);
+  const plan = planOwnedSetBatch([
+    { card_id: 'c1', setCode: '001', foil: false, qty: 3 },
+    { card_id: 'c1', setCode: '002', foil: false, qty: 2 },
+  ], catalog(CV), cur, setArgs);
+  assert.equal(plan.setN, 2); assert.equal(plan.removed, 0); assert.equal(plan.cards, 1);
+  assert.match(plan.statements[0].sql, /UPDATE owned_cards SET qty_owned=\?/);
+  assert.deepEqual(plan.statements[0].params, [3, 'T', 'row1']);
+  assert.match(plan.statements[1].sql, /INSERT INTO owned_cards/);
+});
+
+test('set 0 DELETEs an owned-only row, but ZEROES (keeps) a row that also has a want', () => {
+  const cur = new Map([
+    ['c1|001', { id: 'owned-only', qty_wanted: 0 }],
+    ['c1|002', { id: 'also-wanted', qty_wanted: 2 }],
+  ]);
+  const plan = planOwnedSetBatch([
+    { card_id: 'c1', setCode: '001', foil: false, qty: 0 },
+    { card_id: 'c1', setCode: '002', foil: false, qty: 0 },
+  ], catalog(CV), cur, setArgs);
+  assert.equal(plan.removed, 1);
+  assert.match(plan.statements[0].sql, /DELETE FROM owned_cards/);
+  assert.deepEqual(plan.statements[0].params, ['owned-only']);
+  assert.match(plan.statements[1].sql, /UPDATE owned_cards SET qty_owned=0/);   // want preserved
+  assert.deepEqual(plan.statements[1].params, ['T', 'also-wanted']);
+});
+
+test('set 0 on a row that does not exist is a no-op', () => {
+  const plan = planOwnedSetBatch([{ card_id: 'c1', setCode: '001', foil: false, qty: 0 }], catalog(CV), new Map(), setArgs);
+  assert.deepEqual(plan.statements, []); assert.equal(plan.removed, 0);
+});
+
+test('a POSITIVE set validates the printing; ZERO clearing an impossible pair is exempt', () => {
+  assert.throws(() => planOwnedSetBatch([{ card_id: 'c1', setCode: '002', foil: true, qty: 1 }], catalog(CV), new Map(), setArgs), /foil is not a printing/);
+  const cur = new Map([['c1|002:f', { id: 'phantom', qty_wanted: 0 }]]);
+  const plan = planOwnedSetBatch([{ card_id: 'c1', setCode: '002', foil: true, qty: 0 }], catalog(CV), cur, setArgs);
+  assert.equal(plan.removed, 1);   // a historical malformed row can always be cleared
+});
+
+test('set: foil must be a real boolean and qty in 0..MAX', () => {
+  assert.throws(() => planOwnedSetBatch([{ card_id: 'c1', setCode: '001', foil: 'false', qty: 1 }], catalog(CV), new Map(), setArgs), /foil must be a boolean/);
+  assert.throws(() => planOwnedSetBatch([{ card_id: 'c1', setCode: '001', foil: false, qty: -1 }], catalog(CV), new Map(), setArgs), /out of range/);
+  assert.throws(() => planOwnedSetBatch([{ card_id: 'c1', setCode: '001', foil: false, qty: MAX_ITEM_QTY + 1 }], catalog(CV), new Map(), setArgs), /out of range/);
+});
+
+test('setOwnedItemsBulk end-to-end: sets, deletes owned-only, keeps a wanted row (one broadcast)', async () => {
+  // Seed: c1/001 owned=1, c1/002 owned=2 AND wanted=1.
+  await importCollectionResolved([{ card_id: 'c1', setCode: '001', foil: false, qty: 1 }, { card_id: 'c1', setCode: '002', foil: false, qty: 2 }]);
+  const { setWantedForItem } = await import('./ownedRepository.js');
+  await setWantedForItem('c1', { set: '002', foil: false }, 1);
+
+  let fired = 0; const { subscribeCollection } = await import('./ownedRepository.js');
+  const unsub = subscribeCollection(() => { fired += 1; });
+  const r = await setOwnedItemsBulk([
+    { card_id: 'c1', setCode: '001', foil: false, qty: 5 },   // set
+    { card_id: 'c1', setCode: '002', foil: false, qty: 0 },   // clear owned, but 002 is wanted -> keep row
+  ]);
+  unsub();
+  assert.equal(fired, 1, 'exactly ONE broadcast for the whole batch');
+  assert.deepEqual(r, { set: 1, removed: 0, cards: 1 });
+  const c1 = rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [PID, 'c1']);
+  assert.equal(c1.find((x) => x.variant_slug === '001')?.qty_owned, 5);
+  const beta = c1.find((x) => x.variant_slug === '002');
+  assert.equal(beta?.qty_owned, 0, 'owned cleared'); assert.equal(beta?.qty_wanted, 1, 'want kept');
 });
 
 test('quantity bounds are enforced', () => {
