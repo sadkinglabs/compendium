@@ -10,7 +10,7 @@ import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import {
   setWantedForItem, stepWantedForItem, addWantedForItem, wantedItemsForCard, qtyFor,
-  subscribeCollection, wishlistCards, queueWantWrite,
+  subscribeCollection, wishlistCards, wishlistExportText, queueWantWrite,
 } from './ownedRepository.js';
 import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL, isLegacyPrinting,
@@ -446,4 +446,22 @@ test('COUNTERFACTUAL: bypassing the shared chain loses one of them', async () =>
 
   assert.equal(ledger('cRace')[0].qty_wanted, 2,
     'unqueued, the absolute write clobbers the atomic add - 3 increments became 2');
+});
+
+/* ---------------- wishlist export: the collector-item grammar ---------------- */
+
+test('wishlistExportText emits N Card [Set] [Foil] so a wishlist round-trips through the importer', async () => {
+  __setActiveIdForTests(PID);
+  sdb.run("INSERT OR REPLACE INTO cards(card_id,name,variants,sets) VALUES('lw','Lone Wolves',?,?);",
+    [JSON.stringify([{ slug: '001-x-b-s', set: '001', finish: 'Standard' }, { slug: '001-x-b-f', set: '001', finish: 'Foil' }]),
+      JSON.stringify([{ code: '001', name: 'Alpha' }])]);
+  await setWantedForItem('lw', { set: '001', foil: true }, 1);
+  assert.equal(await wishlistExportText(), '1 Lone Wolves [Alpha] [Foil]');
+});
+
+test('wishlistExportText emits a bare line for an uncategorised want (no printing to name)', async () => {
+  __setActiveIdForTests(PID);
+  sdb.run("INSERT OR REPLACE INTO cards(card_id,name,variants,sets) VALUES('uu','Unknown One','[]','[]');");
+  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('wu',?,'uu','uncategorised',0,2,'','x','x');", [PID]);
+  assert.equal(await wishlistExportText(), '2 Unknown One');
 });
