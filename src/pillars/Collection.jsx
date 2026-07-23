@@ -660,12 +660,12 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         </div>
       )}
 
-      {/* Every ADD is a FAB: the camera docked (kept front-and-centre - the primary add gesture) and
-          "Import from text" stacked above it. */}
-      <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
-        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
-      <Fab variant="lib" label="Import from text" className="fab-stacked" icon={<FabGlyph kind="import" />}
-        onClick={() => setImportOpen(true)} />
+      {/* ONE + FAB reveals every add method as a menu (not a blind stacked fire). The camera lives
+          inside it, clearly labelled - never buried. */}
+      <Fab variant="lib" label="Add cards" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+        { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+      ]} />
       {/* HONEST BUT QUIET, per the ruling: the count sits on the entry itself rather than as a
           standing badge. A user with 300 uncategorised imports does not want a permanent 300 on
           their home screen. An empty pile shows no row at all. */}
@@ -735,6 +735,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
 
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);   // text import lives on the set's + FAB (adds to the collection, not just this set)
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
   // here, so neither can be moved by a filter the user happens to have on.
@@ -951,9 +952,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
-          <OverflowMenu label="Set actions" items={[
-            { label: 'Export missing as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
-          ]} />
+          {/* No overflow here - a set has no edit ops; adding and exporting live on the + FAB. */}
         </div>
       </div>
 
@@ -1004,11 +1003,15 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           not a mode, so there is no add surface to toggle into. The ownership lens that used
           to occupy this slot in read mode is now inline in the header. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {/* Scan, one tap. Typed import is NOT here on purpose: a paste spanning many sets must
-          stay one paste, so it lives on Collection > Overview rather than inside a set where
-          it would imply the set scopes it. */}
-      <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={<FabGlyph kind="camera" />}
-        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      {/* The + FAB (stacked above Filter) reveals add + export as a menu. Add-from-text adds to the
+          COLLECTION (a paste self-scopes per line), not just this set - the sheet says so; "Export
+          missing" is this set's buy list. */}
+      <Fab variant="lib" label="Add & export" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+        { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+        { label: 'Export missing', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
+      ]} />
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
       {/* A buy list for the WHOLE set, never the filtered view: selecting "Owned" must not
           turn "Export missing" into an empty file. Missing means no non-foil copy - the same
           definition as the header tally and as set completion. */}
@@ -1414,9 +1417,9 @@ function ListsIndex({ onOpenList, rev }) {
       <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell.">
         {custom.length ? custom.map(card) : <Empty text="No card lists yet." />}
       </Section>
-      <Fab variant="lib" label="New list" icon={<FabGlyph kind="add" />} items={[
-        { label: 'New wanted list', onClick: () => setCreate('wanted') },
-        { label: 'New card list', onClick: () => setCreate('custom') },
+      <Fab variant="lib" label="Create a list" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Create a wanted list', onClick: () => setCreate('wanted') },
+        { label: 'Create a card list', onClick: () => setCreate('custom') },
       ]} />
       <ListNameSheet open={!!create} kind={create}
         title={create === 'wanted' ? 'NEW WANTED LIST' : 'NEW CARD LIST'} submitLabel="Create list"
@@ -1798,11 +1801,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
             it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
             delete, and OverflowMenu drops the null entries. */}
+        {/* Overflow is EDIT-only now: manage the list itself. Adding and exporting live on the + FAB.
+            The Wishlist is virtual (no edit ops), so all entries drop and the overflow disappears. */}
         <OverflowMenu label="List actions" items={[
           isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
           isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
-          { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
-          isWanted ? { label: 'Get missing cards', icon: <MenuGlyph kind="missing" />, onClick: openMissing } : null,
           isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
         ]} />
       </div>
@@ -1859,17 +1862,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      {/* Both ADD methods are FABs: "Add cards" (the search picker) docked, "Add from text" stacked
-          above. Everything else is list chrome and lives in the header overflow.
-
-          Neither is a camera FAB, despite the set drill's being one. launchScanner has only
-          'collection' and 'deck' modes - scanning here would silently add to the collection rather
-          than to this list, which is worse than not offering it. When the scanner learns a list mode
-          the docked FAB becomes a camera. */}
-      <Fab variant="lib" label="Add cards to this list" icon={<FabGlyph kind="add" />}
-        onClick={() => setAddOpen(true)} />
-      <Fab variant="lib" label="Add cards from text" className="fab-stacked" icon={<FabGlyph kind="import" />}
-        onClick={() => setBulkOpen(true)} />
+      {/* ONE + FAB holds every "cards in / out" method for this list as a menu. Add-from-camera is
+          deferred until the scanner learns a list target (it only knows collection/deck today) -
+          scanning now would add to the collection, not this list. */}
+      <Fab variant="lib" label="List actions" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add cards', icon: <MenuGlyph kind="add" />, onClick: () => setAddOpen(true) },
+        { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setBulkOpen(true) },
+        isWanted ? { label: 'Get missing cards', icon: <MenuGlyph kind="missing" />, onClick: openMissing } : null,
+        { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
+      ].filter(Boolean)} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>
