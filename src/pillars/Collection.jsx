@@ -726,7 +726,7 @@ const OWN_LABEL = { regular: 'Owned', foilOnly: 'Foil only', missing: 'Missing',
 // While cards are being multi-selected the docked search bar becomes a selection action bar. It
 // portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
 // shift, one keyboard-aware container.
-function SelectionBar({ count, onAdd, onCreate, onCancel }) {
+function SelectionBar({ count, total, allSelected, onToggleAll, onAdd, onCreate, onCancel }) {
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
@@ -740,7 +740,10 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
       <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
-      <span style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
+      {/* The count IS the select-all toggle - enter Edit empty, then grab everything or tap tiles. */}
+      <button onClick={onToggleAll} style={{ flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', border: 'none', background: 'transparent', font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>
+        {allSelected ? `Deselect all · ${count}` : `Select all · ${total}`}
+      </button>
       <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
       <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
     </div>,
@@ -756,7 +759,7 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
 // A finish toggle picks Standard vs Foil; a card without the chosen finish (a non-foil-only card when
 // touching foils, or Winter River when touching standard) is skipped and reported, so one impossible
 // pairing never sinks the batch. `onConfirm({ mode, qty, foil, dir })`.
-function AddCopiesSheet({ open, count, onClose, onConfirm }) {
+function AddCopiesSheet({ open, count, onClose, onConfirm, maxStd = 99, maxFoil = 99 }) {
   const [mode, setMode] = useState('adjust');   // 'adjust' | 'set'
   const [dir, setDir] = useState('add');        // 'add' | 'remove' (adjust only)
   const [qty, setQty] = useState(1);
@@ -764,8 +767,12 @@ function AddCopiesSheet({ open, count, onClose, onConfirm }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (open) { setMode('adjust'); setDir('add'); setQty(1); setFoil(false); setBusy(false); } }, [open]);
   const min = mode === 'adjust' ? 1 : 0;   // Adjust magnitude is >=1 (a 0 delta is a no-op); Set allows 0 (= clear)
-  const setModeSafe = (m) => { setMode(m); if (m === 'adjust' && qty < 1) setQty(1); };
   const removing = mode === 'adjust' && dir === 'remove';
+  // Removing is capped at the largest stack in the selection (per finish) - offering to remove more
+  // than anything holds is meaningless. Add/Set keep the plain 99 ceiling.
+  const max = removing ? Math.max(1, foil ? maxFoil : maxStd) : 99;
+  useEffect(() => { setQty((q) => Math.min(Math.max(q, min), max)); }, [min, max]);
+  const setModeSafe = (m) => { setMode(m); if (m === 'adjust' && qty < 1) setQty(1); };
   const f = foil ? 'foil ' : '';
   const cta = mode === 'set'
     ? (qty === 0 ? `Remove ${f}from collection` : `Set each to ${qty}${foil ? ' foil' : ''}`)
@@ -791,7 +798,7 @@ function AddCopiesSheet({ open, count, onClose, onConfirm }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 22 }}>
         <StepBtn dir={-1} disabled={qty <= min} onClick={() => setQty((q) => Math.max(min, q - 1))} />
         <span style={{ font: "500 36px/1 var(--f-display)", color: dangerCta ? 'var(--destructive)' : '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{removing ? `-${qty}` : qty}</span>
-        <StepBtn dir={1} disabled={qty >= 99} onClick={() => setQty((q) => Math.min(99, q + 1))} />
+        <StepBtn dir={1} disabled={qty >= max} onClick={() => setQty((q) => Math.min(max, q + 1))} />
       </div>
       <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm({ mode, qty, foil, dir }); }} disabled={busy}
         style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1,
@@ -997,15 +1004,17 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
 
   // ---- Multi-select over the scoped grid ----
+  // Each selected entry captures the present owned/foil counts too, so the Adjust sheet can cap a
+  // Remove at what's actually on hand (never offer to remove more than the biggest stack holds).
   const selKey = (id, set) => `${id}|${set}`;
-  const enterSelectAll = () => {
-    setSelected(new Map(drillRows.map((r) => [selKey(r.card.card_id, r.set), { card: r.card, set: r.set }])));
-    setSelectMode(true);
-  };
+  const selVal = (r) => ({ card: r.card, set: r.set, owned: r.owned || 0, foil: r.foil || 0 });
+  const enterSelectMode = () => { setSelected(new Map()); setSelectMode(true); };   // enter empty - tap tiles, or "Select all"
+  const selectAll = () => setSelected(new Map(drillRows.map((r) => [selKey(r.card.card_id, r.set), selVal(r)])));
+  const deselectAll = () => setSelected(new Map());
   const toggleSel = (id, set) => setSelected((m) => {
     const n = new Map(m); const k = selKey(id, set);
     if (n.has(k)) n.delete(k);
-    else { const row = drillRows.find((r) => r.card.card_id === id && r.set === set); if (row) n.set(k, { card: row.card, set: row.set }); }
+    else { const row = drillRows.find((r) => r.card.card_id === id && r.set === set); if (row) n.set(k, selVal(row)); }
     return n;
   });
   const cancelSelect = () => { setSelectMode(false); setSelected(new Map()); };
@@ -1113,11 +1122,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
-          {/* Overflow = manage: "Select all" enters multi-select over the CURRENT (scoped) grid, so
-              "scope to Missing -> Select all -> New list" is a two-tap buy-list. */}
+          {/* Overflow = manage: "Edit" enters multi-select (empty) over the CURRENT (scoped) grid;
+              the action bar then offers Select-all or per-tile tapping, so a single card is one tap. */}
           {!selectMode && totalRows > 0 && (
             <OverflowMenu label="Set actions" items={[
-              { label: 'Select all', icon: <MenuGlyph kind="select" />, onClick: enterSelectAll },
+              { label: 'Edit', icon: <MenuGlyph kind="select" />, onClick: enterSelectMode },
             ]} />
           )}
         </div>
@@ -1166,11 +1175,16 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
           portal into the same #cx-dock-search slot, so it swaps in place). */}
       {selectMode ? (
-        <SelectionBar count={selected.size} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+        <SelectionBar count={selected.size} total={drillRows.length}
+          allSelected={selected.size > 0 && selected.size === drillRows.length}
+          onToggleAll={selected.size === drillRows.length ? deselectAll : selectAll}
+          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
       )}
-      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkEditCopies} />
+      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkEditCopies}
+        maxStd={[...selected.values()].reduce((m, s) => Math.max(m, s.owned || 0), 0)}
+        maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
       <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
 
@@ -1984,11 +1998,12 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
             it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
             delete, and OverflowMenu drops the null entries. */}
-        {/* Overflow is EDIT-only now: manage the list itself. Adding and exporting live on the + FAB.
-            The Wishlist is virtual (no edit ops), so all entries drop and the overflow disappears. */}
+        {/* Overflow = manage the list itself: rename, duplicate, EXPORT, delete. Adding lives on the +
+            FAB. The Wishlist is virtual (no rename/duplicate/delete), so only Export survives for it. */}
         <OverflowMenu label="List actions" items={[
           isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
           isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+          { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
           isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
         ]} />
       </div>
@@ -2045,15 +2060,14 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      {/* ONE + FAB holds every "cards in / out" method for this list as a menu. Add-from-camera is
-          deferred until the scanner learns a list target (it only knows collection/deck today) -
-          scanning now would add to the collection, not this list. */}
+      {/* The + FAB is ADD-only: the ways cards come INTO this list. Export moved to the overflow (it
+          is a manage action, not an add), and "Get missing" lives on the progress bar's "View missing".
+          Add-from-camera is deferred until the scanner learns a list target (it only knows
+          collection/deck today) - scanning now would add to the collection, not this list. */}
       <Fab variant="lib" label="List actions" icon={<FabGlyph kind="add" />} items={[
         { label: 'Add cards', icon: <MenuGlyph kind="add" />, onClick: () => setAddOpen(true) },
         { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setBulkOpen(true) },
-        isWanted ? { label: 'Get missing cards', icon: <MenuGlyph kind="missing" />, onClick: openMissing } : null,
-        { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
-      ].filter(Boolean)} />
+      ]} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>
