@@ -1660,7 +1660,7 @@ const fmtWishDate = (iso) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, onRemove, printing = null, wishlist = false, wishlistDate = null }) {
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, onRemove, printing = null, wishlist = false, wishlistDate = null, hearted = true }) {
   // The WISHLIST tracks no progress (that is what Wanted lists are for), so its rows carry no
   // owned-vs-goal state: no completion gilt, no dimming, no "X of Y" line - just the wanted card.
   const { goalMet, ownedAny } = wishlist ? { goalMet: false, ownedAny: false } : goalRowState({ owned, target, isWanted });
@@ -1736,13 +1736,16 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
         )}
       </div>
 
-      {/* Right rail. Wishlist: a filled heart that un-wishlists on tap (binary - no amount).
+      {/* Right rail. Wishlist: a heart toggle (binary - no amount). Tapping only FLIPS the heart -
+          filled = on the wishlist, outline = marked to drop - so an accidental tap is undone by
+          tapping again; the drop actually commits when you leave the list (see toggleUnwish).
           Otherwise, Edit mode: frosted -/+ on the GOAL; Read mode: the same figure, static. */}
       {wishlist ? (
-        <button onClick={(e) => { e.stopPropagation(); onRemove?.(); }} aria-label={`Remove ${card.name} from wishlist`}
-          style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(210,88,115,.12)', border: '1px solid rgba(210,88,115,.5)', color: 'var(--accent-ruby)', cursor: 'pointer' }}>
-          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
+        <button onClick={(e) => { e.stopPropagation(); onRemove?.(); }} aria-pressed={hearted}
+          aria-label={hearted ? `Remove ${card.name} from wishlist` : `Keep ${card.name} on wishlist`}
+          style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            background: hearted ? 'rgba(210,88,115,.12)' : 'transparent', border: `1px solid ${hearted ? 'rgba(210,88,115,.5)' : 'var(--hair-40)'}`, color: hearted ? 'var(--accent-ruby)' : 'var(--ink-faint)' }}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill={hearted ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth={hearted ? 0 : 1.8} aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
         </button>
       ) : editable ? (
         <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -1771,6 +1774,12 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [meta, setMeta] = useState(list);
   const [loaded, setLoaded] = useState(false);     // initial fetch done
   const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
+  // Deferred un-wishlisting (Wishlist only): tapping a heart marks the row here without writing, so
+  // an accidental tap is undone by tapping again. The marked rows are dropped when you LEAVE the list.
+  const [pendingUnwish, setPendingUnwish] = useState(() => new Set());
+  const pendingUnwishRef = useRef(pendingUnwish);
+  pendingUnwishRef.current = pendingUnwish;
+  const toggleUnwish = (key) => setPendingUnwish((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [bulkOpen, setBulkOpen] = useState(false); // paste-a-list bulk add
   const [ownQty, setOwnQty] = useState(new Map()); // keyed like the goal map: item for the Wishlist, card for lists
@@ -1893,6 +1902,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       set ? setWantedForItem(cardId, { set, foil }, 0, pid) : setWanted(cardId, 0, pid)
     ));
   };
+  // Commit the deferred un-wishlists (the marked hearts) when the list closes. clearEntry is an
+  // idempotent set-to-0, and the ref is emptied first, so the visible back button and the unmount
+  // safety net can both call this without double-writing. Held in a ref so the unmount cleanup sees
+  // the latest marks + the latest clearEntry closure.
+  const flushUnwish = () => {
+    const keys = pendingUnwishRef.current;
+    if (!keys.size) return;
+    pendingUnwishRef.current = new Set();
+    for (const key of keys) clearEntry(key);
+  };
+  const flushRef = useRef(flushUnwish);
+  flushRef.current = flushUnwish;
+  useEffect(() => () => flushRef.current(), []);   // leaving ANY way (hardware back, nav) still commits
   // Mutate the SYNCHRONOUS goal mirror and the visible state together, so rapid taps
   // accumulate off qtyRef instead of a stale render closure. Reconciliation from the repo
   // (once writes settle, guarded against regressing a newer edit) lives in the per-list drain.
@@ -2009,7 +2031,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     <div style={{ padding: '0 20px' }}>
       {/* Header: frosted back + name/eyebrow + a live owned/goal tally. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4, marginBottom: 14 }}>
-        <button onClick={onBack} aria-label="Back to lists" style={{
+        <button onClick={() => { flushRef.current(); onBack(); }} aria-label="Back to lists" style={{
           width: 38, height: 38, flex: 'none', borderRadius: '50%', cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           font: "400 22px/1 var(--f-ui)", color: '#d3a8af',
@@ -2089,7 +2111,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
               printing={isWishlist ? printingLabel(c) : null} wishlistDate={isWishlist ? c.created_at : null}
               isWanted={isWanted || isWishlist} wishlist={isWishlist} editable={editing} onStep={(d) => step(rowKey(c), d)}
-              onRemove={() => removeEntry(rowKey(c))}
+              hearted={!pendingUnwish.has(rowKey(c))} onRemove={() => toggleUnwish(rowKey(c))}
               onPeek={() => (isWishlist ? onPeek(c.card_id, c.set, !!c.foil) : onPeek(c.card_id))} />
           ))}
         </>
