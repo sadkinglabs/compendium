@@ -1374,7 +1374,7 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
         placeholder="Description (optional)…" style={{ ...SHEET_INPUT, marginTop: 10, font: "400 13.5px/1 var(--f-read)" }} />
       <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
         <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
-        <button onClick={go} disabled={!name.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() && !busy ? 1 : 0.5 }}>{busy ? 'Creating…' : submitLabel}</button>
+        <button onClick={go} disabled={!name.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() && !busy ? 1 : 0.5 }}>{busy ? `${submitLabel}…` : submitLabel}</button>
       </div>
     </BottomSheet>
   );

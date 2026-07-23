@@ -19,7 +19,7 @@ import { __setActiveIdForTests } from './profileRepository.js';
 import { enqueueWrite, withExclusiveCollectionWrites, __resetCollectionWritesForTests } from './collectionWrites.js';
 import { ownedRowKey, previewCollectionText } from './ownedRepository.js';
 import {
-  createOwnedImportCommand, planOwnedItemBatch, planOwnedSetBatch, importCollectionResolved, setOwnedItemsBulk, MAX_ITEM_QTY, MAX_BATCH_ITEMS,
+  createOwnedImportCommand, planOwnedItemBatch, planOwnedSetBatch, importCollectionResolved, setOwnedItemsBulk, createListWithEntries, MAX_ITEM_QTY, MAX_BATCH_ITEMS,
 } from './ownedImportRepository.js';
 import { planCollectionImport, buildImportItems } from './importPlan.js';
 
@@ -315,6 +315,62 @@ test('createListWithEntries: an empty name is prewrite/none, nothing written', a
   await assert.rejects(() => cmdList()({ kind: 'custom', name: '   ', cardIds: ['c1'] }),
     (e) => e.phase === 'prewrite' && e.writeState === 'none');
   assert.equal(notifyCount, 0);
+});
+
+test('createListWithEntries: an UNKNOWN catalog id rejects the whole op - prewrite/none, no list, no broadcast', async () => {
+  await assert.rejects(() => cmdList()({ kind: 'custom', name: 'Phantoms', cardIds: ['c1', 'ghost-card'] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /unknown card/.test(e.message));
+  assert.equal(listRows().find((l) => l.name === 'Phantoms'), undefined, 'no partially-populated list survives');
+  assert.equal(rows("SELECT COUNT(*) n FROM card_list_entries WHERE card_id='ghost-card';")[0].n, 0, 'no phantom entry committed');
+  assert.equal(notifyCount, 0, 'a rejected create never broadcasts');
+});
+
+test('createListWithEntries: a malformed id is REJECTED, not silently filtered', async () => {
+  for (const bad of [['c1', ''], ['c1', '   '], ['c1', 42], ['c1', null], ['c1', { card_id: 'c1' }]]) {
+    notifyCount = 0;
+    await assert.rejects(() => cmdList()({ kind: 'custom', name: 'Malformed', cardIds: bad }),
+      (e) => e.phase === 'prewrite' && e.writeState === 'none', `${JSON.stringify(bad)} should reject`);
+    assert.equal(listRows().find((l) => l.name === 'Malformed'), undefined);
+    assert.equal(notifyCount, 0);
+  }
+});
+
+test('createListWithEntries: kind must be exactly wanted or custom; cardIds must be an array', async () => {
+  await assert.rejects(() => cmdList()({ kind: 'buylist', name: 'X', cardIds: ['c1'] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /kind must be/.test(e.message));
+  await assert.rejects(() => cmdList()({ kind: 'custom', name: 'X', cardIds: 'c1' }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /must be an array/.test(e.message));
+  assert.equal(notifyCount, 0);
+});
+
+test('createListWithEntries: the ceiling is enforced on the RAW array, before de-duplication', async () => {
+  // 2001 duplicates of ONE real card dedupe to a single entry, but the raw count still exceeds the
+  // ceiling - the guard must fire on the input, not the deduped set.
+  const flood = Array.from({ length: MAX_BATCH_ITEMS + 1 }, () => 'c1');
+  await assert.rejects(() => cmdList()({ kind: 'custom', name: 'Flood', cardIds: flood }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /exceeds 2000/.test(e.message));
+  assert.equal(listRows().find((l) => l.name === 'Flood'), undefined);
+  assert.equal(notifyCount, 0);
+});
+
+test('createListWithEntries: an apply-then-reject (web) is transaction/unknown with ONE invalidation', async () => {
+  const applyThenReject = async (stmts) => { await runTx(stmts); throw new Error('IndexedDB quota exceeded'); };
+  await assert.rejects(() => cmdList((fn) => fn(), { tx: applyThenReject })({ kind: 'custom', name: 'Landed', cardIds: ['c1', 'ap'] }),
+    (e) => e.phase === 'transaction' && e.writeState === 'unknown');
+  assert.equal(listRows().find((l) => l.name === 'Landed')?.name, 'Landed', 'the rows actually landed - "nothing written" would be a lie');
+  assert.equal(notifyCount, 1, 'exactly one invalidation after an indeterminate write');
+});
+
+test('PRODUCTION WIRING: exported createListWithEntries BLOCKS behind a held barrier write', async () => {
+  __resetCollectionWritesForTests();
+  const held = deferred();
+  const first = enqueueWrite(ownedRowKey(PID, 'c1', '001'), async () => { await held.promise; });
+  let ran = false;
+  const create = createListWithEntries({ kind: 'custom', name: 'Barriered', cardIds: ['c1'] }).then(() => { ran = true; });
+  await settleTurns();
+  assert.equal(ran, false, 'the list create waited for the in-flight write to drain');
+  held.resolve(); await first; await create;
+  assert.equal(ran, true);
 });
 
 test('createListWithEntries: writes under the CAPTURED profile even if active switches mid-flight', async () => {

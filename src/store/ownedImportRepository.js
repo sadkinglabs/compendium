@@ -285,30 +285,50 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
    * and every entry commit together or not at all, so a backgrounded app or a mid-loop profile switch
    * can never leave a half-populated list. `cardIds` are card-grain and de-duplicated. `pid` is
    * captured by the CALLER at the submit gesture.
+   *
+   * `card_list_entries.card_id` has NO catalog foreign key, so an unknown id would commit as a phantom
+   * entry that joins away to nothing on read - counted but invisible, an internally inconsistent list.
+   * We therefore fail closed: strict input validation up front, then an authoritative catalog-membership
+   * check INSIDE the barrier that rejects the whole operation before a single row is written.
    * @returns { id, kind, name, entries } on success; throws a BulkWriteError otherwise.
    */
   async function createListWithEntries({ kind, name, description = '', cardIds } = {}, pid = activeProfileId()) {
     if (!pid) throw bulkWriteError('prewrite', 'none', 'createListWithEntries: no active profile.');
+    if (kind !== 'wanted' && kind !== 'custom') throw bulkWriteError('prewrite', 'none', `createListWithEntries: kind must be "wanted" or "custom", got ${JSON.stringify(kind)}.`);
     const nm = String(name || '').trim();
     if (!nm) throw bulkWriteError('prewrite', 'none', 'createListWithEntries: a name is required.');
-    const k = kind === 'wanted' ? 'wanted' : 'custom';
-    const ids = [...new Set((Array.isArray(cardIds) ? cardIds : []).filter((c) => typeof c === 'string' && c))];
-    if (ids.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `createListWithEntries: exceeds ${MAX_BATCH_ITEMS} entries.`);
+    if (!Array.isArray(cardIds)) throw bulkWriteError('prewrite', 'none', 'createListWithEntries: cardIds must be an array.');
+    // Enforce the ceiling against the RAW array, before dedup, so duplicates can't smuggle an
+    // unbounded payload past the guard.
+    if (cardIds.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `createListWithEntries: exceeds ${MAX_BATCH_ITEMS} entries.`);
+    // Reject a malformed id, never silently drop it - a dropped id is a silent partial write.
+    for (const c of cardIds) {
+      if (typeof c !== 'string' || !c.trim()) throw bulkWriteError('prewrite', 'none', `createListWithEntries: invalid card id ${JSON.stringify(c)}.`);
+    }
+    const ids = [...new Set(cardIds.map((c) => c.trim()))];
 
     const listId = uuid();
     const now = nowIso();
     let ranTransaction = false;
     try {
       await exclusive(async () => {
+        // Authoritative catalog read under the barrier: reject the WHOLE op if any id is not a real
+        // card. Thrown as a plain Error while ranTransaction is false, so the catch classifies it
+        // prewrite/none - nothing written, no broadcast.
+        if (ids.length) {
+          const catalog = await readCatalog(ids);
+          const missing = ids.filter((id) => !catalog.has(id));
+          if (missing.length) throw new Error(`createListWithEntries: unknown card(s) ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}.`);
+        }
         const stmts = [
-          ['INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?);', [listId, pid, k, nm, description || '', now, now]],
+          ['INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?);', [listId, pid, kind, nm, description || '', now, now]],
           ...ids.map((cid) => ['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,1,?,?);', [uuid(), listId, cid, '', now]]),
         ];
         ranTransaction = true;
         await tx(stmts);
       });
       notify();
-      return { id: listId, kind: k, name: nm, entries: ids.length };
+      return { id: listId, kind, name: nm, entries: ids.length };
     } catch (e) {
       if (ranTransaction) notify();
       if (e && e.name === 'BulkWriteError') throw e;

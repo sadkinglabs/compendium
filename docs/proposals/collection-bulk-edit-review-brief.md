@@ -4,6 +4,27 @@
 Device: built + owner-exercised on a Pixel 9 Pro XL. **The highest-risk surface is the new
 durable bulk-owned-SET command - please attack it first.**
 
+## Corrective 2 - catalog-membership guard + doc accuracy (please re-check)
+
+Second-round disposition raised one new Major + one Minor; both are closed.
+
+- **Major - `createListWithEntries` accepted phantom catalog ids.** `card_list_entries.card_id` has no
+  FK to `cards`, so an unknown id would commit as an entry that joins away to nothing on read (counted
+  but invisible). The command now fails closed: `kind` must be exactly `wanted`|`custom`; `cardIds`
+  must be an array; the `MAX_BATCH_ITEMS` ceiling is enforced on the RAW array before dedup; any
+  non-string/blank id is REJECTED (never dropped); and inside the exclusive holder it authoritatively
+  reads the catalog and rejects the whole op (prewrite/none, no write, no broadcast) if any deduped id
+  is missing. Five new tests: unknown id → prewrite/none + no list + no broadcast; malformed id →
+  rejection not filtering; kind/array guards; 2001-duplicate raw-ceiling; apply-then-reject →
+  transaction/unknown + one invalidation; production command blocks behind a held barrier.
+- **Minor - doc accuracy.** DESIGN_SYSTEM §4 now states the shipped surfaces exactly (set overflow =
+  Select all; list overflow = rename/duplicate/delete; Overview has no manage overflow; Collection/set
+  `+` = camera + typed import; list `+` = add, text import, missing-card workflow, export). The shared
+  sheet's busy label is now `${submitLabel}…` (was hard-coded "Creating…", wrong for rename).
+
+Gates after corrective 2: store suites 61, test:ui 162, test:app 17, check:types, check:cycles 134,
+check:docs, build - all green.
+
 ## Corrective increment - all six findings addressed (please re-check)
 
 Following the "Changes required" disposition (4 Majors + 2 Minors), this commit lands the fixes.
