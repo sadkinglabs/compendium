@@ -6,6 +6,7 @@ import { getDeck, getDeckCards } from './deckRepository.js';
 import { slugify } from './ids.js';
 import { shareImage } from '../native.js';
 import { roundRectPath } from './roundRect.js';
+import { posterScale, maxCanvasDim } from './posterScale.js';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -50,7 +51,7 @@ async function deckShim(deckId) {
 
 // ── Deckbuilder poster ──
 async function _buildDeckPosterCanvas(deck) {
-  const SCALE = 3, W = 990, pad = 44;   // 3x device-pixel render for a crisp shared poster
+  const W = 990, pad = 44;   // SCALE is chosen after H is known - see the canvas creation below
   const INK = '#0b0806', GOLD = '#dcb86f';
   const ELS = ['air', 'earth', 'fire', 'water'];
   const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
@@ -117,6 +118,10 @@ async function _buildDeckPosterCanvas(deck) {
   const statsTop = yCursor + 18, STATS_H = 336;
   const H = statsTop + STATS_H + 52;
 
+  // Rasterise at the highest device-pixel scale the GPU can actually back, so poster text stays crisp
+  // when magnified without risking a blank canvas past the device's max texture size. Layout below is
+  // in logical pixels (x.scale maps them), so SCALE only sets the raster resolution, never the layout.
+  const SCALE = posterScale(maxCanvasDim(), W, H);
   const cv = document.createElement('canvas');
   cv.width = W * SCALE; cv.height = H * SCALE;
   const x = cv.getContext('2d');
