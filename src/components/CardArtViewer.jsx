@@ -1,60 +1,67 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { cardFallbackArt } from '../store/cardArt.js';
 import { useArtSource } from './ArtImage.jsx';
 import { registerBackConsumer } from '../back.js';
 import { setImmersive } from '../native.js';
+import { viewerTransition, initialViewerState } from './cardArtViewerPhase.js';
 
 // Full-screen card display. Tapping the art in a card sheet POPS the card out of the sheet onto its
 // own stage, where dragging a finger tilts it in 3D over a cast shadow and a foil printing catches a
-// holographic sheen. Closing animates it back into the sheet's frame.
+// holographic sheen. One explicit visual phase (cardArtViewerPhase.js) drives the whole entrance and
+// exit - preparing → entering → open → exiting → closed - so nothing can reopen the viewer mid-exit.
 //
-// Motion (both finishes): a SINGLE requestAnimationFrame spring loop lerps six values from their
-// targets and writes them as CSS variables. Pointer down/move sets targets and tracks tightly
-// (k=0.3); on release the loop eases (k=0.14) into a slow lissajous IDLE DRIFT, so the card is always
-// gently alive and glides back toward centre without any CSS keyframes or transitions. The gyroscope
-// parallax this view used to have was dropped - it read janky, and finger tracking is the interaction.
+// Entrance/exit (one step, no stagger): every value below is derived from `phase` in a single render
+// - root fade, card transform, caption and controls all change together. FLIP continuity is kept when
+// an origin frame is known; otherwise a centred .94 → 1 scale. The enter is soft and slightly long,
+// the exit crisp and quick, and it begins the instant the X is pressed. Reduced motion opens and
+// closes immediately.
 //
-// Foil (foil printings only): Layer 1 is a color-dodge rainbow sheet that only ignites where the
-// artwork is bright (highlights, metallics, lightning) - the crush comes from brightness(.26+hyp*.26)
-// contrast(3) saturate(1.45), and it slides OPPOSITE the pointer (--px/--py = 100-mx/my) so the
-// counter-motion reads as refraction. Layer 2 is an overlay glare hotspot that follows the pointer -
-// the lacquer - and applies to BOTH finishes. Global foil intensity is --o x 0.6.
+// Motion (both finishes): a SINGLE requestAnimationFrame spring loop lerps six values toward
+// pointer-driven targets (k=0.3 tracking) and, on release, eases (k=0.14) into a slow lissajous idle
+// drift. The idle drift runs ONLY at phase 'open', held neutral during the entrance/exit so the inner
+// card never starts a second movement over the outer entrance.
 //
-// Platform notes (DESIGN_SYSTEM.md §6):
-//  - Two transform layers, deliberately separated: the OUTER layer runs the pop (translate + scale
-//    between the sheet's frame and the stage), the INNER layer runs the tilt + foil. Composing both on
-//    one element made the pop fight the tilt mid-flight.
-//  - The scrim animates opacity only; neither element scrolls, so the transform-plus-scroller WebView
-//    rule is not in play. `isolation: isolate` on the tilt layer keeps the blend modes off the page.
-//  - Zero-image safe: with art suppressed there is no <img>, so the foil/glare layers do not render
-//    (they must never ignite over the deterministic gradient); the fallback fills the stage.
-//  - Reduced motion: no tilt, no drift, no glare; a foil card shows a STATIC low-key sheen so it still
-//    reads as special. The name's glimmer is neutralised globally by body.reduce-motion.
-//  - Immersive: the Android status bar is hidden on entry and restored on exit.
+// Input (Codex's architecture): pointer capture lives on the fixed, untransformed ROOT - hit-testing
+// against the rotating tilt element was unreliable on Android WebView. The flat cardRef rectangle is
+// only a geometric admission boundary; the whole 3D subtree is pointerEvents:none. The close button
+// captures its OWN pointer and stops propagation, so it is immune to the card-drag logic and the X
+// never starts a drag.
+//
+// Foil (foil printings only): Layer 1 color-dodge rainbow ignites on the artwork's highlights and
+// slides OPPOSITE the pointer; Layer 2 overlay glare hotspot follows the pointer (both finishes).
+// Intensity --o x 0.6. isolation:isolate keeps the blend modes off the page. Zero-image safe: no
+// <img> ⇒ no foil/glare over the deterministic fallback.
 
-const POP_MS = 340;
-const TILT = 15;      // degrees at full deflection
+const ENTER_MS = 400, EXIT_MS = 240;
+const ENTER_EASE = 'cubic-bezier(.16,1,.3,1)';
+const EXIT_EASE = 'cubic-bezier(.4,0,1,1)';
+const IDENTITY = 'translate3d(0,0,0) scale(1)';   // interpolable identity, never transform:none
+const TILT = 15;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export default function CardArtViewer({ card, foil = false, origin, onClose }) {
   const reduce = typeof document !== 'undefined' && document.body.classList.contains('reduce-motion');
-  const [flipT, setFlipT] = useState(null);   // transform that maps the stage back onto the sheet frame
-  const [armed, setArmed] = useState(false);  // transitions enabled (skipped on the first frame)
-  const [open, setOpen] = useState(false);
-  const cardRef = useRef(null);      // pop layer
+  const [state, dispatch] = useReducer(viewerTransition, reduce, initialViewerState);
+  const phase = state.phase;
+  const [flipT, setFlipT] = useState(null);      // FLIP origin transform, or null (no origin ⇒ scale fallback)
+  const [closePressed, setClosePressed] = useState(false);
+
+  const cardRef = useRef(null);      // pop layer (flat, untransformed at rest) - admission + mapping rect
   const tiltRef = useRef(null);      // tilt + foil layer (the CSS-var target)
   const shadowRef = useRef(null);
   const rootRef = useRef(null);
   const closeBtnRef = useRef(null);
   const restoreRef = useRef(null);
-  const closing = useRef(false);
+  const active = useRef(false);      // a pointer drag is tracking
+  const dragId = useRef(null);       // the captured pointer id for the active drag, or null
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   // Hide the status bar for the duration - this is a full-bleed, immersive moment.
   useEffect(() => { setImmersive(true); return () => { setImmersive(false); }; }, []);
 
-  // A real modal boundary: take focus, hold it, give it back. Without this a keyboard or
-  // switch-control user keeps tabbing through the sheet behind the viewer.
+  // A real modal boundary: take focus, hold it, give it back.
   useEffect(() => {
     restoreRef.current = document.activeElement;
     closeBtnRef.current?.focus();
@@ -83,51 +90,71 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     return () => document.removeEventListener('keydown', onKey, true);
   }, []);
 
-  const close = () => {
-    if (closing.current) return;
-    closing.current = true;
-    if (reduce || !flipT) { onClose(); return; }
-    setOpen(false);                       // animate back into the sheet's frame
-    setTimeout(onClose, POP_MS);
-  };
+  // ---- Phase plumbing ------------------------------------------------------------------------------
 
-  // Hardware back / Escape close the viewer BEFORE the sheet underneath it.
-  const closeRef = useRef(close);
-  closeRef.current = close;
-  useEffect(() => registerBackConsumer(() => { closeRef.current(); return true; }), []);
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
-
-  // FLIP: measure the stage, then express it as the sheet frame we came from.
+  // FLIP: measure the stage, express it as the sheet frame we came from. Only when an origin exists;
+  // no origin leaves flipT null and the entrance/exit fall back to a centred scale.
   useLayoutEffect(() => {
-    const el = cardRef.current;
-    if (!el || !origin || reduce) { setOpen(true); setArmed(true); return; }
+    if (reduce || !origin) return;
+    const el = cardRef.current; if (!el) return;
     const f = el.getBoundingClientRect();
-    if (!f.width || !origin.w) { setOpen(true); setArmed(true); return; }
+    if (!f.width || !origin.w) return;
     const s = origin.w / f.width;
     const dx = (origin.x + origin.w / 2) - (f.left + f.width / 2);
     const dy = (origin.y + origin.h / 2) - (f.top + f.height / 2);
     setFlipT(`translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px) scale(${s.toFixed(4)})`);
   }, [origin, reduce]);
 
-  // Release on the next frame so the browser has painted the start position first.
+  // Begin the entrance on the frame AFTER `preparing` has painted at its start transform, so the
+  // browser has a start position to animate FROM.
   useEffect(() => {
-    if (!flipT || open) return;
-    const r = requestAnimationFrame(() => { setArmed(true); setOpen(true); });
-    return () => cancelAnimationFrame(r);
-  }, [flipT, open]);
+    if (reduce || phase !== 'preparing') return undefined;
+    const id = requestAnimationFrame(() => dispatch({ type: 'PREPARED', transform: flipT }));
+    return () => cancelAnimationFrame(id);
+  }, [phase, flipT, reduce]);
 
-  // THE MOTION LOOP. One rAF for the single card on stage: spring each value toward its target and
-  // write the CSS variables. Values are refs, never state, so this never triggers a React render.
+  // The entrance/exit transition finishing advances the phase. transitionend is filtered to the card's
+  // own transform; a short fallback timer covers a dropped event. Both are idempotent via the reducer.
+  const onCardTransitionEnd = (e) => {
+    if (e.target !== cardRef.current || e.propertyName !== 'transform') return;
+    if (phase === 'entering') dispatch({ type: 'ENTERED' });
+    else if (phase === 'exiting') dispatch({ type: 'EXITED' });
+  };
+  useEffect(() => {
+    if (phase === 'entering') { const id = setTimeout(() => dispatch({ type: 'ENTERED' }), ENTER_MS + 90); return () => clearTimeout(id); }
+    if (phase === 'exiting') { const id = setTimeout(() => dispatch({ type: 'EXITED' }), EXIT_MS + 90); return () => clearTimeout(id); }
+    return undefined;
+  }, [phase]);
+
+  // Unmount once the exit has fully played.
+  useEffect(() => { if (phase === 'closed') onCloseRef.current(); }, [phase]);
+
+  // The one way out. Terminates any in-flight drag, then heads to exiting (or straight out under
+  // reduced motion). Idempotent - the reducer ignores a repeat CLOSE.
+  const requestClose = () => {
+    dragId.current = null;
+    active.current = false;
+    if (reduce) { onCloseRef.current(); return; }
+    dispatch({ type: 'CLOSE' });
+  };
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
+  useEffect(() => registerBackConsumer(() => { requestCloseRef.current(); return true; }), []);
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') requestCloseRef.current(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  // ---- Motion loop ---------------------------------------------------------------------------------
+
   const vals = useRef({
     rx: { c: 0, t: 0 }, ry: { c: 0, t: 0 }, mx: { c: 50, t: 50 },
     my: { c: 50, t: 50 }, o: { c: 0, t: 0 }, hyp: { c: 0, t: 0 },
   });
-  const active = useRef(false);
-  const dragId = useRef(null);   // the captured pointer id for the active drag, or null
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
+
   useEffect(() => {
     if (reduce) return undefined;   // static sheen instead - see the reduced-motion effect below
     let running = true;
@@ -135,9 +162,11 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     const loop = () => {
       if (!running) return;
       const v = vals.current;
-      if (!active.current) {
-        // Idle lissajous drift - different x/y frequencies (.5 vs .65) wander instead of circling.
-        // Kept subtle: a gentle breath at rest, not a sway.
+      if (phaseRef.current !== 'open') {
+        // Held neutral through the entrance/exit so the inner card does not move under the outer pop.
+        v.rx.t = 0; v.ry.t = 0; v.mx.t = 50; v.my.t = 50; v.o.t = 0; v.hyp.t = 0;
+      } else if (!active.current) {
+        // Idle lissajous drift - a gentle breath at rest, different x/y frequencies wander not circle.
         const now = performance.now() / 1000;
         v.rx.t = Math.sin(now * 0.65 + seed) * 3;
         v.ry.t = Math.cos(now * 0.5 + seed) * 4;
@@ -146,11 +175,8 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
         v.o.t = 0.8;
         v.hyp.t = 0.4 + 0.12 * Math.sin(now * 0.6 + seed);
       }
-      const k = active.current ? 0.3 : 0.14;   // tight while tracking, brisk glide back to centre on release
-      for (const key of ['rx', 'ry', 'mx', 'my', 'o', 'hyp']) {
-        const p = v[key];
-        p.c += (p.t - p.c) * k;
-      }
+      const k = active.current ? 0.3 : 0.14;
+      for (const key of ['rx', 'ry', 'mx', 'my', 'o', 'hyp']) { const p = v[key]; p.c += (p.t - p.c) * k; }
       const el = tiltRef.current;
       if (el) {
         el.style.setProperty('--rx', `${v.rx.c.toFixed(2)}deg`);
@@ -170,14 +196,8 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     return () => { running = false; cancelAnimationFrame(id); };
   }, [reduce]);
 
-  // INPUT is handled on the fixed, untransformed dialog ROOT, never on the tilt element. Hit-testing
-  // against an element whose own 3D transform (rotateX/rotateY) changes every frame inside a
-  // perspective + preserve-3d context is unreliable in Android WebView - most pointerdowns landed
-  // beside the projected surface, so ~4 of 5 drags never started. The full-screen root cannot be
-  // missed; the FLAT cardRef rectangle is used only as a geometric admission boundary, and all six
-  // CSS variables are still written to the (pointer-inert) tilt element by the loop.
-  //
-  // Coordinates always map against cardRef (the untransformed pop layer), NOT the rotated inner box.
+  // ---- Drag input (on the untransformed root) ------------------------------------------------------
+
   const updatePointer = (e) => {
     const r = cardRef.current?.getBoundingClientRect();
     if (!r?.width || !r?.height) return;
@@ -191,39 +211,60 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     v.hyp.t = Math.min(1, Math.hypot(px - 50, py - 50) / 50);
   };
   const onStageDown = (e) => {
-    if (reduce || !e.isPrimary) return;                       // ignore secondary fingers
-    if (e.pointerType === 'mouse' && e.button !== 0) return;  // left button only
+    if (reduce || phase !== 'open' || !e.isPrimary) return;
+    if (closeBtnRef.current?.contains(e.target)) return;       // the X owns its own taps
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     const r = cardRef.current?.getBoundingClientRect();
     if (!r) return;
     const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-    if (!inside) return;                                       // taps off the card (close X, name) pass through
+    if (!inside) return;                                        // taps off the card pass through
     e.preventDefault();
     dragId.current = e.pointerId;
     try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* not all pointers are capturable */ }
     updatePointer(e);
   };
   const onStageMove = (e) => { if (dragId.current === e.pointerId) updatePointer(e); };
-  // Captured-pointer lifetime ends ONLY on up, cancel, or lost capture - never on a boundary leave.
   const finishDrag = (e) => {
     if (dragId.current !== e.pointerId) return;
     dragId.current = null;
-    active.current = false;   // loop eases back into the idle drift
+    active.current = false;
   };
+
+  // ---- Close button (captures its own pointer, immune to the drag logic) ---------------------------
+
+  const closePointerDown = (e) => {
+    e.stopPropagation();
+    if (!e.isPrimary) return;
+    setClosePressed(true);
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+  const closePointerUp = (e) => { e.stopPropagation(); setClosePressed(false); requestClose(); };
+  const closePointerCancel = (e) => { e.stopPropagation(); setClosePressed(false); };
+
+  // ---- Render --------------------------------------------------------------------------------------
 
   const { src, gen, onError } = useArtSource(card?.image_slug || null);
   const site = !!card?.is_site;
   const artist = card?._artist || null;
-  const popT = open ? 'none' : (flipT || 'scale(.94)');
   const showFx = !!src;   // no foil/glare over the deterministic fallback (zero-image safe)
 
-  // Reduced motion: no loop runs, so seed a STATIC low-key foil sheen through the same variables
-  // (set on the ref to avoid custom-property keys in the JSX style). Non-foil rests with nothing extra.
+  // Reduced motion: no loop, so seed a STATIC low-key foil sheen on the ref. Non-foil rests plain.
   useEffect(() => {
     if (!reduce || !foil || !showFx) return;
     const el = tiltRef.current; if (!el) return;
     const set = (k, val) => el.style.setProperty(k, val);
-    set('--o', '0.28'); set('--hyp', '0.32'); set('--px', '46%'); set('--py', '54%'); set('--mx', '50%'); set('--my', '50%');
+    set('--o', '0.3'); set('--hyp', '0.32'); set('--px', '46%'); set('--py', '54%'); set('--mx', '50%'); set('--my', '50%');
   }, [reduce, foil, showFx]);
+
+  // Everything below is derived from `phase` in ONE render - no stagger.
+  const shown = phase === 'entering' || phase === 'open';
+  const dur = phase === 'exiting' ? EXIT_MS : ENTER_MS;
+  const ease = phase === 'exiting' ? EXIT_EASE : ENTER_EASE;
+  const fade = phase === 'preparing' ? 'none' : `opacity ${dur}ms ${ease}`;
+  const cardTransition = phase === 'preparing' ? 'none' : `transform ${dur}ms ${ease}, opacity ${dur}ms ${ease}`;
+  const cardTransform = shown ? IDENTITY : (phase === 'exiting' ? (flipT || 'scale(.96)') : (flipT || 'scale(.94)'));
+  const cardOpacity = shown ? 1 : (phase === 'exiting' ? 0.55 : 0.65);
+  const rootOpacity = shown ? 1 : 0;
 
   return createPortal(
     <div
@@ -234,26 +275,22 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
       style={{
         position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 26, padding: 20,
-        background: 'rgba(6,4,3,.94)', opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease`,
+        background: 'rgba(6,4,3,.94)', opacity: rootOpacity, transition: fade,
         perspective: 1100, WebkitTapHighlightColor: 'transparent', touchAction: 'none',
       }}
     >
-      {/* pop layer */}
-      <div ref={cardRef}
+      {/* pop layer - the entrance/exit envelope + FLIP. Flat and pointer-inert so the drag capture on
+          the root never depends on this transforming element. */}
+      <div ref={cardRef} onTransitionEnd={onCardTransitionEnd}
         style={{
           position: 'relative', width: 'min(88vw, 420px)', aspectRatio: site ? '531 / 380' : '5 / 7',
-          transform: popT, transition: armed ? `transform ${POP_MS}ms cubic-bezier(.2,.9,.3,1)` : 'none',
-          transformStyle: 'preserve-3d',
-          // The whole 3D card subtree is pointer-inert: input is handled on the untransformed root so
-          // hit-testing never depends on the rotating element. cardRef's rect is still the drag boundary.
-          pointerEvents: 'none',
+          transform: cardTransform, opacity: cardOpacity, transition: cardTransition,
+          transformStyle: 'preserve-3d', pointerEvents: 'none',
         }}>
-        {/* cast shadow - sits BEHIND and below, and slides opposite the tilt so the card reads as
-            lifted off the backdrop rather than pasted to it. Driven by the loop (shadowRef). */}
+        {/* cast shadow - driven by the loop (shadowRef); slides opposite the tilt. */}
         <span ref={shadowRef} aria-hidden="true" style={{
           position: 'absolute', left: '6%', right: '6%', bottom: -26, height: 42, borderRadius: '50%',
-          background: 'radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.75), transparent 72%)',
-          filter: 'blur(14px)',
+          background: 'radial-gradient(50% 50% at 50% 50%, rgba(0,0,0,.75), transparent 72%)', filter: 'blur(14px)',
         }} />
         {/* tilt + foil layer - the CSS-var target */}
         <div ref={tiltRef}
@@ -263,8 +300,6 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
             boxShadow: '0 34px 60px -18px rgba(0,0,0,.9), 0 6px 18px rgba(0,0,0,.6)',
             transform: 'rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg))',
           }}>
-          {/* Self-removing on error, matching CardArt. The deterministic fallback is already painted
-              on this layer's background; without this a 404 renders a broken image ON TOP of it. */}
           {src && (
             <img key={gen} src={src} alt={card?.name || ''} draggable="false" onError={onError}
               style={{
@@ -279,14 +314,12 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
               position: 'absolute', inset: 0, zIndex: 3, pointerEvents: 'none',
               mixBlendMode: 'color-dodge', opacity: 'var(--o, 0)',
               background: 'repeating-linear-gradient(115deg, #ff8a8a 0%, #ffd08a 8%, #8aff9e 16%, #8ad9ff 24%, #b18aff 32%, #ff8ae2 40%, #ff8a8a 48%)',
-              backgroundSize: '250% 250%',
-              backgroundPosition: 'var(--px, 50%) var(--py, 50%)',
+              backgroundSize: '250% 250%', backgroundPosition: 'var(--px, 50%) var(--py, 50%)',
               filter: 'brightness(calc(.26 + var(--hyp, 0) * .26)) contrast(3) saturate(1.45)',
             }} />
           )}
-
-          {/* LAYER 2 - glare pass (both finishes): a bright hotspot that follows the pointer, fading to
-              a dark far-corner vignette. Static under reduced motion, so it is skipped there. */}
+          {/* LAYER 2 - glare (both finishes): a bright hotspot following the pointer. Skipped under
+              reduced motion (static). */}
           {showFx && !reduce && (
             <span aria-hidden="true" style={{
               position: 'absolute', inset: 0, zIndex: 4, pointerEvents: 'none',
@@ -297,10 +330,8 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', maxWidth: '82vw', opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease` }}>
-        <div className="cx-glimmer" style={{
-          font: "600 16px/1.3 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase',
-        }}>
+      <div style={{ textAlign: 'center', maxWidth: '82vw', opacity: rootOpacity, transition: fade }}>
+        <div className="cx-glimmer" style={{ font: "600 16px/1.3 var(--f-display)", letterSpacing: '.14em', textTransform: 'uppercase' }}>
           {card?.name}
         </div>
         {artist && (
@@ -310,15 +341,21 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
         )}
       </div>
 
-      {/* The X is the only on-screen way out - the backdrop is inert so you can tilt and study the
-          card without dismissing it by accident. Hardware back still works. */}
-      <button ref={closeBtnRef} type="button" onClick={close} aria-label="Close artwork"
+      {/* The X captures its OWN pointer and stops propagation, so it is immune to the card-drag logic
+          and gives an immediate down-state. Hardware back / Escape route through the same requestClose. */}
+      <button ref={closeBtnRef} type="button"
+        onPointerDown={closePointerDown} onPointerUp={closePointerUp}
+        onPointerCancel={closePointerCancel} onLostPointerCapture={closePointerCancel}
+        onClick={requestClose} aria-label="Close artwork"
         style={{
           position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 14px)', right: 16, zIndex: 2,
           width: 44, height: 44, borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          background: 'rgba(20,15,10,.7)', border: '1px solid var(--hair-30)', color: 'var(--gold-leaf)',
-          opacity: open ? 1 : 0, transition: `opacity ${POP_MS}ms ease`,
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none',
+          transform: closePressed ? 'scale(.88)' : 'scale(1)',
+          background: closePressed ? 'rgba(55,38,18,.92)' : 'rgba(20,15,10,.7)',
+          border: '1px solid var(--hair-30)', color: 'var(--gold-leaf)',
+          opacity: rootOpacity,
+          transition: 'transform 80ms ease-out, background 80ms ease-out, opacity 180ms ease',
         }}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
           <line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" />
