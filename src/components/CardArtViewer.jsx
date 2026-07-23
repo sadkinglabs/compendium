@@ -37,9 +37,9 @@ const ENTER_MS = 300, EXIT_MS = 180;
 const ENTER_EASE = 'cubic-bezier(.16,1,.3,1)';
 const EXIT_EASE = 'cubic-bezier(.4,0,1,1)';
 const IDENTITY = 'translate3d(0,0,0) scale(1)';   // interpolable identity, never transform:none
-const TILT = 11.25;          // max rotation at full deflection (25% gentler than the original 15)
-const HYP_MAX = 0.75;        // cap the foil's deflection peak too - hyp (not TILT) drives brightness,
-                             // so this is what actually keeps a hard tilt from looking burnt.
+const TILT = 12.4;           // max rotation at full deflection (gentler than the original 15)
+const HYP_MAX = 0.75;        // cap the foil's deflection peak - hyp (not TILT) drives brightness, so
+                             // this is what keeps a hard tilt from looking burnt, independent of TILT.
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export default function CardArtViewer({ card, foil = false, origin, onClose }) {
