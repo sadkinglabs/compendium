@@ -89,6 +89,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // subscribeCollection, so each view refreshes itself).
   const [sheetCard, setSheetCard] = useState(boundSession.sheetCard);
   const [sheetSet, setSheetSet] = useState(boundSession.sheetSet);   // the PRINTING (set code) the sheet is scoped to, if any
+  const [sheetFoil, setSheetFoil] = useState(undefined);   // the wanted FINISH a scoped open lands on (wishlist rows); undefined = default per printing
   // No edit mode: adding is a PLACE, not a mode. Steppers are permanent on every row and the
   // card sheet is always editable - you record what you own wherever a card appears.
   // Sets-are-home: My Collection lands on the sets-completion grid (SetsHome). Tapping a
@@ -102,7 +103,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   useEffect(() => { collectionSession().view = view; collectionSession().listOpen = listOpen; collectionSession().sheetCard = sheetCard; collectionSession().sheetSet = sheetSet; collectionSession().setDrill = setDrill; }, [view, listOpen, sheetCard, sheetSet, setDrill]);
   // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
   // = name-level. Stable so the memoized rows don't re-render.
-  const peek = useCallback((cardId, set) => { setSheetCard(cardId || null); setSheetSet(set || null); }, []);
+  const peek = useCallback((cardId, set, foil) => { setSheetCard(cardId || null); setSheetSet(set || null); setSheetFoil(foil); }, []);
   const go = (v) => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
   const goAdd = () => go('cards');   // adding starts by choosing a set; the steppers are always live
   const pills = (
@@ -146,7 +147,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       {surface === 'listsIndex' && <ListsIndex onOpenList={setListOpen} rev={rev} />}
       {/* The sheet's open card is KEPT in state across a pillar unmount (a Codex hand-off
           from the scanner), so Back lands right back on this sheet - where the user left. */}
-      <CollectionCardSheet cardId={sheetCard} set={sheetSet} onClose={() => { setSheetCard(null); setSheetSet(null); }} editable />
+      <CollectionCardSheet cardId={sheetCard} set={sheetSet} foil={sheetFoil} onClose={() => { setSheetCard(null); setSheetSet(null); setSheetFoil(undefined); }} editable />
     </div>
   );
 }
@@ -1860,7 +1861,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             // card, and a card_id key would collapse them in React and send both edits to one.
             <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
               printing={isWishlist ? printingLabel(c) : null}
-              isWanted={showProgress} editable={editing} onStep={(d) => step(rowKey(c), d)} onPeek={() => onPeek(c.card_id)} />
+              isWanted={showProgress} editable={editing} onStep={(d) => step(rowKey(c), d)}
+              onPeek={() => (isWishlist ? onPeek(c.card_id, c.set, !!c.foil) : onPeek(c.card_id))} />
           ))}
         </>
       )}

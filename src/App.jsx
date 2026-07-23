@@ -5,6 +5,7 @@ import {
   createProfile, switchProfile, renameProfile, deleteProfile,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
+import { initArtCache } from './store/artCacheInstance.js';
 import { canonicaliseLedger } from './store/canonicaliseBoot.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
@@ -133,6 +134,9 @@ export default function App() {
       try {
         await openDatabase();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
+        // Art boundary (Phase 2): load the shipped art manifest and prep the native cache dirs. Best
+        // effort - if it fails, card art degrades to the deterministic fallback; it must never cost a boot.
+        try { await initArtCache(); } catch { /* art falls back to gradients */ }
         // Ledger canonicalisation (v10 -> v11), and the ONE step in this effect that is not
         // allowed to fail quietly.
         //

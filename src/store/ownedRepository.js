@@ -25,6 +25,7 @@ import { compareRequirements } from './compareEngine.js';
 import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
 import { parseItemText } from './itemLineGrammar.js';
 import { printingFinishes } from './printingRows.js';
+import { getCard } from './codexRepository.js';
 import { MAX_BATCH_ITEMS } from './bulkWriteContract.js';
 
 /* ---------------- freshness (in-memory revision) ---------------- */
@@ -476,6 +477,64 @@ async function resolveItemRow(cardId, set, foil, pid) {
   return rows.find((r) => r.variant_slug === canonical) || rows[0] || null;
 }
 
+// A POSITIVE want-write must name a printing the catalog actually lists. The durable v11 ledger is
+// the source of truth for the collection; a phantom item - a foil on a set whose printing is
+// non-foil only (Promotional 999 for a card without a foil promo) - would survive forever and
+// misreport buildability. The heart and the reprint picker are UI and can be wrong, so the invariant
+// is enforced HERE, at the one boundary every want passes through (defense in depth, not instead of
+// the UI fix).
+//
+// Only POSITIVE writes validate. Setting a want to 0, or stepping one DOWN, must always succeed so a
+// user can clear a historical malformed row this guard would now reject on the way in. A malformed
+// catalog variant (printingFinishes throws) is treated as "no such printing" and also rejected -
+// refusing a dubious write beats seeding a ledger row nothing can describe. `foil` is already an
+// exact boolean here - requireBooleanFinish runs first in every exported writer.
+async function assertRealPrinting(cardId, set, foil, action) {
+  const card = cardId ? await getCard(cardId) : null;
+  let f = null;
+  if (card) { try { f = printingFinishes(card, set); } catch { f = null; } }
+  if (!(f && (foil ? f.foil : f.nonFoil))) {
+    const e = new Error(`${action}: no ${foil ? 'foil' : 'non-foil'} printing of ${cardId} in set ${set}`);
+    e.name = 'InvalidPrinting';
+    throw e;
+  }
+}
+
+// The finish must be an EXACT boolean before canonicalisation. `!!foil` was a real hole: a caller
+// passing `foil:'false'` coerced to true, and on a card that genuinely HAS a foil printing the
+// catalog check then passed - silently storing a non-foil intent as foil. A malformed finish is a
+// caller bug; reject it, never guess. Every exported item writer calls this first, so the SQL
+// primitive below can trust its input.
+function requireBooleanFinish(foil, action) {
+  if (typeof foil !== 'boolean') {
+    const e = new Error(`${action}: foil must be an exact boolean, got ${typeof foil} (${JSON.stringify(foil)})`);
+    e.name = 'InvalidPrinting';
+    throw e;
+  }
+}
+
+// PRIVATE set-absolute write for one collector item's want. NOT exported and takes NO validate flag:
+// there is deliberately no public seam that reaches the ledger without passing through a validating
+// writer, so the phantom-item invariant is structural, not a default a caller can opt out of. Input
+// is already validated (resolved set, exact-boolean finish, catalog membership checked by the caller
+// where required). The row is deleted only when BOTH quantities reach zero - the uncategorised row is
+// shared with ownership, so dropping it on wanted=0 would take owned copies with it.
+async function writeWantedRow(cardId, set, foil, qty, pid) {
+  const now = nowIso();
+  const slug = canonicalPrinting(set, foil);
+  const cur = await resolveItemRow(cardId, set, foil, pid);
+  const o = cur?.qty_owned || 0;
+  if (qty === 0 && o === 0) {
+    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+  } else if (cur) {
+    await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, qty, now, cur.id]);
+  } else {
+    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?);',
+      [uuid(), pid, cardId, slug, qty, '', now, now]);
+  }
+  bump();
+}
+
 /**
  * Set the wanted quantity for one collector item.
  *
@@ -487,29 +546,25 @@ async function resolveItemRow(cardId, set, foil, pid) {
  * between ownership and the wishlist, so deleting it on wanted=0 would silently take the
  * user's owned copies with it - the exact shape of the bug that made '' unsafe to drop.
  */
-export async function setWantedForItem(cardId, { set, foil = false } = {}, qty, pid = activeProfileId()) {
+export async function setWantedForItem(cardId, { set, foil } = {}, qty, pid = activeProfileId()) {
   requireResolvedSet(set, 'setWantedForItem');
-  const now = nowIso();
-  const slug = canonicalPrinting(set, foil);
-  const cur = await resolveItemRow(cardId, set, foil, pid);
+  requireBooleanFinish(foil, 'setWantedForItem');
   const w = Math.max(0, qty | 0);
-  const o = cur?.qty_owned || 0;
-  if (w === 0 && o === 0) {
-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
-  } else if (cur) {
-    await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, w, now, cur.id]);
-  } else {
-    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,0,?,?,?,?);',
-      [uuid(), pid, cardId, slug, w, '', now, now]);
-  }
-  bump();
+  // A positive SET creates or raises the row - it must name a real printing. Setting to 0 (clear)
+  // is exempt so a historical malformed row can always be cleared.
+  if (w > 0) await assertRealPrinting(cardId, set, foil, 'setWantedForItem');
+  await writeWantedRow(cardId, set, foil, w, pid);
 }
 
 /** Step a collector item's want by a delta, floored at zero. */
 export async function stepWantedForItem(cardId, item = {}, delta = 1, pid = activeProfileId()) {
   requireResolvedSet(item.set, 'stepWantedForItem');
-  const cur = await resolveItemRow(cardId, item.set, !!item.foil, pid);
-  return setWantedForItem(cardId, item, Math.max(0, (cur?.qty_wanted || 0) + delta), pid);
+  requireBooleanFinish(item.foil, 'stepWantedForItem');
+  // An INCREASE must name a real printing; a decrement bypasses ONLY catalog membership (never the
+  // set/finish-type checks), so a historical malformed item can still be walked down and cleared.
+  if (delta > 0) await assertRealPrinting(cardId, item.set, item.foil, 'stepWantedForItem');
+  const cur = await resolveItemRow(cardId, item.set, item.foil, pid);
+  await writeWantedRow(cardId, item.set, item.foil, Math.max(0, (cur?.qty_wanted || 0) + delta), pid);
 }
 
 /**
@@ -520,9 +575,11 @@ export async function stepWantedForItem(cardId, item = {}, delta = 1, pid = acti
  * legacy row for the same item is NOT merged here - that is left to the boot pass, because
  * doing it atomically would need the read this function exists to avoid.
  */
-export async function addWantedForItem(cardId, { set, foil = false } = {}, n = 1, pid = activeProfileId()) {
+export async function addWantedForItem(cardId, { set, foil } = {}, n = 1, pid = activeProfileId()) {
   requireResolvedSet(set, 'addWantedForItem');
+  requireBooleanFinish(foil, 'addWantedForItem');
   if (!cardId || !(n > 0)) return;
+  await assertRealPrinting(cardId, set, foil, 'addWantedForItem');   // +N is always an increase
   const now = nowIso();
   await run(
     `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)

@@ -5,6 +5,8 @@
 import { getDeck, getDeckCards } from './deckRepository.js';
 import { slugify } from './ids.js';
 import { shareImage } from '../native.js';
+import { roundRectPath } from './roundRect.js';
+import { posterScale, maxCanvasDim, memoryBudgetPx, deviceMemoryGb } from './posterScale.js';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -41,7 +43,6 @@ async function deckShim(deckId) {
   return {
     name: d.name,
     avatar: d.avatar?.name || 'custom',
-    avatarSlug: d.avatar?.image_slug || null,   // full 'x-y-b-s.webp' (no extra .webp appended below)
     spellbook: (zones.spellbook || []).map(entry),
     atlas: (zones.atlas || []).map(entry),
     collection: (zones.collection || []).map(entry),
@@ -50,7 +51,7 @@ async function deckShim(deckId) {
 
 // ── Deckbuilder poster ──
 async function _buildDeckPosterCanvas(deck) {
-  const SCALE = 2, W = 990, pad = 44;
+  const W = 990, pad = 44;   // SCALE is chosen after H is known - see the canvas creation below
   const INK = '#0b0806', GOLD = '#dcb86f';
   const ELS = ['air', 'earth', 'fire', 'water'];
   const EL_ORDER = ['Air', 'Earth', 'Fire', 'Water', 'Multi', 'Neutral'];
@@ -66,10 +67,11 @@ async function _buildDeckPosterCanvas(deck) {
     "400 12px 'IBM Plex Mono'", "400 13px 'IBM Plex Mono'", "400 15px 'IBM Plex Mono'",
   ].map((f) => document.fonts.load(f).catch(() => {}))); } catch (e) { /* noop */ }
 
-  const [icons, hero] = await Promise.all([
-    Promise.all(ELS.map((k) => _loadImg(`${BASE}icons/${k}.png`))).then((a) => Object.fromEntries(ELS.map((k, i) => [k, a[i]]))),
-    deck.avatarSlug ? _loadImg(`${BASE}cards/${deck.avatarSlug}`) : Promise.resolve(null),
-  ]);
+  // The poster no longer draws the avatar's CARD art (Phase 2 owner decision) - that art now lives on
+  // the CDN, and compositing a remote image into an exported canvas would taint it (breaking toDataURL/
+  // toBlob). Only the bundled, same-origin element icons are drawn; the header is the gilt gradient.
+  const icons = await Promise.all(ELS.map((k) => _loadImg(`${BASE}icons/${k}.png`)))
+    .then((a) => Object.fromEntries(ELS.map((k, i) => [k, a[i]])));
 
   const cardMeta = {};
   for (const e of [...deck.spellbook, ...deck.atlas, ...deck.collection]) cardMeta[e.name] = { cost: e._cost, th: e._thresholds || {} };
@@ -116,12 +118,18 @@ async function _buildDeckPosterCanvas(deck) {
   const statsTop = yCursor + 18, STATS_H = 336;
   const H = statsTop + STATS_H + 52;
 
+  // Rasterise at the highest device-pixel scale that fits BOTH the GPU's max texture dimension AND a
+  // memory budget derived from reported RAM - so poster text stays crisp when magnified without a
+  // blank canvas (dimension) or an OOM-killed renderer (memory) on a lower-memory device. Only a
+  // device reporting ample RAM reaches 4x; everything else stays at the device-proven 3x. Layout below
+  // is in logical pixels (x.scale maps them), so SCALE only sets the raster resolution.
+  const SCALE = posterScale(maxCanvasDim(), memoryBudgetPx(deviceMemoryGb()), W, H);
   const cv = document.createElement('canvas');
   cv.width = W * SCALE; cv.height = H * SCALE;
   const x = cv.getContext('2d');
   x.scale(SCALE, SCALE);
   x.textBaseline = 'alphabetic';
-  const rrect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph / 2); x.beginPath(); x.moveTo(px + r, py); x.cx-decksTo(px + pw, py, px + pw, py + ph, r); x.cx-decksTo(px + pw, py + ph, px, py + ph, r); x.cx-decksTo(px, py + ph, px, py, r); x.cx-decksTo(px, py, px + pw, py, r); x.closePath(); };
+  const rrect = (px, py, pw, ph, r) => roundRectPath(x, px, py, pw, ph, r);
   const topRect = (px, py, pw, ph, r) => { r = Math.min(r, pw / 2, ph); x.beginPath(); x.moveTo(px, py + ph); x.lineTo(px, py + r); x.quadraticCurveTo(px, py, px + r, py); x.lineTo(px + pw - r, py); x.quadraticCurveTo(px + pw, py, px + pw, py + r); x.lineTo(px + pw, py + ph); x.closePath(); };
   const fit = (t, maxw) => { if (x.measureText(t).width <= maxw) return t; let s = t; while (s.length > 1 && x.measureText(s + '…').width > maxw) s = s.slice(0, -1); return s + '…'; };
   const setLS = (v) => { try { x.letterSpacing = v; } catch (e) { /* noop */ } };
@@ -132,21 +140,6 @@ async function _buildDeckPosterCanvas(deck) {
   rg.addColorStop(0, '#1a1206'); rg.addColorStop(0.55, '#120d07'); rg.addColorStop(1, INK);
   x.fillStyle = rg; x.fillRect(-W, 0, W * 2, H * 2); x.restore();
 
-  if (hero) {
-    const oc = document.createElement('canvas'); oc.width = W * SCALE; oc.height = HERO_H * SCALE;
-    const ox = oc.getContext('2d'); ox.scale(SCALE, SCALE);
-    const ir = hero.width / hero.height, rr = W / HERO_H; let sw, sh, sx, sy;
-    if (ir > rr) { sh = hero.height; sw = sh * rr; sx = (hero.width - sw) / 2; sy = 0; }
-    else { sw = hero.width; sh = sw / rr; sx = 0; sy = (hero.height - sh) * 0.16; }
-    ox.filter = 'blur(46px) saturate(1.2) brightness(0.92)';
-    ox.drawImage(hero, sx, sy, sw, sh, -64, -64, W + 128, HERO_H + 128);
-    ox.filter = 'none';
-    ox.globalCompositeOperation = 'destination-out';
-    const mg = ox.createLinearGradient(0, 0, 0, HERO_H);
-    mg.addColorStop(0, 'rgba(0,0,0,0)'); mg.addColorStop(0.5, 'rgba(0,0,0,0)'); mg.addColorStop(1, 'rgba(0,0,0,1)');
-    ox.fillStyle = mg; ox.fillRect(0, 0, W, HERO_H);
-    x.drawImage(oc, 0, 0, W, HERO_H);
-  }
   const hgrad = x.createLinearGradient(0, 0, 0, HERO_H);
   hgrad.addColorStop(0, 'rgba(11,8,6,.10)'); hgrad.addColorStop(0.62, 'rgba(11,8,6,.30)'); hgrad.addColorStop(1, 'rgba(11,8,6,0)');
   x.fillStyle = hgrad; x.fillRect(0, 0, W, HERO_H);
@@ -226,11 +219,11 @@ async function _buildDeckPosterCanvas(deck) {
     const bodyTop = py + 26, rowH = (STATS_H - 26 - 26) / 2, Ro = 46, Ri = 30;
     const drawDonut = (ccx, ccy, slices, total, label) => {
       x.lineWidth = Ro - Ri; const r = (Ro + Ri) / 2;
-      if (total) { let ang = -Math.PI / 2; for (const s of slices) { if (!s.value) continue; const a = s.value / total * 2 * Math.PI; x.strokeStyle = s.color; x.beginPath(); x.cx-decks(ccx, ccy, r, ang, ang + a); x.stroke(); ang += a; } }
-      else { x.strokeStyle = 'rgba(74,60,34,.5)'; x.beginPath(); x.cx-decks(ccx, ccy, r, 0, 7); x.stroke(); }
-      x.strokeStyle = 'rgba(220,184,111,.3)'; x.lineWidth = 1; x.beginPath(); x.cx-decks(ccx, ccy, Ro, 0, 7); x.stroke();
+      if (total) { let ang = -Math.PI / 2; for (const s of slices) { if (!s.value) continue; const a = s.value / total * 2 * Math.PI; x.strokeStyle = s.color; x.beginPath(); x.arc(ccx, ccy, r, ang, ang + a); x.stroke(); ang += a; } }
+      else { x.strokeStyle = 'rgba(74,60,34,.5)'; x.beginPath(); x.arc(ccx, ccy, r, 0, 7); x.stroke(); }
+      x.strokeStyle = 'rgba(220,184,111,.3)'; x.lineWidth = 1; x.beginPath(); x.arc(ccx, ccy, Ro, 0, 7); x.stroke();
       const ig = x.createRadialGradient(ccx, ccy - Ri * 0.4, 1, ccx, ccy, Ri); ig.addColorStop(0, '#1a1206'); ig.addColorStop(1, '#0b0806');
-      x.fillStyle = ig; x.beginPath(); x.cx-decks(ccx, ccy, Ri, 0, 7); x.fill();
+      x.fillStyle = ig; x.beginPath(); x.arc(ccx, ccy, Ri, 0, 7); x.fill();
       x.fillStyle = '#f0e9d8'; x.font = "700 22px 'Cinzel', Georgia, serif"; x.textAlign = 'center'; x.fillText(total, ccx, ccy + 1);
       x.fillStyle = '#8a8175'; x.font = "600 7.5px 'Hanken Grotesk', sans-serif"; setLS('0.05em'); x.fillText(label, ccx, ccy + 14); setLS('0px'); x.textAlign = 'left';
     };

@@ -7,8 +7,8 @@ import '../theme/counter.css';
 import { listAvatars } from '../store/playRepository.js';
 import { listDecks } from '../store/deckRepository.js';
 import { selectionReducer, initialSelection, rolesOf, isReady, armedRole } from './avatarPickerState.js';
+import { ArtImg } from '../components/ArtImage.jsx';
 
-const BASE = import.meta.env.BASE_URL;
 // The reducer's role keys are the state keys ('you' | 'opponent'); the CSS uses the
 // short forms that match the hue system's naming (.role-opp, .targeting-opp).
 const ROLE_SUFFIX = { you: 'you', opponent: 'opp' };
@@ -94,7 +94,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
                   who -> which avatar -> what a tap does. */}
               <div className="pm-role">{caption}</div>
               <div className="pm-thumb">
-                {val ? <img src={`${BASE}cards/${val.image_slug}`} alt="" />
+                {val ? <ArtImg artKey={val.image_slug} alt="" />
                      : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>}
               </div>
               {/* Name and hint always render so the two slots stay the same height and
@@ -117,7 +117,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
           <div className="picker-decks-row">
             {deckList.map((d) => (
               <button key={d.id} className={`picker-deck-chip${deck?.id === d.id ? ' on' : ''}`} onClick={() => pickDeck(d)}>
-                {d.avatar?.image_slug && <img src={`${BASE}cards/${d.avatar.image_slug}`} alt="" />}
+                {d.avatar?.image_slug && <ArtImg artKey={d.avatar.image_slug} alt="" />}
                 <span>{d.name}</span>
               </button>
             ))}
@@ -134,7 +134,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
               disabled={!armed}
               aria-pressed={rolesOf(sel, a).you || rolesOf(sel, a).opponent}
               aria-label={cardLabel(a.name, rolesOf(sel, a), armed)}>
-              <img src={`${BASE}cards/${a.image_slug}`} alt="" loading="lazy" />
+              <ArtImg artKey={a.image_slug} alt="" loading="lazy" />
               {mirrored(a) && <span className="avatar-split" aria-hidden="true" />}
               <div className="avatar-card-name" aria-hidden="true">{a.name}</div>
             </button>

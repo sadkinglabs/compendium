@@ -6,6 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
+import { ArtImg } from '../components/ArtImage.jsx';
 import { Loading } from '../components/ui.jsx';
 import { ChevronIcon, EditIcon, PlusIcon } from '../components/icons.jsx';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
@@ -167,8 +168,7 @@ function HandCard({ zones, avatar, onCardTap }) {
     <div key={c.id} className={`dealt-card${site ? ' site' : ''}${c.id === hand.newest ? ' newest' : ''}${leaving ? ' leaving' : ''}`}
       style={{ '--rot': fanAngle(i, n) + 'deg', width: (site ? SITE_W : SPELL_W) + 'px', animationDelay: (leaving ? i * 30 : c.drawn ? 0 : i * 55) + 'ms' }}
       onClick={() => c.e.card_id && onCardTap?.(c.e.card_id)}>
-      {c.e.image_slug && <img src={`${BASE}cards/${c.e.image_slug}`} loading="lazy" alt=""
-        onError={(ev) => { ev.currentTarget.style.display = 'none'; }} />}
+      {c.e.image_slug && <ArtImg artKey={c.e.image_slug} loading="lazy" alt="" />}
       <span className="dealt-frame" aria-hidden="true" />
       {!site && <span className="dealt-tab">DRAWN</span>}
     </div>
@@ -336,7 +336,7 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
             <div className="ob-avatar-grid">
               {avatars.map((c) => (
                 <div key={c.card_id} className={`ob-av-card${(sel ? sel.card_id === c.card_id : current === c.card_id) ? ' selected' : ''}`} onClick={() => setSel(c)}>
-                  {c.image_slug && <img src={`${BASE}cards/${c.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
+                  {c.image_slug && <ArtImg artKey={c.image_slug} alt="" />}
                   <div className="ob-av-card-grad" />
                   <div className="ob-av-card-info">
                     <div className="ob-av-card-name">{c.name}</div>
@@ -449,7 +449,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
         <div className="mf-hero-inner">
           <div className="mf-hero-card">
             <div className="mf-hero-art">
-              {deck.avatar?.image_slug && <img src={`${BASE}cards/${deck.avatar.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
+              {deck.avatar?.image_slug && <ArtImg artKey={deck.avatar.image_slug} alt="" />}
               <div className="mf-hero-scrim" />
               <div className="mf-hero-name">{deck.name}</div>
             </div>

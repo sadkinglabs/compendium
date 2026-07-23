@@ -46,8 +46,11 @@ before(async () => {
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',11,'x');");
   // sole1 is printed once; multi1 is a reprint. Both shapes matter: a writer that resolves a
   // collector item behaves differently for each, and only one of them may ever ask.
-  sdb.run("INSERT INTO cards(card_id,name,system,sets) VALUES('sole1','Sole','sorcery','[{\"code\":\"004\"}]');");
-  sdb.run("INSERT INTO cards(card_id,name,system,sets) VALUES('multi1','Reprinted','sorcery','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
+  // variants are needed now that positive item-writes validate the (set, finish) against the catalog
+  // (assertRealPrinting). Both finishes on every set these tests write, so only the UNCATEGORISED
+  // path - the actual subject here - exercises the writer divergence, never a phantom rejection.
+  sdb.run("INSERT INTO cards(card_id,name,system,sets,variants) VALUES('sole1','Sole','sorcery','[{\"code\":\"004\"}]','[{\"slug\":\"004-sole1-s\",\"set\":\"004\",\"finish\":\"Standard\"},{\"slug\":\"004-sole1-f\",\"set\":\"004\",\"finish\":\"Foil\"}]');");
+  sdb.run("INSERT INTO cards(card_id,name,system,sets,variants) VALUES('multi1','Reprinted','sorcery','[{\"code\":\"001\"},{\"code\":\"002\"}]','[{\"slug\":\"001-multi1-s\",\"set\":\"001\",\"finish\":\"Standard\"},{\"slug\":\"001-multi1-f\",\"set\":\"001\",\"finish\":\"Foil\"},{\"slug\":\"002-multi1-s\",\"set\":\"002\",\"finish\":\"Standard\"},{\"slug\":\"002-multi1-f\",\"set\":\"002\",\"finish\":\"Foil\"}]');");
   __setActiveIdForTests(PID);
 });
 

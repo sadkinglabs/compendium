@@ -21,16 +21,27 @@ function hash(str) {
 
 // §5 test gate: when on, ALL card images are suppressed so the app must render
 // from data + generated fallbacks alone. Toggle via localStorage['cx-no-images'].
-function imagesDisabled() {
+// Exported so the art boundary (artCache) can enforce the SAME gate on render AND I/O (rev-6 B6).
+export function imagesDisabled() {
   try { return localStorage.getItem('cx-no-images') === '1'; } catch { return false; }
 }
 
-/** Full URL for a card's bundled image, or null when none is known/suppressed. */
-export function cardImageUrl(card) {
-  if (imagesDisabled()) return null;
-  const slug = card?.image_slug;
-  return slug ? `${BASE}cards/${slug}` : null;
-}
+// `cardImageUrl` (the old bundled `${BASE}cards/${slug}` builder) was RETIRED in Phase 2b: every
+// render site now resolves art through the boundary (useArtSource/ArtImage), keyed on the content
+// key. The scripts/check-source-guards gate rejects its re-introduction. The one remaining bundled
+// path is `legacyUrl` below, the boundary's offline fallback, deleted with the bundle in Phase 5.
+
+// --- Art-CDN (Phase 2) config. ---
+// The content-addressed card art is served from this CDN base. A compile-time constant so the app
+// needs no runtime config and works offline once cached; overridable for staging via VITE_ART_CDN_BASE.
+export const ART_CDN_BASE = (import.meta.env.VITE_ART_CDN_BASE || 'https://cdn.sadkinglabs.com').replace(/\/+$/, '');
+
+/** The remote URL for a content-addressed art key (the art boundary's remote candidate). */
+export function artUrl(key) { return `${ART_CDN_BASE}/${key}`; }
+
+/** The bundled legacy image URL for a printing-base filename - the ONE sanctioned `${BASE}cards/` path,
+ *  used only by the boundary's offline legacy fallback, deleted with the bundle in Phase 5. */
+export function legacyUrl(legacyKey) { return `${BASE}cards/${legacyKey}`; }
 
 // Set-hero art ships BUNDLED as app assets (public/sets/{code}.webp) - deliberately NOT
 // via the card-image CDN, so the Collection landing works fully offline. Only these codes

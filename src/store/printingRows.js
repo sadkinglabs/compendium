@@ -182,9 +182,10 @@ export function expandItemRows(cards, setTerms = [], setRank = defaultSetRank) {
 /**
  * The image slug for one collector item (card + set + finish), or null.
  *
- * Returns a SLUG, never a URL - rendering routes it through `cardArt.js`'s `cardImageUrl`, the
- * single seam that decides bundled-vs-CDN and honours zero-image mode. So this is CDN-ready by
- * construction: when card art moves to a CDN, only `cardImageUrl` changes.
+ * Returns a SLUG (a content-addressed art key), never a URL - rendering routes it through the art
+ * boundary (`useArtSource`/`ArtImage`), the single seam that resolves the local -> CDN -> bundled
+ * -> fallback candidate chain and honours zero-image mode. The key names the art; the boundary owns
+ * where the bytes come from.
  *
  * Deterministic fallback chain:
  *   1. a variant of this set in the requested finish, with an image. When `foil` and the set
@@ -208,6 +209,35 @@ export function printingArt(card, setCode, foil) {
   }
   if (vs.length) return vs[0].image;                 // the other finish of this set
   return card?.image_slug || null;
+}
+
+/**
+ * The display facts for one printing at a finish: `{ slug, artist, product }`, ALL read from the SAME
+ * chosen variant so a dual Foil/Rainbow promo can never show Rainbow art credited to another variant's
+ * artist (the Phase-6 card sheet's one selector). The variant chosen matches `printingArt` exactly, so
+ * `slug === printingArt(card, setCode, foil)`; artist/product come from that variant.
+ */
+export function selectPrinting(card, setCode, foil) {
+  const vs = variantsOf(card).filter((v) => v && v.set === setCode && v.image);
+  const want = foil ? 'foil' : 'nonFoil';
+  const inFinish = vs.filter((v) => finishCategory(v.finish) === want);
+  let fv = null;
+  if (inFinish.length) fv = (foil && inFinish.find((v) => v.finish === 'Rainbow')) || inFinish[0];
+  else if (vs.length) fv = vs[0];                    // the other finish of this set
+  return {
+    slug: fv?.image || card?.image_slug || null,
+    artist: fv?.artist || null,
+    product: fv?.product || null,
+  };
+}
+
+/**
+ * The finish the sheet's toggle should default to for a printing's `{ nonFoil, foil }` availability.
+ * Locks to the sole finish; when both exist, defaults to non-foil - the "bare heart means non-foil"
+ * doctrine, so a foil is always an explicit choice, never a silent guess.
+ */
+export function defaultFinish({ nonFoil, foil }) {
+  return !!foil && !nonFoil;   // foil-only (promos) -> true (Foil); both or non-foil-only -> false
 }
 
 // product code -> human label, by transform not lookup, so a NEW product value degrades to a

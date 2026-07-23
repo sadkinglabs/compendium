@@ -6,10 +6,10 @@
 // the unified catalogue via listAvatarCards().
 import React, { useEffect, useRef, useState } from 'react';
 import { listAvatarCards, createDeck } from '../store/deckRepository.js';
+import { ArtImg } from './ArtImage.jsx';
 import { toast } from '../feedback.js';
 import '../theme/decks.css';
 
-const BASE = import.meta.env.BASE_URL;
 
 export default function CreateDeckWizard({ onClose, onCreated }) {
   const [step, setStep] = useState(1);
@@ -98,7 +98,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
               <div className="ob-avatar-grid">
                 {avatars.map((c) => (
                   <div key={c.card_id} className={`ob-av-card${sel?.card_id === c.card_id ? ' selected' : ''}`} onClick={() => setSel(c)}>
-                    {c.image_slug && <img src={`${BASE}cards/${c.image_slug}`} onError={(e) => { e.currentTarget.style.display = 'none'; }} alt="" />}
+                    {c.image_slug && <ArtImg artKey={c.image_slug} alt="" />}
                     <div className="ob-av-card-grad" />
                     <div className="ob-av-card-info">
                       <div className="ob-av-card-name">{c.name}</div>

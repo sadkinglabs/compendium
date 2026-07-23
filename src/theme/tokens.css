@@ -502,3 +502,13 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 /* Collection card area: a short fade replayed on each view/lens change. */
 @keyframes cxsheet { from { transform: translateY(100%); } to { transform: translateY(0); } }
 @keyframes cxpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* Card-art loading shimmer (Phase 2): a subtle gold sheen over the deterministic fallback while the
+   resolved image loads, so a cold/loading card reads as "loading", not "broken". Used by ArtImage. */
+@keyframes cx-art-sheen { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+.cx-art-shimmer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.cx-art-shimmer::after {
+  content: ''; position: absolute; inset: 0;
+  background: linear-gradient(100deg, transparent 25%, rgba(220,184,111,.12) 50%, transparent 75%);
+  transform: translateX(-100%); animation: cx-art-sheen 1.4s ease-in-out infinite;
+}

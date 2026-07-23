@@ -5,12 +5,14 @@
 //   npm run update:catalog -- --dry-run   build + validate + report; refreshes gitignored staging only
 //   npm run update:catalog -- --recover   finish an interrupted promotion from staging (steady-state)
 //
-// ART-CDN MIGRATION (current): the catalog PROMOTE is dormant. A run converts every scan and
-// atomically stages it to the gitignored CATALOG_DROP/cdn-art/<slug>.webp, and writes the prospective
-// manifest to .catalog-build/art-manifest.json, but NOTHING under public/ or src/ is repointed - the
-// app keeps serving bundled art. Publishing is the additive `cdn-upload.mjs` step; the promote returns
-// with the atomic Phase-2 activation (see docs/proposals/art-cdn-migration.md). This file orchestrates
-// the engines in scripts/catalog/*; each engine is unit-tested.
+// ART-CDN MIGRATION (Phase 2, ACTIVE): a run converts every scan and atomically stages it to the
+// gitignored CATALOG_DROP/cdn-art/<slug>.webp, writes the prospective manifest, and - when the
+// content hash changed - PROMOTES a JSON-only generation: cards.json is repointed to content-
+// addressed art keys, the full manifest ships, setCatalog + the version token are installed. The art
+// itself lives on the CDN (published by the additive cdn-upload.mjs step), so there is NO art dir to
+// promote; public/cards/ stays as the offline bundled-legacy fallback until Phase 5. The exact file
+// plan is scripts/catalog/promotionPlan.mjs, shared with the tests. This file orchestrates the
+// engines in scripts/catalog/*; each engine is unit-tested.
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -18,18 +20,26 @@ import { join, relative } from 'node:path';
 import { discover } from './catalog/discover.mjs';
 import { fetchAllCards } from './catalog/curiosa.mjs';
 import { buildArtManifest, TIER } from './catalog/artManifest.mjs';
-import { buildGeneration, validateGeneration } from './catalog/generation.mjs';
+import { buildGeneration, validateGeneration, writeStagingJson, serializeVersion, serializeSetCatalog } from './catalog/generation.mjs';
 import { formatReport } from './catalog/report.mjs';
-import { isPending, recover } from './catalog/journal.mjs';
+import { isPending, recover, promote } from './catalog/journal.mjs';
+import { productionPromotionPlan } from './catalog/promotionPlan.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DROP = join(ROOT, 'CATALOG_DROP');
 const CATALOG = join(ROOT, 'public', 'catalog');
 const CARDS_DIR = join(ROOT, 'public', 'cards');
-const MANIFEST_FILE = join(CATALOG, 'art-manifest.json');   // committed content-addressed art manifest (absent on first run)
+// The content-addressed art manifest, FULL (key + digests + srcSha256/recipeId/encoder + legacyKey).
+// One file serves two readers: the pipeline's skip oracle (needs srcSha256/recipeId) and the app's
+// artCache at runtime (reads only key/legacyKey/bytes, ignores the rest). Shipped to public/catalog so
+// it bundles with the app. (Absent on the first activation run.)
+const MANIFEST_FILE = join(CATALOG, 'art-manifest.json');
 const STAGE_DIR = join(ROOT, 'CATALOG_DROP', 'cdn-art');    // durable content-tier webp staging (gitignored), one <slug>.webp per scan
+const VERSION_FILE = join(ROOT, 'src', 'store', 'catalogVersion.json');
+const SET_CATALOG_FILE = join(ROOT, 'src', 'store', 'setCatalog.json');
 const BUILD_DIR = join(ROOT, '.catalog-build');
-const BUILD_MANIFEST = join(BUILD_DIR, 'art-manifest.json'); // the PROSPECTIVE manifest the uploader consumes (never public/catalog in Phase 1)
+const BUILD_MANIFEST = join(BUILD_DIR, 'art-manifest.json'); // the prospective manifest the uploader consumes
+const STAGING = join(BUILD_DIR, 'staging');
 const JOURNAL = join(BUILD_DIR, 'PROMOTE.json');
 const readJson = (f) => JSON.parse(readFileSync(join(CATALOG, f), 'utf8'));
 
@@ -134,7 +144,7 @@ async function main() {
   };
   const staging = { stageDir: relative(ROOT, STAGE_DIR), manifestPath: relative(ROOT, BUILD_MANIFEST), count: artReport.total };
   const report = { ...gen.report, images, staging, ok: gen.warnings.length === 0, warnings: gen.warnings };
-  console.log(formatReport(report, { dryRun, dormant: !dryRun }));
+  console.log(formatReport(report, { dryRun }));
 
   // The advertised "build + validate" preflight must run the SAME guards the real
   // promote does (no warnings; every card/variant image present; elements/subTypes
@@ -142,10 +152,38 @@ async function main() {
   // regressions. So validate BEFORE the dry-run returns, not only on a real run.
   validateGeneration(gen);
 
-  // Phase 1 is dormant: staging + the prospective manifest are written to gitignored build dirs
-  // (above), but the committed catalog under public/ and src/ is NEVER repointed or promoted here.
-  // Publishing is the additive `cdn-upload.mjs` step; activation into the app is Phase 2. The report
-  // footer (formatReport, dormant) states this; there is nothing further to do on either run.
+  if (dryRun) return;
+
+  // ---- Phase 2 activation: repoint the committed catalog to content-addressed art keys and ship the
+  // manifest. JSON ONLY - the art itself lives on the CDN (uploaded + audited by cdn-upload), so there
+  // is NO art dir to promote; public/cards/ is left untouched as the offline bundled-legacy fallback
+  // until Phase 5. The version token is written LAST, so an interrupted promote is recovered, never a
+  // half-repointed catalog. ----
+  const committedVersion = JSON.parse(readFileSync(VERSION_FILE, 'utf8'));
+  if (gen.hash === committedVersion.hash) {
+    console.log('\nNo changes: the catalog content hash is unchanged. Nothing written.');
+    return;
+  }
+  const nextVersion = { version: committedVersion.version + 1, hash: gen.hash };
+
+  console.log('\nBuilding the staging generation…');
+  rmSync(STAGING, { recursive: true, force: true });
+  const stagingCatalog = join(STAGING, 'catalog');
+  mkdirSync(stagingCatalog, { recursive: true });
+  writeStagingJson(gen, stagingCatalog);   // cards.json (content keys) + articles/faqs/link_graph/codex
+  writeFileSync(join(stagingCatalog, 'art-manifest.json'), JSON.stringify(artManifest, null, 2) + '\n');   // FULL manifest (app + next-run oracle)
+  writeFileSync(join(STAGING, 'catalogVersion.json'), serializeVersion(nextVersion));
+  writeFileSync(join(STAGING, 'setCatalog.json'), serializeSetCatalog(gen.setCatalog));
+
+  const { files } = productionPromotionPlan({
+    stagingCatalog, staging: STAGING, catalog: CATALOG,
+    manifestFile: MANIFEST_FILE, setCatalogFile: SET_CATALOG_FILE, versionFile: VERSION_FILE,
+  });
+  promote({ journalPath: JOURNAL, hash: gen.hash, files });   // JSON only - no artDir (art is on the CDN)
+
+  console.log(`\nPromoted catalog v${committedVersion.version} -> v${nextVersion.version}: repointed ${artReport.total} printings to content-addressed art keys; art is served from the CDN, public/cards/ kept as the offline legacy fallback.`);
+  console.log('Review `git diff`, add a changelog entry, and bump the build on install (see BUILD.md).');
+  console.log('RESULT: OK');
 }
 
 main().catch((e) => {

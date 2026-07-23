@@ -44,6 +44,17 @@ before(async () => {
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);
   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Test', 10, '2026-01-01']);
+  // Seed the CATALOG rows the want-writers now validate against: a positive want must name a real
+  // printing (assertRealPrinting -> getCard -> printingFinishes). c1 is a reprint (Alpha 001 + Beta
+  // 002, both finishes); c2 is Arderial 004, both finishes - covering every (set, foil) these tests
+  // write. Without this, getCard returns null and every positive item-write would fail closed.
+  const seedCard = (id, variants) => sdb.run('INSERT INTO cards(card_id,name,variants) VALUES(?,?,?);', [id, id, JSON.stringify(variants)]);
+  // Every card these tests write to, listing Alpha/Beta/Arderial (001/002/004) in BOTH finishes so
+  // any valid (set, foil) pair commits. 'occult' (mixed availability) is seeded per-test via seedMixed.
+  const fullVariants = ['001', '002', '004'].flatMap((s) => [
+    { slug: `${s}-x-b-s`, set: s, finish: 'Standard' }, { slug: `${s}-x-b-f`, set: s, finish: 'Foil' },
+  ]);
+  for (const id of ['c1', 'c2']) seedCard(id, fullVariants);   // c3/cRace/cBind are seeded per-test below
   __setActiveIdForTests(PID);
 });
 
@@ -116,6 +127,91 @@ test('a rejected write emits NO collection notification', async () => {
   assert.equal(fired, 0);
 });
 
+/* ---------------- fail-closed: no phantom collector items (Codex Phase-2b Major 2) ---------------- */
+
+// 'occult' has a Promotional (999) printing that is STANDARD-ONLY, plus Alpha (001) in both finishes
+// - the exact 'mixed per-set finish availability' shape that makes a foil phantom (999:f) reachable.
+const seedMixed = () => sdb.run('INSERT OR REPLACE INTO cards(card_id,name,variants) VALUES(?,?,?);',
+  ['occult', 'Occult Ritual', JSON.stringify([
+    { slug: '001-occult-b-s', set: '001', finish: 'Standard' },
+    { slug: '001-occult-b-f', set: '001', finish: 'Foil' },
+    { slug: '999-occult-b-s', set: '999', finish: 'Standard' },
+  ])]);
+
+test('a positive want on a printing the catalog lacks (Promotional foil) is refused, no row', async () => {
+  seedMixed();
+  for (const write of [
+    () => addWantedForItem('occult', { set: '999', foil: true }, 1),
+    () => setWantedForItem('occult', { set: '999', foil: true }, 2),
+    () => stepWantedForItem('occult', { set: '999', foil: true }, 1),
+  ]) await assert.rejects(write, /no foil printing/);
+  assert.deepEqual(ledger('occult'), []);
+});
+
+test('a rejected phantom want emits NO collection notification', async () => {
+  seedMixed();
+  let fired = 0; const unsub = subscribeCollection(() => { fired++; });
+  await assert.rejects(() => addWantedForItem('occult', { set: '999', foil: true }, 1));
+  unsub();
+  assert.equal(fired, 0, 'a refused write must not signal a change');
+});
+
+test('a valid foil want (Alpha, both finishes) commits', async () => {
+  seedMixed();
+  await addWantedForItem('occult', { set: '001', foil: true }, 1);
+  assert.deepEqual(ledger('occult'), [{ variant_slug: '001:f', qty_owned: 0, qty_wanted: 1 }]);
+});
+
+test('a valid non-foil Promotional want commits - only the foil pair is impossible', async () => {
+  seedMixed();
+  await setWantedForItem('occult', { set: '999', foil: false }, 1);
+  assert.deepEqual(ledger('occult'), [{ variant_slug: '999', qty_owned: 0, qty_wanted: 1 }]);
+});
+
+test('a HISTORICAL malformed item can still be cleared, and stepped DOWN even to a positive value', async () => {
+  seedMixed();
+  seed('999:f', 0, 3, 'occult');                                   // a phantom that predates the guard
+  await setWantedForItem('occult', { set: '999', foil: true }, 0);  // clear must always work
+  assert.deepEqual(ledger('occult'), []);
+  seed('999:f', 0, 3, 'occult');
+  await stepWantedForItem('occult', { set: '999', foil: true }, -1);  // decrement must not be blocked
+  assert.deepEqual(ledger('occult'), [{ variant_slug: '999:f', qty_owned: 0, qty_wanted: 2 }]);
+});
+
+// STRICT boolean finish - the mutation sentinel for requireBooleanFinish. c1/001 genuinely has BOTH
+// finishes, so the old `!!foil` coercion would turn 'false' into true, PASS the catalog check, and
+// store a non-foil intent as foil. Remove requireBooleanFinish and this test fails: the malformed
+// value coerces, canonicalises to '001:f', and writes instead of rejecting.
+test('every positive writer rejects a NON-boolean finish outright, even on a card that has foil', async () => {
+  let fired = 0; const unsub = subscribeCollection(() => { fired++; });
+  for (const bad of ['false', 'true', 0, 1, null, undefined]) {
+    for (const call of [
+      () => addWantedForItem('c1', { set: '001', foil: bad }, 1),
+      () => setWantedForItem('c1', { set: '001', foil: bad }, 1),
+      () => stepWantedForItem('c1', { set: '001', foil: bad }, 1),
+    ]) await assert.rejects(call, /foil must be an exact boolean/, `accepted ${JSON.stringify(bad)}`);
+  }
+  unsub();
+  assert.deepEqual(ledger(), [], 'no malformed write reached the ledger');
+  assert.equal(fired, 0, 'no rejected write signalled a change');
+});
+
+test('an EXACT boolean finish writes the right slug: false -> standard key, true -> foil key', async () => {
+  await addWantedForItem('c1', { set: '001', foil: false }, 1);
+  await addWantedForItem('c1', { set: '001', foil: true }, 1);
+  assert.deepEqual(ledger().map((r) => r.variant_slug).sort(), ['001', '001:f']);
+});
+
+test('the public validate-bypass is gone: a stray 5th argument cannot skip catalog validation', async () => {
+  // Before the fix, setWantedForItem(..., {validate:false}) persisted a phantom. The option no longer
+  // exists, so the extra arg is inert and the catalog check still fires.
+  seedMixed();
+  await assert.rejects(
+    () => setWantedForItem('occult', { set: '999', foil: true }, 1, PID, { validate: false }),
+    /no foil printing/, 'the removed option must not resurrect the bypass');
+  assert.deepEqual(ledger('occult'), []);
+});
+
 test('a rejected write does not disturb an existing row', async () => {
   seed('001', 2, 3);
   await assert.rejects(() => setWantedForItem('c1', {}, 9), /is not a set code/);
@@ -128,13 +224,13 @@ test('setting a want to zero does NOT delete owned copies on the same row', asyn
   // This is the exact shape of the defect that made dropping '' rows destructive: ownership
   // and the wishlist share a row, so a careless delete takes both.
   seed('001', 3, 2);
-  await setWantedForItem('c1', { set: '001' }, 0);
+  await setWantedForItem('c1', { set: '001', foil: false }, 0);
   assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 3, qty_wanted: 0 }]);
 });
 
 test('the row IS removed once both quantities reach zero', async () => {
   seed('001', 0, 1);
-  await setWantedForItem('c1', { set: '001' }, 0);
+  await setWantedForItem('c1', { set: '001', foil: false }, 0);
   assert.deepEqual(ledger(), [], 'no 0/0 tombstone is left behind');
 });
 
@@ -145,7 +241,7 @@ test('editing a want on a per-set row updates it rather than duplicating it', as
   // collector item, and the two would drift apart. Uncategorised rows are no longer reachable
   // from these writers at all - only triage may resolve those.
   seed('001', 2, 1);
-  await setWantedForItem('c1', { set: '001' }, 5);
+  await setWantedForItem('c1', { set: '001', foil: false }, 5);
   assert.deepEqual(ledger(), [{ variant_slug: '001', qty_owned: 2, qty_wanted: 5 }],
     'one row, owned copies preserved');
 });
@@ -153,15 +249,15 @@ test('editing a want on a per-set row updates it rather than duplicating it', as
 /* ---------------- stepping and atomic adds ---------------- */
 
 test('stepping floors at zero rather than going negative', async () => {
-  await setWantedForItem('c1', { set: '001' }, 1);
-  await stepWantedForItem('c1', { set: '001' }, -5);
+  await setWantedForItem('c1', { set: '001', foil: false }, 1);
+  await stepWantedForItem('c1', { set: '001', foil: false }, -5);
   assert.deepEqual(ledger(), []);
 });
 
 test('stepping composes across separate collector items', async () => {
-  await stepWantedForItem('c1', { set: '001' }, 2);
-  await stepWantedForItem('c1', { set: '002' }, 3);
-  await stepWantedForItem('c1', { set: '001' }, 1);
+  await stepWantedForItem('c1', { set: '001', foil: false }, 2);
+  await stepWantedForItem('c1', { set: '002', foil: false }, 3);
+  await stepWantedForItem('c1', { set: '001', foil: false }, 1);
   assert.deepEqual(ledger(), [
     { variant_slug: '001', qty_owned: 0, qty_wanted: 3 },
     { variant_slug: '002', qty_owned: 0, qty_wanted: 3 },
@@ -170,9 +266,9 @@ test('stepping composes across separate collector items', async () => {
 
 test('atomic adds accumulate without a read-modify-write', async () => {
   await Promise.all([
-    addWantedForItem('c1', { set: '002' }, 1),
-    addWantedForItem('c1', { set: '002' }, 1),
-    addWantedForItem('c1', { set: '002' }, 1),
+    addWantedForItem('c1', { set: '002', foil: false }, 1),
+    addWantedForItem('c1', { set: '002', foil: false }, 1),
+    addWantedForItem('c1', { set: '002', foil: false }, 1),
   ]);
   assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 0, qty_wanted: 3 }],
     'overlapping increments do not lose each other');
@@ -180,7 +276,7 @@ test('atomic adds accumulate without a read-modify-write', async () => {
 
 test('an atomic add never disturbs owned copies on the same row', async () => {
   seed('002', 4, 0);
-  await addWantedForItem('c1', { set: '002' }, 2);
+  await addWantedForItem('c1', { set: '002', foil: false }, 2);
   assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 4, qty_wanted: 2 }]);
 });
 
@@ -188,7 +284,7 @@ test('an atomic add never disturbs owned copies on the same row', async () => {
 
 test('wantedItemsForCard reports every collector item, in canonical terms', async () => {
   seed(LEGACY_UNCATEGORISED, 0, 1);
-  await setWantedForItem('c1', { set: '002' }, 2);
+  await setWantedForItem('c1', { set: '002', foil: false }, 2);
   await setWantedForItem('c1', { set: '002', foil: true }, 3);
   const m = await wantedItemsForCard('c1');
   assert.equal(m.get(UNCATEGORISED), 1, 'a legacy row is reported under its canonical name');
@@ -198,8 +294,8 @@ test('wantedItemsForCard reports every collector item, in canonical terms', asyn
 
 test('card-level totals still sum across every collector item', async () => {
   // qtyFor is the existing card-level read; per-item wants must not break it.
-  await setWantedForItem('c1', { set: '001' }, 1);
-  await setWantedForItem('c1', { set: '002' }, 2);
+  await setWantedForItem('c1', { set: '001', foil: false }, 1);
+  await setWantedForItem('c1', { set: '002', foil: false }, 2);
   const { wanted } = await qtyFor('c1');
   assert.equal(wanted, 3);
 });
@@ -255,7 +351,7 @@ test('Alpha and Beta wants are two independently editable rows', async () => {
   // The Wishlist surface could not honestly display the v11 model while wishlistCards() grouped
   // by card_id: two wants collapsed into one row, and editing it could not say which item was
   // meant - which is what raised NeedsPrintingChoice on a card the user could plainly see.
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
+  sdb.run("INSERT OR REPLACE INTO cards(card_id,name,sets,variants) VALUES('c1','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]','[{\"slug\":\"001-c1-s\",\"set\":\"001\",\"finish\":\"Standard\"},{\"slug\":\"001-c1-f\",\"set\":\"001\",\"finish\":\"Foil\"},{\"slug\":\"002-c1-s\",\"set\":\"002\",\"finish\":\"Standard\"},{\"slug\":\"002-c1-f\",\"set\":\"002\",\"finish\":\"Foil\"}]');");
   await setWantedForItem('c1', { set: '001', foil: false }, 1);
   await setWantedForItem('c1', { set: '002', foil: false }, 2);
 
@@ -275,7 +371,7 @@ test('Alpha and Beta wants are two independently editable rows', async () => {
 });
 
 test('a foil want is its own wishlist row, and says so', async () => {
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c3','Both','[{\"code\":\"001\"}]');");
+  sdb.run("INSERT OR REPLACE INTO cards(card_id,name,sets,variants) VALUES('c3','Both','[{\"code\":\"001\"}]','[{\"slug\":\"001-c3-s\",\"set\":\"001\",\"finish\":\"Standard\"},{\"slug\":\"001-c3-f\",\"set\":\"001\",\"finish\":\"Foil\"}]');");
   await setWantedForItem('c3', { set: '001', foil: false }, 1);
   await setWantedForItem('c3', { set: '001', foil: true }, 1);
   const wl = (await wishlistCards()).filter((r) => r.card_id === 'c3');
@@ -293,7 +389,7 @@ test('two concurrent increments through queueWantWrite finish at 3, not 2', asyn
   // this must fail, so it uses queueWantWrite directly.
   const { __resetCollectionWritesForTests } = await import('./collectionWrites.js');
   __resetCollectionWritesForTests();
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('cRace','Solo','[{\"code\":\"004\"}]');");
+  sdb.run("INSERT OR REPLACE INTO cards(card_id,name,sets,variants) VALUES('cRace','Solo','[{\"code\":\"004\"}]','[{\"slug\":\"004-cRace-s\",\"set\":\"004\",\"finish\":\"Standard\"}]');");
   seed('004', 0, 1, 'cRace');
 
   await Promise.all([
@@ -314,7 +410,7 @@ test('a queued want write commits under the PROFILE it was bound to, not the act
   __resetCollectionWritesForTests();
   sdb.run("INSERT OR IGNORE INTO profiles(id,name,schema_version,created_at) VALUES('A','A',11,'x');");
   sdb.run("INSERT OR IGNORE INTO profiles(id,name,schema_version,created_at) VALUES('B','B',11,'x');");
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('cBind','Solo','[{\"code\":\"004\"}]');");
+  sdb.run("INSERT OR REPLACE INTO cards(card_id,name,sets,variants) VALUES('cBind','Solo','[{\"code\":\"004\"}]','[{\"slug\":\"004-cBind-s\",\"set\":\"004\",\"finish\":\"Standard\"}]');");
 
   __setActiveIdForTests('A');
   const gate = (() => { let release; const p = new Promise((r) => { release = r; }); return { p, release }; })();

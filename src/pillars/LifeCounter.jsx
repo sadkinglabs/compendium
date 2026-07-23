@@ -12,7 +12,8 @@ import { buildMatchShare } from '../store/matchShare.js';
 import QRCode from '../components/QRCode.jsx';
 import { haptic, setKeepAwake, setImmersive, shareLink } from '../native.js';
 import { registerBackConsumer } from '../back.js';
-import { cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
+import { cardFallbackArt } from '../store/cardArt.js';
+import { useArtSource } from '../components/ArtImage.jsx';
 import { createDdArming, DD } from './ddArming.js';
 import { initSide, restoreSide, applyStep, applyMax, LIFE_CAP, MIN_MAX } from './matchLife.js';
 import { rollOutcome, initialRollPhase, isRollLocked, canStartRoll } from './matchRoll.js';
@@ -591,13 +592,15 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
     guarded('Exit without recording the match?', () => onExit?.());
   }
 
-  // Through the resolver, not by hand. This file used to build `${BASE}cards/${slug}`
-  // itself, which bypassed cardImageUrl and therefore localStorage['cx-no-images']
-  // entirely - the counter was the one screen the zero-image release gate could not
-  // reach, and it rendered <img src=""> with no avatar. cardImageUrl returns null when
-  // suppressed or unknown, and the SVG sigil below carries the half instead.
-  const pImg = cardImageUrl(players.you);
-  const eImg = cardImageUrl(players.opp);
+  // Through the shared art boundary, not by hand. This file used to build `${BASE}cards/${slug}`
+  // itself, which bypassed the resolver and therefore localStorage['cx-no-images'] entirely - the
+  // counter was the one screen the zero-image gate could not reach. useArtSource honours zero-image
+  // (src null), resolves through the CDN + cache, and drives the candidate chain on error; the SVG
+  // sigil / fallback gradient carries the half when there is no art.
+  const you = useArtSource(players.you?.image_slug || null);
+  const opp = useArtSource(players.opp?.image_slug || null);
+  const pImg = you.src;
+  const eImg = opp.src;
   const pFall = players.you ? cardFallbackArt(players.you) : null;
   const eFall = players.opp ? cardFallbackArt(players.opp) : null;
   const p = pRef.current, e = eRef.current;
@@ -666,9 +669,9 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       <div className="roll-sub" aria-hidden="true">Match begins in {resultLeft}</div>
     </div>
   );
-  const halfArt = (img, id) => (
+  const halfArt = (img, id, gen, onError) => (
     <>
-      {img && <img className="half-bg" id={id} src={img} alt="" />}
+      {img && <img key={gen} className="half-bg" id={id} src={img} alt="" onError={onError} />}
       {img && <div className="half-gradient" />}
       {/* The ash layer. With art it is a grayscale twin of the same <img>; artless it
           is a flat achromatic wash that crossfades OVER whatever colours the half -
@@ -677,7 +680,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
           between two players and should recede into it, so iconography would be
           exactly the wrong instinct here. */}
       {img
-        ? <img className="half-bg half-bg-dd" src={img} alt="" aria-hidden="true" />
+        ? <img key={gen} className="half-bg half-bg-dd" src={img} alt="" aria-hidden="true" onError={onError} />
         : <div className="half-bg half-bg-dd half-bg-ash" aria-hidden="true" />}
       <div className="half-birth-rim" aria-hidden="true" />
     </>
@@ -689,7 +692,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       {/* Enemy half (rotated 180° for across-table reading) */}
       <div className={`counter-half enemy-half${e.life <= 0 ? ' dd' : ''}${rollCls('opponent')}`} id="enemy-half"
            style={!eImg && eFall ? { background: eFall } : undefined}>
-        {halfArt(eImg, 'enemy-bg')}
+        {halfArt(eImg, 'enemy-bg', opp.gen, opp.onError)}
         <div className="half-dd-veil" />
         <div className="half-roll-veil" />
         <div className="half-roll-light" />
@@ -730,7 +733,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       {/* Player half */}
       <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}${rollCls('player')}`} id="player-half"
            style={!pImg && pFall ? { background: pFall } : undefined}>
-        {halfArt(pImg, 'player-bg')}
+        {halfArt(pImg, 'player-bg', you.gen, you.onError)}
         <div className="half-dd-veil" />
         <div className="half-roll-veil" />
         <div className="half-roll-light" />
@@ -992,6 +995,8 @@ function DiceModal({ open, dice, setDice, onClose, rotated }) {
 
 function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord, onNew, onReset, onExit, onClose }) {
   const { winner, pLife, eLife, durationSec, recorded } = info;
+  const you = useArtSource(players.you?.image_slug || null);
+  const opp = useArtSource(players.opp?.image_slug || null);
   const [shareLink, setShareLink] = useState(null);
   const [sharing, setSharing] = useState(false);
   async function openShare() {
@@ -1027,11 +1032,11 @@ function EndModal({ info, quick, players, oppName, setOppName, recent, onRecord,
         <div className="end-result">
           <div className="end-life-row">
             <div className="end-life-pill end-player" style={{ borderColor: pBorder }}>
-              <div className="end-life-pill-art">{cardImageUrl(players.you) && <img src={cardImageUrl(players.you)} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}</div>
+              <div className="end-life-pill-art">{you.src && <img key={you.gen} src={you.src} alt="" onError={you.onError} />}</div>
               <div className="end-life-pill-info"><div className="end-life-label">{quick ? 'You' : (players.you?.name || 'You')}</div><div className={`end-life-val${pLife <= 0 ? ' dd' : ''}`}>{lifeText(pLife, eWin)}</div></div>
             </div>
             <div className="end-life-pill end-enemy" style={{ borderColor: eBorder }}>
-              <div className="end-life-pill-art">{cardImageUrl(players.opp) && <img src={cardImageUrl(players.opp)} alt="" onError={(e) => { e.currentTarget.style.display = 'none'; }} />}</div>
+              <div className="end-life-pill-art">{opp.src && <img key={opp.gen} src={opp.src} alt="" onError={opp.onError} />}</div>
               <div className="end-life-pill-info"><div className="end-life-label">{quick ? 'Opponent' : (players.opp?.name || 'Opponent')}</div><div className={`end-life-val${eLife <= 0 ? ' dd' : ''}`}>{lifeText(eLife, pWin)}</div></div>
             </div>
           </div>

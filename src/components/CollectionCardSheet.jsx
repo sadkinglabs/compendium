@@ -11,13 +11,15 @@ import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
 import CardArtViewer from './CardArtViewer.jsx';
-import { thresholdRuns, cardImageUrl, cardFallbackArt } from '../store/cardArt.js';
+import { thresholdRuns, cardFallbackArt } from '../store/cardArt.js';
+import { useArtSource } from './ArtImage.jsx';
 import { getCard } from '../store/codexRepository.js';
 import { listCardLists, listsWithCard, stepListEntry, ownedSetsForCard, subscribeCollection, listRowKey, wantedItemsForCard, setWantedForItem, addWantedForItem, setWanted, queueWantWrite } from '../store/ownedRepository.js';
 import { SET_RANK } from '../store/sets.js';
 import { useOwnedLedger } from './OwnedControl.jsx';
 import { haptic } from '../native.js';
 import { UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, canonicalPrinting } from '../store/printings.js';
+import { selectPrinting, defaultFinish, printingFinishes, printingProducts } from '../store/printingRows.js';
 import { wantTarget } from '../store/wantIntent.js';
 import { cardSheetSetReducer, initialSetState, explicitSetOf, displaySetOf } from './cardSheetSetState.js';
 import { enqueueWrite } from '../store/collectionWrites.js';
@@ -100,13 +102,37 @@ export function CountCol({ label, foil = false, field, qty, step, editable = tru
   );
 }
 
+// The card sheet's horizontal count (Phase 6, Fable): [-] N [+] with the finish name captioned under
+// the number - a full-width "ownership console" band. CountCol (stacked) stays untouched for the
+// deckbuilder's paired columns (CardSheet.jsx); this is a sibling, not a replacement.
+export function CountRow({ label, foil = false, field, qty, step, editable = true }) {
+  const v = qty?.[field] || 0;
+  const loading = qty === null;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 26 }}>
+      {editable && <StepBtn dir={-1} disabled={loading || v === 0} onClick={() => step(field, -1)} />}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minWidth: 64 }}>
+        <span style={{ font: "500 34px/1 var(--f-display)", color: '#efe7d8', fontVariantNumeric: 'tabular-nums' }}>{v}</span>
+        <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.22em', color: '#a99a80', textTransform: 'uppercase' }}>
+          {label}{foil && <span style={{ color: '#e3c589', marginLeft: 4, textShadow: '0 0 8px rgba(227,197,137,.5)' }}>✦</span>}
+        </span>
+      </div>
+      {editable && <StepBtn dir={1} disabled={loading} onClick={() => step(field, 1)} />}
+    </div>
+  );
+}
+
 // One action in the sheet's bottom row. `on` fills it with the pillar accent - used by the
 // wishlist, which is a toggle (a heart that fills when the card is wanted) rather than a
 // quantity. Wanting N copies is what a Wanted list's per-card target is for.
-export function ActionButton({ icon, label, on = false, disabled = false, onClick }) {
+// `pressed` (optional) makes this a real toggle for assistive tech: when defined, aria-pressed is
+// emitted for BOTH states, so an OFF wishlist heart announces as an unpressed toggle rather than a
+// plain button. `on` stays the visual-emphasis flag. A non-toggle action ("Add to list") omits
+// `pressed` and gets no aria-pressed at all.
+export function ActionButton({ icon, label, on = false, pressed, disabled = false, onClick }) {
   return (
     <button
-      type="button" onClick={onClick} disabled={disabled} aria-pressed={on || undefined}
+      type="button" onClick={onClick} disabled={disabled} aria-pressed={pressed === undefined ? undefined : pressed}
       style={{
         flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 9,
         padding: '15px 0', borderRadius: 16, cursor: disabled ? 'default' : 'pointer',
@@ -191,12 +217,11 @@ export function SetPill({ name }) {
 // the real card ratio) and the image is sized to the swapped dimensions then
 // counter-rotated to fill it upright - the canonical .sheet-site-wrap technique.
 function SiteArt({ c }) {
-  const [broken, setBroken] = useState(false);
-  const url = cardImageUrl(c);
+  const { src, gen, onError } = useArtSource(c?.image_slug || null);
   return (
     <div style={{ position: 'relative', width: '100%', aspectRatio: '531 / 380', borderRadius: 11, overflow: 'hidden', background: cardFallbackArt(c) }}>
-      {url && !broken && (
-        <img src={url} alt={c.name || ''} loading="lazy" onError={() => setBroken(true)}
+      {src && (
+        <img key={gen} src={src} alt={c.name || ''} loading="lazy" onError={onError}
           style={{ position: 'absolute', top: '50%', left: '50%', width: 'calc(100% * 380 / 531)', height: 'calc(100% * 531 / 380)', objectFit: 'cover', transform: 'translate(-50%,-50%) rotate(90deg)', display: 'block' }} />
       )}
     </div>
@@ -205,7 +230,7 @@ function SiteArt({ c }) {
 
 // The glowing card frame - portrait for cards, flipped landscape for Sites. Tapping it raises
 // the card onto its own full-screen stage (CardArtViewer).
-export function SheetArt({ c }) {
+export function SheetArt({ c, width }) {
   const site = !!c.is_site;
   const [zoom, setZoom] = useState(null);   // the frame we popped FROM, so we can return to it
   const frameRef = useRef(null);
@@ -214,7 +239,7 @@ export function SheetArt({ c }) {
     setZoom(r ? { x: r.left, y: r.top, w: r.width, h: r.height } : {});
   };
   return (
-    <div style={{ position: 'relative', width: site ? 244 : 172, margin: '14px auto 0' }}>
+    <div style={{ position: 'relative', width: width ?? (site ? 244 : 172), margin: width ? 0 : '14px auto 0' }}>
       <div aria-hidden="true" style={{ position: 'absolute', inset: -16, borderRadius: 24, background: `radial-gradient(circle at 50% 45%, ${glowColor(c)}, transparent 70%)`, filter: 'blur(16px)', zIndex: 0 }} />
       <button ref={frameRef} type="button" onClick={raise} aria-label={`View ${c.name || 'card'} artwork`}
         style={{ position: 'relative', zIndex: 1, display: 'block', width: '100%', padding: 1, border: 'none', cursor: 'pointer',
@@ -231,10 +256,9 @@ export function SheetArt({ c }) {
 // The centered card body. useOwnedLedger only mounts here (once the card exists).
 // `set` (a set code) scopes owned/foil to that ONE printing - Alpha and Beta are
 // distinct cards in the collection, so tapping the Alpha row edits only Alpha.
-function CardBody({ c, onPick, editable, set }) {
+function CardBody({ c, onPick, editable, set, foil: initFoil }) {
   const subs = jp(c.sub_types, []) || [];
   const sets = jp(c.sets, []) || [];
-  const variants = jp(c.variants, []) || [];
   const runs = thresholdRuns(c);
 
   // Per-set ownership (incl '' Unspecified) for the picker's counts + smart default.
@@ -287,6 +311,21 @@ function CardBody({ c, onPick, editable, set }) {
   const effSet = displaySetOf(setState, ranked[0]?.code ?? '');
   const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
 
+  // THE ACTIVE FINISH (Phase 6). One collector item at a time: a Standard/Foil toggle drives the
+  // stepper, the heart, and the art together. `finishes` is display-safe - malformed variant metadata
+  // degrades to standard-only rather than crashing the sheet (authorisation still fails closed
+  // elsewhere). The toggle shows only when a printing has both; it defaults per printing and resets on
+  // a set change, so a foil is always an explicit choice, never a silent guess.
+  const finishes = (() => { try { return printingFinishes(c, effSet); } catch { return { nonFoil: true, foil: false }; } })();
+  // A scoped open (a wishlist row carries the exact finish it wants) honors that finish ONCE, so the
+  // sheet lands on the printing the user tapped. Every later set change falls back to the per-set
+  // default - a foil stays an explicit choice, never a silent guess. `initFoil` is consumed on mount
+  // via the ref, so it never overrides a subsequent deliberate set switch.
+  const resolveFoil = (want) => (want != null && (want ? finishes.foil : finishes.nonFoil) ? want : defaultFinish(finishes));
+  const pendingFoil = useRef(initFoil);
+  const [foil, setFoil] = useState(() => resolveFoil(initFoil));
+  useEffect(() => { const w = pendingFoil.current; pendingFoil.current = undefined; setFoil(resolveFoil(w)); }, [effSet]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // THE HEART IS PER COLLECTOR ITEM, not per card.
   //
   // It used to read the card-level want total, so with Alpha wanted and Beta selected the Beta
@@ -311,8 +350,7 @@ function CardBody({ c, onPick, editable, set }) {
   // schema change exists to remove. Only an explicit selection counts: the set the sheet was
   // opened at, or a segment the user tapped.
   const explicitSet = explicitSetOf(setState);
-  const heartItem = { set: effSet, foil: false };
-  const heartSlug = effSet ? canonicalPrinting(effSet, false) : null;
+  const heartSlug = effSet ? canonicalPrinting(effSet, foil) : null;
   const heartWanted = heartSlug ? (wantedItems?.get(heartSlug) || 0) : 0;
   const wished = heartWanted > 0;
 
@@ -329,7 +367,14 @@ function CardBody({ c, onPick, editable, set }) {
   // deliberately coarser so any two edits to one card's wants serialise.
   // pid captured at tap time and handed to the writer, so a mid-flight profile switch cannot
   // redirect a parked edit - see queueWantWrite.
-  const queueWant = (write) => queueWantWrite(activeProfileId(), c.card_id, write);
+  // Surface a rejected want honestly. The repository fails closed on a positive write to a printing
+  // the catalog does not list (an impossible foil), so the returned promise can reject - swallowing
+  // it would leave the heart looking like it worked. We toast the known validation error and re-raise
+  // anything else, so a genuine failure is never hidden.
+  const queueWant = (write) => queueWantWrite(activeProfileId(), c.card_id, write).catch((e) => {
+    if (e?.name === 'InvalidPrinting') { toast('That printing does not exist for this card', { tone: 'warn' }); return; }
+    throw e;
+  });
   const addWant = (item) => queueWant((pid) => addWantedForItem(c.card_id, item, 1, pid));
 
   // Clearing is not the mirror of adding. A want can legitimately sit on the UNCATEGORISED row
@@ -338,88 +383,84 @@ function CardBody({ c, onPick, editable, set }) {
   // want instead of naming one. Removing something the user can see must always be possible.
   const clearWant = () => queueWant((pid) => (
     effSet && effSet !== UNCATEGORISED_BUCKET
-      ? setWantedForItem(c.card_id, { set: effSet, foil: false }, 0, pid)
+      ? setWantedForItem(c.card_id, { set: effSet, foil }, 0, pid)
       : setWanted(c.card_id, 0, pid)
   ));
 
   const onHeart = async () => {
     if (wished) return clearWant();                          // clearing never needs a choice
     const t = wantTarget(setCodes, { set: explicitSet });
-    if (t.kind === 'item') return addWant(t.item);
+    if (t.kind === 'item') return addWant({ ...t.item, foil });   // the active finish, not a hardcoded non-foil
     if (t.kind === 'ask') { setPicking(true); return; }
     toast('The catalog does not list a printing for this card', { tone: 'warn' });
   };
 
-  // Art follows the active printing (Unspecified -> the card's default art).
-  const imageForSet = (code) => {
-    if (!code) return c.image_slug;
-    const vs = variants.filter((v) => v.set === code && v.image);
-    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.image ?? c.image_slug;
-  };
-  // The credited artist follows the printing on show - a reprint is often a different artist.
-  const artistForSet = (code) => {
-    const vs = (code ? variants.filter((v) => v.set === code) : variants).filter((v) => v.artist);
-    return (vs.find((v) => /-s$/.test(v.slug)) || vs[0])?.artist || null;
-  };
-  const artCard = { ...c, image_slug: imageForSet(effSet), _artist: artistForSet(effSet) };
+  // Art, artist, and origin follow the active printing AND finish through ONE selector, so a dual
+  // Foil/Rainbow promo can never show Rainbow art credited to another variant's artist (Phase 6).
+  const printing = selectPrinting(c, effSet, foil);
+  const products = printingProducts(c, effSet, foil);   // origin labels for the active printing+finish
+  const artCard = { ...c, image_slug: printing.slug ?? c.image_slug, _artist: printing.artist };
 
   // SegTabs keys avoid an empty-string key for the Unspecified option.
   const KEY = (code) => (code === '' ? '__unspec__' : code);
   const setName = (effSet && sets.find((s) => s.code === effSet)?.name) || (effSet === UNCATEGORISED_BUCKET ? UNCATEGORISED_LABEL : ranked[0]?.name);
-  const hair = <span aria-hidden="true" style={{ width: 1, height: 14, background: 'rgba(107,90,46,.6)', flex: 'none' }} />;
-  const smallCaps = (color) => ({ font: "600 12.5px/1 var(--f-display)", letterSpacing: '.2em', color, textTransform: 'uppercase' });
-  // Meta row: rarity + type sit together (the type moved down off the header),
-  // then subtype(s), then threshold icons. Hairline-separated, wraps if tight.
-  const meta = [];
-  if (c.rarity) meta.push(<span key="r" style={smallCaps(RARITY_HUE[c.rarity] || 'var(--ink-muted)')}>{c.rarity}</span>);
-  meta.push(<span key="ty" style={smallCaps('#cba75f')}>{typeLabel(c)}</span>);
-  if (subs.length) meta.push(<span key="s" style={{ font: "italic 500 17.5px/1 var(--f-read)", color: '#a99a80' }}>{subs.join(', ')}</span>);
-  if (runs.length) meta.push(<ThresholdPips key="t" runs={runs} size={20} />);
-  const metaRow = meta.flatMap((node, i) => (i === 0 ? [node] : [React.cloneElement(hair, { key: `h${i}` }), node]));
+  const smallCaps = (color) => ({ font: "600 12px/1 var(--f-display)", letterSpacing: '.18em', color, textTransform: 'uppercase' });
 
   return (
     <>
-      {/* Set picker - drives the art AND which set the Owned/Foil steppers edit.
-          Opened from INSIDE a set (`set` given) the printing is already decided, so the sheet
-          shows a plain pill instead of a chooser: you are adding to the set you are in.
-          Single-set cards likewise. Only the name-level entry points (Codex, search, Overview)
-          still need to pick. The heart itself is per collector item - it reflects and edits
-          the printing the sheet is showing. */}
-      {set == null && options.length > 1 ? (
-        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 2 }}>
-          <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
-            <SegTabs ariaLabel="Printing"
-              value={KEY(effSet)} onChange={(k) => setSel(k === '__unspec__' ? '' : k)}
-              options={options.map((o) => {
-                const t = (ownedSets?.get(o.code)?.owned || 0) + (ownedSets?.get(o.code)?.foil || 0);
-                return { key: KEY(o.code), label: t > 0 ? `${o.name} ·${t}` : o.name };
-              })} />
-          </div>
+      {/* Two columns (Phase 6): the card image on the LEFT; on the RIGHT the identity - set, name,
+          type, artist, product/origin - and, beneath it, the active-finish stepper. Far tighter than
+          the old full-width stack. The set picker/pill and the Standard/Foil toggle live in the right
+          column; a printing with one finish shows no toggle (promos/foil-only lock to Foil). */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 8 }}>
+        <div style={{ flex: '0 0 44%', maxWidth: 176 }}>
+          <SheetArt c={artCard} width="100%" />
         </div>
-      ) : setName ? (
-        <div style={{ textAlign: 'center', marginTop: 2 }}><SetPill name={setName} /></div>
-      ) : null}
 
-      <SheetArt c={artCard} />
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          {set == null && options.length > 1 ? (
+            <div style={{ maxWidth: '100%', overflowX: 'auto', padding: 1 }}>
+              <SegTabs ariaLabel="Printing"
+                value={KEY(effSet)} onChange={(k) => setSel(k === '__unspec__' ? '' : k)}
+                options={options.map((o) => {
+                  const t = (ownedSets?.get(o.code)?.owned || 0) + (ownedSets?.get(o.code)?.foil || 0);
+                  return { key: KEY(o.code), label: t > 0 ? `${o.name} ·${t}` : o.name };
+                })} />
+            </div>
+          ) : setName ? <div><SetPill name={setName} /></div> : null}
 
-      <div style={{ font: "700 27px/1.1 var(--f-display)", color: '#efe7d8', textAlign: 'center', marginTop: 20 }}>{c.name}</div>
+          <div style={{ font: "700 21px/1.15 var(--f-display)", color: '#efe7d8' }}>{c.name}</div>
 
-      {metaRow.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 12, marginTop: 14 }}>{metaRow}</div>
-      )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+            {c.rarity && <span style={smallCaps(RARITY_HUE[c.rarity] || 'var(--ink-muted)')}>{c.rarity}</span>}
+            <span style={smallCaps('#cba75f')}>{typeLabel(c)}</span>
+            {subs.length > 0 && <span style={{ font: "italic 500 14.5px/1 var(--f-read)", color: '#a99a80' }}>{subs.join(', ')}</span>}
+          </div>
+          {runs.length > 0 && <ThresholdPips runs={runs} size={16} />}
 
-      <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '22px 0 18px' }} />
+          {printing.artist && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#a99a80' }}>Art · {printing.artist}</div>}
+          {products.length > 0 && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#8a7a55' }}>{products.join(' · ')}</div>}
 
-      {/* Owned + Foil are the collection ledger - real quantities, so they get steppers.
-          The wishlist is a binary INTENT ("I want this"), not a quantity: wanting three
-          copies is what a Wanted list's per-card target is for. So it is a toggle, and it
-          stays available everywhere (it is a list, not the owned collection). */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-        <CountCol label="Owned" field="owned" qty={qty} step={step} editable={editable} />
-        <CountCol label="Foil" foil field="foil" qty={qty} step={step} editable={editable} />
+        </div>
       </div>
+
+      {/* The ownership console (Fable): a hairline-separated full-width band. The Standard/Foil toggle
+          (only when both finishes exist) sits above the horizontal [-] N [+] stepper. Moving ownership
+          out of the right column lets the columns center, so a short landscape site no longer pools
+          empty space beside its identity. */}
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--hair-12, rgba(220,184,111,.12))' }}>
+        {finishes.nonFoil && finishes.foil && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <SegTabs ariaLabel="Finish"
+              value={foil ? 'foil' : 'std'} onChange={(k) => setFoil(k === 'foil')}
+              options={[{ key: 'std', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
+          </div>
+        )}
+        <CountRow label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
+      </div>
+
       {!editable && (
-        <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 10 }}>
+        <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a7a55', textAlign: 'center', marginTop: 12 }}>
           Edit owned copies in My Collection.
         </div>
       )}
@@ -427,7 +468,7 @@ function CardBody({ c, onPick, editable, set }) {
       {/* One action row: wishlist (a heart that fills when on) and add-to-list (a plus).
           There is deliberately no "Open in Codex" hand-off - this sheet is about OWNING the
           card, and the Codex page is reached from Codex/search. */}
-      <div style={{ display: 'flex', gap: 12, marginTop: 26 }}>
+      <div style={{ display: 'flex', gap: 12, marginTop: 18 }}>
         <ActionButton
           icon={
             <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"
@@ -437,7 +478,7 @@ function CardBody({ c, onPick, editable, set }) {
             </svg>
           }
           /* Per collector item: reflects and toggles the item the sheet is showing, not the card. */
-          label="Wishlist" on={wished} disabled={wantedItems === null}
+          label="Wishlist" on={wished} pressed={wished} disabled={wantedItems === null}
           onClick={onHeart} />
         <ActionButton
           icon={
@@ -452,13 +493,14 @@ function CardBody({ c, onPick, editable, set }) {
         cardId={c.card_id}
         cardName={c.name}
         setCodes={setCodes}
+        initialFoil={foil}
         onPick={(item) => addWant(item)}
         onClose={() => setPicking(false)} />
     </>
   );
 }
 
-export default function CollectionCardSheet({ cardId, onClose, editable = false, set = null }) {
+export default function CollectionCardSheet({ cardId, onClose, editable = false, set = null, foil = undefined }) {
   const [c, setC] = useState(null);
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
@@ -466,7 +508,7 @@ export default function CollectionCardSheet({ cardId, onClose, editable = false,
     <GothicSheet open={!!cardId} onClose={onClose} label="Card">
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
-        : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} />}
+        : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} foil={foil} />}
     </GothicSheet>
   );
 }
