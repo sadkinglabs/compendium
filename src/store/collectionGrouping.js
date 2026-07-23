@@ -30,13 +30,17 @@ const byNameWith = (cardOf) => (a, b) =>
 
 /**
  * Group cards into rendered sections.
- * @returns [{ key, label, cards }] - always alphabetical within a section, and sections
- *          themselves in a meaningful order (element palette order, rarity scarcity order).
- *          Empty sections are omitted; a mode that yields one section still returns an array
- *          so the caller renders one code path rather than branching on mode.
+ * @param comparator optional within-section order (row, row) => number. Defaults to name A-Z, so
+ *        an unset sort preserves the historical grid order. Grouping still SECTIONS by element or
+ *        rarity; the comparator only orders WITHIN a section.
+ * @returns [{ key, label, cards }] - sorted within a section, and sections themselves in a
+ *          meaningful order (element palette order, rarity scarcity order). Empty sections are
+ *          omitted; a mode that yields one section still returns an array so the caller renders one
+ *          code path rather than branching on mode.
  */
-export function groupCards(cards, mode = 'none', cardOf = identity) {
-  const list = [...(cards || [])].sort(byNameWith(cardOf));
+export function groupCards(cards, mode = 'none', cardOf = identity, comparator = null) {
+  const order2 = comparator || byNameWith(cardOf);
+  const list = [...(cards || [])].sort(order2);
   if (mode !== 'element' && mode !== 'rarity') {
     return [{ key: 'all', label: '', cards: list }];
   }

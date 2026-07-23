@@ -5,18 +5,16 @@ import { query, run, tx } from './db.js';
 import { getCatalog } from './catalogCache.js';
 import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso, slugify } from './ids.js';
+import { RARITY_LIMITS, isUnlimited } from './playset.js';
 
 export const ZONES = ['spellbook', 'atlas', 'collection'];
-export const RARITY_LIMITS = { Ordinary: 4, Exceptional: 3, Elite: 2, Unique: 1 };
+export { RARITY_LIMITS, isUnlimited };   // re-exported from the leaf playset module (unchanged public API)
 export const EL_COLOR = { air: '#c4cdd6', earth: '#b35c33', fire: '#e0623f', water: '#4aa3d4' };   // app-wide: air grey, earth brown, fire red, water blue (mirrors tokens.css)
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 
 export function collectionMax(deck) {
   return deck?.avatar_card_id === 'dragonlord' ? 11 : 10;
-}
-export function isUnlimited(card) {
-  return /any number of/i.test(card?.rules_text || '');
 }
 export function copyLimit(card) {
   if (isUnlimited(card)) return 99;
