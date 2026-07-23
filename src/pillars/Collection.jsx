@@ -747,25 +747,32 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
   );
 }
 
-// "Add copies" is intentional, not one-tap: a stepper modal confirms how many of EACH selected card
-// go into the collection.
+// "Add copies" is intentional, not one-tap: a stepper modal confirms how many of EACH selected card,
+// and which FINISH, go into the collection. A card without the chosen finish (a non-foil-only card
+// when adding foils, or Winter River when adding standard) is skipped and reported, so one impossible
+// pairing never sinks the whole batch.
 function AddCopiesSheet({ open, count, onClose, onConfirm }) {
   const [qty, setQty] = useState(1);
+  const [foil, setFoil] = useState(false);
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (open) { setQty(1); setBusy(false); } }, [open]);
+  useEffect(() => { if (open) { setQty(1); setFoil(false); setBusy(false); } }, [open]);
   return (
     <BottomSheet open={open} title="ADD COPIES" onClose={onClose}>
-      <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 18 }}>
+      <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 16 }}>
         How many copies of each of the {count} selected card{count === 1 ? '' : 's'} do you own? They are added to your collection.
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
+        <SegTabs ariaLabel="Finish" value={foil ? 'foil' : 'standard'} onChange={(k) => setFoil(k === 'foil')}
+          options={[{ key: 'standard', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 22 }}>
         <StepBtn dir={-1} disabled={qty <= 1} onClick={() => setQty((q) => Math.max(1, q - 1))} />
         <span style={{ font: "500 36px/1 var(--f-display)", color: '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{qty}</span>
         <StepBtn dir={1} disabled={qty >= 99} onClick={() => setQty((q) => Math.min(99, q + 1))} />
       </div>
-      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm(qty); }} disabled={busy}
+      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm(qty, foil); }} disabled={busy}
         style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}>
-        {busy ? 'Adding…' : `Add ${qty} of each to collection`}
+        {busy ? 'Adding…' : `Add ${qty} ${foil ? 'foil ' : ''}of each to collection`}
       </button>
     </BottomSheet>
   );
@@ -984,17 +991,21 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
   }, [selectMode]);
   // Add N copies of each selected printing to the collection through the barrier-guarded bulk writer.
-  const bulkAddCopies = async (qty) => {
-    // The finish is per printing, NOT a flat non-foil: a foil-ONLY printing (Winter River in Alpha)
-    // has no non-foil item, and the strict bulk writer rejects the whole batch for one impossible
-    // pair. defaultFinish picks non-foil where it exists, else foil.
-    const items = [...selected.values()].map(({ card, set }) => {
+  const bulkAddCopies = async (qty, foil) => {
+    // Only cards that actually have the chosen finish are added; the rest are skipped and counted (a
+    // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
+    // standard). This keeps one impossible pairing from rejecting the whole strict batch.
+    const items = []; let skipped = 0;
+    for (const { card, set } of selected.values()) {
       let fin; try { fin = printingFinishes(card, set); } catch { fin = { nonFoil: true, foil: false }; }
-      return { card_id: card.card_id, qty, setCode: set, foil: defaultFinish(fin) };
-    });
+      if (foil ? fin.foil : fin.nonFoil) items.push({ card_id: card.card_id, qty, setCode: set, foil });
+      else skipped += 1;
+    }
+    if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
     try {
       const r = await importCollectionResolved(items);
-      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}`);
+      const tail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
+      toast(`Added ${r.copies} ${foil ? 'foil ' : ''}cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}${tail}`);
       setQtyOpen(false); cancelSelect();
     } catch (e) {
       console.error('bulkAddCopies failed', e);
