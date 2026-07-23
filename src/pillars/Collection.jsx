@@ -1713,6 +1713,12 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
         }}>{card.name}</span>
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 }}>
           {setName && <span style={listSetPill}>{setName}</span>}
+          {/* Wishlist: how many of THIS printing you already own (0 stays quiet). */}
+          {wishlist && owned > 0 && (
+            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 3, font: "600 12.5px/1 var(--f-read)", color: 'var(--gold-num)' }}>
+              <span style={{ font: "600 14px/1 var(--f-display)" }}>×{owned}</span>owned
+            </span>
+          )}
           {wishlist ? null : goalMet ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-jade)', flex: 'none' }} />
@@ -1779,7 +1785,12 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [pendingUnwish, setPendingUnwish] = useState(() => new Set());
   const pendingUnwishRef = useRef(pendingUnwish);
   pendingUnwishRef.current = pendingUnwish;
-  const toggleUnwish = (key) => setPendingUnwish((prev) => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  const toggleUnwish = (key) => {
+    const removing = !pendingUnwishRef.current.has(key);   // read the synchronous mirror for direction
+    haptic('light');
+    toast(removing ? 'Removed from wishlist' : 'Back on your wishlist');
+    setPendingUnwish((prev) => { const n = new Set(prev); if (removing) n.add(key); else n.delete(key); return n; });
+  };
   const [addOpen, setAddOpen] = useState(false);   // in-list add picker
   const [bulkOpen, setBulkOpen] = useState(false); // paste-a-list bulk add
   const [ownQty, setOwnQty] = useState(new Map()); // keyed like the goal map: item for the Wishlist, card for lists
@@ -2003,8 +2014,10 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     track(persist(cardId, delta));
   }
   function removeEntry(cardId) {
+    const name = cardIndex.current.get(cardId)?.name;
     setRemoveCard(null);
     haptic('light');
+    toast(name ? `Removed ${name}` : 'Removed from list');
     applyGoal((m) => m.delete(cardId));
     track(clearEntry(cardId));
   }
