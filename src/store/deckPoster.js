@@ -6,7 +6,7 @@ import { getDeck, getDeckCards } from './deckRepository.js';
 import { slugify } from './ids.js';
 import { shareImage } from '../native.js';
 import { roundRectPath } from './roundRect.js';
-import { posterScale, maxCanvasDim } from './posterScale.js';
+import { posterScale, maxCanvasDim, memoryBudgetPx, deviceMemoryGb } from './posterScale.js';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -118,10 +118,12 @@ async function _buildDeckPosterCanvas(deck) {
   const statsTop = yCursor + 18, STATS_H = 336;
   const H = statsTop + STATS_H + 52;
 
-  // Rasterise at the highest device-pixel scale the GPU can actually back, so poster text stays crisp
-  // when magnified without risking a blank canvas past the device's max texture size. Layout below is
-  // in logical pixels (x.scale maps them), so SCALE only sets the raster resolution, never the layout.
-  const SCALE = posterScale(maxCanvasDim(), W, H);
+  // Rasterise at the highest device-pixel scale that fits BOTH the GPU's max texture dimension AND a
+  // memory budget derived from reported RAM - so poster text stays crisp when magnified without a
+  // blank canvas (dimension) or an OOM-killed renderer (memory) on a lower-memory device. Only a
+  // device reporting ample RAM reaches 4x; everything else stays at the device-proven 3x. Layout below
+  // is in logical pixels (x.scale maps them), so SCALE only sets the raster resolution.
+  const SCALE = posterScale(maxCanvasDim(), memoryBudgetPx(deviceMemoryGb()), W, H);
   const cv = document.createElement('canvas');
   cv.width = W * SCALE; cv.height = H * SCALE;
   const x = cv.getContext('2d');
