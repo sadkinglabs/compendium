@@ -1037,11 +1037,12 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     try {
       if (adjust) {
         const r = await adjustOwnedItemsBulk(items);   // one atomic write; Remove floors at 0, keeping any want
-        const raised = r.set, lowered = r.removed + r.cleared;
-        const changed = raised + lowered;
+        const changed = r.set + r.removed + r.cleared;   // rows actually touched
+        const copies = dir === 'remove' ? r.copiesRemoved : r.copiesAdded;   // AUTHORITATIVE copy movement, not the request
+        const cop = `${copies} ${f}cop${copies === 1 ? 'y' : 'ies'}`;
         toast(changed === 0
-          ? `No change - ${cnt(r.unchanged)} already at the limit${skipTail}`
-          : (dir === 'remove' ? `Removed ${qty} ${f}from ${cnt(changed)}` : `Added ${qty} ${f}to ${cnt(changed)}`) + skipTail);
+          ? `No change - ${cnt(r.unchanged)} unaffected${skipTail}`
+          : (dir === 'remove' ? `Removed ${cop} across ${cnt(changed)}` : `Added ${cop} across ${cnt(changed)}`) + skipTail);
       } else {
         const r = await setOwnedItemsBulk(items);   // one atomic write; 0 removes, keeping any wishlist want
         const changed = qty === 0 ? (r.removed + r.cleared) : r.set;

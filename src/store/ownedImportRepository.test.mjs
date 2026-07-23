@@ -232,7 +232,7 @@ test('setOwnedItemsBulk end-to-end: sets, deletes owned-only, keeps a wanted row
   ]);
   unsub();
   assert.equal(fired, 1, 'exactly ONE broadcast for the whole batch');
-  assert.deepEqual(r, { set: 1, removed: 0, cleared: 1, unchanged: 0, cards: 1 });
+  assert.deepEqual(r, { set: 1, removed: 0, cleared: 1, unchanged: 0, cards: 1, copiesAdded: 4, copiesRemoved: 2 });
   const c1 = rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [PID, 'c1']);
   assert.equal(c1.find((x) => x.variant_slug === '001')?.qty_owned, 5);
   const beta = c1.find((x) => x.variant_slug === '002');
@@ -262,7 +262,7 @@ test('setOwnedItemsBulk: apply-then-reject -> transaction/unknown, the write LAN
 test('setOwnedItemsBulk: an all-no-op batch runs no transaction and does not broadcast', async () => {
   seedOwn('001', 3);
   const r = await cmdSet()([{ card_id: 'c1', setCode: '001', foil: false, qty: 3 }]);   // already 3
-  assert.deepEqual(r, { set: 0, removed: 0, cleared: 0, unchanged: 1, cards: 1 });
+  assert.deepEqual(r, { set: 0, removed: 0, cleared: 0, unchanged: 1, cards: 1, copiesAdded: 0, copiesRemoved: 0 });
   assert.equal(notifyCount, 0, 'no change -> no broadcast');
 });
 
@@ -302,7 +302,7 @@ test('adjustOwnedItemsBulk: a positive delta RAISES against the present count', 
   seedOwn('001', 2);
   const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: 3 }]);
   assert.equal(ownOf('001'), 5, '2 + 3');
-  assert.deepEqual(r, { set: 1, removed: 0, cleared: 0, unchanged: 0, cards: 1 });
+  assert.deepEqual(r, { set: 1, removed: 0, cleared: 0, unchanged: 0, cards: 1, copiesAdded: 3, copiesRemoved: 0 });
   assert.equal(notifyCount, 1);
 });
 
@@ -322,7 +322,8 @@ test('adjustOwnedItemsBulk: removing MORE than present floors at 0 - row deleted
   seedOwn('001', 2);
   const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: -5 }]);
   assert.equal(rowExists('001'), false, 'floored to 0 with no want -> row removed');
-  assert.deepEqual(r, { set: 0, removed: 1, cleared: 0, unchanged: 0, cards: 1 });
+  assert.deepEqual(r, { set: 0, removed: 1, cleared: 0, unchanged: 0, cards: 1, copiesAdded: 0, copiesRemoved: 2 },
+    'only the 2 present copies were removed, not the requested 5');
 });
 
 test('adjustOwnedItemsBulk: falling to 0 KEEPS a wishlist want (owned zeroed, row survives)', async () => {
@@ -332,19 +333,36 @@ test('adjustOwnedItemsBulk: falling to 0 KEEPS a wishlist want (owned zeroed, ro
   assert.equal(ownOf('001'), 0, 'owned cleared');
   assert.equal(wantedOf('001'), 1, 'the want is preserved');
   assert.equal(r.cleared, 1);
+  assert.equal(r.copiesRemoved, 2, 'only the 2 present copies count as removed');
 });
 
-test('adjustOwnedItemsBulk: a positive delta CLAMPS at MAX_ITEM_QTY (already-max is a no-op)', async () => {
-  seedOwn('001', MAX_ITEM_QTY);
-  const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: 5 }]);
-  assert.equal(ownOf('001'), MAX_ITEM_QTY, 'clamped, not overflowed');
-  assert.deepEqual(r, { set: 0, removed: 0, cleared: 0, unchanged: 1, cards: 1 });
-  assert.equal(notifyCount, 0, 'a clamped no-op does not broadcast');
+// The 999 REGRESSIONS: MAX_ITEM_QTY is an INPUT/delta limit, never a stored-ledger cap. A row already
+// above 999 (two 999 imports = 1998) must adjust arithmetically, not be truncated to 999.
+test('adjustOwnedItemsBulk: an existing total ABOVE 999 raises arithmetically - 1998 + 1 = 1999 (no truncation)', async () => {
+  seedOwn('001', 1998);
+  const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: 1 }]);
+  assert.equal(ownOf('001'), 1999, 'raised, NOT clamped to 999 - that would silently delete ~999 copies');
+  assert.equal(r.copiesAdded, 1);
+  assert.equal(r.set, 1);
+});
+
+test('adjustOwnedItemsBulk: an existing total ABOVE 999 lowers arithmetically - 1998 - 1 = 1997', async () => {
+  seedOwn('001', 1998);
+  const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: -1 }]);
+  assert.equal(ownOf('001'), 1997);
+  assert.equal(r.copiesRemoved, 1);
+});
+
+test('adjustOwnedItemsBulk: a present count outside the safe-integer range rejects prewrite/none, no broadcast', async () => {
+  seedOwn('001', Number.MAX_SAFE_INTEGER);   // a corrupt/overflowing row
+  await assert.rejects(() => cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: 1 }]),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /overflow/.test(e.message));
+  assert.equal(notifyCount, 0, 'an unsafe overflow rejects without notification');
 });
 
 test('adjustOwnedItemsBulk: removing from an already-empty printing is a true no-op', async () => {
   const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: -3 }]);
-  assert.deepEqual(r, { set: 0, removed: 0, cleared: 0, unchanged: 1, cards: 1 });
+  assert.deepEqual(r, { set: 0, removed: 0, cleared: 0, unchanged: 1, cards: 1, copiesAdded: 0, copiesRemoved: 0 });
   assert.equal(notifyCount, 0);
 });
 
@@ -697,6 +715,33 @@ test('COUNTERFACTUAL control: without the barrier the absolute write clobbers th
   r.absWriteGo.resolve();                                   // absolute writes its stale absolute 2 -> stays 2
   await r.absolute;
   assert.equal(ownOf('001'), 2, 'the import increment was lost - this is what the barrier prevents');
+});
+
+// ADJUST is a READ-modify-write (unlike the import's atomic +=), so a stale read is a lost update.
+// These prove the authoritative read sits INSIDE the exclusive holder. The guarded arm asserts 3: it
+// can ONLY reach 3 if the barrier drains the concurrent write BEFORE adjust reads. Hoist
+// readCurrentOwned outside the holder and this arm drops to 2 and FAILS - that is the regression fence.
+test('COUNTERFACTUAL (adjust): the real barrier makes the delta read the post-write value - final 3', async () => {
+  const r = raceScenario(withExclusiveCollectionWrites);
+  await r.absReadDone.promise;                               // the concurrent absolute write has read 1, parked
+  const bulk = cmdAdjust(r.exclusive, { tx: r.tx })([{ card_id: 'c1', setCode: '001', foil: false, delta: 1 }]);
+  r.absWriteGo.resolve();                                    // barrier drains it first: 1 -> 2
+  await r.bulkAtTx.promise;                                  // adjust admitted AFTER; it read 2 inside the holder, plans 3
+  r.bulkTxGo.resolve();
+  await Promise.all([r.absolute, bulk]);
+  assert.equal(ownOf('001'), 3, 'the delta resolved against the fresh 2 - no increment lost');
+});
+
+test('COUNTERFACTUAL control (adjust): a pass-through barrier reads stale and loses the increment - final 2', async () => {
+  const r = raceScenario((fn) => fn());
+  await r.absReadDone.promise;                               // absolute has read 1, parked
+  const bulk = cmdAdjust(r.exclusive, { tx: r.tx })([{ card_id: 'c1', setCode: '001', foil: false, delta: 1 }]);
+  await r.bulkAtTx.promise;                                  // no barrier: adjust already read the STALE 1, plans 2
+  r.bulkTxGo.resolve();                                      // adjust writes 2
+  await bulk;
+  r.absWriteGo.resolve();                                    // absolute writes its stale 1+1 -> stays 2
+  await r.absolute;
+  assert.equal(ownOf('001'), 2, 'the delta read stale 1 - the concurrent increment was lost (this is what the holder-scoped read prevents)');
 });
 
 test('PRODUCTION WIRING: the exported importCollectionResolved BLOCKS behind a held barrier write', async () => {
