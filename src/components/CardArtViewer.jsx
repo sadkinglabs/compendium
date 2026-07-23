@@ -33,11 +33,13 @@ import { viewerTransition, initialViewerState } from './cardArtViewerPhase.js';
 // Intensity --o x 0.6. isolation:isolate keeps the blend modes off the page. Zero-image safe: no
 // <img> ⇒ no foil/glare over the deterministic fallback.
 
-const ENTER_MS = 400, EXIT_MS = 240;
+const ENTER_MS = 300, EXIT_MS = 180;
 const ENTER_EASE = 'cubic-bezier(.16,1,.3,1)';
 const EXIT_EASE = 'cubic-bezier(.4,0,1,1)';
 const IDENTITY = 'translate3d(0,0,0) scale(1)';   // interpolable identity, never transform:none
-const TILT = 15;
+const TILT = 11.25;          // max rotation at full deflection (25% gentler than the original 15)
+const HYP_MAX = 0.75;        // cap the foil's deflection peak too - hyp (not TILT) drives brightness,
+                             // so this is what actually keeps a hard tilt from looking burnt.
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
 export default function CardArtViewer({ card, foil = false, origin, onClose }) {
@@ -208,7 +210,7 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     v.ry.t = (px - 50) / 50 * TILT;
     v.rx.t = -(py - 50) / 50 * TILT;
     v.mx.t = px; v.my.t = py; v.o.t = 1;
-    v.hyp.t = Math.min(1, Math.hypot(px - 50, py - 50) / 50);
+    v.hyp.t = Math.min(1, Math.hypot(px - 50, py - 50) / 50) * HYP_MAX;
   };
   const onStageDown = (e) => {
     if (reduce || phase !== 'open' || !e.isPrimary) return;
