@@ -23,7 +23,7 @@ import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
 import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
-import { parseItemText } from './itemLineGrammar.js';
+import { parseItemText, formatItemLine } from './itemLineGrammar.js';
 import { printingFinishes } from './printingRows.js';
 import { getCard } from './codexRepository.js';
 import { MAX_BATCH_ITEMS } from './bulkWriteContract.js';
@@ -976,7 +976,7 @@ export async function wishlistCards() {
   // collector items, which is the whole premise. A card-level sum would report a Beta want as
   // already met because some other printing sits in the binder.
   const rows = await query(
-    `SELECT o.card_id, o.variant_slug, o.qty_wanted quantity, o.qty_owned owned,
+    `SELECT o.card_id, o.variant_slug, o.qty_wanted quantity, o.qty_owned owned, o.created_at,
             c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets, c.variants
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=? AND o.qty_wanted>0 ORDER BY c.name, o.variant_slug;`,
@@ -997,10 +997,17 @@ export async function exportListText(listId) {
   return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
 }
 
-// Same flat export for the Wishlist (qty_wanted ledger) - take it to a shop.
+// Item-grain export for the Wishlist (qty_wanted ledger) - take it to a shop. Emits the collector-item
+// grammar `N Card [Set] [Foil]` (optional tags), so a wishlist round-trips back through the bulk
+// importer to the same printings: `1 Lone Wolves [Alpha] [Foil]`. A set-less (uncategorised) want
+// emits a bare `N Card` line, exactly as the grammar reads it.
 export async function wishlistExportText() {
   const rows = await wishlistCards();
-  return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
+  return rows.map((r) => {
+    let setName = '';
+    if (r.set) { try { setName = JSON.parse(r.sets || '[]').find((s) => s?.code === r.set)?.name || ''; } catch { setName = ''; } }
+    return formatItemLine({ qty: r.quantity, name: r.name, set: setName, foil: !!r.foil });
+  }).join('\n');
 }
 
 // Lists a card appears in (for card detail "Appears in").

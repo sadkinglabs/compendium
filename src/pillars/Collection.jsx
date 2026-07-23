@@ -1653,7 +1653,14 @@ const listSetName = (card) => soleSetName(card?.sets);
 // frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
-function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, printing = null, wishlist = false }) {
+// "24 Jul 2026" from an ISO timestamp; blank on anything unparseable.
+const fmtWishDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, onRemove, printing = null, wishlist = false, wishlistDate = null }) {
   // The WISHLIST tracks no progress (that is what Wanted lists are for), so its rows carry no
   // owned-vs-goal state: no completion gilt, no dimming, no "X of Y" line - just the wanted card.
   const { goalMet, ownedAny } = wishlist ? { goalMet: false, ownedAny: false } : goalRowState({ owned, target, isWanted });
@@ -1723,12 +1730,21 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
             </span>
           )}
         </span>
+        {/* Date wishlisted, under the printing. */}
+        {wishlist && fmtWishDate(wishlistDate) && (
+          <span style={{ display: 'block', marginTop: 5, font: "400 11.5px/1 var(--f-read)", color: 'var(--ink-faint)' }}>Wishlisted {fmtWishDate(wishlistDate)}</span>
+        )}
       </div>
 
-      {/* Right rail. Edit mode: frosted -/+ on the GOAL (wanted qty / copies) - the
-          WANT/COPIES label marks it as goal-editing, distinct from the unlabeled
-          owned-editing on the Cards tab. Read mode: the same figure, static. */}
-      {editable ? (
+      {/* Right rail. Wishlist: a filled heart that un-wishlists on tap (binary - no amount).
+          Otherwise, Edit mode: frosted -/+ on the GOAL; Read mode: the same figure, static. */}
+      {wishlist ? (
+        <button onClick={(e) => { e.stopPropagation(); onRemove?.(); }} aria-label={`Remove ${card.name} from wishlist`}
+          style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(210,88,115,.12)', border: '1px solid rgba(210,88,115,.5)', color: 'var(--accent-ruby)', cursor: 'pointer' }}>
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" /></svg>
+        </button>
+      ) : editable ? (
         <span onClick={(e) => e.stopPropagation()} style={{ flex: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <Frost label={isWanted ? 'Want one fewer' : 'One fewer copy'} onClick={() => onStep(-1)}>−</Frost>
           <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 30 }}>
@@ -2001,7 +2017,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         }}>‹</button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: 'var(--accent-ruby)', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
+          {/* The Wishlist's name already says "Wishlist" - a WISHLIST eyebrow under it just read twice. */}
+          {!isWishlist && <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: 'var(--accent-ruby)', marginTop: 5 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>}
         </div>
         {isWanted && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
@@ -2057,18 +2074,22 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             <span style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: '#8a7a55' }}>
               {totals.names} card{totals.names === 1 ? '' : 's'}{isWanted && totals.done > 0 ? ` · ${totals.done} complete` : ''}
             </span>
-            <button onClick={() => setEditing((e) => !e)} aria-pressed={editing}
-              style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
-                background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : 'var(--gold-num)', border: `1px solid ${editing ? 'var(--gold-num)' : 'rgba(210,88,115,.5)'}` }}>
-              {editing ? 'Done' : 'Edit'}
-            </button>
+            {/* The Wishlist is binary (a heart per row), so there is no amount to Edit into. */}
+            {!isWishlist && (
+              <button onClick={() => setEditing((e) => !e)} aria-pressed={editing}
+                style={{ flex: 'none', padding: '6px 14px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)", whiteSpace: 'nowrap',
+                  background: editing ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)', color: editing ? '#1a1206' : 'var(--gold-num)', border: `1px solid ${editing ? 'var(--gold-num)' : 'rgba(210,88,115,.5)'}` }}>
+                {editing ? 'Done' : 'Edit'}
+              </button>
+            )}
           </div>
           {listRows.map((c) => (
             // Keyed and stepped by ROW identity, not card_id: two wishlist rows can share a
             // card, and a card_id key would collapse them in React and send both edits to one.
             <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
-              printing={isWishlist ? printingLabel(c) : null}
+              printing={isWishlist ? printingLabel(c) : null} wishlistDate={isWishlist ? c.created_at : null}
               isWanted={isWanted || isWishlist} wishlist={isWishlist} editable={editing} onStep={(d) => step(rowKey(c), d)}
+              onRemove={() => removeEntry(rowKey(c))}
               onPeek={() => (isWishlist ? onPeek(c.card_id, c.set, !!c.foil) : onPeek(c.card_id))} />
           ))}
         </>
