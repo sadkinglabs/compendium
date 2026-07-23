@@ -977,7 +977,7 @@ export async function wishlistCards() {
   // already met because some other printing sits in the binder.
   const rows = await query(
     `SELECT o.card_id, o.variant_slug, o.qty_wanted quantity, o.qty_owned owned,
-            c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets
+            c.name, c.type, c.cost, c.attack, c.defence, c.elements, c.thresholds, c.image_slug, c.is_site, c.rarity, c.rules_text, c.sets, c.variants
      FROM owned_cards o JOIN cards c ON c.card_id=o.card_id
      WHERE o.profile_id=? AND o.qty_wanted>0 ORDER BY c.name, o.variant_slug;`,
     [pid]

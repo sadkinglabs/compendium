@@ -49,7 +49,7 @@ import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRo
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
-import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
+import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
@@ -1653,8 +1653,15 @@ const listSetName = (card) => soleSetName(card?.sets);
 // frosted -/+ steppers that edit the GOAL - the wanted quantity. The owned count
 // is read-only, derived live from the collection, so the row fills in on its own
 // as you acquire cards. Custom lists reuse the row with a "COPIES" stepper.
-function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, printing = null }) {
-  const { goalMet, ownedAny } = goalRowState({ owned, target, isWanted });
+function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, printing = null, wishlist = false }) {
+  // The WISHLIST tracks no progress (that is what Wanted lists are for), so its rows carry no
+  // owned-vs-goal state: no completion gilt, no dimming, no "X of Y" line - just the wanted card.
+  const { goalMet, ownedAny } = wishlist ? { goalMet: false, ownedAny: false } : goalRowState({ owned, target, isWanted });
+  const framed = wishlist || ownedAny;      // a wishlist thumb is always cleanly framed, never dimmed
+  const dim = !wishlist && !ownedAny;
+  // Paint the WANTED printing's art (a Promotional want wears Promo art, not the default). The row
+  // carries its set; a set-less (card-grain list) row falls through artForSet unchanged.
+  const artCard = artForSet(card, card.set);
   // A wishlist row states the collector item it wants. `listSetName` is the old name-level
   // fallback, which only ever showed a set when the card had exactly one - it cannot tell two
   // wants of one card apart, which is precisely what this row now has to do.
@@ -1672,13 +1679,13 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
           when you own none, so the list visibly fills in as the collection grows. */}
       <span style={{
         width: 64, flex: 'none', position: 'relative', borderRadius: 9,
-        padding: ownedAny ? 1 : 0,
-        background: ownedAny ? (goalMet ? GILT_BRIGHT : GILT) : 'none',
-        boxShadow: ownedAny ? (goalMet ? GLOW_BRIGHT : GLOW) : 'none',
+        padding: framed ? 1 : 0,
+        background: framed ? (goalMet ? GILT_BRIGHT : GILT) : 'none',
+        boxShadow: framed ? (goalMet ? GLOW_BRIGHT : GLOW) : 'none',
       }}>
         <span style={{ display: 'block', position: 'relative', borderRadius: 8, overflow: 'hidden' }}>
-          <CardArt card={card} radius={8} aspect="5/7" />
-          {!ownedAny && <span style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.62)' }} />}
+          <CardArt card={artCard} radius={8} aspect="5/7" />
+          {dim && <span style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.62)' }} />}
         </span>
         {goalMet && (
           <span title={`${owned} owned`} style={{
@@ -1691,7 +1698,7 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
         )}
       </span>
 
-      {/* Name / set + ONE status line. */}
+      {/* Name / set + ONE status line (the status line is progress, so the wishlist has none). */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{
           display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
@@ -1699,7 +1706,7 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
         }}>{card.name}</span>
         <span style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 7 }}>
           {setName && <span style={listSetPill}>{setName}</span>}
-          {goalMet ? (
+          {wishlist ? null : goalMet ? (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-jade)', flex: 'none' }} />
               <span style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-jade)' }}>COMPLETE</span>
@@ -1743,7 +1750,8 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
 function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const isWishlist = list.kind === 'wishlist';   // the virtual, un-deletable Wishlist (qty_wanted ledger)
   const isWanted = list.kind === 'wanted';
-  const showProgress = isWanted || isWishlist;   // owned-vs-goal bar + "X of Y wanted" figure
+  // Progress (owned-vs-goal bar + "X of Y" figure) is a WANTED-LIST idea - a goal you close in on.
+  // The Wishlist is just the cards you want, so it shows none of it.
   const [meta, setMeta] = useState(list);
   const [loaded, setLoaded] = useState(false);     // initial fetch done
   const [editing, setEditing] = useState(false);   // read-first: steppers appear only in edit mode
@@ -1995,7 +2003,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
           <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: 'var(--accent-ruby)', marginTop: 5 }}>{isWishlist ? 'WISHLIST' : isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>
         </div>
-        {showProgress && totals.req > 0 && (
+        {isWanted && totals.req > 0 && (
           <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
             <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{totals.have}</span>
             <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{totals.req}</span>
@@ -2018,7 +2026,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
       {/* Progress bar (wanted only): fills rose as the collection acquires copies,
           turning gold at 100%. "View missing ›" filters to what is still short. */}
-      {showProgress && totals.req > 0 && (
+      {isWanted && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ height: 6, borderRadius: 3, background: 'var(--track-neutral)', overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${totals.percent}%`, background: 'var(--completion-fill)', borderRadius: 3, transition: 'width .3s ease' }} />
@@ -2060,7 +2068,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             // card, and a card_id key would collapse them in React and send both edits to one.
             <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
               printing={isWishlist ? printingLabel(c) : null}
-              isWanted={showProgress} editable={editing} onStep={(d) => step(rowKey(c), d)}
+              isWanted={isWanted || isWishlist} wishlist={isWishlist} editable={editing} onStep={(d) => step(rowKey(c), d)}
               onPeek={() => (isWishlist ? onPeek(c.card_id, c.set, !!c.foil) : onPeek(c.card_id))} />
           ))}
         </>
