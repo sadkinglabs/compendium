@@ -734,7 +734,6 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // its temporal dead zone. It depends only on props, so there is nothing to wait for.
   const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
 
-  const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);   // text import lives on the set's + FAB (adds to the collection, not just this set)
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
@@ -908,14 +907,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // drill could render a header like "402 / 50".
   const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
-  // Everything in the set you do NOT hold in non-foil - missing outright, or foil-only.
-  // Filter-independent by construction: it reads the roster, not the grid.
-  const missingInSet = useMemo(() => (roster || []).filter((c) => {
-    const oc = owBySet.get(c.card_id + '|' + setDrill);
-    return ownershipOf(oc?.owned, oc?.foil) !== 'regular';
-  }), [roster, owBySet, setDrill]);
-
-  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
+  const richComp =['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // no sets facet in a set drill; grouping is an arrangement, not a filter
   const clearAll = () => {
     setOwnScope([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
@@ -1003,21 +995,14 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           not a mode, so there is no add surface to toggle into. The ownership lens that used
           to occupy this slot in read mode is now inline in the header. */}
       <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {/* The + FAB (stacked above Filter) reveals add + export as a menu. Add-from-text adds to the
-          COLLECTION (a paste self-scopes per line), not just this set - the sheet says so; "Export
-          missing" is this set's buy list. */}
-      <Fab variant="lib" label="Add & export" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+      {/* The + FAB (stacked above Filter) reveals the add methods as a menu. Add-from-text adds to the
+          COLLECTION (a paste self-scopes per line), not just this set - the sheet says so. Export
+          lives only on Lists: to make a buy list, scope to Missing, select all, and create a list. */}
+      <Fab variant="lib" label="Add cards" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
         { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
         { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
-        { label: 'Export missing', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
       ]} />
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
-      {/* A buy list for the WHOLE set, never the filtered view: selecting "Owned" must not
-          turn "Export missing" into an empty file. Missing means no non-foil copy - the same
-          definition as the header tally and as set completion. */}
-      <ExportListSheet open={exportOpen} listName={`${drillName} - missing`}
-        fetchText={async () => missingInSet.map((c) => `1 ${c.name}`).join('\n')}
-        onClose={() => setExportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
