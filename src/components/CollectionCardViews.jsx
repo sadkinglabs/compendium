@@ -234,20 +234,23 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus, selectMode = false, checked = false, onToggle }) {
   const total = owned + foil;
   const artCard = artForSet(card, set);
   const { complete } = playsetOf(card, total);
   const missing = total === 0;
   const setName = setLabel || firstSetName(card);
   return (
-    <div onClick={() => onPeek(card.card_id, set)} style={{ position: 'relative', cursor: 'pointer', contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
-      {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. */}
+    <div onClick={() => (selectMode ? onToggle?.(card.card_id, set) : onPeek(card.card_id, set))}
+      style={{ position: 'relative', cursor: 'pointer', contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
+      {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. In select mode a
+          checked tile wears a gold ring. */}
       <div style={{
         position: 'relative', borderRadius: 13, overflow: 'hidden',
         ...(missing
           ? { border: '1px dashed rgba(203,167,95,.22)' }
           : { padding: 1, background: complete ? GILT_BRIGHT : GILT, boxShadow: complete ? GLOW_BRIGHT : GLOW }),
+        ...(selectMode && checked ? { outline: '2px solid var(--gold-leaf)', outlineOffset: 2 } : null),
       }}>
         <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden' }}>
           <CardArt card={artCard} radius={12} aspect="5/7" />
@@ -267,16 +270,26 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           {foil > 0 && <span style={chipDark}>✦{foil}</span>}
         </span>
       )}
-      {complete && (
+      {complete && !selectMode && (
         <span title="Playset collected" style={{ position: 'absolute', top: 7, right: 7, width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,20,16,.8)', border: `1px solid ${TEAL}` }}>
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
         </span>
       )}
+      {/* Selection tick (select mode): the top-right slot becomes a checkbox. */}
+      {selectMode && (
+        <span aria-hidden="true" style={{
+          position: 'absolute', top: 7, right: 7, width: 24, height: 24, borderRadius: '50%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: checked ? 'var(--gold-leaf)' : 'rgba(10,9,7,.72)',
+          border: `1.5px solid ${checked ? 'var(--gold-leaf)' : 'var(--hair-40)'}`,
+        }}>
+          {checked && <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1a1206" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>}
+        </span>
+      )}
       {/* Quick add - present wherever adding is enabled, owned or not, so you can keep
           tapping to add copies without the control disappearing under your finger the moment
-          the card stops being "missing". Omitted entirely when the caller passes no onStep
-          (read-only surfaces), which is what stops a dead "+" appearing there. */}
-      {onStep && (
+          the card stops being "missing". Hidden in select mode (the tile toggles instead). */}
+      {onStep && !selectMode && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
           <QuickAdd label={`Add ${card.name}`} cardName={card.name} status={addStatus}
             onAdd={() => onStep(card.card_id, set, 1)} />

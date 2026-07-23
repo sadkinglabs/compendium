@@ -25,6 +25,7 @@ import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
+import { registerBackConsumer } from '../back.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
@@ -44,7 +45,7 @@ import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
-import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
+import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -720,6 +721,55 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 const OWN_OPTS = [['regular', 'Owned'], ['foilOnly', 'Foil only'], ['missing', 'Missing'], ['wishlist', 'Wishlisted']];
 const OWN_LABEL = { regular: 'Owned', foilOnly: 'Foil only', missing: 'Missing', wishlist: 'Wishlisted' };
 
+// While cards are being multi-selected the docked search bar becomes a selection action bar. It
+// portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
+// shift, one keyboard-aware container.
+function SelectionBar({ count, onAdd, onCreate, onCancel }) {
+  const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
+  useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
+  if (!slot) return null;
+  const btn = {
+    flex: 'none', padding: '8px 13px', borderRadius: 18, whiteSpace: 'nowrap',
+    border: '1px solid rgba(203,167,95,.45)', background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)',
+    font: "600 12.5px/1 var(--f-ui)", cursor: count ? 'pointer' : 'default', opacity: count ? 1 : 0.4,
+  };
+  return createPortal(
+    <div className="cx-search-pill" style={{ gap: 8 }}>
+      <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      </button>
+      <span style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
+      <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Add copies</button>
+      <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
+    </div>,
+    slot,
+  );
+}
+
+// "Add copies" is intentional, not one-tap: a stepper modal confirms how many of EACH selected card
+// go into the collection.
+function AddCopiesSheet({ open, count, onClose, onConfirm }) {
+  const [qty, setQty] = useState(1);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setQty(1); setBusy(false); } }, [open]);
+  return (
+    <BottomSheet open={open} title="ADD COPIES" onClose={onClose}>
+      <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 18 }}>
+        How many copies of each of the {count} selected card{count === 1 ? '' : 's'} do you own? They are added to your collection.
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 22 }}>
+        <StepBtn dir={-1} disabled={qty <= 1} onClick={() => setQty((q) => Math.max(1, q - 1))} />
+        <span style={{ font: "500 36px/1 var(--f-display)", color: '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{qty}</span>
+        <StepBtn dir={1} disabled={qty >= 99} onClick={() => setQty((q) => Math.min(99, q + 1))} />
+      </div>
+      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm(qty); }} disabled={busy}
+        style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}>
+        {busy ? 'Adding…' : `Add ${qty} of each to collection`}
+      </button>
+    </BottomSheet>
+  );
+}
+
 // Cards is the PER-SET drill (the parent shows SetsHome until a plate is tapped). It scopes
 // the shared catalog/search/filter machinery to `setDrill`, adds a back + set-completion
 // header, and carries a permanent stepper on every tile.
@@ -735,6 +785,12 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
 
   const [importOpen, setImportOpen] = useState(false);   // text import lives on the set's + FAB (adds to the collection, not just this set)
+  // Multi-select: entered from the overflow ("Select all"), driven by the scoped grid. `selected`
+  // captures {card, set} at selection time so the two actions do not depend on the live filter.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Map());   // 'cardId|set' -> { card, set }
+  const [qtyOpen, setQtyOpen] = useState(false);               // Add-copies stepper modal
+  const [createOpen, setCreateOpen] = useState(false);         // Create-list (name + type) sheet
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
   // here, so neither can be moved by a filter the user happens to have on.
@@ -907,6 +963,44 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // drill could render a header like "402 / 50".
   const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
+
+  // ---- Multi-select over the scoped grid ----
+  const selKey = (id, set) => `${id}|${set}`;
+  const enterSelectAll = () => {
+    setSelected(new Map(drillRows.map((r) => [selKey(r.card.card_id, r.set), { card: r.card, set: r.set }])));
+    setSelectMode(true);
+  };
+  const toggleSel = (id, set) => setSelected((m) => {
+    const n = new Map(m); const k = selKey(id, set);
+    if (n.has(k)) n.delete(k);
+    else { const row = drillRows.find((r) => r.card.card_id === id && r.set === set); if (row) n.set(k, { card: row.card, set: row.set }); }
+    return n;
+  });
+  const cancelSelect = () => { setSelectMode(false); setSelected(new Map()); };
+  // Hardware Back exits selection before it leaves the set drill.
+  useEffect(() => {
+    if (!selectMode) return undefined;
+    return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
+  }, [selectMode]);
+  // Add N copies of each selected printing to the collection through the barrier-guarded bulk writer.
+  const bulkAddCopies = async (qty) => {
+    const items = [...selected.values()].map(({ card, set }) => ({ card_id: card.card_id, qty, setCode: set, foil: false }));
+    try {
+      const r = await importCollectionResolved(items);
+      toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}`);
+      setQtyOpen(false); cancelSelect();
+    } catch { toast("Couldn't add those cards.", { tone: 'danger' }); setQtyOpen(false); }
+  };
+  // Create a new list (name + type chosen in the sheet) holding the selected cards - CARD-grain, so
+  // multiple printings of one card become one entry. The user then opens it from Lists to export.
+  const createListFromSelection = async (name, desc, kind) => {
+    const id = await createList(kind, name, desc);
+    const cardIds = [...new Set([...selected.values()].map(({ card }) => card.card_id))];
+    for (const cid of cardIds) await setListEntry(id, cid, 1);
+    toast(`Created “${name}” with ${cardIds.length} card${cardIds.length === 1 ? '' : 's'}`);
+    setCreateOpen(false); cancelSelect();
+  };
+
   const richComp =['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // no sets facet in a set drill; grouping is an arrangement, not a filter
   const clearAll = () => {
@@ -944,7 +1038,13 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
-          {/* No overflow here - a set has no edit ops; adding and exporting live on the + FAB. */}
+          {/* Overflow = manage: "Select all" enters multi-select over the CURRENT (scoped) grid, so
+              "scope to Missing -> Select all -> New list" is a two-tap buy-list. */}
+          {!selectMode && totalRows > 0 && (
+            <OverflowMenu label="Set actions" items={[
+              { label: 'Select all', icon: <MenuGlyph kind="select" />, onClick: enterSelectAll },
+            ]} />
+          )}
         </div>
       </div>
 
@@ -978,7 +1078,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
                   {section.cards.map((r) => (
                     <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
                       owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
-                      addStatus={addStatus.get(r.card.card_id + '|' + r.set)} />
+                      addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
+                      selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                   ))}
                 </div>
               </div>
@@ -987,21 +1088,32 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         </>
       )}
 
-      {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
+      {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
+          portal into the same #cx-dock-search slot, so it swaps in place). */}
+      {selectMode ? (
+        <SelectionBar count={selected.size} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+      ) : (
+        <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
+      )}
+      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkAddCopies} />
+      <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
+        onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
 
       {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
           (camera + text) search can't do. They are ALWAYS available now: adding is a place,
           not a mode, so there is no add surface to toggle into. The ownership lens that used
           to occupy this slot in read mode is now inline in the header. */}
-      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {/* The + FAB (stacked above Filter) reveals the add methods as a menu. Add-from-text adds to the
+      {/* Hidden while multi-selecting: the dock belongs to the selection action bar then. The + FAB
+          (stacked above Filter) reveals the add methods as a menu. Add-from-text adds to the
           COLLECTION (a paste self-scopes per line), not just this set - the sheet says so. Export
           lives only on Lists: to make a buy list, scope to Missing, select all, and create a list. */}
-      <Fab variant="lib" label="Add cards" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
-        { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
-        { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
-      ]} />
+      {!selectMode && <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />}
+      {!selectMode && (
+        <Fab variant="lib" label="Add cards" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+          { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+          { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+        ]} />
+      )}
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
@@ -1178,16 +1290,24 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
   );
 }
 
-function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', submitLabel = 'Create', onClose, onSubmit }) {
+function ListNameSheet({ open, title, kind, chooseKind = false, initialName = '', initialDesc = '', submitLabel = 'Create', onClose, onSubmit }) {
   const [name, setName] = useState(initialName);
   const [desc, setDesc] = useState(initialDesc);
-  useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); } /* eslint-disable-next-line */ }, [open]);
-  const go = () => { const nm = name.trim(); if (!nm) return; onSubmit(nm, desc.trim()); };
-  const hint = kind === 'wanted'
+  const [k, setK] = useState(kind || 'wanted');   // only used when chooseKind
+  useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); setK(kind || 'wanted'); } /* eslint-disable-next-line */ }, [open]);
+  const effKind = chooseKind ? k : kind;
+  const go = () => { const nm = name.trim(); if (!nm) return; onSubmit(nm, desc.trim(), effKind); };
+  const hint = effKind === 'wanted'
     ? 'A named goal - Collection tracks how close you are as you record the cards you own.'
-    : kind === 'custom' ? 'A custom grouping - a trade binder, a cube, cards to sell.' : '';
+    : effKind === 'custom' ? 'A custom grouping - a trade binder, a cube, cards to sell.' : '';
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
+      {chooseKind && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+          <SegTabs ariaLabel="List type" value={k} onChange={setK}
+            options={[{ key: 'wanted', label: 'Wanted list' }, { key: 'custom', label: 'Card list' }]} />
+        </div>
+      )}
       {hint && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>{hint}</div>}
       <input value={name} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
         placeholder={kind === 'wanted' ? 'e.g. Beta staples I still need' : 'Name your list…'} style={SHEET_INPUT} />

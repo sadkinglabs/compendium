@@ -63,6 +63,7 @@ export function MenuGlyph({ kind }) {
     case 'export': return svg(<><path d="M12 15V4" /><polyline points="8 8 12 4 16 8" /><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></>);
     case 'missing': return svg(<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></>);
     case 'add': return svg(<><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></>);
+    case 'select': return svg(<><rect x="3" y="3" width="18" height="18" rx="3" /><polyline points="8 12 11 14.5 16 9" /></>);
     default: return svg(<circle cx="12" cy="12" r="9" />);
   }
 }
