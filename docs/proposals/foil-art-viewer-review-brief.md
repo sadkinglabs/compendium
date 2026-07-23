@@ -1,5 +1,27 @@
 # Codex review request - holographic foil + finger-tracked full-art view
 
+## Corrective (build 163) - read first
+
+The "Changes required" disposition is addressed in commit `1b753fd` (`git diff 67dc00c..HEAD`):
+- **Major (decode gate):** effects now gate on the DECODED candidate identity `{src, gen}`, not URL
+  availability - `<img> onLoad` sets `decoded`, `onError` resets it, `showFx = !!src && decoded.src===src
+  && decoded.gen===gen`. Foil/glare can no longer ignite over the fallback during slow/failed delivery,
+  and a same-URI/new-gen quarantine re-resolve returns to fallback-only until the replacement decodes.
+- **Minor (capture release):** `requestClose` routes through one `stopDrag()` that also
+  `releasePointerCapture` on the root (Back/Escape mid-drag no longer leaves the pointer held); a
+  `closeRequested` ref prevents a reduced-motion double `onClose`.
+- **Minor (X pointer identity):** the close button only closes on the pointer that began on it
+  (`closePointerId`).
+- **Minor (FLIP exactness):** origin scale measured from the untransformed `offsetWidth`, not the
+  `scale(.94)` `getBoundingClientRect().width`.
+- **Docs:** feature matrix + DESIGN_SYSTEM (mix-blend-mode now two, device-verified; Foil recorded as
+  shipping in the viewer only, not a universal primitive). Architecture / Data Model / BUILD: reviewed,
+  no change (pure view; foil is validated boolean UI state; no command/env change).
+
+Gates after corrective: test:ui 162, check:types, check:cycles (133), check:source, check:docs, build.
+
+---
+
 **Branch:** `foil-art-viewer` (off `main`, tip = latest). **Range:** `git diff main..foil-art-viewer`.
 **Primary file:** `src/components/CardArtViewer.jsx` (+ `src/components/cardArtViewerPhase.js` and its test).
 Device: **build 162 on a Pixel 9 Pro XL**, owner-validated across the acceptance checklist below.
