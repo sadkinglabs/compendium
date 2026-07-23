@@ -26,6 +26,7 @@ import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
 import { registerBackConsumer } from '../back.js';
+import { printingFinishes, defaultFinish } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
@@ -984,12 +985,22 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   }, [selectMode]);
   // Add N copies of each selected printing to the collection through the barrier-guarded bulk writer.
   const bulkAddCopies = async (qty) => {
-    const items = [...selected.values()].map(({ card, set }) => ({ card_id: card.card_id, qty, setCode: set, foil: false }));
+    // The finish is per printing, NOT a flat non-foil: a foil-ONLY printing (Winter River in Alpha)
+    // has no non-foil item, and the strict bulk writer rejects the whole batch for one impossible
+    // pair. defaultFinish picks non-foil where it exists, else foil.
+    const items = [...selected.values()].map(({ card, set }) => {
+      let fin; try { fin = printingFinishes(card, set); } catch { fin = { nonFoil: true, foil: false }; }
+      return { card_id: card.card_id, qty, setCode: set, foil: defaultFinish(fin) };
+    });
     try {
       const r = await importCollectionResolved(items);
       toast(`Added ${r.copies} cop${r.copies === 1 ? 'y' : 'ies'} across ${r.cards} card${r.cards === 1 ? '' : 's'}`);
       setQtyOpen(false); cancelSelect();
-    } catch { toast("Couldn't add those cards.", { tone: 'danger' }); setQtyOpen(false); }
+    } catch (e) {
+      console.error('bulkAddCopies failed', e);
+      toast("Couldn't add those cards.", { tone: 'danger' });
+      setQtyOpen(false);
+    }
   };
   // Create a new list (name + type chosen in the sheet) holding the selected cards - CARD-grain, so
   // multiple printings of one card become one entry. The user then opens it from Lists to export.
