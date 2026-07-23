@@ -48,7 +48,9 @@ export function maxCanvasDim(doc = typeof document !== 'undefined' ? document : 
 }
 
 // navigator.deviceMemory (GB), or 0 when unavailable - so the budget falls to the safe baseline.
+// Number.isFinite rejects NaN AND Infinity: a non-finite value must never flow into the budget as
+// "ample RAM" (Chromium supplies a constrained finite value, but the boundary should not assume it).
 export function deviceMemoryGb(nav = typeof navigator !== 'undefined' ? navigator : null) {
   const m = nav && nav.deviceMemory;
-  return typeof m === 'number' && m > 0 ? m : 0;
+  return Number.isFinite(m) && m > 0 ? m : 0;
 }

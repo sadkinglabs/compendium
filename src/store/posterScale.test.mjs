@@ -86,4 +86,5 @@ test('deviceMemoryGb reads navigator.deviceMemory, 0 when absent', () => {
   assert.equal(deviceMemoryGb({ deviceMemory: 4 }), 4);
   assert.equal(deviceMemoryGb({}), 0);
   assert.equal(deviceMemoryGb(null), 0);
+  for (const bad of [NaN, Infinity, -Infinity, '8', -1]) assert.equal(deviceMemoryGb({ deviceMemory: bad }), 0, `non-finite/invalid ${bad} -> 0`);
 });
