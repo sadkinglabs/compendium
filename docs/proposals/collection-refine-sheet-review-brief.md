@@ -1,5 +1,35 @@
 # Codex review request - Collection-specific Refine sheet (Filters + Sort)
 
+## Corrective increment - all four Majors + the Minor addressed (please re-check)
+
+- **Major 1 (wishlist card-grain).** `wishSet` is now keyed by collector item `card_id|variant_slug`
+  (from `wishlistCards().item_id`), and `groupCollection.wishedIn(card,set,finishes)` matches the
+  row's EXACT set + finish: no scope = either finish in that set; Standard/Foil scope = only that
+  item. An Alpha want no longer lights the Beta drill. Tests: Alpha-wanted/Beta-not, Standard-wanted/
+  Foil-not.
+- **Major 2 (finish admits impossible items).** Each printed row now carries `finishAvail` =
+  `printingFinishes(card,set)`; `finishAllowed`/`rowMatchesOwn` drop a row when NONE of the selected
+  finishes exists in the catalog. Winter River (Alpha foil-only) no longer appears under Standard;
+  a standard-only card no longer appears under Foil; "supports Standard, owns only Foil" still matches
+  Standard+Missing. Finish is now a real filter. Tests use the foil-only + standard-only shapes.
+- **Major 3 (created_at ≠ first owned).** `ownedBySet` now aggregates `updated` = MAX(`updated_at`);
+  the sort option is renamed **Recently updated** and documented as collector-record activity. The
+  "true first-added" claim is removed. (A genuine first-owned needs a per-item ownership timestamp +
+  its own migration.)
+- **Major 4 (grouping removed without ruling).** Group-by is RESTORED: `groupBy` reads/persists from
+  `collectionSession`, the Sort page gains a **Group by** section (None / Element / Rarity),
+  `groupCards(drillRows, groupBy, cardOf, comparator)` sections then orders within, and Clear stays
+  filters-only. (Owner may still rule to drop it.)
+- **Minor (avatars).** `playset.js` gains `isAvatar`; `playsetOf` treats avatars as uncapped despite
+  their rarity, and the rarity comparator sorts avatars after all normal cards.
+
+Gates after corrective: `test:query` 777, `test:ui` 162, `test:app` 17, `test:codex` 10, types,
+cycles (137), source, docs, build - all green. New/updated tests in `collectionFilter.test.mjs` +
+`collectionGroups.test.mjs`.
+
+---
+
+
 **Branch:** `collection-refine-sheet` (off `main`, and main has since been merged IN, so the review
 range is clean). **Range:** `git diff main..HEAD` - this isolates ONLY the refine-sheet work
 (~493+/181-, 15 files); the wishlist changes already on main are excluded. Device: built +

@@ -73,8 +73,9 @@ import { toast } from '../feedback.js';
 // Back re-mounts Collection exactly as it was - same view, search, filter, open list,
 // even the open card sheet. Module-level = session-scoped, deliberately not
 // persisted (a fresh launch starts at Overview).
-// The grouping vocabulary offered inside a set. Alphabetical is the resting state; the other
-// two section the grid rather than reorder it.
+// The grouping vocabulary offered inside a set. None is the resting state; the other two SECTION
+// the grid (headers), leaving Sort to order within each section.
+const GROUP_OPTS = [['none', 'None'], ['element', 'Element'], ['rarity', 'Rarity']];
 
 export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged }) {
   // Reconcile the cache with the ACTIVE profile before reading a single field from it. Done
@@ -835,9 +836,13 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [types, setTypes] = useState(collectionSession().types);
   const [rarities, setRarities] = useState(collectionSession().rarities);
   const [els, setEls] = useState(collectionSession().els);
+  // Grouping = SECTIONING the grid by element/rarity (distinct from Sort, which orders WITHIN a
+  // section). Preserved from the pre-refine surface - restored per Codex review (an existing
+  // capability; "grouping is not sorting"). Persisted like the other arrangement state.
+  const [groupBy, setGroupBy] = useState(collectionSession().groupBy || 'none');
   // No collectionSession().sets: the drill is pinned to its own set, so there is no cross-set selection
   // left to remember. Restoring one was what let a stale Alpha filter empty the Beta grid.
-  useEffect(() => { collectionSession().q = q; collectionSession().types = types; collectionSession().rarities = rarities; collectionSession().els = els; }, [q, types, rarities, els]);
+  useEffect(() => { collectionSession().q = q; collectionSession().types = types; collectionSession().rarities = rarities; collectionSession().els = els; collectionSession().groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
 
   // Catalog axes (browsing a collection, NOT building a deck - so no threshold/mana/power
   // comparators; those are deck-building criteria). Element + Multi + Type + Rarity + Artist.
@@ -911,7 +916,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       }
     }
     setOwBySet(obs);
-    setWishSet(new Set(wl.map((r) => r.card_id)));
+    // Collector-item keys `card_id|variant_slug` (card + set + finish), so a want lights up ONLY its
+    // exact printing - an Alpha want never shows in the Beta drill (see groupCollection.wishedIn).
+    setWishSet(new Set(wl.map((r) => r.item_id)));
   }, []);
   useEffect(() => { refreshOwnership(); }, [refreshOwnership]);
   // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
@@ -1154,7 +1161,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             // min-content width, which inflated 1fr tracks; pin the min to 0.
             // Sections, not a reordered flat list. With grouping off this is one unlabelled
             // section, so the grid has a single code path either way.
-            groupCards(drillRows, 'none', (r) => r.card, rowComparator(sort, (r) => r.card)).map((section) => (
+            groupCards(drillRows, groupBy, (r) => r.card, rowComparator(sort, (r) => r.card)).map((section) => (
               <div key={section.key}>
                 {section.label && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
@@ -1215,7 +1222,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
         states={states} setStates={setStates} finishes={finishes} setFinishes={setFinishes}
         playset={playset} setPlayset={setPlayset} ownedCmp={ownedCmp} setOwnedCmp={setOwnedCmp}
-        sort={sort} setSort={setSort} />
+        sort={sort} setSort={setSort} groupBy={groupBy} setGroupBy={setGroupBy} groupOpts={GROUP_OPTS} />
     </div>
   );
 }

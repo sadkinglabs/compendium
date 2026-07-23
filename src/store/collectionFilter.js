@@ -3,16 +3,19 @@
 // DOM-free so the whole "does this printing pass the ownership/playset/finish/quantity filter, and
 // in what order" question is node-testable, not a device round-trip.
 //
-// A row is the set-drill shape { card, set, owned, foil, added } - `owned` is the non-foil count,
-// `foil` the foil count, `added` the printing's first-added timestamp (ISO, for the sort).
+// A row is the set-drill shape { card, set, owned, foil, updated, finishAvail } - `owned` is the
+// non-foil count, `foil` the foil count, `updated` the printing's latest updated_at (ISO, for the
+// sort), and `finishAvail` = { nonFoil, foil } the catalog's finish availability for this printing.
 import { rarityRank } from './rarity.js';
-import { playsetOf } from './playset.js';
+import { playsetOf, isAvatar } from './playset.js';
 
 // The vocabularies the sheet renders, defined here so the UI and the predicate can never drift.
 export const OWN_STATES = [['owned', 'Owned'], ['missing', 'Missing'], ['wishlist', 'Wishlisted']];
 export const FINISHES = [['standard', 'Standard'], ['foil', 'Foil']];
 export const PLAYSET_KEYS = [['complete', 'Completed'], ['partial', 'Missing copies'], ['over', 'More than a playset']];
-export const SORT_KEYS = [['name-asc', 'Name A → Z'], ['name-desc', 'Name Z → A'], ['added', 'Recently added'], ['rarity-asc', 'Rarity']];
+// 'updated' (not 'added'): a want can create the row before any copy is owned, so no shared-row
+// timestamp is a true acquisition time - see ownedBySet. This sorts by collector-record activity.
+export const SORT_KEYS = [['name-asc', 'Name A → Z'], ['name-desc', 'Name Z → A'], ['updated', 'Recently updated'], ['rarity-asc', 'Rarity']];
 
 const cmp = (a, op, b) => (op === '=' ? a === b : op === '<=' ? a <= b : a >= b);
 
@@ -27,6 +30,18 @@ export function effOwned(row, finishes = []) {
   const foil = row?.foil || 0;
   if (!finishes.length) return owned + foil;
   return (finishes.includes('standard') ? owned : 0) + (finishes.includes('foil') ? foil : 0);
+}
+
+/**
+ * Is at least one of the SELECTED finishes a real catalog printing for this row? `finishAvail` =
+ * { nonFoil, foil } comes off the row (from printingFinishes). A foil-only card under Standard scope
+ * fails here, so the surface never presents an impossible collector item (a Standard Winter River)
+ * as something the user "lacks". No scope => always allowed. Missing availability => permissive.
+ */
+export function finishAllowed(row, finishes = []) {
+  if (!finishes.length) return true;
+  const a = row?.finishAvail || { nonFoil: true, foil: true };
+  return (finishes.includes('standard') && a.nonFoil) || (finishes.includes('foil') && a.foil);
 }
 
 /**
@@ -56,6 +71,9 @@ export function matchesPlayset(row, playset = [], finishes = []) {
  */
 export function rowMatchesOwn(row, isWish, own = {}) {
   const { states = [], playset = [], qty = null, finishes = [] } = own;
+  // Finish is a REAL filter: a printing whose catalog offers none of the selected finishes is not a
+  // valid collector item under this scope, so it drops out entirely (a foil-only card under Standard).
+  if (finishes.length && !finishAllowed(row, finishes)) return false;
   const t = effOwned(row, finishes);
   if (states.length) {
     const ok = (states.includes('owned') && t > 0)
@@ -77,22 +95,27 @@ export function ownActive(own = {}) {
 const byName = (cardOf) => (a, b) =>
   String(cardOf(a).name || '').localeCompare(String(cardOf(b).name || ''), 'en', { sensitivity: 'base' });
 
+// Rarity rank that sorts AVATARS after every normal card: real avatars carry a rarity (Templar is
+// Elite, Witch/Dragonlord Unique), but they are not collected as rarity playsets, so they must not
+// interleave with normal Elites/Uniques. Unknown/no-rarity cards keep rarityRank's own "last" slot.
+const rarityRankFor = (card) => (isAvatar(card) ? rarityRank(undefined) + 1 : rarityRank(card?.rarity));
+
 /**
  * A within-section row comparator for the chosen sort key. Default (name-asc) matches the grid's
  * historical A-Z, so an unset sort changes nothing.
  *   name-asc/name-desc - alphabetical
- *   added              - first-added timestamp, NEWEST first; missing timestamps sort last
- *   rarity-asc         - Ordinary -> Unique (rarityRank); avatars/no-rarity last
+ *   updated            - latest updated_at (collector-record activity), NEWEST first; blanks last
+ *   rarity-asc         - Ordinary -> Unique; then avatars; then unknown/no-rarity
  * Every key breaks ties by name-asc so the order is total and stable.
  */
 export function rowComparator(sortKey = 'name-asc', cardOf = (x) => x) {
   const nameAsc = byName(cardOf);
   if (sortKey === 'name-desc') return (a, b) => nameAsc(b, a);
-  if (sortKey === 'rarity-asc') return (a, b) => (rarityRank(cardOf(a).rarity) - rarityRank(cardOf(b).rarity)) || nameAsc(a, b);
-  if (sortKey === 'added') {
+  if (sortKey === 'rarity-asc') return (a, b) => (rarityRankFor(cardOf(a)) - rarityRankFor(cardOf(b))) || nameAsc(a, b);
+  if (sortKey === 'updated') {
     return (a, b) => {
-      const av = a?.added || '';
-      const bv = b?.added || '';
+      const av = a?.updated || '';
+      const bv = b?.updated || '';
       if (av === bv) return nameAsc(a, b);
       if (!av) return 1;           // no timestamp sorts last
       if (!bv) return -1;

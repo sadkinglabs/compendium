@@ -24,12 +24,13 @@ export default function CollectionRefineSheet({
   open, onClose, onClear, activeCount = 0, ctaLabel = 'Show results',
   els, setEls, multi, setMulti, types, setTypes, rarities, setRarities, artist, setArtist, artistOpts = [],
   states, setStates, finishes, setFinishes, playset, setPlayset, ownedCmp, setOwnedCmp,
-  sort, setSort,
+  sort, setSort, groupBy = 'none', setGroupBy, groupOpts = [],
 }) {
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const [tab, setTab] = useState('filters');
   useEffect(() => { if (open) setTab('filters'); }, [open]);   // reopen on Filters
-  const sortActive = sort && sort !== 'name-asc';
+  const grouped = !!setGroupBy && groupBy && groupBy !== 'none';
+  const sortActive = (sort && sort !== 'name-asc') || grouped;
 
   // Summary hero: the active refinement written as a manuscript line.
   const labels = [];
@@ -101,11 +102,20 @@ export default function CollectionRefineSheet({
           </div>
         )}
       </>) : (
-        <div style={{ marginBottom: 22 }}>
-          <SectionLabel label="SORT" />
-          <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 8px' }}>Applies within each group.</div>
-          <ChipRow>{SORT_KEYS.map(([k, l]) => <Chip key={k} label={l} active={(sort || 'name-asc') === k} onClick={() => setSort(k)} />)}</ChipRow>
-        </div>
+        <>
+          {setGroupBy && groupOpts.length > 0 && (
+            <div style={{ marginBottom: 22 }}>
+              <SectionLabel label="GROUP BY" count={cnt(grouped ? 1 : 0)} />
+              <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 8px' }}>Sections the grid; Sort orders within each section.</div>
+              <ChipRow>{groupOpts.map(([k, l]) => <Chip key={k} label={l} active={(groupBy || 'none') === k} onClick={() => setGroupBy(k)} />)}</ChipRow>
+            </div>
+          )}
+          <div style={{ marginBottom: 22 }}>
+            <SectionLabel label="SORT" />
+            <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 8px' }}>Applies within each group.</div>
+            <ChipRow>{SORT_KEYS.map(([k, l]) => <Chip key={k} label={l} active={(sort || 'name-asc') === k} onClick={() => setSort(k)} />)}</ChipRow>
+          </div>
+        </>
       )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>

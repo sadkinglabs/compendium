@@ -2,13 +2,16 @@
 // combined ownership predicate, and the within-group sort. Run: npm run test:query
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { effOwned, matchesPlayset, rowMatchesOwn, ownActive, rowComparator } from './collectionFilter.js';
+import { effOwned, matchesPlayset, rowMatchesOwn, ownActive, rowComparator, finishAllowed } from './collectionFilter.js';
 
 // A capped Ordinary card (playset = 4) and an unlimited ("any number of") card.
 const ORD = { card_id: 'o', name: 'Ordinary One', rarity: 'Ordinary' };
 const UNLIM = { card_id: 'u', name: 'Unbound', rarity: 'Ordinary', rules_text: 'You may have any number of Unbound in your deck.' };
-const AVATAR = { card_id: 'av', name: 'Avatar', rarity: null };
-const row = (card, owned, foil, added = '') => ({ card, set: '001', owned, foil, added });
+// A REAL avatar carries a rarity in the catalog (Templar is Elite) - it must still be treated as
+// uncapped (no playset) and sorted apart from normal rarities.
+const AVATAR = { card_id: 'av', name: 'Templar', rarity: 'Elite', is_avatar: 1 };
+const BOTH = { nonFoil: true, foil: true };
+const row = (card, owned, foil, updated = '', finishAvail = BOTH) => ({ card, set: '001', owned, foil, updated, finishAvail });
 
 /* ---------------- effOwned (finish scope) ---------------- */
 
@@ -32,9 +35,9 @@ test('matchesPlayset: complete (>=limit), over (>limit), partial (0<t<limit)', (
   assert.equal(matchesPlayset(row(ORD, 2, 0), ['complete', 'over']), false, 'any-of: 2 matches neither');
 });
 
-test('matchesPlayset: an UNCAPPED card (unlimited / no rarity) never matches a playset filter', () => {
+test('matchesPlayset: an UNCAPPED card (unlimited, or a rarity-bearing AVATAR) never matches a playset filter', () => {
   assert.equal(matchesPlayset(row(UNLIM, 99, 0), ['complete', 'partial', 'over']), false);
-  assert.equal(matchesPlayset(row(AVATAR, 1, 0), ['complete']), false);
+  assert.equal(matchesPlayset(row(AVATAR, 1, 0), ['complete']), false, 'an Elite AVATAR has no playset');
 });
 
 test('matchesPlayset: the finish scope reframes the count', () => {
@@ -86,6 +89,30 @@ test('rowMatchesOwn: the Owned-amount comparator', () => {
   assert.equal(rowMatchesOwn(row(ORD, 2, 0), false, { qty: { op: '=', val: null } }), true, 'null value is inactive');
 });
 
+/* ---------------- finish availability (no impossible collector items) ---------------- */
+
+const STD_ONLY = { nonFoil: true, foil: false };
+const FOIL_ONLY = { nonFoil: false, foil: true };   // Winter River shape
+
+test('finishAllowed: a selected finish must be a real catalog printing', () => {
+  assert.equal(finishAllowed(row(ORD, 0, 0, '', FOIL_ONLY), ['standard']), false, 'no standard Winter River exists');
+  assert.equal(finishAllowed(row(ORD, 0, 0, '', FOIL_ONLY), ['foil']), true);
+  assert.equal(finishAllowed(row(ORD, 0, 0, '', STD_ONLY), ['foil']), false, 'no foil of a standard-only card');
+  assert.equal(finishAllowed(row(ORD, 0, 0, '', BOTH), []), true, 'no scope = always allowed');
+});
+
+test('rowMatchesOwn: Finish is a REAL filter - a printing lacking the finish drops out', () => {
+  // Winter River (Alpha foil-only): Standard + Missing must NOT present a nonexistent standard.
+  assert.equal(rowMatchesOwn(row(ORD, 0, 0, '', FOIL_ONLY), false, { states: ['missing'], finishes: ['standard'] }), false);
+  // A standard-only card under Foil scope drops out entirely.
+  assert.equal(rowMatchesOwn(row(ORD, 0, 0, '', STD_ONLY), false, { states: ['missing'], finishes: ['foil'] }), false);
+  // Supports Standard but user owns only Foil -> Standard + Missing SHOULD match.
+  assert.equal(rowMatchesOwn(row(ORD, 0, 2, '', BOTH), false, { states: ['missing'], finishes: ['standard'] }), true);
+  // Finish=Foil alone filters to printings that HAVE a foil.
+  assert.equal(rowMatchesOwn(row(ORD, 3, 0, '', STD_ONLY), false, { finishes: ['foil'] }), false, 'no foil printing -> excluded');
+  assert.equal(rowMatchesOwn(row(ORD, 3, 0, '', BOTH), false, { finishes: ['foil'] }), true);
+});
+
 test('ownActive: true only when some axis is set', () => {
   assert.equal(ownActive({}), false);
   assert.equal(ownActive({ states: [], playset: [], qty: { op: '>=', val: null }, finishes: [] }), false);
@@ -105,23 +132,24 @@ test('rowComparator: name asc/desc', () => {
   assert.deepEqual(sorted(rows, 'name-desc'), ['b', 'a']);
 });
 
-test('rowComparator: recently added is NEWEST first, blanks last', () => {
+test('rowComparator: recently UPDATED is NEWEST first, blanks last', () => {
   const rows = [
     row({ card_id: 'old', name: 'B' }, 1, 0, '2020-01-01'),
     row({ card_id: 'new', name: 'A' }, 1, 0, '2026-01-01'),
     row({ card_id: 'blank', name: 'C' }, 1, 0, ''),
   ];
-  assert.deepEqual(sorted(rows, 'added'), ['new', 'old', 'blank']);
+  assert.deepEqual(sorted(rows, 'updated'), ['new', 'old', 'blank']);
 });
 
-test('rowComparator: rarity ascends Ordinary -> Unique, unknown/avatar last, name breaks ties', () => {
+test('rowComparator: rarity ascends Ordinary -> Unique, then AVATARS (rarity-bearing), then unknown', () => {
   const rows = [
     row({ card_id: 'u', name: 'U', rarity: 'Unique' }, 0, 0),
     row({ card_id: 'o2', name: 'Z-ord', rarity: 'Ordinary' }, 0, 0),
     row({ card_id: 'o1', name: 'A-ord', rarity: 'Ordinary' }, 0, 0),
-    row({ card_id: 'av', name: 'Avatar', rarity: null }, 0, 0),
+    row({ card_id: 'av', name: 'Templar', rarity: 'Elite', is_avatar: 1 }, 0, 0),   // Elite AVATAR -> after normal cards, not among Elites
+    row({ card_id: 'x', name: 'NoRarity', rarity: null }, 0, 0),
   ];
-  assert.deepEqual(sorted(rows, 'rarity-asc'), ['o1', 'o2', 'u', 'av']);
+  assert.deepEqual(sorted(rows, 'rarity-asc'), ['o1', 'o2', 'u', 'x', 'av'], 'avatars sort dead last');
 });
 
 test('rowComparator default (name-asc) preserves the historical A-Z order', () => {
