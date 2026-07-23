@@ -230,7 +230,7 @@ function SiteArt({ c }) {
 
 // The glowing card frame - portrait for cards, flipped landscape for Sites. Tapping it raises
 // the card onto its own full-screen stage (CardArtViewer).
-export function SheetArt({ c, width }) {
+export function SheetArt({ c, width, foil = false }) {
   const site = !!c.is_site;
   const [zoom, setZoom] = useState(null);   // the frame we popped FROM, so we can return to it
   const frameRef = useRef(null);
@@ -248,7 +248,7 @@ export function SheetArt({ c, width }) {
           visibility: zoom ? 'hidden' : 'visible' }}>
         {site ? <SiteArt c={c} /> : <CardArt card={c} radius={11} aspect="5/7" />}
       </button>
-      {zoom && <CardArtViewer card={c} origin={zoom.w ? zoom : null} onClose={() => setZoom(null)} />}
+      {zoom && <CardArtViewer card={c} foil={foil} origin={zoom.w ? zoom : null} onClose={() => setZoom(null)} />}
     </div>
   );
 }
@@ -414,7 +414,7 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
           column; a printing with one finish shows no toggle (promos/foil-only lock to Foil). */}
       <div style={{ display: 'flex', gap: 14, alignItems: 'center', marginTop: 8 }}>
         <div style={{ flex: '0 0 44%', maxWidth: 176 }}>
-          <SheetArt c={artCard} width="100%" />
+          <SheetArt c={artCard} width="100%" foil={foil} />
         </div>
 
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 9 }}>
