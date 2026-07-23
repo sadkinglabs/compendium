@@ -30,7 +30,7 @@ function firstSetName(card) {
 // The art for a specific printing (set code): a card shown in its Promo / Beta tile
 // wears THAT printing's illustration, not the default (lowest-set) art. Unspecified
 // ('' / null) keeps the default. Standard finish preferred; falls back to any scan.
-function artForSet(card, set) {
+export function artForSet(card, set) {
   if (!set) return card;
   const vs = Array.isArray(card?._variants)
     ? card._variants
