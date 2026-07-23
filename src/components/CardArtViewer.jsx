@@ -19,7 +19,7 @@ import { setImmersive } from '../native.js';
 // artwork is bright (highlights, metallics, lightning) - the crush comes from brightness(.26+hyp*.26)
 // contrast(3) saturate(1.45), and it slides OPPOSITE the pointer (--px/--py = 100-mx/my) so the
 // counter-motion reads as refraction. Layer 2 is an overlay glare hotspot that follows the pointer -
-// the lacquer - and applies to BOTH finishes. Global foil intensity is --o x 0.55.
+// the lacquer - and applies to BOTH finishes. Global foil intensity is --o x 0.6.
 //
 // Platform notes (DESIGN_SYSTEM.md §6):
 //  - Two transform layers, deliberately separated: the OUTER layer runs the pop (translate + scale
@@ -136,15 +136,16 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
       const v = vals.current;
       if (!active.current) {
         // Idle lissajous drift - different x/y frequencies (.5 vs .65) wander instead of circling.
+        // Kept subtle: a gentle breath at rest, not a sway.
         const now = performance.now() / 1000;
-        v.rx.t = Math.sin(now * 0.65 + seed) * 6;
-        v.ry.t = Math.cos(now * 0.5 + seed) * 8;
-        v.mx.t = 50 + Math.cos(now * 0.5 + seed) * 30;
-        v.my.t = 50 + Math.sin(now * 0.65 + seed) * 30;
+        v.rx.t = Math.sin(now * 0.65 + seed) * 3;
+        v.ry.t = Math.cos(now * 0.5 + seed) * 4;
+        v.mx.t = 50 + Math.cos(now * 0.5 + seed) * 16;
+        v.my.t = 50 + Math.sin(now * 0.65 + seed) * 16;
         v.o.t = 0.8;
-        v.hyp.t = 0.45 + 0.25 * Math.sin(now * 0.6 + seed);
+        v.hyp.t = 0.4 + 0.12 * Math.sin(now * 0.6 + seed);
       }
-      const k = active.current ? 0.3 : 0.05;   // tight while tracking, soft glide on release
+      const k = active.current ? 0.3 : 0.14;   // tight while tracking, brisk glide back to centre on release
       for (const key of ['rx', 'ry', 'mx', 'my', 'o', 'hyp']) {
         const p = v[key];
         p.c += (p.t - p.c) * k;
@@ -157,7 +158,7 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
         el.style.setProperty('--my', `${v.my.c.toFixed(2)}%`);
         el.style.setProperty('--px', `${(100 - v.mx.c).toFixed(2)}%`);   // foil sheet moves OPPOSITE
         el.style.setProperty('--py', `${(100 - v.my.c).toFixed(2)}%`);
-        el.style.setProperty('--o', (v.o.c * 0.55).toFixed(3));          // global foil intensity
+        el.style.setProperty('--o', (v.o.c * 0.6).toFixed(3));           // global foil intensity
         el.style.setProperty('--hyp', v.hyp.c.toFixed(3));
       }
       const sh = shadowRef.current;
@@ -181,6 +182,15 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
     v.rx.t = -(py - 50) / 50 * TILT;
     v.mx.t = px; v.my.t = py; v.o.t = 1;
     v.hyp.t = Math.min(1, Math.hypot(px - 50, py - 50) / 50);
+  };
+  // CAPTURE the pointer on touch-down so the drag keeps tracking even when the finger moves off the
+  // card or fast - without this, move events stop the instant the pointer leaves the element and the
+  // tilt only caught SOME of the drag. Capture also suppresses the boundary leave mid-drag, so a
+  // release only happens on a real lift/cancel.
+  const onDown = (e) => {
+    if (reduce) return;
+    try { tiltRef.current?.setPointerCapture(e.pointerId); } catch { /* some pointers are not capturable */ }
+    onPointer(e);
   };
   const release = () => { active.current = false; };   // loop eases back into the idle drift
 
@@ -225,7 +235,7 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
           filter: 'blur(14px)',
         }} />
         {/* tilt + foil layer - the CSS-var target */}
-        <div ref={tiltRef} onPointerMove={onPointer} onPointerDown={onPointer}
+        <div ref={tiltRef} onPointerMove={onPointer} onPointerDown={onDown}
           onPointerUp={release} onPointerLeave={release} onPointerCancel={release}
           style={{
             position: 'absolute', inset: 0, borderRadius: 14, overflow: 'hidden', isolation: 'isolate',
