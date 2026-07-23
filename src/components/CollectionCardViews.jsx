@@ -278,9 +278,12 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
           {foil > 0 && <span style={chipDark}>✦{foil}</span>}
         </span>
       )}
+      {/* Playset-complete mark: the SAME jade diamond seal the Overview card row uses, so a
+          SQUARE tick = full playset - never confused with the ROUND tick that means "card added".
+          Drop-shadow gives it contrast over the art (the row shows it on a dark strip instead). */}
       {complete && !selectMode && (
-        <span title="Playset collected" style={{ position: 'absolute', top: 7, right: 7, width: 22, height: 22, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,20,16,.8)', border: `1px solid ${TEAL}` }}>
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke={TEAL} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        <span style={{ position: 'absolute', top: 6, right: 6, display: 'inline-flex', filter: 'drop-shadow(0 1px 2.5px rgba(0,0,0,.8))' }}>
+          <PlaysetSeal size={24} />
         </span>
       )}
       {/* Selection tick (select mode): the top-right slot becomes a checkbox. */}
