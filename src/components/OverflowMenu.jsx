@@ -20,17 +20,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import { registerBackConsumer } from '../back.js';
 import { haptic } from '../native.js';
 
+// The panel matches the FAB menu's chassis (decks.css `.fab-menu`): the same frosted gilt glass, so
+// a header overflow and the docked FAB read as one menu language. It does NOT copy the FAB's SCALE
+// morph - the a11y note above is load-bearing - so it plays a small opacity+translate entrance
+// (`cx-ofm-in`, reduced-motion-safe) instead.
 const PANEL = {
-  position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 60, minWidth: 190,
-  background: 'rgba(10,9,8,.94)', border: '1px solid var(--hair-22)', borderRadius: 16,
-  boxShadow: '0 12px 36px rgba(0,0,0,.6)', overflow: 'hidden', padding: '4px 0',
-  transition: 'opacity .16s ease, transform .16s cubic-bezier(.34,1.2,.64,1)',
+  position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 60, minWidth: 200,
+  background: 'rgba(10,9,8,.72)', border: '1px solid rgba(220,184,111,.25)', borderRadius: 18,
+  backdropFilter: 'blur(16px) saturate(1.15)', WebkitBackdropFilter: 'blur(16px) saturate(1.15)',
+  boxShadow: '0 8px 32px rgba(0,0,0,.6)', overflow: 'hidden', padding: '4px 0',
 };
 
+// Mirrors `.fab-menu button` (decks.css): same font, padding, colour and hairline, so the two menus
+// are indistinguishable.
 const ITEM = {
-  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '12px 16px',
+  display: 'flex', alignItems: 'center', gap: 11, width: '100%', padding: '12px 16px',
   textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer',
-  font: "600 14px/1.2 var(--f-ui)", color: 'var(--ink-body)', whiteSpace: 'nowrap',
+  font: "600 14px/1.2 var(--f-ui)", color: '#e9dcc0', whiteSpace: 'nowrap',
 };
 
 /** The house dots glyph - three dots, drawn not typed (the app never ships Unicode glyphs). */
@@ -40,6 +46,23 @@ export function DotsGlyph({ size = 16 }) {
       <circle cx="12" cy="5" r="1.9" /><circle cx="12" cy="12" r="1.9" /><circle cx="12" cy="19" r="1.9" />
     </svg>
   );
+}
+
+// The ONE menu-item glyph language, sized once here so callers never hand-size an icon (the reason
+// the old ad-hoc SVGs read too big/too small). Mirrors Fab.jsx's FabGlyph; every glyph is a 17px
+// stroke line-icon, `.cx-ofm-glyph svg` in tokens.css is the backstop for any raw icon.
+export function MenuGlyph({ kind }) {
+  const P = { fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const svg = (children) => <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" {...P}>{children}</svg>;
+  switch (kind) {
+    case 'edit': return svg(<path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" />);
+    case 'duplicate': return svg(<><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></>);
+    case 'delete': return svg(<><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>);
+    case 'import': return svg(<><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></>);
+    case 'export': return svg(<><path d="M12 15V4" /><polyline points="8 8 12 4 16 8" /><path d="M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" /></>);
+    case 'missing': return svg(<><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></>);
+    default: return svg(<circle cx="12" cy="12" r="9" />);
+  }
 }
 
 /**
@@ -159,7 +182,7 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
           and it leaked into UI-automation text. */}
       {open && (
         <div
-          role="menu" aria-label={label}
+          role="menu" aria-label={label} className="cx-ofm-panel"
           style={{ ...PANEL, ...(align === 'left' ? { right: 'auto', left: 0 } : null) }}
         >
           {shown.map((it, i) => (
@@ -172,10 +195,10 @@ export default function OverflowMenu({ items = [], label = 'More actions', align
                 color: it.danger ? 'var(--destructive)' : ITEM.color,
                 opacity: it.disabled ? 0.4 : 1,
                 cursor: it.disabled ? 'default' : 'pointer',
-                borderBottom: i < shown.length - 1 ? '1px solid rgba(220,184,111,.12)' : 'none',
+                borderBottom: i < shown.length - 1 ? '1px solid rgba(220,184,111,.14)' : 'none',
               }}
             >
-              {it.icon}
+              {it.icon && <span className="cx-ofm-glyph" style={{ display: 'inline-flex', flex: 'none', opacity: 0.75 }}>{it.icon}</span>}
               <span>{it.label}</span>
             </button>
           ))}

@@ -24,7 +24,7 @@ import TriageSheet from '../components/TriageSheet.jsx';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
-import OverflowMenu from '../components/OverflowMenu.jsx';
+import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
@@ -61,13 +61,8 @@ import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
 
-// FAB menu-item glyphs (unsized - the fab-menu CSS sizes them), matching the
-// Decks library FAB's icon language.
-const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
-const EditSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>;
-const CopySvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
-const TrashSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
-const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></svg>;
+// Header-overflow menu glyphs now come from the shared `MenuGlyph` set (OverflowMenu.jsx), sized and
+// styled to the FAB-menu language - callers no longer hand-author per-icon SVGs.
 
 // Where-you-left-off cache. The app unmounts the whole pillar when a Codex detail opens
 // (e.g. the scanner handing off a recognised card), so this survives the round-trip: coming
@@ -627,13 +622,9 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
   if (!stats) return <Loading />;
   return (
     <div style={{ padding: '2px 20px' }}>
-      {/* The FAB is the camera and nothing else, so the typed import lives here. Text import
-          is deliberately NOT set-scoped: a paste spanning many sets must stay one paste. */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-        <OverflowMenu label="Collection actions" items={[
-          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-        ]} />
-      </div>
+      {/* Every ADD lives on a FAB now: a docked camera + a stacked "Import from text" (below). Text
+          import is deliberately NOT set-scoped - a paste spanning many sets must stay one paste, so it
+          lives here on Overview rather than inside a set. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
@@ -669,10 +660,12 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         </div>
       )}
 
-      {/* Scan. One tap, no menu - the camera glyph teaches that cards get in by pointing the
-          phone at them. Typed import moved to the header overflow above. */}
+      {/* Every ADD is a FAB: the camera docked (kept front-and-centre - the primary add gesture) and
+          "Import from text" stacked above it. */}
       <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
         onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      <Fab variant="lib" label="Import from text" className="fab-stacked" icon={<FabGlyph kind="import" />}
+        onClick={() => setImportOpen(true)} />
       {/* HONEST BUT QUIET, per the ruling: the count sits on the entry itself rather than as a
           standing badge. A user with 300 uncategorised imports does not want a permanent 300 on
           their home screen. An empty pile shows no row at all. */}
@@ -959,7 +952,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
           <OverflowMenu label="Set actions" items={[
-            { label: 'Export missing as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
+            { label: 'Export missing as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
           ]} />
         </div>
       </div>
@@ -1806,12 +1799,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
             delete, and OverflowMenu drops the null entries. */}
         <OverflowMenu label="List actions" items={[
-          { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
-          isWishlist ? null : { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
-          isWishlist ? null : { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
-          { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
-          isWanted ? { label: 'Get missing cards', icon: SeekSvg, onClick: openMissing } : null,
-          isWishlist ? null : { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+          isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
+          isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+          { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
+          isWanted ? { label: 'Get missing cards', icon: <MenuGlyph kind="missing" />, onClick: openMissing } : null,
+          isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
         ]} />
       </div>
 
@@ -1867,15 +1859,17 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      {/* Adding cards is the primary action, so it gets the FAB. Everything else is
-          list-level chrome and lives in the header overflow.
+      {/* Both ADD methods are FABs: "Add cards" (the search picker) docked, "Add from text" stacked
+          above. Everything else is list chrome and lives in the header overflow.
 
-          It is NOT a camera FAB, despite the set drill's being one. launchScanner has only
-          'collection' and 'deck' modes - scanning here would silently add to the collection
-          rather than to this list, which is worse than not offering it. When the scanner
-          learns a list mode this becomes a camera and "Add cards" joins the overflow. */}
+          Neither is a camera FAB, despite the set drill's being one. launchScanner has only
+          'collection' and 'deck' modes - scanning here would silently add to the collection rather
+          than to this list, which is worse than not offering it. When the scanner learns a list mode
+          the docked FAB becomes a camera. */}
       <Fab variant="lib" label="Add cards to this list" icon={<FabGlyph kind="add" />}
         onClick={() => setAddOpen(true)} />
+      <Fab variant="lib" label="Add cards from text" className="fab-stacked" icon={<FabGlyph kind="import" />}
+        onClick={() => setBulkOpen(true)} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>
