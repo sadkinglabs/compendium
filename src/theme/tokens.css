@@ -512,3 +512,11 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   background: linear-gradient(100deg, transparent 25%, rgba(220,184,111,.12) 50%, transparent 75%);
   transform: translateX(-100%); animation: cx-art-sheen 1.4s ease-in-out infinite;
 }
+
+/* Header overflow menu (OverflowMenu.jsx). Glyphs are sized to the FAB-menu language here as a
+   backstop for any raw icon; the panel plays a small opacity+translate entrance - never a scale,
+   which breaks the WebView a11y geometry (see the note in OverflowMenu.jsx). */
+.cx-ofm-glyph svg { width: 17px; height: 17px; flex: none; }
+.cx-ofm-panel { animation: cx-ofm-in .15s ease; }
+@keyframes cx-ofm-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .cx-ofm-panel { animation: none; } }

@@ -24,7 +24,9 @@ import TriageSheet from '../components/TriageSheet.jsx';
 import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
-import OverflowMenu from '../components/OverflowMenu.jsx';
+import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
+import { registerBackConsumer } from '../back.js';
+import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
@@ -38,13 +40,14 @@ import {
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
-import { importCollectionResolved } from '../store/ownedImportRepository.js';
+import { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
+import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
 import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
-import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
+import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -61,13 +64,8 @@ import { launchScanner } from '../cardScanner.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
 
-// FAB menu-item glyphs (unsized - the fab-menu CSS sizes them), matching the
-// Decks library FAB's icon language.
-const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><polyline points="14 3 14 9 20 9" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></svg>;
-const EditSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z" /></svg>;
-const CopySvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
-const TrashSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>;
-const SeekSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /><line x1="8" y1="11" x2="14" y2="11" /></svg>;
+// Header-overflow menu glyphs now come from the shared `MenuGlyph` set (OverflowMenu.jsx), sized and
+// styled to the FAB-menu language - callers no longer hand-author per-icon SVGs.
 
 // Where-you-left-off cache. The app unmounts the whole pillar when a Codex detail opens
 // (e.g. the scanner handing off a recognised card), so this survives the round-trip: coming
@@ -627,13 +625,9 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
   if (!stats) return <Loading />;
   return (
     <div style={{ padding: '2px 20px' }}>
-      {/* The FAB is the camera and nothing else, so the typed import lives here. Text import
-          is deliberately NOT set-scoped: a paste spanning many sets must stay one paste. */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 4 }}>
-        <OverflowMenu label="Collection actions" items={[
-          { label: 'Import from text', icon: TextImportSvg, onClick: () => setImportOpen(true) },
-        ]} />
-      </div>
+      {/* Every ADD lives on a FAB now: a docked camera + a stacked "Import from text" (below). Text
+          import is deliberately NOT set-scoped - a paste spanning many sets must stay one paste, so it
+          lives here on Overview rather than inside a set. */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 18 }}>
         <Tile label="CARDS OWNED" value={stats.owned} onClick={onGoCards} />
         <Tile label="UNIQUE CARDS" value={stats.unique} onClick={onGoCards} />
@@ -669,10 +663,12 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         </div>
       )}
 
-      {/* Scan. One tap, no menu - the camera glyph teaches that cards get in by pointing the
-          phone at them. Typed import moved to the header overflow above. */}
-      <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
-        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
+      {/* ONE + FAB reveals every add method as a menu (not a blind stacked fire). The camera lives
+          inside it, clearly labelled - never buried. */}
+      <Fab variant="lib" label="Add cards" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+        { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+      ]} />
       {/* HONEST BUT QUIET, per the ruling: the count sits on the entry itself rather than as a
           standing badge. A user with 300 uncategorised imports does not want a permanent 300 on
           their home screen. An empty pile shows no row at all. */}
@@ -727,6 +723,90 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 const OWN_OPTS = [['regular', 'Owned'], ['foilOnly', 'Foil only'], ['missing', 'Missing'], ['wishlist', 'Wishlisted']];
 const OWN_LABEL = { regular: 'Owned', foilOnly: 'Foil only', missing: 'Missing', wishlist: 'Wishlisted' };
 
+// While cards are being multi-selected the docked search bar becomes a selection action bar. It
+// portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
+// shift, one keyboard-aware container.
+function SelectionBar({ count, onAdd, onCreate, onCancel }) {
+  const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
+  useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
+  if (!slot) return null;
+  const btn = {
+    flex: 'none', minHeight: 44, padding: '0 15px', borderRadius: 18, whiteSpace: 'nowrap',
+    border: '1px solid rgba(203,167,95,.45)', background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)',
+    font: "600 12.5px/1 var(--f-ui)", cursor: count ? 'pointer' : 'default', opacity: count ? 1 : 0.4,
+  };
+  return createPortal(
+    <div className="cx-search-pill" style={{ gap: 8 }}>
+      <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+      </button>
+      {/* Just the running count - Select all / Deselect all lives on the header pill now. */}
+      <span aria-live="polite" style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
+      <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
+      <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
+    </div>,
+    slot,
+  );
+}
+
+// A stepper modal for bulk-editing owned copies of the selected cards. TWO modes:
+//   ADJUST - raise OR lower each card by N against its PRESENT count (an Add/Remove direction picks
+//            the sign). Removing floors at 0, never negative; it can't target 0 outright.
+//   SET    - make the owned count exactly N regardless of what it was; N=0 REMOVES (bulk delete),
+//            keeping any wishlist want.
+// A finish toggle picks Standard vs Foil; a card without the chosen finish (a non-foil-only card when
+// touching foils, or Winter River when touching standard) is skipped and reported, so one impossible
+// pairing never sinks the batch. `onConfirm({ mode, qty, foil, dir })`.
+function AddCopiesSheet({ open, count, onClose, onConfirm, maxStd = 99, maxFoil = 99 }) {
+  const [mode, setMode] = useState('adjust');   // 'adjust' | 'set'
+  const [dir, setDir] = useState('add');        // 'add' | 'remove' (adjust only)
+  const [qty, setQty] = useState(1);
+  const [foil, setFoil] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setMode('adjust'); setDir('add'); setQty(1); setFoil(false); setBusy(false); } }, [open]);
+  const min = mode === 'adjust' ? 1 : 0;   // Adjust magnitude is >=1 (a 0 delta is a no-op); Set allows 0 (= clear)
+  const removing = mode === 'adjust' && dir === 'remove';
+  // Removing is capped at the largest stack in the selection (per finish) - offering to remove more
+  // than anything holds is meaningless. Add/Set keep the plain 99 ceiling.
+  const max = removing ? Math.max(1, foil ? maxFoil : maxStd) : 99;
+  useEffect(() => { setQty((q) => Math.min(Math.max(q, min), max)); }, [min, max]);
+  const setModeSafe = (m) => { setMode(m); if (m === 'adjust' && qty < 1) setQty(1); };
+  const f = foil ? 'foil ' : '';
+  const cta = mode === 'set'
+    ? (qty === 0 ? `Remove ${f}from collection` : `Set each to ${qty}${foil ? ' foil' : ''}`)
+    : (removing ? `Remove ${qty} ${f}from each` : `Add ${qty} ${f}to each`);
+  const dangerCta = (mode === 'set' && qty === 0) || removing;
+  return (
+    <BottomSheet open={open} title="EDIT COPIES" onClose={onClose}>
+      <div style={{ font: "400 13.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 16 }}>
+        {mode === 'set'
+          ? <>Set the owned count of each of the {count} selected card{count === 1 ? '' : 's'} to a fixed number. <strong style={{ color: 'var(--ink-body)' }}>0 removes them</strong> (any wishlist want is kept).</>
+          : <>Raise or lower the owned count of each of the {count} selected card{count === 1 ? '' : 's'} by this many. <strong style={{ color: 'var(--ink-body)' }}>Removing never goes below 0.</strong></>}
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+        <SegTabs ariaLabel="Mode" value={mode} onChange={setModeSafe}
+          options={[{ key: 'adjust', label: 'Adjust' }, { key: 'set', label: 'Set' }]} />
+        {mode === 'adjust' && (
+          <SegTabs ariaLabel="Direction" value={dir} onChange={setDir}
+            options={[{ key: 'add', label: 'Add' }, { key: 'remove', label: 'Remove' }]} />
+        )}
+        <SegTabs ariaLabel="Finish" value={foil ? 'foil' : 'standard'} onChange={(k) => setFoil(k === 'foil')}
+          options={[{ key: 'standard', label: 'Standard' }, { key: 'foil', label: 'Foil ✦' }]} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, marginBottom: 22 }}>
+        <StepBtn dir={-1} disabled={qty <= min} onClick={() => setQty((q) => Math.max(min, q - 1))} />
+        <span style={{ font: "500 36px/1 var(--f-display)", color: dangerCta ? 'var(--destructive)' : '#efe7d8', minWidth: 52, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{removing ? `-${qty}` : qty}</span>
+        <StepBtn dir={1} disabled={qty >= max} onClick={() => setQty((q) => Math.min(max, q + 1))} />
+      </div>
+      <button onClick={async () => { if (busy) return; setBusy(true); await onConfirm({ mode, qty, foil, dir }); }} disabled={busy}
+        style={{ ...BTN_GOLD, width: '100%', justifyContent: 'center', opacity: busy ? 0.6 : 1,
+          ...(dangerCta ? { background: 'rgba(60,20,20,.6)', color: 'var(--destructive)', border: '1px solid rgba(168,88,74,.5)' } : null) }}>
+        {busy ? 'Working…' : cta}
+      </button>
+    </BottomSheet>
+  );
+}
+
 // Cards is the PER-SET drill (the parent shows SetsHome until a plate is tapped). It scopes
 // the shared catalog/search/filter machinery to `setDrill`, adds a back + set-completion
 // header, and carries a permanent stepper on every tile.
@@ -741,7 +821,13 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // its temporal dead zone. It depends only on props, so there is nothing to wait for.
   const drillName = drillInfo?.name || SET_LABEL[setDrill] || setDrill;
 
-  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);   // text import lives on the set's + FAB (adds to the collection, not just this set)
+  // Multi-select: entered from the overflow ("Select all"), driven by the scoped grid. `selected`
+  // captures {card, set} at selection time so the two actions do not depend on the live filter.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState(() => new Map());   // 'cardId|set' -> { card, set }
+  const [qtyOpen, setQtyOpen] = useState(false);               // Add-copies stepper modal
+  const [createOpen, setCreateOpen] = useState(false);         // Create-list (name + type) sheet
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
   // here, so neither can be moved by a filter the user happens to have on.
@@ -914,14 +1000,90 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // drill could render a header like "402 / 50".
   const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
-  // Everything in the set you do NOT hold in non-foil - missing outright, or foil-only.
-  // Filter-independent by construction: it reads the roster, not the grid.
-  const missingInSet = useMemo(() => (roster || []).filter((c) => {
-    const oc = owBySet.get(c.card_id + '|' + setDrill);
-    return ownershipOf(oc?.owned, oc?.foil) !== 'regular';
-  }), [roster, owBySet, setDrill]);
 
-  const richComp = ['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
+  // ---- Multi-select over the scoped grid ----
+  // Each selected entry captures the present owned/foil counts too, so the Adjust sheet can cap a
+  // Remove at what's actually on hand (never offer to remove more than the biggest stack holds).
+  const selKey = (id, set) => `${id}|${set}`;
+  const selVal = (r) => ({ card: r.card, set: r.set, owned: r.owned || 0, foil: r.foil || 0 });
+  const enterSelectMode = () => { setSelected(new Map()); setSelectMode(true); };   // enter empty - tap tiles, or "Select all"
+  const selectAll = () => setSelected(new Map(drillRows.map((r) => [selKey(r.card.card_id, r.set), selVal(r)])));
+  const deselectAll = () => setSelected(new Map());
+  const toggleSel = (id, set) => setSelected((m) => {
+    const n = new Map(m); const k = selKey(id, set);
+    if (n.has(k)) n.delete(k);
+    else { const row = drillRows.find((r) => r.card.card_id === id && r.set === set); if (row) n.set(k, selVal(row)); }
+    return n;
+  });
+  const cancelSelect = () => { setSelectMode(false); setSelected(new Map()); };
+  // Hardware Back exits selection before it leaves the set drill.
+  useEffect(() => {
+    if (!selectMode) return undefined;
+    return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
+  }, [selectMode]);
+  // Bulk-edit owned copies of the selection through the barrier-guarded commands. ADJUST raises/lowers
+  // by a signed delta (Remove floors at 0); SET writes an absolute count (0 clears, keeping any want).
+  // The toast is driven by the REPOSITORY result (actual changes), never the selection count - so a
+  // no-op reads honestly.
+  const bulkEditCopies = async ({ mode, qty, foil, dir }) => {
+    // Only cards that actually have the chosen finish are touched; the rest are skipped and counted (a
+    // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
+    // standard). This keeps one impossible pairing from rejecting the whole strict batch.
+    const adjust = mode === 'adjust';
+    const delta = dir === 'remove' ? -qty : qty;
+    const items = []; let skipped = 0;
+    for (const { card, set } of selected.values()) {
+      let fin; try { fin = printingFinishes(card, set); } catch { fin = { nonFoil: true, foil: false }; }
+      if (foil ? fin.foil : fin.nonFoil) items.push(adjust ? { card_id: card.card_id, setCode: set, foil, delta } : { card_id: card.card_id, setCode: set, foil, qty });
+      else skipped += 1;
+    }
+    if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
+    const skipTail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
+    const f = foil ? 'foil ' : '';
+    const cnt = (nn) => `${nn} card${nn === 1 ? '' : 's'}`;
+    try {
+      if (adjust) {
+        const r = await adjustOwnedItemsBulk(items);   // one atomic write; Remove floors at 0, keeping any want
+        const changed = r.set + r.removed + r.cleared;   // rows actually touched
+        const copies = dir === 'remove' ? r.copiesRemoved : r.copiesAdded;   // AUTHORITATIVE copy movement, not the request
+        const cop = `${copies} ${f}cop${copies === 1 ? 'y' : 'ies'}`;
+        toast(changed === 0
+          ? `No change - ${cnt(r.unchanged)} unaffected${skipTail}`
+          : (dir === 'remove' ? `Removed ${cop} across ${cnt(changed)}` : `Added ${cop} across ${cnt(changed)}`) + skipTail);
+      } else {
+        const r = await setOwnedItemsBulk(items);   // one atomic write; 0 removes, keeping any wishlist want
+        const changed = qty === 0 ? (r.removed + r.cleared) : r.set;
+        toast(changed === 0
+          ? `No change - ${cnt(r.unchanged)} already ${qty === 0 ? 'empty' : `at ${qty}${foil ? ' foil' : ''}`}${skipTail}`
+          : (qty === 0 ? `Removed ${f}from ${cnt(changed)}` : `Set ${cnt(changed)} to ${qty}${foil ? ' foil' : ''}`) + skipTail);
+      }
+      setQtyOpen(false); cancelSelect();
+    } catch (e) {
+      console.error('bulkEditCopies failed', e);
+      const o = bulkWriteFailure(e);
+      toast(o.copy, { tone: o.tone });
+      setQtyOpen(false);
+      if (!o.keepSelection) cancelSelect();   // indeterminate: clear so it can't read as a retry invite
+    }
+  };
+  // Create a new list holding the selected cards - CARD-grain, so multiple printings of one card
+  // become one entry. ONE atomic write (list + entries), pid captured at the submit gesture.
+  const createListFromSelection = async (name, desc, kind) => {
+    const cardIds = [...new Set([...selected.values()].map(({ card }) => card.card_id))];
+    try {
+      const r = await createListWithEntries({ kind, name, description: desc, cardIds }, activeProfileId());
+      toast(`Created “${r.name}” with ${r.entries} card${r.entries === 1 ? '' : 's'}`);
+      setCreateOpen(false); cancelSelect();
+    } catch (e) {
+      console.error('createListFromSelection failed', e);
+      const o = bulkWriteFailure(e);
+      toast(o.indeterminate ? "Couldn't confirm the list - check Lists before trying again." : "Couldn't create the list.", { tone: o.tone });
+      setCreateOpen(false);
+      if (!o.keepSelection) cancelSelect();
+    }
+  };
+
+  const richComp =['air', 'earth', 'fire', 'water'].filter((el) => thByEl[el].val != null).length + (totalTh.val != null ? 1 : 0) + (costCmp.val != null ? 1 : 0) + (powerCmp.val != null ? 1 : 0);
   const activeCount = ownScope.length + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0) + richComp;   // no sets facet in a set drill; grouping is an arrangement, not a filter
   const clearAll = () => {
     setOwnScope([]); setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
@@ -958,9 +1120,23 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
           </div>
-          <OverflowMenu label="Set actions" items={[
-            { label: 'Export missing as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
-          ]} />
+          {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
+              overflow. "Select" enters multi-select (empty) over the CURRENT (scoped) grid; once in,
+              the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
+              the running count). A single card is one tap on its tile. */}
+          {totalRows > 0 && (() => {
+            const allSel = selected.size > 0 && selected.size === drillRows.length;
+            const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
+            return (
+              <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
+                flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+                borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+                color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+              }}>
+                <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+              </button>
+            );
+          })()}
         </div>
       </div>
 
@@ -994,7 +1170,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
                   {section.cards.map((r) => (
                     <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
                       owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
-                      addStatus={addStatus.get(r.card.card_id + '|' + r.set)} />
+                      addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
+                      selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                   ))}
                 </div>
               </div>
@@ -1003,25 +1180,36 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         </>
       )}
 
-      {/* Bottom search - the one shared dock pill (portals beside the FAB). */}
-      <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
+      {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
+          portal into the same #cx-dock-search slot, so it swaps in place). */}
+      {selectMode ? (
+        <SelectionBar count={selected.size}
+          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+      ) : (
+        <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
+      )}
+      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkEditCopies}
+        maxStd={[...selected.values()].reduce((m, s) => Math.max(m, s.owned || 0), 0)}
+        maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
+      <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
+        onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
 
       {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
           (camera + text) search can't do. They are ALWAYS available now: adding is a place,
           not a mode, so there is no add surface to toggle into. The ownership lens that used
           to occupy this slot in read mode is now inline in the header. */}
-      <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />
-      {/* Scan, one tap. Typed import is NOT here on purpose: a paste spanning many sets must
-          stay one paste, so it lives on Collection > Overview rather than inside a set where
-          it would imply the set scopes it. */}
-      <Fab variant="lib" label="Scan cards" className="fab-stacked" icon={<FabGlyph kind="camera" />}
-        onClick={() => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' })} />
-      {/* A buy list for the WHOLE set, never the filtered view: selecting "Owned" must not
-          turn "Export missing" into an empty file. Missing means no non-foil copy - the same
-          definition as the header tally and as set completion. */}
-      <ExportListSheet open={exportOpen} listName={`${drillName} - missing`}
-        fetchText={async () => missingInSet.map((c) => `1 ${c.name}`).join('\n')}
-        onClose={() => setExportOpen(false)} />
+      {/* Hidden while multi-selecting: the dock belongs to the selection action bar then. The + FAB
+          (stacked above Filter) reveals the add methods as a menu. Add-from-text adds to the
+          COLLECTION (a paste self-scopes per line), not just this set - the sheet says so. Export
+          lives only on Lists: to make a buy list, scope to Missing, select all, and create a list. */}
+      {!selectMode && <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />}
+      {!selectMode && (
+        <Fab variant="lib" label="Add cards" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+          { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+          { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+        ]} />
+      )}
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="FILTERS" activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
@@ -1197,24 +1385,35 @@ function ListRowCard({ list, progress, thumbs, onClick, onViewMissing }) {
   );
 }
 
-function ListNameSheet({ open, title, kind, initialName = '', initialDesc = '', submitLabel = 'Create', onClose, onSubmit }) {
+function ListNameSheet({ open, title, kind, chooseKind = false, initialName = '', initialDesc = '', submitLabel = 'Create', onClose, onSubmit }) {
   const [name, setName] = useState(initialName);
   const [desc, setDesc] = useState(initialDesc);
-  useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); } /* eslint-disable-next-line */ }, [open]);
-  const go = () => { const nm = name.trim(); if (!nm) return; onSubmit(nm, desc.trim()); };
-  const hint = kind === 'wanted'
+  const [k, setK] = useState(kind || 'wanted');   // only used when chooseKind
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { if (open) { setName(initialName); setDesc(initialDesc); setK(kind || 'wanted'); setBusy(false); } /* eslint-disable-next-line */ }, [open]);
+  const effKind = chooseKind ? k : kind;
+  // Await the submission and lock the button while it runs, so a rapid double-tap can't create two
+  // lists (createListWithEntries is one transaction, but the SHEET must not fire it twice).
+  const go = async () => { const nm = name.trim(); if (!nm || busy) return; setBusy(true); try { await onSubmit(nm, desc.trim(), effKind); } finally { setBusy(false); } };
+  const hint = effKind === 'wanted'
     ? 'A named goal - Collection tracks how close you are as you record the cards you own.'
-    : kind === 'custom' ? 'A custom grouping - a trade binder, a cube, cards to sell.' : '';
+    : effKind === 'custom' ? 'A custom grouping - a trade binder, a cube, cards to sell.' : '';
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
+      {chooseKind && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 14 }}>
+          <SegTabs ariaLabel="List type" value={k} onChange={setK}
+            options={[{ key: 'wanted', label: 'Wanted list' }, { key: 'custom', label: 'Card list' }]} />
+        </div>
+      )}
       {hint && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>{hint}</div>}
       <input value={name} autoFocus onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
         placeholder={kind === 'wanted' ? 'e.g. Beta staples I still need' : 'Name your list…'} style={SHEET_INPUT} />
       <input value={desc} onChange={(e) => setDesc(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
         placeholder="Description (optional)…" style={{ ...SHEET_INPUT, marginTop: 10, font: "400 13.5px/1 var(--f-read)" }} />
       <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
-        <button onClick={onClose} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
-        <button onClick={go} disabled={!name.trim()} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() ? 1 : 0.5 }}>{submitLabel}</button>
+        <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
+        <button onClick={go} disabled={!name.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() && !busy ? 1 : 0.5 }}>{busy ? `${submitLabel}…` : submitLabel}</button>
       </div>
     </BottomSheet>
   );
@@ -1421,9 +1620,9 @@ function ListsIndex({ onOpenList, rev }) {
       <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell.">
         {custom.length ? custom.map(card) : <Empty text="No card lists yet." />}
       </Section>
-      <Fab variant="lib" label="New list" icon={<FabGlyph kind="add" />} items={[
-        { label: 'New wanted list', onClick: () => setCreate('wanted') },
-        { label: 'New card list', onClick: () => setCreate('custom') },
+      <Fab variant="lib" label="Create a list" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Create a wanted list', onClick: () => setCreate('wanted') },
+        { label: 'Create a card list', onClick: () => setCreate('custom') },
       ]} />
       <ListNameSheet open={!!create} kind={create}
         title={create === 'wanted' ? 'NEW WANTED LIST' : 'NEW CARD LIST'} submitLabel="Create list"
@@ -1805,13 +2004,13 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
             it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
             delete, and OverflowMenu drops the null entries. */}
+        {/* Overflow = manage the list itself: rename, duplicate, EXPORT, delete. Adding lives on the +
+            FAB. The Wishlist is virtual (no rename/duplicate/delete), so only Export survives for it. */}
         <OverflowMenu label="List actions" items={[
-          { label: 'Add from text', icon: TextImportSvg, onClick: () => setBulkOpen(true) },
-          isWishlist ? null : { label: 'Edit list', icon: EditSvg, onClick: () => setRename(true) },
-          isWishlist ? null : { label: 'Duplicate list', icon: CopySvg, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
-          { label: 'Export as text', icon: TextImportSvg, onClick: () => setExportOpen(true) },
-          isWanted ? { label: 'Get missing cards', icon: SeekSvg, onClick: openMissing } : null,
-          isWishlist ? null : { label: 'Delete list', icon: TrashSvg, danger: true, onClick: () => setConfirmDel(true) },
+          isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
+          isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+          { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
+          isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
         ]} />
       </div>
 
@@ -1867,15 +2066,14 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </>
       )}
 
-      {/* Adding cards is the primary action, so it gets the FAB. Everything else is
-          list-level chrome and lives in the header overflow.
-
-          It is NOT a camera FAB, despite the set drill's being one. launchScanner has only
-          'collection' and 'deck' modes - scanning here would silently add to the collection
-          rather than to this list, which is worse than not offering it. When the scanner
-          learns a list mode this becomes a camera and "Add cards" joins the overflow. */}
-      <Fab variant="lib" label="Add cards to this list" icon={<FabGlyph kind="add" />}
-        onClick={() => setAddOpen(true)} />
+      {/* The + FAB is ADD-only: the ways cards come INTO this list. Export moved to the overflow (it
+          is a manage action, not an add), and "Get missing" lives on the progress bar's "View missing".
+          Add-from-camera is deferred until the scanner learns a list target (it only knows
+          collection/deck today) - scanning now would add to the collection, not this list. */}
+      <Fab variant="lib" label="List actions" icon={<FabGlyph kind="add" />} items={[
+        { label: 'Add cards', icon: <MenuGlyph kind="add" />, onClick: () => setAddOpen(true) },
+        { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setBulkOpen(true) },
+      ]} />
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>

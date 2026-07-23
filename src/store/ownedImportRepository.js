@@ -33,6 +33,12 @@ import { printingFinishes } from './printingRows.js';
 import { uuid as newId, nowIso as newNow } from './ids.js';
 import { bulkWriteError, MAX_ITEM_QTY, MAX_BATCH_ITEMS } from './bulkWriteContract.js';
 
+// The largest total the ledger can safely STORE. MAX_ITEM_QTY (999) is only an input/delta limit;
+// the ledger itself has no 999 cap (two 999 imports legitimately total 1998 - see the data model), so
+// Adjust plans against this ceiling and never truncates an existing total. It is the JS safe-integer
+// bound because a total larger than that cannot be represented, not a product rule.
+const LEDGER_MAX = Number.MAX_SAFE_INTEGER;
+
 // Re-exported so callers and tests can reach the shared bounds through this command's module.
 export { MAX_ITEM_QTY, MAX_BATCH_ITEMS };
 
@@ -101,6 +107,98 @@ export function planOwnedItemBatch(items, catalogById) {
   return [...merged.values()];
 }
 
+/**
+ * Plan an ABSOLUTE owned-set batch: each item SETS `qty_owned` for its collector item, rather than
+ * adding. `qty: 0` clears the copies - deleting the row, UNLESS it also carries a want, in which case
+ * only the owned count is zeroed so a bulk owned cleanup never wipes a wishlist goal. PURE.
+ *
+ * Order-INDEPENDENT: every item is validated FIRST, then duplicate targets for one collector item are
+ * coalesced when identical and REJECTED when they conflict (`[{0},{5}]` is a caller bug, not a
+ * silent first-wins). A no-op (setting a row to the value it already holds, or clearing an
+ * already-empty one) emits NO statement and counts as `unchanged`, so the toast can be honest and the
+ * write can be a true no-op.
+ *
+ * A POSITIVE set validates the printing against the catalog (a foil-only set can't take a non-foil,
+ * etc.), like the add path. A ZERO is exempt - clearing a historical or malformed row must always be
+ * possible, exactly as the want writers treat zero.
+ *
+ * `ceiling` is the maximum a stored total may be SET to, defaulting to MAX_ITEM_QTY (999) so the
+ * direct Set path preserves its 0..999 input contract. The Adjust path passes a ledger-safe ceiling
+ * so it never silently truncates a legitimately larger existing total (two 999 imports = 1998) down
+ * to 999 - 999 is an input limit, not a stored-ledger cap.
+ *
+ * @param items       [{ card_id, setCode, foil, qty }]  qty 0 = clear
+ * @param catalogById Map<card_id, { sets, variants }>  (positive items only need be present)
+ * @param currentByKey Map<`card_id|slug`, { id, qty_owned, qty_wanted }>  the owned rows already on file
+ * @param opts        { pid, uuid, now, ceiling = MAX_ITEM_QTY }
+ * @returns { statements, set, removed, cleared, unchanged, cards, copiesAdded, copiesRemoved }
+ *          `set` = rows whose positive target was updated/inserted (INCLUDES a lowering to a positive
+ *          value, e.g. 5->2); `copiesAdded`/`copiesRemoved` are the true copy movement from the
+ *          authoritative cur->target pairs, so a confirmation can state copies, not just rows.
+ */
+export function planOwnedSetBatch(items, catalogById, currentByKey, { pid, uuid, now, ceiling = MAX_ITEM_QTY }) {
+  if (!Array.isArray(items)) throw new Error('planOwnedSetBatch: items must be an array');
+  if (items.length > MAX_BATCH_ITEMS) throw new Error(`planOwnedSetBatch: batch exceeds ${MAX_BATCH_ITEMS} items`);
+
+  // Pass 1: validate EVERY item, then fold into one target per collector item. Validation precedes
+  // the fold so a malformed item is caught regardless of its position or whether it is a duplicate.
+  const targets = new Map();   // key -> { card_id, slug, qty }
+  for (const it of items) {
+    const cardId = it?.card_id;
+    if (typeof it?.foil !== 'boolean') throw new Error(`planOwnedSetBatch: foil must be a boolean for ${cardId}, got ${JSON.stringify(it?.foil)}`);
+    const foil = it.foil;
+    const setCode = it?.setCode;
+    if (typeof setCode !== 'string') throw new Error(`planOwnedSetBatch: setCode must be a string for ${cardId}, got ${JSON.stringify(setCode)}`);
+    const qty = it?.qty;
+    if (!Number.isSafeInteger(qty) || qty < 0 || qty > ceiling) throw new Error(`planOwnedSetBatch: qty ${JSON.stringify(qty)} out of range (0..${ceiling}) for ${cardId}`);
+
+    if (qty > 0) {   // a positive set must name a real printing (zero is exempt - see the doc above)
+      const card = catalogById.get(cardId);
+      if (!card) throw new Error(`planOwnedSetBatch: unknown card ${JSON.stringify(cardId)}`);
+      if (setCode) {
+        if (!setCodesOf(card).includes(setCode)) throw new Error(`planOwnedSetBatch: ${JSON.stringify(setCode)} is not a set of ${cardId}`);
+        const fin = printingFinishes(card, setCode);
+        if (foil ? !fin.foil : !fin.nonFoil) throw new Error(`planOwnedSetBatch: ${foil ? 'foil' : 'non-foil'} is not a printing of ${cardId} in ${setCode}`);
+      }
+    }
+
+    const slug = canonicalPrinting(setCode, foil);
+    const key = `${cardId}|${slug}`;
+    const prev = targets.get(key);
+    if (prev && prev.qty !== qty) throw new Error(`planOwnedSetBatch: conflicting targets for ${key} - ${prev.qty} and ${qty}`);
+    if (!prev) targets.set(key, { card_id: cardId, slug, qty });   // identical duplicate coalesces
+  }
+
+  // Pass 2: turn each unique target into a statement, OMITTING no-ops (unchanged rows). Copy movement
+  // (copiesAdded/copiesRemoved) is accumulated from the authoritative cur->target pair per row, so the
+  // confirmation reports what actually changed on the ledger rather than what was requested.
+  const statements = [];
+  const cards = new Set();
+  let set = 0, removed = 0, cleared = 0, unchanged = 0, copiesAdded = 0, copiesRemoved = 0;
+  for (const { card_id, slug, qty } of targets.values()) {
+    cards.add(card_id);
+    const existing = currentByKey.get(`${card_id}|${slug}`);
+    const curOwned = existing ? (existing.qty_owned || 0) : 0;
+    if (qty === 0) {
+      if (!existing || curOwned === 0) { unchanged += 1; continue; }   // already empty - true no-op
+      copiesRemoved += curOwned;
+      if ((existing.qty_wanted || 0) > 0) { statements.push({ sql: 'UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE id=?;', params: [now, existing.id] }); cleared += 1; }
+      else { statements.push({ sql: 'DELETE FROM owned_cards WHERE id=?;', params: [existing.id] }); removed += 1; }
+    } else if (existing && curOwned === qty) {
+      unchanged += 1;   // already at the requested value - true no-op
+    } else if (existing) {
+      if (qty > curOwned) copiesAdded += qty - curOwned; else copiesRemoved += curOwned - qty;
+      statements.push({ sql: 'UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', params: [qty, now, existing.id] });
+      set += 1;
+    } else {
+      copiesAdded += qty;
+      statements.push({ sql: 'INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', params: [uuid(), pid, card_id, slug, qty, '', now, now] });
+      set += 1;
+    }
+  }
+  return { statements, set, removed, cleared, unchanged, cards: cards.size, copiesAdded, copiesRemoved };
+}
+
 /** Build the command over injected primitives so the barrier tests run PRODUCTION code. */
 export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = newId, nowIso = newNow, activeProfileId = realActiveProfileId }) {
   async function readCatalog(ids) {
@@ -159,7 +257,179 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
     }
   }
 
-  return { importCollectionResolved };
+  // Read the current owned rows (id + qty_owned + qty_wanted) for a set of cards under one profile,
+  // keyed `card_id|variant_slug`. Shared by every absolute-set path so the plan can delete-or-keep-want
+  // a zero, update-or-insert a positive, and no-op an already-correct row.
+  async function readCurrentOwned(cardIds, pid) {
+    const currentByKey = new Map();
+    for (let i = 0; i < cardIds.length; i += 400) {
+      const chunk = cardIds.slice(i, i + 400);
+      const rows = await query(`SELECT id, card_id, variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id IN (${chunk.map(() => '?').join(',')});`, [pid, ...chunk]);
+      for (const r of rows) currentByKey.set(`${r.card_id}|${r.variant_slug}`, r);
+    }
+    return currentByKey;
+  }
+
+  // Run one planned absolute write end to end under the barrier: the `plan` callback (executed INSIDE
+  // the exclusive holder) returns a planOwnedSetBatch result; we run its statements in ONE tx and
+  // broadcast exactly ONCE, or no-op silently when the plan is empty. Both setOwnedItemsBulk and
+  // adjustOwnedItemsBulk funnel through here, so they share the single-broadcast + write-outcome
+  // contract (prewrite/none before the tx, transaction/unknown once statements have been dispatched).
+  async function runPlannedWrite(plan) {
+    let ranTransaction = false;
+    try {
+      const result = await exclusive(async () => {
+        const p = await plan();   // throws (prewrite) on an impossible positive OR a conflicting target
+        const summary = { set: p.set, removed: p.removed, cleared: p.cleared, unchanged: p.unchanged, cards: p.cards, copiesAdded: p.copiesAdded, copiesRemoved: p.copiesRemoved };
+        if (!p.statements.length) return { ...summary, noop: true };
+        ranTransaction = true;
+        await tx(p.statements.map((s) => [s.sql, s.params]));
+        return { ...summary, noop: false };
+      });
+      if (ranTransaction && !result.noop) notify();
+      return { set: result.set, removed: result.removed, cleared: result.cleared, unchanged: result.unchanged, cards: result.cards, copiesAdded: result.copiesAdded, copiesRemoved: result.copiesRemoved };
+    } catch (e) {
+      if (ranTransaction) notify();
+      if (e && e.name === 'BulkWriteError') throw e;
+      throw ranTransaction
+        ? bulkWriteError('transaction', 'unknown', e?.message || String(e))
+        : bulkWriteError('prewrite', 'none', e?.message || String(e));
+    }
+  }
+
+  /**
+   * Commit an absolute owned-SET batch (bulk edit / bulk delete). One transaction, ONE broadcast.
+   * Each target is bounded 0..MAX_ITEM_QTY (the direct-Set input contract).
+   * @param items [{ card_id, setCode, foil, qty }]  qty 0 = clear (row removed, any want kept)
+   * @returns { set, removed, cleared, unchanged, cards, copiesAdded, copiesRemoved }
+   */
+  async function setOwnedItemsBulk(items, pid = activeProfileId()) {
+    if (!pid) throw bulkWriteError('prewrite', 'none', 'setOwnedItemsBulk: no active profile.');
+    if (items != null && !Array.isArray(items)) throw bulkWriteError('prewrite', 'none', 'setOwnedItemsBulk: items must be an array.');
+    const list = items || [];
+    if (!list.length) return { set: 0, removed: 0, cleared: 0, unchanged: 0, cards: 0, copiesAdded: 0, copiesRemoved: 0 };
+    if (list.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `setOwnedItemsBulk: batch exceeds ${MAX_BATCH_ITEMS} items.`);
+
+    return runPlannedWrite(async () => {
+      const catalog = await readCatalog(list.filter((i) => (i?.qty | 0) > 0).map((i) => i?.card_id));
+      const cardIds = [...new Set(list.map((i) => i?.card_id).filter(Boolean))];
+      const currentByKey = await readCurrentOwned(cardIds, pid);
+      return planOwnedSetBatch(list, catalog, currentByKey, { pid, uuid, now: nowIso() });
+    });
+  }
+
+  /**
+   * Commit a RELATIVE owned-adjust batch (bulk "Adjust": raise or lower each item by a signed delta).
+   * The absolute target is computed from the PRESENT count INSIDE the barrier - `max(0, cur + delta)` -
+   * so it respects what's on file and a UI-side compute can't race it. There is NO upper clamp to 999:
+   * MAX_ITEM_QTY bounds the per-request delta (an INPUT limit), never the resulting stored total, so a
+   * legitimately larger existing total (two 999 imports = 1998) is never silently truncated. Reaching
+   * 0 reuses the set-to-0 semantics (owned row removed, any wishlist want preserved). The resolved
+   * target is planned against a ledger-safe ceiling and guarded to a safe integer. One tx, ONE broadcast.
+   * @param items [{ card_id, setCode, foil, delta }]  delta signed, non-zero, |delta| <= MAX_ITEM_QTY
+   * @returns { set, removed, cleared, unchanged, cards, copiesAdded, copiesRemoved }
+   *          (set = rows updated/inserted to a positive value, incl. a positive lowering; removed+cleared = fell to 0)
+   */
+  async function adjustOwnedItemsBulk(items, pid = activeProfileId()) {
+    if (!pid) throw bulkWriteError('prewrite', 'none', 'adjustOwnedItemsBulk: no active profile.');
+    if (items != null && !Array.isArray(items)) throw bulkWriteError('prewrite', 'none', 'adjustOwnedItemsBulk: items must be an array.');
+    const list = items || [];
+    if (!list.length) return { set: 0, removed: 0, cleared: 0, unchanged: 0, cards: 0, copiesAdded: 0, copiesRemoved: 0 };
+    if (list.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `adjustOwnedItemsBulk: batch exceeds ${MAX_BATCH_ITEMS} items.`);
+    // Validate shape up front (prewrite): a non-zero, in-range signed delta over a well-formed printing.
+    for (const it of list) {
+      if (typeof it?.foil !== 'boolean') throw bulkWriteError('prewrite', 'none', `adjustOwnedItemsBulk: foil must be a boolean for ${it?.card_id}, got ${JSON.stringify(it?.foil)}`);
+      if (typeof it?.setCode !== 'string') throw bulkWriteError('prewrite', 'none', `adjustOwnedItemsBulk: setCode must be a string for ${it?.card_id}, got ${JSON.stringify(it?.setCode)}`);
+      const d = it?.delta;
+      if (!Number.isSafeInteger(d) || d === 0 || d < -MAX_ITEM_QTY || d > MAX_ITEM_QTY) throw bulkWriteError('prewrite', 'none', `adjustOwnedItemsBulk: delta ${JSON.stringify(d)} out of range (non-zero, +-${MAX_ITEM_QTY}) for ${it?.card_id}`);
+    }
+
+    return runPlannedWrite(async () => {
+      const cardIds = [...new Set(list.map((i) => i.card_id).filter(Boolean))];
+      const currentByKey = await readCurrentOwned(cardIds, pid);
+      // Fold deltas per collector item FIRST (two picks of one printing sum), then resolve each to an
+      // absolute target against the present count. This coalesces to one target per key, so the set
+      // planner never sees a "conflict".
+      const deltaByKey = new Map();
+      for (const it of list) {
+        const slug = canonicalPrinting(it.setCode, it.foil);
+        const key = `${it.card_id}|${slug}`;
+        const prev = deltaByKey.get(key);
+        deltaByKey.set(key, { card_id: it.card_id, setCode: it.setCode, foil: it.foil, slug, delta: (prev ? prev.delta : 0) + it.delta });
+      }
+      const absoluteList = [...deltaByKey.values()].map(({ card_id, setCode, foil, slug, delta }) => {
+        const cur = currentByKey.get(`${card_id}|${slug}`)?.qty_owned || 0;
+        // Guard the authoritative present count and the resolved total as safe non-negative integers -
+        // a corrupt/overflowing row must reject (prewrite), never write a garbage total.
+        if (!Number.isSafeInteger(cur) || cur < 0) throw new Error(`adjustOwnedItemsBulk: present count ${JSON.stringify(cur)} is not a safe non-negative integer for ${card_id}`);
+        const raw = cur + delta;
+        if (!Number.isSafeInteger(raw)) throw new Error(`adjustOwnedItemsBulk: ${cur} + ${delta} overflows the safe-integer range for ${card_id}`);
+        return { card_id, setCode, foil, qty: Math.max(0, raw) };   // floor at 0; NO upper clamp
+      });
+      const catalog = await readCatalog(absoluteList.filter((i) => i.qty > 0).map((i) => i.card_id));
+      return planOwnedSetBatch(absoluteList, catalog, currentByKey, { pid, uuid, now: nowIso(), ceiling: LEDGER_MAX });
+    });
+  }
+
+  /**
+   * Create a list AND populate it in ONE transaction (bulk "New list from selection"). The parent row
+   * and every entry commit together or not at all, so a backgrounded app or a mid-loop profile switch
+   * can never leave a half-populated list. `cardIds` are card-grain and de-duplicated. `pid` is
+   * captured by the CALLER at the submit gesture.
+   *
+   * `card_list_entries.card_id` has NO catalog foreign key, so an unknown id would commit as a phantom
+   * entry that joins away to nothing on read - counted but invisible, an internally inconsistent list.
+   * We therefore fail closed: strict input validation up front, then an authoritative catalog-membership
+   * check INSIDE the barrier that rejects the whole operation before a single row is written.
+   * @returns { id, kind, name, entries } on success; throws a BulkWriteError otherwise.
+   */
+  async function createListWithEntries({ kind, name, description = '', cardIds } = {}, pid = activeProfileId()) {
+    if (!pid) throw bulkWriteError('prewrite', 'none', 'createListWithEntries: no active profile.');
+    if (kind !== 'wanted' && kind !== 'custom') throw bulkWriteError('prewrite', 'none', `createListWithEntries: kind must be "wanted" or "custom", got ${JSON.stringify(kind)}.`);
+    const nm = String(name || '').trim();
+    if (!nm) throw bulkWriteError('prewrite', 'none', 'createListWithEntries: a name is required.');
+    if (!Array.isArray(cardIds)) throw bulkWriteError('prewrite', 'none', 'createListWithEntries: cardIds must be an array.');
+    // Enforce the ceiling against the RAW array, before dedup, so duplicates can't smuggle an
+    // unbounded payload past the guard.
+    if (cardIds.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `createListWithEntries: exceeds ${MAX_BATCH_ITEMS} entries.`);
+    // Reject a malformed id, never silently drop it - a dropped id is a silent partial write.
+    for (const c of cardIds) {
+      if (typeof c !== 'string' || !c.trim()) throw bulkWriteError('prewrite', 'none', `createListWithEntries: invalid card id ${JSON.stringify(c)}.`);
+    }
+    const ids = [...new Set(cardIds.map((c) => c.trim()))];
+
+    const listId = uuid();
+    const now = nowIso();
+    let ranTransaction = false;
+    try {
+      await exclusive(async () => {
+        // Authoritative catalog read under the barrier: reject the WHOLE op if any id is not a real
+        // card. Thrown as a plain Error while ranTransaction is false, so the catch classifies it
+        // prewrite/none - nothing written, no broadcast.
+        if (ids.length) {
+          const catalog = await readCatalog(ids);
+          const missing = ids.filter((id) => !catalog.has(id));
+          if (missing.length) throw new Error(`createListWithEntries: unknown card(s) ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}.`);
+        }
+        const stmts = [
+          ['INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?);', [listId, pid, kind, nm, description || '', now, now]],
+          ...ids.map((cid) => ['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,1,?,?);', [uuid(), listId, cid, '', now]]),
+        ];
+        ranTransaction = true;
+        await tx(stmts);
+      });
+      notify();
+      return { id: listId, kind, name: nm, entries: ids.length };
+    } catch (e) {
+      if (ranTransaction) notify();
+      if (e && e.name === 'BulkWriteError') throw e;
+      throw ranTransaction
+        ? bulkWriteError('transaction', 'unknown', e?.message || String(e))
+        : bulkWriteError('prewrite', 'none', e?.message || String(e));
+    }
+  }
+
+  return { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries };
 }
 
 /** Production instance, wired to the REAL barrier. */
@@ -171,3 +441,6 @@ const production = createOwnedImportCommand({
 });
 
 export const importCollectionResolved = production.importCollectionResolved;
+export const setOwnedItemsBulk = production.setOwnedItemsBulk;
+export const adjustOwnedItemsBulk = production.adjustOwnedItemsBulk;
+export const createListWithEntries = production.createListWithEntries;
