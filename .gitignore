@@ -28,6 +28,7 @@ CATALOG_DROP/*
 .env
 .env.local
 .env.r2
+.env.discord
 !.env.r2.example
 
 # Distribution screenshots (generated, not tracked)
