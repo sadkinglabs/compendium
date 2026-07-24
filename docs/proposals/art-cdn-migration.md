@@ -298,11 +298,17 @@ the per-finish art of Phases 1-2 but is otherwise standalone.
   `art-tmp/`**. Device
   evidence: full download, restart, airplane full-app sweep; re-run skips existing; clear mid-pack;
   `adb bmgr` backup/restore confirms `art/` absent + profile data intact. Checkpoint: **pack-proven**.
-- **Phase 5 - stop bundling + doc reconciliation.** (No Phase 4 - the cache landed with activation in
-  Phase 2 and the pack in Phase 3.) Delete `public/cards/` + the legacy fallback; confirm no
-  references remain (`update-catalog.mjs` CARDS_DIR, recovery message, `assert-no-pending...`);
-  seam-guard asserts no `dist/cards`; docs per the table; `check:docs`. Build APK, measure. Checkpoint:
-  **slim-APK**.
+- **Phase 5 - stop bundling + doc reconciliation. [EXECUTED]** (No Phase 4 - the cache landed with
+  activation in Phase 2 and the pack in Phase 3.) Deleted `public/cards/` (72 MB / 1,596 WebP); stripped
+  `legacyKey` from every committed `art-manifest.json` entry (surgical - the manifest is fetched directly
+  at boot, not part of the catalog-version reseed hash, so no version bump); retired the `legacy`
+  candidate everywhere (`cardArt.legacyUrl`, `artCache.legacySrc` + dep, `artCacheInstance` wiring,
+  `artSource` `'legacy'` kind + reducer branch, `ArtImage` IMG_ERROR `legacy` arg) - a remote miss now
+  falls straight to the deterministic element-gradient placeholder; cleared `update-catalog.mjs`
+  CARDS_DIR / `bundledExists` (`() => false`) / recovery message and `assert-no-pending`; the
+  `check:source` guard now forbids the bundled `cards/` path in EVERY file and asserts `public/cards`
+  absent. **APK measured: ~90 MB -> slim (dist 7.1 MB; card art fully CDN-served).** Repo gates green;
+  device fresh-install + airplane-mode sweep is the remaining pre-merge gate. Checkpoint: **slim-APK**.
 - **Phase 6 - Standard/Foil card sheet.** The change points in `CollectionCardSheet.jsx` incl. the
   one `selectPrinting` selector. `npm run test:ui` (pure finish-defaulting logic), device + TalkBack
   evidence. Checkpoint: **sheet-done**.

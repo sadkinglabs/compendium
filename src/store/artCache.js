@@ -6,7 +6,7 @@
 // Implements the approved design in docs/proposals/art-cdn-rev2-architecture.md Section B (B2 interface,
 // B3 resolution, B3.5 candidate chain, B6 zero-image, B7 clear/stats). The load-bearing invariants:
 //
-//   - ZERO-IMAGE prohibits BOTH render AND I/O: resolve/download/peek/legacySrc all return null when
+//   - ZERO-IMAGE prohibits BOTH render AND I/O: resolve/download/peek all return null when
 //     imagesDisabled(), at the top, before any Filesystem call (B6).
 //   - LINEARIZATION: every write into art/ (a rename or a delete) happens inside a short promotion lock
 //     with the request's epoch re-checked INSIDE the lock; the network download is never under the lock.
@@ -16,8 +16,8 @@
 //   - EXACT-SIZE VALIDATION, FAIL CLOSED: a cached file is trusted only if its byte count equals the
 //     manifest's, and a key absent from the manifest is never cached or served.
 //
-// Sources are KIND-TAGGED { kind:'local'|'remote'|'legacy', src } - never bare strings (a native cached
-// file becomes an https://localhost/_capacitor_file_/... URL a startsWith('http') sniff misreads).
+// Sources are KIND-TAGGED { kind:'local'|'remote', src } - never bare strings (a native cached file
+// becomes an https://localhost/_capacitor_file_/... URL a startsWith('http') sniff misreads).
 
 const noop = () => {};
 
@@ -27,17 +27,16 @@ const noop = () => {};
  *                            size(path)->number, rename(from,to), delete(path), deleteTree(path),
  *                            list(dir)->[{name,size}] }
  *                          paths are relative to Directory.Data ('art/<key>', 'art-tmp/<key>.<rand>').
- * @param deps.manifest    { objects: { <slug>: { key, legacyKey?, bytes } } } - the shipped slim manifest
+ * @param deps.manifest    { objects: { <slug>: { key, bytes } } } - the shipped slim manifest
  * @param deps.isNative    () => boolean
  * @param deps.imagesDisabled () => boolean   (the zero-image gate; app-wide)
  * @param deps.remoteUrl   (key) => string    (ART_CDN_BASE + '/' + key)
- * @param deps.legacyUrl   (legacyKey) => string   (`${BASE}cards/${legacyKey}` - the ONE bundled path)
  * @param deps.convertFileSrc (relPath) => string  (Directory.Data-relative art path -> WebView src; the
  *                          adapter does Filesystem.getUri + Capacitor.convertFileSrc; identity in tests)
  * @param deps.rand        () => string        (unique temp suffix; injected for deterministic tests)
  */
 export function createArtCache(deps) {
-  const { io, manifest, isNative, imagesDisabled, remoteUrl, legacyUrl, convertFileSrc, rand } = deps;
+  const { io, manifest, isNative, imagesDisabled, remoteUrl, convertFileSrc, rand } = deps;
 
   const inflight = new Map();   // key -> { epoch, promise }  (single-flight; joinable only within one epoch)
   const resolved = new Map();   // key -> {kind,src}          (session memo; feeds peek)
@@ -63,13 +62,6 @@ export function createArtCache(deps) {
     const run = promotionLock.then(fn, fn);   // a promise-chain mutex, held for ONE rename or delete
     promotionLock = run.then(noop, noop);
     return run;
-  }
-
-  /** The bundled printing-base image, the Phase 2->5 offline fallback. Sync, gated, null when absent. */
-  function legacySrc(key) {
-    if (!key || imagesDisabled()) return null;
-    const e = entryOf(key);
-    return e && e.legacyKey ? { kind: 'legacy', src: legacyUrl(e.legacyKey) } : null;
   }
 
   /** Memoized prior resolution, for a flash-free first paint. Web is deterministic (remote); native
@@ -200,7 +192,7 @@ export function createArtCache(deps) {
   async function sweepScratch() { await io.deleteTree('art-tmp').catch(noop); }
 
   return {
-    resolve, download, downloadAll, quarantine, clear, stats, peek, legacySrc, sweepScratch,
+    resolve, download, downloadAll, quarantine, clear, stats, peek, sweepScratch,
     _debug: { get epoch() { return epoch; }, inflight, resolved, retried },
   };
 }

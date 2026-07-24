@@ -139,9 +139,9 @@ rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header
 nothing in that folder is committed except the README. The command fetches card stats
 from the Curiosa tRPC API and merges them, compiles the two CSVs, converts each
 per-printing PNG to WebP with `sharp`, regenerates `link_graph.json` and the compiled
-Codex documents, and - in steady state - promotes `public/catalog/*.json`, the art in
-`public/cards/`, and the seed token `src/store/catalogVersion.json` (currently dormant; see
-the migration note above).
+Codex documents, and - in steady state - promotes `public/catalog/*.json` (including the
+content-addressed `art-manifest.json`) and the seed token `src/store/catalogVersion.json`.
+Card art itself is uploaded to the CDN, not bundled (art-cdn Phase 5); there is no `public/cards/`.
 
 **It is idempotent.** Every stage builds into a staging tree; nothing under `public/` or
 `src/` is touched until the whole generation validates and a journaled promote runs. The
@@ -156,7 +156,7 @@ you would for any install (see below).
 > `precompile:codex`, and `precheck:docs` all run `scripts/assert-no-pending-catalog-promote.mjs`.
 > Recover with one of: **A)** finish it - `npm run update:catalog -- --recover`; or **B)**
 > restore the previous catalog AND clear the journal (both, or the build stays blocked) -
-> `git checkout -- public/catalog public/cards src/store/catalogVersion.json src/store/setCatalog.json`
+> `git checkout -- public/catalog src/store/catalogVersion.json src/store/setCatalog.json`
 > then delete the `.catalog-build` directory (removes `PROMOTE.json` and the staging tree).
 
 ## Version and build number
@@ -370,12 +370,13 @@ drop one without the other.
 aapt2 dump badging <apk> | grep native-code
 ```
 
-**Size is dominated by card art, not code.** `assets/public/cards` is ~72 MB of the ~90 MB
-release APK: ~1,600 WebP files (one per printing) averaging ~46 KB, already compressed,
-bundled deliberately for the
-offline-first constraint. Native libs are ~14 MB. Anyone chasing further size reduction
-should start there and treat it as a product decision (resolution or coverage), not a
-build fix.
+**Card art is no longer bundled (art-cdn Phase 5).** The ~72 MB `public/cards/` WebP bundle was
+removed; card art is served from the CDN (`ART_CDN_BASE`) and cached on device on first view, so the
+APK dropped from ~90 MB to roughly the native-libs floor (~14 MB) plus the JSON catalog + set-hero
+logos. The resolver chain is `local cache -> remote CDN -> deterministic element-gradient placeholder`
+(no bundled legacy step). **Offline behaviour:** a fresh install with no network shows the placeholders
+for card art until the device has been online once; set-hero logos (`public/sets/`) stay bundled so the
+Collection landing is always legible offline. The `check:source` guard fails if `public/cards/` returns.
 
 ## Notes
 

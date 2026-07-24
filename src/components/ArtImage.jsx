@@ -33,7 +33,7 @@ export function useArtSource(key) {
 
   const cand = visibleCandidate(st, key);   // pure; null on a key mismatch (no stale paint)
   const onError = useCallback(
-    () => dispatch({ type: 'IMG_ERROR', key, legacy: artCache.legacySrc(key) }),
+    () => dispatch({ type: 'IMG_ERROR', key }),   // a remote miss goes straight to the deterministic fallback (Phase 5: no bundled legacy)
     [key],
   );
   const isRemote = cand?.kind === 'remote';

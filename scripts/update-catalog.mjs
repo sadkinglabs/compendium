@@ -10,7 +10,7 @@
 // content hash changed - PROMOTES a JSON-only generation: cards.json is repointed to content-
 // addressed art keys, the full manifest ships, setCatalog + the version token are installed. The art
 // itself lives on the CDN (published by the additive cdn-upload.mjs step), so there is NO art dir to
-// promote; public/cards/ stays as the offline bundled-legacy fallback until Phase 5. The exact file
+// promote; card art is fully CDN-served (Phase 5 removed the bundled fallback). The exact file
 // plan is scripts/catalog/promotionPlan.mjs, shared with the tests. This file orchestrates the
 // engines in scripts/catalog/*; each engine is unit-tested.
 import { createHash } from 'node:crypto';
@@ -28,8 +28,7 @@ import { productionPromotionPlan } from './catalog/promotionPlan.mjs';
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DROP = join(ROOT, 'CATALOG_DROP');
 const CATALOG = join(ROOT, 'public', 'catalog');
-const CARDS_DIR = join(ROOT, 'public', 'cards');
-// The content-addressed art manifest, FULL (key + digests + srcSha256/recipeId/encoder + legacyKey).
+// The content-addressed art manifest, FULL (key + digests + srcSha256/recipeId/encoder).
 // One file serves two readers: the pipeline's skip oracle (needs srcSha256/recipeId) and the app's
 // artCache at runtime (reads only key/legacyKey/bytes, ignores the rest). Shipped to public/catalog so
 // it bundles with the app. (Absent on the first activation run.)
@@ -54,7 +53,7 @@ async function main() {
     return;
   }
   if (isPending(JOURNAL)) {
-    console.error('A previous catalog promotion was interrupted. Finish it with `npm run update:catalog -- --recover`, OR restore the previous catalog with `git checkout -- public/catalog public/cards src/store/catalogVersion.json src/store/setCatalog.json` AND delete the .catalog-build directory to clear the journal (both, or the build stays blocked).');
+    console.error('A previous catalog promotion was interrupted. Finish it with `npm run update:catalog -- --recover`, OR restore the previous catalog with `git checkout -- public/catalog src/store/catalogVersion.json src/store/setCatalog.json` AND delete the .catalog-build directory to clear the journal (both, or the build stays blocked).');
     process.exit(1);
   }
 
@@ -114,7 +113,7 @@ async function main() {
       return buf;
     },
     hashBytes: async (buf) => ({ sha256: createHash('sha256').update(buf).digest('hex'), md5: createHash('md5').update(buf).digest('hex') }),
-    bundledExists: (name) => existsSync(join(CARDS_DIR, name)),
+    bundledExists: () => false,   // Phase 5: the bundle is gone -> legacyKey is stripped from every entry
     encoder,
   };
   const { manifest: artManifest, report: artReport } = await buildArtManifest(committedManifest, dropSlugs, artDeps, {});
@@ -156,8 +155,8 @@ async function main() {
 
   // ---- Phase 2 activation: repoint the committed catalog to content-addressed art keys and ship the
   // manifest. JSON ONLY - the art itself lives on the CDN (uploaded + audited by cdn-upload), so there
-  // is NO art dir to promote; public/cards/ is left untouched as the offline bundled-legacy fallback
-  // until Phase 5. The version token is written LAST, so an interrupted promote is recovered, never a
+  // is NO art dir to promote; card art is fully CDN-served (Phase 5 removed the bundled fallback).
+  // The version token is written LAST, so an interrupted promote is recovered, never a
   // half-repointed catalog. ----
   const committedVersion = JSON.parse(readFileSync(VERSION_FILE, 'utf8'));
   if (gen.hash === committedVersion.hash) {
@@ -181,7 +180,7 @@ async function main() {
   });
   promote({ journalPath: JOURNAL, hash: gen.hash, files });   // JSON only - no artDir (art is on the CDN)
 
-  console.log(`\nPromoted catalog v${committedVersion.version} -> v${nextVersion.version}: repointed ${artReport.total} printings to content-addressed art keys; art is served from the CDN, public/cards/ kept as the offline legacy fallback.`);
+  console.log(`\nPromoted catalog v${committedVersion.version} -> v${nextVersion.version}: repointed ${artReport.total} printings to content-addressed art keys; card art is served fully from the CDN (no bundled fallback).`);
   console.log('Review `git diff`, add a changelog entry, and bump the build on install (see BUILD.md).');
   console.log('RESULT: OK');
 }
