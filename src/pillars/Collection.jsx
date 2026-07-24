@@ -1138,11 +1138,13 @@ function AllCards({ onPeek, onOpenCodex }) {
         background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         borderBottom: '1px solid var(--hair-12)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
-            <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', marginTop: 4 }}>All Cards</div>
-            <div aria-live={selectMode ? 'polite' : undefined} style={{ font: selectMode ? "600 11.5px/1 var(--f-mono)" : "400 11.5px/1 var(--f-mono)", color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-muted)', marginTop: 4 }}>
+            {/* Typographic scale matches the Sets landing header (SetsHome.jsx) exactly, so the two
+                My-Collection views read as one family: eyebrow 10px, title 22px, tally 11.5px mono. */}
+            <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
+            <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>All Cards</div>
+            <div aria-live={selectMode ? 'polite' : undefined} style={{ font: selectMode ? "600 11.5px/1 var(--f-mono)" : "400 11.5px/1 var(--f-mono)", letterSpacing: '.04em', color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}>
               {selectMode
                 ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
                 : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
@@ -1188,7 +1190,7 @@ function AllCards({ onPeek, onOpenCodex }) {
           ))}
           {railVisible && (
             <AlphabetRail model={railM} count={count} ensureRendered={ensureRendered} signature={signature}
-              headerHeight={64} selecting={selectMode} />
+              headerHeight={78} selecting={selectMode} />
           )}
           {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. When no observer
               or scroll root is available, the explicit button keeps the rest of the catalogue reachable. */}
