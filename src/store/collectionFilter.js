@@ -95,9 +95,10 @@ export function ownActive(own = {}) {
 const byName = (cardOf) => (a, b) =>
   String(cardOf(a).name || '').localeCompare(String(cardOf(b).name || ''), 'en', { sensitivity: 'base' });
 
-// Rarity rank that sorts AVATARS after every normal card: real avatars carry a rarity (Templar is
-// Elite, Witch/Dragonlord Unique), but they are not collected as rarity playsets, so they must not
-// interleave with normal Elites/Uniques. Unknown/no-rarity cards keep rarityRank's own "last" slot.
+// Rarity rank that sorts AVATARS dead last: real avatars carry a rarity (Templar is Elite,
+// Witch/Dragonlord Unique), but they are not collected as rarity playsets, so they must not
+// interleave with normal Elites/Uniques. Ordering is: known rarities (Ordinary->Unique), then
+// unknown/no-rarity (rarityRank's own last slot), then avatars one past that.
 const rarityRankFor = (card) => (isAvatar(card) ? rarityRank(undefined) + 1 : rarityRank(card?.rarity));
 
 /**
@@ -105,7 +106,7 @@ const rarityRankFor = (card) => (isAvatar(card) ? rarityRank(undefined) + 1 : ra
  * historical A-Z, so an unset sort changes nothing.
  *   name-asc/name-desc - alphabetical
  *   updated            - latest updated_at (collector-record activity), NEWEST first; blanks last
- *   rarity-asc         - Ordinary -> Unique; then avatars; then unknown/no-rarity
+ *   rarity-asc         - Ordinary -> Unique; then unknown/no-rarity; then avatars (dead last)
  * Every key breaks ties by name-asc so the order is total and stable.
  */
 export function rowComparator(sortKey = 'name-asc', cardOf = (x) => x) {

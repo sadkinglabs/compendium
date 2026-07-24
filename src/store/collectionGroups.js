@@ -65,8 +65,10 @@ export function groupCollection({
 
   // Set-less ('' ) owned rows recovered into an "Uncategorised" group. The SET gate is the only
   // special case left: they belong to no printed set, so they appear under no set filter or
-  // under the explicit "Uncategorised" chip. Their OWNERSHIP is judged by the same `matches`
-  // as everything else. Availability is permissive (no set to check); a want is never uncategorised.
+  // under the explicit "Uncategorised" chip. Their OWNERSHIP is judged by the same `matches` as
+  // everything else. An uncategorised row has no catalog printing, so its finish availability IS
+  // what it actually holds - a foil-only pile has no Standard to be "missing" under Finish=Standard.
+  // A want is never uncategorised.
   if (sets.length === 0 || sets.includes(UNCATEGORISED_LABEL)) {
     const byId = new Map((pool || []).map((c) => [c.card_id, c]));
     for (const [k, v] of owBySet) {
@@ -76,7 +78,7 @@ export function groupCollection({
       if (owned + foil === 0) continue;                             // no row to recover
       const card = byId.get(k.slice(0, i));
       if (!card) continue;
-      const row = { card, set: UNCATEGORISED_BUCKET, owned, foil, updated: v.updated || '', finishAvail: { nonFoil: true, foil: true } };
+      const row = { card, set: UNCATEGORISED_BUCKET, owned, foil, updated: v.updated || '', finishAvail: { nonFoil: owned > 0, foil: foil > 0 } };
       if (!matches(row, false)) continue;
       push(UNCATEGORISED_BUCKET, UNCATEGORISED_LABEL, row);
     }

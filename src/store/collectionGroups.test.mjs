@@ -85,6 +85,15 @@ test('with no finish scope, either finish wanted in the set lights the row', () 
 
 /* ---------------- uncategorised recovery ---------------- */
 
+test('Uncategorised finish availability = what it HOLDS (a foil-only pile has no Standard)', () => {
+  const pool = [{ card_id: 'wr', name: 'Winter River', _sets: [{ code: '001', name: 'Alpha' }], variants: V([['001', 'Foil']]) }];
+  const ow = new Map([['wr|', { owned: 0, foil: 1 }]]);   // foil-only, uncategorised
+  const b2 = { pool, owBySet: ow, wishSet: new Set(), setLabel: SET_LABEL, setRank, sets: [] };
+  assert.deepEqual(idsIn(groupCollection({ ...b2, own: { finishes: ['standard'] } }), ''), [], 'Finish=Standard hides it (no standard held)');
+  assert.deepEqual(idsIn(groupCollection({ ...b2, own: { states: ['missing'], finishes: ['standard'] } }), ''), [], 'Standard+Missing hides it too');
+  assert.deepEqual(idsIn(groupCollection({ ...b2, own: { states: ['owned'], finishes: ['foil'] } }), ''), ['wr'], 'Foil+Owned shows it');
+});
+
 test('Uncategorised alone: only the set-less pile shows', () => {
   const g = run({ sets: [UNCATEGORISED_LABEL], own: { states: ['owned'] } });
   assert.deepEqual(codes(g), ['']);

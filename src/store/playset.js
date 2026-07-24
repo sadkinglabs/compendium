@@ -1,7 +1,8 @@
 // A card's PLAYSET: the legal number of copies you may own, capped by rarity
-// (Ordinary 4 · Exceptional 3 · Elite 2 · Unique 1). "Any number of" cards and cards with no
-// rarity (avatars, sites) are UNCAPPED - they stand outside the playset concept, so a playset
-// filter or a completion seal never applies to them.
+// (Ordinary 4 · Exceptional 3 · Elite 2 · Unique 1). "Any number of" cards, cards with no rarity,
+// and AVATARS are UNCAPPED - they stand outside the playset concept, so a playset filter or a
+// completion seal never applies. Avatars (and Sites) DO carry a rarity in the catalog; they are
+// excluded because `isAvatar` names them explicitly, not because they lack rarity.
 //
 // Leaf module (no store imports) so both the UI (CollectionCardViews) and the pure collection
 // filter/group layer can share ONE definition of "a playset" without a cycle. deckRepository

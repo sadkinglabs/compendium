@@ -869,7 +869,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   owRef.current = owBySet;
   const aliveRef = useRef(true);
   useEffect(() => () => { aliveRef.current = false; }, []);
-  const [wishSet, setWishSet] = useState(() => new Set());   // card_ids on the wishlist
+  const [wishSet, setWishSet] = useState(() => new Set());   // wanted collector-item keys `card_id|variant_slug`
   // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
   // those sections mount mid-slide and hitch the open animation (see open= below).
   const [optsLoaded, setOptsLoaded] = useState(false);
