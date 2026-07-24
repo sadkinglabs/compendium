@@ -12,7 +12,7 @@ index e1e93d7..61737f0 100644
  - **Why:** Collection answers a different question from Codex and Decks: “what do I own or want?” Keeping ownership as a first-class pillar makes collection state reusable by Home and Decks without confusing it with the deck `collection` zone or named Codex collections.
  
 diff --git a/COMPENDIUM_FEATURE_MATRIX.md b/COMPENDIUM_FEATURE_MATRIX.md
-index a8c1828..9b86676 100644
+index a8c1828..26b7b4d 100644
 --- a/COMPENDIUM_FEATURE_MATRIX.md
 +++ b/COMPENDIUM_FEATURE_MATRIX.md
 @@ -73,7 +73,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
@@ -20,7 +20,7 @@ index a8c1828..9b86676 100644
  |---|---|---|---|
  | Overview | Show owned copies, unique cards, wanted quantities, recent activity, and deck buildability | Derived from `owned_cards`, `card_lists`, decks | **Implemented** |
 -| My Collection | Sets-completion landing (tile per set, non-foil completion + foil count) drilling into a per-set card grid, with search and refinement | `owned_cards` + shared `cards` | **Implemented** |
-+| My Collection | A **Sets \| All** toggle over one landing. **Sets**: sets-completion landing (tile per set, non-foil completion + foil count) drilling into a per-set card grid. **All**: a single flat grid of every collector item across every set, one tile per printing. Both surfaces run the SAME refine engine (search + refinement + sort + group) and the SAME selection controller; ALL renders a progressive prefix (first ~100 tiles, grown by a viewport sentinel with an explicit Show-more fallback) so first paint is bounded regardless of catalogue size - presentation only, never the selection or result scope. Both surfaces also carry an **A-Z jump rail** (drag/tap a letter to scroll to it, with a distance-based bulge) that shows only when the order is globally alphabetical by name and ducks otherwise; a jump on ALL grows the prefix to the target first | `owned_cards` + shared `cards`, `useCollectionRefine.js`, `collectionAllModel.js`, `alphabetIndex.js`, `AlphabetRail.jsx` | **Implemented** |
++| My Collection | A **Sets \| All** toggle over one landing. **Sets**: sets-completion landing (tile per set, non-foil completion + foil count) drilling into a per-set card grid. **All**: a single flat grid of every collector item across every set, one tile per printing. Both surfaces run the SAME refine engine (search + refinement + sort + group) and the SAME selection controller; ALL renders a progressive prefix (first ~100 tiles, grown by a viewport sentinel with an explicit Show-more fallback) so first paint is bounded regardless of catalogue size - presentation only, never the selection or result scope. Both surfaces also carry an **A-Z jump rail**: drag or tap a letter and, on **release** (a latch, so the drag never fights the grid), the list jumps to it - a big letter pill floats beside the thumb during the scrub, with a haptic tick per letter. It shows only when the order is globally alphabetical by name and ducks otherwise; a jump on ALL grows the prefix to the target first | `owned_cards` + shared `cards`, `useCollectionRefine.js`, `collectionAllModel.js`, `alphabetIndex.js`, `AlphabetRail.jsx` | **Implemented** |
  | Collection refine (own sheet) | A Collection-specific two-page Refine sheet (`CollectionRefineSheet`), distinct from the deckbuilder's, because browsing a collection asks different questions than building a deck. **Filters:** Ownership (Owned / Missing / Wishlisted - "Owned" = any copy; Wishlisted matches the exact collector item), a **Finish** scope (Standard / Foil) that reframes the ownership/playset/quantity math AND gates catalog availability (a foil-only printing never shows under Standard), **Playset** (Completed / Missing copies / More than a playset, from the rarity limit; avatars are uncapped), Element (+ Multi), Type (incl. Avatars), Rarity, an **Owned-amount** comparator (=/≤/≥), and Artist. No threshold/mana/power comparators (deck criteria). **Arrange:** Group by None / Element / Rarity (sections), and Sort within - Name A→Z / Z→A, Recently updated (`owned_cards` MAX `updated_at`, i.e. collector-record activity - not an acquisition date), Rarity (Ordinary→Unique, then avatars). Catalog axes run through `getPool`; the ownership-derived axes + sort are applied in the pure collection layer (`collectionFilter.js`, `collectionGroups.js`), so the catalog/profile boundary holds | `owned_cards`, shared `cards`, `collectionFilter.js`, `collectionGroups.js`, `playset.js` | **Implemented** |
  | Per-item ownership | Record owned copies per collector item — set and finish (Alpha, Beta, and their foils tracked separately); opened from inside a set the sheet is locked to that printing, and the picker appears only at name-level entry points | `owned_cards.variant_slug` | **Implemented** - per collector item (v11); see the granularity note below |
  | Ambient adding | No edit mode: every tile and the card sheet carry a permanent stepper, so adding is a property of where you are. Counts are provisional while a write is pending and confirmed when it resolves | `owned_cards` | **Implemented** |
@@ -241,10 +241,10 @@ index 0000000..df0d55e
 +   Deselect-all/Edit copies/New list; snapshot over full derived rows; payload-guarded at 2000).
 diff --git a/docs/proposals/collection-alphabet-rail-proposal.md b/docs/proposals/collection-alphabet-rail-proposal.md
 new file mode 100644
-index 0000000..c31d0d6
+index 0000000..17acb60
 --- /dev/null
 +++ b/docs/proposals/collection-alphabet-rail-proposal.md
-@@ -0,0 +1,292 @@
+@@ -0,0 +1,301 @@
 +# Proposal - Collection Phase 2: the A-Z alphabet rail (rev 2)
 +
 +**Branch:** `collection-all-and-alphabar` (continues from the approved Phase 1 ALL view)
@@ -253,6 +253,15 @@ index 0000000..c31d0d6
 +"no leaks" bar).
 +**Author:** Claude (lead engineer). **Reviewer:** Codex (principal). This rev answers Codex's five
 +Majors + two Minors on rev 1. **No production code exists yet; none begins until this lands.**
++
++> **⚠ SUPERSEDED (gesture/readout only).** The **bulge/wave** interaction, the **injected scheduler /
++> capture / tracker seams** (§D4-D5), and the **parent-owned `committedLetter`** announcement wiring
++> described below were BUILT, then **replaced on owner device direction** with a **latch + floating pill**
++> readout (jump on release; the shell owns the announcement; the gesture orchestration is the pure
++> `makeRailGesture` controller, not injected seams). The shipped behaviour is the source of truth - see
++> the "Device-driven readout pivot" note in the Approval record and `AlphabetRail.jsx` /
++> `alphabetRailState.js`. Everything else here (model, geometry, indexability, jump coordinator,
++> visibility/duck rules, docs impact) is as shipped.
 +
 +## Problem / goal
 +ALL holds ~1,500 collector items. Even with the progressive prefix, reaching "W" by thumb is a long
@@ -537,6 +546,82 @@ index 0000000..c31d0d6
 +  source. Replaced with **latch + floating pill** (owner-chosen): the rail is a static Cinzel track, a
 +  big letter pill floats beside the thumb during a scrub, and the single jump fires on release. The
 +  tested pure helpers are unchanged except `bulge` (removed - now dead). This is the shipping design.
+diff --git a/docs/proposals/collection-phase2-codex-review.md b/docs/proposals/collection-phase2-codex-review.md
+new file mode 100644
+index 0000000..e4a3071
+--- /dev/null
++++ b/docs/proposals/collection-phase2-codex-review.md
+@@ -0,0 +1,70 @@
++# Codex review brief - Collection ALL view + alphabet rail + Add-to-list
++
++**Branch:** `collection-all-and-alphabar` (off `main`)
++**Diff:** `docs/proposals/collection-phase2-codex-review.diff` (`git diff main...HEAD`, 30 files, +2543/-439)
++**Build on device:** 195 (owner device-iterated 186→195 on a Pixel; a second device is testing the art CDN)
++**Purpose:** pre-alpha review. This is the increment we want to ship to alpha testers this week.
++
++## Gate status (repo, all green)
++`test:query` 820 · `test:ui` 173 · `test:app` 17 · `check:types` · `check:cycles` (147 modules, no cycles) ·
++`check:source` · `check:docs` · `build`. **`check:smoke` is pending a connected device** (will run before merge).
++
++## What is ALREADY approved (context, light-touch)
++- **Phase 1 - the ALL view** (`collection-all-view-proposal.md`): you approved it + two corrective rounds
++  (identity selection, synchronous prefix reset, set-drill hidden disclosure, tested pure helpers). Commits
++  `98d57f1`, `efbd5bf`, `4fabc44`. Re-review only if the later work disturbed it.
++- **The rail PROPOSAL** (`collection-alphabet-rail-proposal.md` rev 3): you approved the contract. **But the
++  implementation then PIVOTED** on owner device feedback - see below.
++
++## What NEEDS review (new since your last pass)
++
++### 1. NEW WRITE PATH - `addEntriesToList` (the priority) - `src/store/ownedImportRepository.js`
++"Add to list" adds a bulk selection to an EXISTING list. Invariant §3.5 (transactional user-data). It mirrors
++the approved `createListWithEntries`: strict input validation + the `MAX_BATCH_ITEMS` (2000) ceiling on the RAW
++array, an authoritative catalog-membership check AND a profile-ownership check INSIDE the barrier (foreign/stale
++list rejected, nothing written), existing entries skipped so no duplicate row (idempotent), and the same
++`prewrite/none` vs `transaction/unknown` write-outcome contract. Returns `{ added, skipped }`.
++- Tests: `ownedImportRepository.test.mjs` (+8) - dedup-existing, foreign-profile reject, unknown-id reject, raw
++  ceiling, all-present no-op, malformed input, apply-then-reject (indeterminate), production barrier blocking.
++- Consumed by `useCollectionBulkActions.addToListFromSelection` (card-grain dedup + 2000 guard + honest copy)
++  and the `AddToListSheet` picker in `Collection.jsx`.
++- **Please attack:** the profile-scope check, the dedup-vs-existing read, the raw-vs-deduped ceiling ordering,
++  and the notify()/write-state classification on the apply-then-reject path.
++
++### 2. The alphabet rail - IMPLEMENTATION PIVOT from the reviewed proposal
++The proposal described a Niagara bulge/wave with live jump-on-crossing. On device that was janky (overlap +
++render contention) and the active letter sat under the thumb. **Owner-directed pivot to: latch + floating pill.**
++- **Latch:** during a drag we do ZERO grid work (no jump/scroll/re-render); only a floating letter pill moves.
++  The single grow+scroll fires once on RELEASE. `pointercancel` aborts with no jump.
++- Pure, tested: `alphabetIndex.js` (`letterOf`/`railModel` with `indexable` fail-closed + deterministic
++  `modelKey`/`activeLetterFor`), `railGeometry.js` (`railBounds`/`railTopOffset`/`effectiveZoom`/`indexAtY`),
++  `alphabetRailState.js` (the jump-coordinator reducer). ~40 unit tests.
++- `AlphabetRail.jsx` is the DOM shell (device-gated, not unit-tested). **Please attack the teardown/leak
++  surface:** window-level pointer listeners keyed to pointerId, one `teardownRef`, dispose on unmount, two
++  rAF-throttled scroll listeners (active-letter + bounds re-measure) - confirm nothing leaks across
++  mount/unmount/root-change, and that the four rev-3 contracts still hold in code (deterministic `modelKey`
++  cancellation, last-anchor active letter, tap exactly-once, single-boundary geometry with no safe-area
++  double-count). The `bulge` helper was removed (dead after the pivot).
++- **Zoom caveat worth a look:** the rail lives inside `.cx-app { zoom: var(--ui-scale) }`; every measured inset
++  and `scrollTop` delta is divided once by a measured `effectiveZoom`. Verify that's correct and complete.
++
++### 3. Shared sticky sub-header - `src/components/CollectionSubHeader.jsx`
++One component now renders BOTH My-Collection headers (Sets landing + ALL grid) so they're identical in size and
++colour (pixel-diff drift + a warm band clashing with the fixed `#000`+ruby wash drove this). Neutral frosted
++band; single-line (nowrap) so a wider pill / long count can't reflow it; `data-rail-sticky` is the rail's top
++floor. Set-drill header switched to the same band value. Low risk; flag any a11y/contrast concern.
++
++### 4. Consolidations (should be behaviour-preserving)
++- `bulkSelection.js` deleted → folded into `collectionSelection.js` (`selectionSummary` unifies count/allSelected/
++  hidden across both surfaces).
++- Set drill refactored onto the shared `arrangeSections` (one canonical arranged object drives grid + rail
++  anchors + indexes) and the shared refine/selection/bulk hooks.
++
++## Docs updated
++FEATURE_MATRIX (Sets|All row, bulk-selection row incl. Add-to-list + `addEntriesToList`), ARCHITECTURE §7.4,
++DESIGN_SYSTEM (rail primitive + header). Both proposals carry their full approval records + the rail's
++device-pivot note.
++
++## Disposition asked
++Go / changes-required for an alpha release from `main`. The write path (§1) is the one I'd most want a second
++set of eyes on before it touches testers' data; the rail (§2) is device-verified but its shell is not unit-tested.
 diff --git a/package.json b/package.json
 index fe85fbf..a10a58f 100644
 --- a/package.json
@@ -552,43 +637,38 @@ index fe85fbf..a10a58f 100644
    "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
 diff --git a/src/components/AlphabetRail.jsx b/src/components/AlphabetRail.jsx
 new file mode 100644
-index 0000000..fd96258
+index 0000000..cef58ee
 --- /dev/null
 +++ b/src/components/AlphabetRail.jsx
-@@ -0,0 +1,330 @@
+@@ -0,0 +1,316 @@
 +// The Collection A-Z alphabet rail: a vertical index on the logical inline edge. The rail is a plain,
 +// static track of small Cinzel letters; the READOUT is a big letter pill that floats beside the thumb
-+// while you scrub. Present letters are real <button>s for keyboard/AT, but ALL pointer input lands on
-+// the continuous capture strip (the buttons are pointer-inert), so the letter always comes from POSITION
-+// - and on touch the implicit pointer capture lands on the strip itself, never on a tiny child. ALL the
-+// decisions live in tested pure helpers - `railModel` (which letters, indexability, stable modelKey),
-+// `indexAtY` (finger -> letter), `railTopOffset`/`railBounds`/`effectiveZoom` (the measured geometry),
-+// `activeLetterFor` (scroll highlight), and the `railReducer` jump coordinator. This is the DOM shell.
++// while you scrub. Present letters are real <button>s for keyboard/AT, but ALL pointer input lands on the
++// continuous capture strip (the buttons are pointer-inert), so the letter always comes from POSITION.
 +//
-+// LATCH model (the key to smoothness): during a drag we do ZERO grid work - no jump, no scroll, no React
-+// re-render - we only move the floating pill imperatively (one element) and remember the letter under the
-+// finger. The single expensive grow+scroll fires once, on RELEASE. Live-scrubbing ~1,500 image tiles was
-+// the source of the jank; a pill preview is the standard fix. A pointercancel aborts with no jump.
++// LATCH model: during a drag we do ZERO grid work (no jump/scroll/re-render) - we only move the floating
++// pill imperatively and remember the letter under the finger. The single grow+scroll fires once, on
++// RELEASE, and the release letter is resolved SYNCHRONOUSLY from pointerup.clientY (never a value left by
++// an animation frame) so a tap that releases before any rAF still jumps exactly once. A pointercancel
++// aborts with no jump; a release over an absent slot is a no-op with no haptic confirm. The whole
++// sequence lives in the pure, tested `makeRailGesture` controller - this component is the DOM shell.
 +//
-+// Gesture plumbing: pointerdown on the strip installs WINDOW-level pointermove/up/cancel listeners keyed
-+// to that pointerId, so the drag survives a failed/stolen pointer capture and a finger that wanders off
-+// the strip. setPointerCapture is requested as a bonus but nothing depends on it. Teardown lives in a
-+// per-gesture cleanup ref + an unmount-only dispose effect - NEVER keyed on callback identities, which
-+// churn on parent re-renders and used to release the capture mid-drag. One rAF positions the pill with
-+// direct DOM writes (no per-frame React re-render).
++// Lifecycle / leaks: the scroll root is resolved through a CALLBACK REF into state, so mounting, ducking
++// (indexable/present -> false renders null), and a real root replacement each rebind or tear down the
++// tracking effects. When the rail becomes invisible we also abort any live gesture, CANCEL the pending
++// jump, and clear stale bounds. Gesture window-listeners live in a per-gesture cleanup ref; the unmount
++// dispose aborts the gesture. Nothing rides on callback identities (those churn on parent re-render).
 +//
-+// Geometry: every measurement (rects, viewport) is in REAL viewport px, but this nav renders inside the
-+// zoomed .cx-app subtree (`zoom: var(--ui-scale)`), where fixed insets and scrollTop are consumed in
-+// LAYOUT px - so every measured inset/delta is divided by the measured effectiveZoom exactly once.
-+//
-+// Interactive behaviour (WebView pointer streams, scroll fidelity, exact geometry) is DEVICE-GATED and
-+// unverified in the repo gates - only the pure helpers it drives are unit-tested.
++// Geometry: measurements are REAL viewport px but this nav renders inside `.cx-app { zoom: --ui-scale }`,
++// where fixed insets and scrollTop are LAYOUT px - so every measured inset/delta is divided once by the
++// measured effectiveZoom. Interactive behaviour (WebView pointer streams, scroll fidelity, exact
++// geometry) is DEVICE-GATED; only the pure helpers it drives are unit-tested.
 +import { useReducer, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 +import { RAIL_ORDER, firstPresent, lastPresent, stepLetter, activeLetterFor } from '../store/alphabetIndex.js';
 +import { indexAtY, railBounds, railTopOffset, effectiveZoom } from '../store/railGeometry.js';
 +import { resolveScrollRoot } from '../store/collectionAllModel.js';
 +import { haptic } from '../native.js';
-+import { initialRailState, railReducer, shouldCommit } from './alphabetRailState.js';
++import { initialRailState, railReducer, shouldCommit, makeRailGesture } from './alphabetRailState.js';
 +
 +const LOOKAHEAD = 60;     // render a little past the target so the landing has context
 +const PRIMARY_MOUSE = 0;  // left button
@@ -597,30 +677,35 @@ index 0000000..fd96258
 +const PILL_LETTER = 30;   // the big Cinzel letter shown in the floating pill beside the thumb
 +const PILL_SIZE = 58;     // pill diameter (px)
 +const PILL_GAP = 18;      // pill sits this far INSIDE the strip, so it clears the thumb driving the scroll
-+// The reachable bottom stack to clear: the dock itself plus ANY FAB wrap in its FAB slot (the plain
-+// filter FAB shares the dock rect; the stacked add FAB rises above it and is the true obstruction).
++// The reachable bottom stack to clear: the dock itself plus ANY FAB wrap in its FAB slot.
 +const OBSTRUCTIONS = '.cx-dock, .cx-dock-fab .fab-wrap';
 +
-+// `headerHeight` is the root-relative landing offset on THIS surface (a per-surface constant,
-+// device-tunable): a jump scrolls its anchor this far below the root top, and the active-letter
-+// threshold matches it. The rail's own top/bottom POSITION is measured live, never from this.
 +export default function AlphabetRail({ model, count, ensureRendered, signature, headerHeight = 48, side = 'right', selecting = false }) {
 +  const [state, dispatch] = useReducer(railReducer, initialRailState);
-+  const [active, setActive] = useState(null);
++  const [active, setActive] = useState(null);           // scroll-derived highlight (last crossed anchor)
++  const [focusedLetter, setFocusedLetter] = useState(null);   // keyboard roving focus (independent of `active`)
 +  const [bounds, setBounds] = useState(null);
-+  const rootRef = useRef(null);          // this rail's DOM node -> resolve the scroll root from it
-+  const stripRef = useRef(null);         // the continuous capture strip
-+  const reqRef = useRef(0);              // monotonic pick requestId
-+  const rafRef = useRef(0);              // wave rAF handle
-+  const pendingYRef = useRef(null);      // latest pointer Y awaiting a pill frame
-+  const teardownRef = useRef(null);      // live gesture's cleanup (window listeners + capture release)
-+  const [scrubbing, setScrubbing] = useState(false);   // a drag is live -> the floating letter pill is shown
-+  const pillRef = useRef(null);          // the pill DOM node - positioned + lettered imperatively (no re-render)
-+  const scrubLetterRef = useRef(null);   // the letter currently under the finger (the LATCHED jump target)
-+  const zoomRef = useRef(1);             // effectiveZoom captured at gesture start (fixed insets are layout px)
++  const [scrubbing, setScrubbing] = useState(false);    // a drag is live -> the floating letter pill is shown
++  const [rootEl, setRootEl] = useState(null);           // resolved scroll root (via callback ref -> rebinds on root change)
++  const stripRef = useRef(null);
++  const pillRef = useRef(null);
++  const buttonRefs = useRef(new Map());                 // present-letter buttons, for roving focus()
++  const reqRef = useRef(0);
++  const rafRef = useRef(0);                             // pill-position rAF
++  const pendingYRef = useRef(null);
++  const zoomRef = useRef(1);
++  const teardownRef = useRef(null);                     // live gesture's window-listener + capture cleanup
++  const scrubLetterRef = useRef(null);
++  const modelRef = useRef(model);
++  const pickRef = useRef(null);
 +
 +  const { order, present, firstIndex, indexable, modelKey } = model;
-+  const scrollRoot = () => resolveScrollRoot(rootRef.current);
++  const visible = indexable && present.size > 0;        // fail closed: not-indexable or empty -> duck
++  useLayoutEffect(() => { modelRef.current = model; });
++
++  // The nav's callback ref resolves the scroll root into STATE. Mount -> bind; duck (null render) or a
++  // root replacement -> the effects keyed on rootEl tear down the old root and bind the new one.
++  const navRef = useCallback((node) => { setRootEl(node ? resolveScrollRoot(node) : null); }, []);
 +
 +  // ---- Jump coordinator (drives the DOM scroll; the reducer owns sequencing) -----------------------
 +  const pick = useCallback((letter) => {
@@ -631,68 +716,61 @@ index 0000000..fd96258
 +    dispatch({ type: 'PICK', requestId, signature, modelKey, letter, idx });
 +    ensureRendered(idx + 1 + LOOKAHEAD);                       // grow the prefix so the target row exists
 +  }, [present, firstIndex, signature, modelKey, ensureRendered]);
++  useLayoutEffect(() => { pickRef.current = pick; });
 +
-+  // OBSERVE whenever the pick, the rendered count, or the world (signature/modelKey) changes.
 +  useLayoutEffect(() => {
 +    dispatch({ type: 'OBSERVE', count, signature, modelKey });
 +  }, [state.pending, count, signature, modelKey]);
 +
-+  // Commit: once ready, find the letter's first anchor INSIDE the resolved root and scroll it under the
-+  // header. Rect deltas are real px, scrollTop is layout px - normalise by the measured zoom. Fail
-+  // closed (no announcement) if the anchor is missing.
++  // Commit: once ready, scroll the letter's first anchor under the header. Rect deltas are real px,
++  // scrollTop is layout px - normalise by the measured zoom. Fail closed (no announcement) if missing.
 +  useLayoutEffect(() => {
-+    if (!shouldCommit(state)) return;
++    if (!shouldCommit(state) || !rootEl) return;
 +    const { requestId, letter } = state.pending;
-+    const root = scrollRoot();
-+    const anchor = root && root.querySelector(`[data-letter="${letter}"]`);
-+    if (!root || !anchor) { dispatch({ type: 'COMMIT_MISS', requestId }); return; }
-+    const rootRect = root.getBoundingClientRect();
-+    const zoom = effectiveZoom(rootRect.width, root.offsetWidth);
++    const anchor = rootEl.querySelector(`[data-letter="${letter}"]`);
++    if (!anchor) { dispatch({ type: 'COMMIT_MISS', requestId }); return; }
++    const rootRect = rootEl.getBoundingClientRect();
++    const zoom = effectiveZoom(rootRect.width, rootEl.offsetWidth);
 +    const delta = (anchor.getBoundingClientRect().top - rootRect.top) / zoom - headerHeight;
-+    root.scrollTop += delta;                                    // land just below the landing offset
++    rootEl.scrollTop += delta;
 +    dispatch({ type: 'COMMIT_OK', requestId });
-+  }, [state.ready, state.pending && state.pending.requestId]);
++  }, [state.ready, state.pending && state.pending.requestId, rootEl]);
 +
-+  // ---- Active-letter tracking: one passive listener on the resolved root, rAF-throttled. Removed only
-+  // by dispose (root change / unmount), NOT by a completed gesture. -----------------------------------
++  // ---- Active-letter tracking: one passive listener on the resolved root, rAF-throttled. Bound to
++  // rootEl + visible, so a duck or a root replacement tears it down. ----------------------------------
 +  useEffect(() => {
-+    const root = scrollRoot();
-+    if (!root) return undefined;
++    if (!rootEl || !visible) return undefined;
 +    let raf = 0;
 +    const measure = () => {
 +      raf = 0;
-+      const rootRect = root.getBoundingClientRect();
-+      const zoom = effectiveZoom(rootRect.width, root.offsetWidth);
-+      const threshold = headerHeight;                          // the landing boundary, in root-relative layout px
++      const rootRect = rootEl.getBoundingClientRect();
++      const zoom = effectiveZoom(rootRect.width, rootEl.offsetWidth);
 +      const anchors = [];
 +      for (const l of RAIL_ORDER) {
-+        const el = root.querySelector(`[data-letter="${l}"]`);
++        const el = rootEl.querySelector(`[data-letter="${l}"]`);
 +        if (el) anchors.push({ letter: l, top: (el.getBoundingClientRect().top - rootRect.top) / zoom });
 +      }
-+      setActive(activeLetterFor(anchors, threshold, present));
++      setActive(activeLetterFor(anchors, headerHeight, present));
 +    };
 +    const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
 +    measure();
-+    root.addEventListener('scroll', onScroll, { passive: true });
-+    return () => { root.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
-+  }, [present, modelKey, headerHeight]);
++    rootEl.addEventListener('scroll', onScroll, { passive: true });
++    return () => { rootEl.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
++  }, [rootEl, visible, present, modelKey, headerHeight]);
 +
-+  // Measure the fixed bounds LIVE: top from the sticky chrome ([data-rail-sticky]) and the first grid
-+  // tile ([data-letter]) - the rail starts where the cards are, floored at the sticky header/scrollport
-+  // (railTopOffset). Bottom from the dock/FAB obstruction (a single measured boundary, immune to
-+  // safe-area double-counting). Both real-px results are divided ONCE by the measured zoom because this
-+  // nav's fixed insets are consumed inside the zoomed .cx-app subtree. Recompute on viewport resize +
-+  // keyboard, and once more after the stacked FAB's .4s rise (its mid-flight transform skews the rect).
++  // ---- Live bounds: top from the sticky chrome / first tile (railTopOffset), bottom from the dock/FAB
++  // obstruction (one measured boundary). Re-measured on scroll (the ALL header rides below the toggle
++  // then pins), resize/keyboard, and once after the stacked FAB's .4s rise. Bound to rootEl + visible. --
 +  useEffect(() => {
++    if (!rootEl || !visible || typeof window === 'undefined') return undefined;
++    let raf = 0;
 +    const compute = () => {
 +      raf = 0;
-+      const root = scrollRoot();
-+      if (!root || typeof window === 'undefined') return;
-+      const vh = window.innerHeight;                           // fixed insets anchor to the LAYOUT viewport
-+      const rootRect = root.getBoundingClientRect();
-+      const zoom = effectiveZoom(rootRect.width, root.offsetWidth);
-+      const sticky = root.querySelector('[data-rail-sticky]');
-+      const firstTile = root.querySelector('[data-letter]');
++      const vh = window.innerHeight;
++      const rootRect = rootEl.getBoundingClientRect();
++      const zoom = effectiveZoom(rootRect.width, rootEl.offsetWidth);
++      const sticky = rootEl.querySelector('[data-rail-sticky]');
++      const firstTile = rootEl.querySelector('[data-letter]');
 +      const offset = railTopOffset({
 +        scrollRootTop: rootRect.top,
 +        stickyBottom: sticky ? sticky.getBoundingClientRect().bottom : null,
@@ -706,98 +784,82 @@ index 0000000..fd96258
 +      const b = railBounds({ viewportHeight: vh, scrollRootTop: rootRect.top, headerHeight: offset, obstructionTop });
 +      const nt = b.top / zoom;
 +      const nb = b.bottom / zoom;
-+      // Skip a same-value update so scrolling past the pinned point does not re-render the rail per frame.
 +      setBounds((prev) => (prev && Math.abs(prev.top - nt) < 0.5 && Math.abs(prev.bottom - nb) < 0.5 ? prev : { top: nt, bottom: nb }));
 +    };
-+    let raf = requestAnimationFrame(compute);   // measure after paint (dock/keyboard settled)
-+    const late = setTimeout(compute, 480);      // after fabRiseIn (.4s) - the stacked FAB's true rest position
-+    const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(compute); };
-+    // Re-measure on SCROLL (rAF-throttled): the ALL header rides below the Sets/All toggle until it
-+    // pins to the scrollport top, so the rail's top floor moves with it.
-+    const root0 = scrollRoot();
-+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(compute); };
-+    if (root0) root0.addEventListener('scroll', onScroll, { passive: true });
-+    window.addEventListener('resize', onResize);
-+    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
++    const schedule = () => { if (!raf) raf = requestAnimationFrame(compute); };
++    raf = requestAnimationFrame(compute);
++    const late = setTimeout(compute, 480);
++    rootEl.addEventListener('scroll', schedule, { passive: true });
++    window.addEventListener('resize', schedule);
++    if (window.visualViewport) window.visualViewport.addEventListener('resize', schedule);
 +    return () => {
-+      cancelAnimationFrame(raf);
-+      if (root0) root0.removeEventListener('scroll', onScroll);
++      if (raf) cancelAnimationFrame(raf);
 +      clearTimeout(late);
-+      window.removeEventListener('resize', onResize);
-+      if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
++      rootEl.removeEventListener('scroll', schedule);
++      window.removeEventListener('resize', schedule);
++      if (window.visualViewport) window.visualViewport.removeEventListener('resize', schedule);
 +    };
-+  }, [headerHeight, selecting]);
++  }, [rootEl, visible, headerHeight, selecting]);
 +
-+  // ---- Gesture: strip-only pointer target; window-level move/up. LATCH model - during the drag we do
-+  // ZERO grid work (no jump, no scroll, no re-render); we only move the floating letter pill imperatively
-+  // and remember the letter under the finger. The single jump fires on RELEASE. This is what makes it
-+  // smooth: the heavy grow+scroll can't compete with the drag. -----------------------------------------
-+  const frame = useCallback(() => {
++  // ---- Gesture (latch): the pure controller resolves letters synchronously; these callbacks are the
++  // DOM side (pill position/haptic) and are created ONCE, reading refs so they never go stale. ---------
++  const positionPill = useCallback(() => {
 +    rafRef.current = 0;
 +    const y = pendingYRef.current;
 +    const strip = stripRef.current;
-+    if (y == null || !strip) return;
-+    const rect = strip.getBoundingClientRect();
-+    const letter = order[indexAtY(y, rect.top, rect.height, order.length)];
 +    const pill = pillRef.current;
-+    const changed = letter !== scrubLetterRef.current;
-+    if (pill) {
-+      const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
-+      pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;   // follows the finger every frame (layout px)
-+    }
-+    if (changed) {
-+      scrubLetterRef.current = letter;
-+      const on = present.has(letter);
-+      if (pill) {
-+        pill.style.opacity = on ? '1' : '.5';                      // an absent letter (won't jump) reads muted
-+        if (pill.firstChild) {
-+          pill.firstChild.textContent = letter || '';
-+          pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)';
-+        }
-+      }
-+      haptic('light');                                             // a tick per letter, like fast-scroll
-+    }
-+  }, [order, present]);
-+
-+  // Latest-frame ref: rAF always runs the CURRENT frame closure, while schedule/end/commit stay
-+  // identity-stable for the whole component lifetime (no teardown churn releasing the gesture mid-drag).
-+  const frameRef = useRef(frame);
-+  useLayoutEffect(() => { frameRef.current = frame; });
-+  const runFrame = useCallback(() => { frameRef.current(); }, []);
-+
-+  const schedule = useCallback((y) => {
-+    pendingYRef.current = y;
-+    if (!rafRef.current) rafRef.current = requestAnimationFrame(runFrame);
-+  }, [runFrame]);
-+
-+  const endGesture = useCallback(() => {
-+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
-+    pendingYRef.current = null;
-+    if (teardownRef.current) teardownRef.current();            // window listeners + capture release
-+    setScrubbing(false);                                       // hides the pill
++    if (y == null || !strip || !pill) return;
++    const rect = strip.getBoundingClientRect();
++    const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
++    pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;
 +  }, []);
-+
-+  // Release = LATCH: jump to the letter that was under the finger, once. Absent slots are a silent no-op.
-+  const commit = useCallback(() => {
-+    const letter = scrubLetterRef.current;
-+    endGesture();
-+    if (letter && present.has(letter)) { haptic('medium'); pick(letter); }   // a firmer tick confirms the jump
-+  }, [endGesture, present, pick]);
-+  const commitRef = useRef(commit);
-+  useLayoutEffect(() => { commitRef.current = commit; });
++  const gestureRef = useRef(null);
++  if (!gestureRef.current) {
++    gestureRef.current = makeRailGesture({
++      resolveLetter: (y) => {
++        const strip = stripRef.current;
++        if (!strip) return null;
++        const rect = strip.getBoundingClientRect();
++        const ord = modelRef.current.order;
++        return ord[indexAtY(y, rect.top, rect.height, ord.length)] || null;
++      },
++      isPresent: (l) => modelRef.current.present.has(l),
++      onScrub: (letter, y, changed) => {
++        pendingYRef.current = y;
++        if (!rafRef.current) rafRef.current = requestAnimationFrame(positionPill);
++        if (changed) {
++          scrubLetterRef.current = letter;
++          const on = modelRef.current.present.has(letter);
++          const pill = pillRef.current;
++          if (pill) {
++            pill.style.opacity = on ? '1' : '.5';
++            if (pill.firstChild) { pill.firstChild.textContent = letter || ''; pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)'; }
++          }
++          haptic('light');
++        }
++      },
++      onJump: (letter) => { haptic('medium'); pickRef.current(letter); },
++      onEnd: () => {
++        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
++        pendingYRef.current = null;
++        if (teardownRef.current) teardownRef.current();
++        setScrubbing(false);
++      },
++    });
++  }
++  const gesture = gestureRef.current;
 +
 +  const onPointerDown = (e) => {
 +    if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== PRIMARY_MOUSE)) return;
-+    if (teardownRef.current) return;                           // one gesture at a time
++    if (teardownRef.current || gesture.isActive()) return;     // one gesture at a time
 +    const id = e.pointerId;
 +    const strip = e.currentTarget;
-+    const root = scrollRoot();
-+    const rr = root && root.getBoundingClientRect();
-+    zoomRef.current = rr ? effectiveZoom(rr.width, root.offsetWidth) : 1;
++    const rr = rootEl && rootEl.getBoundingClientRect();
++    zoomRef.current = rr ? effectiveZoom(rr.width, rootEl.offsetWidth) : 1;
 +    try { strip.setPointerCapture(id); } catch { /* capture is a bonus - window listeners carry the drag */ }
-+    const onMove = (ev) => { if (ev.pointerId === id) schedule(ev.clientY); };
-+    const onUp = (ev) => { if (ev.pointerId === id) commitRef.current(); };     // release -> the one jump
-+    const onCancel = (ev) => { if (ev.pointerId === id) endGesture(); };        // aborted -> no jump
++    const onMove = (ev) => { if (ev.pointerId === id) gesture.move(id, ev.clientY); };
++    const onUp = (ev) => { if (ev.pointerId === id) gesture.up(id, ev.clientY); };       // release -> synchronous jump
++    const onCancel = (ev) => { if (ev.pointerId === id) gesture.cancel(id); };
 +    window.addEventListener('pointermove', onMove, { passive: true });
 +    window.addEventListener('pointerup', onUp, { passive: true });
 +    window.addEventListener('pointercancel', onCancel, { passive: true });
@@ -810,55 +872,67 @@ index 0000000..fd96258
 +    };
 +    e.preventDefault();
 +    scrubLetterRef.current = null;
-+    setScrubbing(true);                        // show the pill; the first frame positions + letters it
-+    schedule(e.clientY);                       // a bare tap positions the pill and latches its letter too
++    setScrubbing(true);
++    gesture.down(id, e.clientY);                                // latches the first letter + positions the pill
 +  };
 +
-+  // dispose: unmount tears the live gesture down (rAF + window listeners + capture). Deliberately
-+  // dependency-free - gesture teardown must never ride on render identities.
++  // Duck / root-change teardown: when the rail becomes invisible, abort any live gesture, cancel the
++  // pending jump, and clear stale bounds. The tracking effects unbind via their rootEl/visible deps.
++  useEffect(() => {
++    if (visible) return;
++    gesture.abort();
++    dispatch({ type: 'CANCEL' });
++    setBounds(null);
++  }, [visible, gesture]);
++
++  // Unmount dispose: abort the gesture (removes window listeners + capture) and cancel the pill rAF.
 +  useEffect(() => () => {
++    gesture.abort();
 +    if (rafRef.current) cancelAnimationFrame(rafRef.current);
 +    rafRef.current = 0;
-+    pendingYRef.current = null;
-+    if (teardownRef.current) teardownRef.current();
-+  }, []);
++  }, [gesture]);
 +
++  // Keyboard: ARROW/HOME/END only (Enter/Space are left to the focused button's native onClick, so an
++  // activation is exactly one pick). Navigation moves DOM FOCUS to the destination button, then jumps -
++  // movement derives from the FOCUSED letter, never the scroll-derived `active`.
 +  const onKeyDown = (e) => {
++    const cur = focusedLetter || firstPresent(present);
 +    let next = null;
-+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = stepLetter(present, active || firstPresent(present), 1);
-+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = stepLetter(present, active || firstPresent(present), -1);
++    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = stepLetter(present, cur, 1);
++    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = stepLetter(present, cur, -1);
 +    else if (e.key === 'Home') next = firstPresent(present);
 +    else if (e.key === 'End') next = lastPresent(present);
-+    else if (e.key === 'Enter' || e.key === ' ') next = active;
 +    else return;
 +    e.preventDefault();
-+    if (next) { setActive(next); pick(next); }
++    if (!next) return;
++    setFocusedLetter(next);
++    const node = buttonRefs.current.get(next);
++    if (node) node.focus();                                     // move focus BEFORE the jump
++    pick(next);
 +  };
 +
-+  if (!indexable || present.size === 0) return null;   // fail closed / nothing to navigate -> duck (unmounts, disposing)
++  if (!visible) return null;   // fail closed / nothing to navigate -> duck (effects unbind via deps above)
 +
-+  // Render at a safe fallback until the first measure lands (one frame) - the nav must mount so rootRef
-+  // populates and the bounds effect can resolve the scroll root and measure the live boundaries.
-+  const b = bounds || { top: headerHeight, bottom: 140 };
++  const b = bounds || { top: headerHeight, bottom: 140 };       // safe fallback until the first measure
++  const tabLetter = focusedLetter && present.has(focusedLetter) ? focusedLetter : firstPresent(present);
 +  const edge = side === 'left' ? { insetInlineStart: 0 } : { insetInlineEnd: 0 };
 +  return (
-+    <nav ref={rootRef} aria-label="Alphabetical index" onKeyDown={onKeyDown}
++    <nav ref={navRef} aria-label="Alphabetical index" onKeyDown={onKeyDown}
 +      style={{ position: 'fixed', top: b.top, bottom: b.bottom, ...edge, zIndex: 45,
 +        display: 'flex', width: RAIL_WIDTH, pointerEvents: 'none', opacity: bounds ? 1 : 0 }}>
-+      {/* continuous capture strip - the ONLY pointer target; the letter comes from POSITION, so the
-+          hit area is the full strip width while the labels stay small and tucked against the edge */}
 +      <div ref={stripRef} onPointerDown={onPointerDown}
 +        style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column',
 +          alignItems: side === 'left' ? 'flex-start' : 'flex-end', justifyContent: 'space-between',
 +          padding: side === 'left' ? '4px 0 4px 10px' : '4px 10px 4px 0',
 +          touchAction: 'none', pointerEvents: 'auto', cursor: 'pointer' }}>
-+        {order.map((l, i) => {
++        {order.map((l) => {
 +          const on = present.has(l);
 +          return (
-+            <button key={l} type="button"
-+              disabled={!on} aria-hidden={!on} tabIndex={on && (active === l || (!active && l === firstPresent(present))) ? 0 : -1}
++            <button key={l} type="button" className="cx-rail-letter"
++              ref={(n) => { if (n) buttonRefs.current.set(l, n); else buttonRefs.current.delete(l); }}
++              disabled={!on} aria-hidden={!on} tabIndex={on && l === tabLetter ? 0 : -1}
 +              aria-current={active === l ? 'true' : undefined}
-+              onClick={on ? () => { setActive(l); pick(l); } : undefined}
++              onClick={on ? () => { setFocusedLetter(l); pick(l); } : undefined}
 +              style={{ all: 'unset', fontFamily: 'var(--f-display)', fontWeight: active === l ? 800 : 600,
 +                fontSize: LETTER, lineHeight: 1, letterSpacing: '.03em',
 +                color: on ? (active === l ? 'var(--gold-num)' : 'var(--ink-muted)') : 'var(--ink-faint)',
@@ -868,10 +942,8 @@ index 0000000..fd96258
 +          );
 +        })}
 +      </div>
-+      {/* Floating readout: while scrubbing, a big Cinzel letter rides beside the thumb (offset INWARD so
-+          the finger never covers it), positioned + lettered imperatively from the rAF frame. */}
 +      {scrubbing && (
-+        <div ref={pillRef} data-present="1" aria-hidden="true"
++        <div ref={pillRef} aria-hidden="true"
 +          style={{ position: 'fixed', top: 0, [side === 'left' ? 'left' : 'right']: RAIL_WIDTH + PILL_GAP,
 +            transform: 'translateY(-50%)', width: PILL_SIZE, height: PILL_SIZE, borderRadius: '50%',
 +            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, pointerEvents: 'none',
@@ -879,7 +951,6 @@ index 0000000..fd96258
 +          <span style={{ font: `800 ${PILL_LETTER}px/1 var(--f-display)`, color: 'var(--gold-num)' }} />
 +        </div>
 +      )}
-+      {/* committed-destination announcement only (never intermediate drag crossings) */}
 +      <span aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
 +        {state.committedLetter ? `Jumped to ${state.committedLetter}` : ''}
 +      </span>
@@ -974,10 +1045,10 @@ index 0000000..231cc4c
 +}
 diff --git a/src/components/alphabetRailState.js b/src/components/alphabetRailState.js
 new file mode 100644
-index 0000000..8eb8708
+index 0000000..106fa86
 --- /dev/null
 +++ b/src/components/alphabetRailState.js
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,99 @@
 +// The alphabet-rail JUMP COORDINATOR as a pure reducer, so the load-bearing sequencing - wait for the
 +// growth paint, supersede a stale pick, cancel on a filter/membership change, commit exactly once, and
 +// announce only a committed destination - is a unit test, not a device round-trip. The React shell
@@ -1029,16 +1100,64 @@ index 0000000..8eb8708
 +
 +/** Whether the shell should now attempt the scroll for the current pick. */
 +export const shouldCommit = (state) => !!(state.pending && state.ready);
++
++/**
++ * The rail gesture orchestrator as a plain controller (no DOM, no React) so the exactly-once + latch
++ * sequence is unit-tested, not device-observed. It resolves the letter SYNCHRONOUSLY from each event's Y
++ * (via injected `resolveLetter`) - the jump target is the RELEASE position, never a value left behind by
++ * an animation frame, so a tap that releases before any rAF still jumps exactly once. `pointercancel`
++ * ends with no jump; a release over an absent slot ends with no jump (and no haptic confirm).
++ *
++ *   resolveLetter(y) -> letter | null      isPresent(letter) -> boolean
++ *   onScrub(letter, y, changed)   onJump(letter)   onEnd()
++ */
++export function makeRailGesture({ resolveLetter, isPresent, onScrub, onJump, onEnd }) {
++  let activeId = null;
++  let last = null;
++  return {
++    isActive: () => activeId != null,
++    down(id, y) {
++      if (activeId != null) return;              // one gesture at a time
++      activeId = id;
++      last = resolveLetter(y);
++      onScrub(last, y, true);
++    },
++    move(id, y) {
++      if (id !== activeId) return;
++      const l = resolveLetter(y);
++      const changed = l !== last;
++      last = l;
++      onScrub(l, y, changed);
++    },
++    up(id, y) {
++      if (id !== activeId) return;
++      activeId = null;
++      const l = resolveLetter(y);                // RELEASE position - synchronous, no rAF dependency
++      onEnd();
++      if (l && isPresent(l)) onJump(l);          // absent slot / null -> no jump, no confirm
++    },
++    cancel(id) {
++      if (id !== activeId) return;
++      activeId = null;
++      onEnd();                                   // aborted -> no jump
++    },
++    abort() {                                    // duck / unmount while a gesture is live
++      if (activeId == null) return;
++      activeId = null;
++      onEnd();
++    },
++  };
++}
 diff --git a/src/components/alphabetRailState.test.mjs b/src/components/alphabetRailState.test.mjs
 new file mode 100644
-index 0000000..9368113
+index 0000000..5ad0831
 --- /dev/null
 +++ b/src/components/alphabetRailState.test.mjs
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,153 @@
 +// Pure tests for the alphabet-rail jump coordinator. Run: npm run test:ui
 +import { test } from 'node:test';
 +import assert from 'node:assert/strict';
-+import { initialRailState as init, railReducer as r, shouldCommit } from './alphabetRailState.js';
++import { initialRailState as init, railReducer as r, shouldCommit, makeRailGesture } from './alphabetRailState.js';
 +
 +const run = (state, ...events) => events.reduce(r, state);
 +const pick = (over = {}) => ({ type: 'PICK', requestId: 1, signature: 'sig', modelKey: 'mk', letter: 'M', idx: 300, ...over });
@@ -1116,6 +1235,77 @@ index 0000000..9368113
 +  const s = run(init, pick(), { type: 'CANCEL' });
 +  assert.equal(s.pending, null);
 +  assert.equal(shouldCommit(s), false);
++});
++
++/* ---------------- makeRailGesture: the latch orchestration (exactly-once) ---------------- */
++
++// resolveLetter is identity here (the test passes the letter as the "y").
++const gestureSetup = (present = new Set(['A', 'B', 'C'])) => {
++  const events = { scrub: [], jump: [], end: 0 };
++  const g = makeRailGesture({
++    resolveLetter: (y) => y || null,
++    isPresent: (l) => present.has(l),
++    onScrub: (l, y, changed) => events.scrub.push({ l, changed }),
++    onJump: (l) => events.jump.push(l),
++    onEnd: () => { events.end += 1; },
++  });
++  return { g, events };
++};
++
++test('gesture: down then up BEFORE any frame -> exactly one jump (the tap contract)', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'B'); g.up(1, 'B');
++  assert.deepEqual(events.jump, ['B']);
++  assert.equal(events.end, 1);
++});
++
++test('gesture: moves then up -> the RELEASE position wins, exactly once', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'A'); g.move(1, 'B'); g.move(1, 'C'); g.up(1, 'C');
++  assert.deepEqual(events.jump, ['C']);
++});
++
++test('gesture: cancel -> zero jumps', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'A'); g.move(1, 'B'); g.cancel(1);
++  assert.deepEqual(events.jump, []);
++  assert.equal(events.end, 1);
++});
++
++test('gesture: release over an ABSENT slot -> zero jumps (no haptic confirm)', () => {
++  const { g, events } = gestureSetup(new Set(['A', 'C']));   // B absent
++  g.down(1, 'A'); g.up(1, 'B');
++  assert.deepEqual(events.jump, []);
++});
++
++test('gesture: events for the wrong pointer id are ignored', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'A'); g.move(2, 'Z'); g.up(2, 'Z');
++  assert.deepEqual(events.jump, []);
++  g.up(1, 'A');
++  assert.deepEqual(events.jump, ['A']);
++});
++
++test('gesture: a second down while active is ignored (one gesture at a time)', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'A'); g.down(2, 'C');
++  assert.equal(g.isActive(), true);
++  g.up(2, 'C'); assert.deepEqual(events.jump, []);
++  g.up(1, 'A'); assert.deepEqual(events.jump, ['A']);
++});
++
++test('gesture: abort ends a live gesture with no jump', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'A'); g.abort();
++  assert.equal(events.end, 1);
++  assert.deepEqual(events.jump, []);
++  assert.equal(g.isActive(), false);
++});
++
++test('gesture: onScrub reports changed only when the letter changes', () => {
++  const { g, events } = gestureSetup();
++  g.down(1, 'A'); g.move(1, 'A'); g.move(1, 'B');
++  assert.deepEqual(events.scrub.map((s) => s.changed), [true, false, true]);
 +});
 diff --git a/src/components/useCollectionBulkActions.js b/src/components/useCollectionBulkActions.js
 new file mode 100644
@@ -1473,7 +1663,7 @@ index 0000000..a3edadd
 +  return { count, sentinelRef: setSentinel, hasMore: count < total, showMore, ensureRendered };
 +}
 diff --git a/src/pillars/Collection.jsx b/src/pillars/Collection.jsx
-index 88d32d3..9b29d80 100644
+index 88d32d3..7d14cdb 100644
 --- a/src/pillars/Collection.jsx
 +++ b/src/pillars/Collection.jsx
 @@ -21,11 +21,19 @@ import { wantTarget } from '../store/wantIntent.js';
@@ -2152,7 +2342,7 @@ index 88d32d3..9b29d80 100644
  /* ---------------- Lists (Wanted goals + custom Card Lists) ---------------- */
  
  const SHEET_INPUT = {
-@@ -1415,6 +1414,53 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
+@@ -1415,6 +1414,69 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
    );
  }
  
@@ -2160,22 +2350,38 @@ index 88d32d3..9b29d80 100644
 +// one adds every selected card (deduped to card grain, 2000-guarded, existing entries skipped) to it.
 +function AddToListSheet({ open, count, onPick, onClose }) {
 +  const [lists, setLists] = useState(null);
++  const [busyId, setBusyId] = useState(null);   // the row whose write is in flight (shows progress)
++  const inflight = useRef(false);               // single-flight guard - ref so a synchronous double-tap can't race
 +  useEffect(() => {
-+    if (!open) return undefined;
++    if (!open) { inflight.current = false; setBusyId(null); return undefined; }
 +    let alive = true;
-+    setLists(null);
++    setLists(null); inflight.current = false; setBusyId(null);
 +    listCardLists().then((all) => { if (alive) setLists(all); }).catch(() => { if (alive) setLists([]); });
 +    return () => { alive = false; };
 +  }, [open]);
-+  const row = (l) => (
-+    <button key={l.id} onClick={() => onPick(l.id, l.name)} style={{
-+      display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '13px 4px', textAlign: 'left',
-+      background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer',
-+    }}>
-+      <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
-+      <span style={{ flex: 'none', font: "600 15px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>+</span>
-+    </button>
-+  );
++  const busy = busyId != null;
++  // One submission at a time: a second tap (double-tap, or a different list) while a write is pending is
++  // ignored, so a selection can't be added to two lists by accident. The guard clears in finally.
++  const choose = async (l) => {
++    if (inflight.current) return;
++    inflight.current = true;
++    setBusyId(l.id);
++    try { await onPick(l.id, l.name); }         // awaited; the caller closes the sheet + clears selection on success
++    finally { inflight.current = false; setBusyId(null); }
++  };
++  const row = (l) => {
++    const rowBusy = busyId === l.id;
++    return (
++      <button key={l.id} type="button" disabled={busy} aria-busy={rowBusy} onClick={() => choose(l)} style={{
++        display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '13px 4px', textAlign: 'left',
++        background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)',
++        cursor: busy ? 'default' : 'pointer', opacity: busy && !rowBusy ? 0.4 : 1,
++      }}>
++        <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
++        <span style={{ flex: 'none', font: "600 12px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>{rowBusy ? 'Adding…' : '+'}</span>
++      </button>
++    );
++  };
 +  const section = (title, items, hint) => (
 +    <div style={{ marginBottom: 14 }}>
 +      <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 6px' }}>{title}</div>
@@ -2185,7 +2391,7 @@ index 88d32d3..9b29d80 100644
 +    </div>
 +  );
 +  return (
-+    <BottomSheet open={open} title="ADD TO LIST" onClose={onClose}>
++    <BottomSheet open={open} title="ADD TO LIST" onClose={onClose} dismissible={!busy} ariaBusy={busy}>
 +      <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>
 +        Add the {count} selected card{count === 1 ? '' : 's'} (one per card) to a list.
 +      </div>
@@ -3054,7 +3260,7 @@ index 0000000..1ac9496
 +  // 1900 cards is allowed (checked on the deduped count), while 2143 edit-copies items is refused.
 +});
 diff --git a/src/store/ownedImportRepository.js b/src/store/ownedImportRepository.js
-index eb08d33..caf9205 100644
+index eb08d33..2a01d35 100644
 --- a/src/store/ownedImportRepository.js
 +++ b/src/store/ownedImportRepository.js
 @@ -429,7 +429,63 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid =
@@ -3107,7 +3313,7 @@ index eb08d33..caf9205 100644
 +          ]);
 +        }
 +      });
-+      notify();
++      if (ranTransaction) notify();   // an all-present op wrote nothing - honour the no-op contract (no broadcast)
 +      return { listId: lid, added, skipped };
 +    } catch (e) {
 +      if (ranTransaction) notify();
@@ -3128,7 +3334,7 @@ index eb08d33..caf9205 100644
  export const createListWithEntries = production.createListWithEntries;
 +export const addEntriesToList = production.addEntriesToList;
 diff --git a/src/store/ownedImportRepository.test.mjs b/src/store/ownedImportRepository.test.mjs
-index ca406cf..435d091 100644
+index ca406cf..f1b5b0f 100644
 --- a/src/store/ownedImportRepository.test.mjs
 +++ b/src/store/ownedImportRepository.test.mjs
 @@ -19,7 +19,7 @@ import { __setActiveIdForTests } from './profileRepository.js';
@@ -3140,7 +3346,7 @@ index ca406cf..435d091 100644
  } from './ownedImportRepository.js';
  import { planCollectionImport, buildImportItems } from './importPlan.js';
  
-@@ -526,6 +526,89 @@ test('createListWithEntries: writes under the CAPTURED profile even if active sw
+@@ -526,6 +526,108 @@ test('createListWithEntries: writes under the CAPTURED profile even if active sw
    assert.equal(listRows('p2').find((l) => l.id === r.id), undefined, 'nothing under the switched-to profile');
  });
  
@@ -3185,13 +3391,32 @@ index ca406cf..435d091 100644
 +    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /exceeds 2000/.test(e.message));
 +});
 +
-+test('addEntriesToList: all ids already present -> added 0 / skipped N, no duplicate rows', async () => {
++test('addEntriesToList: all ids already present -> added 0 / skipped N, no duplicate rows, ZERO broadcasts', async () => {
 +  const id = await seedList('Full', ['c1']);
 +  await cmdAdd()({ listId: id, cardIds: ['ap'] });       // now c1 + ap
++  notifyCount = 0;
 +  const r = await cmdAdd()({ listId: id, cardIds: ['c1', 'ap'] });
 +  assert.equal(r.added, 0);
 +  assert.equal(r.skipped, 2);
 +  assert.deepEqual(entryCards(id), ['ap', 'c1']);
++  assert.equal(notifyCount, 0, 'a no-op add wrote nothing, so it must not broadcast a Collection refresh');
++});
++
++test('addEntriesToList: writes under the CAPTURED profile even if active switches mid-flight', async () => {
++  const targetA = await seedList('MineA', ['c1']);       // list owned by PID (A)
++  const gate = deferred();
++  let active = PID;
++  // Move the active-profile read to a gated tx so the profile can switch after capture but before write.
++  const cmd2 = createOwnedImportCommand(deps((fn) => fn(), {
++    activeProfileId: () => active,
++    tx: async (s) => { await gate.promise; return runTx(s); },
++  })).addEntriesToList;
++  const p = cmd2({ listId: targetA, cardIds: ['ap'] }, PID);   // pid captured = A
++  active = 'p2';                                                // active switches to B mid-flight
++  gate.resolve();
++  const r = await p;
++  assert.equal(r.added, 1);
++  assert.deepEqual(entryCards(targetA), ['ap', 'c1'], 'the add landed on A - the captured profile, not the switched-to B');
 +});
 +
 +test('addEntriesToList: a malformed id / missing listId / non-array is prewrite/none', async () => {
@@ -3402,3 +3627,17 @@ index 0000000..e470a46
 +  assert.equal(indexAtY(300, 100, 0, 27), 0, 'zero height -> 0, no divide-by-zero');
 +  assert.equal(indexAtY(300, 100, 540, 0), 0, 'no slots -> 0');
 +});
+diff --git a/src/theme/tokens.css b/src/theme/tokens.css
+index 6dc5335..efac239 100644
+--- a/src/theme/tokens.css
++++ b/src/theme/tokens.css
+@@ -247,6 +247,9 @@ input, textarea { -webkit-user-select: text; user-select: text; }
+    adding it on top of --kb floated the dock ~78px above the keyboard with a dead
+    band of list rows showing through. Closed: --kb=0, the nav base wins. Open:
+    --kb dwarfs the base, so the dock rides 12px above the keyboard, flush. */
++/* Alphabet-rail letters use `all: unset`, which drops the native focus ring - re-add a visible one for
++   keyboard users only (:focus-visible), using the gold accent. */
++.cx-rail-letter:focus-visible { outline: 2px solid var(--gold-leaf); outline-offset: 2px; border-radius: 3px; }
+ .cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(62px + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
+ .cx-dock-search { flex: 1; min-width: 0; }
+ .cx-dock-fab { flex: none; position: relative; }   /* anchor for the stacked add FAB (My Collection edit mode) */
