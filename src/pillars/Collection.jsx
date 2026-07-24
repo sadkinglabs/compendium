@@ -27,6 +27,8 @@ import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
 import { registerBackConsumer } from '../back.js';
 import { useCollectionSelection } from '../components/useCollectionSelection.js';
+import { useCollectionRefine } from '../components/useCollectionRefine.js';
+import { useCollectionBulkActions } from '../components/useCollectionBulkActions.js';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -886,63 +888,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // by a signed delta (Remove floors at 0); SET writes an absolute count (0 clears, keeping any want).
   // The toast is driven by the REPOSITORY result (actual changes), never the selection count - so a
   // no-op reads honestly.
-  const bulkEditCopies = async ({ mode, qty, foil, dir }) => {
-    // Only cards that actually have the chosen finish are touched; the rest are skipped and counted (a
-    // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
-    // standard). This keeps one impossible pairing from rejecting the whole strict batch.
-    const adjust = mode === 'adjust';
-    const delta = dir === 'remove' ? -qty : qty;
-    const items = []; let skipped = 0;
-    for (const { card, set } of selected.values()) {
-      let fin; try { fin = printingFinishes(card, set); } catch { fin = { nonFoil: true, foil: false }; }
-      if (foil ? fin.foil : fin.nonFoil) items.push(adjust ? { card_id: card.card_id, setCode: set, foil, delta } : { card_id: card.card_id, setCode: set, foil, qty });
-      else skipped += 1;
-    }
-    if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
-    const skipTail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
-    const f = foil ? 'foil ' : '';
-    const cnt = (nn) => `${nn} card${nn === 1 ? '' : 's'}`;
-    try {
-      if (adjust) {
-        const r = await adjustOwnedItemsBulk(items);   // one atomic write; Remove floors at 0, keeping any want
-        const changed = r.set + r.removed + r.cleared;   // rows actually touched
-        const copies = dir === 'remove' ? r.copiesRemoved : r.copiesAdded;   // AUTHORITATIVE copy movement, not the request
-        const cop = `${copies} ${f}cop${copies === 1 ? 'y' : 'ies'}`;
-        toast(changed === 0
-          ? `No change - ${cnt(r.unchanged)} unaffected${skipTail}`
-          : (dir === 'remove' ? `Removed ${cop} across ${cnt(changed)}` : `Added ${cop} across ${cnt(changed)}`) + skipTail);
-      } else {
-        const r = await setOwnedItemsBulk(items);   // one atomic write; 0 removes, keeping any wishlist want
-        const changed = qty === 0 ? (r.removed + r.cleared) : r.set;
-        toast(changed === 0
-          ? `No change - ${cnt(r.unchanged)} already ${qty === 0 ? 'empty' : `at ${qty}${foil ? ' foil' : ''}`}${skipTail}`
-          : (qty === 0 ? `Removed ${f}from ${cnt(changed)}` : `Set ${cnt(changed)} to ${qty}${foil ? ' foil' : ''}`) + skipTail);
-      }
-      setQtyOpen(false); cancelSelect();
-    } catch (e) {
-      console.error('bulkEditCopies failed', e);
-      const o = bulkWriteFailure(e);
-      toast(o.copy, { tone: o.tone });
-      setQtyOpen(false);
-      if (!o.keepSelection) cancelSelect();   // indeterminate: clear so it can't read as a retry invite
-    }
-  };
-  // Create a new list holding the selected cards - CARD-grain, so multiple printings of one card
-  // become one entry. ONE atomic write (list + entries), pid captured at the submit gesture.
-  const createListFromSelection = async (name, desc, kind) => {
-    const cardIds = [...new Set([...selected.values()].map(({ card }) => card.card_id))];
-    try {
-      const r = await createListWithEntries({ kind, name, description: desc, cardIds }, activeProfileId());
-      toast(`Created “${r.name}” with ${r.entries} card${r.entries === 1 ? '' : 's'}`);
-      setCreateOpen(false); cancelSelect();
-    } catch (e) {
-      console.error('createListFromSelection failed', e);
-      const o = bulkWriteFailure(e);
-      toast(o.indeterminate ? "Couldn't confirm the list - check Lists before trying again." : "Couldn't create the list.", { tone: o.tone });
-      setCreateOpen(false);
-      if (!o.keepSelection) cancelSelect();
-    }
-  };
+  // Bulk Edit-copies / New-list via the shared actions hook (atomic commands, honest write outcomes,
+  // 2000-payload guard). Same one the ALL view uses.
+  const { bulkEditCopies, createListFromSelection } = useCollectionBulkActions({
+    selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
+  });
 
   // activeCount + clearAll come from the shared hook (filters only; Sort/Group are arrangements).
 
