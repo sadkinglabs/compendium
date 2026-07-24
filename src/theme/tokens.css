@@ -247,6 +247,9 @@ input, textarea { -webkit-user-select: text; user-select: text; }
    adding it on top of --kb floated the dock ~78px above the keyboard with a dead
    band of list rows showing through. Closed: --kb=0, the nav base wins. Open:
    --kb dwarfs the base, so the dock rides 12px above the keyboard, flush. */
+/* Alphabet-rail letters use `all: unset`, which drops the native focus ring - re-add a visible one for
+   keyboard users only (:focus-visible), using the gold accent. */
+.cx-rail-letter:focus-visible { outline: 2px solid var(--gold-leaf); outline-offset: 2px; border-radius: 3px; }
 .cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(62px + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
 .cx-dock-search { flex: 1; min-width: 0; }
 .cx-dock-fab { flex: none; position: relative; }   /* anchor for the stacked add FAB (My Collection edit mode) */

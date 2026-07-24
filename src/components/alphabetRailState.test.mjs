@@ -1,7 +1,7 @@
 // Pure tests for the alphabet-rail jump coordinator. Run: npm run test:ui
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { initialRailState as init, railReducer as r, shouldCommit } from './alphabetRailState.js';
+import { initialRailState as init, railReducer as r, shouldCommit, makeRailGesture } from './alphabetRailState.js';
 
 const run = (state, ...events) => events.reduce(r, state);
 const pick = (over = {}) => ({ type: 'PICK', requestId: 1, signature: 'sig', modelKey: 'mk', letter: 'M', idx: 300, ...over });
@@ -79,4 +79,75 @@ test('CANCEL clears a pending pick (duck / teardown / unmount)', () => {
   const s = run(init, pick(), { type: 'CANCEL' });
   assert.equal(s.pending, null);
   assert.equal(shouldCommit(s), false);
+});
+
+/* ---------------- makeRailGesture: the latch orchestration (exactly-once) ---------------- */
+
+// resolveLetter is identity here (the test passes the letter as the "y").
+const gestureSetup = (present = new Set(['A', 'B', 'C'])) => {
+  const events = { scrub: [], jump: [], end: 0 };
+  const g = makeRailGesture({
+    resolveLetter: (y) => y || null,
+    isPresent: (l) => present.has(l),
+    onScrub: (l, y, changed) => events.scrub.push({ l, changed }),
+    onJump: (l) => events.jump.push(l),
+    onEnd: () => { events.end += 1; },
+  });
+  return { g, events };
+};
+
+test('gesture: down then up BEFORE any frame -> exactly one jump (the tap contract)', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'B'); g.up(1, 'B');
+  assert.deepEqual(events.jump, ['B']);
+  assert.equal(events.end, 1);
+});
+
+test('gesture: moves then up -> the RELEASE position wins, exactly once', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'A'); g.move(1, 'B'); g.move(1, 'C'); g.up(1, 'C');
+  assert.deepEqual(events.jump, ['C']);
+});
+
+test('gesture: cancel -> zero jumps', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'A'); g.move(1, 'B'); g.cancel(1);
+  assert.deepEqual(events.jump, []);
+  assert.equal(events.end, 1);
+});
+
+test('gesture: release over an ABSENT slot -> zero jumps (no haptic confirm)', () => {
+  const { g, events } = gestureSetup(new Set(['A', 'C']));   // B absent
+  g.down(1, 'A'); g.up(1, 'B');
+  assert.deepEqual(events.jump, []);
+});
+
+test('gesture: events for the wrong pointer id are ignored', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'A'); g.move(2, 'Z'); g.up(2, 'Z');
+  assert.deepEqual(events.jump, []);
+  g.up(1, 'A');
+  assert.deepEqual(events.jump, ['A']);
+});
+
+test('gesture: a second down while active is ignored (one gesture at a time)', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'A'); g.down(2, 'C');
+  assert.equal(g.isActive(), true);
+  g.up(2, 'C'); assert.deepEqual(events.jump, []);
+  g.up(1, 'A'); assert.deepEqual(events.jump, ['A']);
+});
+
+test('gesture: abort ends a live gesture with no jump', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'A'); g.abort();
+  assert.equal(events.end, 1);
+  assert.deepEqual(events.jump, []);
+  assert.equal(g.isActive(), false);
+});
+
+test('gesture: onScrub reports changed only when the letter changes', () => {
+  const { g, events } = gestureSetup();
+  g.down(1, 'A'); g.move(1, 'A'); g.move(1, 'B');
+  assert.deepEqual(events.scrub.map((s) => s.changed), [true, false, true]);
 });

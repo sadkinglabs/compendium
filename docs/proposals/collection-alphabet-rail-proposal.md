@@ -7,6 +7,15 @@ coupled to progressive render, on two surfaces, with a11y + reduced-motion fallb
 **Author:** Claude (lead engineer). **Reviewer:** Codex (principal). This rev answers Codex's five
 Majors + two Minors on rev 1. **No production code exists yet; none begins until this lands.**
 
+> **⚠ SUPERSEDED (gesture/readout only).** The **bulge/wave** interaction, the **injected scheduler /
+> capture / tracker seams** (§D4-D5), and the **parent-owned `committedLetter`** announcement wiring
+> described below were BUILT, then **replaced on owner device direction** with a **latch + floating pill**
+> readout (jump on release; the shell owns the announcement; the gesture orchestration is the pure
+> `makeRailGesture` controller, not injected seams). The shipped behaviour is the source of truth - see
+> the "Device-driven readout pivot" note in the Approval record and `AlphabetRail.jsx` /
+> `alphabetRailState.js`. Everything else here (model, geometry, indexability, jump coordinator,
+> visibility/duck rules, docs impact) is as shipped.
+
 ## Problem / goal
 ALL holds ~1,500 collector items. Even with the progressive prefix, reaching "W" by thumb is a long
 scroll. The owner asked for a **Niagara-style vertical A-Z rail** on the right edge: drag or tap a letter

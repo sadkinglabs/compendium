@@ -1,36 +1,31 @@
 // The Collection A-Z alphabet rail: a vertical index on the logical inline edge. The rail is a plain,
 // static track of small Cinzel letters; the READOUT is a big letter pill that floats beside the thumb
-// while you scrub. Present letters are real <button>s for keyboard/AT, but ALL pointer input lands on
-// the continuous capture strip (the buttons are pointer-inert), so the letter always comes from POSITION
-// - and on touch the implicit pointer capture lands on the strip itself, never on a tiny child. ALL the
-// decisions live in tested pure helpers - `railModel` (which letters, indexability, stable modelKey),
-// `indexAtY` (finger -> letter), `railTopOffset`/`railBounds`/`effectiveZoom` (the measured geometry),
-// `activeLetterFor` (scroll highlight), and the `railReducer` jump coordinator. This is the DOM shell.
+// while you scrub. Present letters are real <button>s for keyboard/AT, but ALL pointer input lands on the
+// continuous capture strip (the buttons are pointer-inert), so the letter always comes from POSITION.
 //
-// LATCH model (the key to smoothness): during a drag we do ZERO grid work - no jump, no scroll, no React
-// re-render - we only move the floating pill imperatively (one element) and remember the letter under the
-// finger. The single expensive grow+scroll fires once, on RELEASE. Live-scrubbing ~1,500 image tiles was
-// the source of the jank; a pill preview is the standard fix. A pointercancel aborts with no jump.
+// LATCH model: during a drag we do ZERO grid work (no jump/scroll/re-render) - we only move the floating
+// pill imperatively and remember the letter under the finger. The single grow+scroll fires once, on
+// RELEASE, and the release letter is resolved SYNCHRONOUSLY from pointerup.clientY (never a value left by
+// an animation frame) so a tap that releases before any rAF still jumps exactly once. A pointercancel
+// aborts with no jump; a release over an absent slot is a no-op with no haptic confirm. The whole
+// sequence lives in the pure, tested `makeRailGesture` controller - this component is the DOM shell.
 //
-// Gesture plumbing: pointerdown on the strip installs WINDOW-level pointermove/up/cancel listeners keyed
-// to that pointerId, so the drag survives a failed/stolen pointer capture and a finger that wanders off
-// the strip. setPointerCapture is requested as a bonus but nothing depends on it. Teardown lives in a
-// per-gesture cleanup ref + an unmount-only dispose effect - NEVER keyed on callback identities, which
-// churn on parent re-renders and used to release the capture mid-drag. One rAF positions the pill with
-// direct DOM writes (no per-frame React re-render).
+// Lifecycle / leaks: the scroll root is resolved through a CALLBACK REF into state, so mounting, ducking
+// (indexable/present -> false renders null), and a real root replacement each rebind or tear down the
+// tracking effects. When the rail becomes invisible we also abort any live gesture, CANCEL the pending
+// jump, and clear stale bounds. Gesture window-listeners live in a per-gesture cleanup ref; the unmount
+// dispose aborts the gesture. Nothing rides on callback identities (those churn on parent re-render).
 //
-// Geometry: every measurement (rects, viewport) is in REAL viewport px, but this nav renders inside the
-// zoomed .cx-app subtree (`zoom: var(--ui-scale)`), where fixed insets and scrollTop are consumed in
-// LAYOUT px - so every measured inset/delta is divided by the measured effectiveZoom exactly once.
-//
-// Interactive behaviour (WebView pointer streams, scroll fidelity, exact geometry) is DEVICE-GATED and
-// unverified in the repo gates - only the pure helpers it drives are unit-tested.
+// Geometry: measurements are REAL viewport px but this nav renders inside `.cx-app { zoom: --ui-scale }`,
+// where fixed insets and scrollTop are LAYOUT px - so every measured inset/delta is divided once by the
+// measured effectiveZoom. Interactive behaviour (WebView pointer streams, scroll fidelity, exact
+// geometry) is DEVICE-GATED; only the pure helpers it drives are unit-tested.
 import { useReducer, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { RAIL_ORDER, firstPresent, lastPresent, stepLetter, activeLetterFor } from '../store/alphabetIndex.js';
 import { indexAtY, railBounds, railTopOffset, effectiveZoom } from '../store/railGeometry.js';
 import { resolveScrollRoot } from '../store/collectionAllModel.js';
 import { haptic } from '../native.js';
-import { initialRailState, railReducer, shouldCommit } from './alphabetRailState.js';
+import { initialRailState, railReducer, shouldCommit, makeRailGesture } from './alphabetRailState.js';
 
 const LOOKAHEAD = 60;     // render a little past the target so the landing has context
 const PRIMARY_MOUSE = 0;  // left button
@@ -39,30 +34,35 @@ const LETTER = 12;        // static rail letter size (px) - the rail is a plain 
 const PILL_LETTER = 30;   // the big Cinzel letter shown in the floating pill beside the thumb
 const PILL_SIZE = 58;     // pill diameter (px)
 const PILL_GAP = 18;      // pill sits this far INSIDE the strip, so it clears the thumb driving the scroll
-// The reachable bottom stack to clear: the dock itself plus ANY FAB wrap in its FAB slot (the plain
-// filter FAB shares the dock rect; the stacked add FAB rises above it and is the true obstruction).
+// The reachable bottom stack to clear: the dock itself plus ANY FAB wrap in its FAB slot.
 const OBSTRUCTIONS = '.cx-dock, .cx-dock-fab .fab-wrap';
 
-// `headerHeight` is the root-relative landing offset on THIS surface (a per-surface constant,
-// device-tunable): a jump scrolls its anchor this far below the root top, and the active-letter
-// threshold matches it. The rail's own top/bottom POSITION is measured live, never from this.
 export default function AlphabetRail({ model, count, ensureRendered, signature, headerHeight = 48, side = 'right', selecting = false }) {
   const [state, dispatch] = useReducer(railReducer, initialRailState);
-  const [active, setActive] = useState(null);
+  const [active, setActive] = useState(null);           // scroll-derived highlight (last crossed anchor)
+  const [focusedLetter, setFocusedLetter] = useState(null);   // keyboard roving focus (independent of `active`)
   const [bounds, setBounds] = useState(null);
-  const rootRef = useRef(null);          // this rail's DOM node -> resolve the scroll root from it
-  const stripRef = useRef(null);         // the continuous capture strip
-  const reqRef = useRef(0);              // monotonic pick requestId
-  const rafRef = useRef(0);              // wave rAF handle
-  const pendingYRef = useRef(null);      // latest pointer Y awaiting a pill frame
-  const teardownRef = useRef(null);      // live gesture's cleanup (window listeners + capture release)
-  const [scrubbing, setScrubbing] = useState(false);   // a drag is live -> the floating letter pill is shown
-  const pillRef = useRef(null);          // the pill DOM node - positioned + lettered imperatively (no re-render)
-  const scrubLetterRef = useRef(null);   // the letter currently under the finger (the LATCHED jump target)
-  const zoomRef = useRef(1);             // effectiveZoom captured at gesture start (fixed insets are layout px)
+  const [scrubbing, setScrubbing] = useState(false);    // a drag is live -> the floating letter pill is shown
+  const [rootEl, setRootEl] = useState(null);           // resolved scroll root (via callback ref -> rebinds on root change)
+  const stripRef = useRef(null);
+  const pillRef = useRef(null);
+  const buttonRefs = useRef(new Map());                 // present-letter buttons, for roving focus()
+  const reqRef = useRef(0);
+  const rafRef = useRef(0);                             // pill-position rAF
+  const pendingYRef = useRef(null);
+  const zoomRef = useRef(1);
+  const teardownRef = useRef(null);                     // live gesture's window-listener + capture cleanup
+  const scrubLetterRef = useRef(null);
+  const modelRef = useRef(model);
+  const pickRef = useRef(null);
 
   const { order, present, firstIndex, indexable, modelKey } = model;
-  const scrollRoot = () => resolveScrollRoot(rootRef.current);
+  const visible = indexable && present.size > 0;        // fail closed: not-indexable or empty -> duck
+  useLayoutEffect(() => { modelRef.current = model; });
+
+  // The nav's callback ref resolves the scroll root into STATE. Mount -> bind; duck (null render) or a
+  // root replacement -> the effects keyed on rootEl tear down the old root and bind the new one.
+  const navRef = useCallback((node) => { setRootEl(node ? resolveScrollRoot(node) : null); }, []);
 
   // ---- Jump coordinator (drives the DOM scroll; the reducer owns sequencing) -----------------------
   const pick = useCallback((letter) => {
@@ -73,68 +73,61 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
     dispatch({ type: 'PICK', requestId, signature, modelKey, letter, idx });
     ensureRendered(idx + 1 + LOOKAHEAD);                       // grow the prefix so the target row exists
   }, [present, firstIndex, signature, modelKey, ensureRendered]);
+  useLayoutEffect(() => { pickRef.current = pick; });
 
-  // OBSERVE whenever the pick, the rendered count, or the world (signature/modelKey) changes.
   useLayoutEffect(() => {
     dispatch({ type: 'OBSERVE', count, signature, modelKey });
   }, [state.pending, count, signature, modelKey]);
 
-  // Commit: once ready, find the letter's first anchor INSIDE the resolved root and scroll it under the
-  // header. Rect deltas are real px, scrollTop is layout px - normalise by the measured zoom. Fail
-  // closed (no announcement) if the anchor is missing.
+  // Commit: once ready, scroll the letter's first anchor under the header. Rect deltas are real px,
+  // scrollTop is layout px - normalise by the measured zoom. Fail closed (no announcement) if missing.
   useLayoutEffect(() => {
-    if (!shouldCommit(state)) return;
+    if (!shouldCommit(state) || !rootEl) return;
     const { requestId, letter } = state.pending;
-    const root = scrollRoot();
-    const anchor = root && root.querySelector(`[data-letter="${letter}"]`);
-    if (!root || !anchor) { dispatch({ type: 'COMMIT_MISS', requestId }); return; }
-    const rootRect = root.getBoundingClientRect();
-    const zoom = effectiveZoom(rootRect.width, root.offsetWidth);
+    const anchor = rootEl.querySelector(`[data-letter="${letter}"]`);
+    if (!anchor) { dispatch({ type: 'COMMIT_MISS', requestId }); return; }
+    const rootRect = rootEl.getBoundingClientRect();
+    const zoom = effectiveZoom(rootRect.width, rootEl.offsetWidth);
     const delta = (anchor.getBoundingClientRect().top - rootRect.top) / zoom - headerHeight;
-    root.scrollTop += delta;                                    // land just below the landing offset
+    rootEl.scrollTop += delta;
     dispatch({ type: 'COMMIT_OK', requestId });
-  }, [state.ready, state.pending && state.pending.requestId]);
+  }, [state.ready, state.pending && state.pending.requestId, rootEl]);
 
-  // ---- Active-letter tracking: one passive listener on the resolved root, rAF-throttled. Removed only
-  // by dispose (root change / unmount), NOT by a completed gesture. -----------------------------------
+  // ---- Active-letter tracking: one passive listener on the resolved root, rAF-throttled. Bound to
+  // rootEl + visible, so a duck or a root replacement tears it down. ----------------------------------
   useEffect(() => {
-    const root = scrollRoot();
-    if (!root) return undefined;
+    if (!rootEl || !visible) return undefined;
     let raf = 0;
     const measure = () => {
       raf = 0;
-      const rootRect = root.getBoundingClientRect();
-      const zoom = effectiveZoom(rootRect.width, root.offsetWidth);
-      const threshold = headerHeight;                          // the landing boundary, in root-relative layout px
+      const rootRect = rootEl.getBoundingClientRect();
+      const zoom = effectiveZoom(rootRect.width, rootEl.offsetWidth);
       const anchors = [];
       for (const l of RAIL_ORDER) {
-        const el = root.querySelector(`[data-letter="${l}"]`);
+        const el = rootEl.querySelector(`[data-letter="${l}"]`);
         if (el) anchors.push({ letter: l, top: (el.getBoundingClientRect().top - rootRect.top) / zoom });
       }
-      setActive(activeLetterFor(anchors, threshold, present));
+      setActive(activeLetterFor(anchors, headerHeight, present));
     };
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
     measure();
-    root.addEventListener('scroll', onScroll, { passive: true });
-    return () => { root.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
-  }, [present, modelKey, headerHeight]);
+    rootEl.addEventListener('scroll', onScroll, { passive: true });
+    return () => { rootEl.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, [rootEl, visible, present, modelKey, headerHeight]);
 
-  // Measure the fixed bounds LIVE: top from the sticky chrome ([data-rail-sticky]) and the first grid
-  // tile ([data-letter]) - the rail starts where the cards are, floored at the sticky header/scrollport
-  // (railTopOffset). Bottom from the dock/FAB obstruction (a single measured boundary, immune to
-  // safe-area double-counting). Both real-px results are divided ONCE by the measured zoom because this
-  // nav's fixed insets are consumed inside the zoomed .cx-app subtree. Recompute on viewport resize +
-  // keyboard, and once more after the stacked FAB's .4s rise (its mid-flight transform skews the rect).
+  // ---- Live bounds: top from the sticky chrome / first tile (railTopOffset), bottom from the dock/FAB
+  // obstruction (one measured boundary). Re-measured on scroll (the ALL header rides below the toggle
+  // then pins), resize/keyboard, and once after the stacked FAB's .4s rise. Bound to rootEl + visible. --
   useEffect(() => {
+    if (!rootEl || !visible || typeof window === 'undefined') return undefined;
+    let raf = 0;
     const compute = () => {
       raf = 0;
-      const root = scrollRoot();
-      if (!root || typeof window === 'undefined') return;
-      const vh = window.innerHeight;                           // fixed insets anchor to the LAYOUT viewport
-      const rootRect = root.getBoundingClientRect();
-      const zoom = effectiveZoom(rootRect.width, root.offsetWidth);
-      const sticky = root.querySelector('[data-rail-sticky]');
-      const firstTile = root.querySelector('[data-letter]');
+      const vh = window.innerHeight;
+      const rootRect = rootEl.getBoundingClientRect();
+      const zoom = effectiveZoom(rootRect.width, rootEl.offsetWidth);
+      const sticky = rootEl.querySelector('[data-rail-sticky]');
+      const firstTile = rootEl.querySelector('[data-letter]');
       const offset = railTopOffset({
         scrollRootTop: rootRect.top,
         stickyBottom: sticky ? sticky.getBoundingClientRect().bottom : null,
@@ -148,98 +141,82 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
       const b = railBounds({ viewportHeight: vh, scrollRootTop: rootRect.top, headerHeight: offset, obstructionTop });
       const nt = b.top / zoom;
       const nb = b.bottom / zoom;
-      // Skip a same-value update so scrolling past the pinned point does not re-render the rail per frame.
       setBounds((prev) => (prev && Math.abs(prev.top - nt) < 0.5 && Math.abs(prev.bottom - nb) < 0.5 ? prev : { top: nt, bottom: nb }));
     };
-    let raf = requestAnimationFrame(compute);   // measure after paint (dock/keyboard settled)
-    const late = setTimeout(compute, 480);      // after fabRiseIn (.4s) - the stacked FAB's true rest position
-    const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(compute); };
-    // Re-measure on SCROLL (rAF-throttled): the ALL header rides below the Sets/All toggle until it
-    // pins to the scrollport top, so the rail's top floor moves with it.
-    const root0 = scrollRoot();
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(compute); };
-    if (root0) root0.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onResize);
-    if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(compute); };
+    raf = requestAnimationFrame(compute);
+    const late = setTimeout(compute, 480);
+    rootEl.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', schedule);
     return () => {
-      cancelAnimationFrame(raf);
-      if (root0) root0.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
       clearTimeout(late);
-      window.removeEventListener('resize', onResize);
-      if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
+      rootEl.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
+      if (window.visualViewport) window.visualViewport.removeEventListener('resize', schedule);
     };
-  }, [headerHeight, selecting]);
+  }, [rootEl, visible, headerHeight, selecting]);
 
-  // ---- Gesture: strip-only pointer target; window-level move/up. LATCH model - during the drag we do
-  // ZERO grid work (no jump, no scroll, no re-render); we only move the floating letter pill imperatively
-  // and remember the letter under the finger. The single jump fires on RELEASE. This is what makes it
-  // smooth: the heavy grow+scroll can't compete with the drag. -----------------------------------------
-  const frame = useCallback(() => {
+  // ---- Gesture (latch): the pure controller resolves letters synchronously; these callbacks are the
+  // DOM side (pill position/haptic) and are created ONCE, reading refs so they never go stale. ---------
+  const positionPill = useCallback(() => {
     rafRef.current = 0;
     const y = pendingYRef.current;
     const strip = stripRef.current;
-    if (y == null || !strip) return;
-    const rect = strip.getBoundingClientRect();
-    const letter = order[indexAtY(y, rect.top, rect.height, order.length)];
     const pill = pillRef.current;
-    const changed = letter !== scrubLetterRef.current;
-    if (pill) {
-      const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
-      pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;   // follows the finger every frame (layout px)
-    }
-    if (changed) {
-      scrubLetterRef.current = letter;
-      const on = present.has(letter);
-      if (pill) {
-        pill.style.opacity = on ? '1' : '.5';                      // an absent letter (won't jump) reads muted
-        if (pill.firstChild) {
-          pill.firstChild.textContent = letter || '';
-          pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)';
-        }
-      }
-      haptic('light');                                             // a tick per letter, like fast-scroll
-    }
-  }, [order, present]);
-
-  // Latest-frame ref: rAF always runs the CURRENT frame closure, while schedule/end/commit stay
-  // identity-stable for the whole component lifetime (no teardown churn releasing the gesture mid-drag).
-  const frameRef = useRef(frame);
-  useLayoutEffect(() => { frameRef.current = frame; });
-  const runFrame = useCallback(() => { frameRef.current(); }, []);
-
-  const schedule = useCallback((y) => {
-    pendingYRef.current = y;
-    if (!rafRef.current) rafRef.current = requestAnimationFrame(runFrame);
-  }, [runFrame]);
-
-  const endGesture = useCallback(() => {
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
-    pendingYRef.current = null;
-    if (teardownRef.current) teardownRef.current();            // window listeners + capture release
-    setScrubbing(false);                                       // hides the pill
+    if (y == null || !strip || !pill) return;
+    const rect = strip.getBoundingClientRect();
+    const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
+    pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;
   }, []);
-
-  // Release = LATCH: jump to the letter that was under the finger, once. Absent slots are a silent no-op.
-  const commit = useCallback(() => {
-    const letter = scrubLetterRef.current;
-    endGesture();
-    if (letter && present.has(letter)) { haptic('medium'); pick(letter); }   // a firmer tick confirms the jump
-  }, [endGesture, present, pick]);
-  const commitRef = useRef(commit);
-  useLayoutEffect(() => { commitRef.current = commit; });
+  const gestureRef = useRef(null);
+  if (!gestureRef.current) {
+    gestureRef.current = makeRailGesture({
+      resolveLetter: (y) => {
+        const strip = stripRef.current;
+        if (!strip) return null;
+        const rect = strip.getBoundingClientRect();
+        const ord = modelRef.current.order;
+        return ord[indexAtY(y, rect.top, rect.height, ord.length)] || null;
+      },
+      isPresent: (l) => modelRef.current.present.has(l),
+      onScrub: (letter, y, changed) => {
+        pendingYRef.current = y;
+        if (!rafRef.current) rafRef.current = requestAnimationFrame(positionPill);
+        if (changed) {
+          scrubLetterRef.current = letter;
+          const on = modelRef.current.present.has(letter);
+          const pill = pillRef.current;
+          if (pill) {
+            pill.style.opacity = on ? '1' : '.5';
+            if (pill.firstChild) { pill.firstChild.textContent = letter || ''; pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)'; }
+          }
+          haptic('light');
+        }
+      },
+      onJump: (letter) => { haptic('medium'); pickRef.current(letter); },
+      onEnd: () => {
+        if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
+        pendingYRef.current = null;
+        if (teardownRef.current) teardownRef.current();
+        setScrubbing(false);
+      },
+    });
+  }
+  const gesture = gestureRef.current;
 
   const onPointerDown = (e) => {
     if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== PRIMARY_MOUSE)) return;
-    if (teardownRef.current) return;                           // one gesture at a time
+    if (teardownRef.current || gesture.isActive()) return;     // one gesture at a time
     const id = e.pointerId;
     const strip = e.currentTarget;
-    const root = scrollRoot();
-    const rr = root && root.getBoundingClientRect();
-    zoomRef.current = rr ? effectiveZoom(rr.width, root.offsetWidth) : 1;
+    const rr = rootEl && rootEl.getBoundingClientRect();
+    zoomRef.current = rr ? effectiveZoom(rr.width, rootEl.offsetWidth) : 1;
     try { strip.setPointerCapture(id); } catch { /* capture is a bonus - window listeners carry the drag */ }
-    const onMove = (ev) => { if (ev.pointerId === id) schedule(ev.clientY); };
-    const onUp = (ev) => { if (ev.pointerId === id) commitRef.current(); };     // release -> the one jump
-    const onCancel = (ev) => { if (ev.pointerId === id) endGesture(); };        // aborted -> no jump
+    const onMove = (ev) => { if (ev.pointerId === id) gesture.move(id, ev.clientY); };
+    const onUp = (ev) => { if (ev.pointerId === id) gesture.up(id, ev.clientY); };       // release -> synchronous jump
+    const onCancel = (ev) => { if (ev.pointerId === id) gesture.cancel(id); };
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerup', onUp, { passive: true });
     window.addEventListener('pointercancel', onCancel, { passive: true });
@@ -252,55 +229,67 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
     };
     e.preventDefault();
     scrubLetterRef.current = null;
-    setScrubbing(true);                        // show the pill; the first frame positions + letters it
-    schedule(e.clientY);                       // a bare tap positions the pill and latches its letter too
+    setScrubbing(true);
+    gesture.down(id, e.clientY);                                // latches the first letter + positions the pill
   };
 
-  // dispose: unmount tears the live gesture down (rAF + window listeners + capture). Deliberately
-  // dependency-free - gesture teardown must never ride on render identities.
+  // Duck / root-change teardown: when the rail becomes invisible, abort any live gesture, cancel the
+  // pending jump, and clear stale bounds. The tracking effects unbind via their rootEl/visible deps.
+  useEffect(() => {
+    if (visible) return;
+    gesture.abort();
+    dispatch({ type: 'CANCEL' });
+    setBounds(null);
+  }, [visible, gesture]);
+
+  // Unmount dispose: abort the gesture (removes window listeners + capture) and cancel the pill rAF.
   useEffect(() => () => {
+    gesture.abort();
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     rafRef.current = 0;
-    pendingYRef.current = null;
-    if (teardownRef.current) teardownRef.current();
-  }, []);
+  }, [gesture]);
 
+  // Keyboard: ARROW/HOME/END only (Enter/Space are left to the focused button's native onClick, so an
+  // activation is exactly one pick). Navigation moves DOM FOCUS to the destination button, then jumps -
+  // movement derives from the FOCUSED letter, never the scroll-derived `active`.
   const onKeyDown = (e) => {
+    const cur = focusedLetter || firstPresent(present);
     let next = null;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = stepLetter(present, active || firstPresent(present), 1);
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = stepLetter(present, active || firstPresent(present), -1);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = stepLetter(present, cur, 1);
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') next = stepLetter(present, cur, -1);
     else if (e.key === 'Home') next = firstPresent(present);
     else if (e.key === 'End') next = lastPresent(present);
-    else if (e.key === 'Enter' || e.key === ' ') next = active;
     else return;
     e.preventDefault();
-    if (next) { setActive(next); pick(next); }
+    if (!next) return;
+    setFocusedLetter(next);
+    const node = buttonRefs.current.get(next);
+    if (node) node.focus();                                     // move focus BEFORE the jump
+    pick(next);
   };
 
-  if (!indexable || present.size === 0) return null;   // fail closed / nothing to navigate -> duck (unmounts, disposing)
+  if (!visible) return null;   // fail closed / nothing to navigate -> duck (effects unbind via deps above)
 
-  // Render at a safe fallback until the first measure lands (one frame) - the nav must mount so rootRef
-  // populates and the bounds effect can resolve the scroll root and measure the live boundaries.
-  const b = bounds || { top: headerHeight, bottom: 140 };
+  const b = bounds || { top: headerHeight, bottom: 140 };       // safe fallback until the first measure
+  const tabLetter = focusedLetter && present.has(focusedLetter) ? focusedLetter : firstPresent(present);
   const edge = side === 'left' ? { insetInlineStart: 0 } : { insetInlineEnd: 0 };
   return (
-    <nav ref={rootRef} aria-label="Alphabetical index" onKeyDown={onKeyDown}
+    <nav ref={navRef} aria-label="Alphabetical index" onKeyDown={onKeyDown}
       style={{ position: 'fixed', top: b.top, bottom: b.bottom, ...edge, zIndex: 45,
         display: 'flex', width: RAIL_WIDTH, pointerEvents: 'none', opacity: bounds ? 1 : 0 }}>
-      {/* continuous capture strip - the ONLY pointer target; the letter comes from POSITION, so the
-          hit area is the full strip width while the labels stay small and tucked against the edge */}
       <div ref={stripRef} onPointerDown={onPointerDown}
         style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column',
           alignItems: side === 'left' ? 'flex-start' : 'flex-end', justifyContent: 'space-between',
           padding: side === 'left' ? '4px 0 4px 10px' : '4px 10px 4px 0',
           touchAction: 'none', pointerEvents: 'auto', cursor: 'pointer' }}>
-        {order.map((l, i) => {
+        {order.map((l) => {
           const on = present.has(l);
           return (
-            <button key={l} type="button"
-              disabled={!on} aria-hidden={!on} tabIndex={on && (active === l || (!active && l === firstPresent(present))) ? 0 : -1}
+            <button key={l} type="button" className="cx-rail-letter"
+              ref={(n) => { if (n) buttonRefs.current.set(l, n); else buttonRefs.current.delete(l); }}
+              disabled={!on} aria-hidden={!on} tabIndex={on && l === tabLetter ? 0 : -1}
               aria-current={active === l ? 'true' : undefined}
-              onClick={on ? () => { setActive(l); pick(l); } : undefined}
+              onClick={on ? () => { setFocusedLetter(l); pick(l); } : undefined}
               style={{ all: 'unset', fontFamily: 'var(--f-display)', fontWeight: active === l ? 800 : 600,
                 fontSize: LETTER, lineHeight: 1, letterSpacing: '.03em',
                 color: on ? (active === l ? 'var(--gold-num)' : 'var(--ink-muted)') : 'var(--ink-faint)',
@@ -310,10 +299,8 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
           );
         })}
       </div>
-      {/* Floating readout: while scrubbing, a big Cinzel letter rides beside the thumb (offset INWARD so
-          the finger never covers it), positioned + lettered imperatively from the rAF frame. */}
       {scrubbing && (
-        <div ref={pillRef} data-present="1" aria-hidden="true"
+        <div ref={pillRef} aria-hidden="true"
           style={{ position: 'fixed', top: 0, [side === 'left' ? 'left' : 'right']: RAIL_WIDTH + PILL_GAP,
             transform: 'translateY(-50%)', width: PILL_SIZE, height: PILL_SIZE, borderRadius: '50%',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, pointerEvents: 'none',
@@ -321,7 +308,6 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
           <span style={{ font: `800 ${PILL_LETTER}px/1 var(--f-display)`, color: 'var(--gold-num)' }} />
         </div>
       )}
-      {/* committed-destination announcement only (never intermediate drag crossings) */}
       <span aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
         {state.committedLetter ? `Jumped to ${state.committedLetter}` : ''}
       </span>

@@ -49,3 +49,51 @@ export function railReducer(state, event) {
 
 /** Whether the shell should now attempt the scroll for the current pick. */
 export const shouldCommit = (state) => !!(state.pending && state.ready);
+
+/**
+ * The rail gesture orchestrator as a plain controller (no DOM, no React) so the exactly-once + latch
+ * sequence is unit-tested, not device-observed. It resolves the letter SYNCHRONOUSLY from each event's Y
+ * (via injected `resolveLetter`) - the jump target is the RELEASE position, never a value left behind by
+ * an animation frame, so a tap that releases before any rAF still jumps exactly once. `pointercancel`
+ * ends with no jump; a release over an absent slot ends with no jump (and no haptic confirm).
+ *
+ *   resolveLetter(y) -> letter | null      isPresent(letter) -> boolean
+ *   onScrub(letter, y, changed)   onJump(letter)   onEnd()
+ */
+export function makeRailGesture({ resolveLetter, isPresent, onScrub, onJump, onEnd }) {
+  let activeId = null;
+  let last = null;
+  return {
+    isActive: () => activeId != null,
+    down(id, y) {
+      if (activeId != null) return;              // one gesture at a time
+      activeId = id;
+      last = resolveLetter(y);
+      onScrub(last, y, true);
+    },
+    move(id, y) {
+      if (id !== activeId) return;
+      const l = resolveLetter(y);
+      const changed = l !== last;
+      last = l;
+      onScrub(l, y, changed);
+    },
+    up(id, y) {
+      if (id !== activeId) return;
+      activeId = null;
+      const l = resolveLetter(y);                // RELEASE position - synchronous, no rAF dependency
+      onEnd();
+      if (l && isPresent(l)) onJump(l);          // absent slot / null -> no jump, no confirm
+    },
+    cancel(id) {
+      if (id !== activeId) return;
+      activeId = null;
+      onEnd();                                   // aborted -> no jump
+    },
+    abort() {                                    // duck / unmount while a gesture is live
+      if (activeId == null) return;
+      activeId = null;
+      onEnd();
+    },
+  };
+}

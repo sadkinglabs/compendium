@@ -567,13 +567,32 @@ test('addEntriesToList: the ceiling is enforced on the RAW array, before dedup',
     (e) => e.phase === 'prewrite' && e.writeState === 'none' && /exceeds 2000/.test(e.message));
 });
 
-test('addEntriesToList: all ids already present -> added 0 / skipped N, no duplicate rows', async () => {
+test('addEntriesToList: all ids already present -> added 0 / skipped N, no duplicate rows, ZERO broadcasts', async () => {
   const id = await seedList('Full', ['c1']);
   await cmdAdd()({ listId: id, cardIds: ['ap'] });       // now c1 + ap
+  notifyCount = 0;
   const r = await cmdAdd()({ listId: id, cardIds: ['c1', 'ap'] });
   assert.equal(r.added, 0);
   assert.equal(r.skipped, 2);
   assert.deepEqual(entryCards(id), ['ap', 'c1']);
+  assert.equal(notifyCount, 0, 'a no-op add wrote nothing, so it must not broadcast a Collection refresh');
+});
+
+test('addEntriesToList: writes under the CAPTURED profile even if active switches mid-flight', async () => {
+  const targetA = await seedList('MineA', ['c1']);       // list owned by PID (A)
+  const gate = deferred();
+  let active = PID;
+  // Move the active-profile read to a gated tx so the profile can switch after capture but before write.
+  const cmd2 = createOwnedImportCommand(deps((fn) => fn(), {
+    activeProfileId: () => active,
+    tx: async (s) => { await gate.promise; return runTx(s); },
+  })).addEntriesToList;
+  const p = cmd2({ listId: targetA, cardIds: ['ap'] }, PID);   // pid captured = A
+  active = 'p2';                                                // active switches to B mid-flight
+  gate.resolve();
+  const r = await p;
+  assert.equal(r.added, 1);
+  assert.deepEqual(entryCards(targetA), ['ap', 'c1'], 'the add landed on A - the captured profile, not the switched-to B');
 });
 
 test('addEntriesToList: a malformed id / missing listId / non-array is prewrite/none', async () => {

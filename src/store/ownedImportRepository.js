@@ -474,7 +474,7 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
           ]);
         }
       });
-      notify();
+      if (ranTransaction) notify();   // an all-present op wrote nothing - honour the no-op contract (no broadcast)
       return { listId: lid, added, skipped };
     } catch (e) {
       if (ranTransaction) notify();

@@ -1418,22 +1418,38 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
 // one adds every selected card (deduped to card grain, 2000-guarded, existing entries skipped) to it.
 function AddToListSheet({ open, count, onPick, onClose }) {
   const [lists, setLists] = useState(null);
+  const [busyId, setBusyId] = useState(null);   // the row whose write is in flight (shows progress)
+  const inflight = useRef(false);               // single-flight guard - ref so a synchronous double-tap can't race
   useEffect(() => {
-    if (!open) return undefined;
+    if (!open) { inflight.current = false; setBusyId(null); return undefined; }
     let alive = true;
-    setLists(null);
+    setLists(null); inflight.current = false; setBusyId(null);
     listCardLists().then((all) => { if (alive) setLists(all); }).catch(() => { if (alive) setLists([]); });
     return () => { alive = false; };
   }, [open]);
-  const row = (l) => (
-    <button key={l.id} onClick={() => onPick(l.id, l.name)} style={{
-      display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '13px 4px', textAlign: 'left',
-      background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer',
-    }}>
-      <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
-      <span style={{ flex: 'none', font: "600 15px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>+</span>
-    </button>
-  );
+  const busy = busyId != null;
+  // One submission at a time: a second tap (double-tap, or a different list) while a write is pending is
+  // ignored, so a selection can't be added to two lists by accident. The guard clears in finally.
+  const choose = async (l) => {
+    if (inflight.current) return;
+    inflight.current = true;
+    setBusyId(l.id);
+    try { await onPick(l.id, l.name); }         // awaited; the caller closes the sheet + clears selection on success
+    finally { inflight.current = false; setBusyId(null); }
+  };
+  const row = (l) => {
+    const rowBusy = busyId === l.id;
+    return (
+      <button key={l.id} type="button" disabled={busy} aria-busy={rowBusy} onClick={() => choose(l)} style={{
+        display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '13px 4px', textAlign: 'left',
+        background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)',
+        cursor: busy ? 'default' : 'pointer', opacity: busy && !rowBusy ? 0.4 : 1,
+      }}>
+        <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+        <span style={{ flex: 'none', font: "600 12px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>{rowBusy ? 'Adding…' : '+'}</span>
+      </button>
+    );
+  };
   const section = (title, items, hint) => (
     <div style={{ marginBottom: 14 }}>
       <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 6px' }}>{title}</div>
@@ -1443,7 +1459,7 @@ function AddToListSheet({ open, count, onPick, onClose }) {
     </div>
   );
   return (
-    <BottomSheet open={open} title="ADD TO LIST" onClose={onClose}>
+    <BottomSheet open={open} title="ADD TO LIST" onClose={onClose} dismissible={!busy} ariaBusy={busy}>
       <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>
         Add the {count} selected card{count === 1 ? '' : 's'} (one per card) to a list.
       </div>
