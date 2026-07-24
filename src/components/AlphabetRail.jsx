@@ -27,12 +27,14 @@ import { indexAtY, railBounds, railTopOffset, effectiveZoom } from '../store/rai
 import { resolveScrollRoot } from '../store/collectionAllModel.js';
 import { initialRailState, railReducer, shouldCommit } from './alphabetRailState.js';
 
-const RADIUS = 64;        // wave falloff radius (px) around the touch point
-const MAX_SCALE = 1.9;    // centre label scale at the touch point
-const SHIFT = 14;         // max inward push (px) of the centre label - the wave fans OUT from under the finger
+const RADIUS = 88;        // wave falloff radius (px) around the touch point - wide so many letters swell
+const MAX_SCALE = 3.4;    // centre label scale at the touch point - a big, dramatic bulge
+const SHIFT = 30;         // max inward push (px) of the centre label - the wave fans OUT from under the finger
 const LOOKAHEAD = 60;     // render a little past the target so the landing has context
 const PRIMARY_MOUSE = 0;  // left button
-const RAIL_WIDTH = 36;    // capture strip width - a real thumb target; letters hug the screen edge inside it
+const RAIL_WIDTH = 44;    // capture strip width - a real thumb target; letters hug the screen edge inside it
+const LETTER = 12;        // base letter size (px); the ACTIVE letter is drawn much larger at rest
+const ACTIVE_LETTER = 22; // the letter we are "up to" reads big even without a drag
 const SETTLE = 'transform .18s ease';                       // release ease - letters glide home, not snap
 // The reachable bottom stack to clear: the dock itself plus ANY FAB wrap in its FAB slot (the plain
 // filter FAB shares the dock rect; the stacked add FAB rises above it and is the true obstruction).
@@ -279,8 +281,10 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
               disabled={!on} aria-hidden={!on} tabIndex={on && (active === l || (!active && l === firstPresent(present))) ? 0 : -1}
               aria-current={active === l ? 'true' : undefined}
               onClick={on ? () => { setActive(l); pick(l); } : undefined}
-              style={{ all: 'unset', font: "700 10px/1 var(--f-mono)", letterSpacing: '.02em',
+              style={{ all: 'unset', fontFamily: 'var(--f-display)', fontWeight: active === l ? 800 : 600,
+                fontSize: active === l ? ACTIVE_LETTER : LETTER, lineHeight: 1, letterSpacing: '.03em',
                 color: on ? (active === l ? 'var(--gold-num)' : 'var(--ink-muted)') : 'var(--ink-faint)',
+                textShadow: active === l ? '0 0 14px rgba(203,167,95,.45)' : 'none',
                 opacity: on ? 1 : 0.28, transformOrigin: side === 'left' ? 'left center' : 'right center',
                 pointerEvents: 'none', willChange: 'transform' }}>
               {l}
