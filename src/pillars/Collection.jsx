@@ -959,11 +959,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
             {selectMode ? (
-              <div aria-live="polite" style={{ font: "600 11.5px/1 var(--f-mono)", color: 'var(--gold-leaf)', marginTop: 3 }}>
+              <div aria-live="polite" style={{ font: "600 11.5px/1 var(--f-mono)", color: 'var(--gold-leaf)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {sel.count} selected{sel.hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {sel.hidden} hidden</span> : ''}
               </div>
             ) : (
-              <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
+              <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillOwned} / {drillTotal}</div>
             )}
           </div>
           {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
@@ -1144,9 +1144,9 @@ function AllCards({ onPeek, onOpenCodex }) {
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Typographic scale matches the Sets landing header (SetsHome.jsx) exactly, so the two
                 My-Collection views read as one family: eyebrow 10px, title 22px, tally 11.5px mono. */}
-            <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
-            <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>All Cards</div>
-            <div aria-live={selectMode ? 'polite' : undefined} style={{ font: selectMode ? "600 11.5px/1 var(--f-mono)" : "400 11.5px/1 var(--f-mono)", letterSpacing: '.04em', color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}>
+            <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Collection</div>
+            <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>All Cards</div>
+            <div aria-live={selectMode ? 'polite' : undefined} style={{ font: selectMode ? "600 11.5px/1 var(--f-mono)" : "400 11.5px/1 var(--f-mono)", letterSpacing: '.04em', color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {selectMode
                 ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
                 : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
