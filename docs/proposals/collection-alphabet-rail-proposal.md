@@ -62,7 +62,7 @@ indexes. There is no second ordering path, so rail indexes cannot diverge from D
   scalar; a leading non-A-Z char (digit, quote, symbol, empty) -> `'#'`.
 - `bulge(distancePx, radiusPx, maxScale)` -> scale in `[1, maxScale]`: smoothstep falloff of `|distance|`
   within `radius`, `1` beyond. Pure; the animation layer only feeds it a distance.
-- `railModel(flat, cardOf)` -> `{ order, present, firstIndex, indexable }`:
+- `railModel(flat, cardOf)` -> `{ order, present, firstIndex, indexable, modelKey }`:
   - `order`: the fixed sequence `['#','A',...,'Z']` (constant length; the wave never reflows).
   - `present`: `Set` of letters that occur.
   - `firstIndex`: `Map(letter -> first flat index)` walking `flat` in render order.
@@ -70,17 +70,30 @@ indexes. There is no second ordering path, so rail indexes cannot diverge from D
     `flat` - i.e. the locale sort and ASCII buckets disagree (the `Aardvark, Æther, Alpha` ->
     `A, #, A` case). When false, the rail ducks. This is the fail-closed guarantee: we never scroll to a
     false index; we hide instead.
+  - `modelKey` (Major, rev 3): a **deterministic** string derived from the ordered stable collector-item
+    IDs (`card_id|set` joined in `flat` order) - NOT object identity. The coordinator compares this, so an
+    equivalent re-allocated model after an inert rerender does **not** cancel a live jump, while a genuine
+    membership/order change under the same filter signature **does**. (Kept cheap: a rolling hash of the
+    id sequence, not the full concatenation.)
 
 ### D3. Geometry - pure `railBounds(...)` + one shared CSS base var
 - Extract the dock's base offset into a shared CSS custom property (e.g. `--cx-dock-base`) consumed by
   BOTH `.cx-dock` and the rail, so they can never drift.
-- `railBounds({ scrollportTop, headerHeight, dockStackHeight, safeAreaBottom, kb, uiScale, selecting })`
-  -> `{ top, bottom }` (logical insets): `top = scrollportTop + headerHeight`;
-  `bottom = max(dock-base + dockStackHeight, kb/uiScale + gap) + safeAreaBottom`. `dockStackHeight`
-  accounts for the tallest reachable dock/FAB (and the selection action bar when `selecting`). Pure and
-  tested across normal / selection / keyboard-open / UI-scale / safe-area cases. The set drill passes its
-  sticky-header height; ALL passes the scrollport top with a zero per-set header. Device may tune the
-  stack constant; it does not invent the formula.
+- `railBounds({ scrollportTop, headerHeight, navBase, activeStackHeight, kb, uiScale, keyboardGap,
+  railGap })` -> `{ top, bottom }` (logical insets). **One authoritative obstruction boundary (Major,
+  rev 3) - safe area is NOT double-counted.** `navBase` is the dock's closed-nav base *already including*
+  `env(safe-area-inset-bottom)`, exactly as `.cx-dock` computes it (`tokens.css:250`,
+  `62 + safe-area + 16`); the keyboard branch does NOT re-add safe area:
+  ```
+  top       = scrollportTop + headerHeight
+  dockBottom = max(navBase, kb / uiScale + keyboardGap)     // same semantics as .cx-dock's bottom
+  bottom     = dockBottom + activeStackHeight + railGap      // clear the tallest reachable stack; NO trailing +safeArea
+  ```
+  `activeStackHeight` is the reachable dock/action-bar/FAB stack that extends UPWARD from the dock
+  bottom edge (includes the stacked add-FAB, and the selection action bar when selecting). Pure and
+  tested across closed / keyboard-open / selection / UI-scale / safe-area cases against the same
+  semantics as `.cx-dock`. The set drill passes its sticky-header height; ALL passes the scrollport top
+  with a zero per-set header. Device may tune the stack constant; it does not invent the formula.
 
 ### D4. Component - `src/components/AlphabetRail.jsx`
 `<AlphabetRail model activeLetter side='right' bounds onPick scheduler capture tracker />`
@@ -99,36 +112,52 @@ indexes. There is no second ordering path, so rail indexes cannot diverge from D
 
 ### D5. Gesture + active-letter lifecycle (Major 4)
 - **Admission:** accept only the **primary** pointer and, for mouse, the **left button**; ignore others.
-- **Event-driven rAF (not a continuous loop):** `pointermove` stores the latest Y; at most one rAF is
-  scheduled; that frame computes the wave (<=27 scale writes) and the deduped active letter, and emits a
-  pick only when the letter changes. No idle frames.
-- **One teardown - `endGesture()`** runs from **up, cancel, `lostpointercapture`, a replacing pointer,
-  and unmount**: releases capture, cancels the pending rAF, removes transforms; a short **CSS** settle
-  (not the JS lerp) returns labels to rest, so "cancel rAF" and "settle" don't contradict.
-- **Ordinary-scroll tracking:** `activeLetter` during normal scrolling comes from ONE **passive**
-  listener on the resolved scroll root, rAF-throttled, testing at most 27 `data-letter` anchors to find
-  the first below the header. That exact listener + its rAF are removed on every teardown.
+- **Tap schedules immediately (Major, rev 3):** an admitted `pointerdown` records Y **and schedules the
+  selection at once**, so a fast `pointerdown -> pointerup` with no move still picks. If `pointerup`
+  arrives before the first rAF fires, teardown **flushes** the pending point so that tap commits **exactly
+  once** (never zero, never twice).
+- **Event-driven rAF (not a continuous loop):** subsequent `pointermove` stores the latest Y; at most one
+  rAF is scheduled; that frame computes the wave (<=27 scale writes) and the deduped active letter, and
+  emits a pick only when the letter changes. No idle frames.
+- **Two-level teardown (Major, rev 3) - `endGesture()` vs `dispose()`:**
+  - `endGesture()` (runs from **up, cancel, `lostpointercapture`, a replacing pointer**): releases
+    capture, cancels the *gesture* rAF, flushes any pending tap, clears wave state; a short **CSS** settle
+    (not the JS lerp) returns labels to rest. **It does NOT remove the scroll tracker** - so active-letter
+    highlighting keeps working for the rest of the mount after a completed gesture.
+  - `dispose()` (runs on **scroll-root change and unmount**): calls `endGesture()`, then removes the
+    passive scroll listener and cancels the *tracker* rAF. This is the only path that tears the tracker
+    down.
+- **Ordinary-scroll tracking:** `activeLetter` during normal scrolling comes from ONE **passive** listener
+  on the resolved scroll root, rAF-throttled, over at most 27 `data-letter` anchors. **The active letter
+  is the LAST anchor that has crossed the header boundary (Major, rev 3)** - the greatest anchor whose top
+  <= threshold - with the **first present letter** as the top-of-list fallback (before any anchor has
+  crossed). It is never "the first below the header" (that highlights B while still mid-A).
 - **Reduced motion:** `body.reduce-motion` disables the wave (labels stay scale 1); tap/drag still jump.
-- **Live region (Major 4):** announce only the **committed** destination letter, never each intermediate
-  drag crossing - no live-region spam.
+- **Live region committed-only (Major, rev 3):** the announcement has an explicit data path - a
+  **parent-owned `committedLetter`** updated **only after the coordinator finds the anchor and scrolls**,
+  never the raw `onPick`. A rejected or missing-anchor pick announces nothing.
 
 ### D6. Jump coordinator (Major 3) - one explicit, cancellable sequence
 ```
 PICK(letter):                       // present letters only
   idx = firstIndex.get(letter)
-  set pendingJump = { requestId, signature, modelId, letter, idx }   // newer supersedes older
+  set pendingJump = { requestId, signature, modelKey, letter, idx }  // newer supersedes older
   ensureRendered(min(total, idx + 1 + LOOKAHEAD))                     // idx+1 guarantees the 0-based row
 
-layoutEffect [pendingJump, count, signature, model]:                 // useLayoutEffect
+layoutEffect [pendingJump, count, signature, model.modelKey]:        // useLayoutEffect
   if !pendingJump: return
-  if pendingJump.signature !== signature || pendingJump.modelId !== model.id:
-      clear pendingJump; return                                       // filter/sort/group/duck/unmount cancels
+  if pendingJump.signature !== signature || pendingJump.modelKey !== model.modelKey:
+      clear pendingJump; return                                       // filter/sort/group/membership/duck/unmount cancels
   if count <= pendingJump.idx: return                                 // wait for the growth paint (re-fires on count change)
   anchor = scrollRoot.querySelector(`[data-letter="${pendingJump.letter}"]`)  // within the root, never global
-  if !anchor: clear pendingJump; return                              // fail closed, no throw
+  if !anchor: clear pendingJump; return                              // fail closed, no throw, no announcement
   scrollRoot.scrollTop += anchor.offsetTop-relative delta so it sits just below the header
+  set committedLetter = pendingJump.letter                           // the ONLY announcement trigger
   clear pendingJump                                                   // exactly-once commit
 ```
+- **Deterministic cancellation (rev 3):** the effect keys on `model.modelKey` (stable id sequence), so an
+  equivalent re-allocated model does not cancel a valid jump, while a real membership/order change under
+  the same filter signature does.
 - **Last-pick-wins:** a newer pick overwrites `pendingJump`; the stale requestId never commits.
 - **Already-rendered & set-drill jumps** still execute: changing `pendingJump` re-runs the effect even
   when `count` is unchanged (set drill renders in full, so `count > idx` immediately).
@@ -209,13 +238,22 @@ Can be gated behind a simple render condition if a device issue appears late.
 - **Pure:** `letterOf` (accents fold, digits/symbols/quotes/empty -> `#`, case); `bulge` (monotone,
   clamped `[1,maxScale]`, `1` beyond radius, symmetric); `railModel` (present set, `firstIndex` in render
   order, `#` bucketing, `indexable` true on clean A-Z, **false** on the `A,#,A` interleave and other
-  non-monotonic corpora, empty result); a **real-catalog corpus contract** asserting `indexable` holds
-  for the shipped catalogue under name-asc.
+  non-monotonic corpora, empty result); **`modelKey`** (stable id sequence -> equal key for an equivalent
+  re-allocation, **different** key when membership or order changes under the same filter); a
+  **real-catalog corpus contract** asserting `indexable` holds for the shipped catalogue under name-asc.
 - **Coordinator (with injected seams):** insufficient-count wait, already-rendered immediate commit,
-  last-pick-wins supersession, signature/model cancellation, missing-anchor no-op, exactly-once commit.
+  last-pick-wins supersession, **signature cancellation, modelKey cancellation on membership change,
+  modelKey NON-cancellation on equivalent re-allocation**, missing-anchor no-op (no announcement),
+  exactly-once commit, and `committedLetter` set only after a successful scroll.
+- **Active-letter tracker:** last-crossed-boundary selection - before the first anchor (top fallback),
+  midway through a section (stays on that letter), exactly at the next boundary (flips), bottom of list.
+- **Gesture lifecycle:** rapid `pointerdown->pointerup` tap commits exactly once; scroll tracking still
+  works **after** a completed gesture (`endGesture` must not remove it); `dispose` on root replacement +
+  unmount removes the listener and cancels the tracker rAF; rejected/missing-anchor picks announce nothing.
 - **Rail control:** pointer-Y -> letter mapping (incl. absent-slot no-op), keyboard arrow skipping of
   absent letters, Home/End -> first/last **present** letter, empty-result duck.
-- **Geometry:** `railBounds` normal / selection / keyboard-open / UI-scale / safe-area.
+- **Geometry:** `railBounds` closed / keyboard-open / selection / UI-scale / safe-area, with **no
+  safe-area double-count** (closed base matches `.cx-dock`; keyboard branch adds no safe area).
 - **Gates:** full battery (`test:query/ui/app`, `check:types/cycles/source/docs`, `build`).
 - **Device (pre-merge gate, not claimed):** drag/tap jump on ALL (incl. jump past the prefix -> grow ->
   land), tap jump in a set, duck on sort/group/non-indexable, keyboard operation, reduced-motion, no
@@ -233,4 +271,15 @@ Can be gated behind a simple render condition if a device issue appears late.
 ## Approval record
 - Rev 1 - owner rulings on 5 product questions (folded above).
 - Rev 1 review - Codex: Changes required (5 Majors + 2 Minors on the implementation contract).
-- Rev 2 (this) - answers all seven; **awaiting Codex disposition. No implementation until approved.**
+- Rev 2 - answered all seven. Codex: Changes required (4 narrow contract corrections).
+- Rev 3 (this) - folds Codex's 4 corrections: (1) deterministic `modelKey` (stable id sequence, not
+  object identity) drives cancellation; (2) active letter is the last anchor to cross the header
+  boundary, not the first below it; (3) tap schedules immediately with an exactly-once flush, and
+  `endGesture()` is split from `dispose()` so the scroll tracker survives a completed gesture, with a
+  parent-owned `committedLetter` announcement path; (4) geometry uses one authoritative obstruction
+  boundary with no safe-area double-count.
+- **Owner: APPROVED** (final product + technical authority). Codex's rev-3 confirmation is a narrow
+  follow-up, not a gate on starting the reviewable pure-module slice.
+- **Build order:** pure `alphabetIndex.js` + `railBounds` + tests first (this slice) -> `AlphabetRail`
+  component + injected seams -> wire both surfaces (set drill refactored onto shared `arrangeSections`)
+  -> docs -> full gate battery. Build number holds until the owner's coordinated device pass.
