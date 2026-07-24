@@ -13,7 +13,7 @@ const GHOST = 'ghost.' + 'c'.repeat(64) + '.webp';   // not in the manifest
 const REMOTE = (k) => `https://cdn/${k}`;
 const MF = {
   objects: {
-    '001-a-b-s': { key: KEY, legacyKey: '001-a-b.webp', bytes: 100 },
+    '001-a-b-s': { key: KEY, bytes: 100 },
     '002-b-b-s': { key: KEY2, bytes: 200 },
   },
 };
@@ -61,7 +61,6 @@ const make = (over = {}) => {
     isNative: over.isNative ?? (() => true),
     imagesDisabled: over.imagesDisabled ?? (() => false),
     remoteUrl: REMOTE,
-    legacyUrl: (lk) => `/cards/${lk}`,
     convertFileSrc: (rel) => `cap://${rel}`,
     rand: () => `t${seq++}`,
   });
@@ -77,12 +76,11 @@ test('web: resolve returns the remote candidate and touches NO filesystem', asyn
   assert.deepEqual(cache.peek(KEY), remoteCand(KEY), 'web peek is flash-free remote');
 });
 
-test('zero-image: resolve/download/peek/legacySrc all return null and do NO io', async () => {
+test('zero-image: resolve/download/peek all return null and do NO io', async () => {
   const { cache, f } = make({ imagesDisabled: () => true });
   assert.equal(await cache.resolve(KEY), null);
   assert.equal(await cache.download(KEY), false);
   assert.equal(cache.peek(KEY), null);
-  assert.equal(cache.legacySrc(KEY), null);
   assert.equal(f.ops.length, 0, 'zero-image prohibits I/O, not just render');
 });
 
@@ -222,12 +220,6 @@ test('quarantine: first offence deletes + re-resolves (fresh); repeat offence re
   const second = await cache.quarantine(KEY);
   assert.deepEqual(second, remoteCand(KEY));
   assert.equal(fake.ops.filter((o) => o.startsWith('download ')).length, dloads, 'no further download on repeat');
-});
-
-test('legacySrc: bundled image when the entry has a legacyKey, null otherwise', () => {
-  const { cache } = make();
-  assert.deepEqual(cache.legacySrc(KEY), { kind: 'legacy', src: '/cards/001-a-b.webp' });
-  assert.equal(cache.legacySrc(KEY2), null);
 });
 
 test('stats: files/bytes/scratch and manifest-computed completeness', async () => {

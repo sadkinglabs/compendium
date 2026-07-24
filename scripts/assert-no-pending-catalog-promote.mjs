@@ -25,7 +25,7 @@ if (existsSync(JOURNAL)) {
       `  Recover with one of:\n` +
       `    A) finish it:     npm run update:catalog -- --recover\n` +
       `    B) restore + clear the journal (both, or the build stays blocked):\n` +
-      `         git checkout -- public/catalog public/cards src/store/catalogVersion.json src/store/setCatalog.json\n` +
+      `         git checkout -- public/catalog src/store/catalogVersion.json src/store/setCatalog.json\n` +
       `         then delete the .catalog-build directory (PROMOTE.json + staging)\n`,
     );
     process.exit(1);

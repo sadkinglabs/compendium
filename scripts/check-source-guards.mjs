@@ -4,17 +4,16 @@
 //     into a nonexistent `x.cx-decksTo(...)`. It compiles and only throws when the poster is drawn
 //     at runtime. The guard rejects the `identifier.cx-<word>` property-call shape in JS/JSX.
 //
-//  2. ART-SEAM BYPASS - after the CDN activation, card art must resolve ONLY through the art
-//     boundary. Three sanctioned constructors live in cardArt.js: `legacyUrl` (the one bundled
-//     `${BASE}cards/` path), `artUrl` (the CDN url, wired once in artCacheInstance.js), and no
-//     `cardImageUrl` at all (removed). The guard rejects any re-introduction: a raw bundled
-//     `cards/` url built anywhere else, a call to the deleted `cardImageUrl`, or `artUrl` used
-//     outside the cache-composition boundary. A regressed render site would otherwise silently
-//     fall back forever with every gate still green.
+//  2. ART-SEAM BYPASS - card art resolves ONLY through the art boundary. `artUrl` (the CDN url) is
+//     wired once in artCacheInstance.js; there is no `cardImageUrl` (removed) and, since Phase 5,
+//     NO bundled `${BASE}cards/` path anywhere (the bundle + `legacyUrl` were deleted). The guard
+//     rejects any re-introduction: a raw bundled `cards/` url built ANY file, a call to the deleted
+//     `cardImageUrl`, or `artUrl` used outside the cache-composition boundary. It also asserts the
+//     bundle directory itself (`public/cards`) is absent, so no build can re-ship it.
 //
 // Both scans run over COMMENT-STRIPPED source so a doc comment naming the pattern is not a false
 // positive, while a string/template that actually builds the path still is (that is the point).
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative, sep } from 'node:path';
 
@@ -22,7 +21,6 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = join(ROOT, 'src');
 
 // Files where a given otherwise-forbidden token is the sanctioned definition/wiring.
-const ALLOW_BUNDLED_CARDS = new Set(['src/store/cardArt.js']);           // legacyUrl lives here
 const ALLOW_ARTURL = new Set(['src/store/cardArt.js', 'src/store/artCacheInstance.js']);
 
 export function stripComments(src) {
@@ -50,7 +48,7 @@ export function scanSource(rel, stripped) {
   lines.forEach((ln, i) => {
     if (CANVAS_CORRUPTION.test(ln)) push('canvas-method-corruption', i);
     if (DELETED_CARDIMAGEURL.test(ln)) push('deleted-cardImageUrl', i);
-    if (BUNDLED_CARDS.test(ln) && !ALLOW_BUNDLED_CARDS.has(rel)) push('bundled-cards-path-bypass', i);
+    if (BUNDLED_CARDS.test(ln)) push('bundled-cards-path-bypass', i);   // Phase 5: no sanctioned bundled path
     if (ARTURL_TOKEN.test(ln) && !ALLOW_ARTURL.has(rel)) push('artUrl-outside-boundary', i);
   });
   return out;
@@ -74,13 +72,20 @@ export function scanTree() {
   return violations;
 }
 
+/** Phase 5: the bundled card-art directory must not exist (nothing can re-ship it into the APK). */
+export function bundleAbsent() { return !existsSync(join(ROOT, 'public', 'cards')); }
+
 // Run as a script (not when imported by the test).
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const violations = scanTree();
+  if (!bundleAbsent()) {
+    console.error('check:source FAILED - public/cards still exists (the bundled card art must be gone in Phase 5; card art ships from the CDN).');
+    process.exit(1);
+  }
   if (violations.length) {
     console.error(`check:source FAILED - ${violations.length} art-seam / canvas-corruption violation(s):`);
     for (const v of violations) console.error(`  [${v.rule}] ${v.file}:${v.line}  ${v.snippet}`);
     process.exit(1);
   }
-  console.log('check:source OK - no canvas-method corruption and no art-seam bypass.');
+  console.log('check:source OK - no canvas-method corruption, no art-seam bypass, no bundled card art.');
 }

@@ -207,10 +207,11 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
 - **Content-addressed keys.** Conversion moves in FRONT of `buildGeneration` (resolving the
   chicken-and-egg: a content key is unknowable until bytes exist). A new engine
   `scripts/catalog/artManifest.mjs` produces `public/catalog/art-manifest.json` -
-  `{ slug -> { key: `<slug>.<sha256(outputBytes)>.webp`, sha256, md5, bytes, srcSha256, recipeId, encoder, legacyKey } }` - and
+  `{ slug -> { key: `<slug>.<sha256(outputBytes)>.webp`, sha256, md5, bytes, srcSha256, recipeId, encoder } }` - and
   `planImages` sets `v.image = manifest.objects[v.slug]?.key ?? keyOfSiblingFinish(...) ?? null`
-  (`images.mjs:71`). The catalog content hash (`generation.mjs:95`) folds in the **serialized
-  manifest (keys + full digests)**, not filenames - closing the exact stale-art hole. `convertOne`
+  (`images.mjs:71`). (Phase 5 note: `legacyKey` is gone - the bundle was deleted.) The catalog content
+  hash folds in the sorted per-printing **(slug, art-key) projection** - NOT the full manifest, so an
+  encoder-only metadata change that keeps the bytes never bumps the version - closing the stale-art hole. `convertOne`
   reconciles to **745 px q80**; `images.test.mjs` flips its contract (per-finish; missing-finish
   standard fallback; foil-only; reverse-face exclusion; **corrected-bytes-under-same-slug -> new
   key**; no `droppedFoilDupes`). `printingArt`'s "returns a slug, never a URL" contract survives -
@@ -298,11 +299,17 @@ the per-finish art of Phases 1-2 but is otherwise standalone.
   `art-tmp/`**. Device
   evidence: full download, restart, airplane full-app sweep; re-run skips existing; clear mid-pack;
   `adb bmgr` backup/restore confirms `art/` absent + profile data intact. Checkpoint: **pack-proven**.
-- **Phase 5 - stop bundling + doc reconciliation.** (No Phase 4 - the cache landed with activation in
-  Phase 2 and the pack in Phase 3.) Delete `public/cards/` + the legacy fallback; confirm no
-  references remain (`update-catalog.mjs` CARDS_DIR, recovery message, `assert-no-pending...`);
-  seam-guard asserts no `dist/cards`; docs per the table; `check:docs`. Build APK, measure. Checkpoint:
-  **slim-APK**.
+- **Phase 5 - stop bundling + doc reconciliation. [EXECUTED]** (No Phase 4 - the cache landed with
+  activation in Phase 2 and the pack in Phase 3.) Deleted `public/cards/` (72 MB / 1,596 WebP); stripped
+  `legacyKey` from every committed `art-manifest.json` entry (surgical - the manifest is fetched directly
+  at boot, not part of the catalog-version reseed hash, so no version bump); retired the `legacy`
+  candidate everywhere (`cardArt.legacyUrl`, `artCache.legacySrc` + dep, `artCacheInstance` wiring,
+  `artSource` `'legacy'` kind + reducer branch, `ArtImage` IMG_ERROR `legacy` arg) - a remote miss now
+  falls straight to the deterministic element-gradient placeholder; cleared `update-catalog.mjs`
+  CARDS_DIR / `bundledExists` (`() => false`) / recovery message and `assert-no-pending`; the
+  `check:source` guard now forbids the bundled `cards/` path in EVERY file and asserts `public/cards`
+  absent. **APK measured: ~90 MB -> slim (dist 7.1 MB; card art fully CDN-served).** Repo gates green;
+  device fresh-install + airplane-mode sweep is the remaining pre-merge gate. Checkpoint: **slim-APK**.
 - **Phase 6 - Standard/Foil card sheet.** The change points in `CollectionCardSheet.jsx` incl. the
   one `selectPrinting` selector. `npm run test:ui` (pure finish-defaulting logic), device + TalkBack
   evidence. Checkpoint: **sheet-done**.

@@ -5,7 +5,6 @@ import { initial, reduce, visibleCandidate } from './artSource.js';
 
 const local = (src = 'file://a') => ({ kind: 'local', src });
 const remote = (src = 'https://cdn/a') => ({ kind: 'remote', src });
-const legacy = (src = '/cards/a-b.webp') => ({ kind: 'legacy', src });
 
 test('initial: peeked -> shown flash-free; a fresh key -> resolving; a falsy key -> broken', () => {
   assert.deepEqual(initial('k', remote()), { key: 'k', phase: 'shown', cand: remote(), gen: 0 });
@@ -26,7 +25,7 @@ test('RESOLVED shows the candidate, only while resolving/quarantining', () => {
   assert.deepEqual(reduce(shown, { type: 'RESOLVED', key: 'k', cand: local() }), shown, 'a RESOLVED while shown is ignored');
 });
 
-test('RESOLVED null (zero-image / falsy) -> broken, fallback only, legacy NOT consulted', () => {
+test('RESOLVED null (zero-image / falsy) -> broken, deterministic fallback only', () => {
   const resolving = initial('k', null);
   assert.deepEqual(reduce(resolving, { type: 'RESOLVED', key: 'k', cand: null }), { key: 'k', phase: 'broken', cand: null, gen: 0 });
 });
@@ -39,25 +38,19 @@ test('a quarantine re-resolve to the SAME local uri still bumps gen (forces an <
 
 test('IMG_ERROR on a LOCAL candidate -> quarantining (delete + retry)', () => {
   const shown = { key: 'k', phase: 'shown', cand: local(), gen: 0 };
-  assert.equal(reduce(shown, { type: 'IMG_ERROR', key: 'k', legacy: null }).phase, 'quarantining');
+  assert.equal(reduce(shown, { type: 'IMG_ERROR', key: 'k' }).phase, 'quarantining');
 });
 
-test('IMG_ERROR on a REMOTE candidate advances to the bundled legacy image, else broken', () => {
+test('IMG_ERROR on a REMOTE candidate -> broken (Phase 5: no bundled legacy, deterministic fallback shows)', () => {
   const shown = { key: 'k', phase: 'shown', cand: remote(), gen: 0 };
-  assert.deepEqual(reduce(shown, { type: 'IMG_ERROR', key: 'k', legacy: legacy() }), { key: 'k', phase: 'shown', cand: legacy(), gen: 0 });
-  assert.deepEqual(reduce(shown, { type: 'IMG_ERROR', key: 'k', legacy: null }), { key: 'k', phase: 'broken', cand: null, gen: 0 });
-});
-
-test('IMG_ERROR on the LEGACY candidate -> broken (terminal; the deterministic fallback shows)', () => {
-  const shown = { key: 'k', phase: 'shown', cand: legacy(), gen: 0 };
-  assert.deepEqual(reduce(shown, { type: 'IMG_ERROR', key: 'k', legacy: legacy() }), { key: 'k', phase: 'broken', cand: null, gen: 0 });
+  assert.deepEqual(reduce(shown, { type: 'IMG_ERROR', key: 'k' }), { key: 'k', phase: 'broken', cand: null, gen: 0 });
 });
 
 test('a stale async result for a SUPERSEDED key is dropped (the generation guard)', () => {
   const state = initial('B', null);   // reducer is now bound to B
   // a late RESOLVED/IMG_ERROR produced for the old key A must not touch B's state
   assert.deepEqual(reduce(state, { type: 'RESOLVED', key: 'A', cand: remote() }), state);
-  assert.deepEqual(reduce(state, { type: 'IMG_ERROR', key: 'A', legacy: legacy() }), state);
+  assert.deepEqual(reduce(state, { type: 'IMG_ERROR', key: 'A' }), state);
 });
 
 test('visibleCandidate returns null on a key mismatch (no stale paint on a recycled tile frame)', () => {

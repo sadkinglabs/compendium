@@ -28,8 +28,9 @@ export function imagesDisabled() {
 
 // `cardImageUrl` (the old bundled `${BASE}cards/${slug}` builder) was RETIRED in Phase 2b: every
 // render site now resolves art through the boundary (useArtSource/ArtImage), keyed on the content
-// key. The scripts/check-source-guards gate rejects its re-introduction. The one remaining bundled
-// path is `legacyUrl` below, the boundary's offline fallback, deleted with the bundle in Phase 5.
+// key. The scripts/check-source-guards gate rejects its re-introduction. Phase 5 removed the last
+// bundled `${BASE}cards/` path (`legacyUrl`) with the bundle itself - a remote miss now falls straight
+// to the deterministic element-gradient placeholder.
 
 // --- Art-CDN (Phase 2) config. ---
 // The content-addressed card art is served from this CDN base. A compile-time constant so the app
@@ -38,10 +39,6 @@ export const ART_CDN_BASE = (import.meta.env.VITE_ART_CDN_BASE || 'https://cdn.s
 
 /** The remote URL for a content-addressed art key (the art boundary's remote candidate). */
 export function artUrl(key) { return `${ART_CDN_BASE}/${key}`; }
-
-/** The bundled legacy image URL for a printing-base filename - the ONE sanctioned `${BASE}cards/` path,
- *  used only by the boundary's offline legacy fallback, deleted with the bundle in Phase 5. */
-export function legacyUrl(legacyKey) { return `${BASE}cards/${legacyKey}`; }
 
 // Set-hero art ships BUNDLED as app assets (public/sets/{code}.webp) - deliberately NOT
 // via the card-image CDN, so the Collection landing works fully offline. Only these codes

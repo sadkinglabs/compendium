@@ -16,11 +16,12 @@
 // EVENT, captured by the hook's dispatch sites (useArtSource). A transition never reaches into artCache.
 // See docs/proposals/art-cdn-rev2-architecture.md Section B4 for the approved design this implements.
 //
-// A candidate is a KIND-TAGGED object { kind:'local'|'remote'|'legacy', src } - never a bare string,
-// because a native cached file becomes an https://localhost/_capacitor_file_/... URL that a
-// startsWith('http') sniff would misread as remote. The resolver says what it produced.
+// A candidate is a KIND-TAGGED object { kind:'local'|'remote', src } - never a bare string, because a
+// native cached file becomes an https://localhost/_capacitor_file_/... URL that a startsWith('http')
+// sniff would misread as remote. The resolver says what it produced. (Phase 5 removed the 'legacy'
+// bundled-image candidate: a remote miss now goes straight to the deterministic fallback.)
 
-/** @typedef {{ kind: 'local'|'remote'|'legacy', src: string }} Candidate */
+/** @typedef {{ kind: 'local'|'remote', src: string }} Candidate */
 /** @typedef {'resolving'|'shown'|'quarantining'|'broken'} Phase */
 /** @typedef {{ key: string|null, phase: Phase, cand: Candidate|null, gen: number }} ArtState */
 
@@ -40,7 +41,7 @@ export function initial(key, peeked) {
  * The pure transition. Events:
  *   { type:'KEY', key, peeked }              the prop key changed (or first mount)
  *   { type:'RESOLVED', key, cand }           artCache.resolve()/quarantine() settled (cand may be null)
- *   { type:'IMG_ERROR', key, legacy }        the <img> onError fired; legacy = artCache.legacySrc(key)
+ *   { type:'IMG_ERROR', key }                the <img> onError fired (a remote miss -> deterministic fallback)
  * Every non-KEY event carries the key it was produced for; a result for a superseded key is DROPPED
  * (the generation guard, now inside the tested core - a late resolve for card A cannot paint over B).
  * @param {ArtState} state
@@ -69,9 +70,7 @@ export function reduce(state, ev) {
       switch (state.cand.kind) {
         case 'local':                                            // a cached file went bad -> quarantine + retry
           return { ...state, phase: 'quarantining' };
-        case 'remote':                                           // CDN miss -> the bundled legacy image, else fallback
-          return ev.legacy ? { ...state, phase: 'shown', cand: ev.legacy } : { ...state, phase: 'broken', cand: null };
-        case 'legacy':                                           // even the bundled image failed -> fallback
+        case 'remote':                                           // CDN miss -> the deterministic fallback (Phase 5: no bundled legacy)
           return { ...state, phase: 'broken', cand: null };
         default:
           return state;

@@ -5,19 +5,19 @@
 // The manifest is a MUTABLE holder filled by loadArtManifest() at boot, so the singleton can be created
 // at import time (before the manifest is fetched) and the core's later reads see the loaded entries.
 // With an absent manifest (not yet shipped, or an offline first-run) a key has no entry, so it degrades
-// to the REMOTE candidate and then the deterministic fallback - legacy is NOT reachable without the
-// manifest's legacyKey. Once the manifest loads, the full local -> remote -> legacy -> fallback chain applies.
+// to the REMOTE candidate and then the deterministic fallback. Once the manifest loads, the local ->
+// remote -> deterministic-fallback chain applies (Phase 5 removed the bundled 'legacy' step).
 import { createArtCache } from './artCache.js';
 import { makeArtIo, artConvertFileSrc, initArtIo } from './artCacheAdapter.js';
 import { isNative } from '../native.js';
-import { imagesDisabled, artUrl, legacyUrl } from './cardArt.js';
+import { imagesDisabled, artUrl } from './cardArt.js';
 
 const BASE = import.meta.env.BASE_URL;
 const manifest = { objects: {} };
 
 /** Fetch the shipped art manifest into the holder. It is the FULL manifest ({ tier, objects: { slug:
- *  {key, sha256, md5, bytes, srcSha256, recipeId, encoder, legacyKey} } }) - one file serves the app and
- *  the pipeline's skip oracle - but artCache reads only key/legacyKey/bytes and ignores the rest. */
+ *  {key, sha256, md5, bytes, srcSha256, recipeId, encoder} } }) - one file serves the app and the
+ *  pipeline's skip oracle - but artCache reads only key/bytes and ignores the rest. */
 export async function loadArtManifest() {
   try {
     const res = await fetch(`${BASE}catalog/art-manifest.json`);
@@ -33,7 +33,6 @@ export const artCache = createArtCache({
   isNative,
   imagesDisabled,
   remoteUrl: artUrl,
-  legacyUrl,
   convertFileSrc: artConvertFileSrc,
   rand: () => `${Date.now().toString(36)}${(seq++).toString(36)}`,
 });

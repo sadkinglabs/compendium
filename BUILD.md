@@ -115,23 +115,25 @@ passing the command does not prove that prose and implementation agree.
 
 ## Update the catalog
 
-The bundled catalog - cards, rules, FAQs, and card art - is regenerated from a drop
-folder by **one command**. A routine content update needs no code edit.
+The bundled catalog data - cards, rules, FAQs, and the content-addressed `art-manifest.json` -
+is regenerated from a drop folder by **one command**. Card **art itself is not bundled**: the
+command converts each scan, publishes it to the CDN, and audits that the whole manifest is
+published *before* it promotes the catalog. A routine content update needs no code edit.
 
 ```bash
-npm run update:catalog              # fetch, build, validate; stage CDN art + prospective manifest (promotion dormant - see the migration note)
-npm run update:catalog -- --dry-run # build + validate + report; refreshes gitignored staging, writes nothing under public/ or src/
-npm run update:catalog -- --recover # finish an interrupted promotion from staging (steady-state)
+npm run update:catalog              # fetch, build, validate, PUBLISH art to R2 + audit the whole manifest, then promote
+npm run update:catalog -- --dry-run # build + validate + report; refreshes gitignored staging, writes nothing / uploads nothing
+npm run update:catalog -- --recover # re-audit R2, then finish an interrupted promotion from staging
+npm run update:catalog -- --repair-conflicts   # if a remote object conflicts: create repair keys, fold them back, re-audit, promote
 ```
 
-> **Art-CDN migration status (current).** While the art-CDN migration is in progress this
-> command runs in a **dormant** mode: it converts and durably stages the card art to the
-> gitignored `CATALOG_DROP/cdn-art/` and writes a prospective content-addressed manifest to
-> `.catalog-build/art-manifest.json`, but it does **not** promote the committed catalog - nothing
-> under `public/` or `src/` changes and the app keeps serving bundled art. Publish the staged
-> objects additively with `node scripts/catalog/cdn-upload.mjs` (create-only conditional PUTs that
-> never overwrite, then an audit). The catalog promotion returns as the single atomic art-CDN
-> Phase-2 activation. See `docs/proposals/art-cdn-migration.md`.
+> **Publish-before-promote (art-CDN Phase 5).** Because there is no bundled art fallback, the
+> command promotes the catalog **only** once every object its manifest references is published on
+> R2 and a whole-manifest audit is green (`scripts/catalog/promoteGate.mjs`, over the tested
+> `runUpload` boundary). A conflicting remote object fails *before* promotion; `--recover`
+> re-audits before finishing. It therefore needs the R2 credentials in `.env.r2` and internet.
+> The command writes nothing under `public/`/`src/` and creates no promotion journal unless the
+> audit is green. See `docs/proposals/art-cdn-migration.md`.
 
 Drop the Curiosa exports into `CATALOG_DROP/` first: the high-res card PNGs, the Codex
 rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header
@@ -139,9 +141,9 @@ rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header
 nothing in that folder is committed except the README. The command fetches card stats
 from the Curiosa tRPC API and merges them, compiles the two CSVs, converts each
 per-printing PNG to WebP with `sharp`, regenerates `link_graph.json` and the compiled
-Codex documents, and - in steady state - promotes `public/catalog/*.json`, the art in
-`public/cards/`, and the seed token `src/store/catalogVersion.json` (currently dormant; see
-the migration note above).
+Codex documents, and - in steady state - promotes `public/catalog/*.json` (including the
+content-addressed `art-manifest.json`) and the seed token `src/store/catalogVersion.json`.
+Card art itself is uploaded to the CDN, not bundled (art-cdn Phase 5); there is no `public/cards/`.
 
 **It is idempotent.** Every stage builds into a staging tree; nothing under `public/` or
 `src/` is touched until the whole generation validates and a journaled promote runs. The
@@ -156,7 +158,7 @@ you would for any install (see below).
 > `precompile:codex`, and `precheck:docs` all run `scripts/assert-no-pending-catalog-promote.mjs`.
 > Recover with one of: **A)** finish it - `npm run update:catalog -- --recover`; or **B)**
 > restore the previous catalog AND clear the journal (both, or the build stays blocked) -
-> `git checkout -- public/catalog public/cards src/store/catalogVersion.json src/store/setCatalog.json`
+> `git checkout -- public/catalog src/store/catalogVersion.json src/store/setCatalog.json`
 > then delete the `.catalog-build` directory (removes `PROMOTE.json` and the staging tree).
 
 ## Version and build number
@@ -370,12 +372,13 @@ drop one without the other.
 aapt2 dump badging <apk> | grep native-code
 ```
 
-**Size is dominated by card art, not code.** `assets/public/cards` is ~72 MB of the ~90 MB
-release APK: ~1,600 WebP files (one per printing) averaging ~46 KB, already compressed,
-bundled deliberately for the
-offline-first constraint. Native libs are ~14 MB. Anyone chasing further size reduction
-should start there and treat it as a product decision (resolution or coverage), not a
-build fix.
+**Card art is no longer bundled (art-cdn Phase 5).** The ~72 MB `public/cards/` WebP bundle was
+removed; card art is served from the CDN (`ART_CDN_BASE`) and cached on device on first view, so the
+APK dropped from ~90 MB to roughly the native-libs floor (~14 MB) plus the JSON catalog + set-hero
+logos. The resolver chain is `local cache -> remote CDN -> deterministic element-gradient placeholder`
+(no bundled legacy step). **Offline behaviour:** a fresh install with no network shows the placeholders
+for card art until the device has been online once; set-hero logos (`public/sets/`) stay bundled so the
+Collection landing is always legible offline. The `check:source` guard fails if `public/cards/` returns.
 
 ## Notes
 

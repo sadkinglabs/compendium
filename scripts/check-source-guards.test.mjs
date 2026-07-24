@@ -38,9 +38,9 @@ test('flags a dynamic template that builds a bundled cards/ url outside cardArt.
   assert.deepEqual(rules('src/store/printingRows.js', formatter), ['bundled-cards-path-bypass']);
 });
 
-test('the same bundled path is allowed inside cardArt.js (legacyUrl lives there)', () => {
+test('Phase 5: a bundled cards/ path is flagged EVEN inside cardArt.js (no sanctioned bundled path)', () => {
   const legacy = 'export function legacyUrl(k) { return `${BASE}cards/${k}`; }';
-  assert.deepEqual(rules('src/store/cardArt.js', legacy), []);
+  assert.deepEqual(rules('src/store/cardArt.js', legacy), ['bundled-cards-path-bypass']);
 });
 
 test('a quoted cards/ literal outside cardArt.js is flagged', () => {

@@ -1,7 +1,7 @@
 // The native `io` adapter for artCache - the ONLY Capacitor-touching code in the art boundary, so the
 // cache core (artCache.js) stays a pure, DOM-free, unit-tested module. Everything here runs on device;
-// on web the boundary never calls it (artCache short-circuits to remote URLs). Inert until Phase 2b
-// wires the singleton into the render sites.
+// on web the boundary never calls it (artCache short-circuits to remote URLs). LIVE: the singleton is
+// wired into the render sites and caches CDN-served card art on device.
 //
 // Two device-specific concerns handled here:
 //   1. convertFileSrc must be SYNC (the cache returns a src immediately), but a Directory.Data path is

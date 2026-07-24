@@ -15,6 +15,20 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 199,
+    version: '1.0.3-alpha',
+    date: '2026-07-25',
+    notes: 'See your whole collection at once, jump by letter, and a much lighter app.',
+    changes: [
+      { kind: 'added', text: 'My Collection has a new All view: a Sets / All toggle shows every card you can own in one grid, with the full search and refine tools behind it - one tile per printing.' },
+      { kind: 'added', text: 'A full-screen art view renders the game’s artwork beautifully, with a special holographic treatment for foil cards.' },
+      { kind: 'added', text: 'An A-Z rail runs down the side of your collection. Drag or tap a letter and the list jumps there when you let go, with a big letter riding beside your thumb.' },
+      { kind: 'added', text: 'With cards selected you can now add them straight to an existing list - right next to Edit copies and New list.' },
+      { kind: 'changed', text: 'The Sets and All headers now match, and your selected count and the Select button stay pinned to the top as you scroll.' },
+      { kind: 'changed', text: 'The app is far smaller to download and update - about 23 MB, down from 90. Card art now streams from the cloud and is saved on your device as you view it, so give it a moment of internet on the first run to fill in the artwork; some cards may load a little slower the first time.' },
+    ],
+  },
+  {
     build: 64,
     version: '1.0.2-alpha',
     date: '2026-07-17',
