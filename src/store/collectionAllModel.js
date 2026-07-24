@@ -61,6 +61,17 @@ export function visibleSections(arranged, count) {
   return out;
 }
 
+/**
+ * The rendered prefix length, derived SYNCHRONOUSLY from committed progress `{ signature, count }`.
+ * When the signature has moved (sort/filter/group changed), the FIRST render already yields `initial`
+ * - React never reconciles the stale large prefix on the way down to the reset. Only when the stored
+ * signature still matches do we honour the grown count. Always clamped to [0, total].
+ */
+export function effectiveCount(progress, signature, initial, total) {
+  const raw = progress.signature === signature ? progress.count : initial;
+  return Math.max(0, Math.min(raw, total));
+}
+
 /** The vertical scroll ancestor for a node. MUST be resolved from the node (closest), never a global
  *  document.querySelector - the first `.cx-scroll` in the document is Collection's HORIZONTAL header
  *  scroller, which is not an ancestor of the grid, so an IntersectionObserver rooted there never fires. */

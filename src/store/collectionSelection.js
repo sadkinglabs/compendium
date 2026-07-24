@@ -39,6 +39,16 @@ export function allRowsSelected(selected, rows) {
   return true;
 }
 
+/**
+ * The one presentation contract for a selection over a grid: the running count, whether EVERY current
+ * row is selected (drives Select-all vs Deselect-all), and how many picks the active filter now hides.
+ * Both Collection surfaces (set drill + ALL) derive their pill/action-bar state through this, so the
+ * two can't drift apart (e.g. one disclosing hidden picks while the other silently edits them).
+ */
+export function selectionSummary(selected, rows) {
+  return { count: selected.size, allSelected: allRowsSelected(selected, rows), hidden: hiddenSelectedCount(selected, rows) };
+}
+
 /** How many selected items are NOT in the currently derived rows (hidden by the active filter). */
 export function hiddenSelectedCount(selected, rows) {
   if (!selected.size) return 0;

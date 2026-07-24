@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  poolArgs, rowsForScope, renderSignature, arrangeSections, visibleSections, resolveScrollRoot,
+  poolArgs, rowsForScope, renderSignature, arrangeSections, visibleSections, resolveScrollRoot, effectiveCount,
 } from './collectionAllModel.js';
 
 const cardOf = (r) => r.card;
@@ -97,6 +97,20 @@ test('visibleSections: count is clamped to [0, total]', () => {
   const arranged = arrangeSections(rows4, 'none', cardOf, byName);
   assert.deepEqual(visibleSections(arranged, -3), []);
   assert.equal(keySeq(visibleSections(arranged, 999)).length, 4);
+});
+
+test('effectiveCount: a moved signature resets to initial on the SAME (first) render, not after an effect', () => {
+  // The load-bearing case: 1500 rendered, signature changes -> the derived count is 100 immediately,
+  // so React never reconciles the stale large prefix.
+  assert.equal(effectiveCount({ signature: 'old', count: 1500 }, 'new', 100, 1500), 100);
+  // A matching signature honours the grown count...
+  assert.equal(effectiveCount({ signature: 'new', count: 500 }, 'new', 100, 1500), 500);
+  // ...clamped to total, and never below zero.
+  assert.equal(effectiveCount({ signature: 'new', count: 9999 }, 'new', 100, 1500), 1500);
+  assert.equal(effectiveCount({ signature: 'new', count: -5 }, 'new', 100, 1500), 0);
+  // Mutation-check: dropping the signature comparison (returning progress.count) would answer 1500
+  // here instead of 100 - i.e. render the old prefix once. Guard that the compare is load-bearing.
+  assert.notEqual(effectiveCount({ signature: 'old', count: 1500 }, 'new', 100, 1500), 1500);
 });
 
 test('resolveScrollRoot: uses the NODE closest, never a global first-match; non-nodes are null', () => {

@@ -30,7 +30,7 @@ import { useCollectionSelection } from '../components/useCollectionSelection.js'
 import { useCollectionRefine } from '../components/useCollectionRefine.js';
 import { useCollectionBulkActions } from '../components/useCollectionBulkActions.js';
 import { useProgressiveRender } from '../components/useProgressiveRender.js';
-import { hiddenSelectedCount, allRowsSelected } from '../store/collectionSelection.js';
+import { selectionSummary } from '../store/collectionSelection.js';
 import { arrangeSections, visibleSections, renderSignature } from '../store/collectionAllModel.js';
 import { printingFinishes } from '../store/printingRows.js';
 import {
@@ -895,6 +895,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // pick time so the Adjust sheet can cap a Remove at what's actually on hand). ----
   const selectAll = () => selectAllHook(drillRows);
   const toggleSel = (id, set) => toggleSelHook(id, set, drillRows);
+  const sel = selectionSummary(selected, drillRows);   // one contract: count / allSelected / hidden
   // Hardware Back exits selection before it leaves the set drill.
   useEffect(() => {
     if (!selectMode) return undefined;
@@ -943,7 +944,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
               the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
               the running count). A single card is one tap on its tile. */}
           {totalRows > 0 && (() => {
-            const allSel = allRowsSelected(selected, drillRows);   // membership, not a count match
+            const allSel = sel.allSelected;   // membership, not a count match
             const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
             return (
               <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
@@ -1001,7 +1002,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
           portal into the same #cx-dock-search slot, so it swaps in place). */}
       {selectMode ? (
-        <SelectionBar count={selected.size}
+        <SelectionBar count={sel.count} hidden={sel.hidden}
           onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
@@ -1072,8 +1073,8 @@ function AllCards({ onPeek, onOpenCodex }) {
   const sections = useMemo(() => visibleSections(arranged, count), [arranged, count]);
 
   const total = arranged.flat.length;
-  const hidden = hiddenSelectedCount(selected, ordered);   // selected items a filter now conceals
-  const allSel = allRowsSelected(selected, ordered);   // membership over the FULL result, not a count match
+  const sel = selectionSummary(selected, ordered);   // same contract as the set drill: count / allSelected / hidden
+  const { hidden, allSelected: allSel } = sel;
   const toggleSel = (id, set) => toggleSelHook(id, set, ordered);   // toggle captures from the FULL rows
   useEffect(() => {
     if (!selectMode) return undefined;

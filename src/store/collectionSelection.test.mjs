@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  selKey, toggleSelected, selectAllRows, allRowsSelected, hiddenSelectedCount, editCopiesEligible, newListCardIds, overBatch, MAX_BATCH_ITEMS,
+  selKey, toggleSelected, selectAllRows, allRowsSelected, selectionSummary, hiddenSelectedCount, editCopiesEligible, newListCardIds, overBatch, MAX_BATCH_ITEMS,
 } from './collectionSelection.js';
 
 // card 'c1' Alpha(001) both finishes, Beta(002) standard-only; 'wr' Winter River Alpha foil-only.
@@ -57,6 +57,19 @@ test('allRowsSelected is membership, not count-equality (a disjoint same-size re
   assert.equal(allRowsSelected(sel, [rows[2], rows[2]]), false);
   assert.equal(allRowsSelected(new Map(), rows), false, 'empty selection');
   assert.equal(allRowsSelected(sel, []), false, 'no rows is never "all"');
+});
+
+test('selectionSummary is the single contract both surfaces derive (count / allSelected / hidden)', () => {
+  const sel = selectAllRows(new Map(), rows);          // all 3 picked
+  assert.deepEqual(selectionSummary(sel, rows), { count: 3, allSelected: true, hidden: 0 });
+  // A filter now shows only c1|001 (which IS selected): still 3 selected, every VISIBLE row is
+  // selected so the pill reads Deselect-all, and 2 picks are now hidden -> the set drill must disclose
+  // that hidden count exactly as ALL does (the two contracts cannot drift).
+  assert.deepEqual(selectionSummary(sel, [rows[0]]), { count: 3, allSelected: true, hidden: 2 });
+  // A partial selection whose visible row is UNpicked is not "all".
+  const two = selectAllRows(new Map(), [rows[1], rows[2]]);
+  assert.deepEqual(selectionSummary(two, rows), { count: 2, allSelected: false, hidden: 0 });
+  assert.deepEqual(selectionSummary(new Map(), rows), { count: 0, allSelected: false, hidden: 0 });
 });
 
 test('hiddenSelectedCount reports selected items absent from the current filtered rows', () => {
