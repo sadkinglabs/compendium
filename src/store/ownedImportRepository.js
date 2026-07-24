@@ -429,7 +429,63 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
     }
   }
 
-  return { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries };
+  /**
+   * Add card ids to an EXISTING list as one barrier-guarded transaction. Mirrors createListWithEntries:
+   * strict input validation + the MAX_BATCH_ITEMS ceiling on the RAW array, an authoritative catalog-
+   * membership check INSIDE the barrier, and the list must belong to the active profile (fail closed on
+   * a foreign/stale id). Ids already in the list are skipped so no duplicate row is ever written - the
+   * op is idempotent. @returns { listId, added, skipped } on success; throws a BulkWriteError otherwise.
+   */
+  async function addEntriesToList({ listId, cardIds } = {}, pid = activeProfileId()) {
+    if (!pid) throw bulkWriteError('prewrite', 'none', 'addEntriesToList: no active profile.');
+    const lid = String(listId || '').trim();
+    if (!lid) throw bulkWriteError('prewrite', 'none', 'addEntriesToList: a listId is required.');
+    if (!Array.isArray(cardIds)) throw bulkWriteError('prewrite', 'none', 'addEntriesToList: cardIds must be an array.');
+    // Ceiling against the RAW array, before dedup, so duplicates can't smuggle an unbounded payload past.
+    if (cardIds.length > MAX_BATCH_ITEMS) throw bulkWriteError('prewrite', 'none', `addEntriesToList: exceeds ${MAX_BATCH_ITEMS} entries.`);
+    for (const c of cardIds) {
+      if (typeof c !== 'string' || !c.trim()) throw bulkWriteError('prewrite', 'none', `addEntriesToList: invalid card id ${JSON.stringify(c)}.`);
+    }
+    const ids = [...new Set(cardIds.map((c) => c.trim()))];
+    const now = nowIso();
+    let ranTransaction = false;
+    let added = 0;
+    let skipped = 0;
+    try {
+      await exclusive(async () => {
+        // The list must exist AND belong to this profile - a foreign/stale id is rejected, nothing written.
+        const owned = await query('SELECT id FROM card_lists WHERE id=? AND profile_id=?;', [lid, pid]);
+        if (!owned.length) throw new Error('addEntriesToList: no such list for this profile.');
+        if (ids.length) {
+          const catalog = await readCatalog(ids);
+          const missing = ids.filter((id) => !catalog.has(id));
+          if (missing.length) throw new Error(`addEntriesToList: unknown card(s) ${missing.slice(0, 5).join(', ')}${missing.length > 5 ? '…' : ''}.`);
+        }
+        // Skip ids already in the list (card grain) so we never write a duplicate entry.
+        const existing = new Set((await query('SELECT card_id FROM card_list_entries WHERE list_id=?;', [lid])).map((r) => r.card_id));
+        const fresh = ids.filter((id) => !existing.has(id));
+        skipped = ids.length - fresh.length;
+        added = fresh.length;
+        if (fresh.length) {
+          ranTransaction = true;
+          await tx([
+            ...fresh.map((cid) => ['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,1,?,?);', [uuid(), lid, cid, '', now]]),
+            ['UPDATE card_lists SET updated_at=? WHERE id=? AND profile_id=?;', [now, lid, pid]],
+          ]);
+        }
+      });
+      if (ranTransaction) notify();   // an all-present op wrote nothing - honour the no-op contract (no broadcast)
+      return { listId: lid, added, skipped };
+    } catch (e) {
+      if (ranTransaction) notify();
+      if (e && e.name === 'BulkWriteError') throw e;
+      throw ranTransaction
+        ? bulkWriteError('transaction', 'unknown', e?.message || String(e))
+        : bulkWriteError('prewrite', 'none', e?.message || String(e));
+    }
+  }
+
+  return { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries, addEntriesToList };
 }
 
 /** Production instance, wired to the REAL barrier. */
@@ -444,3 +500,4 @@ export const importCollectionResolved = production.importCollectionResolved;
 export const setOwnedItemsBulk = production.setOwnedItemsBulk;
 export const adjustOwnedItemsBulk = production.adjustOwnedItemsBulk;
 export const createListWithEntries = production.createListWithEntries;
+export const addEntriesToList = production.addEntriesToList;

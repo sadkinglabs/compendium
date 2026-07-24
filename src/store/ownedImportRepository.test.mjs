@@ -19,7 +19,7 @@ import { __setActiveIdForTests } from './profileRepository.js';
 import { enqueueWrite, withExclusiveCollectionWrites, __resetCollectionWritesForTests } from './collectionWrites.js';
 import { ownedRowKey, previewCollectionText } from './ownedRepository.js';
 import {
-  createOwnedImportCommand, planOwnedItemBatch, planOwnedSetBatch, importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries, MAX_ITEM_QTY, MAX_BATCH_ITEMS,
+  createOwnedImportCommand, planOwnedItemBatch, planOwnedSetBatch, importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries, addEntriesToList, MAX_ITEM_QTY, MAX_BATCH_ITEMS,
 } from './ownedImportRepository.js';
 import { planCollectionImport, buildImportItems } from './importPlan.js';
 
@@ -524,6 +524,108 @@ test('createListWithEntries: writes under the CAPTURED profile even if active sw
   const r = await p;
   assert.equal(listRows(PID).find((l) => l.id === r.id)?.name, 'Captured', 'created under the captured profile');
   assert.equal(listRows('p2').find((l) => l.id === r.id), undefined, 'nothing under the switched-to profile');
+});
+
+/* ---------------- addEntriesToList: add to an EXISTING list, one transaction ---------------- */
+
+const cmdAdd = (exclusive = (fn) => fn(), over = {}) => createOwnedImportCommand(deps(exclusive, over)).addEntriesToList;
+const seedList = async (name, cardIds) => (await cmdList()({ kind: 'custom', name, cardIds })).id;
+
+test('addEntriesToList: adds deduped ids, SKIPS ones already in the list, one broadcast', async () => {
+  const id = await seedList('Binder', ['c1']);          // c1 already present
+  notifyCount = 0;
+  const r = await cmdAdd()({ listId: id, cardIds: ['c1', 'ap', 'ap', 'wb'] });   // c1 existing; ap deduped
+  assert.equal(r.added, 2);        // ap + wb
+  assert.equal(r.skipped, 1);      // c1 already there
+  assert.deepEqual(entryCards(id), ['ap', 'c1', 'wb'], 'no duplicate c1 row');
+  assert.equal(notifyCount, 1);
+});
+
+test('addEntriesToList: a list from ANOTHER profile is rejected - prewrite/none, nothing written', async () => {
+  const other = createOwnedImportCommand(deps((fn) => fn(), { activeProfileId: () => 'p2' })).createListWithEntries;
+  const foreign = (await other({ kind: 'custom', name: 'Theirs', cardIds: ['c1'] }, 'p2')).id;
+  notifyCount = 0;
+  await assert.rejects(() => cmdAdd()({ listId: foreign, cardIds: ['ap'] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /no such list/.test(e.message));
+  assert.deepEqual(entryCards(foreign), ['c1'], 'the foreign list is untouched');
+  assert.equal(notifyCount, 0);
+});
+
+test('addEntriesToList: an UNKNOWN catalog id rejects the whole op - prewrite/none, no partial add', async () => {
+  const id = await seedList('Guard', ['c1']);
+  notifyCount = 0;
+  await assert.rejects(() => cmdAdd()({ listId: id, cardIds: ['ap', 'ghost-card'] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /unknown card/.test(e.message));
+  assert.deepEqual(entryCards(id), ['c1'], 'nothing added when one id is bogus');
+  assert.equal(notifyCount, 0);
+});
+
+test('addEntriesToList: the ceiling is enforced on the RAW array, before dedup', async () => {
+  const id = await seedList('Flood2', ['c1']);
+  const flood = Array.from({ length: MAX_BATCH_ITEMS + 1 }, () => 'ap');
+  await assert.rejects(() => cmdAdd()({ listId: id, cardIds: flood }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /exceeds 2000/.test(e.message));
+});
+
+test('addEntriesToList: all ids already present -> added 0 / skipped N, no duplicate rows, ZERO broadcasts', async () => {
+  const id = await seedList('Full', ['c1']);
+  await cmdAdd()({ listId: id, cardIds: ['ap'] });       // now c1 + ap
+  notifyCount = 0;
+  const r = await cmdAdd()({ listId: id, cardIds: ['c1', 'ap'] });
+  assert.equal(r.added, 0);
+  assert.equal(r.skipped, 2);
+  assert.deepEqual(entryCards(id), ['ap', 'c1']);
+  assert.equal(notifyCount, 0, 'a no-op add wrote nothing, so it must not broadcast a Collection refresh');
+});
+
+test('addEntriesToList: writes under the CAPTURED profile even if active switches mid-flight', async () => {
+  const targetA = await seedList('MineA', ['c1']);       // list owned by PID (A)
+  const gate = deferred();
+  let active = PID;
+  // Move the active-profile read to a gated tx so the profile can switch after capture but before write.
+  const cmd2 = createOwnedImportCommand(deps((fn) => fn(), {
+    activeProfileId: () => active,
+    tx: async (s) => { await gate.promise; return runTx(s); },
+  })).addEntriesToList;
+  const p = cmd2({ listId: targetA, cardIds: ['ap'] }, PID);   // pid captured = A
+  active = 'p2';                                                // active switches to B mid-flight
+  gate.resolve();
+  const r = await p;
+  assert.equal(r.added, 1);
+  assert.deepEqual(entryCards(targetA), ['ap', 'c1'], 'the add landed on A - the captured profile, not the switched-to B');
+});
+
+test('addEntriesToList: a malformed id / missing listId / non-array is prewrite/none', async () => {
+  await assert.rejects(() => cmdAdd()({ listId: '', cardIds: ['c1'] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /listId is required/.test(e.message));
+  const id = await seedList('Arr', ['c1']);
+  await assert.rejects(() => cmdAdd()({ listId: id, cardIds: 'c1' }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /must be an array/.test(e.message));
+  await assert.rejects(() => cmdAdd()({ listId: id, cardIds: ['ap', 42] }),
+    (e) => e.phase === 'prewrite' && e.writeState === 'none' && /invalid card id/.test(e.message));
+});
+
+test('addEntriesToList: an apply-then-reject (web) is transaction/unknown with ONE invalidation', async () => {
+  const id = await seedList('Landing', ['c1']);
+  notifyCount = 0;
+  const applyThenReject = async (stmts) => { await runTx(stmts); throw new Error('IndexedDB quota exceeded'); };
+  await assert.rejects(() => cmdAdd((fn) => fn(), { tx: applyThenReject })({ listId: id, cardIds: ['ap'] }),
+    (e) => e.phase === 'transaction' && e.writeState === 'unknown');
+  assert.ok(entryCards(id).includes('ap'), 'the entry actually landed - "nothing written" would be a lie');
+  assert.equal(notifyCount, 1);
+});
+
+test('PRODUCTION WIRING: exported addEntriesToList BLOCKS behind a held barrier write', async () => {
+  const id = await seedList('Barriered2', ['c1']);
+  __resetCollectionWritesForTests();
+  const held = deferred();
+  const first = enqueueWrite(ownedRowKey(PID, 'c1', '001'), async () => { await held.promise; });
+  let ran = false;
+  const add = addEntriesToList({ listId: id, cardIds: ['ap'] }).then(() => { ran = true; });
+  await settleTurns();
+  assert.equal(ran, false, 'the add waited for the in-flight write to drain');
+  held.resolve(); await first; await add;
+  assert.equal(ran, true);
 });
 
 test('quantity bounds are enforced', () => {

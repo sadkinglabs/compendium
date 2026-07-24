@@ -21,11 +21,19 @@ import { wantTarget } from '../store/wantIntent.js';
 import { canonicalPrinting, UNCATEGORISED } from '../store/printings.js';
 import WantPrintingSheet from '../components/WantPrintingSheet.jsx';
 import TriageSheet from '../components/TriageSheet.jsx';
-import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
 import { registerBackConsumer } from '../back.js';
+import { useCollectionSelection } from '../components/useCollectionSelection.js';
+import { useCollectionRefine } from '../components/useCollectionRefine.js';
+import { useCollectionBulkActions } from '../components/useCollectionBulkActions.js';
+import { useProgressiveRender } from '../components/useProgressiveRender.js';
+import { selectionSummary } from '../store/collectionSelection.js';
+import { arrangeSections, visibleSections, renderSignature } from '../store/collectionAllModel.js';
+import { railModel } from '../store/alphabetIndex.js';
+import AlphabetRail from '../components/AlphabetRail.jsx';
+import CollectionSubHeader from '../components/CollectionSubHeader.jsx';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -83,6 +91,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const [boundSession] = useState(() => resetCollectionSessionFor(activeProfileId()));
   const [view, setView] = useState(boundSession.view);       // overview | cards | lists
   const [listOpen, setListOpen] = useState(boundSession.listOpen);  // a list row when its detail is open
+  const [allMode, setAllMode] = useState(false);   // My Collection: SETS (sets-home) vs ALL (flat all-cards grid)
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
@@ -133,11 +142,20 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       )}
       {surface === 'setsHome' && (
         <>
-          <SetsHome onOpenSet={openSet} rev={rev} />
-          {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
-              in", everywhere in this pillar. */}
-          <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
-            onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+          {/* My Collection: SETS (the sets-completion home) or ALL (every card, flat, on the search
+              engine). Switching modes unmounts the other, which clears any ALL selection - as spec'd. */}
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
+            <SegTabs ariaLabel="Show sets or all cards" value={allMode ? 'all' : 'sets'} onChange={(k) => setAllMode(k === 'all')}
+              options={[{ key: 'sets', label: 'Sets' }, { key: 'all', label: 'All' }]} />
+          </div>
+          {allMode
+            ? <AllCards onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)} />
+            : <SetsHome onOpenSet={openSet} rev={rev} />}
+          {/* Scan FAB only on the SETS home; the ALL view has its own filter + add FABs. */}
+          {!allMode && (
+            <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
+              onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+          )}
         </>
       )}
       {surface === 'listDetail' && (
@@ -725,24 +743,29 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 // While cards are being multi-selected the docked search bar becomes a selection action bar. It
 // portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
 // shift, one keyboard-aware container.
-function SelectionBar({ count, onAdd, onCreate, onCancel }) {
+// The dock is PURELY actions now - Edit copies / New list / Add to list, three equal-width buttons plus
+// the cancel. The running selected count (and any hidden-by-filter count) lives on the header row where
+// the Select / Deselect-all pill is: context up top, actions at the thumb.
+function SelectionBar({ onAdd, onCreate, onAddToList, onCancel, disabled = false }) {
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
   const btn = {
-    flex: 'none', minHeight: 44, padding: '0 15px', borderRadius: 18, whiteSpace: 'nowrap',
-    border: '1px solid rgba(203,167,95,.45)', background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)',
-    font: "600 12.5px/1 var(--f-ui)", cursor: count ? 'pointer' : 'default', opacity: count ? 1 : 0.4,
+    flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 18, whiteSpace: 'nowrap',
+    overflow: 'hidden', textOverflow: 'ellipsis', border: '1px solid rgba(203,167,95,.45)',
+    background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)",
+    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   };
+  const fire = (fn) => () => { if (!disabled) fn(); };
   return createPortal(
-    <div className="cx-search-pill" style={{ gap: 8 }}>
+    <div className="cx-search-pill" style={{ gap: 7 }}>
       <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
-      {/* Just the running count - Select all / Deselect all lives on the header pill now. */}
-      <span aria-live="polite" style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
-      <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
-      <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
+      <button onClick={fire(onAdd)} disabled={disabled} style={btn}>Edit copies</button>
+      <button onClick={fire(onCreate)} disabled={disabled} style={btn}>New list</button>
+      <button onClick={fire(onAddToList)} disabled={disabled} style={btn}>Add to list</button>
     </div>,
     slot,
   );
@@ -823,61 +846,29 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [importOpen, setImportOpen] = useState(false);   // text import lives on the set's + FAB (adds to the collection, not just this set)
   // Multi-select: entered from the overflow ("Select all"), driven by the scoped grid. `selected`
   // captures {card, set} at selection time so the two actions do not depend on the live filter.
-  const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState(() => new Map());   // 'cardId|set' -> { card, set }
+  // Shared bulk-selection controller (same one the ALL view uses). Snapshot keyed card_id|set.
+  const { selectMode, selected, enter: enterSelectMode, cancel: cancelSelect, toggle: toggleSelHook, selectAll: selectAllHook, deselectAll } = useCollectionSelection();
   const [qtyOpen, setQtyOpen] = useState(false);               // Add-copies stepper modal
   const [createOpen, setCreateOpen] = useState(false);         // Create-list (name + type) sheet
+  const [addToListOpen, setAddToListOpen] = useState(false);   // Add-to-existing-list picker
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
   // here, so neither can be moved by a filter the user happens to have on.
   const [roster, setRoster] = useState(null);
 
-  const [q, setQ] = useState(collectionSession().q);
-  const [types, setTypes] = useState(collectionSession().types);
-  const [rarities, setRarities] = useState(collectionSession().rarities);
-  const [els, setEls] = useState(collectionSession().els);
-  // Grouping = SECTIONING the grid by element/rarity (distinct from Sort, which orders WITHIN a
-  // section). Preserved from the pre-refine surface - restored per Codex review (an existing
-  // capability; "grouping is not sorting"). Persisted like the other arrangement state.
-  const [groupBy, setGroupBy] = useState(collectionSession().groupBy || 'none');
-  // No collectionSession().sets: the drill is pinned to its own set, so there is no cross-set selection
-  // left to remember. Restoring one was what let a stale Alpha filter empty the Beta grid.
-  useEffect(() => { collectionSession().q = q; collectionSession().types = types; collectionSession().rarities = rarities; collectionSession().els = els; collectionSession().groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
+  // ALL the shared refine machinery - filter/sort/group state, catalog pool, ownership maps, the tile
+  // stepper, and the derived rows - lives in the shared hook (the ALL view uses the same one, scoped
+  // to every set instead of one). Only the set-specific chrome below (roster, completion) stays here.
+  const R = useCollectionRefine({ kind: 'set', name: drillName, code: setDrill });
+  const {
+    q, setQ, els, setEls, multi, setMulti, types, setTypes, rarities, setRarities, artist, setArtist, artistOpts,
+    states, setStates, finishes, setFinishes, playset, setPlayset, ownedCmp, setOwnedCmp, sort, setSort, groupBy, setGroupBy,
+    own, activeCount, clearAll, filterOpen, setFilterOpen, optsLoaded,
+    pool, owBySet, wishSet, addStatus, stepSet, rows: drillRows,
+  } = R;
 
-  // Catalog axes (browsing a collection, NOT building a deck - so no threshold/mana/power
-  // comparators; those are deck-building criteria). Element + Multi + Type + Rarity + Artist.
-  const [multi, setMulti] = useState(false);
-  const [artist, setArtist] = useState('');
-  const [artistOpts, setArtistOpts] = useState([]);
-  // Ownership-derived axes (answered by the profile, not the catalog): ownership state chips, a
-  // Finish scope, Playset buckets, and an Owned-amount comparator. Plus the within-group Sort.
-  const [states, setStates] = useState([]);           // subset of ['owned','missing','wishlist']
-  const [finishes, setFinishes] = useState([]);       // subset of ['standard','foil'] - scopes the ownership math
-  const [playset, setPlayset] = useState([]);         // subset of ['complete','partial','over']
-  const [ownedCmp, setOwnedCmp] = useState({ op: '>=', val: null });
-  const [sort, setSort] = useState('name-asc');       // within-group order (see collectionFilter SORT_KEYS)
-  const own = useMemo(() => ({ states, finishes, playset, qty: ownedCmp }), [states, finishes, playset, ownedCmp]);
-
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [pool, setPool] = useState(null);
-  const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
-  // Per-row add status straight from the binding: {pending, ok, error, displayed}. `ok` moves
-  // only on a RECONCILED success - authoritative read back, no failed write - so the tile can
-  // distinguish "tap registered" from "actually persisted".
-  const [addStatus, setAddStatus] = useState(new Map());
-  const owRef = useRef(owBySet);                     // synchronous mirror, for seeding a row's controller
-  owRef.current = owBySet;
-  const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
-  const [wishSet, setWishSet] = useState(() => new Set());   // wanted collector-item keys `card_id|variant_slug`
-  // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
-  // those sections mount mid-slide and hitch the open animation (see open= below).
-  const [optsLoaded, setOptsLoaded] = useState(false);
-  // Only the artist list is still needed: the Sets facet left the drill with the set-scope
-  // fix, and waiting on getSets() meant an irrelevant query could reject and leave an
-  // otherwise-usable drill with no filters at all.
-  useEffect(() => { getArtists().then(setArtistOpts).finally(() => setOptsLoaded(true)); }, []);
-
+  // The canonical, UNFILTERED roster for THIS set (set-specific): the completion denominator + the
+  // "missing" export come from here, so no active filter can move them.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -887,216 +878,61 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     return () => { alive = false; };
   }, [drillName]);
 
-  async function loadPool() {
-    const parsed = parseQuery(q);
-    // The uncategorised bucket is an ownership state, not a printed set - keep it out of the
-    // catalog pool query (it would match no card and empty the pool); grouping applies it.
-    // PINNED to the drilled set. This component IS the per-set drill, so a cross-set filter
-    // is not a narrowing - it is a contradiction. Selecting Alpha inside Beta used to put
-    // Alpha in the pool while the renderer still asked for Beta, emptying the grid.
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: [drillName], multi, artist });
-    const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
-    setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
-  }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, types, rarities, els, multi, artist]);
-  const refreshOwnership = useCallback(async () => {
-    const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
-    // Reconcile the bulk read against rows the grid is editing: keep the optimistic value for
-    // anything still writing, and re-seed settled rows from the truth (which is what confirms
-    // a row whose own post-write read had failed).
-    const grid = gridRef.current;
-    if (grid) {
-      for (const key of grid.keys()) {
-        if (grid.pending(key) > 0) {
-          const st = grid.state(key);
-          obs.set(key, { ...(obs.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
-        } else {
-          grid.reseed(key, obs.get(key)?.owned || 0);
-        }
-      }
-    }
-    setOwBySet(obs);
-    // Collector-item keys `card_id|variant_slug` (card + set + finish), so a want lights up ONLY its
-    // exact printing - an Alpha want never shows in the Beta drill (see groupCollection.wishedIn).
-    setWishSet(new Set(wl.map((r) => r.item_id)));
-  }, []);
-  useEffect(() => { refreshOwnership(); }, [refreshOwnership]);
-  // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
-  // so our optimistic steps commit first (see the write path below).
-  useEffect(() => {
-    let t = null;
-    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(refreshOwnership, 250); });
-    return () => { clearTimeout(t); off(); };
-  }, [refreshOwnership]);
-
-  // A stepper edits OWNED for ONE (card, set) printing. This goes through the SAME
-  // provisional/confirmed contract as the card sheet - a tap shows immediately, the row
-  // reconciles against the store when its write chain drains, and a rejected write restores
-  // the true count and tells the user. Controllers are created lazily per TAPPED row, so a
-  // ~780-tile set costs nothing until you actually edit something.
-  const gridRef = useRef(null);
-  if (gridRef.current === null) {
-    const split = (key) => { const i = key.lastIndexOf('|'); return [key.slice(0, i), key.slice(i + 1)]; };
-    gridRef.current = createOwnedStepGrid({
-      read: async (key) => { const [cardId, set] = split(key); return (await qtyForInSet(cardId, set)).owned; },
-      write: (key, delta) => {
-        const [cardId, set] = split(key);
-        // Bound to the profile captured at tap time and re-read inside its turn, so a profile
-        // switch can't redirect it and overlapping steps can't clobber.
-        const pid = activeProfileId();
-        return enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
-          const cur = await qtyForInSet(cardId, set, pid);
-          return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
-        });
-      },
-      notify: (reason) => toast(
-        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
-          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
-            : "Couldn't save; count restored", { tone: 'danger' }),
-      isAlive: () => aliveRef.current,
-      onChange: (key, status) => {
-        setOwBySet((prev) => {
-          const m = new Map(prev);
-          m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: status.displayed });
-          return m;
-        });
-        // `status.ok` is the controller's RECONCILED-success counter. Success is never
-        // inferred from pending going false: that is emitted before reconcile runs, so it is
-        // briefly true even when the write rejected or the read is about to fail.
-        setAddStatus((prev) => new Map(prev).set(key, status));
-      },
-    });
-  }
-  const stepSet = useCallback((cardId, set, delta) => {
-    const key = cardId + '|' + set;
-    gridRef.current.step(key, owRef.current.get(key)?.owned || 0, delta);
-  }, []);
-
-  // Per-set ownership: expand every catalogue card into one row per set it was
-  // True owned-per-set (independent of the row filter) - drives the drill header's
-  // owned/total. Non-foil only, matching set completion (foil-only cards don't count).
+  // Owned-per-set tally for the header (non-foil only, matching set completion).
   const ownedPerSet = useMemo(() => {
     const m = new Map();
     for (const [k, v] of owBySet) {
-      if (!countsTowardCompletion(ownershipOf(v.owned, v.foil))) continue;   // one shared definition
+      if (!countsTowardCompletion(ownershipOf(v.owned, v.foil))) continue;
       const code = k.slice(k.lastIndexOf('|') + 1);
       m.set(code, (m.get(code) || 0) + 1);
     }
     return m;
   }, [owBySet]);
 
-  const groups = useMemo(() => groupCollection({
-    pool, owBySet, wishSet, sets: [drillName], own, setLabel: SET_LABEL, setRank,
-  }), [pool, owBySet, wishSet, own, drillName]);
-
-  // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
-  // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
-  // the full-catalog figure from drillInfo (falls back to the filtered pool's set total on
-  // a cold session restore, which is exact when no filter is active).
-  const drillGroup = useMemo(() => groups.find((g) => g.code === setDrill) || null, [groups, setDrill]);
-  const drillRows = drillGroup ? drillGroup.rows : [];
   const totalRows = drillRows.length;
   const drillOwned = ownedPerSet.get(setDrill) || 0;
-  // The denominator is IMMUTABLE for the set: it comes from the canonical roster, never from
-  // the filtered pool. It used to fall back to the filtered set total whenever drillInfo was
-  // absent - which is exactly what happens on a session restore - so returning to a filtered
-  // drill could render a header like "402 / 50".
+  // The denominator is IMMUTABLE for the set: it comes from the canonical roster, never from the
+  // filtered pool (a session restore with a filter active would otherwise render "402 / 50").
   const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
 
-  // ---- Multi-select over the scoped grid ----
-  // Each selected entry captures the present owned/foil counts too, so the Adjust sheet can cap a
-  // Remove at what's actually on hand (never offer to remove more than the biggest stack holds).
-  const selKey = (id, set) => `${id}|${set}`;
-  const selVal = (r) => ({ card: r.card, set: r.set, owned: r.owned || 0, foil: r.foil || 0 });
-  const enterSelectMode = () => { setSelected(new Map()); setSelectMode(true); };   // enter empty - tap tiles, or "Select all"
-  const selectAll = () => setSelected(new Map(drillRows.map((r) => [selKey(r.card.card_id, r.set), selVal(r)])));
-  const deselectAll = () => setSelected(new Map());
-  const toggleSel = (id, set) => setSelected((m) => {
-    const n = new Map(m); const k = selKey(id, set);
-    if (n.has(k)) n.delete(k);
-    else { const row = drillRows.find((r) => r.card.card_id === id && r.set === set); if (row) n.set(k, selVal(row)); }
-    return n;
-  });
-  const cancelSelect = () => { setSelectMode(false); setSelected(new Map()); };
+  // ---- Multi-select over the scoped grid (via the shared controller; snapshot captures owned/foil at
+  // pick time so the Adjust sheet can cap a Remove at what's actually on hand). ----
+  const selectAll = () => selectAllHook(drillRows);
+  const toggleSel = (id, set) => toggleSelHook(id, set, drillRows);
+  const sel = selectionSummary(selected, drillRows);   // one contract: count / allSelected / hidden
+
+  // ONE canonical arranged result drives the grid AND the A-Z rail (so rail indexes match DOM order).
+  // The drill renders every row (no progressive prefix), so the rail just scrolls: count is the full
+  // length and ensureRendered is a no-op.
+  const drillComparator = useMemo(() => rowComparator(sort, (r) => r.card), [sort]);
+  const drillArranged = useMemo(() => arrangeSections(drillRows, groupBy, (r) => r.card, drillComparator), [drillRows, groupBy, drillComparator]);
+  const drillOrdered = drillArranged.flat.map((f) => f.row);
+  const drillRailM = useMemo(() => railModel(drillOrdered), [drillOrdered]);
+  const drillAnchorOf = useMemo(() => {
+    const m = new Map();
+    for (const [letter, i] of drillRailM.firstIndex) { const r = drillOrdered[i]; if (r) m.set(r.card.card_id + '|' + r.set, letter); }
+    return m;
+  }, [drillRailM, drillOrdered]);
+  const drillRailVisible = sort === 'name-asc' && groupBy === 'none';
+  const drillSignature = renderSignature({ kind: 'set', code: setDrill }, { q, states, finishes, playset, ownedCmp, types, rarities, els, multi, artist, sort, groupBy });
   // Hardware Back exits selection before it leaves the set drill.
   useEffect(() => {
     if (!selectMode) return undefined;
-    return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
-  }, [selectMode]);
+    return registerBackConsumer(() => { cancelSelect(); return true; });
+  }, [selectMode, cancelSelect]);
   // Bulk-edit owned copies of the selection through the barrier-guarded commands. ADJUST raises/lowers
   // by a signed delta (Remove floors at 0); SET writes an absolute count (0 clears, keeping any want).
   // The toast is driven by the REPOSITORY result (actual changes), never the selection count - so a
   // no-op reads honestly.
-  const bulkEditCopies = async ({ mode, qty, foil, dir }) => {
-    // Only cards that actually have the chosen finish are touched; the rest are skipped and counted (a
-    // non-foil-only card can't take a foil, and a foil-only card like Winter River can't take a
-    // standard). This keeps one impossible pairing from rejecting the whole strict batch.
-    const adjust = mode === 'adjust';
-    const delta = dir === 'remove' ? -qty : qty;
-    const items = []; let skipped = 0;
-    for (const { card, set } of selected.values()) {
-      let fin; try { fin = printingFinishes(card, set); } catch { fin = { nonFoil: true, foil: false }; }
-      if (foil ? fin.foil : fin.nonFoil) items.push(adjust ? { card_id: card.card_id, setCode: set, foil, delta } : { card_id: card.card_id, setCode: set, foil, qty });
-      else skipped += 1;
-    }
-    if (!items.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); setQtyOpen(false); return; }
-    const skipTail = skipped ? ` (${skipped} skipped - no ${foil ? 'foil' : 'non-foil'})` : '';
-    const f = foil ? 'foil ' : '';
-    const cnt = (nn) => `${nn} card${nn === 1 ? '' : 's'}`;
-    try {
-      if (adjust) {
-        const r = await adjustOwnedItemsBulk(items);   // one atomic write; Remove floors at 0, keeping any want
-        const changed = r.set + r.removed + r.cleared;   // rows actually touched
-        const copies = dir === 'remove' ? r.copiesRemoved : r.copiesAdded;   // AUTHORITATIVE copy movement, not the request
-        const cop = `${copies} ${f}cop${copies === 1 ? 'y' : 'ies'}`;
-        toast(changed === 0
-          ? `No change - ${cnt(r.unchanged)} unaffected${skipTail}`
-          : (dir === 'remove' ? `Removed ${cop} across ${cnt(changed)}` : `Added ${cop} across ${cnt(changed)}`) + skipTail);
-      } else {
-        const r = await setOwnedItemsBulk(items);   // one atomic write; 0 removes, keeping any wishlist want
-        const changed = qty === 0 ? (r.removed + r.cleared) : r.set;
-        toast(changed === 0
-          ? `No change - ${cnt(r.unchanged)} already ${qty === 0 ? 'empty' : `at ${qty}${foil ? ' foil' : ''}`}${skipTail}`
-          : (qty === 0 ? `Removed ${f}from ${cnt(changed)}` : `Set ${cnt(changed)} to ${qty}${foil ? ' foil' : ''}`) + skipTail);
-      }
-      setQtyOpen(false); cancelSelect();
-    } catch (e) {
-      console.error('bulkEditCopies failed', e);
-      const o = bulkWriteFailure(e);
-      toast(o.copy, { tone: o.tone });
-      setQtyOpen(false);
-      if (!o.keepSelection) cancelSelect();   // indeterminate: clear so it can't read as a retry invite
-    }
-  };
-  // Create a new list holding the selected cards - CARD-grain, so multiple printings of one card
-  // become one entry. ONE atomic write (list + entries), pid captured at the submit gesture.
-  const createListFromSelection = async (name, desc, kind) => {
-    const cardIds = [...new Set([...selected.values()].map(({ card }) => card.card_id))];
-    try {
-      const r = await createListWithEntries({ kind, name, description: desc, cardIds }, activeProfileId());
-      toast(`Created “${r.name}” with ${r.entries} card${r.entries === 1 ? '' : 's'}`);
-      setCreateOpen(false); cancelSelect();
-    } catch (e) {
-      console.error('createListFromSelection failed', e);
-      const o = bulkWriteFailure(e);
-      toast(o.indeterminate ? "Couldn't confirm the list - check Lists before trying again." : "Couldn't create the list.", { tone: o.tone });
-      setCreateOpen(false);
-      if (!o.keepSelection) cancelSelect();
-    }
-  };
+  // Bulk Edit-copies / New-list via the shared actions hook (atomic commands, honest write outcomes,
+  // 2000-payload guard). Same one the ALL view uses.
+  const { bulkEditCopies, createListFromSelection, addToListFromSelection } = useCollectionBulkActions({
+    selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
+    closeAddToList: () => setAddToListOpen(false),
+  });
 
-  // activeCount = things that HIDE cards. Sort and Group are arrangements, not filters, so they
-  // are excluded (a set drill has no cross-set facet either).
-  const activeCount = states.length + finishes.length + playset.length + (ownedCmp.val != null ? 1 : 0)
-    + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0);
-  const clearAll = () => {
-    setStates([]); setFinishes([]); setPlayset([]); setOwnedCmp({ op: '>=', val: null });
-    setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
-    // Clear resets FILTERS only. Sort and Group are arrangements - they hide nothing, are not
-    // counted in activeCount, and silently undoing them here would surprise someone who arranged
-    // the grid and then cleared a type filter.
-  };
+  // activeCount + clearAll come from the shared hook (filters only; Sort/Group are arrangements).
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
@@ -1104,14 +940,15 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           backing - the card grid scrolls underneath it, and over a transparent header the
           title and ring became unreadable. Bled to the screen edges (negative margin against
           the container's 20px padding) so nothing shows through at the sides. */}
-      <div style={{
+      <div data-rail-sticky style={{
         // marginTop cancels the pillar root's 4px top padding: without it the header sat 4px
         // below the scrollport and visibly slid those 4px before pinning.
+        // data-rail-sticky: the A-Z rail measures this header's bottom edge as its top floor.
         position: 'sticky', top: 0, zIndex: 6, margin: '-4px -20px 0', padding: '8px 20px 12px',
-        background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--hair-12)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, minHeight: 48 }}>
           <button onClick={onBack} aria-label="Back to sets" style={{
             width: 44, height: 44, margin: -5, flex: 'none', borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor; negative margin keeps the header layout
             border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--gold-leaf)',
@@ -1122,18 +959,24 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           <Ring value={drillPct} size={34} stroke={4} color="var(--accent-ruby)" showPct={false} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
-            <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
+            {selectMode ? (
+              <div aria-live="polite" style={{ font: "600 11.5px/1 var(--f-mono)", color: 'var(--gold-leaf)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {sel.count} selected{sel.hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {sel.hidden} hidden</span> : ''}
+              </div>
+            ) : (
+              <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillOwned} / {drillTotal}</div>
+            )}
           </div>
           {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
               overflow. "Select" enters multi-select (empty) over the CURRENT (scoped) grid; once in,
               the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
               the running count). A single card is one tap on its tile. */}
           {totalRows > 0 && (() => {
-            const allSel = selected.size > 0 && selected.size === drillRows.length;
+            const allSel = sel.allSelected;   // membership, not a count match
             const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
             return (
               <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
-                flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+                flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
                 borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
                 color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
               }}>
@@ -1160,8 +1003,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             // virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility tile reports
             // min-content width, which inflated 1fr tracks; pin the min to 0.
             // Sections, not a reordered flat list. With grouping off this is one unlabelled
-            // section, so the grid has a single code path either way.
-            groupCards(drillRows, groupBy, (r) => r.card, rowComparator(sort, (r) => r.card)).map((section) => (
+            // section, so the grid has a single code path either way. Built from the SAME canonical
+            // arrangement the rail models, so a jump index can never disagree with what's rendered.
+            drillArranged.sections.map((section) => (
               <div key={section.key}>
                 {section.label && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
@@ -1173,7 +1017,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
                   {section.cards.map((r) => (
                     <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
-                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek} anchorLetter={drillAnchorOf.get(r.card.card_id + '|' + r.set)}
                       addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
                       selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                   ))}
@@ -1181,14 +1025,18 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
               </div>
             ))
           )}
+          {drillRailVisible && (
+            <AlphabetRail model={drillRailM} count={drillOrdered.length} ensureRendered={() => {}} signature={drillSignature}
+              headerHeight={72} selecting={selectMode} />
+          )}
         </>
       )}
 
       {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
           portal into the same #cx-dock-search slot, so it swaps in place). */}
       {selectMode ? (
-        <SelectionBar count={selected.size}
-          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+        <SelectionBar disabled={!sel.count}
+          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
       )}
@@ -1197,6 +1045,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
       <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
+      <AddToListSheet open={addToListOpen} count={selected.size} onClose={() => setAddToListOpen(false)}
+        onPick={(id, name) => addToListFromSelection(id, name)} />
 
       {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
           (camera + text) search can't do. They are ALWAYS available now: adding is a place,
@@ -1217,6 +1067,155 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
 
       <CollectionRefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
+        els={els} setEls={setEls} multi={multi} setMulti={setMulti}
+        types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
+        artist={artist} setArtist={setArtist} artistOpts={artistOpts}
+        states={states} setStates={setStates} finishes={finishes} setFinishes={setFinishes}
+        playset={playset} setPlayset={setPlayset} ownedCmp={ownedCmp} setOwnedCmp={setOwnedCmp}
+        sort={sort} setSort={setSort} groupBy={groupBy} setGroupBy={setGroupBy} groupOpts={GROUP_OPTS} />
+    </div>
+  );
+}
+
+// The ALL view: every collector item across every set, on the SAME shared refine engine + selection
+// + bulk actions as the set drill (scope 'all'), with progressive rendering so the ~1.5k-tile list
+// paints a bounded prefix and grows on scroll. Header carries the count + Select pill; the SETS/ALL
+// toggle lives in the My Collection wrapper above.
+function AllCards({ onPeek, onOpenCodex }) {
+  const R = useCollectionRefine({ kind: 'all' });
+  const {
+    q, setQ, els, setEls, multi, setMulti, types, setTypes, rarities, setRarities, artist, setArtist, artistOpts,
+    states, setStates, finishes, setFinishes, playset, setPlayset, ownedCmp, setOwnedCmp, sort, setSort, groupBy, setGroupBy,
+    activeCount, clearAll, filterOpen, setFilterOpen, optsLoaded, pool, addStatus, stepSet, rows,
+  } = R;
+  const { selectMode, selected, enter: enterSelectMode, cancel: cancelSelect, toggle: toggleSelHook, selectAll: selectAllHook, deselectAll } = useCollectionSelection();
+  const [qtyOpen, setQtyOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [addToListOpen, setAddToListOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const { bulkEditCopies, createListFromSelection, addToListFromSelection } = useCollectionBulkActions({
+    selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
+    closeAddToList: () => setAddToListOpen(false),
+  });
+
+  // ALL is at collector-item grain: one tile per printing. Arrange the COMPLETE result into final
+  // sections FIRST, then flatten - the progressive prefix rides that flattened order, so growing the
+  // count only ever APPENDS (a later batch can't inject a row above already-rendered content). The
+  // SIGNATURE (not row identity) governs the reset, so a ledger broadcast can't snap us to the top.
+  const comparator = useMemo(() => rowComparator(sort, (r) => r.card), [sort]);
+  const arranged = useMemo(() => arrangeSections(rows, groupBy, (r) => r.card, comparator), [rows, groupBy, comparator]);
+  const ordered = arranged.flat.map((f) => f.row);   // globally ordered item list (for selection/toggle over FULL result)
+  const signature = renderSignature('all', { q, states, finishes, playset, ownedCmp, types, rarities, els, multi, artist, sort, groupBy });
+  const { count, sentinelRef, hasMore, showMore, ensureRendered } = useProgressiveRender(arranged.flat.length, signature);
+  const sections = useMemo(() => visibleSections(arranged, count), [arranged, count]);
+
+  // A-Z rail: one model over the SAME arranged.flat that the grid renders (so indexes match DOM order).
+  // Shows only when the order is globally alphabetical AND the buckets agree with it (model.indexable).
+  const railM = useMemo(() => railModel(ordered), [ordered]);
+  const anchorOf = useMemo(() => {
+    const m = new Map();
+    for (const [letter, i] of railM.firstIndex) { const r = ordered[i]; if (r) m.set(r.card.card_id + '|' + r.set, letter); }
+    return m;
+  }, [railM, ordered]);
+  const railVisible = sort === 'name-asc' && groupBy === 'none';
+
+  const total = arranged.flat.length;
+  const sel = selectionSummary(selected, ordered);   // same contract as the set drill: count / allSelected / hidden
+  const { hidden, allSelected: allSel } = sel;
+  const toggleSel = (id, set) => toggleSelHook(id, set, ordered);   // toggle captures from the FULL rows
+  useEffect(() => {
+    if (!selectMode) return undefined;
+    return registerBackConsumer(() => { cancelSelect(); return true; });   // Back exits selection first
+  }, [selectMode, cancelSelect]);
+
+  return (
+    <div style={{ padding: '0 20px' }}>
+      {/* One shared pinned sub-header (identical to the Sets landing) - anchored so the count + Select
+          never scroll away; the tally becomes the selected count in select mode. */}
+      <CollectionSubHeader title="All Cards" tallyLive={selectMode} tallyEmphasis={selectMode}
+        tally={selectMode
+          ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
+          : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
+        action={total > 0 && (
+          <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
+            aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
+              flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+            }}>
+            <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+          </button>
+        )} />
+
+      {pool == null ? <Loading /> : total === 0 ? (
+        <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+          {(activeCount || q) ? 'No items match those filters.' : 'No items.'}
+        </div>
+      ) : (
+        <>
+          {sections.map((section) => (
+            <div key={section.key}>
+              {section.label && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
+                  <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{section.label}</span>
+                  <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(74,60,34,.6), transparent)' }} />
+                  <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{section.fullCount}</span>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
+                {section.cards.map((r) => (
+                  <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={SET_LABEL[r.set] || r.set}
+                    owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                    addStatus={addStatus.get(r.card.card_id + '|' + r.set)} anchorLetter={anchorOf.get(r.card.card_id + '|' + r.set)}
+                    selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
+                ))}
+              </div>
+            </div>
+          ))}
+          {railVisible && (
+            <AlphabetRail model={railM} count={count} ensureRendered={ensureRendered} signature={signature}
+              headerHeight={78} selecting={selectMode} />
+          )}
+          {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. When no observer
+              or scroll root is available, the explicit button keeps the rest of the catalogue reachable. */}
+          {hasMore && (
+            <>
+              <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '18px 0 4px' }}>
+                <button onClick={showMore} style={{
+                  minHeight: 44, padding: '0 18px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)",
+                  color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+                }}>Show more</button>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {selectMode ? (
+        <SelectionBar disabled={!sel.count} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)} onCancel={cancelSelect} />
+      ) : (
+        <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search all cards…" ariaLabel="Search cards" />
+      )}
+      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkEditCopies}
+        maxStd={[...selected.values()].reduce((m, s) => Math.max(m, s.owned || 0), 0)}
+        maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
+      <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
+        onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
+      <AddToListSheet open={addToListOpen} count={selected.size} onClose={() => setAddToListOpen(false)}
+        onPick={(id, name) => addToListFromSelection(id, name)} />
+
+      {!selectMode && <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />}
+      {!selectMode && (
+        <Fab variant="lib" label="Add cards" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+          { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+          { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+        ]} />
+      )}
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
+
+      <CollectionRefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
+        scope="all" activeCount={activeCount} ctaLabel={`Show ${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
@@ -1411,6 +1410,69 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
         <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
         <button onClick={go} disabled={!name.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() && !busy ? 1 : 0.5 }}>{busy ? `${submitLabel}…` : submitLabel}</button>
       </div>
+    </BottomSheet>
+  );
+}
+
+// Bulk add-to-existing-list picker: the profile's lists (card lists first, then wanted goals). Tapping
+// one adds every selected card (deduped to card grain, 2000-guarded, existing entries skipped) to it.
+function AddToListSheet({ open, count, onPick, onClose }) {
+  const [lists, setLists] = useState(null);
+  const [busyId, setBusyId] = useState(null);   // the row whose write is in flight (shows progress)
+  const inflight = useRef(false);               // single-flight guard - ref so a synchronous double-tap can't race
+  useEffect(() => {
+    if (!open) { inflight.current = false; setBusyId(null); return undefined; }
+    let alive = true;
+    setLists(null); inflight.current = false; setBusyId(null);
+    listCardLists().then((all) => { if (alive) setLists(all); }).catch(() => { if (alive) setLists([]); });
+    return () => { alive = false; };
+  }, [open]);
+  const busy = busyId != null;
+  // One submission at a time: a second tap (double-tap, or a different list) while a write is pending is
+  // ignored, so a selection can't be added to two lists by accident. The guard clears in finally.
+  const choose = async (l) => {
+    if (inflight.current) return;
+    inflight.current = true;
+    setBusyId(l.id);
+    try { await onPick(l.id, l.name); }         // awaited; the caller closes the sheet + clears selection on success
+    finally { inflight.current = false; setBusyId(null); }
+  };
+  const row = (l) => {
+    const rowBusy = busyId === l.id;
+    return (
+      <button key={l.id} type="button" disabled={busy} aria-busy={rowBusy} onClick={() => choose(l)} style={{
+        display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '13px 4px', textAlign: 'left',
+        background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)',
+        cursor: busy ? 'default' : 'pointer', opacity: busy && !rowBusy ? 0.4 : 1,
+      }}>
+        <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+        <span style={{ flex: 'none', font: "600 12px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>{rowBusy ? 'Adding…' : '+'}</span>
+      </button>
+    );
+  };
+  const section = (title, items, hint) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 6px' }}>{title}</div>
+      {items.length === 0
+        ? <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: 'var(--ink-faint)', padding: '4px 0 2px' }}>{hint}</div>
+        : items.map(row)}
+    </div>
+  );
+  return (
+    <BottomSheet open={open} title="ADD TO LIST" onClose={onClose} dismissible={!busy} ariaBusy={busy}>
+      <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>
+        Add the {count} selected card{count === 1 ? '' : 's'} (one per card) to a list.
+      </div>
+      {lists == null ? <Loading /> : lists.length === 0 ? (
+        <div style={{ font: "italic 400 13px/1.5 var(--f-read)", color: 'var(--ink-faint)', textAlign: 'center', padding: '10px 0 6px' }}>
+          No lists yet. Use <strong style={{ color: 'var(--ink-body)' }}>New list</strong> to make one from this selection.
+        </div>
+      ) : (
+        <>
+          {section('CARD LISTS', lists.filter((l) => l.kind === 'custom'), 'No card lists yet.')}
+          {section('WANTED LISTS', lists.filter((l) => l.kind === 'wanted'), 'No wanted lists yet.')}
+        </>
+      )}
     </BottomSheet>
   );
 }

@@ -13,6 +13,7 @@ import { buildSetCompletion } from '../store/setCompletion.js';
 import { setHeroUrl } from '../store/cardArt.js';
 import { SET_LABEL } from '../store/sets.js';
 import { Loading } from '../components/ui.jsx';
+import CollectionSubHeader from '../components/CollectionSubHeader.jsx';
 
 const fmt = (n) => (n || 0).toLocaleString('en-US');
 
@@ -120,13 +121,9 @@ export default function SetsHome({ onOpenSet, rev }) {
   // 150px it used to carry made the page scroll even when the tiles already fitted.
   return (
     <div style={{ padding: '0 20px 24px' }}>
-      <div style={{ margin: '8px 2px 20px' }}>
-        <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
-        <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0' }}>Sets</div>
-        <div style={{ font: "400 11.5px/1 var(--f-mono)", letterSpacing: '.04em', color: 'var(--ink-muted)' }}>
-          {fmt(totals.owned)} / {fmt(totals.total)} non-foil owned
-        </div>
-      </div>
+      {/* The SAME shared sub-header as the All grid - identical size + colour so toggling Sets/All
+          doesn't shift anything. */}
+      <CollectionSubHeader title="Sets" tally={`${fmt(totals.owned)} / ${fmt(totals.total)} non-foil owned`} />
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         {completion.map((s) => <Plate key={s.code} s={s} onOpen={onOpenSet} />)}

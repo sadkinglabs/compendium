@@ -21,7 +21,7 @@ const GILT = 'linear-gradient(180deg, #d8b872, #b8954f)';
 const cnt = (n) => n || undefined;
 
 export default function CollectionRefineSheet({
-  open, onClose, onClear, activeCount = 0, ctaLabel = 'Show results',
+  open, onClose, onClear, scope = 'set', activeCount = 0, ctaLabel = 'Show results',
   els, setEls, multi, setMulti, types, setTypes, rarities, setRarities, artist, setArtist, artistOpts = [],
   states, setStates, finishes, setFinishes, playset, setPlayset, ownedCmp, setOwnedCmp,
   sort, setSort, groupBy = 'none', setGroupBy, groupOpts = [],
@@ -57,7 +57,7 @@ export default function CollectionRefineSheet({
       <div style={{ ...EYEBROW, marginTop: 2 }}>REFINE</div>
       <div style={{ textAlign: 'center', marginTop: 10, minHeight: 18, padding: '0 8px' }}>
         {labels.length === 0
-          ? <span style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: 'var(--ink-faint)' }}>All cards in this set</span>
+          ? <span style={{ font: "italic 400 13.5px/1.4 var(--f-read)", color: 'var(--ink-faint)' }}>{scope === 'all' ? 'Every collector item' : 'All cards in this set'}</span>
           : <span style={{ font: "400 13.5px/1.4 var(--f-read)", color: 'var(--ink-status)' }}><span style={{ font: "600 15px/1 var(--f-display)", color: '#c9b487' }}>{activeCount}</span> <span style={{ fontStyle: 'italic' }}>active &middot; {shown.join(' · ')}</span></span>}
       </div>
       <div style={{ height: 1, background: 'linear-gradient(90deg, transparent, #4a3c22 30%, #4a3c22 70%, transparent)', margin: '18px 0 20px' }} />
