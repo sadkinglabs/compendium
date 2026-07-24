@@ -25,19 +25,6 @@ export function letterOf(name) {
 }
 
 /**
- * Smoothstep bulge factor for a label `distance` px from the touch point: `maxScale` at the centre,
- * easing to `1` at `radius`, flat `1` beyond. Pure and symmetric (uses |distance|), clamped to
- * [1, maxScale] - the animation layer only ever feeds it a distance.
- */
-export function bulge(distance, radius, maxScale) {
-  const d = Math.abs(distance);
-  if (!(radius > 0) || d >= radius) return 1;
-  const t = 1 - d / radius;                 // 1 at centre -> 0 at the edge
-  const s = t * t * (3 - 2 * t);            // smoothstep easing
-  return 1 + (maxScale - 1) * s;
-}
-
-/**
  * Build the rail model from the rows in EXACT render order (the caller's canonical arranged.flat).
  *   - `present`: the letters that actually occur.
  *   - `firstIndex`: letter -> first flat index (its jump target; used only when indexable).

@@ -283,3 +283,10 @@ Can be gated behind a simple render condition if a device issue appears late.
 - **Build order:** pure `alphabetIndex.js` + `railBounds` + tests first (this slice) -> `AlphabetRail`
   component + injected seams -> wire both surfaces (set drill refactored onto shared `arrangeSections`)
   -> docs -> full gate battery. Build number holds until the owner's coordinated device pass.
+- **Device-driven readout pivot (builds 186-189):** the original Niagara bulge/wave was built and
+  device-tested, then set aside on owner direction. On a dense 27-letter vertical strip a dramatic bulge
+  inherently overlaps, is expensive (27 transforms/frame competing with the grid), and never solves thumb
+  occlusion (the "current" letter is under the finger). Live-jumping on every crossing was the jank
+  source. Replaced with **latch + floating pill** (owner-chosen): the rail is a static Cinzel track, a
+  big letter pill floats beside the thumb during a scrub, and the single jump fires on release. The
+  tested pure helpers are unchanged except `bulge` (removed - now dead). This is the shipping design.

@@ -1,19 +1,23 @@
-// The Collection A-Z alphabet rail: a Niagara-style vertical index on the logical inline edge. Drag or
-// tap a letter to jump; labels bulge around the touch point. Present letters are real <button>s for
-// keyboard/AT, but ALL pointer input lands on the continuous capture strip (the buttons are
-// pointer-inert), so the letter always comes from POSITION - and on touch the implicit pointer capture
-// lands on the strip itself, never on a tiny child. ALL the decisions live in tested pure helpers -
-// `railModel` (which letters, indexability, stable modelKey), `bulge`/`indexAtY` (the wave + hit math),
-// `railTopOffset`/`railBounds`/`effectiveZoom` (the measured geometry), `activeLetterFor` (scroll
-// highlight), and the `railReducer` jump coordinator. This component is the thin DOM shell.
+// The Collection A-Z alphabet rail: a vertical index on the logical inline edge. The rail is a plain,
+// static track of small Cinzel letters; the READOUT is a big letter pill that floats beside the thumb
+// while you scrub. Present letters are real <button>s for keyboard/AT, but ALL pointer input lands on
+// the continuous capture strip (the buttons are pointer-inert), so the letter always comes from POSITION
+// - and on touch the implicit pointer capture lands on the strip itself, never on a tiny child. ALL the
+// decisions live in tested pure helpers - `railModel` (which letters, indexability, stable modelKey),
+// `indexAtY` (finger -> letter), `railTopOffset`/`railBounds`/`effectiveZoom` (the measured geometry),
+// `activeLetterFor` (scroll highlight), and the `railReducer` jump coordinator. This is the DOM shell.
 //
-// Gesture model: pointerdown on the strip installs WINDOW-level pointermove/up/cancel listeners keyed
+// LATCH model (the key to smoothness): during a drag we do ZERO grid work - no jump, no scroll, no React
+// re-render - we only move the floating pill imperatively (one element) and remember the letter under the
+// finger. The single expensive grow+scroll fires once, on RELEASE. Live-scrubbing ~1,500 image tiles was
+// the source of the jank; a pill preview is the standard fix. A pointercancel aborts with no jump.
+//
+// Gesture plumbing: pointerdown on the strip installs WINDOW-level pointermove/up/cancel listeners keyed
 // to that pointerId, so the drag survives a failed/stolen pointer capture and a finger that wanders off
-// the 36px strip. setPointerCapture is still requested as a bonus (keeps the stream targeted), but
-// nothing depends on it. Teardown lives in a per-gesture cleanup ref + an unmount-only dispose effect -
-// NEVER keyed on callback identities, which churn on parent re-renders and used to release the capture
-// mid-drag. One rAF drives the wave with direct transform writes (no per-frame React re-render);
-// body.reduce-motion suppresses the wave but never the jump.
+// the strip. setPointerCapture is requested as a bonus but nothing depends on it. Teardown lives in a
+// per-gesture cleanup ref + an unmount-only dispose effect - NEVER keyed on callback identities, which
+// churn on parent re-renders and used to release the capture mid-drag. One rAF positions the pill with
+// direct DOM writes (no per-frame React re-render).
 //
 // Geometry: every measurement (rects, viewport) is in REAL viewport px, but this nav renders inside the
 // zoomed .cx-app subtree (`zoom: var(--ui-scale)`), where fixed insets and scrollTop are consumed in
@@ -22,20 +26,18 @@
 // Interactive behaviour (WebView pointer streams, scroll fidelity, exact geometry) is DEVICE-GATED and
 // unverified in the repo gates - only the pure helpers it drives are unit-tested.
 import { useReducer, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
-import { RAIL_ORDER, bulge, firstPresent, lastPresent, stepLetter, activeLetterFor } from '../store/alphabetIndex.js';
+import { RAIL_ORDER, firstPresent, lastPresent, stepLetter, activeLetterFor } from '../store/alphabetIndex.js';
 import { indexAtY, railBounds, railTopOffset, effectiveZoom } from '../store/railGeometry.js';
 import { resolveScrollRoot } from '../store/collectionAllModel.js';
 import { initialRailState, railReducer, shouldCommit } from './alphabetRailState.js';
 
-const RADIUS = 88;        // wave falloff radius (px) around the touch point - wide so many letters swell
-const MAX_SCALE = 3.4;    // centre label scale at the touch point - a big, dramatic bulge
-const SHIFT = 30;         // max inward push (px) of the centre label - the wave fans OUT from under the finger
 const LOOKAHEAD = 60;     // render a little past the target so the landing has context
 const PRIMARY_MOUSE = 0;  // left button
 const RAIL_WIDTH = 44;    // capture strip width - a real thumb target; letters hug the screen edge inside it
-const LETTER = 12;        // base letter size (px); the ACTIVE letter is drawn much larger at rest
-const ACTIVE_LETTER = 22; // the letter we are "up to" reads big even without a drag
-const SETTLE = 'transform .18s ease';                       // release ease - letters glide home, not snap
+const LETTER = 12;        // static rail letter size (px) - the rail is a plain track; the pill is the readout
+const PILL_LETTER = 30;   // the big Cinzel letter shown in the floating pill beside the thumb
+const PILL_SIZE = 58;     // pill diameter (px)
+const PILL_GAP = 18;      // pill sits this far INSIDE the strip, so it clears the thumb driving the scroll
 // The reachable bottom stack to clear: the dock itself plus ANY FAB wrap in its FAB slot (the plain
 // filter FAB shares the dock rect; the stacked add FAB rises above it and is the true obstruction).
 const OBSTRUCTIONS = '.cx-dock, .cx-dock-fab .fab-wrap';
@@ -48,13 +50,15 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   const [active, setActive] = useState(null);
   const [bounds, setBounds] = useState(null);
   const rootRef = useRef(null);          // this rail's DOM node -> resolve the scroll root from it
-  const labelRefs = useRef([]);          // per-letter DOM nodes, for direct transform writes (no re-render)
   const stripRef = useRef(null);         // the continuous capture strip
   const reqRef = useRef(0);              // monotonic pick requestId
   const rafRef = useRef(0);              // wave rAF handle
-  const pendingYRef = useRef(null);      // latest pointer Y awaiting a wave frame
+  const pendingYRef = useRef(null);      // latest pointer Y awaiting a pill frame
   const teardownRef = useRef(null);      // live gesture's cleanup (window listeners + capture release)
-  const lastPickRef = useRef(null);      // last letter emitted THIS gesture (dedupe; reset on each down)
+  const [scrubbing, setScrubbing] = useState(false);   // a drag is live -> the floating letter pill is shown
+  const pillRef = useRef(null);          // the pill DOM node - positioned + lettered imperatively (no re-render)
+  const scrubLetterRef = useRef(null);   // the letter currently under the finger (the LATCHED jump target)
+  const zoomRef = useRef(1);             // effectiveZoom captured at gesture start (fixed insets are layout px)
 
   const { order, present, firstIndex, indexable, modelKey } = model;
   const scrollRoot = () => resolveScrollRoot(rootRef.current);
@@ -155,42 +159,33 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
     };
   }, [headerHeight, selecting]);
 
-  // ---- Gesture: strip-only pointer target; window-level move/up; event-driven rAF wave --------------
-  const applyWave = useCallback((y) => {
-    const strip = stripRef.current;
-    if (!strip) return;
-    const rect = strip.getBoundingClientRect();
-    const reduce = typeof document !== 'undefined' && document.body.classList.contains('reduce-motion');
-    const dir = side === 'left' ? 1 : -1;                      // bulge pushes INWARD, away from the edge
-    for (let i = 0; i < order.length; i += 1) {
-      const el = labelRefs.current[i];
-      if (!el) continue;
-      const centre = rect.top + (i + 0.5) * (rect.height / order.length);
-      const scale = reduce ? 1 : bulge(y - centre, RADIUS, MAX_SCALE);
-      if (el.style.transition) el.style.transition = '';       // per-frame writes must not tween
-      el.style.transform = scale === 1 ? ''
-        : `translateX(${(dir * SHIFT * (scale - 1) / (MAX_SCALE - 1)).toFixed(1)}px) scale(${scale.toFixed(3)})`;
-    }
-  }, [order.length, side]);
-
+  // ---- Gesture: strip-only pointer target; window-level move/up. LATCH model - during the drag we do
+  // ZERO grid work (no jump, no scroll, no re-render); we only move the floating letter pill imperatively
+  // and remember the letter under the finger. The single jump fires on RELEASE. This is what makes it
+  // smooth: the heavy grow+scroll can't compete with the drag. -----------------------------------------
   const frame = useCallback(() => {
     rafRef.current = 0;
     const y = pendingYRef.current;
-    if (y == null) return;
-    applyWave(y);
     const strip = stripRef.current;
-    if (strip) {
-      const rect = strip.getBoundingClientRect();
-      const letter = order[indexAtY(y, rect.top, rect.height, order.length)];
-      if (letter && letter !== lastPickRef.current && present.has(letter)) {   // deduped; absent slots ignored
-        lastPickRef.current = letter;
-        pick(letter);
+    if (y == null || !strip) return;
+    const rect = strip.getBoundingClientRect();
+    const letter = order[indexAtY(y, rect.top, rect.height, order.length)];
+    scrubLetterRef.current = letter;
+    const pill = pillRef.current;
+    if (pill) {
+      const on = present.has(letter);
+      const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
+      pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;   // fixed inset is layout px in the zoomed subtree
+      pill.style.opacity = on ? '1' : '.5';                        // an absent letter (won't jump) reads muted
+      if (pill.firstChild) {
+        pill.firstChild.textContent = letter || '';
+        pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)';
       }
     }
-  }, [applyWave, order, present, pick]);
+  }, [order, present]);
 
-  // Latest-frame ref: rAF and the per-gesture listeners always run the CURRENT frame closure, while
-  // schedule/endGesture stay identity-stable for the whole component lifetime (no teardown churn).
+  // Latest-frame ref: rAF always runs the CURRENT frame closure, while schedule/end/commit stay
+  // identity-stable for the whole component lifetime (no teardown churn releasing the gesture mid-drag).
   const frameRef = useRef(frame);
   useLayoutEffect(() => { frameRef.current = frame; });
   const runFrame = useCallback(() => { frameRef.current(); }, []);
@@ -201,39 +196,47 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   }, [runFrame]);
 
   const endGesture = useCallback(() => {
-    if (rafRef.current) {
-      cancelAnimationFrame(rafRef.current);
-      rafRef.current = 0;
-      if (pendingYRef.current != null) frameRef.current();     // flush: the release point still picks
-    }
+    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
     pendingYRef.current = null;
     if (teardownRef.current) teardownRef.current();            // window listeners + capture release
-    for (const l of labelRefs.current) {
-      if (l && l.style.transform) { l.style.transition = SETTLE; l.style.transform = ''; }   // glide home
-    }
+    setScrubbing(false);                                       // hides the pill
   }, []);
+
+  // Release = LATCH: jump to the letter that was under the finger, once. Absent slots are a silent no-op.
+  const commit = useCallback(() => {
+    const letter = scrubLetterRef.current;
+    endGesture();
+    if (letter && present.has(letter)) pick(letter);
+  }, [endGesture, present, pick]);
+  const commitRef = useRef(commit);
+  useLayoutEffect(() => { commitRef.current = commit; });
 
   const onPointerDown = (e) => {
     if (!e.isPrimary || (e.pointerType === 'mouse' && e.button !== PRIMARY_MOUSE)) return;
     if (teardownRef.current) return;                           // one gesture at a time
     const id = e.pointerId;
     const strip = e.currentTarget;
+    const root = scrollRoot();
+    const rr = root && root.getBoundingClientRect();
+    zoomRef.current = rr ? effectiveZoom(rr.width, root.offsetWidth) : 1;
     try { strip.setPointerCapture(id); } catch { /* capture is a bonus - window listeners carry the drag */ }
     const onMove = (ev) => { if (ev.pointerId === id) schedule(ev.clientY); };
-    const onEnd = (ev) => { if (ev.pointerId === id) endGesture(); };
+    const onUp = (ev) => { if (ev.pointerId === id) commitRef.current(); };     // release -> the one jump
+    const onCancel = (ev) => { if (ev.pointerId === id) endGesture(); };        // aborted -> no jump
     window.addEventListener('pointermove', onMove, { passive: true });
-    window.addEventListener('pointerup', onEnd, { passive: true });
-    window.addEventListener('pointercancel', onEnd, { passive: true });
+    window.addEventListener('pointerup', onUp, { passive: true });
+    window.addEventListener('pointercancel', onCancel, { passive: true });
     teardownRef.current = () => {
       teardownRef.current = null;
       window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onEnd);
-      window.removeEventListener('pointercancel', onEnd);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
       try { if (strip.hasPointerCapture && strip.hasPointerCapture(id)) strip.releasePointerCapture(id); } catch { /* noop */ }
     };
     e.preventDefault();
-    lastPickRef.current = null;                // a fresh gesture may re-pick the same letter
-    schedule(e.clientY);                       // a bare tap (no move) still schedules a pick immediately
+    scrubLetterRef.current = null;
+    setScrubbing(true);                        // show the pill; the first frame positions + letters it
+    schedule(e.clientY);                       // a bare tap positions the pill and latches its letter too
   };
 
   // dispose: unmount tears the live gesture down (rAF + window listeners + capture). Deliberately
@@ -277,21 +280,30 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
         {order.map((l, i) => {
           const on = present.has(l);
           return (
-            <button key={l} ref={(n) => { labelRefs.current[i] = n; }} type="button"
+            <button key={l} type="button"
               disabled={!on} aria-hidden={!on} tabIndex={on && (active === l || (!active && l === firstPresent(present))) ? 0 : -1}
               aria-current={active === l ? 'true' : undefined}
               onClick={on ? () => { setActive(l); pick(l); } : undefined}
               style={{ all: 'unset', fontFamily: 'var(--f-display)', fontWeight: active === l ? 800 : 600,
-                fontSize: active === l ? ACTIVE_LETTER : LETTER, lineHeight: 1, letterSpacing: '.03em',
+                fontSize: LETTER, lineHeight: 1, letterSpacing: '.03em',
                 color: on ? (active === l ? 'var(--gold-num)' : 'var(--ink-muted)') : 'var(--ink-faint)',
-                textShadow: active === l ? '0 0 14px rgba(203,167,95,.45)' : 'none',
-                opacity: on ? 1 : 0.28, transformOrigin: side === 'left' ? 'left center' : 'right center',
-                pointerEvents: 'none', willChange: 'transform' }}>
+                opacity: on ? 1 : 0.28, pointerEvents: 'none' }}>
               {l}
             </button>
           );
         })}
       </div>
+      {/* Floating readout: while scrubbing, a big Cinzel letter rides beside the thumb (offset INWARD so
+          the finger never covers it), positioned + lettered imperatively from the rAF frame. */}
+      {scrubbing && (
+        <div ref={pillRef} data-present="1" aria-hidden="true"
+          style={{ position: 'fixed', top: 0, [side === 'left' ? 'left' : 'right']: RAIL_WIDTH + PILL_GAP,
+            transform: 'translateY(-50%)', width: PILL_SIZE, height: PILL_SIZE, borderRadius: '50%',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, pointerEvents: 'none',
+            background: 'rgba(14,11,7,.94)', border: '1px solid rgba(203,167,95,.55)', boxShadow: '0 8px 22px rgba(0,0,0,.55)' }}>
+          <span style={{ font: `800 ${PILL_LETTER}px/1 var(--f-display)`, color: 'var(--gold-num)' }} />
+        </div>
+      )}
       {/* committed-destination announcement only (never intermediate drag crossings) */}
       <span aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
         {state.committedLetter ? `Jumped to ${state.committedLetter}` : ''}

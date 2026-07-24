@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  RAIL_ORDER, letterOf, bulge, railModel, firstPresent, lastPresent, stepLetter, activeLetterFor,
+  RAIL_ORDER, letterOf, railModel, firstPresent, lastPresent, stepLetter, activeLetterFor,
 } from './alphabetIndex.js';
 
 const card = (id, name) => ({ card_id: id, name });
@@ -23,16 +23,6 @@ test('letterOf: folds diacritics, buckets digits/symbols/empty to #, is case-ins
   assert.equal(letterOf('   '), '#');
   assert.equal(letterOf(null), '#');
   assert.equal(letterOf(undefined), '#');
-});
-
-test('bulge: peaks at centre, eases to 1 at radius, flat beyond, symmetric, clamped', () => {
-  assert.equal(bulge(0, 100, 2), 2, 'centre is maxScale');
-  assert.equal(bulge(100, 100, 2), 1, 'at radius -> 1');
-  assert.equal(bulge(140, 100, 2), 1, 'beyond radius -> 1');
-  assert.equal(bulge(-40, 100, 2), bulge(40, 100, 2), 'symmetric');
-  assert.ok(bulge(20, 100, 2) > bulge(60, 100, 2), 'monotone decreasing in |distance|');
-  assert.ok(bulge(20, 100, 2) <= 2 && bulge(20, 100, 2) >= 1, 'clamped to [1, maxScale]');
-  assert.equal(bulge(0, 0, 2), 1, 'zero radius -> no bulge');
 });
 
 test('railModel: present set, first-index in render order, # bucketing, indexable on clean A-Z', () => {
