@@ -52,6 +52,7 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   const pendingYRef = useRef(null);
   const zoomRef = useRef(1);
   const teardownRef = useRef(null);                     // live gesture's window-listener + capture cleanup
+  const scrubLetterRef = useRef(null);                  // current scrub letter, for the imperative pill paint
   const modelRef = useRef(model);
   const pickRef = useRef(null);
 
@@ -158,16 +159,23 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   }, [rootEl, visible, headerHeight, selecting]);
 
   // ---- Gesture (latch): the pure controller resolves letters synchronously; these callbacks are the
-  // DOM side (pill position/haptic) and are created ONCE, reading refs so they never go stale. ---------
-  const positionPill = useCallback(() => {
+  // DOM side and are created ONCE, reading refs so they never go stale. `paintPill` writes the pill
+  // ENTIRELY from refs (position + letter + tone), so it renders correctly the moment the pill mounts -
+  // including the FIRST tap, whose onScrub fires before the pill's DOM exists. A layout effect paints
+  // once on mount; the rAF paints each subsequent move. ------------------------------------------------
+  const paintPill = useCallback(() => {
     rafRef.current = 0;
-    const y = pendingYRef.current;
-    const strip = stripRef.current;
     const pill = pillRef.current;
-    if (y == null || !strip || !pill) return;
+    const strip = stripRef.current;
+    const y = pendingYRef.current;
+    if (!pill || !strip || y == null) return;
     const rect = strip.getBoundingClientRect();
     const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
     pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;
+    const letter = scrubLetterRef.current;
+    const on = modelRef.current.present.has(letter);
+    pill.style.opacity = on ? '1' : '.5';                        // an absent slot reads muted (won't jump)
+    if (pill.firstChild) { pill.firstChild.textContent = letter || ''; pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)'; }
   }, []);
   const gestureRef = useRef(null);
   if (!gestureRef.current) {
@@ -182,16 +190,9 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
       isPresent: (l) => modelRef.current.present.has(l),
       onScrub: (letter, y, changed) => {
         pendingYRef.current = y;
-        if (!rafRef.current) rafRef.current = requestAnimationFrame(positionPill);
-        if (changed) {
-          const on = modelRef.current.present.has(letter);
-          const pill = pillRef.current;
-          if (pill) {
-            pill.style.opacity = on ? '1' : '.5';
-            if (pill.firstChild) { pill.firstChild.textContent = letter || ''; pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)'; }
-          }
-          if (on) haptic('light');                             // an absent slot is fully inert - no tick
-        }
+        scrubLetterRef.current = letter;
+        if (!rafRef.current) rafRef.current = requestAnimationFrame(paintPill);
+        if (changed && modelRef.current.present.has(letter)) haptic('light');   // present-only tick
       },
       onJump: (letter) => { haptic('medium'); pickRef.current(letter); },
       onEnd: () => {
@@ -227,8 +228,12 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
     };
     e.preventDefault();
     setScrubbing(true);
-    gesture.down(id, e.clientY);                                // latches the first letter + positions the pill
+    gesture.down(id, e.clientY);                                // latches the first letter into the refs
   };
+
+  // Paint the pill the instant it mounts (scrubbing -> true), from the refs the down already set - so the
+  // FIRST tap shows its letter without waiting for a move.
+  useLayoutEffect(() => { if (scrubbing) paintPill(); }, [scrubbing, paintPill]);
 
   // Duck / root-change teardown: when the rail becomes invisible, abort any live gesture, cancel the
   // pending jump, and clear stale bounds. The tracking effects unbind via their rootEl/visible deps.
