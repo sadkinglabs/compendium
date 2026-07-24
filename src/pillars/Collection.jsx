@@ -33,6 +33,7 @@ import { selectionSummary } from '../store/collectionSelection.js';
 import { arrangeSections, visibleSections, renderSignature } from '../store/collectionAllModel.js';
 import { railModel } from '../store/alphabetIndex.js';
 import AlphabetRail from '../components/AlphabetRail.jsx';
+import CollectionSubHeader from '../components/CollectionSubHeader.jsx';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -944,7 +945,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         // below the scrollport and visibly slid those 4px before pinning.
         // data-rail-sticky: the A-Z rail measures this header's bottom edge as its top floor.
         position: 'sticky', top: 0, zIndex: 6, margin: '-4px -20px 0', padding: '8px 20px 12px',
-        background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
         borderBottom: '1px solid var(--hair-12)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, minHeight: 48 }}>
@@ -1129,41 +1130,22 @@ function AllCards({ onPeek, onOpenCodex }) {
 
   return (
     <div style={{ padding: '0 20px' }}>
-      {/* Sticky header - ALL had none, so the count + Select row scrolled away. It mirrors the set
-          drill: an opaque, full-bleed pinned band (negative margins cancel the container padding) that
-          the A-Z rail measures as its top floor (data-rail-sticky). The tally becomes the selected
-          count in select mode, exactly as the drill's owned/total line does. */}
-      <div data-rail-sticky style={{
-        position: 'sticky', top: 0, zIndex: 6, margin: '0 -20px 10px', padding: '8px 20px 12px',
-        background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
-        borderBottom: '1px solid var(--hair-12)',
-      }}>
-        {/* minHeight reserves the Select pill's footprint so the row NEVER resizes when the pill
-            appears/disappears or its label changes - the content below stays anchored. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {/* Typographic scale matches the Sets landing header (SetsHome.jsx) exactly, so the two
-                My-Collection views read as one family: eyebrow 10px, title 22px, tally 11.5px mono. */}
-            <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Collection</div>
-            <div style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: '6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>All Cards</div>
-            <div aria-live={selectMode ? 'polite' : undefined} style={{ font: selectMode ? "600 11.5px/1 var(--f-mono)" : "400 11.5px/1 var(--f-mono)", letterSpacing: '.04em', color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {selectMode
-                ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
-                : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
-            </div>
-          </div>
-          {total > 0 && (
-            <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
-              aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
-                flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
-                borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
-                color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
-              }}>
-              <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
-            </button>
-          )}
-        </div>
-      </div>
+      {/* One shared pinned sub-header (identical to the Sets landing) - anchored so the count + Select
+          never scroll away; the tally becomes the selected count in select mode. */}
+      <CollectionSubHeader title="All Cards" tallyLive={selectMode} tallyEmphasis={selectMode}
+        tally={selectMode
+          ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
+          : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
+        action={total > 0 && (
+          <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
+            aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
+              flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+            }}>
+            <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+          </button>
+        )} />
 
       {pool == null ? <Loading /> : total === 0 ? (
         <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
