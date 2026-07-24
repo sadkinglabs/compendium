@@ -29,6 +29,8 @@ import { registerBackConsumer } from '../back.js';
 import { useCollectionSelection } from '../components/useCollectionSelection.js';
 import { useCollectionRefine } from '../components/useCollectionRefine.js';
 import { useCollectionBulkActions } from '../components/useCollectionBulkActions.js';
+import { useProgressiveRender } from '../components/useProgressiveRender.js';
+import { hiddenSelectedCount } from '../store/collectionSelection.js';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -86,6 +88,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const [boundSession] = useState(() => resetCollectionSessionFor(activeProfileId()));
   const [view, setView] = useState(boundSession.view);       // overview | cards | lists
   const [listOpen, setListOpen] = useState(boundSession.listOpen);  // a list row when its detail is open
+  const [allMode, setAllMode] = useState(false);   // My Collection: SETS (sets-home) vs ALL (flat all-cards grid)
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
@@ -136,11 +139,20 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       )}
       {surface === 'setsHome' && (
         <>
-          <SetsHome onOpenSet={openSet} rev={rev} />
-          {/* Same gesture as Overview and the set drill: the camera glyph means "get cards
-              in", everywhere in this pillar. */}
-          <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
-            onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+          {/* My Collection: SETS (the sets-completion home) or ALL (every card, flat, on the search
+              engine). Switching modes unmounts the other, which clears any ALL selection - as spec'd. */}
+          <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
+            <SegTabs ariaLabel="Show sets or all cards" value={allMode ? 'all' : 'sets'} onChange={(k) => setAllMode(k === 'all')}
+              options={[{ key: 'sets', label: 'Sets' }, { key: 'all', label: 'All' }]} />
+          </div>
+          {allMode
+            ? <AllCards onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)} />
+            : <SetsHome onOpenSet={openSet} rev={rev} />}
+          {/* Scan FAB only on the SETS home; the ALL view has its own filter + add FABs. */}
+          {!allMode && (
+            <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
+              onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
+          )}
         </>
       )}
       {surface === 'listDetail' && (
@@ -728,7 +740,7 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 // While cards are being multi-selected the docked search bar becomes a selection action bar. It
 // portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
 // shift, one keyboard-aware container.
-function SelectionBar({ count, onAdd, onCreate, onCancel }) {
+function SelectionBar({ count, hidden = 0, onAdd, onCreate, onCancel }) {
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
@@ -742,8 +754,11 @@ function SelectionBar({ count, onAdd, onCreate, onCancel }) {
       <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
-      {/* Just the running count - Select all / Deselect all lives on the header pill now. */}
-      <span aria-live="polite" style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{count} selected</span>
+      {/* Running total; when a filter conceals part of the selection, the hidden count is shown so an
+          action's reach is never a surprise. Select all / Deselect all lives on the header pill. */}
+      <span aria-live="polite" style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}
+      </span>
       <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
       <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
     </div>,
@@ -1015,6 +1030,119 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
 
       <CollectionRefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         activeCount={activeCount} ctaLabel={`Show ${totalRows} card${totalRows === 1 ? '' : 's'}`}
+        els={els} setEls={setEls} multi={multi} setMulti={setMulti}
+        types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
+        artist={artist} setArtist={setArtist} artistOpts={artistOpts}
+        states={states} setStates={setStates} finishes={finishes} setFinishes={setFinishes}
+        playset={playset} setPlayset={setPlayset} ownedCmp={ownedCmp} setOwnedCmp={setOwnedCmp}
+        sort={sort} setSort={setSort} groupBy={groupBy} setGroupBy={setGroupBy} groupOpts={GROUP_OPTS} />
+    </div>
+  );
+}
+
+// The ALL view: every collector item across every set, on the SAME shared refine engine + selection
+// + bulk actions as the set drill (scope 'all'), with progressive rendering so the ~1.5k-tile list
+// paints a bounded prefix and grows on scroll. Header carries the count + Select pill; the SETS/ALL
+// toggle lives in the My Collection wrapper above.
+function AllCards({ onPeek, onOpenCodex }) {
+  const R = useCollectionRefine({ kind: 'all' });
+  const {
+    q, setQ, els, setEls, multi, setMulti, types, setTypes, rarities, setRarities, artist, setArtist, artistOpts,
+    states, setStates, finishes, setFinishes, playset, setPlayset, ownedCmp, setOwnedCmp, sort, setSort, groupBy, setGroupBy,
+    activeCount, clearAll, filterOpen, setFilterOpen, optsLoaded, pool, addStatus, stepSet, rows,
+  } = R;
+  const { selectMode, selected, enter: enterSelectMode, cancel: cancelSelect, toggle: toggleSelHook, selectAll: selectAllHook, deselectAll } = useCollectionSelection();
+  const [qtyOpen, setQtyOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const { bulkEditCopies, createListFromSelection } = useCollectionBulkActions({
+    selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
+  });
+
+  // Full filtered rows, globally ordered (cheap). Progressive rendering caps the DOM tiles; the
+  // SIGNATURE (not row identity) governs the reset, so a ledger broadcast can't snap us to the top.
+  const ordered = useMemo(() => [...rows].sort(rowComparator(sort, (r) => r.card)), [rows, sort]);
+  const signature = `all|${q}|${states}|${finishes}|${playset}|${ownedCmp.op}${ownedCmp.val}|${types}|${rarities}|${els}|${multi}|${artist}|${sort}|${groupBy}`;
+  const { visible, sentinelRef, hasMore } = useProgressiveRender(ordered, signature);
+  const sections = useMemo(() => groupCards(visible, groupBy, (r) => r.card, rowComparator(sort, (r) => r.card)), [visible, groupBy, sort]);
+
+  const total = ordered.length;
+  const hidden = hiddenSelectedCount(selected, ordered);   // selected items a filter now conceals
+  const allSel = selected.size > 0 && selected.size === total;
+  const toggleSel = (id, set) => toggleSelHook(id, set, ordered);   // toggle captures from the FULL rows
+  useEffect(() => {
+    if (!selectMode) return undefined;
+    return registerBackConsumer(() => { cancelSelect(); return true; });   // Back exits selection first
+  }, [selectMode, cancelSelect]);
+
+  return (
+    <div style={{ padding: '0 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px 10px', minHeight: 40 }}>
+        <span style={{ flex: 1, minWidth: 0, font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)' }}>{total.toLocaleString()} card{total === 1 ? '' : 's'}</span>
+        {total > 0 && (
+          <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
+            aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
+              flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+            }}>
+            <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+          </button>
+        )}
+      </div>
+
+      {pool == null ? <Loading /> : total === 0 ? (
+        <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
+          {(activeCount || q) ? 'No cards match those filters.' : 'No cards.'}
+        </div>
+      ) : (
+        <>
+          {sections.map((section) => (
+            <div key={section.key}>
+              {section.label && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
+                  <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{section.label}</span>
+                  <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(74,60,34,.6), transparent)' }} />
+                  <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{section.cards.length}</span>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
+                {section.cards.map((r) => (
+                  <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={SET_LABEL[r.set] || r.set}
+                    owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                    addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
+                    selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
+                ))}
+              </div>
+            </div>
+          ))}
+          {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. */}
+          {hasMore && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+        </>
+      )}
+
+      {selectMode ? (
+        <SelectionBar count={selected.size} hidden={hidden} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+      ) : (
+        <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search all cards…" ariaLabel="Search cards" />
+      )}
+      <AddCopiesSheet open={qtyOpen} count={selected.size} onClose={() => setQtyOpen(false)} onConfirm={bulkEditCopies}
+        maxStd={[...selected.values()].reduce((m, s) => Math.max(m, s.owned || 0), 0)}
+        maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
+      <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
+        onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
+
+      {!selectMode && <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />}
+      {!selectMode && (
+        <Fab variant="lib" label="Add cards" className="fab-stacked" icon={<FabGlyph kind="add" />} items={[
+          { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
+          { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
+        ]} />
+      )}
+      <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
+
+      <CollectionRefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
+        activeCount={activeCount} ctaLabel={`Show ${total.toLocaleString()} card${total === 1 ? '' : 's'}`}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}
