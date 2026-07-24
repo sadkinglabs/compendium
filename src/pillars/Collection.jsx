@@ -1129,22 +1129,36 @@ function AllCards({ onPeek, onOpenCodex }) {
 
   return (
     <div style={{ padding: '0 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px 10px', minHeight: 44 }}>
-        <span aria-live={selectMode ? 'polite' : undefined} style={{ flex: 1, minWidth: 0, font: selectMode ? "600 11.5px/1 var(--f-ui)" : "400 11.5px/1 var(--f-ui)", color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-faint)' }}>
-          {selectMode
-            ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
-            : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
-        </span>
-        {total > 0 && (
-          <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
-            aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
-              flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
-              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
-              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
-            }}>
-            <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
-          </button>
-        )}
+      {/* Sticky header - ALL had none, so the count + Select row scrolled away. It mirrors the set
+          drill: an opaque, full-bleed pinned band (negative margins cancel the container padding) that
+          the A-Z rail measures as its top floor (data-rail-sticky). The tally becomes the selected
+          count in select mode, exactly as the drill's owned/total line does. */}
+      <div data-rail-sticky style={{
+        position: 'sticky', top: 0, zIndex: 6, margin: '0 -20px 10px', padding: '8px 20px 12px',
+        background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+        borderBottom: '1px solid var(--hair-12)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ font: "600 9.5px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: 'var(--accent-ruby)' }}>Collection</div>
+            <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', marginTop: 4 }}>All Cards</div>
+            <div aria-live={selectMode ? 'polite' : undefined} style={{ font: selectMode ? "600 11.5px/1 var(--f-mono)" : "400 11.5px/1 var(--f-mono)", color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-muted)', marginTop: 4 }}>
+              {selectMode
+                ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
+                : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
+            </div>
+          </div>
+          {total > 0 && (
+            <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
+              aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
+                flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+                borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+                color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+              }}>
+              <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+            </button>
+          )}
+        </div>
       </div>
 
       {pool == null ? <Loading /> : total === 0 ? (
@@ -1174,7 +1188,7 @@ function AllCards({ onPeek, onOpenCodex }) {
           ))}
           {railVisible && (
             <AlphabetRail model={railM} count={count} ensureRendered={ensureRendered} signature={signature}
-              headerHeight={40} selecting={selectMode} />
+              headerHeight={64} selecting={selectMode} />
           )}
           {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. When no observer
               or scroll root is available, the explicit button keeps the rest of the catalogue reachable. */}

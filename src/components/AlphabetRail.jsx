@@ -127,6 +127,7 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   // keyboard, and once more after the stacked FAB's .4s rise (its mid-flight transform skews the rect).
   useEffect(() => {
     const compute = () => {
+      raf = 0;
       const root = scrollRoot();
       if (!root || typeof window === 'undefined') return;
       const vh = window.innerHeight;                           // fixed insets anchor to the LAYOUT viewport
@@ -145,15 +146,24 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
         if (t > 0 && t < obstructionTop) obstructionTop = t;
       }
       const b = railBounds({ viewportHeight: vh, scrollRootTop: rootRect.top, headerHeight: offset, obstructionTop });
-      setBounds({ top: b.top / zoom, bottom: b.bottom / zoom });
+      const nt = b.top / zoom;
+      const nb = b.bottom / zoom;
+      // Skip a same-value update so scrolling past the pinned point does not re-render the rail per frame.
+      setBounds((prev) => (prev && Math.abs(prev.top - nt) < 0.5 && Math.abs(prev.bottom - nb) < 0.5 ? prev : { top: nt, bottom: nb }));
     };
     let raf = requestAnimationFrame(compute);   // measure after paint (dock/keyboard settled)
     const late = setTimeout(compute, 480);      // after fabRiseIn (.4s) - the stacked FAB's true rest position
     const onResize = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(compute); };
+    // Re-measure on SCROLL (rAF-throttled): the ALL header rides below the Sets/All toggle until it
+    // pins to the scrollport top, so the rail's top floor moves with it.
+    const root0 = scrollRoot();
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(compute); };
+    if (root0) root0.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onResize);
     if (window.visualViewport) window.visualViewport.addEventListener('resize', onResize);
     return () => {
       cancelAnimationFrame(raf);
+      if (root0) root0.removeEventListener('scroll', onScroll);
       clearTimeout(late);
       window.removeEventListener('resize', onResize);
       if (window.visualViewport) window.visualViewport.removeEventListener('resize', onResize);
