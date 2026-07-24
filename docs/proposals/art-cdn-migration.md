@@ -207,10 +207,11 @@ validateGeneration -> [real run only] upload diff -> publish audit -> journaled 
 - **Content-addressed keys.** Conversion moves in FRONT of `buildGeneration` (resolving the
   chicken-and-egg: a content key is unknowable until bytes exist). A new engine
   `scripts/catalog/artManifest.mjs` produces `public/catalog/art-manifest.json` -
-  `{ slug -> { key: `<slug>.<sha256(outputBytes)>.webp`, sha256, md5, bytes, srcSha256, recipeId, encoder, legacyKey } }` - and
+  `{ slug -> { key: `<slug>.<sha256(outputBytes)>.webp`, sha256, md5, bytes, srcSha256, recipeId, encoder } }` - and
   `planImages` sets `v.image = manifest.objects[v.slug]?.key ?? keyOfSiblingFinish(...) ?? null`
-  (`images.mjs:71`). The catalog content hash (`generation.mjs:95`) folds in the **serialized
-  manifest (keys + full digests)**, not filenames - closing the exact stale-art hole. `convertOne`
+  (`images.mjs:71`). (Phase 5 note: `legacyKey` is gone - the bundle was deleted.) The catalog content
+  hash folds in the sorted per-printing **(slug, art-key) projection** - NOT the full manifest, so an
+  encoder-only metadata change that keeps the bytes never bumps the version - closing the stale-art hole. `convertOne`
   reconciles to **745 px q80**; `images.test.mjs` flips its contract (per-finish; missing-finish
   standard fallback; foil-only; reverse-face exclusion; **corrected-bytes-under-same-slug -> new
   key**; no `droppedFoilDupes`). `printingArt`'s "returns a slug, never a URL" contract survives -

@@ -514,8 +514,9 @@ a phantom item:
 
 Collection and list exports serialise their items back to text lines through the same ownership and
 list repositories. Per-item art is never part of the data: `printingRows.js` (`printingArt` /
-`selectPrinting`) returns a content-addressed **slug**, never a URL — the art boundary
-(`useArtSource`/`ArtImage`) decides bundled-vs-CDN and honours zero-image mode.
+`selectPrinting`) returns a content-addressed **key**, never a URL — the art boundary
+(`useArtSource`/`ArtImage`) resolves it through the on-device cache, then the CDN, then the deterministic
+placeholder (no bundled art since Phase 5), and honours zero-image mode.
 
 ### Profile bundles
 

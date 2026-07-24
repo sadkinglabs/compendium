@@ -3,8 +3,8 @@
 // pure functions in artSource.js - they capture the impure input (the memoized peek) at the dispatch
 // site and call reduce/visibleCandidate in React's documented effect order.
 // All the "which candidate paints this frame" rules live in artSource.js (unit-tested, DOM-free); all
-// the caching/downloading/validating lives in artCache (unit-tested core). Inert until Phase 2b adopts
-// it at the render sites. See docs/proposals/art-cdn-rev2-architecture.md Section B4.
+// the caching/downloading/validating lives in artCache (unit-tested core). This is the LIVE art path at
+// every render site (card art is CDN-served + on-device cached). See art-cdn-rev2-architecture.md B4.
 import { useReducer, useEffect, useCallback, useState } from 'react';
 import { reduce, initial, visibleCandidate } from '../store/artSource.js';
 import { artCache } from '../store/artCacheInstance.js';

@@ -1,3 +1,5 @@
+import { assertManifest } from './artManifest.mjs';
+
 // PUBLISH-BEFORE-PROMOTE gate. After Phase 5 there is no bundled art fallback, so a catalog may be
 // promoted ONLY once every object its manifest references is published on R2 and a whole-manifest audit
 // is green. This module is the pure orchestration over injected seams (the R2 upload runner, a repoint
@@ -39,7 +41,8 @@ export async function publishThenPromote({ manifest, gen, uploadOnce, repoint, r
     if (res.auditDeferred === 'repoints') {
       if (round >= maxRounds) throw new Error('repair did not converge - nothing promoted.');
       log(`  folding ${res.repoints.length} repair repoint(s) into the prospective manifest and regenerating…`);
-      m = repoint(m, res.repoints);          // new content keys for the repaired objects
+      m = repoint(m, res.repoints);          // new content keys (+ incidentOf) for the repaired objects
+      assertManifest(m, 'repointed manifest');   // the repointed manifest must still satisfy its schema
       ({ manifest: m, gen: g } = regen(m));  // cards.json + the version hash follow the repointed keys
       continue;                              // re-audit the repointed manifest (repair objects already PUT)
     }
@@ -72,12 +75,18 @@ export async function recoverWithAudit({ stagedManifest, auditOnce, recover, log
   return recover();
 }
 
-/** Apply repair repoints (from-key -> to-key) to a manifest's object keys. Pure; returns a new manifest. */
+/**
+ * Apply repair repoints (from-key -> to-key) to a manifest's object keys. A repaired key is a
+ * `.repair-n.webp` incident, which the manifest schema REQUIRES to name its predecessor via `incidentOf`
+ * - so the repoint sets `incidentOf` to the key it replaced (base -> repair-1 -> repair-2 chain). Pure;
+ * returns a new manifest. (assertManifest is the executable check on the result.)
+ */
 export function repointManifest(manifest, repoints) {
   const map = new Map(repoints);
   const objects = {};
   for (const [slug, e] of Object.entries(manifest.objects)) {
-    objects[slug] = map.has(e.key) ? { ...e, key: map.get(e.key) } : e;
+    const nextKey = map.get(e.key);
+    objects[slug] = nextKey ? { ...e, key: nextKey, incidentOf: e.key } : e;
   }
   return { ...manifest, objects };
 }

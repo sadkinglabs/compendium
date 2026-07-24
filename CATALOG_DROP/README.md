@@ -36,11 +36,10 @@ Set codes: `001` Alpha, `002` Beta, `004` Arthurian Legends, `005` Dragonlord,
 
 Running it twice with the same files changes nothing, so it is always safe to re-run.
 
-> **While the card-art move to the CDN is in progress:** the command *prepares* the update -
-> it converts and stages the card art and builds the art manifest - but it does not yet flip the
-> committed catalog, so `git diff` will not show catalog data changing. A developer finishes
-> publishing the art and turns the update on in one step. Routine one-command updates resume once
-> that move is complete.
+> **Card art is served from the CDN, not bundled.** The command converts each scan, **uploads it and
+> audits that the whole manifest is published on the CDN**, and only then updates the catalog data (so a
+> `git diff` shows the JSON change). Because there is no bundled fallback, it needs the R2 credentials
+> (`.env.r2`) and internet, and it refuses to promote if the art is not fully published.
 
 ## 3. If it stops with an error
 
