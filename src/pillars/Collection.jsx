@@ -26,6 +26,7 @@ import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
 import { registerBackConsumer } from '../back.js';
+import { useCollectionSelection } from '../components/useCollectionSelection.js';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -823,8 +824,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [importOpen, setImportOpen] = useState(false);   // text import lives on the set's + FAB (adds to the collection, not just this set)
   // Multi-select: entered from the overflow ("Select all"), driven by the scoped grid. `selected`
   // captures {card, set} at selection time so the two actions do not depend on the live filter.
-  const [selectMode, setSelectMode] = useState(false);
-  const [selected, setSelected] = useState(() => new Map());   // 'cardId|set' -> { card, set }
+  // Shared bulk-selection controller (same one the ALL view uses). Snapshot keyed card_id|set.
+  const { selectMode, selected, enter: enterSelectMode, cancel: cancelSelect, toggle: toggleSelHook, selectAll: selectAllHook, deselectAll } = useCollectionSelection();
   const [qtyOpen, setQtyOpen] = useState(false);               // Add-copies stepper modal
   const [createOpen, setCreateOpen] = useState(false);         // Create-list (name + type) sheet
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
@@ -1004,26 +1005,15 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
 
-  // ---- Multi-select over the scoped grid ----
-  // Each selected entry captures the present owned/foil counts too, so the Adjust sheet can cap a
-  // Remove at what's actually on hand (never offer to remove more than the biggest stack holds).
-  const selKey = (id, set) => `${id}|${set}`;
-  const selVal = (r) => ({ card: r.card, set: r.set, owned: r.owned || 0, foil: r.foil || 0 });
-  const enterSelectMode = () => { setSelected(new Map()); setSelectMode(true); };   // enter empty - tap tiles, or "Select all"
-  const selectAll = () => setSelected(new Map(drillRows.map((r) => [selKey(r.card.card_id, r.set), selVal(r)])));
-  const deselectAll = () => setSelected(new Map());
-  const toggleSel = (id, set) => setSelected((m) => {
-    const n = new Map(m); const k = selKey(id, set);
-    if (n.has(k)) n.delete(k);
-    else { const row = drillRows.find((r) => r.card.card_id === id && r.set === set); if (row) n.set(k, selVal(row)); }
-    return n;
-  });
-  const cancelSelect = () => { setSelectMode(false); setSelected(new Map()); };
+  // ---- Multi-select over the scoped grid (via the shared controller; snapshot captures owned/foil at
+  // pick time so the Adjust sheet can cap a Remove at what's actually on hand). ----
+  const selectAll = () => selectAllHook(drillRows);
+  const toggleSel = (id, set) => toggleSelHook(id, set, drillRows);
   // Hardware Back exits selection before it leaves the set drill.
   useEffect(() => {
     if (!selectMode) return undefined;
-    return registerBackConsumer(() => { setSelectMode(false); setSelected(new Map()); return true; });
-  }, [selectMode]);
+    return registerBackConsumer(() => { cancelSelect(); return true; });
+  }, [selectMode, cancelSelect]);
   // Bulk-edit owned copies of the selection through the barrier-guarded commands. ADJUST raises/lowers
   // by a signed delta (Remove floors at 0); SET writes an absolute count (0 clears, keeping any want).
   // The toast is driven by the REPOSITORY result (actual changes), never the selection count - so a
