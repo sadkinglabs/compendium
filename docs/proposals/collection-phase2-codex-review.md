@@ -68,3 +68,31 @@ device-pivot note.
 ## Disposition asked
 Go / changes-required for an alpha release from `main`. The write path (§1) is the one I'd most want a second
 set of eyes on before it touches testers' data; the rail (§2) is device-verified but its shell is not unit-tested.
+
+---
+
+## Corrective applied (post-review) - for the narrow confirmation pass
+Codex round-1 returned **Changes required (4 Majors + 3 Minors)**. All addressed in commit `652dd69`
+(diff refreshed in `collection-phase2-codex-review.diff`). Repo gates re-verified: `test:query` 821,
+`test:ui` 181, `test:app` 17, types, cycles (147), source, docs, build.
+
+- **M1 (fast tap no-jump):** release letter now resolved SYNCHRONOUSLY from `pointerup.clientY`. The latch
+  sequence is extracted into a pure `makeRailGesture` controller (`alphabetRailState.js`) with 8 sequence
+  tests (tap-before-frame → one pick; moves→release wins once; cancel/absent → zero; wrong-id/second-down
+  ignored; abort; changed-flag).
+- **M2 (keyboard):** Enter/Space handled ONLY by the focused button's native `onClick`; the nav handler is
+  Arrow/Home/End, moves `focus()` to the destination before jumping, derives from the focused letter (not
+  `active`); added a `:focus-visible` ring (`.cx-rail-letter`).
+- **M3 (duck/teardown):** `visible = indexable && present.size>0`; scroll root resolved via a callback-ref
+  into state (rebind/teardown on duck AND root replacement); tracking effects keyed on `rootEl`+`visible`;
+  on invisibility we abort the gesture, dispatch `CANCEL`, clear bounds; unmount dispose aborts.
+- **M4 (Add-to-list concurrency):** ref-backed single-flight guard + busy state; awaits `onPick`; disables
+  all rows + sheet dismissal (`aria-busy`) while pending; "Adding…" on the chosen row; clears in `finally`.
+- **m1:** `addEntriesToList` notifies only when `ranTransaction` (all-present add → zero broadcasts, tested).
+- **m2:** added the profile A→B capture regression (park before tx, switch active, release, assert A only).
+- **m3:** FEATURE_MATRIX rail row rewritten to the shipped latch+pill; proposal carries a SUPERSEDED banner
+  over the pre-pivot bulge/injected-seams/parent-announcement sections.
+
+Still device-gated before merge (Codex flagged): manual keyboard-focus verification, rapid-tap-two-rows on
+Add-to-list, and **`check:smoke`** (held until a device is free - the owner is CDN-testing on the second
+device and the Pixel is currently off adb).
