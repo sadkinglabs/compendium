@@ -93,6 +93,13 @@ Codex round-1 returned **Changes required (4 Majors + 3 Minors)**. All addressed
 - **m3:** FEATURE_MATRIX rail row rewritten to the shipped latch+pill; proposal carries a SUPERSEDED banner
   over the pre-pivot bulge/injected-seams/parent-announcement sections.
 
+**Round-2 (commit `ee8ad09`)** - Codex returned two mechanical fixes + one minor, all applied:
+- Focus ring: `all: unset` moved from the button's INLINE style into the `.cx-rail-letter` class, so the
+  class-level `:focus-visible` outline is no longer outranked (the ring is now visible to validate).
+- Absent slots fully inert: `haptic('light')` fires only for a present letter; removed the unused
+  `scrubLetterRef`.
+- Removed the tracked generated `*.diff` artifact (now gitignored); `git diff --check main...HEAD` is CLEAN.
+
 Still device-gated before merge (Codex flagged): manual keyboard-focus verification, rapid-tap-two-rows on
 Add-to-list, and **`check:smoke`** (held until a device is free - the owner is CDN-testing on the second
 device and the Pixel is currently off adb).
