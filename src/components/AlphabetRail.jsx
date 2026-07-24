@@ -52,7 +52,6 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   const pendingYRef = useRef(null);
   const zoomRef = useRef(1);
   const teardownRef = useRef(null);                     // live gesture's window-listener + capture cleanup
-  const scrubLetterRef = useRef(null);
   const modelRef = useRef(model);
   const pickRef = useRef(null);
 
@@ -185,14 +184,13 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
         pendingYRef.current = y;
         if (!rafRef.current) rafRef.current = requestAnimationFrame(positionPill);
         if (changed) {
-          scrubLetterRef.current = letter;
           const on = modelRef.current.present.has(letter);
           const pill = pillRef.current;
           if (pill) {
             pill.style.opacity = on ? '1' : '.5';
             if (pill.firstChild) { pill.firstChild.textContent = letter || ''; pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)'; }
           }
-          haptic('light');
+          if (on) haptic('light');                             // an absent slot is fully inert - no tick
         }
       },
       onJump: (letter) => { haptic('medium'); pickRef.current(letter); },
@@ -228,7 +226,6 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
       try { if (strip.hasPointerCapture && strip.hasPointerCapture(id)) strip.releasePointerCapture(id); } catch { /* noop */ }
     };
     e.preventDefault();
-    scrubLetterRef.current = null;
     setScrubbing(true);
     gesture.down(id, e.clientY);                                // latches the first letter + positions the pill
   };
@@ -290,7 +287,7 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
               disabled={!on} aria-hidden={!on} tabIndex={on && l === tabLetter ? 0 : -1}
               aria-current={active === l ? 'true' : undefined}
               onClick={on ? () => { setFocusedLetter(l); pick(l); } : undefined}
-              style={{ all: 'unset', fontFamily: 'var(--f-display)', fontWeight: active === l ? 800 : 600,
+              style={{ fontFamily: 'var(--f-display)', fontWeight: active === l ? 800 : 600,
                 fontSize: LETTER, lineHeight: 1, letterSpacing: '.03em',
                 color: on ? (active === l ? 'var(--gold-num)' : 'var(--ink-muted)') : 'var(--ink-faint)',
                 opacity: on ? 1 : 0.28, pointerEvents: 'none' }}>

@@ -49,3 +49,4 @@ android/local.properties
 
 # Transient review scaffolds
 CODEX-*.md
+docs/proposals/*.diff
