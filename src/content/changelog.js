@@ -15,7 +15,7 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
-    build: 198,
+    build: 199,
     version: '1.0.3-alpha',
     date: '2026-07-25',
     notes: 'See your whole collection at once, jump by letter, and a much lighter app.',
