@@ -742,27 +742,29 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 // While cards are being multi-selected the docked search bar becomes a selection action bar. It
 // portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
 // shift, one keyboard-aware container.
-function SelectionBar({ count, hidden = 0, onAdd, onCreate, onCancel }) {
+// The dock is PURELY actions now - Edit copies / New list / Add to list, three equal-width buttons plus
+// the cancel. The running selected count (and any hidden-by-filter count) lives on the header row where
+// the Select / Deselect-all pill is: context up top, actions at the thumb.
+function SelectionBar({ onAdd, onCreate, onAddToList, onCancel, disabled = false }) {
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
   const btn = {
-    flex: 'none', minHeight: 44, padding: '0 15px', borderRadius: 18, whiteSpace: 'nowrap',
-    border: '1px solid rgba(203,167,95,.45)', background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)',
-    font: "600 12.5px/1 var(--f-ui)", cursor: count ? 'pointer' : 'default', opacity: count ? 1 : 0.4,
+    flex: 1, minWidth: 0, minHeight: 44, padding: '0 8px', borderRadius: 18, whiteSpace: 'nowrap',
+    overflow: 'hidden', textOverflow: 'ellipsis', border: '1px solid rgba(203,167,95,.45)',
+    background: 'rgba(42,33,20,.55)', color: 'var(--gold-leaf)', font: "600 12px/1 var(--f-ui)",
+    cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   };
+  const fire = (fn) => () => { if (!disabled) fn(); };
   return createPortal(
-    <div className="cx-search-pill" style={{ gap: 8 }}>
+    <div className="cx-search-pill" style={{ gap: 7 }}>
       <button onClick={onCancel} aria-label="Cancel selection" style={{ flex: 'none', width: 44, height: 44, borderRadius: '50%', border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--ink-muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
       </button>
-      {/* Running total; when a filter conceals part of the selection, the hidden count is shown so an
-          action's reach is never a surprise. Select all / Deselect all lives on the header pill. */}
-      <span aria-live="polite" style={{ flex: 1, minWidth: 0, font: "600 13px/1 var(--f-ui)", color: 'var(--gold-leaf)', textAlign: 'center', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}
-      </span>
-      <button onClick={() => count && onAdd()} disabled={!count} style={btn}>Edit copies</button>
-      <button onClick={() => count && onCreate()} disabled={!count} style={btn}>New list</button>
+      <button onClick={fire(onAdd)} disabled={disabled} style={btn}>Edit copies</button>
+      <button onClick={fire(onCreate)} disabled={disabled} style={btn}>New list</button>
+      <button onClick={fire(onAddToList)} disabled={disabled} style={btn}>Add to list</button>
     </div>,
     slot,
   );
@@ -847,6 +849,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const { selectMode, selected, enter: enterSelectMode, cancel: cancelSelect, toggle: toggleSelHook, selectAll: selectAllHook, deselectAll } = useCollectionSelection();
   const [qtyOpen, setQtyOpen] = useState(false);               // Add-copies stepper modal
   const [createOpen, setCreateOpen] = useState(false);         // Create-list (name + type) sheet
+  const [addToListOpen, setAddToListOpen] = useState(false);   // Add-to-existing-list picker
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
   // here, so neither can be moved by a filter the user happens to have on.
@@ -923,8 +926,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // no-op reads honestly.
   // Bulk Edit-copies / New-list via the shared actions hook (atomic commands, honest write outcomes,
   // 2000-payload guard). Same one the ALL view uses.
-  const { bulkEditCopies, createListFromSelection } = useCollectionBulkActions({
+  const { bulkEditCopies, createListFromSelection, addToListFromSelection } = useCollectionBulkActions({
     selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
+    closeAddToList: () => setAddToListOpen(false),
   });
 
   // activeCount + clearAll come from the shared hook (filters only; Sort/Group are arrangements).
@@ -954,7 +958,13 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           <Ring value={drillPct} size={34} stroke={4} color="var(--accent-ruby)" showPct={false} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
-            <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
+            {selectMode ? (
+              <div aria-live="polite" style={{ font: "600 11.5px/1 var(--f-mono)", color: 'var(--gold-leaf)', marginTop: 3 }}>
+                {sel.count} selected{sel.hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {sel.hidden} hidden</span> : ''}
+              </div>
+            ) : (
+              <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3 }}>{drillOwned} / {drillTotal}</div>
+            )}
           </div>
           {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
               overflow. "Select" enters multi-select (empty) over the CURRENT (scoped) grid; once in,
@@ -1024,8 +1034,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
       {/* Bottom dock pill: the search bar, OR the selection action bar while multi-selecting (both
           portal into the same #cx-dock-search slot, so it swaps in place). */}
       {selectMode ? (
-        <SelectionBar count={sel.count} hidden={sel.hidden}
-          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+        <SelectionBar disabled={!sel.count}
+          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
       )}
@@ -1034,6 +1044,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
       <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
+      <AddToListSheet open={addToListOpen} count={selected.size} onClose={() => setAddToListOpen(false)}
+        onPick={(id, name) => addToListFromSelection(id, name)} />
 
       {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
           (camera + text) search can't do. They are ALWAYS available now: adding is a place,
@@ -1078,9 +1090,11 @@ function AllCards({ onPeek, onOpenCodex }) {
   const { selectMode, selected, enter: enterSelectMode, cancel: cancelSelect, toggle: toggleSelHook, selectAll: selectAllHook, deselectAll } = useCollectionSelection();
   const [qtyOpen, setQtyOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [addToListOpen, setAddToListOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const { bulkEditCopies, createListFromSelection } = useCollectionBulkActions({
+  const { bulkEditCopies, createListFromSelection, addToListFromSelection } = useCollectionBulkActions({
     selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
+    closeAddToList: () => setAddToListOpen(false),
   });
 
   // ALL is at collector-item grain: one tile per printing. Arrange the COMPLETE result into final
@@ -1116,7 +1130,11 @@ function AllCards({ onPeek, onOpenCodex }) {
   return (
     <div style={{ padding: '0 20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px 10px', minHeight: 44 }}>
-        <span style={{ flex: 1, minWidth: 0, font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)' }}>{total.toLocaleString()} item{total === 1 ? '' : 's'}</span>
+        <span aria-live={selectMode ? 'polite' : undefined} style={{ flex: 1, minWidth: 0, font: selectMode ? "600 11.5px/1 var(--f-ui)" : "400 11.5px/1 var(--f-ui)", color: selectMode ? 'var(--gold-leaf)' : 'var(--ink-faint)' }}>
+          {selectMode
+            ? <>{sel.count} selected{hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {hidden} hidden</span> : ''}</>
+            : `${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
+        </span>
         {total > 0 && (
           <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
             aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
@@ -1175,7 +1193,7 @@ function AllCards({ onPeek, onOpenCodex }) {
       )}
 
       {selectMode ? (
-        <SelectionBar count={selected.size} hidden={hidden} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onCancel={cancelSelect} />
+        <SelectionBar disabled={!sel.count} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search all cards…" ariaLabel="Search cards" />
       )}
@@ -1184,6 +1202,8 @@ function AllCards({ onPeek, onOpenCodex }) {
         maxFoil={[...selected.values()].reduce((m, s) => Math.max(m, s.foil || 0), 0)} />
       <ListNameSheet open={createOpen} chooseKind title="NEW LIST FROM SELECTION" submitLabel="Create list"
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
+      <AddToListSheet open={addToListOpen} count={selected.size} onClose={() => setAddToListOpen(false)}
+        onPick={(id, name) => addToListFromSelection(id, name)} />
 
       {!selectMode && <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />}
       {!selectMode && (
@@ -1390,6 +1410,53 @@ function ListNameSheet({ open, title, kind, chooseKind = false, initialName = ''
         <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>Cancel</button>
         <button onClick={go} disabled={!name.trim() || busy} style={{ ...BTN_GOLD, flex: 1, justifyContent: 'center', opacity: name.trim() && !busy ? 1 : 0.5 }}>{busy ? `${submitLabel}…` : submitLabel}</button>
       </div>
+    </BottomSheet>
+  );
+}
+
+// Bulk add-to-existing-list picker: the profile's lists (card lists first, then wanted goals). Tapping
+// one adds every selected card (deduped to card grain, 2000-guarded, existing entries skipped) to it.
+function AddToListSheet({ open, count, onPick, onClose }) {
+  const [lists, setLists] = useState(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    let alive = true;
+    setLists(null);
+    listCardLists().then((all) => { if (alive) setLists(all); }).catch(() => { if (alive) setLists([]); });
+    return () => { alive = false; };
+  }, [open]);
+  const row = (l) => (
+    <button key={l.id} onClick={() => onPick(l.id, l.name)} style={{
+      display: 'flex', width: '100%', alignItems: 'center', gap: 10, padding: '13px 4px', textAlign: 'left',
+      background: 'none', border: 'none', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer',
+    }}>
+      <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+      <span style={{ flex: 'none', font: "600 15px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>+</span>
+    </button>
+  );
+  const section = (title, items, hint) => (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)', margin: '2px 0 6px' }}>{title}</div>
+      {items.length === 0
+        ? <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: 'var(--ink-faint)', padding: '4px 0 2px' }}>{hint}</div>
+        : items.map(row)}
+    </div>
+  );
+  return (
+    <BottomSheet open={open} title="ADD TO LIST" onClose={onClose}>
+      <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 14 }}>
+        Add the {count} selected card{count === 1 ? '' : 's'} (one per card) to a list.
+      </div>
+      {lists == null ? <Loading /> : lists.length === 0 ? (
+        <div style={{ font: "italic 400 13px/1.5 var(--f-read)", color: 'var(--ink-faint)', textAlign: 'center', padding: '10px 0 6px' }}>
+          No lists yet. Use <strong style={{ color: 'var(--ink-body)' }}>New list</strong> to make one from this selection.
+        </div>
+      ) : (
+        <>
+          {section('CARD LISTS', lists.filter((l) => l.kind === 'custom'), 'No card lists yet.')}
+          {section('WANTED LISTS', lists.filter((l) => l.kind === 'wanted'), 'No wanted lists yet.')}
+        </>
+      )}
     </BottomSheet>
   );
 }

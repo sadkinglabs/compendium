@@ -29,6 +29,7 @@ import { useReducer, useRef, useState, useEffect, useLayoutEffect, useCallback }
 import { RAIL_ORDER, firstPresent, lastPresent, stepLetter, activeLetterFor } from '../store/alphabetIndex.js';
 import { indexAtY, railBounds, railTopOffset, effectiveZoom } from '../store/railGeometry.js';
 import { resolveScrollRoot } from '../store/collectionAllModel.js';
+import { haptic } from '../native.js';
 import { initialRailState, railReducer, shouldCommit } from './alphabetRailState.js';
 
 const LOOKAHEAD = 60;     // render a little past the target so the landing has context
@@ -170,17 +171,23 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
     if (y == null || !strip) return;
     const rect = strip.getBoundingClientRect();
     const letter = order[indexAtY(y, rect.top, rect.height, order.length)];
-    scrubLetterRef.current = letter;
     const pill = pillRef.current;
+    const changed = letter !== scrubLetterRef.current;
     if (pill) {
-      const on = present.has(letter);
       const clampedY = Math.max(rect.top, Math.min(rect.bottom, y));
-      pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;   // fixed inset is layout px in the zoomed subtree
-      pill.style.opacity = on ? '1' : '.5';                        // an absent letter (won't jump) reads muted
-      if (pill.firstChild) {
-        pill.firstChild.textContent = letter || '';
-        pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)';
+      pill.style.top = `${clampedY / (zoomRef.current || 1)}px`;   // follows the finger every frame (layout px)
+    }
+    if (changed) {
+      scrubLetterRef.current = letter;
+      const on = present.has(letter);
+      if (pill) {
+        pill.style.opacity = on ? '1' : '.5';                      // an absent letter (won't jump) reads muted
+        if (pill.firstChild) {
+          pill.firstChild.textContent = letter || '';
+          pill.firstChild.style.color = on ? 'var(--gold-num)' : 'var(--ink-faint)';
+        }
       }
+      haptic('light');                                             // a tick per letter, like fast-scroll
     }
   }, [order, present]);
 
@@ -206,7 +213,7 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   const commit = useCallback(() => {
     const letter = scrubLetterRef.current;
     endGesture();
-    if (letter && present.has(letter)) pick(letter);
+    if (letter && present.has(letter)) { haptic('medium'); pick(letter); }   // a firmer tick confirms the jump
   }, [endGesture, present, pick]);
   const commitRef = useRef(commit);
   useLayoutEffect(() => { commitRef.current = commit; });

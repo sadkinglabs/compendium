@@ -6,13 +6,13 @@
 import { useCallback } from 'react';
 import { toast } from '../feedback.js';
 import { activeProfileId } from '../store/profileRepository.js';
-import { adjustOwnedItemsBulk, setOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
+import { adjustOwnedItemsBulk, setOwnedItemsBulk, createListWithEntries, addEntriesToList } from '../store/ownedImportRepository.js';
 import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
 import { editCopiesEligible, newListCardIds, overBatch, MAX_BATCH_ITEMS } from '../store/collectionSelection.js';
 
 const LIMIT = MAX_BATCH_ITEMS.toLocaleString();
 
-export function useCollectionBulkActions({ selected, cancelSelect, closeEdit, closeCreate }) {
+export function useCollectionBulkActions({ selected, cancelSelect, closeEdit, closeCreate, closeAddToList }) {
   const bulkEditCopies = useCallback(async ({ mode, qty, foil, dir }) => {
     const { items: eligible, skipped } = editCopiesEligible([...selected.values()], foil);
     if (!eligible.length) { toast(`None of the selected cards have a ${foil ? 'foil' : 'non-foil'} printing.`, { tone: 'warn' }); closeEdit(); return; }
@@ -76,5 +76,27 @@ export function useCollectionBulkActions({ selected, cancelSelect, closeEdit, cl
     }
   }, [selected, cancelSelect, closeCreate]);
 
-  return { bulkEditCopies, createListFromSelection };
+  const addToListFromSelection = useCallback(async (listId, listName = 'list') => {
+    const cardIds = newListCardIds([...selected.values()]);   // dedup printings to card grain FIRST
+    if (overBatch(cardIds.length)) {
+      toast(`${cardIds.length.toLocaleString()} cards selected. Refine to ${LIMIT} or fewer to add to a list.`, { tone: 'warn' });
+      closeAddToList?.();
+      return;
+    }
+    try {
+      const r = await addEntriesToList({ listId, cardIds }, activeProfileId());   // one atomic write; existing skipped
+      toast(r.added === 0
+        ? `All ${r.skipped} already in “${listName}”`
+        : `Added ${r.added} card${r.added === 1 ? '' : 's'} to “${listName}”${r.skipped ? ` (${r.skipped} already there)` : ''}`);
+      closeAddToList?.(); cancelSelect();
+    } catch (e) {
+      console.error('addToListFromSelection failed', e);
+      const o = bulkWriteFailure(e);
+      toast(o.indeterminate ? "Couldn't confirm the add - check the list before trying again." : "Couldn't add to the list.", { tone: o.tone });
+      closeAddToList?.();
+      if (!o.keepSelection) cancelSelect();
+    }
+  }, [selected, cancelSelect, closeAddToList]);
+
+  return { bulkEditCopies, createListFromSelection, addToListFromSelection };
 }
