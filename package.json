@@ -1,6 +1,6 @@
 {
   "name": "compendium",
-  "version": "1.0.2-alpha",
+  "version": "1.0.3-alpha",
   "build": 198,
   "private": true,
   "type": "module",
