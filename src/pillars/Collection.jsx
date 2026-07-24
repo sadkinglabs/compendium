@@ -21,7 +21,6 @@ import { wantTarget } from '../store/wantIntent.js';
 import { canonicalPrinting, UNCATEGORISED } from '../store/printings.js';
 import WantPrintingSheet from '../components/WantPrintingSheet.jsx';
 import TriageSheet from '../components/TriageSheet.jsx';
-import { groupCards } from '../store/collectionGrouping.js';
 import { ownershipOf, countsTowardCompletion } from '../store/ownership.js';
 import { soleSetName, UNCATEGORISED_LABEL } from '../store/printings.js';
 import OverflowMenu, { MenuGlyph } from '../components/OverflowMenu.jsx';
@@ -32,6 +31,8 @@ import { useCollectionBulkActions } from '../components/useCollectionBulkActions
 import { useProgressiveRender } from '../components/useProgressiveRender.js';
 import { selectionSummary } from '../store/collectionSelection.js';
 import { arrangeSections, visibleSections, renderSignature } from '../store/collectionAllModel.js';
+import { railModel } from '../store/alphabetIndex.js';
+import AlphabetRail from '../components/AlphabetRail.jsx';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -896,6 +897,21 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const selectAll = () => selectAllHook(drillRows);
   const toggleSel = (id, set) => toggleSelHook(id, set, drillRows);
   const sel = selectionSummary(selected, drillRows);   // one contract: count / allSelected / hidden
+
+  // ONE canonical arranged result drives the grid AND the A-Z rail (so rail indexes match DOM order).
+  // The drill renders every row (no progressive prefix), so the rail just scrolls: count is the full
+  // length and ensureRendered is a no-op.
+  const drillComparator = useMemo(() => rowComparator(sort, (r) => r.card), [sort]);
+  const drillArranged = useMemo(() => arrangeSections(drillRows, groupBy, (r) => r.card, drillComparator), [drillRows, groupBy, drillComparator]);
+  const drillOrdered = drillArranged.flat.map((f) => f.row);
+  const drillRailM = useMemo(() => railModel(drillOrdered), [drillOrdered]);
+  const drillAnchorOf = useMemo(() => {
+    const m = new Map();
+    for (const [letter, i] of drillRailM.firstIndex) { const r = drillOrdered[i]; if (r) m.set(r.card.card_id + '|' + r.set, letter); }
+    return m;
+  }, [drillRailM, drillOrdered]);
+  const drillRailVisible = sort === 'name-asc' && groupBy === 'none';
+  const drillSignature = renderSignature({ kind: 'set', code: setDrill }, { q, states, finishes, playset, ownedCmp, types, rarities, els, multi, artist, sort, groupBy });
   // Hardware Back exits selection before it leaves the set drill.
   useEffect(() => {
     if (!selectMode) return undefined;
@@ -975,8 +991,9 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
             // virtualization lib. minmax(0,1fr), NOT 1fr: a content-visibility tile reports
             // min-content width, which inflated 1fr tracks; pin the min to 0.
             // Sections, not a reordered flat list. With grouping off this is one unlabelled
-            // section, so the grid has a single code path either way.
-            groupCards(drillRows, groupBy, (r) => r.card, rowComparator(sort, (r) => r.card)).map((section) => (
+            // section, so the grid has a single code path either way. Built from the SAME canonical
+            // arrangement the rail models, so a jump index can never disagree with what's rendered.
+            drillArranged.sections.map((section) => (
               <div key={section.key}>
                 {section.label && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
@@ -988,13 +1005,17 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
                   {section.cards.map((r) => (
                     <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
-                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek} anchorLetter={drillAnchorOf.get(r.card.card_id + '|' + r.set)}
                       addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
                       selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                   ))}
                 </div>
               </div>
             ))
+          )}
+          {drillRailVisible && (
+            <AlphabetRail model={drillRailM} count={drillOrdered.length} ensureRendered={() => {}} signature={drillSignature}
+              headerHeight={72} selecting={selectMode} />
           )}
         </>
       )}
@@ -1069,8 +1090,18 @@ function AllCards({ onPeek, onOpenCodex }) {
   const arranged = useMemo(() => arrangeSections(rows, groupBy, (r) => r.card, comparator), [rows, groupBy, comparator]);
   const ordered = arranged.flat.map((f) => f.row);   // globally ordered item list (for selection/toggle over FULL result)
   const signature = renderSignature('all', { q, states, finishes, playset, ownedCmp, types, rarities, els, multi, artist, sort, groupBy });
-  const { count, sentinelRef, hasMore, showMore } = useProgressiveRender(arranged.flat.length, signature);
+  const { count, sentinelRef, hasMore, showMore, ensureRendered } = useProgressiveRender(arranged.flat.length, signature);
   const sections = useMemo(() => visibleSections(arranged, count), [arranged, count]);
+
+  // A-Z rail: one model over the SAME arranged.flat that the grid renders (so indexes match DOM order).
+  // Shows only when the order is globally alphabetical AND the buckets agree with it (model.indexable).
+  const railM = useMemo(() => railModel(ordered), [ordered]);
+  const anchorOf = useMemo(() => {
+    const m = new Map();
+    for (const [letter, i] of railM.firstIndex) { const r = ordered[i]; if (r) m.set(r.card.card_id + '|' + r.set, letter); }
+    return m;
+  }, [railM, ordered]);
+  const railVisible = sort === 'name-asc' && groupBy === 'none';
 
   const total = arranged.flat.length;
   const sel = selectionSummary(selected, ordered);   // same contract as the set drill: count / allSelected / hidden
@@ -1116,12 +1147,16 @@ function AllCards({ onPeek, onOpenCodex }) {
                 {section.cards.map((r) => (
                   <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={SET_LABEL[r.set] || r.set}
                     owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
-                    addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
+                    addStatus={addStatus.get(r.card.card_id + '|' + r.set)} anchorLetter={anchorOf.get(r.card.card_id + '|' + r.set)}
                     selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                 ))}
               </div>
             </div>
           ))}
+          {railVisible && (
+            <AlphabetRail model={railM} count={count} ensureRendered={ensureRendered} signature={signature}
+              headerHeight={40} selecting={selectMode} />
+          )}
           {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. When no observer
               or scroll root is available, the explicit button keeps the rest of the catalogue reachable. */}
           {hasMore && (

@@ -145,6 +145,9 @@ These are **`[Shipping]` constraints** — codify, do not change.
 
 This is a **viewer-local implementation, NOT a universal foil primitive**. Any reuse on other surfaces (grids, thumbnails) is a **separate device-verified proposal** — the constraints above remain law; the specific CSS technique here is not automatically promoted app-wide.
 
+### A-Z alphabet rail — `[Shipping]` in Collection (repo-green; interactive behaviour device-gated)
+**`AlphabetRail.jsx`** — a Niagara-style vertical index on the logical inline edge of both Collection grids (ALL and the set drill). Drag or tap a letter to jump to it; labels bulge around the touch point. **Structure & law:** it is a `<nav aria-label="Alphabetical index">` of letter `<button>`s (not a listbox) — **present** letters are focusable with `aria-current`; **absent** letters are inert, non-focusable, non-jumping slots. The hit model is a **continuous position-mapped strip**, so the letter under the finger comes from pointer Y (not a per-label button), which is how 27 labels stay reachable **below** the §5 touch floor without violating it. **Constraints met:** *offline* (text/vector only), *reduced-motion safe* (`body.reduce-motion` disables the wave; tap/drag still jump), *zero-image safe* (no art), *non-load-bearing* (thumb-scroll still reaches everything; the rail only shows when the order is globally alphabetical and **fails closed** — ducks — otherwise). **Geometry** clears the live dock/FAB obstruction via one measured boundary (`railGeometry.js`), never a reconstructed inset. All decisions live in tested pure helpers (`alphabetIndex.js`, `railGeometry.js`, `alphabetRailState.js`); the component is a thin shell with strict rAF/capture/listener teardown. **Interactive fidelity on the WebView is a device gate, not a repo claim.**
+
 ---
 
 ## 7 · Governance

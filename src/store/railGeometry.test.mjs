@@ -1,47 +1,56 @@
 // Pure tests for the alphabet-rail bounds. Run: npm run test:query
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { railBounds } from './railGeometry.js';
+import { railBounds, indexAtY } from './railGeometry.js';
 
-const SAFE = 34;                       // a representative env(safe-area-inset-bottom)
-const NAV_BASE = 62 + SAFE + 16;       // .cx-dock closed base: safe area lives here, ONCE
+const VP = 900;   // viewport height
 
-test('closed: bottom clears the nav base + stack + gap; safe area counted exactly once', () => {
-  const b = railBounds({ scrollportTop: 0, headerHeight: 56, navBase: NAV_BASE, activeStackHeight: 40, railGap: 8 });
+test('bottom clears the MEASURED obstruction; a single boundary cannot double-count safe area', () => {
+  // dock/FAB obstruction top measured at y=760 (its own CSS already placed it above the safe area).
+  const b = railBounds({ viewportHeight: VP, scrollRootTop: 0, headerHeight: 56, obstructionTop: 760, railGap: 8 });
   assert.equal(b.top, 56);
-  assert.equal(b.bottom, NAV_BASE + 40 + 8);            // 112 + 48
-  // The safe area appears once (inside navBase) and is NOT appended again.
-  assert.equal(b.bottom, 62 + SAFE + 16 + 40 + 8);
+  assert.equal(b.bottom, VP - 760 + 8);   // 148 - exactly the gap below the obstruction, safe area included once
 });
 
-test('keyboard-open: the keyboard branch wins and does NOT re-add safe area', () => {
-  const b = railBounds({ headerHeight: 56, navBase: NAV_BASE, activeStackHeight: 40, kb: 400, uiScale: 1, keyboardGap: 12, railGap: 8 });
-  const dockBottom = 400 / 1 + 12;                      // 412 > navBase
-  assert.equal(b.bottom, dockBottom + 40 + 8);
-  // No safe-area double-count: the open-keyboard inset already represents the usable viewport.
-  assert.ok(b.bottom < NAV_BASE + 400 + SAFE, 'safe area is not stacked above the keyboard inset');
+test('keyboard-open pushes the obstruction up, so the rail shortens (bottom grows) - no re-added safe area', () => {
+  const closed = railBounds({ viewportHeight: VP, obstructionTop: 760 });
+  const open = railBounds({ viewportHeight: VP, obstructionTop: 420 });   // keyboard raised the dock
+  assert.ok(open.bottom > closed.bottom, 'rail ends higher when the dock rides above the keyboard');
+  assert.equal(open.bottom, VP - 420 + 8);
 });
 
-test('UI scale divides the keyboard inset, as in .cx-dock', () => {
-  const b = railBounds({ navBase: NAV_BASE, kb: 400, uiScale: 2, keyboardGap: 12, activeStackHeight: 0, railGap: 8 });
-  const dockBottom = Math.max(NAV_BASE, 400 / 2 + 12);  // max(112, 212) = 212
-  assert.equal(b.bottom, dockBottom + 0 + 8);
+test('a taller selection/FAB stack measures a smaller obstructionTop -> larger bottom inset', () => {
+  const plain = railBounds({ viewportHeight: VP, obstructionTop: 760 });
+  const stacked = railBounds({ viewportHeight: VP, obstructionTop: 700 });   // action bar / stacked FAB rises 60px
+  assert.equal(stacked.bottom - plain.bottom, 60);
 });
 
-test('selection stack raises the bottom terminus by the action-bar height', () => {
-  const closed = railBounds({ navBase: NAV_BASE, activeStackHeight: 40, railGap: 8 });
-  const selecting = railBounds({ navBase: NAV_BASE, activeStackHeight: 40 + 72, railGap: 8 });   // + action bar
-  assert.equal(selecting.bottom - closed.bottom, 72);
+test('top is scrollRootTop + this surface header (drill header taller than ALL toolbar)', () => {
+  const all = railBounds({ viewportHeight: VP, scrollRootTop: 10, headerHeight: 44, obstructionTop: 760 });
+  const drill = railBounds({ viewportHeight: VP, scrollRootTop: 10, headerHeight: 88, obstructionTop: 760 });
+  assert.equal(all.top, 54);
+  assert.equal(drill.top, 98);
 });
 
-test('top is scrollport top + this surface header (drill header taller than ALL toolbar)', () => {
-  const all = railBounds({ scrollportTop: 0, headerHeight: 44, navBase: NAV_BASE });
-  const drill = railBounds({ scrollportTop: 0, headerHeight: 88, navBase: NAV_BASE });
-  assert.equal(all.top, 44);
-  assert.equal(drill.top, 88);
+test('missing / non-finite obstruction falls back to a minimal gap, never NaN', () => {
+  const b = railBounds({ viewportHeight: VP, headerHeight: 44 });
+  assert.equal(b.bottom, 8);
+  assert.ok(Number.isFinite(b.top) && Number.isFinite(b.bottom));
 });
 
-test('degenerate uiScale is treated as 1 (never divides by zero)', () => {
-  const b = railBounds({ navBase: NAV_BASE, kb: 300, uiScale: 0, keyboardGap: 12 });
-  assert.equal(b.bottom, Math.max(NAV_BASE, 300 + 12) + 8);
+test('an obstruction below the viewport bottom clamps to the gap (never negative)', () => {
+  const b = railBounds({ viewportHeight: VP, obstructionTop: 980, railGap: 8 });
+  assert.equal(b.bottom, 8);
+});
+
+test('indexAtY maps position -> slot over the strip, clamped to [0, count-1]', () => {
+  // 27 slots over [100, 640] (height 540, 20px each).
+  assert.equal(indexAtY(100, 100, 540, 27), 0, 'top edge -> first');
+  assert.equal(indexAtY(639, 100, 540, 27), 26, 'bottom edge -> last');
+  assert.equal(indexAtY(50, 100, 540, 27), 0, 'above the strip clamps to 0');
+  assert.equal(indexAtY(9999, 100, 540, 27), 26, 'below the strip clamps to last');
+  assert.equal(indexAtY(110, 100, 540, 27), 0, 'first 20px band -> slot 0');
+  assert.equal(indexAtY(130, 100, 540, 27), 1, 'second band -> slot 1');
+  assert.equal(indexAtY(300, 100, 0, 27), 0, 'zero height -> 0, no divide-by-zero');
+  assert.equal(indexAtY(300, 100, 540, 0), 0, 'no slots -> 0');
 });

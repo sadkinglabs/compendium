@@ -226,7 +226,7 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus, selectMode = false, checked = false, onToggle }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus, selectMode = false, checked = false, onToggle, anchorLetter }) {
   const total = owned + foil;
   const artCard = artForSet(card, set);
   const { complete } = playsetOf(card, total);
@@ -241,7 +241,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
         onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } } }
     : null;
   return (
-    <div onClick={act} {...a11y}
+    <div onClick={act} {...a11y} data-letter={anchorLetter || undefined}
       style={{ position: 'relative', cursor: 'pointer', contentVisibility: 'auto', containIntrinsicSize: 'auto 240px' }}>
       {/* The tile face: gilt frame when owned, dashed "empty sleeve" when missing. In select mode a
           checked tile wears a gold ring. */}
