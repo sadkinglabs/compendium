@@ -935,9 +935,10 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           backing - the card grid scrolls underneath it, and over a transparent header the
           title and ring became unreadable. Bled to the screen edges (negative margin against
           the container's 20px padding) so nothing shows through at the sides. */}
-      <div style={{
+      <div data-rail-sticky style={{
         // marginTop cancels the pillar root's 4px top padding: without it the header sat 4px
         // below the scrollport and visibly slid those 4px before pinning.
+        // data-rail-sticky: the A-Z rail measures this header's bottom edge as its top floor.
         position: 'sticky', top: 0, zIndex: 6, margin: '-4px -20px 0', padding: '8px 20px 12px',
         background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         borderBottom: '1px solid var(--hair-12)',

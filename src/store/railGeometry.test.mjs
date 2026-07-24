@@ -1,7 +1,7 @@
 // Pure tests for the alphabet-rail bounds. Run: npm run test:query
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { railBounds, indexAtY } from './railGeometry.js';
+import { railBounds, indexAtY, railTopOffset, effectiveZoom } from './railGeometry.js';
 
 const VP = 900;   // viewport height
 
@@ -41,6 +41,42 @@ test('missing / non-finite obstruction falls back to a minimal gap, never NaN', 
 test('an obstruction below the viewport bottom clamps to the gap (never negative)', () => {
   const b = railBounds({ viewportHeight: VP, obstructionTop: 980, railGap: 8 });
   assert.equal(b.bottom, 8);
+});
+
+test('railTopOffset: at scroll 0 the grid content top wins (rail starts where the cards are)', () => {
+  // Root at 120; no sticky chrome (ALL surface); the first tile measured 112px below the root.
+  assert.equal(railTopOffset({ scrollRootTop: 120, stickyBottom: null, contentTop: 232 }), 112);
+});
+
+test('railTopOffset: scrolled - the content top is above the floor, so the floor wins', () => {
+  // ALL surface scrolled: the first tile is off the top of the scrollport (above the root).
+  assert.equal(railTopOffset({ scrollRootTop: 120, stickyBottom: null, contentTop: 40 }), 0);
+  // Drill surface scrolled: the sticky header (bottom 192) is the floor, tiles slide under it.
+  assert.equal(railTopOffset({ scrollRootTop: 120, stickyBottom: 192, contentTop: 40 }), 72);
+});
+
+test('railTopOffset: sticky chrome floors the rail even when content is measured below it', () => {
+  // Drill at scroll 0: content (count row + grid) starts below the sticky header - content wins.
+  assert.equal(railTopOffset({ scrollRootTop: 100, stickyBottom: 172, contentTop: 240 }), 140);
+  // Content exactly at the sticky edge - identical either way.
+  assert.equal(railTopOffset({ scrollRootTop: 100, stickyBottom: 172, contentTop: 172 }), 72);
+});
+
+test('railTopOffset: missing measurements fail closed to the scroll root, never negative/NaN', () => {
+  assert.equal(railTopOffset({ scrollRootTop: 120 }), 0);
+  assert.equal(railTopOffset({ scrollRootTop: 120, stickyBottom: NaN, contentTop: NaN }), 0);
+  assert.equal(railTopOffset({ scrollRootTop: 120, stickyBottom: 80 }), 0, 'sticky above the root clamps to 0');
+  assert.equal(railTopOffset({}), 0);
+});
+
+test('effectiveZoom: real rect px over layout px, guarded against degenerate inputs', () => {
+  assert.equal(effectiveZoom(130, 100), 1.3, 'ui-scale 1.3');
+  assert.equal(effectiveZoom(85, 100), 0.85, 'ui-scale 0.85');
+  assert.equal(effectiveZoom(100, 100), 1);
+  assert.equal(effectiveZoom(0, 100), 1, 'zero rect width -> 1');
+  assert.equal(effectiveZoom(100, 0), 1, 'zero layout width -> 1');
+  assert.equal(effectiveZoom(NaN, 100), 1);
+  assert.equal(effectiveZoom(100, -5), 1);
 });
 
 test('indexAtY maps position -> slot over the strip, clamped to [0, count-1]', () => {

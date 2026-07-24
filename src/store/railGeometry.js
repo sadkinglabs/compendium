@@ -27,6 +27,35 @@ export function railBounds({ viewportHeight = 0, scrollRootTop = 0, headerHeight
 }
 
 /**
+ * The rail's top offset from the scroll root's top, derived from MEASURED boundaries (all values in
+ * the same viewport-px space):
+ *   - `stickyBottom`: the bottom edge of this surface's sticky chrome (the set-drill header), or
+ *     null / non-finite when the surface has none - non-sticky header content scrolls away, so the
+ *     floor is then the scroll root itself.
+ *   - `contentTop`: the measured top of the first grid tile - the rail's alignment target ("start
+ *     where the cards are"). When the list is scrolled the tile sits above the floor and the floor
+ *     wins: the rail never starts above the sticky chrome or outside the scrollport.
+ * Returns an offset >= 0, shaped to feed railBounds as `headerHeight` (top = scrollRootTop + offset).
+ */
+export function railTopOffset({ scrollRootTop = 0, stickyBottom = null, contentTop = null } = {}) {
+  const sticky = Number.isFinite(stickyBottom) ? Math.max(0, stickyBottom - scrollRootTop) : 0;
+  const content = Number.isFinite(contentTop) ? contentTop - scrollRootTop : -Infinity;
+  return Math.max(sticky, content, 0);
+}
+
+/**
+ * The effective CSS zoom between real viewport px (getBoundingClientRect) and the layout px a zoomed
+ * subtree consumes (`.cx-app { zoom: var(--ui-scale) }`): rect width / layout (offset) width. Fixed
+ * insets computed from viewport measurements MUST be divided by this before being written as style
+ * inside the zoomed subtree, and rect-derived scroll deltas likewise before feeding scrollTop.
+ * Degenerate inputs (zero, negative, non-finite) return 1 - never NaN, never a blown-up inset.
+ */
+export function effectiveZoom(rectWidth, layoutWidth) {
+  if (!Number.isFinite(rectWidth) || !Number.isFinite(layoutWidth) || rectWidth <= 0 || layoutWidth <= 0) return 1;
+  return rectWidth / layoutWidth;
+}
+
+/**
  * Which slot index a pointer at `y` maps to over a continuous capture strip of `count` slots spanning
  * [top, top+height]. This is the Niagara hit model: the letter under the finger comes from POSITION,
  * not a per-label button, so precision never depends on a label being >= 44px. Clamped to
