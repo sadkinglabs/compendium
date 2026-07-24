@@ -947,7 +947,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         borderBottom: '1px solid var(--hair-12)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, minHeight: 48 }}>
           <button onClick={onBack} aria-label="Back to sets" style={{
             width: 44, height: 44, margin: -5, flex: 'none', borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor; negative margin keeps the header layout
             border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--gold-leaf)',
@@ -1138,7 +1138,9 @@ function AllCards({ onPeek, onOpenCodex }) {
         background: 'rgba(10,8,5,.94)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         borderBottom: '1px solid var(--hair-12)',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* minHeight reserves the Select pill's footprint so the row NEVER resizes when the pill
+            appears/disappears or its label changes - the content below stays anchored. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 48 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             {/* Typographic scale matches the Sets landing header (SetsHome.jsx) exactly, so the two
                 My-Collection views read as one family: eyebrow 10px, title 22px, tally 11.5px mono. */}
