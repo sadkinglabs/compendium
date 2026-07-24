@@ -833,52 +833,19 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // here, so neither can be moved by a filter the user happens to have on.
   const [roster, setRoster] = useState(null);
 
-  const [q, setQ] = useState(collectionSession().q);
-  const [types, setTypes] = useState(collectionSession().types);
-  const [rarities, setRarities] = useState(collectionSession().rarities);
-  const [els, setEls] = useState(collectionSession().els);
-  // Grouping = SECTIONING the grid by element/rarity (distinct from Sort, which orders WITHIN a
-  // section). Preserved from the pre-refine surface - restored per Codex review (an existing
-  // capability; "grouping is not sorting"). Persisted like the other arrangement state.
-  const [groupBy, setGroupBy] = useState(collectionSession().groupBy || 'none');
-  // No collectionSession().sets: the drill is pinned to its own set, so there is no cross-set selection
-  // left to remember. Restoring one was what let a stale Alpha filter empty the Beta grid.
-  useEffect(() => { collectionSession().q = q; collectionSession().types = types; collectionSession().rarities = rarities; collectionSession().els = els; collectionSession().groupBy = groupBy; }, [q, types, rarities, els, groupBy]);
+  // ALL the shared refine machinery - filter/sort/group state, catalog pool, ownership maps, the tile
+  // stepper, and the derived rows - lives in the shared hook (the ALL view uses the same one, scoped
+  // to every set instead of one). Only the set-specific chrome below (roster, completion) stays here.
+  const R = useCollectionRefine({ kind: 'set', name: drillName, code: setDrill });
+  const {
+    q, setQ, els, setEls, multi, setMulti, types, setTypes, rarities, setRarities, artist, setArtist, artistOpts,
+    states, setStates, finishes, setFinishes, playset, setPlayset, ownedCmp, setOwnedCmp, sort, setSort, groupBy, setGroupBy,
+    own, activeCount, clearAll, filterOpen, setFilterOpen, optsLoaded,
+    pool, owBySet, wishSet, addStatus, stepSet, rows: drillRows,
+  } = R;
 
-  // Catalog axes (browsing a collection, NOT building a deck - so no threshold/mana/power
-  // comparators; those are deck-building criteria). Element + Multi + Type + Rarity + Artist.
-  const [multi, setMulti] = useState(false);
-  const [artist, setArtist] = useState('');
-  const [artistOpts, setArtistOpts] = useState([]);
-  // Ownership-derived axes (answered by the profile, not the catalog): ownership state chips, a
-  // Finish scope, Playset buckets, and an Owned-amount comparator. Plus the within-group Sort.
-  const [states, setStates] = useState([]);           // subset of ['owned','missing','wishlist']
-  const [finishes, setFinishes] = useState([]);       // subset of ['standard','foil'] - scopes the ownership math
-  const [playset, setPlayset] = useState([]);         // subset of ['complete','partial','over']
-  const [ownedCmp, setOwnedCmp] = useState({ op: '>=', val: null });
-  const [sort, setSort] = useState('name-asc');       // within-group order (see collectionFilter SORT_KEYS)
-  const own = useMemo(() => ({ states, finishes, playset, qty: ownedCmp }), [states, finishes, playset, ownedCmp]);
-
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [pool, setPool] = useState(null);
-  const [owBySet, setOwBySet] = useState(new Map());  // 'cardId|setCode' -> {owned, foil}
-  // Per-row add status straight from the binding: {pending, ok, error, displayed}. `ok` moves
-  // only on a RECONCILED success - authoritative read back, no failed write - so the tile can
-  // distinguish "tap registered" from "actually persisted".
-  const [addStatus, setAddStatus] = useState(new Map());
-  const owRef = useRef(owBySet);                     // synchronous mirror, for seeding a row's controller
-  owRef.current = owBySet;
-  const aliveRef = useRef(true);
-  useEffect(() => () => { aliveRef.current = false; }, []);
-  const [wishSet, setWishSet] = useState(() => new Set());   // wanted collector-item keys `card_id|variant_slug`
-  // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
-  // those sections mount mid-slide and hitch the open animation (see open= below).
-  const [optsLoaded, setOptsLoaded] = useState(false);
-  // Only the artist list is still needed: the Sets facet left the drill with the set-scope
-  // fix, and waiting on getSets() meant an irrelevant query could reject and leave an
-  // otherwise-usable drill with no filters at all.
-  useEffect(() => { getArtists().then(setArtistOpts).finally(() => setOptsLoaded(true)); }, []);
-
+  // The canonical, UNFILTERED roster for THIS set (set-specific): the completion denominator + the
+  // "missing" export come from here, so no active filter can move them.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -888,120 +855,21 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     return () => { alive = false; };
   }, [drillName]);
 
-  async function loadPool() {
-    const parsed = parseQuery(q);
-    // The uncategorised bucket is an ownership state, not a printed set - keep it out of the
-    // catalog pool query (it would match no card and empty the pool); grouping applies it.
-    // PINNED to the drilled set. This component IS the per-set drill, so a cross-set filter
-    // is not a narrowing - it is a contradiction. Selecting Alpha inside Beta used to put
-    // Alpha in the pool while the renderer still asked for Beta, emptying the grid.
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: [drillName], multi, artist });
-    const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
-    setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
-  }
-  useEffect(() => { const t = setTimeout(loadPool, 130); return () => clearTimeout(t); /* eslint-disable-next-line */ }, [q, types, rarities, els, multi, artist]);
-  const refreshOwnership = useCallback(async () => {
-    const [obs, wl] = await Promise.all([ownedBySet(), wishlistCards()]);
-    // Reconcile the bulk read against rows the grid is editing: keep the optimistic value for
-    // anything still writing, and re-seed settled rows from the truth (which is what confirms
-    // a row whose own post-write read had failed).
-    const grid = gridRef.current;
-    if (grid) {
-      for (const key of grid.keys()) {
-        if (grid.pending(key) > 0) {
-          const st = grid.state(key);
-          obs.set(key, { ...(obs.get(key) || { owned: 0, foil: 0 }), owned: st.displayed });
-        } else {
-          grid.reseed(key, obs.get(key)?.owned || 0);
-        }
-      }
-    }
-    setOwBySet(obs);
-    // Collector-item keys `card_id|variant_slug` (card + set + finish), so a want lights up ONLY its
-    // exact printing - an Alpha want never shows in the Beta drill (see groupCollection.wishedIn).
-    setWishSet(new Set(wl.map((r) => r.item_id)));
-  }, []);
-  useEffect(() => { refreshOwnership(); }, [refreshOwnership]);
-  // Live-refresh with edits made elsewhere (the card sheet's own ledger), debounced
-  // so our optimistic steps commit first (see the write path below).
-  useEffect(() => {
-    let t = null;
-    const off = subscribeCollection(() => { clearTimeout(t); t = setTimeout(refreshOwnership, 250); });
-    return () => { clearTimeout(t); off(); };
-  }, [refreshOwnership]);
-
-  // A stepper edits OWNED for ONE (card, set) printing. This goes through the SAME
-  // provisional/confirmed contract as the card sheet - a tap shows immediately, the row
-  // reconciles against the store when its write chain drains, and a rejected write restores
-  // the true count and tells the user. Controllers are created lazily per TAPPED row, so a
-  // ~780-tile set costs nothing until you actually edit something.
-  const gridRef = useRef(null);
-  if (gridRef.current === null) {
-    const split = (key) => { const i = key.lastIndexOf('|'); return [key.slice(0, i), key.slice(i + 1)]; };
-    gridRef.current = createOwnedStepGrid({
-      read: async (key) => { const [cardId, set] = split(key); return (await qtyForInSet(cardId, set)).owned; },
-      write: (key, delta) => {
-        const [cardId, set] = split(key);
-        // Bound to the profile captured at tap time and re-read inside its turn, so a profile
-        // switch can't redirect it and overlapping steps can't clobber.
-        const pid = activeProfileId();
-        return enqueueWrite(ownedRowKey(pid, cardId, set, false), async () => {
-          const cur = await qtyForInSet(cardId, set, pid);
-          return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
-        });
-      },
-      notify: (reason) => toast(
-        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
-          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
-            : "Couldn't save; count restored", { tone: 'danger' }),
-      isAlive: () => aliveRef.current,
-      onChange: (key, status) => {
-        setOwBySet((prev) => {
-          const m = new Map(prev);
-          m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: status.displayed });
-          return m;
-        });
-        // `status.ok` is the controller's RECONCILED-success counter. Success is never
-        // inferred from pending going false: that is emitted before reconcile runs, so it is
-        // briefly true even when the write rejected or the read is about to fail.
-        setAddStatus((prev) => new Map(prev).set(key, status));
-      },
-    });
-  }
-  const stepSet = useCallback((cardId, set, delta) => {
-    const key = cardId + '|' + set;
-    gridRef.current.step(key, owRef.current.get(key)?.owned || 0, delta);
-  }, []);
-
-  // Per-set ownership: expand every catalogue card into one row per set it was
-  // True owned-per-set (independent of the row filter) - drives the drill header's
-  // owned/total. Non-foil only, matching set completion (foil-only cards don't count).
+  // Owned-per-set tally for the header (non-foil only, matching set completion).
   const ownedPerSet = useMemo(() => {
     const m = new Map();
     for (const [k, v] of owBySet) {
-      if (!countsTowardCompletion(ownershipOf(v.owned, v.foil))) continue;   // one shared definition
+      if (!countsTowardCompletion(ownershipOf(v.owned, v.foil))) continue;
       const code = k.slice(k.lastIndexOf('|') + 1);
       m.set(code, (m.get(code) || 0) + 1);
     }
     return m;
   }, [owBySet]);
 
-  const groups = useMemo(() => groupCollection({
-    pool, owBySet, wishSet, sets: [drillName], own, setLabel: SET_LABEL, setRank,
-  }), [pool, owBySet, wishSet, own, drillName]);
-
-  // Scope to the drilled set. The pool/search/filter machinery is unchanged; we render
-  // only the drilled set's group. Header owned is LIVE (from the ledger map); the total is
-  // the full-catalog figure from drillInfo (falls back to the filtered pool's set total on
-  // a cold session restore, which is exact when no filter is active).
-  const drillGroup = useMemo(() => groups.find((g) => g.code === setDrill) || null, [groups, setDrill]);
-  const drillRows = drillGroup ? drillGroup.rows : [];
   const totalRows = drillRows.length;
   const drillOwned = ownedPerSet.get(setDrill) || 0;
-  // The denominator is IMMUTABLE for the set: it comes from the canonical roster, never from
-  // the filtered pool. It used to fall back to the filtered set total whenever drillInfo was
-  // absent - which is exactly what happens on a session restore - so returning to a filtered
-  // drill could render a header like "402 / 50".
+  // The denominator is IMMUTABLE for the set: it comes from the canonical roster, never from the
+  // filtered pool (a session restore with a filter active would otherwise render "402 / 50").
   const drillTotal = roster ? roster.length : (drillInfo?.totalCollectible ?? 0);
   const drillPct = drillTotal ? drillOwned / drillTotal : 0;
 
@@ -1076,17 +944,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
     }
   };
 
-  // activeCount = things that HIDE cards. Sort and Group are arrangements, not filters, so they
-  // are excluded (a set drill has no cross-set facet either).
-  const activeCount = states.length + finishes.length + playset.length + (ownedCmp.val != null ? 1 : 0)
-    + types.length + rarities.length + els.length + (multi ? 1 : 0) + (artist ? 1 : 0);
-  const clearAll = () => {
-    setStates([]); setFinishes([]); setPlayset([]); setOwnedCmp({ op: '>=', val: null });
-    setTypes([]); setRarities([]); setEls([]); setMulti(false); setArtist('');
-    // Clear resets FILTERS only. Sort and Group are arrangements - they hide nothing, are not
-    // counted in activeCount, and silently undoing them here would surprise someone who arranged
-    // the grid and then cleared a type filter.
-  };
+  // activeCount + clearAll come from the shared hook (filters only; Sort/Group are arrangements).
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
