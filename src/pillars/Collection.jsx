@@ -30,7 +30,8 @@ import { useCollectionSelection } from '../components/useCollectionSelection.js'
 import { useCollectionRefine } from '../components/useCollectionRefine.js';
 import { useCollectionBulkActions } from '../components/useCollectionBulkActions.js';
 import { useProgressiveRender } from '../components/useProgressiveRender.js';
-import { hiddenSelectedCount } from '../store/collectionSelection.js';
+import { hiddenSelectedCount, allRowsSelected } from '../store/collectionSelection.js';
+import { arrangeSections, visibleSections, renderSignature } from '../store/collectionAllModel.js';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -942,11 +943,11 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
               the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
               the running count). A single card is one tap on its tile. */}
           {totalRows > 0 && (() => {
-            const allSel = selected.size > 0 && selected.size === drillRows.length;
+            const allSel = allRowsSelected(selected, drillRows);   // membership, not a count match
             const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
             return (
               <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
-                flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+                flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
                 borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
                 color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
               }}>
@@ -1059,16 +1060,20 @@ function AllCards({ onPeek, onOpenCodex }) {
     selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
   });
 
-  // Full filtered rows, globally ordered (cheap). Progressive rendering caps the DOM tiles; the
+  // ALL is at collector-item grain: one tile per printing. Arrange the COMPLETE result into final
+  // sections FIRST, then flatten - the progressive prefix rides that flattened order, so growing the
+  // count only ever APPENDS (a later batch can't inject a row above already-rendered content). The
   // SIGNATURE (not row identity) governs the reset, so a ledger broadcast can't snap us to the top.
-  const ordered = useMemo(() => [...rows].sort(rowComparator(sort, (r) => r.card)), [rows, sort]);
-  const signature = `all|${q}|${states}|${finishes}|${playset}|${ownedCmp.op}${ownedCmp.val}|${types}|${rarities}|${els}|${multi}|${artist}|${sort}|${groupBy}`;
-  const { visible, sentinelRef, hasMore } = useProgressiveRender(ordered, signature);
-  const sections = useMemo(() => groupCards(visible, groupBy, (r) => r.card, rowComparator(sort, (r) => r.card)), [visible, groupBy, sort]);
+  const comparator = useMemo(() => rowComparator(sort, (r) => r.card), [sort]);
+  const arranged = useMemo(() => arrangeSections(rows, groupBy, (r) => r.card, comparator), [rows, groupBy, comparator]);
+  const ordered = arranged.flat.map((f) => f.row);   // globally ordered item list (for selection/toggle over FULL result)
+  const signature = renderSignature('all', { q, states, finishes, playset, ownedCmp, types, rarities, els, multi, artist, sort, groupBy });
+  const { count, sentinelRef, hasMore, showMore } = useProgressiveRender(arranged.flat.length, signature);
+  const sections = useMemo(() => visibleSections(arranged, count), [arranged, count]);
 
-  const total = ordered.length;
+  const total = arranged.flat.length;
   const hidden = hiddenSelectedCount(selected, ordered);   // selected items a filter now conceals
-  const allSel = selected.size > 0 && selected.size === total;
+  const allSel = allRowsSelected(selected, ordered);   // membership over the FULL result, not a count match
   const toggleSel = (id, set) => toggleSelHook(id, set, ordered);   // toggle captures from the FULL rows
   useEffect(() => {
     if (!selectMode) return undefined;
@@ -1077,12 +1082,12 @@ function AllCards({ onPeek, onOpenCodex }) {
 
   return (
     <div style={{ padding: '0 20px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px 10px', minHeight: 40 }}>
-        <span style={{ flex: 1, minWidth: 0, font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)' }}>{total.toLocaleString()} card{total === 1 ? '' : 's'}</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '2px 2px 10px', minHeight: 44 }}>
+        <span style={{ flex: 1, minWidth: 0, font: "400 11.5px/1 var(--f-ui)", color: 'var(--ink-faint)' }}>{total.toLocaleString()} item{total === 1 ? '' : 's'}</span>
         {total > 0 && (
           <button onClick={!selectMode ? enterSelectMode : (allSel ? deselectAll : () => selectAllHook(ordered))}
-            aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
-              flex: 'none', minHeight: 40, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+            aria-label={!selectMode ? 'Select items' : (allSel ? 'Deselect all' : 'Select all')} style={{
+              flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
               borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
               color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
             }}>
@@ -1093,7 +1098,7 @@ function AllCards({ onPeek, onOpenCodex }) {
 
       {pool == null ? <Loading /> : total === 0 ? (
         <div style={{ padding: '48px 0', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          {(activeCount || q) ? 'No cards match those filters.' : 'No cards.'}
+          {(activeCount || q) ? 'No items match those filters.' : 'No items.'}
         </div>
       ) : (
         <>
@@ -1103,7 +1108,7 @@ function AllCards({ onPeek, onOpenCodex }) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '22px 2px 10px' }}>
                   <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{section.label}</span>
                   <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(74,60,34,.6), transparent)' }} />
-                  <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{section.cards.length}</span>
+                  <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{section.fullCount}</span>
                 </div>
               )}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
@@ -1116,8 +1121,19 @@ function AllCards({ onPeek, onOpenCodex }) {
               </div>
             </div>
           ))}
-          {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. */}
-          {hasMore && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+          {/* Progressive sentinel - crossing it grows the rendered prefix by a batch. When no observer
+              or scroll root is available, the explicit button keeps the rest of the catalogue reachable. */}
+          {hasMore && (
+            <>
+              <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '18px 0 4px' }}>
+                <button onClick={showMore} style={{
+                  minHeight: 44, padding: '0 18px', borderRadius: 16, cursor: 'pointer', font: "600 12.5px/1 var(--f-ui)",
+                  color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+                }}>Show more</button>
+              </div>
+            </>
+          )}
         </>
       )}
 
@@ -1142,7 +1158,7 @@ function AllCards({ onPeek, onOpenCodex }) {
       <ImportTextSheet open={importOpen} onClose={() => setImportOpen(false)} />
 
       <CollectionRefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
-        activeCount={activeCount} ctaLabel={`Show ${total.toLocaleString()} card${total === 1 ? '' : 's'}`}
+        scope="all" activeCount={activeCount} ctaLabel={`Show ${total.toLocaleString()} item${total === 1 ? '' : 's'}`}
         els={els} setEls={setEls} multi={multi} setMulti={setMulti}
         types={types} setTypes={setTypes} rarities={rarities} setRarities={setRarities}
         artist={artist} setArtist={setArtist} artistOpts={artistOpts}

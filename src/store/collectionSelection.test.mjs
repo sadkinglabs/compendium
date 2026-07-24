@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  selKey, toggleSelected, selectAllRows, hiddenSelectedCount, editCopiesEligible, newListCardIds, overBatch, MAX_BATCH_ITEMS,
+  selKey, toggleSelected, selectAllRows, allRowsSelected, hiddenSelectedCount, editCopiesEligible, newListCardIds, overBatch, MAX_BATCH_ITEMS,
 } from './collectionSelection.js';
 
 // card 'c1' Alpha(001) both finishes, Beta(002) standard-only; 'wr' Winter River Alpha foil-only.
@@ -29,13 +29,38 @@ test('two printings of one card are two independent selection entries', () => {
 });
 
 test('selectAll captures the FULL row set (the contract: not just a rendered prefix)', () => {
-  const sel = selectAllRows(rows);
+  const sel = selectAllRows(new Map(), rows);
   assert.equal(sel.size, 3);
   assert.deepEqual([...sel.keys()].sort(), ['c1|001', 'c1|002', 'wr|001']);
 });
 
+test('selectAll UNIONS into the existing snapshot - it never drops earlier hand-picks', () => {
+  // Hand-pick under one filter, then Select-all a DISJOINT filtered result: both survive.
+  let sel = toggleSelected(new Map(), 'wr', '001', rows);       // hand-picked wr|001
+  sel = selectAllRows(sel, [rows[0], rows[1]]);                 // filter now shows only the two c1 printings
+  assert.deepEqual([...sel.keys()].sort(), ['c1|001', 'c1|002', 'wr|001'], 'union, not replace');
+});
+
+test('selectAll is idempotent - re-selecting the same rows changes nothing', () => {
+  const once = selectAllRows(new Map(), rows);
+  const twice = selectAllRows(once, rows);
+  assert.deepEqual([...twice.keys()].sort(), [...once.keys()].sort());
+  assert.equal(twice.size, 3);
+});
+
+test('allRowsSelected is membership, not count-equality (a disjoint same-size result is NOT all)', () => {
+  const sel = selectAllRows(new Map(), [rows[0], rows[1]]);     // c1|001, c1|002 selected
+  assert.equal(allRowsSelected(sel, [rows[0], rows[1]]), true, 'exact set is all-selected');
+  assert.equal(allRowsSelected(sel, [rows[2]]), false, 'wr|001 not selected');
+  assert.equal(allRowsSelected(sel, rows), false, 'wr|001 present but unselected -> not all');
+  // A disjoint result of the SAME size (2) must not read as all-selected off a count match.
+  assert.equal(allRowsSelected(sel, [rows[2], rows[2]]), false);
+  assert.equal(allRowsSelected(new Map(), rows), false, 'empty selection');
+  assert.equal(allRowsSelected(sel, []), false, 'no rows is never "all"');
+});
+
 test('hiddenSelectedCount reports selected items absent from the current filtered rows', () => {
-  const sel = selectAllRows(rows);                 // 3 selected
+  const sel = selectAllRows(new Map(), rows);      // 3 selected
   assert.equal(hiddenSelectedCount(sel, rows), 0, 'all visible');
   assert.equal(hiddenSelectedCount(sel, [rows[0]]), 2, 'filter now shows only c1|001 -> 2 hidden');
   assert.equal(hiddenSelectedCount(new Map(), rows), 0);
@@ -43,14 +68,14 @@ test('hiddenSelectedCount reports selected items absent from the current filtere
 
 test('a snapshot is not mutated by a filter change - hidden items still count for an action', () => {
   // Select all 3, then the "visible rows" shrink to one. The snapshot keeps all 3.
-  const sel = selectAllRows(rows);
+  const sel = selectAllRows(new Map(), rows);
   const visibleAfterFilter = [rows[0]];
   assert.equal(sel.size, 3, 'selection unchanged by filtering');
   assert.equal(hiddenSelectedCount(sel, visibleAfterFilter), 2);
 });
 
 test('editCopiesEligible drops printings lacking the chosen finish (Winter River has no standard)', () => {
-  const values = [...selectAllRows(rows).values()];
+  const values = [...selectAllRows(new Map(), rows).values()];
   const std = editCopiesEligible(values, false);
   assert.deepEqual(std.items.map((i) => `${i.card.card_id}|${i.set}`).sort(), ['c1|001', 'c1|002'], 'wr skipped (foil-only)');
   assert.equal(std.skipped, 1);
@@ -60,7 +85,7 @@ test('editCopiesEligible drops printings lacking the chosen finish (Winter River
 });
 
 test('newListCardIds dedups printings to card grain', () => {
-  const values = [...selectAllRows(rows).values()];   // c1|001, c1|002, wr|001
+  const values = [...selectAllRows(new Map(), rows).values()];   // c1|001, c1|002, wr|001
   assert.deepEqual(newListCardIds(values).sort(), ['c1', 'wr'], 'two c1 printings -> one entry');
 });
 

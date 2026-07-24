@@ -131,6 +131,25 @@ rendered" - is designed in now, not bolted on.)
   existing, tested tile stepper + barrier-guarded writes).
 - **Graceful zero-image.** ALL is the same `BinderTile` (deterministic art fallback) - unaffected.
 
+## Documentation Impact
+- **`COMPENDIUM_FEATURE_MATRIX.md`** - **updated.** My Collection row now names the **Sets | All** toggle,
+  the item-grain flat grid, the shared refine engine, and the progressive prefix; the Bulk-selection row
+  now states it applies on either surface and spells out full-result Select-all, snapshot semantics, the
+  hidden-selected count, Sets/All-switch clearing, and the 2,000 boundary. The per-collector-item
+  granularity note (§ below the table) already covers ALL unchanged.
+- **`COMPENDIUM_ARCHITECTURE.md`** - **updated.** §7.4 Collection now describes the Sets/All toggle, the
+  two shared controllers, and that the progressive prefix is presentation-only (never the selection
+  scope). Corrected a stale "gyro parallax" phrase to the shipped finger-tracked tilt.
+- **`COMPENDIUM_DATA_MODEL.md`** - **reviewed, no change.** ALL introduces no table, column, repository,
+  or schema-version change; it reads the existing `owned_cards` collector-item grain through the same
+  `getPool`/`groupCollection` path the set drill uses. Bulk actions reuse the already-documented
+  `adjustOwnedItemsBulk`/`setOwnedItemsBulk`/`createListWithEntries` commands.
+- **`BUILD.md`** - **reviewed, no change.** No new command, dependency, env var, or build/deploy step; the
+  same gate battery + `check:smoke` covers it. Zero-image mode is exercised by the unchanged `BinderTile`.
+- **`DESIGN_SYSTEM.md`** - **reviewed, no change.** ALL reuses existing primitives (BinderTile, SegTabs,
+  the refine sheet, FAB/dock, SearchPill) and tokens; the Select controls meet the documented ≥44px touch
+  floor. No new token, primitive, or platform-render rule is introduced.
+
 ## Risks / self-critique
 - **Perf on device** - I will measure ALL first paint + scroll on the Pixel with the full catalogue; if
   the prefix model still janks I will say so, not ship it. The rail (Phase 2) is the real navigation

@@ -20,9 +20,23 @@ export function toggleSelected(selected, cardId, set, rows) {
   return next;
 }
 
-/** Select EVERY row in the current (filtered) result - the full derived set, not the rendered prefix. */
-export function selectAllRows(rows) {
-  return new Map(rows.map((r) => [selKey(r.card.card_id, r.set), selVal(r)]));
+/**
+ * Select all: UNION the current (filtered) result into the existing snapshot - the full derived set,
+ * not the rendered prefix, and ADDED to (never replacing) what was already hand-picked or selected
+ * under an earlier filter. Clearing is only ever the explicit Deselect-all action. Returns a NEW Map.
+ */
+export function selectAllRows(selected, rows) {
+  const next = new Map(selected);
+  for (const r of rows) next.set(selKey(r.card.card_id, r.set), selVal(r));
+  return next;
+}
+
+/** True iff EVERY current row is in the snapshot (membership, not counts). A disjoint result of the
+ *  same size is NOT "all selected" - that count-equality bug wrongly showed "Deselect all". */
+export function allRowsSelected(selected, rows) {
+  if (!rows.length) return false;
+  for (const r of rows) if (!selected.has(selKey(r.card.card_id, r.set))) return false;
+  return true;
 }
 
 /** How many selected items are NOT in the currently derived rows (hidden by the active filter). */

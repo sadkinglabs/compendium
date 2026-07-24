@@ -12,6 +12,7 @@ import { isTokenCard } from '../store/tokens.js';
 import { collectionSession } from '../pillars/collectionSession.js';
 import { SET_LABEL, setRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
+import { poolArgs, rowsForScope } from '../store/collectionAllModel.js';
 import { enqueueWrite } from '../store/collectionWrites.js';
 import { createOwnedStepGrid } from '../store/ownedStepGrid.js';
 import { activeProfileId } from '../store/profileRepository.js';
@@ -23,6 +24,7 @@ const EMPTY_CMP = () => ({ op: '>=', val: null });
 export function useCollectionRefine(scope) {
   const isSet = scope.kind === 'set';
   const setName = isSet ? scope.name : null;   // getPool filters by set NAME; groups are keyed by CODE
+  const setCode = isSet ? scope.code : null;
 
   // Catalog axes (session-backed so a browse survives navigation): element/multi/type/rarity/artist.
   const [q, setQ] = useState(collectionSession().q);
@@ -58,7 +60,7 @@ export function useCollectionRefine(scope) {
   // contradiction); ALL scope passes no set filter, so getPool returns the whole catalogue once.
   const loadPool = useCallback(async () => {
     const parsed = parseQuery(q);
-    const rows = await getPool({ q: parsed.name, els, types, rarities, sets: isSet ? [setName] : undefined, multi, artist });
+    const rows = await getPool(poolArgs({ kind: isSet ? 'set' : 'all', name: setName }, { q: parsed.name, els, types, rarities, multi, artist }));
     const real = rows.filter((c) => !isTokenCard(c));   // tokens aren't collected
     setPool(parsed.clauses.length ? real.filter((c) => cardMatchesQuery(c, parsed)) : real);
   }, [q, els, types, rarities, multi, artist, isSet, setName]);
@@ -123,9 +125,7 @@ export function useCollectionRefine(scope) {
   const groups = useMemo(() => groupCollection({
     pool, owBySet, wishSet, sets: isSet ? [setName] : [], own, setLabel: SET_LABEL, setRank,
   }), [pool, owBySet, wishSet, own, isSet, setName]);
-  const rows = useMemo(() => (
-    isSet ? (groups.find((g) => g.code === scope.code)?.rows || []) : groups.flatMap((g) => g.rows)
-  ), [groups, isSet, scope.code]);
+  const rows = useMemo(() => rowsForScope(groups, { kind: isSet ? 'set' : 'all', code: setCode }), [groups, isSet, setCode]);
 
   // activeCount = things that HIDE cards (Sort/Group are arrangements, excluded).
   const activeCount = states.length + finishes.length + playset.length + (ownedCmp.val != null ? 1 : 0)

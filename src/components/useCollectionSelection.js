@@ -13,8 +13,8 @@ export function useCollectionSelection() {
   const cancel = useCallback(() => { setSelectMode(false); setSelected(new Map()); }, []);
   const clear = useCallback(() => setSelected(new Map()), []);
   const toggle = useCallback((cardId, set, rows) => setSelected((s) => toggleSelected(s, cardId, set, rows)), []);
-  const selectAll = useCallback((rows) => setSelected(selectAllRows(rows)), []);
-  const deselectAll = useCallback(() => setSelected(new Map()), []);
+  const selectAll = useCallback((rows) => setSelected((s) => selectAllRows(s, rows)), []);   // UNION, not replace
+  const deselectAll = useCallback(() => setSelected(new Map()), []);   // the explicit full clear
 
   return { selectMode, selected, enter, cancel, clear, toggle, selectAll, deselectAll, hiddenSelectedCount };
 }
