@@ -28,6 +28,11 @@ test('the shipped manifest is non-trivial and content-addressed', () => {
   for (const k of manifestKeys) { assert.match(k, /\.[0-9a-f]{64}\.webp$/, `key is content-addressed: ${k}`); break; }
 });
 
+test('Phase 5 slim contract: NO shipped manifest entry carries a legacyKey (the bundle is gone)', () => {
+  const withLegacy = Object.entries(manifest.objects || {}).filter(([, e]) => 'legacyKey' in e).map(([slug]) => slug);
+  assert.equal(withLegacy.length, 0, `every entry must be slim; ${withLegacy.length} still carry legacyKey (e.g. ${withLegacy.slice(0, 3).join(', ')})`);
+});
+
 test('every card/variant art key in cards.json resolves to a shipped manifest entry', () => {
   const missing = [];
   let checked = 0;

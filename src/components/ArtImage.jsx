@@ -1,7 +1,7 @@
 // The two consumption forms of the art boundary: the `useArtSource` hook (for bespoke markup) and the
 // `ArtImage` component (for the common framed thumbnail). Both are ZERO-LOGIC shells over the tested
-// pure functions in artSource.js - they capture the impure inputs (the memoized peek, the legacy
-// fallback) at the dispatch sites and call reduce/visibleCandidate in React's documented effect order.
+// pure functions in artSource.js - they capture the impure input (the memoized peek) at the dispatch
+// site and call reduce/visibleCandidate in React's documented effect order.
 // All the "which candidate paints this frame" rules live in artSource.js (unit-tested, DOM-free); all
 // the caching/downloading/validating lives in artCache (unit-tested core). Inert until Phase 2b adopts
 // it at the render sites. See docs/proposals/art-cdn-rev2-architecture.md Section B4.

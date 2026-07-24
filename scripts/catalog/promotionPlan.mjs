@@ -4,9 +4,9 @@ import { join } from 'node:path';
 // files, and in what order. ONE function, consumed by both update-catalog.mjs and its tests, so a
 // test can never certify a topology production does not use.
 //
-// Phase 2 is JSON-ONLY. The art lives on the CDN (uploaded + audited by cdn-upload), so there is NO
-// art directory to promote - the retired `artDir` journal shape must NOT appear here. public/cards/
-// is left in place as the offline bundled-legacy fallback until Phase 5.
+// The promotion is JSON-ONLY. Card art lives on the CDN (published + audited before the promote, see
+// promoteGate), so there is NO art directory to promote - the retired `artDir` journal shape must NOT
+// appear here. Phase 5 deleted the `public/cards/` bundle; there is no bundled fallback.
 //
 // catalogVersion.json is ALWAYS the last entry: it is the reseed trigger the app reads at boot, so
 // an interrupt before it leaves the OLD version in force and the promote is recovered whole on the

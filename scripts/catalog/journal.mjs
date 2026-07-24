@@ -34,7 +34,7 @@ const RECOVERY = (
   '  A) finish the interrupted promotion from staging:\n' +
   '       npm run update:catalog -- --recover\n' +
   '  B) restore the previous catalog AND clear the journal (both, or the build stays blocked):\n' +
-  '       git checkout -- public/catalog public/cards src/store/catalogVersion.json src/store/setCatalog.json\n' +
+  '       git checkout -- public/catalog src/store/catalogVersion.json src/store/setCatalog.json\n' +
   '       then delete the .catalog-build directory (removes PROMOTE.json + staging)'
 );
 

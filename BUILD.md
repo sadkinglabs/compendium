@@ -115,23 +115,25 @@ passing the command does not prove that prose and implementation agree.
 
 ## Update the catalog
 
-The bundled catalog - cards, rules, FAQs, and card art - is regenerated from a drop
-folder by **one command**. A routine content update needs no code edit.
+The bundled catalog data - cards, rules, FAQs, and the content-addressed `art-manifest.json` -
+is regenerated from a drop folder by **one command**. Card **art itself is not bundled**: the
+command converts each scan, publishes it to the CDN, and audits that the whole manifest is
+published *before* it promotes the catalog. A routine content update needs no code edit.
 
 ```bash
-npm run update:catalog              # fetch, build, validate; stage CDN art + prospective manifest (promotion dormant - see the migration note)
-npm run update:catalog -- --dry-run # build + validate + report; refreshes gitignored staging, writes nothing under public/ or src/
-npm run update:catalog -- --recover # finish an interrupted promotion from staging (steady-state)
+npm run update:catalog              # fetch, build, validate, PUBLISH art to R2 + audit the whole manifest, then promote
+npm run update:catalog -- --dry-run # build + validate + report; refreshes gitignored staging, writes nothing / uploads nothing
+npm run update:catalog -- --recover # re-audit R2, then finish an interrupted promotion from staging
+npm run update:catalog -- --repair-conflicts   # if a remote object conflicts: create repair keys, fold them back, re-audit, promote
 ```
 
-> **Art-CDN migration status (current).** While the art-CDN migration is in progress this
-> command runs in a **dormant** mode: it converts and durably stages the card art to the
-> gitignored `CATALOG_DROP/cdn-art/` and writes a prospective content-addressed manifest to
-> `.catalog-build/art-manifest.json`, but it does **not** promote the committed catalog - nothing
-> under `public/` or `src/` changes and the app keeps serving bundled art. Publish the staged
-> objects additively with `node scripts/catalog/cdn-upload.mjs` (create-only conditional PUTs that
-> never overwrite, then an audit). The catalog promotion returns as the single atomic art-CDN
-> Phase-2 activation. See `docs/proposals/art-cdn-migration.md`.
+> **Publish-before-promote (art-CDN Phase 5).** Because there is no bundled art fallback, the
+> command promotes the catalog **only** once every object its manifest references is published on
+> R2 and a whole-manifest audit is green (`scripts/catalog/promoteGate.mjs`, over the tested
+> `runUpload` boundary). A conflicting remote object fails *before* promotion; `--recover`
+> re-audits before finishing. It therefore needs the R2 credentials in `.env.r2` and internet.
+> The command writes nothing under `public/`/`src/` and creates no promotion journal unless the
+> audit is green. See `docs/proposals/art-cdn-migration.md`.
 
 Drop the Curiosa exports into `CATALOG_DROP/` first: the high-res card PNGs, the Codex
 rules CSV (header `title,content,subcodexes`), and the FAQ CSV (header

@@ -62,5 +62,7 @@ do. The common ones:
 
 - Nothing in this folder is saved to git except this README. Your images and CSVs stay
   on your machine; they are the source, not the shipped output.
-- The shipped output lives in `public/catalog/` (the data) and `public/cards/` (the
-  art). The command writes those for you.
+- The command writes the bundled data to `public/catalog/` (cards, rules, FAQs, and the
+  content-addressed `art-manifest.json`). Card **art itself is not bundled** - the command
+  converts each scan, uploads it to the CDN, and audits that the whole manifest is published
+  before it promotes the catalog. So a run needs the R2 credentials (`.env.r2`) and internet.

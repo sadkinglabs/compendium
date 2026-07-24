@@ -48,7 +48,8 @@ const arg = (argv, name) => { const i = argv.indexOf(name); return i >= 0 ? argv
 
 // Read a staged scan by slug and VERIFY byte count + sha256 + md5 against the manifest immediately
 // before it can be PUT - a corrupted or stale staging file can never be published as the object.
-function makeReadStaged(stageDir) {
+// Exported so update-catalog wires the SAME verified reader into its publish-before-promote step.
+export function makeReadStaged(stageDir) {
   return (slug, entry) => {
     const p = `${stageDir}/${slug}.webp`;
     if (!existsSync(p)) throw new Error(`staged bytes for ${slug} missing at ${p} (run the catalog update)`);
