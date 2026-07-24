@@ -49,7 +49,7 @@ export function parseUi(xml) {
     const attrs = m[1];
     const text = /\btext="([^"]*)"/.exec(attrs)?.[1] || '';
     // content-desc too: icon buttons and nav items often carry no text, and a marker that
-    // exists only as an accessible label ("Back to sets", "Set actions") is exactly the kind
+    // exists only as an accessible label ("Back to sets", "Select cards") is exactly the kind
     // that is unique to one screen rather than global chrome.
     const desc = /\bcontent-desc="([^"]*)"/.exec(attrs)?.[1] || '';
     const b = /\bbounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"/.exec(attrs);
@@ -110,7 +110,7 @@ export const ROUTES = [
   { name: 'Play', tap: ['Play'], expect: ['quick match'] },
   { name: 'Collection > Overview', tap: ['Collection'], expect: ['cards owned', 'decks buildable'] },
   { name: 'Collection > My Collection', tap: ['Collection', 'My Collection'], expect: ['non-foil owned'] },
-  { name: 'Collection > set drill', tap: ['Collection', 'My Collection', 'BETA'], expect: ['back to sets', 'set actions'] },
+  { name: 'Collection > set drill', tap: ['Collection', 'My Collection', 'BETA'], expect: ['back to sets', 'select cards'] },
   { name: 'Collection > Lists', tap: ['Collection', 'Lists'], expect: ['wanted lists', 'card lists'] },
 ];
 

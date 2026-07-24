@@ -82,7 +82,7 @@ Radii `--r-*` (pill/tag/btn/input/tab/thumb/chip/card/modal/sheet) · spacing `-
 
 ## 3 · Primitives
 
-**`[Shipping]` (usable now)** — from `src/components/`: `Chip`/`ChipRow`, `SegTabs`, `IconButton`, `SectionLabel`, `ListRow`, `Loading`, `ThresholdPips`/`ElementPip`, `BottomSheet`, `CenteredModal`, `BlankState`, `EmptyCta`, `BTN_GOLD`/`BTN_GHOST`, `GothicSheet` (the sheet chassis), `SearchPill`, `BottomDock`, `Fab` (context FAB), `OverflowMenu` (header overflow), `RefineSheet`, `MissingSheet`, `CardArt` (**the zero-image reference primitive** — deterministic fallback painted behind a self-removing `<img>`, no layout shift), the icon set `icons.jsx`, and the Collection card views (`LedgerRow`/`BinderTile`, `Frost`, `CollectionCardSheet`).
+**`[Shipping]` (usable now)** — from `src/components/`: `Chip`/`ChipRow`, `SegTabs`, `IconButton`, `SectionLabel`, `ListRow`, `Loading`, `ThresholdPips`/`ElementPip`, `BottomSheet`, `CenteredModal`, `BlankState`, `EmptyCta`, `BTN_GOLD`/`BTN_GHOST`, `GothicSheet` (the sheet chassis), `SearchPill`, `BottomDock`, `Fab` (context FAB), `OverflowMenu` (header overflow), `RefineSheet` (deck/Codex) + `CollectionRefineSheet` (the Collection's own two-page Filters/Sort sheet, sharing `RefineSheet`'s `Chip`/`PipChip`/`CmpRow` primitives), `MissingSheet`, `CardArt` (**the zero-image reference primitive** — deterministic fallback painted behind a self-removing `<img>`, no layout shift), the icon set `icons.jsx`, and the Collection card views (`LedgerRow`/`BinderTile`, `Frost`, `CollectionCardSheet`).
 
 **`[Target]` consolidation catalog** (OD-13 — *asserted targets, not implementation equivalence*; refactor deferred):
 | Target primitive | Consolidates (shipping reality) |

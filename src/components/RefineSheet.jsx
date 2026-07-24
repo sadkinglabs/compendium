@@ -16,7 +16,7 @@ const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Wat
 const EL_LABEL = { air: 'Air', earth: 'Earth', fire: 'Fire', water: 'Water' };
 const TYPES = [['Minion', 'Minions'], ['Aura', 'Auras'], ['Magic', 'Magic'], ['Artifact', 'Artifacts'], ['Site', 'Sites']];
 const RAR = [['Ordinary', 'Ordinary'], ['Exceptional', 'Exceptional'], ['Elite', 'Elite'], ['Unique', 'Unique']];
-const RARITY_DOT = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
+export const RARITY_DOT = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
 // Default sort vocabulary, for callers that do not supply their own (Codex, the deckbuilder).
 // Collection deliberately supplies none: it is always alphabetical within a group, so it has
 // a grouping control instead. See the `groupBy` note below.
@@ -29,7 +29,7 @@ const HAIR_ROW = { borderBottom: '1px solid rgba(74,60,34,.3)' };
 const DOT = { width: 6, height: 6, borderRadius: '50%', background: '#e3c589', flex: 'none' };   // "this tab has active choices" mark
 
 // Element chip carrying the real PNG threshold icon (togglable). Chip geometry.
-function PipChip({ el, label, active, onClick }) {
+export function PipChip({ el, label, active, onClick }) {
   return (
     <button onClick={onClick} aria-pressed={active} style={{
       display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px 6px 10px', borderRadius: 18, cursor: 'pointer',
@@ -44,7 +44,7 @@ function PipChip({ el, label, active, onClick }) {
 // Comparator ledger row - the trophy sheet's CountCol grammar applied to a
 // numeric filter: element/label on the left, operator pill + frosted StepBtns +
 // gilt value on the right. Any = unset.
-function CmpRow({ label, icon, state, set, max, valueTint }) {
+export function CmpRow({ label, icon, state, set, max, valueTint }) {
   const stepVal = (d) => {
     let v = state.val == null ? (d > 0 ? 0 : null) : state.val + d;
     if (v != null) v = v < 0 ? null : Math.min(max, v);
@@ -67,7 +67,7 @@ function CmpRow({ label, icon, state, set, max, valueTint }) {
 
 // Sort ledger row - a gilt priority seal (numbered when active) + label + an
 // SVG direction flip. Tap row toggles; tap the flip reverses.
-function SortRow({ label, index, dir, onToggle, onFlip }) {
+export function SortRow({ label, index, dir, onToggle, onFlip }) {
   const on = index >= 0;
   return (
     <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', cursor: 'pointer', ...HAIR_ROW }}>

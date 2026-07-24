@@ -334,16 +334,21 @@ export function queueWantWrite(pid, cardId, write) {
 }
 export const listRowKey = (pid, listId, cardId) => `l:${pid}:${listId}:${cardId}`;
 
-// Map "cardId|set" -> { owned, foil } for the whole collection, grouped by printing.
+// Map "cardId|set" -> { owned, foil, updated } for the whole collection, grouped by printing.
+// `updated` is the LATEST updated_at across the printing's rows (standard + foil) - collector-record
+// activity, NOT a first-owned time: a want can create the row before any copy is acquired, so
+// created_at is not an acquisition date. It drives the "Recently updated" sort. A true "first owned"
+// would need a persisted per-item ownership timestamp (a separate migration).
 export async function ownedBySet() {
   const pid = activeProfileId();
-  const rows = await query('SELECT card_id, variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND qty_owned>0;', [pid]);
+  const rows = await query('SELECT card_id, variant_slug, qty_owned, updated_at FROM owned_cards WHERE profile_id=? AND qty_owned>0;', [pid]);
   const m = new Map();
   for (const r of rows) {
     const { set, foil } = parseVslug(r.variant_slug);
     const key = r.card_id + '|' + set;
-    const cur = m.get(key) || { owned: 0, foil: 0 };
+    const cur = m.get(key) || { owned: 0, foil: 0, updated: '' };
     cur[foil ? 'foil' : 'owned'] += r.qty_owned;
+    if (r.updated_at && r.updated_at > cur.updated) cur.updated = r.updated_at;   // MAX(updated_at)
     m.set(key, cur);
   }
   return m;

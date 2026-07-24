@@ -9,7 +9,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import CardArt from './CardArt.jsx';
 import { toast } from '../feedback.js';
-import { RARITY_LIMITS, isUnlimited } from '../store/deckRepository.js';
+import { playsetOf } from '../store/playset.js';
 import { haptic } from '../native.js';
 
 // Reference palette (from the design spec; kept literal - these are deliberate).
@@ -38,14 +38,6 @@ export function artForSet(card, set) {
   const inSet = vs.filter((v) => v && v.set === set && v.image);
   const img = (inSet.find((v) => /-s$/.test(v.slug)) || inSet[0])?.image;
   return img ? { ...card, image_slug: img } : card;
-}
-
-// A card's playset state: the legal limit for its rarity (4/3/2/1), whether the
-// total owned reaches it, and whether the card is exempt ("any number of").
-function playsetOf(card, total) {
-  const limit = RARITY_LIMITS[card?.rarity];
-  const capped = !!limit && !isUnlimited(card);
-  return { limit: capped ? limit : 0, complete: capped && total >= limit };
 }
 
 const setPillStyle = {
