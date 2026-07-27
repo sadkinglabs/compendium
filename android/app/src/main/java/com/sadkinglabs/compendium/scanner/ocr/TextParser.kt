@@ -1,9 +1,12 @@
 package com.sadkinglabs.compendium.scanner.ocr
 
 import com.google.mlkit.vision.text.Text
+import com.sadkinglabs.compendium.scanner.model.Source
 
-/** A raw OCR candidate: the joined strip text + whether it came from a site edge. */
-data class OcrCandidate(val text: String, val isSite: Boolean)
+/** A raw OCR candidate: the joined strip text + the EXACT strip it came from (TOP banner, or a
+ *  rotated site edge). Carrying the exact [Source] (not a collapsed isSite) is what lets the
+ *  reliability harness reproduce production's per-strip evidence and lets Step 4 weight by source. */
+data class OcrCandidate(val text: String, val source: Source)
 
 object TextParser {
     /** Concatenate a strip's lines in reading order (top-to-bottom, left-to-right). The

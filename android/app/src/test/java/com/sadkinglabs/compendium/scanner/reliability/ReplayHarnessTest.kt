@@ -3,12 +3,16 @@ package com.sadkinglabs.compendium.scanner.reliability
 import com.sadkinglabs.compendium.scanner.match.CardIndex
 import com.sadkinglabs.compendium.scanner.match.Matcher
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * Verifies the reliability harness end to end on the frozen seed corpus, and pins the current-
- * behaviour baseline (the two failures below are the evidence that motivates Step 4).
+ * Verifies the reworked reliability harness on the frozen seed corpus (envelope v2): the shared
+ * FrameSelector path, QR-precedes-OCR, ambiguity-margin handling, fail-closed validation, and the
+ * reproducible report metadata. Two cases pin the current-behaviour baseline that motivates Step 4.
  */
 class ReplayHarnessTest {
 
@@ -16,51 +20,68 @@ class ReplayHarnessTest {
     private val matcher = Matcher(CardIndex(catalog))
     private val corpus = SeedCorpus.corpus()
 
-    private fun outcome(id: String) =
-        ReplayHarness.replay(corpus.cases.first { it.id == id }, matcher)
+    private fun lock(id: String) = ReplayHarness.replay(corpus.cases.first { it.id == id }, matcher)
 
-    @Test fun a_spell_confirms_and_reports_lock_latency() {
-        val o = outcome("spell_smite")
-        assertEquals("smite", o.lockedId)
-        assertEquals(450L, o.lockLatencyMs)   // locked on the 4th frame (obs>=3 AND elapsed>=350ms)
+    @Test fun spell_site_and_multiset_confirm() {
+        assertEquals("smite", lock("spell_smite").lockedId)
+        assertEquals(450L, lock("spell_smite").lockLatencyMs)
+        assertEquals("haystack", lock("site_haystack_right").lockedId)   // name found mid-strip (right edge)
+        assertEquals("haystack", lock("site_haystack_left").lockedId)    // ...and left edge
+        assertEquals("dragon", lock("multi_set_dragon").lockedId)
     }
 
-    @Test fun a_site_name_is_found_mid_strip_by_the_sliding_window() {
-        assertEquals("haystack", outcome("site_haystack").lockedId)
+    @Test fun ambiguity_margin_accepts_a_noisy_winner_and_rejects_a_close_pair() {
+        assertEquals("flame", lock("similar_flame").lockedId)
+        assertEquals("flame", lock("noisy_winner_flamme").lockedId)      // clears threshold + margin
+        assertNull("equidistant Flame/Flare is rejected", lock("ambiguous_flae").lockedId)
     }
 
-    @Test fun a_similar_name_resolves_by_the_ambiguity_margin() {
-        assertEquals("flame", outcome("similar_flame").lockedId)   // Flame beats Flare
+    @Test fun qr_precedes_ocr_so_no_card_locks() {
+        assertNull(lock("qr_only").lockedId)
+        assertNull("a QR beside a card still suppresses the card path", lock("qr_near_card").lockedId)
     }
 
     @Test fun empty_and_non_card_text_never_lock() {
-        assertNull(outcome("empty").lockedId)
-        assertNull(outcome("non_card_text").lockedId)
+        assertNull(lock("empty").lockedId)
+        assertNull(lock("non_card_text").lockedId)
     }
 
     @Test fun baseline_current_matcher_false_locks_site_to_smite() {
-        // Documents the pre-Step-4 defect the class policy must fix.
-        assertEquals("smite", outcome("type_word_site").lockedId)
+        assertEquals("smite", lock("type_word_site").lockedId)   // documents the pre-Step-4 defect
     }
 
     @Test fun baseline_a_dropout_frame_defeats_current_confirmation() {
-        // Documents that Step 4 must make confirmation tolerant of transient OCR dropouts.
-        assertNull(outcome("dropout_while_present").lockedId)
+        assertNull(lock("dropout_while_present").lockedId)       // Step 4 must tolerate dropouts
     }
 
-    @Test fun report_aggregates_the_required_metrics() {
-        val r = ReplayHarness.report(corpus, matcher, SeedCorpus::classOf)
-        assertEquals("seed-v1", r.version)
-        assertEquals(7, r.total)
-        assertEquals(5, r.correct)                 // 3 identity-correct + 2 correct negatives
-        assertEquals(1, r.misses)                  // the dropout case
-        assertEquals(1, r.falseLocks)              // site->Smite
-        assertEquals(3, r.negativeCount)
-        assertEquals(1, r.negativeFalseLocks)
-        assertEquals(1.0 / 3, r.negativeFalseLockRate, 0.001)
-        assertEquals(1.0, r.perClass[CardClass.SITE]!!.recall, 0.001)
-        assertEquals(2.0 / 3, r.perClass[CardClass.SPELL]!!.recall, 0.001)   // smite + flame ok, dropout missed
-        assertEquals(2.0 / 3, r.perClass[CardClass.SPELL]!!.precision, 0.001) // smite, flame correct of {smite, flame, site->smite}
-        assertEquals(450L, r.latencyP50Ms)
+    @Test fun report_records_metadata_and_denominators() {
+        val r = ReplayHarness.report(corpus, matcher, catalog, SeedCorpus.meta())
+        assertEquals("seed-v2", r.corpusVersion)
+        assertEquals(64, r.corpusDigest.length)          // sha-256 hex
+        assertEquals(64, r.catalogDigest.length)
+        assertEquals(5, r.catalogSize)
+        assertEquals("name-level-baseline", r.policyMode)
+        assertNull(r.deviceBuild)
+        assertTrue(r.coverage.contains(Category.QR_ONLY) && r.coverage.contains(Category.SIMILAR_NAME))
+        assertEquals(6, r.negativeCount)                 // ambiguous_flae, type_word_site, empty, non_card, qr_only, qr_near_card
+        assertEquals(1, r.negativeFalseLocks)            // only site->Smite
+        assertEquals(1.0, r.perClass[CardClass.SITE]!!.recall, 0.001)   // both haystack cases lock
+        assertTrue(r.latencyP50Ms != null)
+    }
+
+    @Test fun report_is_fail_closed_on_an_unknown_expected_identity() {
+        val bad = corpus.copy(cases = corpus.cases + CorpusCase(
+            "ghost", Category.SPELL, listOf(FrameObservation(0, emptyList())), Expected.Identity("does-not-exist"),
+        ))
+        assertThrows(IllegalStateException::class.java) {
+            ReplayHarness.report(bad, matcher, catalog, SeedCorpus.meta())
+        }
+    }
+
+    @Test fun corpus_digest_is_deterministic_and_drift_sensitive() {
+        val a = CorpusValidator.corpusDigest(corpus)
+        assertEquals(a, CorpusValidator.corpusDigest(corpus))        // deterministic
+        val drifted = corpus.copy(cases = corpus.cases.dropLast(1))   // a change (without a version bump)
+        assertNotEquals("digest must change when contents drift", a, CorpusValidator.corpusDigest(drifted))
     }
 }

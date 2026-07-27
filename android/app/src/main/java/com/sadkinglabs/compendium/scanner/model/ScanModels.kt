@@ -62,3 +62,8 @@ object GuideGeometry {
 /** The frame-colour phase: purple while searching, gold while a (new) card is being
  *  confirmed. A lock flashes green then fades back - see [ScannerViewModel]. */
 enum class Phase { SEARCHING, DETECTING }
+
+/** Which strip a reading came from - the card's name-text orientation. EVIDENCE for the recognition
+ *  policy (Phase-2a: weighted evidence by default), NOT a hard class gate. Shared by the OCR
+ *  extractor, the session reducer, the shared FrameSelector, and the reliability corpus/harness. */
+enum class Source { TOP, LEFT_270, RIGHT_90 }

@@ -207,13 +207,28 @@ regression vs policy OFF; (b) **zero** cross-class false locks across the comple
 meaningfully lower-end Android device**. If that evidence is not available, **evidence-weighting ships
 and hard exclusion stays deferred.** No arbitrary absolute recall percentage is chosen up front.
 
-## 8. Frozen, versioned corpus + metrics (Phase 2a foundation)
-A **frozen, versioned** device corpus with expected identity + negative labels, covering: empty
-frames; non-card printed text; similar-name pairs; both site orientations; multi-set reprints;
-sleeved/foil/glare; partial title strips; QR-only and QR-near-card frames; same-card
-removal/reinsertion sequences. **Metrics tracked:** per-class precision & recall, false-lock rate on
-negatives, lock latency p50/p95. A debug-only replay harness drives it. ("Zero site→Smite errors"
-alone is too narrow — it is one negative slice of this.)
+## 8. Frozen, versioned corpus + metrics (Phase 2a foundation) — reworked after Codex review
+**Envelope (v2).** A case is a sequence of per-frame **analyzer observations**: the full set of strip
+readings the extractor would emit that frame — each an `OcrCandidate` carrying its **exact `Source`**
+(`TOP`/`LEFT_270`/`RIGHT_90`, now moved to `scanner.model` and emitted by `StripExtractor` instead of
+a collapsed `isSite`) — plus an **optional QR** payload. This is exactly the evidence production hands
+the selector, so a noisy TOP reading competing with a good site edge, QR-only, and QR-near-card are
+all representable (the old single-`siteDetected` reading could not).
+**Shared selection.** A single pure `FrameSelector.selectCard(candidates, matcher)` is used by BOTH
+`ScannerViewModel` and the harness, so a policy that passes the harness behaves identically on-device;
+Step 4 evolves source weighting inside it and both callers inherit it. QR precedes OCR in both.
+**Fail-closed + reproducible.** `CorpusValidator` rejects malformed corpora (duplicate ids,
+non-monotonic timestamps, empty frame lists, unknown expected identities) and the run **aborts** on an
+unknown predicted/expected class (no silent omission). Every `Report` pins **corpus digest, catalog
+digest + size, coverage, policy mode, matcher threshold/margin, reducer config, device/build, and the
+metric denominators**, so ON/OFF policy runs are provably comparable and content drift without a
+version bump is detectable. **Metrics:** per-class precision/recall, false-lock rate on negatives,
+lock latency p50/p95. Cover categories include OCR-dropout-while-present (null ≠ absence).
+**Off-device now (`seed-v2`, 5-card fixture catalog) vs device tier:** the harness + validator + seed
++ margin/QR cases are unit-tested off-device; the on-device **capture** UI (logging real readings into
+the frozen corpus against the full catalog) is the remaining device-gated part — and when it lands the
+harness/capture code moves to a **debug-only source set** and `BUILD.md` documents the workflow
+(deferred Minor). The 5-card seed is a framework demonstration + baseline, NOT a recall verdict.
 
 ## 9. Performance budgets (baseline + allowed regression, recorded before 2a completes)
 | Metric | Budget |

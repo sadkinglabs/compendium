@@ -9,7 +9,6 @@ import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.sadkinglabs.compendium.scanner.camera.TitleStripAnalyzer
 import com.sadkinglabs.compendium.scanner.match.MatchResult
-import com.sadkinglabs.compendium.scanner.match.Norm
 import com.sadkinglabs.compendium.scanner.model.Phase
 import com.sadkinglabs.compendium.scanner.model.Recognition
 import com.sadkinglabs.compendium.scanner.model.ScanKind
@@ -75,14 +74,9 @@ class ScannerViewModel : ViewModel() {
         // under a user reaching for "Add". Ignore all further OCR matches until then.
         if (locked != null) return
         _debug.value = ext.debug
-        val candidates = ext.candidates
         val m = matcher ?: return
-        var best: MatchResult? = null
-        var bestScore = -1.0
-        for (c in candidates) {
-            val r = m.match(Norm.normalize(c.text), c.isSite) ?: continue
-            if (r.score > bestScore) { best = r; bestScore = r.score }
-        }
+        // Selection is shared with the reliability harness via FrameSelector, so the two can't diverge.
+        val best: MatchResult? = FrameSelector.selectCard(ext.candidates, m)?.match
         val crossed = gate.onMatch(best?.card)
         if (crossed != null) {
             // Snapshot the deck headroom at lock time: limit from the catalog, inDeck

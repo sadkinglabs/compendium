@@ -1,5 +1,7 @@
 package com.sadkinglabs.compendium.scanner.session
 
+import com.sadkinglabs.compendium.scanner.model.Source
+
 /**
  * The scanner's session state machine as a PURE reducer (no Android, no coroutines, no I/O), so the
  * recognition/commit contract is provable off-device (proposal §3, tightened after Codex review).
@@ -21,9 +23,6 @@ package com.sadkinglabs.compendium.scanner.session
  * the frozen corpus must include OCR-dropout-while-present sequences. "NeedsHelp" (presence-gated
  * "couldn't identify") is deferred to Phase 2b.
  */
-
-/** Where the card's name text was read. Orientation is EVIDENCE, not a hard class gate. */
-enum class Source { TOP, LEFT_270, RIGHT_90 }
 
 /** A per-frame match candidate from the analyzer. */
 data class Candidate(

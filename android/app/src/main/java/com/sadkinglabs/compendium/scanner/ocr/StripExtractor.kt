@@ -6,6 +6,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognizer
 import com.sadkinglabs.compendium.scanner.model.GuideGeometry
+import com.sadkinglabs.compendium.scanner.model.Source
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -32,17 +33,17 @@ class StripExtractor(private val recognizer: TextRecognizer) {
         val top = recognizeStrip(frame, GuideGeometry.topStrip.toPixels(w, h), 0)
         sb?.append("TOP  : ${short(top)}\n")
         val topWord = top != null && hasWord(top)
-        if (topWord) cands.add(OcrCandidate(top!!, false))
+        if (topWord) cands.add(OcrCandidate(top!!, Source.TOP))
         if (topWord && !debug) return Extraction(cands, "")   // fast path: standard card = 1 OCR
 
         // Sites: the name reads on the RIGHT edge at 90° and the LEFT edge at 270°
         // (verified from device readouts) - those two are all we need to match.
         val r90 = recognizeStrip(frame, GuideGeometry.rightStrip.toPixels(w, h), 90)
         sb?.append("R90 : ${short(r90)}\n")
-        if (r90 != null && hasWord(r90)) cands.add(OcrCandidate(r90, true))
+        if (r90 != null && hasWord(r90)) cands.add(OcrCandidate(r90, Source.RIGHT_90))
         val l270 = recognizeStrip(frame, GuideGeometry.leftStrip.toPixels(w, h), 270)
         sb?.append("L270: ${short(l270)}\n")
-        if (l270 != null && hasWord(l270)) cands.add(OcrCandidate(l270, true))
+        if (l270 != null && hasWord(l270)) cands.add(OcrCandidate(l270, Source.LEFT_270))
 
         // Debug only: also read the opposite rotations for the readout (not matched).
         if (debug) {
