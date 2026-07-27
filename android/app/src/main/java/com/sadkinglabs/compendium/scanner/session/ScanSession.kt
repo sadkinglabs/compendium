@@ -48,13 +48,20 @@ data class ScanConfig(
     val minObservations: Int = 3,
     val releaseMs: Long = 400,           // the blocked card must be absent this long to release
     val minReleaseObservations: Int = 3, // ...AND this many absence frames (dropout is not absence)
+    // A confirmation in progress survives a brief OCR dropout: a blank frame holds the count instead
+    // of resetting, but only while the wall-clock gap since the last REAL read stays within this bound.
+    // Derived from measured analyzer cadence (frozen corpora: present-frame gaps p50 662ms, max 1944ms;
+    // a flagged stale blank was 2265ms), so real scanning never resets yet a stall/background does.
+    val maxConfirmGapMs: Long = 2000,
 )
 
 sealed interface ScanState {
     data object Searching : ScanState
-    /** Confirming a candidate: same-id observations accumulating over time. Reused as the "alternate"
-     *  confirmation carried inside [Suppressed]. */
-    data class Confirming(val candidate: Candidate, val sinceMs: Long, val observations: Int) : ScanState
+    /** Confirming a candidate: same-id observations accumulating over time. [sinceMs] is the clock
+     *  start (first sighting); [lastObsMs] is the last REAL observation, so a tolerated blank (which
+     *  does not advance it) lets the gap-since-last-read grow until it trips the stale reset. Reused
+     *  as the "alternate" confirmation carried inside [Suppressed]. */
+    data class Confirming(val candidate: Candidate, val sinceMs: Long, val observations: Int, val lastObsMs: Long) : ScanState
     /** A confirmed, IMMUTABLE result is shown; awaiting the single commit tap (or a reject). */
     data class Result(val snapshot: RecognitionSnapshot) : ScanState
     /** A commit is in flight (one at a time); awaiting the ack. */
@@ -128,9 +135,8 @@ fun reduce(state: ScanState, event: ScanEvent, cfg: ScanConfig = ScanConfig()): 
 private fun onObserved(state: ScanState, ev: ScanEvent.Observed, cfg: ScanConfig): ScanState {
     val c = ev.candidate
     return when (state) {
-        is ScanState.Searching -> if (c != null) ScanState.Confirming(c, ev.nowMs, 1) else state
-        is ScanState.Confirming -> stepConfirm(state, c, ev.nowMs, cfg)
-            ?: if (c == null) ScanState.Searching else ScanState.Confirming(c, ev.nowMs, 1)
+        is ScanState.Searching -> if (c != null) ScanState.Confirming(c, ev.nowMs, 1, ev.nowMs) else state
+        is ScanState.Confirming -> onConfirming(state, c, ev.nowMs, cfg)
         // Immutable while a result is shown / writing / saved / awaiting retry.
         is ScanState.Result -> state
         is ScanState.Committing -> state
@@ -140,14 +146,39 @@ private fun onObserved(state: ScanState, ev: ScanEvent.Observed, cfg: ScanConfig
     }
 }
 
-/** Advance a confirmation for [c]. Returns a Result once time+observations are met, a continuing
- *  Confirming for the same card, or null when [c] is null / a different card (caller decides). */
+/**
+ * The primary confirmation step, dropout-tolerant. A still-present card can drop a frame (blank OCR),
+ * so a blank HOLDS the accumulated count instead of resetting - but only while the wall-clock gap
+ * since the last real read stays within [ScanConfig.maxConfirmGapMs]. A blank does not advance
+ * [Confirming.lastObsMs], so a run of blanks grows the gap monotonically until it trips the stale
+ * reset - bounding consecutive blanks by TIME, not count (a frame count can't bound a stall/background).
+ * A blank never counts as evidence: a lock still needs [ScanConfig.minObservations] real reads.
+ */
+private fun onConfirming(cur: ScanState.Confirming, c: Candidate?, now: Long, cfg: ScanConfig): ScanState = when {
+    // Brief dropout: a blank HOLDS the count - but only within the time bound since the last REAL read.
+    // The bound gates the BLANK hold ONLY (not same-card continuation): a run of blanks grows the gap
+    // until it crosses maxConfirmGapMs, at which point the card is presumed gone and confirmation drops.
+    // (Same-card reads are NOT time-gated: production cadence is sub-second, and a real card can read
+    // slowly; a background/foreground stall is handled by an explicit lifecycle reset at integration.)
+    c == null -> if (now - cur.lastObsMs > cfg.maxConfirmGapMs) ScanState.Searching else cur
+    c.cardId == cur.candidate.cardId -> {
+        val obs = cur.observations + 1
+        if (now - cur.sinceMs >= cfg.minConfirmMs && obs >= cfg.minObservations)
+            ScanState.Result(RecognitionSnapshot(c.cardId, c.name, c.source))
+        else cur.copy(candidate = c, observations = obs, lastObsMs = now)   // keep sinceMs (clock start)
+    }
+    else -> ScanState.Confirming(c, now, 1, now)           // a different card restarts confirmation
+}
+
+/** Advance the SUPPRESSED alternate confirmation for [c]. Returns a Result once time+observations are
+ *  met, a continuing Confirming for the same card, or null when [c] is null / a different card (the
+ *  Suppressed caller resets the alternate on those, so it never holds through a dropout - by design). */
 private fun stepConfirm(cur: ScanState.Confirming, c: Candidate?, now: Long, cfg: ScanConfig): ScanState? {
     if (c == null || c.cardId != cur.candidate.cardId) return null
     val obs = cur.observations + 1
     return if (now - cur.sinceMs >= cfg.minConfirmMs && obs >= cfg.minObservations)
         ScanState.Result(RecognitionSnapshot(c.cardId, c.name, c.source))
-    else cur.copy(candidate = c, observations = obs)   // keep sinceMs (clock started at first sighting)
+    else cur.copy(candidate = c, observations = obs, lastObsMs = now)   // keep sinceMs (clock start)
 }
 
 private fun onSuppressedObserved(s: ScanState.Suppressed, c: Candidate?, now: Long, cfg: ScanConfig): ScanState = when {
@@ -167,7 +198,7 @@ private fun onSuppressedObserved(s: ScanState.Suppressed, c: Candidate?, now: Lo
         val alt = s.alternate
         // First sighting of this alternate = observation 1; a continuing one steps (may reach Result).
         val newAlt: ScanState =
-            if (alt == null || alt.candidate.cardId != c.cardId) ScanState.Confirming(c, now, 1)
+            if (alt == null || alt.candidate.cardId != c.cardId) ScanState.Confirming(c, now, 1, now)
             else stepConfirm(alt, c, now, cfg)!!   // same card as the alternate -> never null
         when (newAlt) {
             is ScanState.Result -> newAlt                               // alternate won -> release suppression

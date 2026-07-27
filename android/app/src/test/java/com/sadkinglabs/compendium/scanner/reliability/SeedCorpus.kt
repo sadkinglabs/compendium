@@ -47,8 +47,8 @@ object SeedCorpus {
             CorpusCase("type_word_site", Category.NON_CARD_TEXT, steady(listOf(right("site"))), Expected.NoLock),
             CorpusCase("empty", Category.EMPTY, steady(emptyList(), times = listOf(0L, 150L, 300L, 450L, 600L)), Expected.NoLock),
             CorpusCase("non_card_text", Category.NON_CARD_TEXT, steady(listOf(top("collector illus reserved"))), Expected.NoLock),
-            // OCR dropout while the card is present: the current reducer resets on the empty frame, so
-            // this MISSES today (evidence Step 4 needs dropout-tolerant confirmation).
+            // OCR dropout while the card is present: the blank frame is HELD within the confirmation
+            // gap (dropout-tolerant confirmation), so this locks to smite at 450ms.
             CorpusCase(
                 "dropout_while_present", Category.DROPOUT_WHILE_PRESENT,
                 listOf(

@@ -63,8 +63,43 @@ class ScanSessionReducerTest {
         assertEquals("c2", s.candidate.cardId); assertEquals(1, s.observations)
     }
 
-    @Test fun losing_candidate_returns_to_searching() {
-        assertEquals(ScanState.Searching, observe(observe(ScanState.Searching, cand(), 0), null, 100))
+    // --- dropout-tolerant confirmation (scanner-dropout-tolerant-confirm proposal) ---
+
+    /** THE win: a still-present card drops a frame mid-confirm; the blank HOLDS the count (within the
+     *  time bound) and the next real read completes the lock. Frozen v2's Lookout couldn't supply a
+     *  third real read, so this synthetic sequence is the proof (Codex Blocker). */
+    @Test fun brief_dropout_is_held_and_confirmation_completes() {
+        var s: ScanState = observe(ScanState.Searching, cand(), 0)   // obs1
+        s = observe(s, cand(), 500)                                   // obs2
+        s = observe(s, null, 1000)                                    // blank, gap 500<=2000 -> held
+        assertTrue("blank holds confirmation", s is ScanState.Confirming)
+        assertEquals("blank is not evidence", 2, (s as ScanState.Confirming).observations)
+        s = observe(s, cand(), 1500)                                  // obs3, elapsed 1500>=350 -> Result
+        assertEquals("c1", (s as ScanState.Result).snapshot.cardId)
+    }
+
+    /** Codex Major: the BLANK hold is time-bounded - a blank beyond maxConfirmGapMs is a stall, not a
+     *  dropout, so the presumed-gone card drops instead of the tolerance persisting arbitrarily. (Same-
+     *  card continuation is intentionally NOT time-gated: production cadence is sub-second and a real
+     *  card can read slowly; a true background pause is caught by an explicit lifecycle reset at the
+     *  reducer->ViewModel integration, since the reducer runs headless here.) */
+    @Test fun blank_beyond_gap_bound_drops_the_stale_hold() {
+        var s: ScanState = observe(ScanState.Searching, cand(), 0)   // obs1
+        s = observe(s, cand(), 500)                                   // obs2, lastObs=500
+        s = observe(s, null, 1000)                                    // gap 500<=2000 -> held
+        assertTrue(s is ScanState.Confirming)
+        s = observe(s, null, 3000)                                    // gap since lastObs(500)=2500>2000 -> drop
+        assertEquals(ScanState.Searching, s)
+    }
+
+    /** A blank never counts toward the observation bar: time can pass but a lock still needs
+     *  minObservations REAL reads. */
+    @Test fun blank_does_not_satisfy_the_observation_threshold() {
+        var s: ScanState = observe(ScanState.Searching, cand(), 0)   // obs1
+        s = observe(s, cand(), 500)                                   // obs2, elapsed already >=350
+        s = observe(s, null, 900)                                     // blank held, still obs2
+        assertTrue("time met but only 2 real reads -> no early lock", s is ScanState.Confirming)
+        assertEquals(2, (s as ScanState.Confirming).observations)
     }
 
     // --- Result immutability ---

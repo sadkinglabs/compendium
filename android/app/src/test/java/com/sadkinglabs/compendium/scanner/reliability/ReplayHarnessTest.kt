@@ -57,8 +57,12 @@ class ReplayHarnessTest {
         assertEquals("smite", lock("type_word_site").lockedId)   // documents the pre-Step-4 defect
     }
 
-    @Test fun baseline_a_dropout_frame_defeats_current_confirmation() {
-        assertNull(lock("dropout_while_present").lockedId)       // Step 4 must tolerate dropouts
+    @Test fun confirmation_tolerates_a_present_card_dropout() {
+        // Was the Step-4 baseline defect (a blank frame reset confirmation); now the blank is HELD
+        // within the time bound, so Smite/∅/Smite/Smite/Smite confirms.
+        val o = lock("dropout_while_present")
+        assertEquals("smite", o.lockedId)
+        assertEquals(450L, o.lockLatencyMs)
     }
 
     @Test fun report_records_metadata_and_denominators() {
