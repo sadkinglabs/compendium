@@ -1,12 +1,6 @@
 package com.sadkinglabs.compendium.scanner.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,7 +37,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -52,8 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,14 +52,12 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sadkinglabs.compendium.scanner.model.Recognition
 import com.sadkinglabs.compendium.scanner.model.ScanKind
 import com.sadkinglabs.compendium.scanner.model.SetRef
-import kotlin.math.cos
-import kotlin.math.sin
-import kotlin.random.Random
 
 /**
  * The recognition surface: a Material 3 card that springs up on lock (re-springs when the
@@ -83,6 +72,7 @@ fun RecognitionCard(
     rec: Recognition,
     collectionMode: Boolean,
     deckMode: Boolean,
+    reveal: Float,
     onSearchCodex: () -> Unit,
     onAddCollection: (String?) -> Unit,
     onAddWishlist: (String?) -> Unit,
@@ -95,16 +85,15 @@ fun RecognitionCard(
 ) {
     val accent = accentFor(rec.kind)
     val key = rec.cardId ?: rec.url ?: rec.title
-    val reveal = remember(key) { Animatable(0f) }
+    // The tray rides the SHARED reveal clock and arrives LATE (0.52 -> 0.875 of the reveal) so it
+    // never competes with the frame + name during their beats. `reveal` is 1f at once under
+    // reduced motion, so `tray` is 1f and the sheet is simply present.
+    val tray = ((reveal - 0.52f) / (0.875f - 0.52f)).coerceIn(0f, 1f)
     // Collection-mode quantity, reset for each newly recognised card.
     var qty by remember(key) { mutableStateOf(1) }
     // Collection-mode set choice: a single-set card auto-selects; a reprint starts
     // null (a pick is required); an unknown card has no sets (files Unspecified).
     var selectedSet by remember(key) { mutableStateOf(if (rec.sets.size == 1) rec.sets[0].code else null) }
-    LaunchedEffect(key) {
-        reveal.snapTo(0f)
-        reveal.animateTo(1f, spring(dampingRatio = 0.52f, stiffness = Spring.StiffnessMediumLow))
-    }
     val eyebrow: String; val title: String; val subtitle: String?
     when (rec.kind) {
         ScanKind.CARD -> { eyebrow = "RECOGNISED CARD"; title = rec.title; subtitle = null }
@@ -116,11 +105,8 @@ fun RecognitionCard(
             .fillMaxWidth()
             .padding(16.dp)
             .graphicsLayer {
-                val v = reveal.value.coerceIn(0f, 1f)
-                val s = 0.90f + 0.10f * v
-                scaleX = s; scaleY = s
-                alpha = v
-                translationY = (1f - v) * 48f
+                alpha = tray
+                translationY = (1f - tray) * 40f   // slide up on the shared clock, no scale pop
             }
             .pointerInput(Unit) { detectTapGestures { } }  // swallow taps (don't dismiss on sheet tap)
             .semantics { contentDescription = "$eyebrow: $title" },
@@ -131,9 +117,15 @@ fun RecognitionCard(
         shadowElevation = 16.dp,
     ) {
         Column(Modifier.fillMaxWidth().padding(22.dp)) {
-            Text(eyebrow, color = accent, fontSize = 10.5f.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.5f.sp)
-            Spacer(Modifier.height(7.dp))
-            Text(title, color = MaterialTheme.colorScheme.onSurface, fontSize = 25.sp, fontWeight = FontWeight.Bold, lineHeight = 29.sp)
+            Text(eyebrow, color = accent, fontFamily = FontDisplay, fontSize = 10.5f.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.5f.sp)
+            Spacer(Modifier.height(6.dp))
+            // Compact heading: the large gilt name is already the payoff above the frame, so the
+            // tray restates it quietly (two lines max) rather than competing with a second big title.
+            Text(
+                title, color = MaterialTheme.colorScheme.onSurface, fontFamily = FontDisplay,
+                fontSize = 18.sp, fontWeight = FontWeight.Bold, lineHeight = 22.sp,
+                maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
             // Single-set card: its set shown as a quiet gilt pill (as if recognised).
             if (rec.kind == ScanKind.CARD && rec.sets.size == 1) {
                 Spacer(Modifier.height(11.dp))
@@ -141,7 +133,7 @@ fun RecognitionCard(
             }
             if (subtitle != null) {
                 Spacer(Modifier.height(7.dp))
-                Text(subtitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f), fontSize = 14.sp, lineHeight = 20.sp)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f), fontFamily = FontRead, fontSize = 15.sp, lineHeight = 21.sp)
             }
             Spacer(Modifier.height(18.dp))
             Hairline()
@@ -378,67 +370,6 @@ private fun StepButton(glyph: String, accent: Color, enabled: Boolean, onClick: 
     ) {
         Text(glyph, color = accent.copy(alpha = if (enabled) 1f else 0.35f), fontSize = 26.sp, fontWeight = FontWeight.Bold)
     }
-}
-
-private data class Spark(val angle: Float, val dist: Float, val scale: Float, val delay: Float)
-
-/**
- * A one-shot sparkle burst in the result's type [color], drawn full-screen and radiating
- * from just above the sheet so it's visible over the camera (not hidden behind the opaque
- * card). Re-plays whenever [key] (the recognised card id / deck url) changes.
- */
-@Composable
-fun SparkleBurst(key: Any, color: Color, modifier: Modifier = Modifier) {
-    val progress = remember(key) { Animatable(0f) }
-    LaunchedEffect(key) {
-        progress.snapTo(0f)
-        progress.animateTo(1f, tween(950, easing = FastOutSlowInEasing))
-    }
-    val sparks = remember(key) {
-        val rnd = Random(key.hashCode())
-        List(24) {
-            Spark(
-                angle = rnd.nextFloat() * 360f,
-                dist = 0.35f + rnd.nextFloat() * 0.65f,
-                scale = 0.7f + rnd.nextFloat() * 1.0f,
-                delay = rnd.nextFloat() * 0.30f,
-            )
-        }
-    }
-    Canvas(modifier.fillMaxSize()) {
-        val cx = size.width / 2f
-        val cy = size.height * 0.62f            // just above the bottom sheet
-        val maxD = size.height * 0.32f
-        val p = progress.value
-        for (s in sparks) {
-            val local = ((p - s.delay) / (1f - s.delay)).coerceIn(0f, 1f)
-            if (local <= 0f) continue
-            val rad = Math.toRadians(s.angle.toDouble())
-            val d = s.dist * maxD * local
-            val x = cx + (cos(rad) * d).toFloat()
-            val y = cy + (sin(rad) * d).toFloat()
-            val fade = 1f - local
-            val sz = sin(local * Math.PI).toFloat() * 16f * s.scale
-            if (sz > 0.5f) sparkle(x, y, sz, color.copy(alpha = fade))
-        }
-    }
-}
-
-/** A 4-point star. */
-private fun DrawScope.sparkle(cx: Float, cy: Float, r: Float, color: Color) {
-    val inner = r * 0.34f
-    val path = Path().apply {
-        moveTo(cx, cy - r)
-        lineTo(cx + inner, cy - inner)
-        lineTo(cx + r, cy)
-        lineTo(cx + inner, cy + inner)
-        lineTo(cx, cy + r)
-        lineTo(cx - inner, cy + inner)
-        lineTo(cx - r, cy)
-        lineTo(cx - inner, cy - inner)
-        close()
-    }
-    drawPath(path, color)
 }
 
 /** Shown when camera permission is denied. */

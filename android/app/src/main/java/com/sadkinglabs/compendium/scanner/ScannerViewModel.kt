@@ -70,6 +70,10 @@ class ScannerViewModel : ViewModel() {
     )
 
     private fun onResult(ext: Extraction) {
+        // FROZEN while a result is shown: the recognised identity is immutable until the user
+        // dismisses ("Scan another") or an action completes, so a card can never change out from
+        // under a user reaching for "Add". Ignore all further OCR matches until then.
+        if (locked != null) return
         _debug.value = ext.debug
         val candidates = ext.candidates
         val m = matcher ?: return
@@ -99,8 +103,8 @@ class ScannerViewModel : ViewModel() {
 
     /** A `compendium://` QR was read - an instant, unambiguous lock (deck or match). */
     private fun onLink(url: String) {
+        if (locked != null) return   // frozen while a result is shown (see onResult)
         val u = url.trim()
-        if (u.equals(locked?.url, ignoreCase = true)) return   // already showing this QR
         val kind = when {
             u.startsWith("compendium://deck", ignoreCase = true) -> ScanKind.DECK
             u.startsWith("compendium://match", ignoreCase = true) -> ScanKind.MATCH

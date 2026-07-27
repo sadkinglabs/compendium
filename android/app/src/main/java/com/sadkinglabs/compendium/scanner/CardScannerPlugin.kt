@@ -65,6 +65,9 @@ class CardScannerPlugin : Plugin() {
             }
         }
 
+        // The resolved reduced-motion preference, so the reveal shows still states.
+        val reduceMotion = call.getBoolean("reduceMotion") ?: false
+
         // Build the index off the caller thread, then hand off + launch.
         Thread {
             val matcher = Matcher(CardIndex(cards), threshold)
@@ -72,6 +75,7 @@ class CardScannerPlugin : Plugin() {
             ScannerChannel.minStreak = minStreak
             ScannerChannel.mode = mode
             ScannerChannel.deckCounts = counts
+            ScannerChannel.reduceMotion = reduceMotion
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }
             terminated.set(false)

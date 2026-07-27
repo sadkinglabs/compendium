@@ -110,9 +110,14 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
     } catch { failed += 1; }
   });
 
+  // The resolved reduced-motion preference (user setting OR OS `prefers-reduced-motion`,
+  // both folded into the body class by appearance.js). Passed into the native scanner so
+  // its reveal honours the app-wide reduced-motion contract with deterministic still states.
+  const reduceMotion = typeof document !== 'undefined' && document.body.classList.contains('reduce-motion');
+
   try {
     const cards = await catalogForScan();
-    const res = await CardScanner.scan({ cards, mode, deckCounts });
+    const res = await CardScanner.scan({ cards, mode, deckCounts, reduceMotion });
     if (res?.action === 'codex' && res.cardId) {
       onOpenCard?.(res.cardId, res.name);
     } else if (res?.action === 'deckUrl' && res.url) {

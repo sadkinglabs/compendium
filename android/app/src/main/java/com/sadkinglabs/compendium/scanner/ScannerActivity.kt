@@ -45,9 +45,10 @@ class ScannerActivity : ComponentActivity() {
             return
         }
 
-        // Snapshot once - the mode is fixed for this scan session.
+        // Snapshot once - the mode + motion preference are fixed for this scan session.
         val collectionMode = ScannerChannel.mode == "collection"
         val deckMode = ScannerChannel.mode == "deck"
+        val reduceMotion = ScannerChannel.reduceMotion
 
         setContent {
             CompendiumScannerTheme {
@@ -68,22 +69,25 @@ class ScannerActivity : ComponentActivity() {
                 val phase by vm.phase.collectAsStateWithLifecycle()
                 val lockEvent by vm.lockEvent.collectAsStateWithLifecycle()
                 val lastTick = remember { longArrayOf(0L) }
-                // Haptics: a light tick while a new card is being confirmed (debounced so
-                // detection-threshold flicker doesn't buzz repeatedly), a growing pulse on lock.
-                LaunchedEffect(lockEvent) {
-                    if (lockEvent > 0) ScannerHaptics.lockPulse(this@ScannerActivity)
-                }
+                // Engaged: a light tick when a candidate is being read (debounced so threshold
+                // flicker can't buzz repeatedly) - the build.
                 LaunchedEffect(phase) {
                     if (phase == Phase.DETECTING) {
                         val now = System.currentTimeMillis()
-                        if (now - lastTick[0] > 1200L) { lastTick[0] = now; ScannerHaptics.tick(this@ScannerActivity) }
+                        if (now - lastTick[0] > 800L) { lastTick[0] = now; ScannerHaptics.tick(this@ScannerActivity) }
                     }
+                }
+                // The climax: a growing pulse on final recognition. Keyed on lockEvent, so a newer
+                // lock restarts it and a stationary card (no new lock) never re-fires.
+                LaunchedEffect(lockEvent) {
+                    if (lockEvent > 0) ScannerHaptics.culminate(this@ScannerActivity)
                 }
                 ScannerScreen(
                     granted = granted,
                     viewModel = vm,
                     collectionMode = collectionMode,
                     deckMode = deckMode,
+                    reduceMotion = reduceMotion,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
                     onAdd = { rec, action, set -> onAdd(rec, action, set) },
                     onSaveCollection = { rec, qty, set -> onSaveCollection(rec, qty, set) },

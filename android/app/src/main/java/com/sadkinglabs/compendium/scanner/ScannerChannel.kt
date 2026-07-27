@@ -26,6 +26,10 @@ object ScannerChannel {
      *  UI thread (add), read on the analysis thread (Recognition build). */
     @Volatile var deckCounts: MutableMap<String, Int> = ConcurrentHashMap()
 
+    /** The resolved app-wide reduced-motion preference (user setting OR OS preference),
+     *  passed in at scan start so the reveal can substitute deterministic still states. */
+    @Volatile var reduceMotion: Boolean = false
+
     /** Streaming add-actions (collection / wishlist) -> plugin.notifyListeners. The
      *  Activity stays open and keeps scanning. */
     @Volatile var onEvent: ((JSObject) -> Unit)? = null
@@ -40,5 +44,6 @@ object ScannerChannel {
         onTerminal = null
         mode = "universal"
         deckCounts = ConcurrentHashMap()
+        reduceMotion = false
     }
 }

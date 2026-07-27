@@ -6,28 +6,33 @@ import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
 
-/** Native haptics for the scanner: a light tick when a card is first detected, and a
- *  GROWING pulse (soft build to a firm finish) on lock, to accompany the reveal. */
+/** Native haptics for the scanner. A light [tick] signals the scanner has ENGAGED a card
+ *  (recognising), then [culminate] is a GROWING pulse that builds to a firm finish on final
+ *  recognition - the "it felt like an achievement" climax from 1.0.2. */
 object ScannerHaptics {
 
+    /** A light, brief tick - the scanner has engaged a candidate and is reading it. */
     fun tick(context: Context) {
         val v = vibrator(context) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            v.vibrate(VibrationEffect.createOneShot(18, 60))
+            v.vibrate(VibrationEffect.createOneShot(14, 70))
         } else {
-            legacy(v, 18)
+            legacy(v, 14)
         }
     }
 
-    fun lockPulse(context: Context) {
+    /** The recognition climax: amplitude ramps from soft to strong and lands on a firm, sustained
+     *  finish, so it reads as a build culminating in an achievement (not a flat single tick). */
+    fun culminate(context: Context) {
         val v = vibrator(context) ?: return
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // rising amplitude -> "a growing long pulse as we get there"
-            val timings = longArrayOf(0, 40, 40, 40, 40, 40, 40, 40, 150)
-            val amps = intArrayOf(0, 45, 75, 110, 145, 180, 215, 240, 255)
+            // Ramps quickly then lands on a firm ~140ms finish so the peak coincides with the gold
+            // bloom (~150-230ms into the reveal), not after it.
+            val timings = longArrayOf(0, 30, 30, 30, 140)
+            val amps = intArrayOf(0, 90, 160, 220, 255)
             v.vibrate(VibrationEffect.createWaveform(timings, amps, -1))
         } else {
-            legacy(v, 300)
+            legacy(v, 320)
         }
     }
 

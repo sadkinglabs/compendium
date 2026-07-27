@@ -1,7 +1,11 @@
 package com.sadkinglabs.compendium.scanner.ui
 
 import androidx.camera.view.PreviewView
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -9,20 +13,28 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +58,7 @@ fun ScannerScreen(
     viewModel: ScannerViewModel,
     collectionMode: Boolean,
     deckMode: Boolean,
+    reduceMotion: Boolean,
     onSearchCodex: (Recognition) -> Unit,
     onAdd: (Recognition, String, String?) -> Unit,
     onSaveCollection: (Recognition, Int, String?) -> Unit,
@@ -61,6 +74,18 @@ fun ScannerScreen(
     val debug by viewModel.debug.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    // ONE presentation clock (0->1 over 800ms) keyed to each lock, shared by the overlay reveal
+    // AND the result tray so they are staged on a single timeline instead of drifting apart.
+    // Reduced motion snaps to the settled end-state.
+    val reveal = remember { Animatable(0f) }
+    LaunchedEffect(lockEvent) {
+        if (lockEvent > 0) {
+            if (reduceMotion) reveal.snapTo(1f)
+            else { reveal.snapTo(0f); reveal.animateTo(1f, tween(800)) }
+        }
+    }
+    val revealT = reveal.value
 
     Box(Modifier.fillMaxSize()) {
         if (granted) {
@@ -79,7 +104,7 @@ fun ScannerScreen(
                     pv
                 },
             )
-            CameraOverlay(phase, lockEvent, sheet?.let { accentFor(it.kind) } ?: PillarGold)
+            CameraOverlay(phase, sheet, reduceMotion, revealT)
         } else {
             PermissionPrompt(onClose)
         }
@@ -89,11 +114,11 @@ fun ScannerScreen(
             val key = rec.cardId ?: rec.url ?: rec.title
             // Tap anywhere outside the sheet to dismiss (the sheet swallows its own taps).
             Box(Modifier.fillMaxSize().pointerInput(key) { detectTapGestures { onDismissSheet() } })
-            SparkleBurst(key, accentFor(rec.kind), Modifier.fillMaxSize())
             RecognitionCard(
                 rec = rec,
                 collectionMode = collectionMode,
                 deckMode = deckMode,
+                reveal = revealT,
                 onSearchCodex = { onSearchCodex(rec) },
                 onAddCollection = { set ->
                     // Universal-mode quick +1: files onto the chosen printing (single-set
@@ -140,14 +165,24 @@ fun ScannerScreen(
             )
         }
 
-        // Close (exit scanner) - drawn last so it stays tappable above the dismiss scrim.
-        TextButton(
-            onClick = onClose,
-            modifier = Modifier
-                .align(Alignment.TopStart)
+        // Close (exit scanner) - the app's language: a gold X in a round button, TOP-RIGHT.
+        // Drawn last so it stays tappable above the dismiss scrim. The reveal status text is
+        // offset below this corner so the two never conflict.
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(8.dp),
-        ) { Text("Close", color = Color.White) }
+                .padding(8.dp)
+                .size(48.dp)   // architectural touch-target floor (OD-15)
+                .clip(CircleShape)
+                .background(Color(0x59000000))
+                .border(1.dp, PillarGold.copy(alpha = 0.45f), CircleShape)
+                .clickable(onClick = onClose)
+                .semantics { contentDescription = "Close scanner" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(22.dp))
+        }
 
         SnackbarHost(
             snackbarHost,
