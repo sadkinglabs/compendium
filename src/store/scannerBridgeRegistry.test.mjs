@@ -47,6 +47,16 @@ test('resolving a non-pending request is a no-op (double-resolve safe)', () => {
   assert.deepEqual(r.stats(), { pending: 0, resolved: 0, mutationInFlight: false });
 });
 
+test('a reused id with a different fingerprint is rejected as a collision, not replayed', () => {
+  const r = createScannerRegistry();
+  r.admit('r1', true, 'own:c1:Alpha:foil:1');
+  r.resolve('r1', { status: 'committed' });
+  // Same id, SAME operation -> safe replay.
+  assert.equal(r.admit('r1', true, 'own:c1:Alpha:foil:1').action, 'replay');
+  // Same id, DIFFERENT operation -> collision, must not replay the old ack.
+  assert.deepEqual(r.admit('r1', true, 'own:c2:Beta:std:3'), { action: 'reject', reason: 'id-reuse-collision' });
+});
+
 test('clear forgets everything and frees the mutation slot', () => {
   const r = createScannerRegistry();
   r.admit('m1', true);

@@ -56,6 +56,14 @@ class RequestRegistryTest {
         assertEquals(1, r.pendingCount())
     }
 
+    @Test fun rejects_reuse_of_a_completed_request_id() {
+        val r = reg()
+        r.submit(S, "r1", RequestRegistry.Kind.MUTATION)
+        assertTrue(r.ack(S, "r1"))
+        // Reusing an id that already completed this session is a collision, not a fresh request.
+        assertEquals(RequestRegistry.Admit.REUSED_ID, r.submit(S, "r1", RequestRegistry.Kind.MUTATION))
+    }
+
     @Test fun clear_forgets_everything() {
         val r = reg()
         r.submit(S, "m1", RequestRegistry.Kind.MUTATION)

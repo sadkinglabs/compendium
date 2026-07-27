@@ -59,18 +59,31 @@ collection/deck/list state.
 `reduceMotion`, `imagesDisabled`, `catalogVersion`, **`fontScale`** (the app's `--ui-scale`
 preference, handed off like `reduceMotion` and applied to Compose `Density` — Phase-1 checklist #5
 found the native scanner honours neither OS font size nor the in-app slider today).
-**Session state machine** (pure Kotlin reducer, unit-tested):
+**Session state machine** (pure Kotlin reducer, unit-tested — implemented + Codex-hardened):
 ```
-Searching → Reading → Confirming(candidate, score, margin, source, elapsed)
-          → Result(immutable snapshot) → Committing(requestId) → Saved → AwaitingRemoval → Searching
-Reading   → NeedsHelp ("couldn't identify")     // presence-gated, Phase 2b, added last
-Result    → Rejected("Not this card") → AwaitingRemoval
-Committing → RetryableError (Result + selections preserved)
+Searching → Confirming(candidate, sinceMs, observations)
+          → Result(immutable snapshot)
+          → Committing(requestId) → Saved(snapshot, opaque outcome) → Suppressed(COMMITTED) → Searching
+Committing → RetryableError → (RetryRequested) → Committing        // retry with a fresh id
+Committing → Result                                                // AckRejected / AckCancelled
+Result     → Suppressed(REJECTED)                                  // "Not this card"
+Suppressed → Result(alternate)                                     // a DIFFERENT card fully confirms
+Suppressed → Searching                                            // blocked card cleared (time AND obs)
+// NeedsHelp ("couldn't identify") is presence-gated, Phase 2b, added last.
 ```
-Properties: **time-based + minimum-observation** confirmation (not raw `minStreak`); **Result identity
-immutable while shown**; **analysis pauses while a Result/write is actionable** (stop the 350ms OCR/QR
-loop the VM currently ignores); **"Not this card" suppresses the rejected candidate until the frame
-clears**; **a failed write preserves the Result + selections**.
+Key corrections from the Codex review of the implemented reducer:
+- **`AwaitingRemoval` and `Rejected` are unified into one `Suppressed(blockedId, reason, …)`** that
+  carries an in-progress *alternate* confirmation. Suppression lifts ONLY when the blocked card clears
+  for a sustained interval (**time AND a minimum observation count** — `candidate==null` is "no
+  confident match", not proven absence, so OCR dropout can't release it) **or** a *different* card
+  **completes** confirmation. A single transient alternate frame can never lift suppression (the bug
+  where a stationary committed/rejected card could relock).
+- **The write lifecycle is complete:** `Saved` carries an opaque `CommitOutcome` (for authoritative
+  counts + `mutationId`/undo) before rearming; `AckCancelled` and mismatched/stale acks are handled;
+  `RetryRequested(newId)` drives the inline retry; **Dismiss cannot rearm while `Committing`/`Saved`**
+  (terminal scanner closure is the Activity's concern, not a reducer rearm).
+Properties: time+observation confirmation; Result identity immutable while shown/committing/saved;
+analysis pauses while a Result/write is actionable; one mutation in flight.
 
 ## 4. The bridge — transport, lifecycle, idempotency
 Concrete Capacitor transport (this is where idempotency actually lives):
@@ -102,6 +115,16 @@ Native        plugin routes the response to the ACTIVE Activity's reducer inbox
   `planId`**; native never holds the authoritative plan. `applyDeckImport(planId)` **re-validates /
   re-parses the original payload in JS** before committing — a plan object round-tripped through native
   is never trusted.
+
+**Implementation status + mandatory integration checkpoint.** Step 2 has delivered the *pure cores*
+of this section: the session reducer and BOTH idempotency registries (native `RequestRegistry` —
+`@Synchronized`, since Compose submissions and Capacitor responses arrive on different threads,
+and rejecting a reused request id after completion; JS `createScannerRegistry` — dedupe/replay with
+fingerprint-bound resolved ids so a reused id with a different operation is rejected, not replayed).
+**NOT yet built:** the typed request/ack payloads over the wire, `scannerRequest` / `CardScanner.respond`,
+JS-owned session resolution, the `ScannerSessionCoordinator`, and end-to-end stale-session
+enforcement. Those are a **mandatory integration checkpoint before Step 5** (device-tested); until it
+lands, **no end-to-end idempotency or JS stale-session claim holds** — only the pure cores are proven.
 
 ## 5. Mutation contracts (JS repository ops)
 All are atomic, validate parent ownership + the JS-captured profile, query catalog truth themselves
