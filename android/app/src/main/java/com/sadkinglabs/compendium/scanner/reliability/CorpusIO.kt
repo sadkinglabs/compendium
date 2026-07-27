@@ -49,7 +49,8 @@ object CorpusIO {
         var exp: Expected? = null
         var frames = ArrayList<FrameObservation>()
         fun flush() { if (id != null) cases.add(CorpusCase(id!!, cat!!, frames.toList(), exp!!)) }
-        for (raw in text.split('\n')) {
+        for (line in text.split('\n')) {
+            val raw = line.removeSuffix("\r")   // tolerate CRLF (files pulled/edited on Windows)
             if (raw.isBlank()) continue
             val p = raw.split('\t')
             when (p[0]) {

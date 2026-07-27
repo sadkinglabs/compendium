@@ -14,6 +14,11 @@ class CorpusIOTest {
         assertEquals(corpus, decoded)   // data classes: structural equality across every case/frame/strip
     }
 
+    @Test fun tolerates_crlf_line_endings() {
+        val crlf = CorpusIO.encode(corpus).replace("\n", "\r\n")   // e.g. a file pulled/edited on Windows
+        assertEquals(corpus, CorpusIO.decode(crlf))
+    }
+
     @Test fun round_trip_preserves_the_content_digest() {
         val decoded = CorpusIO.decode(CorpusIO.encode(corpus))
         assertEquals(CorpusValidator.corpusDigest(corpus), CorpusValidator.corpusDigest(decoded))
