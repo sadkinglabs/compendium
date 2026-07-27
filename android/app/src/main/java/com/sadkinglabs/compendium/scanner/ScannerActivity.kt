@@ -152,9 +152,21 @@ class ScannerActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        // DEV capture: write the recorded corpus to the app's external files dir (adb-pullable at
+        // /sdcard/Android/data/<pkg>/files/scanner-capture/) for the reliability harness. Guarded by
+        // the compile-time flag; best-effort.
+        if (com.sadkinglabs.compendium.scanner.model.GuideGeometry.captureCorpus) writeCapture()
         // Back button / system kill without an explicit action -> cancelled, so the
         // retained `await scan()` never hangs. Guarded so it can't override a real
         // terminal already sent.
         if (!terminalSent) sendTerminal(JSObject().put("action", "cancelled"))
+    }
+
+    private fun writeCapture() {
+        try {
+            val text = vm.captureEncoded() ?: return
+            val dir = java.io.File(getExternalFilesDir(null), "scanner-capture").apply { mkdirs() }
+            java.io.File(dir, "capture-${System.currentTimeMillis()}.corpus").writeText(text)
+        } catch (_: Throwable) { /* capture is best-effort; never disrupt teardown */ }
     }
 }

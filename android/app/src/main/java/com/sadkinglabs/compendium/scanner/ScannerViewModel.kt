@@ -10,9 +10,11 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.sadkinglabs.compendium.scanner.camera.TitleStripAnalyzer
 import com.sadkinglabs.compendium.scanner.match.MatchResult
 import com.sadkinglabs.compendium.scanner.model.Phase
+import com.sadkinglabs.compendium.scanner.model.GuideGeometry
 import com.sadkinglabs.compendium.scanner.model.Recognition
 import com.sadkinglabs.compendium.scanner.model.ScannerQr
 import com.sadkinglabs.compendium.scanner.model.ScanKind
+import com.sadkinglabs.compendium.scanner.reliability.CorpusRecorder
 import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
 import com.sadkinglabs.compendium.scanner.ocr.Extraction
 import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
@@ -60,6 +62,10 @@ class ScannerViewModel : ViewModel() {
 
     @Volatile private var locked: Recognition? = null
 
+    // DEV capture (GuideGeometry.captureCorpus): buffer every frame's observation for the reliability
+    // harness; the Activity persists it on close. Inert otherwise.
+    private val recorder = CorpusRecorder("capture")
+
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
         extractor = extractor,
@@ -67,7 +73,15 @@ class ScannerViewModel : ViewModel() {
         intervalMs = SCAN_MS,       // keep scanning even while a sheet is shown (to replace it)
         onLink = ::onLink,
         onResult = ::onResult,
+        onFrame = { if (GuideGeometry.captureCorpus) recorder.record(it) },
     )
+
+    /** Capture-only: the recorded corpus as text (one session case), or null if nothing was recorded. */
+    fun captureEncoded(): String? {
+        if (recorder.isEmpty()) return null
+        recorder.endCase("session-${System.currentTimeMillis()}")
+        return recorder.encoded()
+    }
 
     private fun onResult(ext: Extraction) {
         // FROZEN while a result is shown: the recognised identity is immutable until the user

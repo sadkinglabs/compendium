@@ -2,26 +2,25 @@ package com.sadkinglabs.compendium.scanner.reliability
 
 import com.sadkinglabs.compendium.scanner.model.Source
 import com.sadkinglabs.compendium.scanner.ocr.OcrCandidate
-import java.util.Base64
 
 /**
  * The on-disk format for a frozen corpus: a deterministic, line-based text encoding that round-trips
  * losslessly, so device captures can be written, pulled (adb), reviewed as text, and re-loaded by the
- * [ReplayHarness]. Free-text (OCR strings, QR urls) is Base64url-encoded (alphabet `A-Za-z0-9-_`) so
- * the `\t` / `:` field delimiters are always unambiguous.
+ * [ReplayHarness]. Free-text (OCR strings, QR urls) is percent-escaped for the delimiters (`%`, `\t`,
+ * `\n`, `:`) so the `\t` / `:` field separators are always unambiguous. Pure Kotlin - no API-level
+ * dependency (works on minSdk 22 and in JVM unit tests).
  *
  * Grammar:
  * ```
  * CORPUS\t<version>
- * C\t<id>\t<CATEGORY>\t<expected>            expected = "N" | "I:"<b64 cardId>
- * F\t<atMs>\t<qr>\t<strip>\t<strip>...       qr = "-" | <b64 url>;  strip = <SOURCE>":"<b64 text>
+ * C\t<id>\t<CATEGORY>\t<expected>            expected = "N" | "I:"<esc cardId>
+ * F\t<atMs>\t<qr>\t<strip>\t<strip>...       qr = "-" | <esc url>;  strip = <SOURCE>":"<esc text>
  * ```
  */
 object CorpusIO {
-    private val enc = Base64.getUrlEncoder().withoutPadding()
-    private val dec = Base64.getUrlDecoder()
-    private fun b(s: String) = enc.encodeToString(s.toByteArray(Charsets.UTF_8))
-    private fun u(s: String) = String(dec.decode(s), Charsets.UTF_8)
+    // Escape % first (so its escape isn't re-escaped); unescape it last.
+    private fun b(s: String) = s.replace("%", "%25").replace("\t", "%09").replace("\n", "%0A").replace(":", "%3A")
+    private fun u(s: String) = s.replace("%3A", ":").replace("%0A", "\n").replace("%09", "\t").replace("%25", "%")
 
     fun encode(corpus: Corpus): String {
         val sb = StringBuilder()

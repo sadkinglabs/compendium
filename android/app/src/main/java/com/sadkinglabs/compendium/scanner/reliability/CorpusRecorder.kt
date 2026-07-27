@@ -8,19 +8,20 @@ package com.sadkinglabs.compendium.scanner.reliability
  * exercised when the capture debug flag is on, so it never touches release scanning.
  */
 class CorpusRecorder(private val version: String) {
+    // Synchronized: [record] is called on the analysis thread, [endCase]/[snapshot] on the UI thread.
     private val cases = ArrayList<CorpusCase>()
     private var frames = ArrayList<FrameObservation>()
 
-    fun record(frame: FrameObservation) { frames.add(frame) }
+    @Synchronized fun record(frame: FrameObservation) { frames.add(frame) }
 
     /** Close the current scan session as one case. No-op if no frames were seen. */
-    fun endCase(id: String, category: Category = Category.NON_CARD_TEXT, expected: Expected = Expected.NoLock) {
+    @Synchronized fun endCase(id: String, category: Category = Category.NON_CARD_TEXT, expected: Expected = Expected.NoLock) {
         if (frames.isEmpty()) return
         cases.add(CorpusCase(id, category, frames.toList(), expected))
         frames = ArrayList()
     }
 
-    fun snapshot(): Corpus = Corpus(version, cases.toList())
-    fun encoded(): String = CorpusIO.encode(snapshot())
-    fun isEmpty(): Boolean = cases.isEmpty() && frames.isEmpty()
+    @Synchronized fun snapshot(): Corpus = Corpus(version, cases.toList())
+    @Synchronized fun encoded(): String = CorpusIO.encode(snapshot())
+    @Synchronized fun isEmpty(): Boolean = cases.isEmpty() && frames.isEmpty()
 }

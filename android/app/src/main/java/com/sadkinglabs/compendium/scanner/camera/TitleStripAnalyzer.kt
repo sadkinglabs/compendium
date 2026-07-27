@@ -6,6 +6,7 @@ import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
 import com.sadkinglabs.compendium.scanner.ocr.Extraction
 import com.sadkinglabs.compendium.scanner.ocr.FrameConverter
 import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
+import com.sadkinglabs.compendium.scanner.reliability.FrameObservation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -24,6 +25,7 @@ class TitleStripAnalyzer(
     private val intervalMs: Long,                 // min gap between admitted frames
     private val onLink: (String) -> Unit,         // a compendium:// QR was read
     private val onResult: (Extraction) -> Unit,   // card OCR result
+    private val onFrame: (FrameObservation) -> Unit = {},  // DEV capture: the full per-frame observation
 ) : ImageAnalysis.Analyzer {
 
     private val busy = AtomicBoolean(false)
@@ -47,8 +49,14 @@ class TitleStripAnalyzer(
         scope.launch(Dispatchers.Default) {
             try {
                 val link = barcodeReader.scan(upright)
-                if (link != null) onLink(link)
-                else onResult(extractor.extract(upright))
+                if (link != null) {
+                    onFrame(FrameObservation(now, emptyList(), link))   // QR short-circuits OCR (matches production)
+                    onLink(link)
+                } else {
+                    val ext = extractor.extract(upright)
+                    onFrame(FrameObservation(now, ext.candidates, null))
+                    onResult(ext)
+                }
             } catch (_: Throwable) {
                 onResult(Extraction(emptyList(), ""))
             } finally {
