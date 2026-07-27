@@ -1,0 +1,58 @@
+CORPUS	device-capture-v2
+C	case-01-Lookout	SITE_RIGHT	I:Lookout
+F	1785140590019	-	RIGHT_90:Loohout An Crdinary Ste ware fhal lo co GenesisLook at each opponent's hand
+F	1785140590458	-	RIGHT_90:Lookout An Ordinary Site warns of whats to come GenesisLook at each opponent's hand
+F	1785140590979	-	RIGHT_90:opponent's hand Genesis -Look at each
+F	1785140592723	-	RIGHT_90:Genesis → Look at each opponent's hand.
+C	case-02-ThinIce	SITE_RIGHT	I:Thin Ice
+F	1785140600126	-	RIGHT_90:minios atop this site oal 5 ar more pow berge them Rse end cf your turn, if
+F	1785140602928	-	RIGHT_90:Thin lce Tread carefuly at this Exceptional Site At the end of your turn, if minions atop this site total 5 or more power, submerge them.
+F	1785140605463	-	RIGHT_90:Thin lce Tread carefuly at this Exceptional Site At the end of your turn, if minlons atop this site total 5 or more power, submerge them.
+F	1785140607814	-	RIGHT_90:Thin lce Tread carefuly at this Exceptional Site At the end of your turn, if minions atop this site total Sor more power, submerge them.
+F	1785140610164	-	RIGHT_90:ES in this column one step left or right. Pery skudge
+C	case-03-Mudslide	SITE_RIGHT	I:Mudslide
+F	1785140612330	-	LEFT_270:Genesis -Slde
+F	1785140614467	-	RIGHT_90:Mudslide - an Exceptional Site of slippery skudge Genesis Side all anits at land sites in this column one step left or right.
+F	1785140616834	-	RIGHT_90:Mudslide An bxceplional Site of slppery skudge GenesisSide all units atland sites in this column one step left or right
+F	1785140619382	-	RIGHT_90:Mudslide - An Exceptionat Site of slippery skudge Genesis Slide all units at land sites in this column one step left or right. LN
+C	case-04-GothicTower	SITE_LEFT	I:Gothic Tower
+F	1785140624163	-	LEFT_270:Art Michal Nagypal Gothic Tower-an Ordinary Ste of runination A A Genesis - If this is the only Gothic Tower you control, gain 0 this turn.
+F	1785140626700	-	TOP:Genesis	LEFT_270:Art Michal Nagypál Gothic Tower-an Crdinary Ste of rumination A Genesis - If this is the only Gothic Tower you control, gain D this turn.
+F	1785140629150	-	TOP:Genes	LEFT_270:Art Michal Nagypál Gothic Tower-An Ordinan Ste of rumination A Genesis -If this is the only Gothic Tower you control, gain this turn.
+C	case-05-Beacon	SITE_LEFT	I:Beacon
+F	1785140636231	-	TOP:Genes	LEFT_270:Art © Alan Pollack Beacon- An Exceptional Site alerts your forces A Genesis Gain D for each nearby site with an enemy atop it.
+F	1785140638663	-	TOP:Gene	LEFT_270:Art © Alan Pollack Beacon - An Exceptional Site A alerts your forces Genesis -Gain for each nearby site with an enemy atop it.
+F	1785140641366	-	LEFT_270:Art © Alan Pollack A A Exceptional Site alerts your forces Beacon - An Genesis Gain D for each nearby site with an enemy atopit.
+F	1785140643897	-	LEFT_270:Art © AlLan Pollack Beacon- &n Excepbonal Ste alerts your forces A Genesis Gain for each nearby site with an enemy atop it.
+C	case-06-HillsideChapel	SITE_RIGHT	I:Hillside Chapel
+F	1785140648798	-	RIGHT_90:AtDVNity Erndt Hillside Chapel An Ordinary Site beneath a watehful slyV Genesis You may pay D to tap and Ward a nearby allied minion.
+F	1785140651031	-	RIGHT_90:AitVNity Emate Hillside Chapel An Ordinary Site benath a watehful sky Genesis You may pay 0 to tap and Ward a nearby allied minion.
+F	1785140653661	-	TOP:nion.	RIGHT_90:AitVNity Endtw 11illside Chapel An Oninary Site eneath a watchul shy V GenesisYou may pay ) to tap and Ward a nearby allied minion.
+C	case-07-AlgaeBloom	SITE_RIGHT	I:Algae Bloom
+F	1785140660830	-	RIGHT_90:AADAso Calazans Algae Bloom an Ordinary site of emerald excess Genesis Provides this turn.
+F	1785140663367	-	TOP:azans	RIGHT_90:ADcalo Calazans Algae BloomAn Ordinary site of emerald excess Genesis → Provides AVA this turn.
+F	1785140665989	-	TOP:lazans	RIGHT_90:Areocalo Calazans Algae Bloom-an Ordinary site of emnerald excess Genesis →Provides AA this turn.
+C	case-08-VastDesert	SITE_RIGHT	I:Vast Desert
+F	1785140670843	-	TOP:by site.	RIGHT_90:Vast Desert an Ordinary Site of desatn Genesis Deal 1 damage to each minion atop target nearby site.
+F	1785140673106	-	TOP:site.	RIGHT_90:Vast Desert an Ordinary Site of deation Genesis Deal 1 damage to each mninion atop targec hearby site.
+F	1785140675748	-	TOP:site.	RIGHT_90:Vast Desert An Ordinary Site of deation Genesis Deal 1 damage to each minion aop brget hearby site.
+C	case-09-DesertBloom	SITE_RIGHT	I:Desert Bloom
+F	1785140680960	-	TOP:Calazans nifest	RIGHT_90:Art D Caio Calazans Desert Bloom- an Ordinary Site and mirage manifest A GenesisProvides vthis turn.
+F	1785140682690	-	TOP:A Calazans nifest	RIGHT_90:Art O Caio Calazans Desert Bloom- An Ordinary Site and mirage manifestA Genesis-Provides is turn.
+F	1785140685090	-	TOP:alazans est	RIGHT_90:Art aCaio Calazans Desert Bloom - An Ordinary Siteand mirage manifest A Genesis Provides olasurn
+C	case-10-Haystack	SITE_LEFT	I:Haystack
+F	1785140690061	-	TOP:Hayst	LEFT_270:Art O Drew Tucker Haystack- Good luck finding anything at this Exceptional Site v Opponent's deck searches are limited to the top three cards.
+F	1785140692828	-	TOP:Hayst Opp	LEFT_270:ArtO Drew Tucker & Exceptional Site ▼ finding anything at this Haystack - Good kuck Opponent's deck searches are limited to the top three cards.
+F	1785140695339	-	TOP:Hay= Op	LEFT_270:Art O Drew Tucker Haystack- Good kuck finding anything at this Exceptional Site V Opponent's deck searches are limited to the top three cards.
+C	case-11-HuntersLodge	SITE_RIGHT	I:Hunter's Lodge
+F	1785140700480	-	RIGHT_90:Hunter's Lodge An Ordinary Site. surrounded by shares Genesis Enemies lose Stealth.
+F	1785140702777	-	RIGHT_90:Andi Modeste Hunter's Lodge An Ordinary Site, surrounded by snaes Genesis Enemies lose Stealth.
+F	1785140705203	-	TOP:Qdestiet	RIGHT_90:AOAnarea Modestt Hunter's Lodge- An Ordinary Site, surrounded by snares Genesis→ Enemies lose Stealth.
+C	case-12-Ghoul	SPELL	I:Ghoul
+F	1785140713299	-	TOP:Gioul	RIGHT_90:Resh
+F	1785140715968	-	TOP:3A Ghioul	RIGHT_90:or lesh 20	LEFT_270:An Or 3A
+F	1785140719219	-	TOP:3A Gioul	RIGHT_90:s for esh	LEFT_270:An Ord 3A
+C	case-13-Drowned	SIMILAR_NAME	I:Drowned
+F	1785140724963	-	TOP:2V Drowned	RIGHT_90:stustenance. 1. lunge	LEFT_270:Blank ey Ordi 2V
+F	1785140727799	-	TOP:2V Drowned	RIGHT_90:ange stenance.	LEFT_270:Ordin Blank eyes 2 V
+F	1785140730492	-	TOP:2V Drowned	RIGHT_90:stenance. ange	LEFT_270:Blank eye Ordir 2V 2 V

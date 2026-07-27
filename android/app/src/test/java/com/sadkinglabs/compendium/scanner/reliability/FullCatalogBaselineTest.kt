@@ -26,9 +26,15 @@ class FullCatalogBaselineTest {
             val t = line.split('\t'); CardRef(id = t[0], name = t[0], isSite = t.getOrNull(1) == "1")
         }.toList()
 
-    @Test fun baseline_device_capture_full_catalog() {
+    @Test fun baseline_device_capture_full_catalog() = runBaseline("device-capture-v1.corpus")
+
+    /** v2 (2026-07-27, overlay session): 11 sites + Ghoul + Drowned - the pip fix's end-to-end
+     *  proof, since Ghoul/Drowned/Beacon/Gothic Tower all failed before it and are here. */
+    @Test fun baseline_device_capture_v2() = runBaseline("device-capture-v2.corpus")
+
+    private fun runBaseline(corpusFile: String) {
         val catalog = catalog()
-        val corpus = CorpusIO.decode(res("device-capture-v1.corpus"))
+        val corpus = CorpusIO.decode(res(corpusFile))
         val report = ReplayHarness.report(corpus, RunSpec(catalog, NameLevelPolicy))
 
         fun cm(c: CardClass) = report.perClass[c]!!
@@ -47,7 +53,8 @@ class FullCatalogBaselineTest {
         }
         val out = sb.toString()
         println(out)
-        File("build/scanner-baseline.txt").apply { parentFile?.mkdirs() }.writeText(out)
+        val stem = corpusFile.removeSuffix(".corpus")
+        File("build/scanner-baseline-$stem.txt").apply { parentFile?.mkdirs() }.writeText(out)
         assertTrue(report.total == corpus.cases.size)
     }
 }
