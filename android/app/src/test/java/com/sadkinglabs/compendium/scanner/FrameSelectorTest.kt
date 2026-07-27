@@ -34,4 +34,19 @@ class FrameSelectorTest {
         assertNull(FrameSelector.selectCard(listOf(OcrCandidate("zzz qqq wwww", Source.TOP)), matcher))
         assertNull(FrameSelector.selectCard(emptyList(), matcher))
     }
+
+    @Test fun selection_is_bound_to_the_policy() {
+        val strips = listOf(OcrCandidate("smitey", Source.TOP), OcrCandidate("Haystack", Source.RIGHT_90))
+        // Default (name-level) picks the higher-scoring site edge.
+        assertEquals("haystack", FrameSelector.selectCard(strips, matcher)!!.match.card.id)
+        // A policy that makes RIGHT_90 ineligible MUST change the executed result - proving selectCard
+        // consumes the policy (so a report can't claim a policy that didn't run).
+        val excludeRight = object : SelectionPolicy {
+            override val id = "test-no-right"
+            override fun eligible(source: Source) = source != Source.RIGHT_90
+        }
+        val sel = FrameSelector.selectCard(strips, matcher, excludeRight)!!
+        assertEquals("smite", sel.match.card.id)
+        assertEquals(Source.TOP, sel.source)
+    }
 }

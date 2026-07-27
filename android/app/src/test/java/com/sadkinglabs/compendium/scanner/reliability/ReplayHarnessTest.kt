@@ -1,6 +1,7 @@
 package com.sadkinglabs.compendium.scanner.reliability
 
 import com.sadkinglabs.compendium.scanner.match.CardIndex
+import com.sadkinglabs.compendium.scanner.match.CardRef
 import com.sadkinglabs.compendium.scanner.match.Matcher
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -66,7 +67,7 @@ class ReplayHarnessTest {
         assertEquals(64, r.corpusDigest.length)          // sha-256 hex
         assertEquals(64, r.catalogDigest.length)
         assertEquals(5, r.catalogSize)
-        assertEquals("name-level-baseline", r.policyMode)
+        assertEquals("name-level", r.policyMode)   // derived from the typed policy that executed
         assertEquals(0.80, r.matcherThreshold, 0.0001)
         assertNull(r.deviceBuild)
         assertTrue(r.coverage.contains(Category.QR_ONLY) && r.coverage.contains(Category.SIMILAR_NAME))
@@ -81,6 +82,18 @@ class ReplayHarnessTest {
             "ghost", Category.SPELL, listOf(FrameObservation(0, emptyList())), Expected.Identity("does-not-exist"),
         ))
         assertThrows(IllegalStateException::class.java) { ReplayHarness.report(bad, SeedCorpus.spec()) }
+    }
+
+    @Test fun runspec_snapshots_the_catalog_against_later_mutation() {
+        val mutable = SeedCorpus.catalog().toMutableList()
+        val spec = RunSpec(mutable)
+        val d0 = spec.catalogDigest; val n0 = spec.catalogSize
+        mutable.add(CardRef("intruder", "Intruder", isSite = false))   // mutate the caller's list AFTER
+        mutable.removeAt(0)
+        assertEquals("digest describes the snapshot, not the mutated list", d0, spec.catalogDigest)
+        assertEquals(n0, spec.catalogSize)
+        // The matcher was built from the snapshot too: the original catalog still resolves.
+        assertEquals("smite", ReplayHarness.replay(corpus.cases.first { it.id == "spell_smite" }, spec.matcher).lockedId)
     }
 
     @Test fun corpus_digest_is_deterministic_and_drift_sensitive() {

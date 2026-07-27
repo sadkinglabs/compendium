@@ -77,5 +77,5 @@ object SeedCorpus {
         ),
     )
 
-    fun spec() = RunSpec(catalog = catalog(), policyMode = "name-level-baseline")
+    fun spec() = RunSpec(catalog = catalog())   // default NameLevelPolicy (id "name-level")
 }

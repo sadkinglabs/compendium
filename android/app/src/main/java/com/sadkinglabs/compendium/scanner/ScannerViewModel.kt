@@ -11,6 +11,7 @@ import com.sadkinglabs.compendium.scanner.camera.TitleStripAnalyzer
 import com.sadkinglabs.compendium.scanner.match.MatchResult
 import com.sadkinglabs.compendium.scanner.model.Phase
 import com.sadkinglabs.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.model.ScannerQr
 import com.sadkinglabs.compendium.scanner.model.ScanKind
 import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
 import com.sadkinglabs.compendium.scanner.ocr.Extraction
@@ -99,8 +100,9 @@ class ScannerViewModel : ViewModel() {
     private fun onLink(url: String) {
         if (locked != null) return   // frozen while a result is shown (see onResult)
         val u = url.trim()
-        // Same terminal-QR predicate the reliability harness uses, so they can't diverge.
-        if (!FrameSelector.isCompendiumLink(u)) return
+        // Same terminal-QR classifier the analyzer boundary + the reliability harness use, so they
+        // can't diverge (BarcodeReader has already filtered, but this stays authoritative).
+        if (!ScannerQr.isCompendiumLink(u)) return
         val kind = if (u.startsWith("compendium://deck", ignoreCase = true)) ScanKind.DECK else ScanKind.MATCH
         val rec = Recognition(kind, if (kind == ScanKind.DECK) "Shared deck" else "Shared match", url = u)
         gate.reset()                     // drop any half-built card streak

@@ -1,9 +1,12 @@
 package com.sadkinglabs.compendium.scanner.reliability
 
 import com.sadkinglabs.compendium.scanner.FrameSelector
+import com.sadkinglabs.compendium.scanner.NameLevelPolicy
+import com.sadkinglabs.compendium.scanner.SelectionPolicy
 import com.sadkinglabs.compendium.scanner.match.CardIndex
 import com.sadkinglabs.compendium.scanner.match.CardRef
 import com.sadkinglabs.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.model.ScannerQr
 import com.sadkinglabs.compendium.scanner.session.Candidate
 import com.sadkinglabs.compendium.scanner.session.ScanConfig
 import com.sadkinglabs.compendium.scanner.session.ScanEvent
@@ -17,19 +20,24 @@ import com.sadkinglabs.compendium.scanner.session.reduce
  * asserted values that could mismatch. (Codex: provenance must be execution-bound.)
  */
 class RunSpec(
-    val catalog: List<CardRef>,
-    val policyMode: String,
+    catalog: List<CardRef>,
+    val policy: SelectionPolicy = NameLevelPolicy,
     val matcherThreshold: Double = 0.80,
     val matcherMargin: Double = 0.05,
     val reducerConfig: ScanConfig = ScanConfig(),
     val deviceBuild: String? = null,   // null = off-device (JVM) run
 ) {
-    /** Built HERE from this spec's catalog + thresholds - the object replay runs against. */
-    val matcher: Matcher = Matcher(CardIndex(catalog), matcherThreshold, matcherMargin)
-    val validCardIds: Set<String> = catalog.mapTo(HashSet()) { it.id }
-    val catalogDigest: String = CorpusValidator.catalogDigest(catalog)
+    // Defensive snapshot: mutating the caller's list afterwards can't change what we ran against, so
+    // matcher/digest/size/classes all describe the SAME frozen catalog.
+    private val catalog: List<CardRef> = catalog.toList()
+
+    /** Built HERE from this spec's snapshot + thresholds - the object replay runs against. */
+    val matcher: Matcher = Matcher(CardIndex(this.catalog), matcherThreshold, matcherMargin)
+    val validCardIds: Set<String> = this.catalog.mapTo(HashSet()) { it.id }
+    val catalogDigest: String = CorpusValidator.catalogDigest(this.catalog)
+    val catalogSize: Int = this.catalog.size
     private val classes: Map<String, CardClass> =
-        catalog.associate { it.id to if (it.isSite) CardClass.SITE else CardClass.SPELL }
+        this.catalog.associate { it.id to if (it.isSite) CardClass.SITE else CardClass.SPELL }
     fun classOf(cardId: String): CardClass? = classes[cardId]
 }
 
@@ -80,17 +88,17 @@ data class Report(
  */
 object ReplayHarness {
 
-    fun replay(case: CorpusCase, matcher: Matcher, cfg: ScanConfig = ScanConfig()): CaseOutcome {
+    fun replay(case: CorpusCase, matcher: Matcher, cfg: ScanConfig = ScanConfig(), policy: SelectionPolicy = NameLevelPolicy): CaseOutcome {
         var state: ScanState = ScanState.Searching
         val t0 = case.frames.firstOrNull()?.atMs ?: 0L
         var lockedId: String? = null
         var lockLatency: Long? = null
         for (f in case.frames) {
             // QR precedes OCR AND is TERMINAL: production's onLink creates a sticky QR result and
-            // freezes, ignoring all later OCR. So a compendium:// link ends replay - no card can lock
+            // freezes, ignoring all later OCR. So a terminal link ends replay - no card can lock
             // afterwards (the previous "Observed(null) then keep going" let a later card false-lock).
-            if (FrameSelector.isCompendiumLink(f.qr)) break
-            val cand: Candidate? = FrameSelector.selectCard(f.strips, matcher)?.let {
+            if (ScannerQr.isCompendiumLink(f.qr)) break
+            val cand: Candidate? = FrameSelector.selectCard(f.strips, matcher, policy)?.let {
                 Candidate(it.match.card.id, it.match.card.name, it.match.score, 0.0, it.source)
             }
             state = reduce(state, ScanEvent.Observed(cand, f.atMs), cfg)
@@ -110,7 +118,7 @@ object ReplayHarness {
         fun classOfOrFail(id: String): CardClass =
             spec.classOf(id) ?: error("run aborted: locked/expected card '$id' is not in the catalog (unknown class)")
 
-        val outcomes = corpus.cases.map { replay(it, spec.matcher, spec.reducerConfig) }
+        val outcomes = corpus.cases.map { replay(it, spec.matcher, spec.reducerConfig, spec.policy) }
         var correct = 0; var misses = 0; var falseLocks = 0
         var negativeCount = 0; var negativeFalseLocks = 0
         val support = HashMap<CardClass, Int>(); val tp = HashMap<CardClass, Int>(); val resolvedHere = HashMap<CardClass, Int>()
@@ -138,9 +146,9 @@ object ReplayHarness {
             corpusVersion = corpus.version,
             corpusDigest = CorpusValidator.corpusDigest(corpus),
             catalogDigest = spec.catalogDigest,
-            catalogSize = spec.catalog.size,
+            catalogSize = spec.catalogSize,
             coverage = CorpusValidator.coverage(corpus),
-            policyMode = spec.policyMode,
+            policyMode = spec.policy.id,
             matcherThreshold = spec.matcherThreshold,
             matcherMargin = spec.matcherMargin,
             reducerConfig = spec.reducerConfig,
