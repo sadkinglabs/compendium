@@ -128,8 +128,26 @@ class ScanSessionReducerTest {
         assertEquals(saved, reduce(saved, ScanEvent.Dismiss, cfg))
     }
 
-    @Test fun dismiss_from_result_returns_to_searching() {
-        assertEquals(ScanState.Searching, reduce(toResult(), ScanEvent.Dismiss, cfg))
+    @Test fun dismiss_from_result_suppresses_the_skipped_card() {
+        val s = reduce(toResult("c1"), ScanEvent.Dismiss, cfg)
+        assertEquals(SuppressReason.DISMISSED, (s as ScanState.Suppressed).reason)
+        assertEquals("c1", s.blockedId)
+        // the skipped card, still in frame, must not instantly reappear
+        assertTrue(observe(observe(s, cand("c1"), 50), cand("c1"), 300) is ScanState.Suppressed)
+    }
+
+    @Test fun dismiss_never_lifts_an_existing_suppression() {
+        // COMMITTED
+        var s: ScanState = toSuppressedCommitted("c1")
+        s = reduce(s, ScanEvent.Dismiss, cfg)
+        assertTrue("dismiss ignored while suppressed (committed)", s is ScanState.Suppressed)
+        s = observe(s, cand("c1"), 100); s = observe(s, cand("c1"), 500)
+        assertTrue("stationary committed card cannot relock via dismiss", s is ScanState.Suppressed)
+        // REJECTED
+        var r: ScanState = reduce(toResult("c1"), ScanEvent.Reject, cfg)
+        r = reduce(r, ScanEvent.Dismiss, cfg)
+        assertTrue("dismiss ignored while suppressed (rejected)", r is ScanState.Suppressed)
+        assertEquals(SuppressReason.REJECTED, (r as ScanState.Suppressed).reason)
     }
 
     // --- suppression: transient alternate must NOT release the blocked card (Codex Major 1) ---

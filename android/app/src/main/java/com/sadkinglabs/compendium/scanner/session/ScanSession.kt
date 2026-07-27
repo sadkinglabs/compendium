@@ -42,7 +42,7 @@ data class RecognitionSnapshot(val cardId: String, val name: String, val source:
 interface CommitOutcome
 
 /** Why a card is currently suppressed from re-locking. */
-enum class SuppressReason { COMMITTED, REJECTED }
+enum class SuppressReason { COMMITTED, REJECTED, DISMISSED }
 
 data class ScanConfig(
     val minConfirmMs: Long = 350,
@@ -114,10 +114,16 @@ fun reduce(state: ScanState, event: ScanEvent, cfg: ScanConfig = ScanConfig()): 
     ScanEvent.Reject ->
         if (state is ScanState.Result)
             ScanState.Suppressed(state.snapshot.cardId, SuppressReason.REJECTED, null, 0, null) else state
-    // Never rearm while a write is in flight or in its success beat; terminal scanner closure is the
-    // Activity's concern, not a reducer rearm.
-    ScanEvent.Dismiss ->
-        if (state is ScanState.Committing || state is ScanState.Saved) state else ScanState.Searching
+    // "Scan another" / skip. Dismissing a SHOWN card suppresses it (so a still-in-frame card cannot
+    // instantly reappear); it can NEVER rearm while a write is in flight/just committed, and NEVER
+    // lifts an existing suppression (a late/duplicate dismiss must not relock a blocked card).
+    // Terminal scanner closure is the Activity's concern, not a reducer rearm.
+    ScanEvent.Dismiss -> when (state) {
+        is ScanState.Result -> ScanState.Suppressed(state.snapshot.cardId, SuppressReason.DISMISSED, null, 0, null)
+        is ScanState.RetryableError -> ScanState.Suppressed(state.snapshot.cardId, SuppressReason.DISMISSED, null, 0, null)
+        is ScanState.Committing, is ScanState.Saved, is ScanState.Suppressed -> state
+        else -> ScanState.Searching
+    }
 }
 
 private fun onObserved(state: ScanState, ev: ScanEvent.Observed, cfg: ScanConfig): ScanState {

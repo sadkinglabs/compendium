@@ -125,6 +125,10 @@ fingerprint-bound resolved ids so a reused id with a different operation is reje
 JS-owned session resolution, the `ScannerSessionCoordinator`, and end-to-end stale-session
 enforcement. Those are a **mandatory integration checkpoint before Step 5** (device-tested); until it
 lands, **no end-to-end idempotency or JS stale-session claim holds** — only the pure cores are proven.
+The checkpoint MUST also make the JS fingerprint check **fail-closed** (Codex): a **canonical
+fingerprint is mandatory for mutations**, and a **missing or mismatched fingerprint is rejected for
+both pending and resolved ids** (today's registry only rejects when both fingerprints are non-null —
+tightened when the coordinator that guarantees canonical fingerprints lands).
 
 ## 5. Mutation contracts (JS repository ops)
 All are atomic, validate parent ownership + the JS-captured profile, query catalog truth themselves
