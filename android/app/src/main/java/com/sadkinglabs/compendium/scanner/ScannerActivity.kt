@@ -150,11 +150,17 @@ class ScannerActivity : ComponentActivity() {
         ScannerChannel.onTerminal?.invoke(js)
     }
 
+    // DEV capture: one stable file per scanner session, written on BACKGROUND and CLOSE so data
+    // persists even if onDestroy never runs. Name fixed at first write.
+    private var captureFile: java.io.File? = null
+
+    override fun onStop() {
+        super.onStop()
+        if (com.sadkinglabs.compendium.scanner.model.GuideGeometry.captureCorpus) writeCapture()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
-        // DEV capture: write the recorded corpus to the app's external files dir (adb-pullable at
-        // /sdcard/Android/data/<pkg>/files/scanner-capture/) for the reliability harness. Guarded by
-        // the compile-time flag; best-effort.
         if (com.sadkinglabs.compendium.scanner.model.GuideGeometry.captureCorpus) writeCapture()
         // Back button / system kill without an explicit action -> cancelled, so the
         // retained `await scan()` never hangs. Guarded so it can't override a real
@@ -162,11 +168,14 @@ class ScannerActivity : ComponentActivity() {
         if (!terminalSent) sendTerminal(JSObject().put("action", "cancelled"))
     }
 
+    /** Write the capture to the app's external files dir (adb-pullable at
+     *  /sdcard/Android/data/<pkg>/files/scanner-capture/). Best-effort; overwrites one session file. */
     private fun writeCapture() {
         try {
             val text = vm.captureEncoded() ?: return
             val dir = java.io.File(getExternalFilesDir(null), "scanner-capture").apply { mkdirs() }
-            java.io.File(dir, "capture-${System.currentTimeMillis()}.corpus").writeText(text)
+            val f = captureFile ?: java.io.File(dir, "capture-${System.currentTimeMillis()}.corpus").also { captureFile = it }
+            f.writeText(text)
         } catch (_: Throwable) { /* capture is best-effort; never disrupt teardown */ }
     }
 }

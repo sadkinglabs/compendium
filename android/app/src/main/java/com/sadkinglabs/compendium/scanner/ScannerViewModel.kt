@@ -76,12 +76,9 @@ class ScannerViewModel : ViewModel() {
         onFrame = { if (GuideGeometry.captureCorpus) recorder.record(it) },
     )
 
-    /** Capture-only: the recorded corpus as text (one session case), or null if nothing was recorded. */
-    fun captureEncoded(): String? {
-        if (recorder.isEmpty()) return null
-        recorder.endCase("session-${System.currentTimeMillis()}")
-        return recorder.encoded()
-    }
+    /** Capture-only: everything recorded so far as text (idempotent - safe to call repeatedly, e.g.
+     *  on background AND on close), or null if nothing was recorded yet. */
+    fun captureEncoded(): String? = if (recorder.isEmpty()) null else recorder.encodedNow("live-session")
 
     private fun onResult(ext: Extraction) {
         // FROZEN while a result is shown: the recognised identity is immutable until the user

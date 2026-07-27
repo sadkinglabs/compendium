@@ -24,4 +24,13 @@ class CorpusRecorder(private val version: String) {
     @Synchronized fun snapshot(): Corpus = Corpus(version, cases.toList())
     @Synchronized fun encoded(): String = CorpusIO.encode(snapshot())
     @Synchronized fun isEmpty(): Boolean = cases.isEmpty() && frames.isEmpty()
+
+    /** Encode everything captured SO FAR - closed cases plus the in-progress frames as a trailing
+     *  case - WITHOUT clearing. Idempotent, so the Activity can persist it on both background and
+     *  close (overwriting one session file) and never lose data if onDestroy doesn't run. */
+    @Synchronized fun encodedNow(pendingCaseId: String): String {
+        val all = ArrayList(cases)
+        if (frames.isNotEmpty()) all.add(CorpusCase(pendingCaseId, Category.NON_CARD_TEXT, frames.toList(), Expected.NoLock))
+        return CorpusIO.encode(Corpus(version, all))
+    }
 }
