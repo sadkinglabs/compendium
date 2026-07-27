@@ -1,5 +1,6 @@
 package com.sadkinglabs.compendium.scanner.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -86,6 +87,10 @@ fun ScannerScreen(
         }
     }
     val revealT = reveal.value
+
+    // Android Back: dismiss the result first, then (with no result up) let Back close the scanner.
+    // Without this the Activity always finished, exiting straight to Home with a result showing.
+    BackHandler(enabled = sheet != null) { onDismissSheet() }
 
     Box(Modifier.fillMaxSize()) {
         if (granted) {

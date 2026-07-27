@@ -7,8 +7,9 @@
 **Status:** Rev 7 — implements Codex's "final experience" review: one shared presentation clock,
 title *translation* (not scale), no frame scaling, a stronger/shorter bloom synced to the haptic,
 frozen recognised identity, ownership removed from the ceremony, app fonts, rounded guides, 48dp
-close. Compiles clean, NOT device-tested, NOT committed. (Rev 5 = fonts/guides/divider; Rev 6 =
-violet frame + building haptic; both folded in.)
+close. **MERGED** to `main` (bb7e391, build 206). Owner-accepted on device for the visual + haptic
+experience; the a11y/reduced-motion/layout matrix was NOT formally run (see §6). (Rev 5 =
+fonts/guides/divider; Rev 6 = violet frame + building haptic; both folded in.)
 
 ---
 
@@ -193,9 +194,22 @@ the panel is at rest, one optional tick. Recognition stays clear via colour + ge
 
 - `npm run check:types` — PASS. `npm run build` — PASS. `npm run check:cycles` — PASS.
 - `:app:compileDebugKotlin` — **BUILD SUCCESSFUL**. `npm run check:docs` — expected PASS.
-- **NOT run (device-gated, and required before final approval):** installed-app normal-motion
-  reveal + frame pacing, **reduced-motion** still states, TalkBack, short/notched layout — naming
-  device, Android version, build type, WebView version. Motion correctness is visual only.
+- **Device (recorded):** owner installed builds 202→206 on **Pixel 9 Pro XL · Android 17 (SDK 37) ·
+  System WebView 150.0.7871.124**, signed **release** APK, and iterated the reveal to acceptance
+  ("Phase 1 is good to go") — so the **normal-motion reveal, frame pacing, and the building/
+  culminating haptic are owner-accepted on that device**. Codex re-review waived by the owner.
+- **Device checklist run (2026-07-27, Pixel 9 Pro XL / Android 17 / WebView 150 / release 206):**
+  | # | Case | Result |
+  |---|---|---|
+  | 1 | App reduce-motion still state (haptics preserved) | **PASS** |
+  | 2 | OS reduce-motion still state | **PASS** |
+  | 3 | TalkBack (once, no stale, traversal/labels) | **NOT CHECKED** (owner deferred) |
+  | 4 | Android Back dismisses result before exit | **FAIL → fixed build 207** (`BackHandler`; needs re-verify) |
+  | 5 | Font/display scaling affects scanner text | **FAIL → deferred to Phase 2a** (native honours neither OS font nor the app `--ui-scale`; needs a font-scale handoff, done with the sheet rebuild) |
+  | 6 | Short/notched portrait layout | **PASS** |
+  | 7 | Touch targets ≥48dp | **PASS** |
+- **Follow-ups:** #4 fixed in build 207 (re-verify pending); #3 TalkBack + #5 font-scale carried into
+  the Phase-2a verification matrix. "Merged" is not a substitute for those.
 
 ## 7. Self-critique / risks for the reviewer
 
