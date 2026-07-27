@@ -22,20 +22,24 @@ data class MatchResult(val card: CardRef, val score: Double)
 /**
  * Text normalization: the SAME rules applied to the OCR text AND the catalog names
  * so they compare on equal footing. NFD-strip diacritics, lowercase, punctuation to
- * spaces, collapse whitespace, and drop stray 1-2 digit tokens (mana / threshold
- * pips the OCR grabs). "Firebal" -> "firebal"; "Drgon Mage" -> "drgon mage".
+ * spaces, collapse whitespace, and drop mana-cost / threshold PIP tokens the OCR grabs
+ * from the card corner (a number with an optional element letter, e.g. "3A", "2V", "27",
+ * "3", and stray single element letters "a"/"v"). Device evidence: a pip left in sinks
+ * the whole-string fuzzy ratio of SHORT names below threshold - "3A Ghoul" scored ~0.63
+ * vs "Ghoul" and never matched; stripping the pip makes it "ghoul" -> exact.
  */
 object Norm {
     private val diacritics = Regex("\\p{Mn}+")
     private val punct = Regex("[^a-z0-9 ]")
     private val ws = Regex("\\s+")
-    private val digitsOnly = Regex("^[0-9]{1,2}$")
+    private val pip = Regex("^[0-9]{1,2}[a-z]?$")   // mana/threshold pip: 3, 27, 3a, 2v
+    private val singleLetter = Regex("^[a-z]$")      // stray element letter / article
 
     fun normalize(raw: String): String {
         val decomposed = Normalizer.normalize(raw, Normalizer.Form.NFD).replace(diacritics, "")
         val cleaned = punct.replace(decomposed.lowercase(Locale.ROOT), " ")
         return ws.split(cleaned)
-            .filter { it.isNotBlank() && !digitsOnly.matches(it) }
+            .filter { it.isNotBlank() && !pip.matches(it) && !singleLetter.matches(it) }
             .joinToString(" ")
             .trim()
     }
