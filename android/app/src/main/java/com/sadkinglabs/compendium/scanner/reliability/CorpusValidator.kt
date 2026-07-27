@@ -60,9 +60,11 @@ object CorpusValidator {
         return sha256(sb.toString())
     }
 
-    /** A digest of the catalog identity (id + name + orientation), so ON/OFF runs prove same catalog. */
+    /** A digest of the catalog identity (id + name + orientation) IN ORDER. Order is preserved (not
+     *  sorted) because `CardIndex` de-dupes same-normalized-name reprints keeping the FIRST, so
+     *  catalog order can change behaviour - the digest must change with it. */
     fun catalogDigest(catalog: List<CardRef>): String =
-        sha256(catalog.map { "${it.id}|${it.name}|${it.isSite}" }.sorted().joinToString("\n"))
+        sha256(catalog.mapIndexed { i, c -> "$i|${c.id}|${c.name}|${c.isSite}" }.joinToString("\n"))
 
     private fun sha256(s: String): String =
         MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8))

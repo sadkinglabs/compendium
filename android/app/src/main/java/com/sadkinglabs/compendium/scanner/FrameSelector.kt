@@ -32,7 +32,13 @@ object FrameSelector {
         return best
     }
 
-    /** A recognised shared-content QR (deck/match). QR precedes OCR in the pipeline. */
-    fun isCompendiumLink(qr: String?): Boolean =
-        qr != null && qr.trim().startsWith("compendium://", ignoreCase = true)
+    /** A recognised shared-content QR that TERMINATES scanning - exactly what production locks on in
+     *  ScannerViewModel.onLink (a compendium deck/match link). Shared by onLink and the harness so the
+     *  two normalise identically (trim + these prefixes); a `compendium://` url that is neither is not
+     *  terminal in either. */
+    fun isCompendiumLink(qr: String?): Boolean {
+        val u = qr?.trim() ?: return false
+        return u.startsWith("compendium://deck", ignoreCase = true) ||
+            u.startsWith("compendium://match", ignoreCase = true)
+    }
 }

@@ -99,11 +99,9 @@ class ScannerViewModel : ViewModel() {
     private fun onLink(url: String) {
         if (locked != null) return   // frozen while a result is shown (see onResult)
         val u = url.trim()
-        val kind = when {
-            u.startsWith("compendium://deck", ignoreCase = true) -> ScanKind.DECK
-            u.startsWith("compendium://match", ignoreCase = true) -> ScanKind.MATCH
-            else -> return                                     // a compendium:// url we don't route here
-        }
+        // Same terminal-QR predicate the reliability harness uses, so they can't diverge.
+        if (!FrameSelector.isCompendiumLink(u)) return
+        val kind = if (u.startsWith("compendium://deck", ignoreCase = true)) ScanKind.DECK else ScanKind.MATCH
         val rec = Recognition(kind, if (kind == ScanKind.DECK) "Shared deck" else "Shared match", url = u)
         gate.reset()                     // drop any half-built card streak
         locked = rec

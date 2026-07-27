@@ -217,6 +217,8 @@ all representable (the old single-`siteDetected` reading could not).
 **Shared selection.** A single pure `FrameSelector.selectCard(candidates, matcher)` is used by BOTH
 `ScannerViewModel` and the harness, so a policy that passes the harness behaves identically on-device;
 Step 4 evolves source weighting inside it and both callers inherit it. QR precedes OCR in both.
+**QR is terminal in replay** (as in production): a compendium deck/match link ends the case (production's `onLink` freezes and ignores later OCR), so a QR frame followed by card frames can't false-lock a card. The terminal-QR predicate is shared by `onLink` and the harness (`FrameSelector.isCompendiumLink`).
+**Execution-bound provenance.** A single immutable `RunSpec` OWNS the catalog + matcher/reducer config + policy mode and CONSTRUCTS the matcher replay runs against, so a `Report`'s threshold/margin/catalog-digest are the values that actually executed — not caller-asserted duplicates that could mismatch. The catalog digest is **order-preserving** (since `CardIndex` de-dupes keeping the first same-name reprint, order affects behaviour and must change the digest).
 **Fail-closed + reproducible.** `CorpusValidator` rejects malformed corpora (duplicate ids,
 non-monotonic timestamps, empty frame lists, unknown expected identities) and the run **aborts** on an
 unknown predicted/expected class (no silent omission). Every `Report` pins **corpus digest, catalog

@@ -60,8 +60,22 @@ object SeedCorpus {
             // QR precedes OCR: a QR-only frame and a QR-next-to-a-card frame must NOT lock a card.
             CorpusCase("qr_only", Category.QR_ONLY, steady(emptyList(), qr = DECK_QR), Expected.NoLock),
             CorpusCase("qr_near_card", Category.QR_NEAR_CARD, steady(listOf(top("Smite")), qr = DECK_QR), Expected.NoLock),
+            // QR is TERMINAL: a QR frame FOLLOWED by confirmable card-only frames must still not lock
+            // the card (production freezes on the QR). Regression for the old "keep replaying" bug.
+            CorpusCase(
+                "qr_then_card", Category.QR_NEAR_CARD,
+                listOf(
+                    FrameObservation(0, emptyList(), qr = DECK_QR),
+                    FrameObservation(150, listOf(top("Smite"))), FrameObservation(300, listOf(top("Smite"))),
+                    FrameObservation(450, listOf(top("Smite"))), FrameObservation(600, listOf(top("Smite"))),
+                ),
+                Expected.NoLock,
+            ),
+            // Competing strips in ONE frame: a noisy TOP (weakly ~Smite) vs a strong site edge. The
+            // higher score (the site) must win, with its Source preserved (asserted in FrameSelectorTest).
+            CorpusCase("multi_strip_site_over_noisy_top", Category.SITE_RIGHT, steady(listOf(top("smitey"), right("Haystack"))), Expected.Identity("haystack")),
         ),
     )
 
-    fun meta() = RunMeta(policyMode = "name-level-baseline", matcherThreshold = 0.80, matcherMargin = 0.05, deviceBuild = null)
+    fun spec() = RunSpec(catalog = catalog(), policyMode = "name-level-baseline")
 }

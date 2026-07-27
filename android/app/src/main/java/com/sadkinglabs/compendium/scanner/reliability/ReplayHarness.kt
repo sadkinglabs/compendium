@@ -1,6 +1,7 @@
 package com.sadkinglabs.compendium.scanner.reliability
 
 import com.sadkinglabs.compendium.scanner.FrameSelector
+import com.sadkinglabs.compendium.scanner.match.CardIndex
 import com.sadkinglabs.compendium.scanner.match.CardRef
 import com.sadkinglabs.compendium.scanner.match.Matcher
 import com.sadkinglabs.compendium.scanner.session.Candidate
@@ -9,13 +10,28 @@ import com.sadkinglabs.compendium.scanner.session.ScanEvent
 import com.sadkinglabs.compendium.scanner.session.ScanState
 import com.sadkinglabs.compendium.scanner.session.reduce
 
-/** Metadata pinned into every report so ON/OFF policy runs are provably comparable. */
-data class RunMeta(
+/**
+ * The ONE immutable run specification. It OWNS the catalog + all configuration + policy mode and
+ * CONSTRUCTS the matcher replay uses, so a report's provenance is execution-bound: the reported
+ * threshold/margin/catalog-digest are the ones that actually produced the matcher, not caller-
+ * asserted values that could mismatch. (Codex: provenance must be execution-bound.)
+ */
+class RunSpec(
+    val catalog: List<CardRef>,
     val policyMode: String,
-    val matcherThreshold: Double,
-    val matcherMargin: Double,
+    val matcherThreshold: Double = 0.80,
+    val matcherMargin: Double = 0.05,
+    val reducerConfig: ScanConfig = ScanConfig(),
     val deviceBuild: String? = null,   // null = off-device (JVM) run
-)
+) {
+    /** Built HERE from this spec's catalog + thresholds - the object replay runs against. */
+    val matcher: Matcher = Matcher(CardIndex(catalog), matcherThreshold, matcherMargin)
+    val validCardIds: Set<String> = catalog.mapTo(HashSet()) { it.id }
+    val catalogDigest: String = CorpusValidator.catalogDigest(catalog)
+    private val classes: Map<String, CardClass> =
+        catalog.associate { it.id to if (it.isSite) CardClass.SITE else CardClass.SPELL }
+    fun classOf(cardId: String): CardClass? = classes[cardId]
+}
 
 data class CaseOutcome(
     val caseId: String,
@@ -70,34 +86,31 @@ object ReplayHarness {
         var lockedId: String? = null
         var lockLatency: Long? = null
         for (f in case.frames) {
-            // QR precedes OCR: a compendium:// link is handled by the QR path, so no card candidate
-            // is produced from this frame (mirrors production onLink-before-onResult).
-            val cand: Candidate? = if (FrameSelector.isCompendiumLink(f.qr)) {
-                null
-            } else {
-                FrameSelector.selectCard(f.strips, matcher)?.let {
-                    Candidate(it.match.card.id, it.match.card.name, it.match.score, 0.0, it.source)
-                }
+            // QR precedes OCR AND is TERMINAL: production's onLink creates a sticky QR result and
+            // freezes, ignoring all later OCR. So a compendium:// link ends replay - no card can lock
+            // afterwards (the previous "Observed(null) then keep going" let a later card false-lock).
+            if (FrameSelector.isCompendiumLink(f.qr)) break
+            val cand: Candidate? = FrameSelector.selectCard(f.strips, matcher)?.let {
+                Candidate(it.match.card.id, it.match.card.name, it.match.score, 0.0, it.source)
             }
             state = reduce(state, ScanEvent.Observed(cand, f.atMs), cfg)
             val s = state
-            if (lockedId == null && s is ScanState.Result) { lockedId = s.snapshot.cardId; lockLatency = f.atMs - t0 }
+            if (s is ScanState.Result) { lockedId = s.snapshot.cardId; lockLatency = f.atMs - t0; break }  // card lock is terminal
         }
         return CaseOutcome(case.id, case.category, case.expected, lockedId, lockLatency)
     }
 
     /**
      * Fail-closed: validates the corpus, and refuses to score if a predicted lock resolves to a card
-     * outside [catalog] (unknown predicted class). Records full run metadata for comparability.
+     * outside the spec's catalog (unknown predicted class). Runs against the spec's OWN matcher +
+     * reducer config, and derives all provenance from the spec (execution-bound, not caller-asserted).
      */
-    fun report(corpus: Corpus, matcher: Matcher, catalog: List<CardRef>, meta: RunMeta, cfg: ScanConfig = ScanConfig()): Report {
-        val ids = catalog.mapTo(HashSet()) { it.id }
-        CorpusValidator.validate(corpus, ids)
-        val classOf: Map<String, CardClass> = catalog.associate { it.id to if (it.isSite) CardClass.SITE else CardClass.SPELL }
+    fun report(corpus: Corpus, spec: RunSpec): Report {
+        CorpusValidator.validate(corpus, spec.validCardIds)
         fun classOfOrFail(id: String): CardClass =
-            classOf[id] ?: error("run aborted: locked/expected card '$id' is not in the catalog (unknown class)")
+            spec.classOf(id) ?: error("run aborted: locked/expected card '$id' is not in the catalog (unknown class)")
 
-        val outcomes = corpus.cases.map { replay(it, matcher, cfg) }
+        val outcomes = corpus.cases.map { replay(it, spec.matcher, spec.reducerConfig) }
         var correct = 0; var misses = 0; var falseLocks = 0
         var negativeCount = 0; var negativeFalseLocks = 0
         val support = HashMap<CardClass, Int>(); val tp = HashMap<CardClass, Int>(); val resolvedHere = HashMap<CardClass, Int>()
@@ -124,14 +137,14 @@ object ReplayHarness {
         return Report(
             corpusVersion = corpus.version,
             corpusDigest = CorpusValidator.corpusDigest(corpus),
-            catalogDigest = CorpusValidator.catalogDigest(catalog),
-            catalogSize = catalog.size,
+            catalogDigest = spec.catalogDigest,
+            catalogSize = spec.catalog.size,
             coverage = CorpusValidator.coverage(corpus),
-            policyMode = meta.policyMode,
-            matcherThreshold = meta.matcherThreshold,
-            matcherMargin = meta.matcherMargin,
-            reducerConfig = cfg,
-            deviceBuild = meta.deviceBuild,
+            policyMode = spec.policyMode,
+            matcherThreshold = spec.matcherThreshold,
+            matcherMargin = spec.matcherMargin,
+            reducerConfig = spec.reducerConfig,
+            deviceBuild = spec.deviceBuild,
             total = outcomes.size, correct = correct, misses = misses, falseLocks = falseLocks,
             negativeCount = negativeCount, negativeFalseLocks = negativeFalseLocks,
             perClass = CardClass.entries.associateWith { ClassMetrics(support[it] ?: 0, tp[it] ?: 0, resolvedHere[it] ?: 0) },

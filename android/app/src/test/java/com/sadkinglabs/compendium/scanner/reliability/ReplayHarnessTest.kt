@@ -36,9 +36,15 @@ class ReplayHarnessTest {
         assertNull("equidistant Flame/Flare is rejected", lock("ambiguous_flae").lockedId)
     }
 
-    @Test fun qr_precedes_ocr_so_no_card_locks() {
+    @Test fun qr_precedes_ocr_and_is_terminal() {
         assertNull(lock("qr_only").lockedId)
         assertNull("a QR beside a card still suppresses the card path", lock("qr_near_card").lockedId)
+        // TERMINAL: a QR frame followed by confirmable card-only frames must NOT lock the card.
+        assertNull("a QR freezes scanning; later card frames can't lock", lock("qr_then_card").lockedId)
+    }
+
+    @Test fun competing_strips_pick_the_higher_score() {
+        assertEquals("haystack", lock("multi_strip_site_over_noisy_top").lockedId)   // site edge beats a noisy TOP
     }
 
     @Test fun empty_and_non_card_text_never_lock() {
@@ -55,17 +61,18 @@ class ReplayHarnessTest {
     }
 
     @Test fun report_records_metadata_and_denominators() {
-        val r = ReplayHarness.report(corpus, matcher, catalog, SeedCorpus.meta())
+        val r = ReplayHarness.report(corpus, SeedCorpus.spec())
         assertEquals("seed-v2", r.corpusVersion)
         assertEquals(64, r.corpusDigest.length)          // sha-256 hex
         assertEquals(64, r.catalogDigest.length)
         assertEquals(5, r.catalogSize)
         assertEquals("name-level-baseline", r.policyMode)
+        assertEquals(0.80, r.matcherThreshold, 0.0001)
         assertNull(r.deviceBuild)
         assertTrue(r.coverage.contains(Category.QR_ONLY) && r.coverage.contains(Category.SIMILAR_NAME))
-        assertEquals(6, r.negativeCount)                 // ambiguous_flae, type_word_site, empty, non_card, qr_only, qr_near_card
+        assertEquals(7, r.negativeCount)                 // ambiguous, type_word_site, empty, non_card, qr_only, qr_near_card, qr_then_card
         assertEquals(1, r.negativeFalseLocks)            // only site->Smite
-        assertEquals(1.0, r.perClass[CardClass.SITE]!!.recall, 0.001)   // both haystack cases lock
+        assertEquals(1.0, r.perClass[CardClass.SITE]!!.recall, 0.001)   // all three haystack cases lock
         assertTrue(r.latencyP50Ms != null)
     }
 
@@ -73,9 +80,7 @@ class ReplayHarnessTest {
         val bad = corpus.copy(cases = corpus.cases + CorpusCase(
             "ghost", Category.SPELL, listOf(FrameObservation(0, emptyList())), Expected.Identity("does-not-exist"),
         ))
-        assertThrows(IllegalStateException::class.java) {
-            ReplayHarness.report(bad, matcher, catalog, SeedCorpus.meta())
-        }
+        assertThrows(IllegalStateException::class.java) { ReplayHarness.report(bad, SeedCorpus.spec()) }
     }
 
     @Test fun corpus_digest_is_deterministic_and_drift_sensitive() {
