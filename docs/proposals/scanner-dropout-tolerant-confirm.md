@@ -169,3 +169,15 @@ unchanged, both precision 1.00, 0 false-locks. All measured; per-case tables abo
 Behind `ScanConfig` (default on). Measured on the frozen corpus before any device build. When it lands
 with the clean confirmation build, flip `GuideGeometry.showReadZones` and `captureCorpus` to `false`
 (the pre-merge checklist already tracks `captureCorpus`).
+
+**Hard acceptance condition for the reducer→ViewModel integration (Codex Minor).** This increment is
+harness-only; the live scanner still uses `StabilityGate` ([ScannerViewModel.kt:50]), and `onStop()`
+today only persists capture ([ScannerActivity.kt:157]). When the reducer replaces `StabilityGate`, the
+integration is **not complete** until: (a) a pause/stop **lifecycle reset** clears any in-progress
+`Confirming` to `Searching` (so same-card evidence cannot survive a background cycle), and (b) a
+background→resume test proves it. Without (a)+(b) the same-card-not-time-gated decision here is unsafe
+live. This is a gating item on that checkpoint, not this commit.
+
+**Fail-closed baselines (Codex Suggestion — done).** `FullCatalogBaselineTest` now asserts, per corpus,
+`falseLocks == 0`, `correct >= floor` (v1 ≥ 13, v2 ≥ 12), and SPELL recall ≥ 1.0, so a later regression
+cannot leave a green gate.

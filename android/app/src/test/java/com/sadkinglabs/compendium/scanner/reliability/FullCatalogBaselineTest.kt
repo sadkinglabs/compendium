@@ -26,13 +26,15 @@ class FullCatalogBaselineTest {
             val t = line.split('\t'); CardRef(id = t[0], name = t[0], isSite = t.getOrNull(1) == "1")
         }.toList()
 
-    @Test fun baseline_device_capture_full_catalog() = runBaseline("device-capture-v1.corpus")
+    @Test fun baseline_device_capture_full_catalog() = runBaseline("device-capture-v1.corpus", minCorrect = 13)
 
     /** v2 (2026-07-27, overlay session): 11 sites + Ghoul + Drowned - the pip fix's end-to-end
      *  proof, since Ghoul/Drowned/Beacon/Gothic Tower all failed before it and are here. */
-    @Test fun baseline_device_capture_v2() = runBaseline("device-capture-v2.corpus")
+    @Test fun baseline_device_capture_v2() = runBaseline("device-capture-v2.corpus", minCorrect = 12)
 
-    private fun runBaseline(corpusFile: String) {
+    // Fail-closed floors (Codex follow-up): asserting the CURRENT measured outcome so a later
+    // regression cannot leave a green test. Raise these only alongside fresh evidence.
+    private fun runBaseline(corpusFile: String, minCorrect: Int) {
         val catalog = catalog()
         val corpus = CorpusIO.decode(res(corpusFile))
         val report = ReplayHarness.report(corpus, RunSpec(catalog, NameLevelPolicy))
@@ -55,6 +57,9 @@ class FullCatalogBaselineTest {
         println(out)
         val stem = corpusFile.removeSuffix(".corpus")
         File("build/scanner-baseline-$stem.txt").apply { parentFile?.mkdirs() }.writeText(out)
-        assertTrue(report.total == corpus.cases.size)
+        assertTrue("every case must run", report.total == corpus.cases.size)
+        assertTrue("fail-closed: no false locks (got ${report.falseLocks})", report.falseLocks == 0)
+        assertTrue("fail-closed: correct ${report.correct} < floor $minCorrect", report.correct >= minCorrect)
+        assertTrue("fail-closed: SPELL recall regressed (${cm(CardClass.SPELL).recall})", cm(CardClass.SPELL).recall >= 1.0)
     }
 }
