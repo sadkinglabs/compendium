@@ -55,7 +55,7 @@ object GuideGeometry {
     // DEV CAPTURE: record every frame's analyzer observation into a corpus file (written to the
     // app's external files dir on scanner close) for the reliability harness. Adds a tiny per-frame
     // append; NOT for release. TRUE only on the capture build - FLIP FALSE before merging to main.
-    const val captureCorpus = true
+    const val captureCorpus = false
 
     val guide = RectFraction(0.06f, 0.12f, 0.94f, 0.81f)     // ~0.716 card within the 9:16 frame
 
