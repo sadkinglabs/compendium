@@ -20,6 +20,7 @@
     "test:app": "node --test \"src/*.test.mjs\"",
     "test:recog": "node --test \"scripts/recog/**/*.test.mjs\"",
     "recog:intake": "node scripts/recog/intake.mjs",
+    "recog:score": "node scripts/recog/score.mjs",
     "check:types": "node --test scripts/check-types.test.mjs && node scripts/check-types.mjs",
     "check:cycles": "node --test scripts/check-cycles.test.mjs && node scripts/check-cycles.mjs",
     "check:source": "node --test scripts/check-source-guards.test.mjs && node scripts/check-source-guards.mjs",
