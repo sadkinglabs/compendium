@@ -78,13 +78,13 @@ fun ScannerScreen(
 
     // ONE presentation clock (0->1 over 800ms) keyed to each lock, shared by the overlay reveal
     // AND the result tray so they are staged on a single timeline instead of drifting apart.
-    // Reduced motion snaps to the settled end-state.
-    val reveal = remember { Animatable(0f) }
+    // Re-created per lock (keyed on lockEvent) so a NEW result composes at 0 on its very first
+    // frame - keying only the LaunchedEffect left the first frame painting at the PREVIOUS card's
+    // settled reveal=1, flashing the tray title in before the gold reveal replayed. Reduced motion
+    // starts (and stays) at the settled end-state.
+    val reveal = remember(lockEvent) { Animatable(if (reduceMotion) 1f else 0f) }
     LaunchedEffect(lockEvent) {
-        if (lockEvent > 0) {
-            if (reduceMotion) reveal.snapTo(1f)
-            else { reveal.snapTo(0f); reveal.animateTo(1f, tween(800)) }
-        }
+        if (lockEvent > 0 && !reduceMotion) reveal.animateTo(1f, tween(800))
     }
     val revealT = reveal.value
 
