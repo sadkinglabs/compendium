@@ -362,15 +362,60 @@ SQLCipher are per-architecture, so each extra ABI is a full duplicate set.
 scoped to `buildTypes.release` in `android/app/build.gradle`; moving it to
 `defaultConfig` would strip them everywhere and quietly break emulator testing.
 
-**`armeabi-v7a` and `minSdkVersion` move together.** minSdk 22 admits 32-bit devices, so
-dropping that ABI without raising minSdk would let such a phone install the app and then
-crash in the scanner, rather than being cleanly excluded from the store listing. Do not
-drop one without the other.
+**`armeabi-v7a` and `minSdkVersion` move together as a product baseline, not a technical
+dependency.** `minSdkVersion` and release ABIs are independent technical filters, but they move
+together in the approved product baseline: API 29 excludes older Android releases, and arm64-only
+excludes 32-bit devices. They are coupled by the owner's support decision, not because minSdk
+controls CPU architecture. An install with no compatible ABI (or below the minSdk) must fail
+cleanly - excluded, not install-then-crash - and that is verified when the baseline is implemented
+(checklist below). The owner has approved making both moves together as the **approved next
+baseline** below.
 
 ```bash
 # what the APK actually ships
 aapt2 dump badging <apk> | grep native-code
 ```
+
+### Approved next Android baseline (minSdk 29, arm64-only) - not yet implemented
+
+**Owner architecture decision, 2026-08-03.** The next platform baseline is **minSdk 29 (Android 10)**
+with **arm64-v8a as the only release ABI**. This is an approved decision **on record, not a change
+that has shipped**: the values above (**minSdk 22**, release **arm64-v8a + armeabi-v7a**) are still
+what current builds produce.
+
+| | Current shipping baseline | Approved next baseline |
+|---|---|---|
+| minSdk | 22 (Android 5.1) | **29 (Android 10)** |
+| Release ABIs | arm64-v8a + armeabi-v7a | **arm64-v8a only** |
+| Debug ABIs | all four (incl. x86_64) | **unchanged - x86_64 retained for emulators** |
+| compileSdk / targetSdk | 35 | 35 (separate 36 follow-up, below) |
+
+**Effective implementation gate.** The Gradle/ABI change is implemented at **card-recogniser Gate 2**
+(native inference integration, which needs single-ABI native libs anyway), or an **explicitly approved
+earlier platform-baseline increment** - never silently. See
+`docs/proposals/card-recogniser-embedding.md` §16 (the architecture record) and its Gate 2.
+
+**User impact.** Android 9 and earlier, and 32-bit-only devices, keep their existing installation and
+its data but cannot install future compatible APKs. No data is lost; those devices simply stop
+receiving updates. This trades obsolete-hardware reach for a modern camera/ML experience, smaller
+native APKs, current inference technology, and a narrower verification matrix.
+
+**Debug retains x86_64** so the emulator keeps working on an x86_64 host; only the release ABI list
+narrows.
+
+**Required implementation verification (run when the change actually lands, not in this doc increment):**
+- release manifest reports `minSdkVersion` 29;
+- release APK contains `arm64-v8a` only (`aapt2 dump badging <apk> | grep native-code`);
+- debug / emulator build still contains `x86_64`;
+- a signed release upgrade on a supported device preserves profile data;
+- installation on an unsupported ABI / API fails cleanly (excluded, not crash-on-launch);
+- release APK size recorded before and after.
+
+**Separate follow-up - targetSdk/compileSdk 35 -> 36.** Independent of the minSdk/ABI move and
+**required before future Google Play submissions** (Play mandates a recent target API for app
+updates). **The Play deadline for target API 36 on new and updated app submissions is
+August 31, 2026; compileSdk/targetSdk must reach 36 before then.** Android 17 / API 37 should be
+tested but is not the production target of this documentation change.
 
 **Card art is no longer bundled (art-cdn Phase 5).** The ~72 MB `public/cards/` WebP bundle was
 removed; card art is served from the CDN (`ART_CDN_BASE`) and cached on device on first view, so the
