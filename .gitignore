@@ -55,3 +55,5 @@ docs/proposals/*.diff
 # Card-recogniser governed image store - private tester/eval photos NEVER enter git.
 # The committed authority is data/recog/manifest.json (metadata only, no image bytes, no PII).
 recog-data/
+scripts/recog/train/.venv/
+scripts/recog/train/_out/
