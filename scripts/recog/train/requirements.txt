@@ -1,3 +1,15 @@
+# Gate-1 encoder training toolchain. Python 3.12 (NOT 3.14 - torch's amp module fails to load there).
+#
+#   py -3.12 -m venv .venv
+#   .venv/Scripts/python -m pip install --index-url https://download.pytorch.org/whl/cu128 torch torchvision
+#   .venv/Scripts/python -m pip install timm numpy opencv-python-headless pillow
+#
+# torch/torchvision come from the CUDA 12.8 index (Blackwell / RTX 50-series). If a later `pip install`
+# pulls a CPU torch as a transitive dep, reinstall from cu128 and pin torchvision to the matching torch
+# (torch 2.11 <-> torchvision 0.26).
+torch==2.11.0+cu128
+torchvision==0.26.0+cu128
+timm==1.0.28
 numpy==2.5.1
-opencv-python-headless==5.0.0
+opencv-python-headless==5.0.0.93
 pillow==12.3.0

@@ -142,7 +142,8 @@ function render(report) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const ROOT = resolve(process.cwd());
   const manifestPath = join(ROOT, 'data', 'recog', 'manifest.json');
-  const resultsPath = join(ROOT, 'recog-data', 'ocr-results.json');
+  const ai = process.argv.indexOf('--results');
+  const resultsPath = ai > -1 ? resolve(process.argv[ai + 1]) : join(ROOT, 'recog-data', 'ocr-results.json');
   if (!existsSync(manifestPath)) { console.error(`no manifest at ${manifestPath}`); process.exit(1); }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   const results = existsSync(resultsPath) ? (JSON.parse(readFileSync(resultsPath, 'utf8')).results ?? []) : [];
