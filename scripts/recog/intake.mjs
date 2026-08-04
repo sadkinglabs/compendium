@@ -19,7 +19,8 @@ import sharp from 'sharp';
 // --- intake contract constants (gate0-plan §2/§3) ---
 export const FORMATS = new Set(['jpeg', 'png', 'webp']);
 export const MIN_SHORT_PX = 800;
-export const MAX_PIXELS = 30_000_000;          // ~30 MP decode bound (also caps decode memory)
+export const DECODE_PIXEL_LIMIT = 100_000_000; // decode ceiling - covers 50MP+ phone sensors; guards OOM
+export const STORE_LONG_PX = 3000;             // normalise the stored long side (ample for recognition + OCR)
 export const MAX_BYTES = 40 * 1024 * 1024;
 export const MEDIA = new Set(['physical', 'screen']);
 export const SEALED_PCT = 30;                  // % of physical sessions held sealed
@@ -45,13 +46,17 @@ async function processImage(subDir, img, meta, seen, store) {
   for (const t of img.tags || []) if (!TAG_RE.test(t)) reasons.push(`bad tag: ${t}`);
   if (statSync(src).size > MAX_BYTES) reasons.push(`too large: ${statSync(src).size} bytes`);
 
-  let normalized, meta2;
+  let normalized, info, meta2;
   try {
-    meta2 = await sharp(src, { limitInputPixels: MAX_PIXELS }).metadata();
+    meta2 = await sharp(src, { limitInputPixels: DECODE_PIXEL_LIMIT }).metadata();
     if (!FORMATS.has(meta2.format)) reasons.push(`bad format: ${meta2.format}`);
     if (Math.min(meta2.width, meta2.height) < MIN_SHORT_PX) reasons.push(`too small: ${meta2.width}x${meta2.height}`);
-    // Re-encode without metadata (sharp drops EXIF unless withMetadata() is called) + bake orientation.
-    normalized = await sharp(src, { limitInputPixels: MAX_PIXELS }).rotate().toBuffer();
+    // Re-encode WITHOUT metadata (sharp drops EXIF unless withMetadata() is called), bake orientation,
+    // and cap the long side so 50MP phone shots normalise to a consistent working resolution.
+    ({ data: normalized, info } = await sharp(src, { limitInputPixels: DECODE_PIXEL_LIMIT })
+      .rotate()
+      .resize(STORE_LONG_PX, STORE_LONG_PX, { fit: 'inside', withoutEnlargement: true })
+      .toBuffer({ resolveWithObject: true }));
   } catch (e) {
     reasons.push(`decode failed: ${e.message}`);
   }
@@ -65,7 +70,7 @@ async function processImage(subDir, img, meta, seen, store) {
 
   return {
     row: {
-      imageId, sha256: imageId, width: meta2.width, height: meta2.height, bytes: normalized.length,
+      imageId, sha256: imageId, width: info.width, height: info.height, bytes: normalized.length,
       medium: img.medium, tags: img.tags || [], card: img.card,
       sessionId: meta.sessionId, device: meta.device,
       contributorId: `c-${short8(meta.contributor)}`,       // hashed - no raw PII in the manifest

@@ -54,6 +54,16 @@ test('rejects too-small image, bad tag, bad medium, and bad consent (fail-closed
   assert.equal(JSON.parse(readFileSync(b.manifestPath, 'utf8')).rows.length, 0);
 });
 
+test('accepts a high-resolution (~50MP) phone shot and normalises the stored long side', async () => {
+  const b = bed();
+  const big = await sharp({ create: { width: 6144, height: 8160, channels: 3, background: { r: 100, g: 110, b: 120 } } }).jpeg().toBuffer();
+  await submission(b.inbox, 'big', okMeta([{ file: 'a.jpg', card: 'Big', medium: 'physical', tags: [] }]), { 'a.jpg': big });
+  const res = await runIntake(b);
+  assert.equal(res.accepted, 1);
+  const row = JSON.parse(readFileSync(b.manifestPath, 'utf8')).rows[0];
+  assert.ok(Math.max(row.width, row.height) <= 3000, `stored long side capped, got ${row.width}x${row.height}`);
+});
+
 test('screen medium is always the dev split, never sealed', () => {
   for (let i = 0; i < 50; i++) assert.equal(splitFor(`sess-${i}`, 'Dev', 'screen'), 'dev');
 });
