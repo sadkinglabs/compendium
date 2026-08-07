@@ -449,7 +449,8 @@ migration.
 **(c) Bundle or CDN the model?** **Bundle.** Offline-first is invariant-grade here: recognition is
 core scanner function, and the R2 precedent covers only *degradable* assets under invariant 6 (the
 app must work zero-image; it must not work zero-scanner-model after a fresh offline install). The
-size cost is real (Section 5.7 budgets it: target <= ~8MB total added, measured at Gate 2 with
+size cost is real (measured at Gate 2 on the signed release build and reported for the owner to weigh;
+the earlier "<= ~8MB" target is WITHDRAWN 2026-08-04, see §Fixed constraints > Size) with
 int8 quantisation, 256-d fp16 index, and the approved arm64-only release ABI which, once it takes
 effect at Gate 2 (Section 16), will ship native libraries once rather than per-ABI; a leaner runtime
 is the remaining lever). If the budget cannot be met, the fallback is a smaller model - not a CDN model.
@@ -890,13 +891,14 @@ are retained for auditability.
   release. The stack must support **API 29+ on arm64**; Android 5.1/API 22 compatibility is no
   longer a constraint on runtime or backbone choice. Native inference libraries ship for one ABI
   only. Takes effect at Gate 2, not before.
-- **Size budget:** total APK delta (runtime + model + index, plus any Phase-B detector model)
-  <= ~8MB on the release APK (currently ~23MB after the deliberate 90->23 art excision -
-  regressing half of that win needs owner sign-off). Levers: int8 model (~3-5MB), the
-  multi-prototype 256-d fp16 index (~1.6MB, §5.1/§5.3 - the old ~0.6MB figure was the
-  superseded one-centroid-per-card design), ops-reduced runtime build; the approved arm64-only
-  release ABI (above) is the baseline, not a contingency, so once it takes effect at Gate 2
-  native libs will ship once rather than per-ABI.
+- **Size:** an OWNER-CONTROLLED tradeoff, NOT a fixed engineering cap. The earlier "~8MB fixed
+  constraint" was author-proposed, never owner-set, and is **withdrawn** (owner direction,
+  2026-08-04: "I get to decide if my app is 32MB or 80MB"). The owner sets the acceptable APK size;
+  current release is ~23MB and growth into the tens of MB (a 45-70MB APK) is acceptable when it buys
+  accuracy. Models are chosen **accuracy-first**; each candidate's measured runtime + model + index
+  delta is REPORTED for the owner to weigh, never gated on a preset ceiling. This reopens licence-clean
+  models previously excluded on size alone - notably **DINOv2-small (Apache-2.0)**. Size levers remain
+  available if the owner later wants them (int8, fp16 index, ops-reduced build, arm64-only single-ABI).
 - **Licensing:** Apache-2.0/MIT-compatible weights and runtime only (MobileCLIP-class research
   licences excluded, Section 1.1).
 - **Portability weighting (owner-relaxed):** optimise **Android now**, port later. Do not pay a
@@ -921,8 +923,9 @@ it may be measured as a bounded comparison in the spike, and adopted only if Lit
 gate that ONNX passes.
 
 **Measured gates the primary candidate must pass (Codex #7 - any failure reopens the choice):**
-- **Release APK delta** (runtime + model + index) within the ~8MB budget, measured on the real
-  signed release build under the arm64-only baseline;
+- **Release APK delta** (runtime + model + index) measured on the real signed release build under the
+  arm64-only baseline, and REPORTED for the owner to weigh (the earlier "~8MB budget" was author-proposed
+  and WITHDRAWN 2026-08-04 - size is an owner-controlled tradeoff, see Fixed constraints > Size);
 - **Cold init** (runtime + model load + index load) within the **numeric ceiling frozen at
   Spike R** (Rev 4, Codex minor 2): Spike R's indicative measurements are turned into
   owner-approved cold-init and memory ceilings BEFORE Gate 2 begins, so Gate 2 verifies against
@@ -1263,7 +1266,8 @@ embed-only update step so a routine catalog drop stays a one-command, no-GPU aff
   are the primary path, OCR refines the score in conflict (ambiguous) cases; OCR's angle/off-frame
   weakness is that the name text falls outside the fixed OCR read-zones, which is exactly what
   whole-card embedding sidesteps.
-- **APK budget (~8MB) - CONFIRMED** ("a non-issue").
+- **APK budget (~8MB) - WITHDRAWN 2026-08-04** (was owner-"confirmed a non-issue"; the ~8MB figure itself
+  was author-proposed and is retired - size is now an owner-controlled tradeoff, see §Fixed constraints > Size).
 - **Screen-scan policy - RESOLVED** per §5.4.4: a genuine card on a screen is a tolerated /
   unguaranteed dev-only input (not a mandated negative); non-card screen content stays a
   must-not-lock negative; the sealed set + all shipping numbers are PHYSICAL cards only. Owner
@@ -1408,7 +1412,7 @@ or a representation that a rights-holder has granted permission.
 
 **Owner approval - recorded 2026-08-03.** The owner approves the architecture and authorises
 Gate 0. Near-term owner decisions resolved the same day (§13): the **Gate-0 off-ramp thresholds
-are accepted as stated**, the **~8MB APK budget is confirmed**, and the **screen-scan policy is
+are accepted as stated**, the ~~8MB APK budget~~ (**WITHDRAWN 2026-08-04**, see §Size), and the **screen-scan policy is
 resolved** (genuine card on a screen = tolerated, unguaranteed, dev-only; sealed set + shipping
 numbers are physical-card only; §5.4.4). Still open and timed: the **false-lock upper confidence
 bound** before sizing/sealing the negative corpus, and the **board home surface** before Phase-B
