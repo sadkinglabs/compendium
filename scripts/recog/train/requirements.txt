@@ -13,3 +13,12 @@ timm==1.0.28
 numpy==2.5.1
 opencv-python-headless==5.0.0.93
 pillow==12.3.0
+
+# Diagnostic-only backbones for the Gate-1 cold-backbone bake-off (fm.py). MobileCLIP-S2 and DINOv2 are
+# REFERENCE/TEACHER ONLY - NOT shipping candidates: MobileCLIP-S2 is Apple research-licence (apple-amlr,
+# excludes product dev) and 35.7M params; DINOv2-small is Apache-2.0 but ~21M, over the ~8MB budget. The
+# only budget+licence-clean cold backbone tested is timm mobilenetv4_conv_small (already pinned above).
+open_clip_torch==3.3.0
+ftfy==6.3.1
+regex==2026.7.19
+huggingface_hub

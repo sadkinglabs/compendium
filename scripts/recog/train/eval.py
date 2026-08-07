@@ -40,6 +40,72 @@ def load_bgr(p):
     return np.array(Image.open(p).convert("RGB"))[:, :, ::-1].copy()
 
 
+CARD_ASPECT = 0.716  # 63x88mm -> short/long. Sites are the same card, rotated.
+
+
+def _order(pts):
+    s, d = pts.sum(1), np.diff(pts, axis=1).ravel()
+    return np.array([pts[np.argmin(s)], pts[np.argmin(d)], pts[np.argmax(s)], pts[np.argmax(d)]], np.float32)
+
+
+def rectify_card(bgr, debug=False):
+    """Detect the card region and perspective-warp it to a tight full-res crop (background removed).
+    Scores every candidate contour by area * card-aspect-fit * rectangularity, and takes a true 4-point
+    quad when one exists (real perspective correction) else the contour's minAreaRect (far more forgiving
+    than demanding exactly four points). Returns None only when nothing card-shaped is found.
+    Orientation is left as-detected on purpose - SIFT is rotation-invariant, so removing the background
+    is what matters, not which way is up."""
+    H, W = bgr.shape[:2]
+    scale = 1100.0 / max(H, W)
+    small = cv2.resize(bgr, None, fx=scale, fy=scale) if scale < 1 else bgr.copy()
+    h, w = small.shape[:2]
+    gray = cv2.bilateralFilter(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), 7, 60, 60)
+    v = np.median(gray)
+    edge_maps = [
+        cv2.Canny(gray, int(max(0, 0.66 * v)), int(min(255, 1.33 * v))),
+        cv2.Canny(gray, 30, 110),
+        cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)),
+    ]
+    cnts = []
+    for e in edge_maps:
+        e = cv2.morphologyEx(e, cv2.MORPH_CLOSE, np.ones((11, 11), np.uint8))
+        c, _ = cv2.findContours(e, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        cnts += list(c)
+
+    best, best_score, best_kind = None, 0.0, None
+    for c in cnts:
+        a = cv2.contourArea(c)
+        if a < 0.06 * h * w or a > 0.99 * h * w:
+            continue
+        rect = cv2.minAreaRect(c)
+        (rw, rh) = rect[1]
+        if rw < 5 or rh < 5:
+            continue
+        aspect = min(rw, rh) / max(rw, rh)
+        asc = max(0.0, 1.0 - abs(aspect - CARD_ASPECT) / CARD_ASPECT)  # reward card-shaped boxes
+        fill = a / (rw * rh)                                            # reward genuinely rectangular blobs
+        score = a * (0.4 + 0.6 * asc) * fill
+        if score <= best_score:
+            continue
+        ap = cv2.approxPolyDP(c, 0.02 * cv2.arcLength(c, True), True)
+        if len(ap) == 4 and cv2.isContourConvex(ap):
+            quad, kind = ap.reshape(4, 2).astype(np.float32), "quad"
+        else:
+            quad, kind = cv2.boxPoints(rect).astype(np.float32), "box"
+        best, best_score, best_kind = quad, score, kind
+
+    if best is None:
+        return (None, "none") if debug else None
+    src = _order(best / scale)  # back to full-res coordinates
+    wq = int(round((np.linalg.norm(src[1] - src[0]) + np.linalg.norm(src[2] - src[3])) / 2))
+    hq = int(round((np.linalg.norm(src[3] - src[0]) + np.linalg.norm(src[2] - src[1])) / 2))
+    if wq < 20 or hq < 20:
+        return (None, "tiny") if debug else None
+    dst = np.array([[0, 0], [wq, 0], [wq, hq], [0, hq]], np.float32)
+    out = cv2.warpPerspective(bgr, cv2.getPerspectiveTransform(src, dst), (wq, hq))
+    return (out, best_kind) if debug else out
+
+
 def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     ck = torch.load(os.path.join(OUT, "encoder.pt"), map_location=dev, weights_only=False)
@@ -56,13 +122,18 @@ def main():
 
     man = json.load(open(MANIFEST, encoding="utf-8"))
     results, per = [], []
+    cropped_n = 0
     for row in man["rows"]:
         if row["medium"] != "physical":
             continue
         p = os.path.join(STORE, row["imageId"] + ".jpg")
         if not os.path.exists(p):
             continue
-        sims = P @ embed(enc, load_bgr(p), dev)
+        raw = load_bgr(p)
+        crop = rectify_card(raw)
+        if crop is not None:
+            cropped_n += 1
+        sims = P @ embed(enc, crop if crop is not None else raw, dev)
         best = {}
         for c, s in zip(proto_card, sims):
             if c not in best or s > best[c]:
