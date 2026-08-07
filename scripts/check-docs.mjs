@@ -65,7 +65,7 @@ export async function checkDocs(root = process.cwd()) {
   async function markdownFiles(dir = root) {
     const found = [];
     for (const entry of await readdir(dir, { withFileTypes: true })) {
-      if (entry.isDirectory() && ['.git', 'node_modules', 'dist', 'android', '.claude'].includes(entry.name)) continue;
+      if (entry.isDirectory() && ['.git', 'node_modules', 'dist', 'android', '.claude', '.venv'].includes(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) found.push(...await markdownFiles(full));
       else if (entry.isFile() && entry.name.endsWith('.md')) found.push(full);
