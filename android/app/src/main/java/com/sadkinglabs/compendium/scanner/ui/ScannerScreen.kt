@@ -4,25 +4,36 @@ import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,11 +43,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -44,14 +56,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sadkinglabs.compendium.scanner.ScannerViewModel
 import com.sadkinglabs.compendium.scanner.camera.CameraController
 import com.sadkinglabs.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.model.SnapCandidate
+import com.sadkinglabs.compendium.scanner.model.SnapState
 import kotlinx.coroutines.launch
 
 /**
- * The full-screen scanner UI: live CameraX preview, the alignment overlay (colour driven
- * by phase + lockEvent, flashing the type accent on lock), and the sticky recognition
- * sheet ([ScannerViewModel.sheet]) - a card, a shared deck, or a shared match - with a
- * type-coloured sparkle flourish + Snackbar. Tapping anywhere outside the sheet dismisses
- * it.
+ * The pure-snapshot scanner UI (Rev 6): a live viewfinder with a gilt shutter, the captured still frozen in
+ * place during the read, a text-first candidate pick-list, and the existing recognition sheet on confirm.
+ * No guide frame; portrait or landscape.
  */
 @Composable
 fun ScannerScreen(
@@ -66,31 +78,24 @@ fun ScannerScreen(
     onAddToDeck: (Recognition, Int) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
     onImportMatch: (Recognition) -> Unit,
+    onSearchByName: () -> Unit,
     onDismissSheet: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val phase by viewModel.phase.collectAsStateWithLifecycle()
-    val lockEvent by viewModel.lockEvent.collectAsStateWithLifecycle()
+    val snap by viewModel.snap.collectAsStateWithLifecycle()
+    val still by viewModel.still.collectAsStateWithLifecycle()
     val sheet by viewModel.sheet.collectAsStateWithLifecycle()
-    val debug by viewModel.debug.collectAsStateWithLifecycle()
+    val lockEvent by viewModel.lockEvent.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
-    // ONE presentation clock (0->1 over 800ms) keyed to each lock, shared by the overlay reveal
-    // AND the result tray so they are staged on a single timeline instead of drifting apart.
-    // Re-created per lock (keyed on lockEvent) so a NEW result composes at 0 on its very first
-    // frame - keying only the LaunchedEffect left the first frame painting at the PREVIOUS card's
-    // settled reveal=1, flashing the tray title in before the gold reveal replayed. Reduced motion
-    // starts (and stays) at the settled end-state.
     val reveal = remember(lockEvent) { Animatable(if (reduceMotion) 1f else 0f) }
-    LaunchedEffect(lockEvent) {
-        if (lockEvent > 0 && !reduceMotion) reveal.animateTo(1f, tween(800))
-    }
+    LaunchedEffect(lockEvent) { if (lockEvent > 0 && !reduceMotion) reveal.animateTo(1f, tween(650)) }
     val revealT = reveal.value
 
-    // Android Back: dismiss the result first, then (with no result up) let Back close the scanner.
-    // Without this the Activity always finished, exiting straight to Home with a result showing.
+    // Back: sheet -> dismiss; mid-snapshot -> cancel; else let Back close.
     BackHandler(enabled = sheet != null) { onDismissSheet() }
+    BackHandler(enabled = sheet == null && snap != SnapState.Ready) { viewModel.onCancelSnap() }
 
     Box(Modifier.fillMaxSize()) {
         if (granted) {
@@ -109,15 +114,79 @@ fun ScannerScreen(
                     pv
                 },
             )
-            CameraOverlay(phase, sheet, reduceMotion, revealT)
+            // Frozen still: the user's own photo becomes the subject while it is read / chosen.
+            val frozen = still
+            if (snap != SnapState.Ready && frozen != null && !frozen.isRecycled) {
+                // The card crop that is actually being matched, shown whole (Fit) - what you see is what
+                // it reads. A dim wash sits under any panel.
+                Box(Modifier.fillMaxSize().background(Color(0xCC000000)))
+                Image(
+                    bitmap = frozen.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(12.dp),
+                )
+            }
         } else {
             PermissionPrompt(onClose)
         }
 
+        // Status line, top-centre.
+        val status = when (val s = snap) {
+            SnapState.Ready -> "Fill the frame with one card, portrait or landscape, then tap"
+            SnapState.Capturing, SnapState.Identifying -> "Reading the card…"
+            is SnapState.Shortlist -> "Couldn't be certain - pick the match"
+            is SnapState.Empty -> if (s.unavailable) "Visual match unavailable" else ""
+        }
+        if (granted && sheet == null && status.isNotEmpty()) {
+            Text(
+                status, color = Color(0xFFEFE7D8), fontSize = 14.5.sp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(top = 12.dp, start = 56.dp, end = 56.dp),
+            )
+        }
+
+        // Reading spinner (centre).
+        if (granted && (snap == SnapState.Capturing || snap == SnapState.Identifying)) {
+            CircularProgressIndicator(
+                color = PillarGold, strokeWidth = 3.dp,
+                modifier = Modifier.align(Alignment.Center).size(52.dp),
+            )
+        }
+
+        // Shutter (Ready only).
+        if (granted && snap == SnapState.Ready && sheet == null) {
+            Shutter(
+                onClick = viewModel::onShutter,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 28.dp),
+            )
+        }
+
+        // Shortlist / Empty panels (no sheet up).
+        val s = snap
+        if (granted && sheet == null && (s is SnapState.Shortlist || s is SnapState.Empty)) {
+            SnapshotPanel(
+                state = s,
+                onPick = viewModel::onPickCandidate,
+                onRetake = viewModel::onRetake,
+                onCancel = viewModel::onCancelSnap,
+                onSearchByName = onSearchByName,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 20.dp),
+            )
+        }
+
+        // Result sheet (after a pick or QR).
         val rec = sheet
         if (rec != null) {
             val key = rec.cardId ?: rec.url ?: rec.title
-            // Tap anywhere outside the sheet to dismiss (the sheet swallows its own taps).
             Box(Modifier.fillMaxSize().pointerInput(key) { detectTapGestures { onDismissSheet() } })
             RecognitionCard(
                 rec = rec,
@@ -126,8 +195,6 @@ fun ScannerScreen(
                 reveal = revealT,
                 onSearchCodex = { onSearchCodex(rec) },
                 onAddCollection = { set ->
-                    // Universal-mode quick +1: files onto the chosen printing (single-set
-                    // auto, reprint via the picker), then stays open to keep scanning.
                     onSaveCollection(rec, 1, set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
                 },
@@ -138,12 +205,12 @@ fun ScannerScreen(
                 onSaveCollection = { qty, set ->
                     onSaveCollection(rec, qty, set)
                     scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
-                    onDismissSheet()   // keep scanning: drop the sheet and resume
+                    onDismissSheet()
                 },
                 onAddToDeck = { qty ->
                     onAddToDeck(rec, qty)
                     scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title} to the deck") }
-                    onDismissSheet()   // keep scanning
+                    onDismissSheet()
                 },
                 onSaveDeck = { onSaveDeck(rec) },
                 onImportMatch = { onImportMatch(rec) },
@@ -152,33 +219,13 @@ fun ScannerScreen(
             )
         }
 
-        // DEBUG: raw OCR readout per strip (TOP / R90 / R270 / L90 / L270), so you can
-        // see exactly what each edge reads. Driven by GuideGeometry.showReadZones.
-        if (debug.isNotEmpty()) {
-            Text(
-                debug,
-                color = Color(0xFFB6FF7A),
-                fontSize = 10.sp,
-                lineHeight = 13.sp,
-                fontFamily = FontFamily.Monospace,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(start = 10.dp, top = 44.dp, end = 10.dp)
-                    .background(Color(0xAA000000))
-                    .padding(6.dp),
-            )
-        }
-
-        // Close (exit scanner) - the app's language: a gold X in a round button, TOP-RIGHT.
-        // Drawn last so it stays tappable above the dismiss scrim. The reveal status text is
-        // offset below this corner so the two never conflict.
+        // Close (exit scanner).
         Box(
             Modifier
                 .align(Alignment.TopEnd)
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(8.dp)
-                .size(48.dp)   // architectural touch-target floor (OD-15)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(Color(0x59000000))
                 .border(1.dp, PillarGold.copy(alpha = 0.45f), CircleShape)
@@ -196,5 +243,80 @@ fun ScannerScreen(
                 .windowInsetsPadding(WindowInsets.safeDrawing)
                 .padding(bottom = 8.dp),
         )
+    }
+}
+
+/** The gilt seal shutter - a 72dp gold ring with a parchment centre dot. */
+@Composable
+private fun Shutter(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .background(Color(0x8C17130B))
+            .border(2.25.dp, PillarGold, CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Capture card" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(Modifier.size(14.dp).clip(CircleShape).background(Color(0xFFEFE7D8)))
+    }
+}
+
+/** Text-first candidate list (Shortlist) or the honest Empty state. */
+@Composable
+private fun SnapshotPanel(
+    state: SnapState,
+    onPick: (String) -> Unit,
+    onRetake: () -> Unit,
+    onCancel: () -> Unit,
+    onSearchByName: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val items: List<SnapCandidate> = (state as? SnapState.Shortlist)?.items ?: emptyList()
+    val unavailable = (state as? SnapState.Empty)?.unavailable == true
+    Box(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xF01A1206))
+            .border(1.dp, PillarGold.copy(alpha = 0.4f), RoundedCornerShape(18.dp))
+            .padding(16.dp),
+    ) {
+        Column {
+            Text(
+                when {
+                    items.isNotEmpty() -> "Is it one of these?"
+                    unavailable -> "Visual match unavailable"
+                    else -> "Couldn't identify the card"
+                },
+                color = PillarGold, fontSize = 16.sp,
+            )
+            if (items.isEmpty() && !unavailable) {
+                Spacer(Modifier.height(4.dp))
+                Text("Try more light, or fill the frame with the card.", color = Color(0xB8EFE7D8), fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            items.forEach { c ->
+                Text(
+                    c.displayName, color = Color(0xFFEFE7D8), fontSize = 16.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { onPick(c.cardId) }
+                        .padding(vertical = 12.dp, horizontal = 8.dp)
+                        .semantics { contentDescription = "Select ${c.displayName}" },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onRetake) { Text("Try another photo", color = PillarGold) }
+                TextButton(onClick = onSearchByName) { Text("Search by name", color = PillarGold) }
+            }
+            if (items.isNotEmpty()) {
+                TextButton(onClick = onCancel) { Text("None of these", color = Color(0xB3EFE7D8)) }
+            }
+        }
     }
 }

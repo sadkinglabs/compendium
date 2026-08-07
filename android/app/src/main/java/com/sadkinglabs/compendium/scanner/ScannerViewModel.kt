@@ -1,42 +1,46 @@
 package com.sadkinglabs.compendium.scanner
 
+import android.graphics.Bitmap
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.sadkinglabs.compendium.scanner.camera.TitleStripAnalyzer
-import com.sadkinglabs.compendium.scanner.match.MatchResult
-import com.sadkinglabs.compendium.scanner.model.Phase
-import com.sadkinglabs.compendium.scanner.model.GuideGeometry
+import com.sadkinglabs.compendium.scanner.match.CardRef
+import com.sadkinglabs.compendium.scanner.match.Norm
 import com.sadkinglabs.compendium.scanner.model.Recognition
-import com.sadkinglabs.compendium.scanner.model.ScannerQr
 import com.sadkinglabs.compendium.scanner.model.ScanKind
-import com.sadkinglabs.compendium.scanner.reliability.CorpusRecorder
+import com.sadkinglabs.compendium.scanner.model.ScannerQr
+import com.sadkinglabs.compendium.scanner.model.SnapCandidate
+import com.sadkinglabs.compendium.scanner.model.SnapState
 import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
-import com.sadkinglabs.compendium.scanner.ocr.Extraction
 import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
-import com.sadkinglabs.compendium.scanner.stability.StabilityGate
+import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.util.concurrent.Executors
 
 /**
- * Owns the universal recognition pipeline (a card, OR a shared deck / match QR). Exposes
- * THREE things, deliberately decoupled:
- *  - [sheet]     : the sticky [Recognition] (null = no sheet). Stays until "Scan another"
- *                  ([onDismiss]) or a DIFFERENT thing locks.
- *  - [phase]     : the live frame-colour driver - purple SEARCHING / gold DETECTING -
- *                  which keeps updating even while a sheet is shown, so the frame can go
- *                  back to purple to signal "scanning is allowed again".
- *  - [lockEvent] : a counter bumped on each new lock, for the (type-coloured) flash +
- *                  haptic + sheet reveal.
+ * Pure-snapshot scanner (Rev 6). One deliberate shutter press captures a still; image recognition
+ * ([VisualMatcher]) identifies it once. Shortlist-first: candidates are presented for the user to confirm;
+ * no automatic single Result and no write happens without an explicit tap. `compendium://` QR is still
+ * detected passively on the live feed and wins from Ready. OCR does NO per-frame work here.
  *
- * Each admitted frame is checked for a `compendium://` QR FIRST ([onLink]) - unambiguous,
- * so it wins - and only falls through to card OCR ([onResult]) when no QR is present.
+ * Fail-closed: if the visual model/index cannot load, the state is Empty(unavailable) - never a fallback to
+ * unrestricted OCR (which would recreate the site mis-identification this redesign fixes).
+ *
+ * Bitmap discipline: the captured pixels are memory-only, owned by one snapshot [token]; a late inference
+ * from a superseded capture can never update a newer scan, and every still is recycled on transition.
  */
 class ScannerViewModel : ViewModel() {
 
@@ -47,97 +51,237 @@ class ScannerViewModel : ViewModel() {
     val analysisExecutor = Executors.newSingleThreadExecutor()
 
     private val matcher = ScannerChannel.matcher
-    private val gate = StabilityGate(ScannerChannel.minStreak)
-    private val extractor = StripExtractor(recognizer)
+    private val extractor = StripExtractor(recognizer)   // held for the analyzer; OCR is off per frame
     private val barcodeReader = BarcodeReader(barcodeClient)
 
+    private val _snap = MutableStateFlow<SnapState>(SnapState.Ready)
+    val snap: StateFlow<SnapState> = _snap.asStateFlow()
+    private val _still = MutableStateFlow<Bitmap?>(null)     // frozen capture, for the UI (memory-only)
+    val still: StateFlow<Bitmap?> = _still.asStateFlow()
     private val _sheet = MutableStateFlow<Recognition?>(null)
     val sheet: StateFlow<Recognition?> = _sheet.asStateFlow()
-    private val _phase = MutableStateFlow(Phase.SEARCHING)
-    val phase: StateFlow<Phase> = _phase.asStateFlow()
     private val _lockEvent = MutableStateFlow(0)
     val lockEvent: StateFlow<Int> = _lockEvent.asStateFlow()
-    private val _debug = MutableStateFlow("")
-    val debug: StateFlow<String> = _debug.asStateFlow()
 
-    @Volatile private var locked: Recognition? = null
-
-    // DEV capture (GuideGeometry.captureCorpus): buffer every frame's observation for the reliability
-    // harness; the Activity persists it on close. Inert otherwise.
-    private val recorder = CorpusRecorder("capture")
+    @Volatile private var token = 0
+    private var job: Job? = null
+    @Volatile private var vmatcher: VisualMatcher? = null
+    @Volatile private var vmatcherTried = false
+    @Volatile private var locked = false     // a result sheet (picked card or QR) is showing
+    @Volatile private var startMs = 0L       // shutter -> suggestions timing (dev log)
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
         extractor = extractor,
         barcodeReader = barcodeReader,
-        intervalMs = SCAN_MS,       // keep scanning even while a sheet is shown (to replace it)
+        intervalMs = SCAN_MS,
         onLink = ::onLink,
-        onResult = ::onResult,
-        onFrame = { if (GuideGeometry.captureCorpus) recorder.record(it) },
+        onResult = {},                       // no per-frame OCR in snapshot mode
+        onCapture = ::onSnapFrame,
+        ocrPerFrame = false,
     )
 
-    /** Capture-only: everything recorded so far as text (idempotent - safe to call repeatedly, e.g.
-     *  on background AND on close), or null if nothing was recorded yet. */
-    fun captureEncoded(): String? = if (recorder.isEmpty()) null else recorder.encodedNow("live-session")
-
-    private fun onResult(ext: Extraction) {
-        // FROZEN while a result is shown: the recognised identity is immutable until the user
-        // dismisses ("Scan another") or an action completes, so a card can never change out from
-        // under a user reaching for "Add". Ignore all further OCR matches until then.
-        if (locked != null) return
-        _debug.value = ext.debug
-        val m = matcher ?: return
-        // Selection is shared with the reliability harness via FrameSelector, so the two can't diverge.
-        val best: MatchResult? = FrameSelector.selectCard(ext.candidates, m)?.match
-        val crossed = gate.onMatch(best?.card)
-        if (crossed != null) {
-            // Snapshot the deck headroom at lock time: limit from the catalog, inDeck
-            // from the live session count (deck mode; 0/unlimited otherwise).
-            val rec = Recognition(
-                ScanKind.CARD, crossed.name, cardId = crossed.id, sets = crossed.sets,
-                limit = crossed.limit, inDeck = ScannerChannel.deckCounts[crossed.id] ?: 0,
-            )
-            locked = rec
-            _sheet.value = rec                        // sticky sheet
-            _lockEvent.value = _lockEvent.value + 1   // gold flash + haptic + reveal
-        }
-        // Gold only for a DIFFERENT card being confirmed; the already-shown thing (or an
-        // empty frame) reads purple, so the flash fades back to purple = "scan again OK".
-        val newCandidate = best != null && best.card.id != locked?.cardId
-        _phase.value = if (newCandidate) Phase.DETECTING else Phase.SEARCHING
-    }
-
-    /** A `compendium://` QR was read - an instant, unambiguous lock (deck or match). */
+    /** A `compendium://` QR - an instant, unambiguous lock. Only from a Ready viewfinder. */
     private fun onLink(url: String) {
-        if (locked != null) return   // frozen while a result is shown (see onResult)
+        if (locked || _snap.value !is SnapState.Ready) return
         val u = url.trim()
-        // Same terminal-QR classifier the analyzer boundary + the reliability harness use, so they
-        // can't diverge (BarcodeReader has already filtered, but this stays authoritative).
         if (!ScannerQr.isCompendiumLink(u)) return
         val kind = if (u.startsWith("compendium://deck", ignoreCase = true)) ScanKind.DECK else ScanKind.MATCH
         val rec = Recognition(kind, if (kind == ScanKind.DECK) "Shared deck" else "Shared match", url = u)
-        gate.reset()                     // drop any half-built card streak
-        locked = rec
+        lockTo(rec)
+    }
+
+    /** Shutter press: arm a single throttle-bypassed capture. */
+    fun onShutter() {
+        if (locked || _snap.value is SnapState.Capturing || _snap.value is SnapState.Identifying) return
+        token++
+        startMs = System.currentTimeMillis()
+        clearStill()
+        _snap.value = SnapState.Capturing
+        analyzer.armCapture()
+    }
+
+    /** The captured still (an owned copy). Display it and run ONE inference on a private copy. */
+    private fun onSnapFrame(bmp: Bitmap) {
+        val t = token
+        if (locked || _snap.value !is SnapState.Capturing) {
+            bmp.recycle()
+            return
+        }
+        // Card-aware crop: to the card's bounds/aspect (handles loose framing + landscape sites). What we
+        // show IS what we match. The original full frame is then dropped.
+        val crop = runCatching { VisualMatcher.cardCrop(bmp) }.getOrDefault(bmp)
+        if (crop !== bmp) bmp.recycle()
+        clearStill()
+        _still.value = crop
+        _snap.value = SnapState.Identifying
+        val work = runCatching { crop.copy(crop.config ?: Bitmap.Config.ARGB_8888, false) }.getOrNull()
+        job?.cancel()
+        job = viewModelScope.launch(Dispatchers.Default) {
+            val m = ensureMatcher()
+            // Wide visual pool (still only cards the model ranked) so OCR can rescue bland-art cards that
+            // sit outside the shown top-5; display stays 5. OCR PROMOTES a pool member whose printed name
+            // it confirms - never introduces a card the model did not rank (the site-quotes-card safeguard).
+            val pool = if (m != null && work != null) runCatching { m.match(work, POOL) }.getOrNull() else null
+            var display = pool?.take(5)
+            var promoted = false
+            if (pool != null && work != null) {
+                val lines = runCatching { ocrLines(work) }.getOrNull().orEmpty()
+                val ocr = ocrCard(pool, lines)          // a card OCR confidently read (in pool or not)
+                if (ocr != null) {
+                    val head = VisualMatcher.Candidate(ocr.id, ocr.name, pool.firstOrNull { it.cardId == ocr.id }?.score ?: 0f)
+                    display = (listOf(head) + pool.filter { it.cardId != ocr.id }).take(5)
+                    promoted = true
+                }
+            }
+            work?.recycle()                                     // the job owns its copy
+            if (t != token) return@launch
+            Log.i(TAG, "shutter->result ${System.currentTimeMillis() - startMs}ms  " +
+                (if (m == null) "UNAVAILABLE" else display?.joinToString { "${it.cardId}=%.2f".format(it.score) } ?: "none"))
+            _snap.value = when {
+                m == null -> SnapState.Empty(unavailable = true)          // fail-closed
+                display.isNullOrEmpty() || (!promoted && display[0].score < FLOOR) -> SnapState.Empty(unavailable = false)
+                else -> SnapState.Shortlist(display.map { SnapCandidate(it.cardId, it.displayName, it.score) })
+            }
+        }
+    }
+
+    /** Full-image OCR of the still at three orientations (sites read vertically), normalised lines.
+     *  Downscaled first - the name is large, and it roughly thirds the per-pass cost. */
+    private fun ocrLines(bmp: Bitmap): List<String> {
+        val big = maxOf(bmp.width, bmp.height)
+        val src = if (big > 1000) {
+            val sc = 1000f / big
+            Bitmap.createScaledBitmap(bmp, (bmp.width * sc).toInt(), (bmp.height * sc).toInt(), true)
+        } else {
+            bmp
+        }
+        val out = ArrayList<String>()
+        for (rot in intArrayOf(0, 90, 270)) {
+            val text = try {
+                Tasks.await(recognizer.process(InputImage.fromBitmap(src, rot)))
+            } catch (_: Throwable) {
+                continue
+            }
+            for (b in text.textBlocks) for (l in b.lines) {
+                val n = Norm.normalize(l.text)
+                if (n.length >= 3) out.add(n)
+            }
+        }
+        if (src !== bmp) src.recycle()
+        return out
+    }
+
+    /** The card OCR confidently read from the still. PREFERS a visual-pool member (promote); otherwise
+     *  returns the confidently-read card so it can be OFFERED even though the embedding missed it
+     *  (shortlist-only - the user still confirms, so it is never an auto-lock). Null if OCR read nothing
+     *  the catalog matcher accepts. */
+    private fun ocrCard(pool: List<VisualMatcher.Candidate>, lines: List<String>): CardRef? {
+        val mm = matcher ?: return null
+        if (lines.isEmpty()) return null
+        val ids = pool.mapTo(HashSet()) { it.cardId }
+        var outside: CardRef? = null
+        for (line in lines) {
+            for (site in booleanArrayOf(true, false)) {
+                val res = mm.match(line, site) ?: continue
+                if (res.card.id in ids) {
+                    Log.i(TAG, "OCR promoted ${res.card.id}")
+                    return res.card
+                }
+                if (outside == null) outside = res.card
+            }
+        }
+        if (outside != null) Log.i(TAG, "OCR offered ${outside.id} (not in visual pool)")
+        return outside
+    }
+
+    /** Lazily load the ~27MB model + index once, off-thread, only on first shutter use. */
+    private fun ensureMatcher(): VisualMatcher? {
+        vmatcher?.let { return it }
+        if (vmatcherTried) return null
+        vmatcherTried = true
+        val loader = ScannerChannel.visualLoader ?: return null
+        return runCatching { loader().also { vmatcher = it } }.getOrNull()
+    }
+
+    /** User confirmed an identity (by card_id): build the same Recognition and enter the existing sheet flow. */
+    fun onPickCandidate(cardId: String) {
+        if (locked) return
+        val ref = matcher?.cardById(cardId)
+        token++
+        if (ref == null) {
+            _snap.value = SnapState.Empty(unavailable = false)
+            return
+        }
+        lockTo(
+            Recognition(
+                ScanKind.CARD, ref.name, cardId = ref.id, sets = ref.sets,
+                limit = ref.limit, inDeck = ScannerChannel.deckCounts[ref.id] ?: 0,
+            ),
+        )
+    }
+
+    /** "Try another photo": capture again without leaving the flow. */
+    fun onRetake() {
+        if (locked) return
+        token++
+        startMs = System.currentTimeMillis()
+        job?.cancel()
+        clearStill()
+        _snap.value = SnapState.Capturing
+        analyzer.armCapture()
+    }
+
+    /** "None of these" / Back out of the snapshot flow: cancel and return to a live viewfinder. */
+    fun onCancelSnap() {
+        token++
+        job?.cancel()
+        clearStill()
+        _snap.value = SnapState.Ready
+    }
+
+    /** "Scan another" from the result sheet. */
+    fun onDismiss() {
+        locked = false
+        token++
+        job?.cancel()
+        clearStill()
+        _sheet.value = null
+        _snap.value = SnapState.Ready
+    }
+
+    private fun lockTo(rec: Recognition) {
+        locked = true
+        token++
+        job?.cancel()
+        clearStill()
+        _snap.value = SnapState.Ready
         _sheet.value = rec
-        _phase.value = Phase.SEARCHING   // QR is instant; skip the gold "detecting" ramp
         _lockEvent.value = _lockEvent.value + 1
     }
 
-    /** "Scan another": drop the shown result and resume fresh scanning. */
-    fun onDismiss() {
-        gate.reset()
-        locked = null
-        _sheet.value = null
-        _phase.value = Phase.SEARCHING
+    /** Drop the displayed still. Do NOT recycle here - Compose may still be drawing it this frame; the ART
+     *  heap reclaims it. The matching copy (owned by the inference job) IS recycled; teardown recycles any
+     *  survivor. This keeps stills memory-only and bounded (one live at a time) without a render-recycle race. */
+    private fun clearStill() {
+        _still.value = null
     }
 
     override fun onCleared() {
+        token++
+        job?.cancel()
+        _still.value?.let { if (!it.isRecycled) it.recycle() }
+        _still.value = null
+        runCatching { vmatcher?.close() }
         recognizer.close()
         barcodeClient.close()
         analysisExecutor.shutdown()
     }
 
     companion object {
+        private const val TAG = "ScannerVisual"
         const val SCAN_MS = 350L
+        private const val FLOOR = 0.35f     // provisional T_floor; below this -> Empty (calibrate on corpus)
+        private const val POOL = 50         // visual candidates OCR may promote from (display stays 5)
     }
 }

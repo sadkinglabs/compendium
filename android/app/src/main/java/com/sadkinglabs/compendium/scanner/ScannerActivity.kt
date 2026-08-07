@@ -18,10 +18,10 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.getcapacitor.JSObject
-import com.sadkinglabs.compendium.scanner.model.Phase
 import com.sadkinglabs.compendium.scanner.model.Recognition
 import com.sadkinglabs.compendium.scanner.ui.CompendiumScannerTheme
 import com.sadkinglabs.compendium.scanner.ui.ScannerScreen
+import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
 
 /**
  * The full-screen scanner. A plain ComponentActivity hosting Compose; it requests the
@@ -50,6 +50,23 @@ class ScannerActivity : ComponentActivity() {
         val deckMode = ScannerChannel.mode == "deck"
         val reduceMotion = ScannerChannel.reduceMotion
 
+        // Lazy visual-match loader: the Activity owns the AssetManager; the ViewModel invokes this ONCE,
+        // off-thread, only if the user taps "Try visual match" - so the ~27MB model/index never load
+        // during a normal OCR session.
+        val appCtx = applicationContext
+        ScannerChannel.visualLoader = {
+            val model = appCtx.assets.open("recog/dinov2_s448_int8.onnx").use { it.readBytes() }
+            val index = appCtx.assets.open("recog/index.f16").use { it.readBytes() }
+            val json = appCtx.assets.open("recog/index.json").use { it.readBytes() }.toString(Charsets.UTF_8)
+            val obj = org.json.JSONObject(json)
+            val idsArr = obj.getJSONArray("cardIds")
+            val namesArr = obj.getJSONArray("displayNames")
+            val ids = ArrayList<String>(idsArr.length())
+            val names = ArrayList<String>(namesArr.length())
+            for (i in 0 until idsArr.length()) { ids.add(idsArr.getString(i)); names.add(namesArr.getString(i)) }
+            VisualMatcher.load(model, index, ids, names)
+        }
+
         setContent {
             CompendiumScannerTheme {
                 var granted by remember {
@@ -66,19 +83,8 @@ class ScannerActivity : ComponentActivity() {
                 ) { ok -> granted = ok }
                 LaunchedEffect(Unit) { if (!granted) launcher.launch(Manifest.permission.CAMERA) }
 
-                val phase by vm.phase.collectAsStateWithLifecycle()
                 val lockEvent by vm.lockEvent.collectAsStateWithLifecycle()
-                val lastTick = remember { longArrayOf(0L) }
-                // Engaged: a light tick when a candidate is being read (debounced so threshold
-                // flicker can't buzz repeatedly) - the build.
-                LaunchedEffect(phase) {
-                    if (phase == Phase.DETECTING) {
-                        val now = System.currentTimeMillis()
-                        if (now - lastTick[0] > 800L) { lastTick[0] = now; ScannerHaptics.tick(this@ScannerActivity) }
-                    }
-                }
-                // The climax: a growing pulse on final recognition. Keyed on lockEvent, so a newer
-                // lock restarts it and a stationary card (no new lock) never re-fires.
+                // The climax: a pulse when an identity is confirmed (a pick or a QR lock).
                 LaunchedEffect(lockEvent) {
                     if (lockEvent > 0) ScannerHaptics.culminate(this@ScannerActivity)
                 }
@@ -94,6 +100,7 @@ class ScannerActivity : ComponentActivity() {
                     onAddToDeck = { rec, qty -> onAddToDeck(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
+                    onSearchByName = { onSearchByName() },
                     onDismissSheet = { vm.onDismiss() },
                     onClose = { finish() },
                 )
@@ -105,6 +112,12 @@ class ScannerActivity : ComponentActivity() {
         sendTerminal(
             JSObject().put("action", "codex").put("cardId", rec.cardId).put("name", rec.title),
         )
+        finish()
+    }
+
+    /** Visual-match "Search by name": open Codex with no specific card so the user can search. */
+    private fun onSearchByName() {
+        sendTerminal(JSObject().put("action", "codex"))
         finish()
     }
 
@@ -150,32 +163,10 @@ class ScannerActivity : ComponentActivity() {
         ScannerChannel.onTerminal?.invoke(js)
     }
 
-    // DEV capture: one stable file per scanner session, written on BACKGROUND and CLOSE so data
-    // persists even if onDestroy never runs. Name fixed at first write.
-    private var captureFile: java.io.File? = null
-
-    override fun onStop() {
-        super.onStop()
-        if (com.sadkinglabs.compendium.scanner.model.GuideGeometry.captureCorpus) writeCapture()
-    }
-
     override fun onDestroy() {
         super.onDestroy()
-        if (com.sadkinglabs.compendium.scanner.model.GuideGeometry.captureCorpus) writeCapture()
-        // Back button / system kill without an explicit action -> cancelled, so the
-        // retained `await scan()` never hangs. Guarded so it can't override a real
-        // terminal already sent.
+        // Back button / system kill without an explicit action -> cancelled, so the retained
+        // `await scan()` never hangs. Guarded so it can't override a real terminal already sent.
         if (!terminalSent) sendTerminal(JSObject().put("action", "cancelled"))
-    }
-
-    /** Write the capture to the app's external files dir (adb-pullable at
-     *  /sdcard/Android/data/<pkg>/files/scanner-capture/). Best-effort; overwrites one session file. */
-    private fun writeCapture() {
-        try {
-            val text = vm.captureEncoded() ?: return
-            val dir = java.io.File(getExternalFilesDir(null), "scanner-capture").apply { mkdirs() }
-            val f = captureFile ?: java.io.File(dir, "capture-${System.currentTimeMillis()}.corpus").also { captureFile = it }
-            f.writeText(text)
-        } catch (_: Throwable) { /* capture is best-effort; never disrupt teardown */ }
     }
 }

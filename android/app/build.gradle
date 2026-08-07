@@ -104,6 +104,9 @@ dependencies {
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    // Card recogniser visual-match fallback (Rev 5.1): ONNX Runtime for on-device DINOv2-small int8
+    // inference, run ONCE per user-tapped "Try visual match" (never per frame). Offline, bundled.
+    implementation "com.microsoft.onnxruntime:onnxruntime-android:1.20.0"
     implementation project(':capacitor-cordova-android-plugins')
 
     // --- Native card scanner ---

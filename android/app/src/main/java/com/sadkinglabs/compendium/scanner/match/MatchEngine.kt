@@ -86,6 +86,10 @@ class CardIndex(cards: List<CardRef>) {
     val portrait: List<IndexedCard>
     val landscape: List<IndexedCard>
 
+    /** Every card by catalog card_id, for resolving a visual-match pick back to its CardRef (sets + limit)
+     *  so it enters the same recognition flow. Keyed on the stable id, never the display name (Codex). */
+    val byId: Map<String, CardRef> = cards.associateBy { it.id }
+
     init {
         val seen = HashSet<String>(cards.size * 2)
         val p = ArrayList<IndexedCard>()
@@ -120,6 +124,9 @@ class Matcher(
      * "Name + rules text", so the name is a leading prefix. Whole is tried first, so it
      * wins ties - standard cards prefer their full name; sites fall back to the prefix.
      */
+    /** Resolve a visual-match card_id back to its catalog CardRef (sets + limit). */
+    fun cardById(id: String): CardRef? = index.byId[id]
+
     fun match(ocrNorm: String, siteDetected: Boolean): MatchResult? {
         if (ocrNorm.length < 3) return null
         val queries = LinkedHashSet<String>()

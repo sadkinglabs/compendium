@@ -2,6 +2,7 @@ package com.sadkinglabs.compendium.scanner
 
 import com.getcapacitor.JSObject
 import com.sadkinglabs.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -13,6 +14,11 @@ import java.util.concurrent.ConcurrentHashMap
 object ScannerChannel {
     @Volatile var matcher: Matcher? = null
     @Volatile var minStreak: Int = 2
+
+    /** Lazy loader for the visual-match fallback (DINOv2-small int8 + prototype index), set by the
+     *  Activity (it owns the AssetManager). The ViewModel calls it once, off-thread, only if the user
+     *  taps "Try visual match" - so the ~27MB model/index never load unless the fallback is used. */
+    @Volatile var visualLoader: (() -> VisualMatcher)? = null
 
     /** Scanner mode: "universal" (Home/Decks - identify, then Codex / +1 collection /
      *  wishlist / deck / match) or "collection" (a focused build-your-collection loop:
@@ -40,6 +46,7 @@ object ScannerChannel {
 
     fun clear() {
         matcher = null
+        visualLoader = null
         onEvent = null
         onTerminal = null
         mode = "universal"
