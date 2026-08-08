@@ -66,6 +66,17 @@ class ScannerViewModel : ViewModel() {
     val lockEvent: StateFlow<Int> = _lockEvent.asStateFlow()
     private val _searching = MutableStateFlow(false)
     val searching: StateFlow<Boolean> = _searching.asStateFlow()
+    // A durable write is in flight. The sheet's actions are disabled while true, and the result is
+    // reported only when JS acknowledges - native never claims a write it has not seen committed.
+    private val _writing = MutableStateFlow(false)
+    val writing: StateFlow<Boolean> = _writing.asStateFlow()
+    /** One-shot outcome of the last acknowledged write: true = committed, false = failed. */
+    private val _writeResult = MutableStateFlow<Pair<Boolean, String>?>(null)
+    val writeResult: StateFlow<Pair<Boolean, String>?> = _writeResult.asStateFlow()
+
+    fun onWriteStarted() { _writing.value = true }
+    fun onWriteAcked(ok: Boolean, label: String) { _writing.value = false; _writeResult.value = ok to label }
+    fun clearWriteResult() { _writeResult.value = null }
 
     @Volatile private var token = 0
     private var job: Job? = null

@@ -10,6 +10,7 @@ import com.getcapacitor.annotation.CapacitorPlugin
 import com.sadkinglabs.compendium.scanner.match.CardIndex
 import com.sadkinglabs.compendium.scanner.match.Catalog
 import com.sadkinglabs.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.session.RequestRegistry
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -67,6 +68,9 @@ class CardScannerPlugin : Plugin() {
 
         // The resolved reduced-motion preference, so the reveal shows still states.
         val reduceMotion = call.getBoolean("reduceMotion") ?: false
+        // JS owns the session id: native never invents one, so an ack can always be attributed to the
+        // session that actually issued the request.
+        val sessionId = call.getString("sessionId") ?: ""
 
         // Build the index off the caller thread, then hand off + launch.
         Thread {
@@ -76,6 +80,8 @@ class CardScannerPlugin : Plugin() {
             ScannerChannel.mode = mode
             ScannerChannel.deckCounts = counts
             ScannerChannel.reduceMotion = reduceMotion
+            ScannerChannel.sessionId = sessionId
+            ScannerChannel.requests = RequestRegistry(sessionId)
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }
             terminated.set(false)
@@ -86,6 +92,21 @@ class CardScannerPlugin : Plugin() {
                 act.startActivity(Intent(act, ScannerActivity::class.java))
             }
         }.start()
+    }
+
+    /**
+     * JS acknowledges a scanner write. Native treats this as the ONLY evidence a write happened: the
+     * result sheet reports success and deck headroom from here, never from having merely emitted the
+     * request. Unknown ids and foreign sessions are dropped by the registry.
+     */
+    @PluginMethod
+    fun respond(call: PluginCall) {
+        val session = call.getString("sessionId") ?: ""
+        val requestId = call.getString("requestId") ?: ""
+        val ok = call.getBoolean("ok") ?: false
+        val deckCount = if (call.getData().has("deckCount")) call.getInt("deckCount") else null
+        ScannerChannel.deliverAck(session, requestId, ok, deckCount)
+        call.resolve()
     }
 
     private fun resolveOnce(js: JSObject) {

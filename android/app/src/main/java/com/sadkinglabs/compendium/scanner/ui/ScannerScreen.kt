@@ -110,6 +110,8 @@ fun ScannerScreen(
     val searching by viewModel.searching.collectAsStateWithLifecycle()
     val lockEvent by viewModel.lockEvent.collectAsStateWithLifecycle()
     val lastLearned by viewModel.lastLearned.collectAsStateWithLifecycle()
+    val writing by viewModel.writing.collectAsStateWithLifecycle()
+    val writeResult by viewModel.writeResult.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -235,24 +237,10 @@ fun ScannerScreen(
                 deckMode = deckMode,
                 reveal = revealT,
                 onSearchCodex = { onSearchCodex(rec) },
-                onAddCollection = { set ->
-                    onSaveCollection(rec, 1, set)
-                    scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
-                },
-                onAddWishlist = { set ->
-                    onAdd(rec, "wishlist", set)
-                    scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
-                },
-                onSaveCollection = { qty, set ->
-                    onSaveCollection(rec, qty, set)
-                    scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
-                    onDismissSheet()
-                },
-                onAddToDeck = { qty ->
-                    onAddToDeck(rec, qty)
-                    scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title} to the deck") }
-                    onDismissSheet()
-                },
+                onAddCollection = { set -> onSaveCollection(rec, 1, set) },
+                onAddWishlist = { set -> onAdd(rec, "wishlist", set) },
+                onSaveCollection = { qty, set -> onSaveCollection(rec, qty, set) },
+                onAddToDeck = { qty -> onAddToDeck(rec, qty) },
                 onSaveDeck = { onSaveDeck(rec) },
                 onImportMatch = { onImportMatch(rec) },
                 onDismiss = onDismissSheet,
@@ -277,6 +265,25 @@ fun ScannerScreen(
             ) {
                 Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(22.dp))
             }
+        }
+
+        // The durable write acknowledged by JS. Native never claims success on its own, so this is the
+        // only place a write is reported - and the sheet closes only on a committed write.
+        LaunchedEffect(writeResult) {
+            val (ok, label) = writeResult ?: return@LaunchedEffect
+            viewModel.clearWriteResult()
+            if (ok) {
+                onDismissSheet()
+                snackbarHost.showSnackbar("Saved $label")
+            } else {
+                snackbarHost.showSnackbar("Couldn't save $label - try again")
+            }
+        }
+
+        // A durable write is in flight: block further taps on the sheet so one action cannot be
+        // submitted twice while its acknowledgement is outstanding.
+        if (writing) {
+            Box(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } })
         }
 
         // A correction was just learned from the pick. Offer an explicit undo - similarity-replacement

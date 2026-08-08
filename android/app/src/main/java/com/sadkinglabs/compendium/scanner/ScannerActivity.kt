@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.getcapacitor.JSObject
 import com.sadkinglabs.compendium.scanner.model.Recognition
+import com.sadkinglabs.compendium.scanner.session.RequestRegistry
 import com.sadkinglabs.compendium.scanner.ui.CompendiumScannerTheme
 import com.sadkinglabs.compendium.scanner.ui.ScannerScreen
 import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
@@ -33,6 +34,8 @@ class ScannerActivity : ComponentActivity() {
 
     private val vm: ScannerViewModel by viewModels()
     private var terminalSent = false
+    private var pendingLabel: String = ""
+    private var pendingDeckCard: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -86,6 +89,13 @@ class ScannerActivity : ComponentActivity() {
                 matcher.addUserPrototype(it.cardId, it.displayName, it.embedding)
             }
             matcher
+        }
+        // JS acknowledges a write: this is the only evidence native accepts that it committed.
+        ScannerChannel.onAck = { _, ok, deckCount ->
+            val card = pendingDeckCard
+            if (ok && card != null && deckCount != null) ScannerChannel.deckCounts[card] = deckCount
+            pendingDeckCard = null
+            runOnUiThread { vm.onWriteAcked(ok, pendingLabel) }
         }
         ScannerChannel.userProtoSink = { entries ->
             // Rewritten rather than appended: a correction can REPLACE an earlier one, which an
@@ -141,13 +151,30 @@ class ScannerActivity : ComponentActivity() {
         finish()
     }
 
+    /**
+     * Emit a durable write and WAIT for JS to acknowledge it. Native does not know whether a write
+     * committed - JS owns the database - so the sheet reports nothing until the ack arrives. The
+     * registry admits one mutation at a time and rejects duplicate or reused ids.
+     */
+    private fun submitWrite(js: JSObject, label: String): Boolean {
+        val reg = ScannerChannel.requests ?: run { ScannerChannel.onEvent?.invoke(js); return false }
+        val requestId = java.util.UUID.randomUUID().toString()
+        val admit = reg.submit(ScannerChannel.sessionId, requestId, RequestRegistry.Kind.MUTATION)
+        if (admit != RequestRegistry.Admit.ACCEPTED) return false     // already one in flight
+        pendingLabel = label
+        vm.onWriteStarted()
+        ScannerChannel.onEvent?.invoke(
+            js.put("requestId", requestId).put("sessionId", ScannerChannel.sessionId),
+        )
+        return true
+    }
+
     private fun onAdd(rec: Recognition, action: String, set: String? = null) {
-        // Emit the add to JS; the sheet stays up (sticky) so both actions can be used.
         // `set` carries the chosen printing for wishlist adds - a want names a collector item
         // under schema v11, and dropping the selection here would make the picker decorative.
         val js = JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title)
         if (set != null) js.put("set", set)
-        ScannerChannel.onEvent?.invoke(js)
+        submitWrite(js, rec.title)
     }
 
     /** Collection mode: emit +qty owned for the recognised card, onto the chosen
@@ -156,7 +183,7 @@ class ScannerActivity : ComponentActivity() {
     private fun onSaveCollection(rec: Recognition, qty: Int, set: String?) {
         val js = JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty)
         if (set != null) js.put("set", set)
-        ScannerChannel.onEvent?.invoke(js)
+        submitWrite(js, rec.title)
     }
 
     /** Deck mode: emit +qty of the recognised card to the open deck (JS files it in
@@ -165,9 +192,12 @@ class ScannerActivity : ComponentActivity() {
      *  count so re-scanning the same card offers the reduced remainder. */
     private fun onAddToDeck(rec: Recognition, qty: Int) {
         val id = rec.cardId ?: return
-        ScannerChannel.deckCounts[id] = (ScannerChannel.deckCounts[id] ?: 0) + qty
-        ScannerChannel.onEvent?.invoke(
+        // The deck count is NOT adjusted here: JS returns the authoritative count with its ack, so a
+        // blocked or failed add can never leave the sheet showing headroom that was never consumed.
+        pendingDeckCard = id
+        submitWrite(
             JSObject().put("action", "deck").put("cardId", id).put("name", rec.title).put("qty", qty),
+            rec.title,
         )
     }
 

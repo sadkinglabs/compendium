@@ -2,6 +2,7 @@ package com.sadkinglabs.compendium.scanner
 
 import com.getcapacitor.JSObject
 import com.sadkinglabs.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.session.RequestRegistry
 import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
 import java.util.concurrent.ConcurrentHashMap
 
@@ -45,11 +46,36 @@ object ScannerChannel {
      *  Activity stays open and keeps scanning. */
     @Volatile var onEvent: ((JSObject) -> Unit)? = null
 
+    // --- Write acknowledgement (proposal S4) ---------------------------------------------------
+    // JS owns the session id and every durable write. Native therefore may not claim success: it
+    // correlates each outbound mutation with the acknowledgement JS sends back once the write has
+    // actually committed, and the UI reports only what has been acknowledged.
+
+    /** The JS-owned session id for this scan. Acks carrying any other id are foreign and dropped. */
+    @Volatile var sessionId: String = ""
+
+    /** Correlates outbound requests with inbound acks: one mutation in flight, dedupe, id-reuse reject. */
+    @Volatile var requests: RequestRegistry? = null
+
+    /** Set by the Activity; invoked when JS acknowledges a request (ok, plus any authoritative state). */
+    @Volatile var onAck: ((requestId: String, ok: Boolean, deckCount: Int?) -> Unit)? = null
+
+    /** Route an inbound acknowledgement from JS. Ignores unknown ids and foreign sessions. */
+    fun deliverAck(session: String, requestId: String, ok: Boolean, deckCount: Int?) {
+        val reg = requests ?: return
+        if (!reg.ack(session, requestId)) return          // unknown request or stale session
+        onAck?.invoke(requestId, ok, deckCount)
+    }
+
     /** Terminal outcome (codex / cancelled / permission_denied) -> resolve/reject the
      *  retained call EXACTLY once. */
     @Volatile var onTerminal: ((JSObject) -> Unit)? = null
 
     fun clear() {
+        requests?.clear()
+        requests = null
+        sessionId = ""
+        onAck = null
         matcher = null
         visualLoader = null
         userProtoSink = null
