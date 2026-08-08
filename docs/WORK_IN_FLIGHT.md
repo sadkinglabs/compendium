@@ -22,11 +22,15 @@ Git records what changed; this records **what is left and how to resume**. Witho
 OCR promotes/offers the named card -> user confirms -> existing result sheet); in-scanner search-by-name;
 correction-driven on-device hardening (a confirmed card the index ranked wrong stores its embedding as a
 user prototype, persisted, vectors never pixels); gilt shutter + violet reading arc.
-**Next step:** reveal choreography + automatic single Result when confident (currently every scan forces a
-pick). Then: decide the orphaned OCR-era reliability harness (`FrameSelector`, `ScanSession`,
-`ReplayHarness`, `Corpus*` + their unit tests) - retire or keep; record for Codex the two deviations from
-the approved design (OCR may OFFER a confidently-read card outside the visual pool; the Rev 7 learning
-loop); consolidate the superseded prose in the Rev 5/6 proposals; measure the signed-release APK.
+**Done since:** reveal choreography (Gilt Impression stamps the captured still) and automatic confirmation
+when the visual index and OCR independently name the same card - 9 of 10 device scans now skip the pick
+list; search-field focus fix; the OCR-strip era pipeline and its reliability harness retired (nothing in
+production referenced them; ~1,500 lines out); as-built deviations recorded and superseded prose
+consolidated in the Rev 6 proposals.
+**Next step:** send the as-built deviations to Codex for review (two relax rules it set: OCR may OFFER a
+card outside the visual pool, and dual-signal agreement auto-confirms without the sealed false-confirm
+bound). Then measure the signed-release APK, and merge. Still owed long-term: a fresh sealed corpus and
+the false-confirm bound that would properly authorise auto-confirmation.
 **Docs:** `docs/proposals/card-recogniser-*.md` (Rev 6 + its interaction design are authoritative).
 
 ### `android-16kb-compat` - Android 16 KB page-size compatibility
