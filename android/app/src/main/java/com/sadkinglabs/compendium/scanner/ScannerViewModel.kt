@@ -20,7 +20,6 @@ import com.sadkinglabs.compendium.scanner.model.ScannerQr
 import com.sadkinglabs.compendium.scanner.model.SnapCandidate
 import com.sadkinglabs.compendium.scanner.model.SnapState
 import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
-import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
 import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,7 +53,6 @@ class ScannerViewModel : ViewModel() {
     val analysisExecutor = Executors.newSingleThreadExecutor()
 
     private val matcher = ScannerChannel.matcher
-    private val extractor = StripExtractor(recognizer)   // held for the analyzer; OCR is off per frame
     private val barcodeReader = BarcodeReader(barcodeClient)
 
     private val _snap = MutableStateFlow<SnapState>(SnapState.Ready)
@@ -82,13 +80,10 @@ class ScannerViewModel : ViewModel() {
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
-        extractor = extractor,
         barcodeReader = barcodeReader,
         intervalMs = SCAN_MS,
         onLink = ::onLink,
-        onResult = {},                       // no per-frame OCR in snapshot mode
         onCapture = ::onSnapFrame,
-        ocrPerFrame = false,
     )
 
     /** A `compendium://` QR - an instant, unambiguous lock. Only from a Ready viewfinder. */
