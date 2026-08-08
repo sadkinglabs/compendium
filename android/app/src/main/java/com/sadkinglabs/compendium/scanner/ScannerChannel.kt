@@ -20,6 +20,11 @@ object ScannerChannel {
      *  taps "Try visual match" - so the ~27MB model/index never load unless the fallback is used. */
     @Volatile var visualLoader: (() -> VisualMatcher)? = null
 
+    /** Persist a user correction (an L2-normalised query embedding + the confirmed card) so the on-device
+     *  hardening survives across sessions. Set by the Activity (it owns filesDir); stores the VECTOR, never
+     *  the photo. Null-safe: if unset, hardening is in-memory only. */
+    @Volatile var userProtoSink: ((cardId: String, displayName: String, emb: FloatArray) -> Unit)? = null
+
     /** Scanner mode: "universal" (Home/Decks - identify, then Codex / +1 collection /
      *  wishlist / deck / match) or "collection" (a focused build-your-collection loop:
      *  identify -> pick a quantity -> Add -> keep scanning). */
@@ -47,6 +52,7 @@ object ScannerChannel {
     fun clear() {
         matcher = null
         visualLoader = null
+        userProtoSink = null
         onEvent = null
         onTerminal = null
         mode = "universal"

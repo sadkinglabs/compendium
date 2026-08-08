@@ -62,6 +62,8 @@ class ScannerViewModel : ViewModel() {
     val sheet: StateFlow<Recognition?> = _sheet.asStateFlow()
     private val _lockEvent = MutableStateFlow(0)
     val lockEvent: StateFlow<Int> = _lockEvent.asStateFlow()
+    private val _searching = MutableStateFlow(false)
+    val searching: StateFlow<Boolean> = _searching.asStateFlow()
 
     @Volatile private var token = 0
     private var job: Job? = null
@@ -69,6 +71,11 @@ class ScannerViewModel : ViewModel() {
     @Volatile private var vmatcherTried = false
     @Volatile private var locked = false     // a result sheet (picked card or QR) is showing
     @Volatile private var startMs = 0L       // shutter -> suggestions timing (dev log)
+    // The last capture's query embedding + what the visual index ranked first. If the user confirms a
+    // DIFFERENT card, that is a correction: the embedding becomes a user prototype for the right card, so
+    // this device recognises it next time. The VECTOR is kept, never the photo.
+    @Volatile private var lastEmb: FloatArray? = null
+    @Volatile private var lastTop: String? = null
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
@@ -122,7 +129,11 @@ class ScannerViewModel : ViewModel() {
             // Wide visual pool (still only cards the model ranked) so OCR can rescue bland-art cards that
             // sit outside the shown top-5; display stays 5. OCR PROMOTES a pool member whose printed name
             // it confirms - never introduces a card the model did not rank (the site-quotes-card safeguard).
-            val pool = if (m != null && work != null) runCatching { m.match(work, POOL) }.getOrNull() else null
+            // Embed once, keep the vector: it powers the match AND becomes the user prototype on a correction.
+            val emb = if (m != null && work != null) runCatching { m.embed(work) }.getOrNull() else null
+            val pool = if (m != null && emb != null) runCatching { m.matchEmbedding(emb, POOL) }.getOrNull() else null
+            lastEmb = emb
+            lastTop = pool?.firstOrNull()?.cardId
             var display = pool?.take(5)
             var promoted = false
             if (pool != null && work != null) {
@@ -213,6 +224,7 @@ class ScannerViewModel : ViewModel() {
             _snap.value = SnapState.Empty(unavailable = false)
             return
         }
+        learnCorrection(ref.id, ref.name)
         lockTo(
             Recognition(
                 ScanKind.CARD, ref.name, cardId = ref.id, sets = ref.sets,
@@ -231,6 +243,36 @@ class ScannerViewModel : ViewModel() {
         _snap.value = SnapState.Capturing
         analyzer.armCapture()
     }
+
+    /**
+     * On-device hardening: if the user confirmed a card the visual index did NOT rank first, keep that
+     * capture's embedding as an extra prototype for the right card - so this device recognises it next
+     * time ("correct it once, it remembers"). Stores the VECTOR only, never the photo. No-op when the
+     * top-1 was already right (nothing to learn) or there is no capture (search opened cold).
+     */
+    private fun learnCorrection(cardId: String, displayName: String) {
+        val emb = lastEmb ?: return
+        if (lastTop == cardId) { lastEmb = null; return }
+        lastEmb = null
+        runCatching {
+            vmatcher?.addUserPrototype(cardId, displayName, emb)
+            ScannerChannel.userProtoSink?.invoke(cardId, displayName, emb)
+            Log.i(TAG, "learned correction: $cardId (was ${lastTop ?: "none"})")
+        }
+    }
+
+    /** Manual recovery: open the catalog name search (when the scan did not offer the right card). */
+    fun openSearch() {
+        if (!locked) _searching.value = true
+    }
+
+    fun closeSearch() {
+        _searching.value = false
+    }
+
+    /** Substring catalog name search -> pickable candidates (card_id identity, name for display). */
+    fun search(query: String): List<SnapCandidate> =
+        matcher?.search(query)?.map { SnapCandidate(it.id, it.name, 0f) } ?: emptyList()
 
     /** "None of these" / Back out of the snapshot flow: cancel and return to a live viewfinder. */
     fun onCancelSnap() {
@@ -255,6 +297,7 @@ class ScannerViewModel : ViewModel() {
         token++
         job?.cancel()
         clearStill()
+        _searching.value = false
         _snap.value = SnapState.Ready
         _sheet.value = rec
         _lockEvent.value = _lockEvent.value + 1

@@ -17,9 +17,9 @@ import java.nio.FloatBuffer
 class VisualMatcher private constructor(
     private val env: OrtEnvironment,
     private val session: OrtSession,
-    private val proto: Array<FloatArray>,   // N x DIM, L2-normalised fp16-decoded prototypes
-    private val protoIds: List<String>,     // N parallel card_ids (multi-prototype; best score per id)
-    private val names: Map<String, String>, // card_id -> display name
+    private val proto: MutableList<FloatArray>,   // L2-normalised prototypes (base index + user examples)
+    private val protoIds: MutableList<String>,    // parallel card_ids (multi-prototype; best score per id)
+    private val names: MutableMap<String, String>, // card_id -> display name
 ) {
     /** [cardId] is the catalog identity (keys every lookup/write); [displayName] is display only. */
     data class Candidate(val cardId: String, val displayName: String, val score: Float)
@@ -58,8 +58,13 @@ class VisualMatcher private constructor(
     }
 
     /** Up to [topK] distinct card candidates, highest cosine first. */
-    fun match(bmp: Bitmap, topK: Int = 5): List<Candidate> {
-        val q = embed(bmp)
+    /** Up to [topK] distinct card candidates for a still, highest cosine first. */
+    fun match(bmp: Bitmap, topK: Int = 5): List<Candidate> = matchEmbedding(embed(bmp), topK)
+
+    /** As [match], from a precomputed L2-normalised query embedding, so the caller can reuse it (e.g. to
+     *  store a correction as a user prototype). Synchronised against [addUserPrototype]. */
+    @Synchronized
+    fun matchEmbedding(q: FloatArray, topK: Int = 5): List<Candidate> {
         val best = HashMap<String, Float>(protoIds.size)
         for (j in proto.indices) {
             val p = proto[j]
@@ -71,6 +76,15 @@ class VisualMatcher private constructor(
         }
         return best.entries.sortedByDescending { it.value }.take(topK)
             .map { Candidate(it.key, names[it.key] ?: it.key, it.value) }
+    }
+
+    /** On-device hardening: add a user-confirmed example (an L2-normalised query embedding) as a new
+     *  prototype for [cardId]. Extends the live index only; the caller persists it. */
+    @Synchronized
+    fun addUserPrototype(cardId: String, displayName: String, emb: FloatArray) {
+        proto.add(emb)
+        protoIds.add(cardId)
+        names.putIfAbsent(cardId, displayName)
     }
 
     fun close() = session.close()
@@ -137,20 +151,21 @@ class VisualMatcher private constructor(
             val session = env.createSession(modelBytes, OrtSession.SessionOptions())
             val n = indexBytes.size / 2 / DIM
             require(n == cardIds.size) { "index/cards mismatch: $n vectors vs ${cardIds.size} ids" }
-            val proto = Array(n) { FloatArray(DIM) }
+            val proto = ArrayList<FloatArray>(n)
             var bi = 0
             for (i in 0 until n) {
-                val row = proto[i]
+                val row = FloatArray(DIM)
                 for (d in 0 until DIM) {
                     val lo = indexBytes[bi].toInt() and 0xFF
                     val hi = indexBytes[bi + 1].toInt() and 0xFF
                     bi += 2
                     row[d] = halfToFloat((hi shl 8) or lo)
                 }
+                proto.add(row)
             }
             val names = HashMap<String, String>(cardIds.size)
             for (i in cardIds.indices) names.putIfAbsent(cardIds[i], displayNames[i])
-            return VisualMatcher(env, session, proto, cardIds, names)
+            return VisualMatcher(env, session, proto, cardIds.toMutableList(), names)
         }
 
         /** IEEE-754 half -> float, covering subnormals and inf/nan. */

@@ -127,6 +127,17 @@ class Matcher(
     /** Resolve a visual-match card_id back to its catalog CardRef (sets + limit). */
     fun cardById(id: String): CardRef? = index.byId[id]
 
+    /** Substring name search over the catalog (prefix matches first) - the manual recovery when a scan does
+     *  not offer the right card. */
+    fun search(query: String, limit: Int = 25): List<CardRef> {
+        val q = query.trim().lowercase()
+        if (q.length < 2) return emptyList()
+        return index.byId.values.asSequence()
+            .filter { it.name.lowercase().contains(q) }
+            .sortedWith(compareBy({ !it.name.lowercase().startsWith(q) }, { it.name }))
+            .take(limit).toList()
+    }
+
     fun match(ocrNorm: String, siteDetected: Boolean): MatchResult? {
         if (ocrNorm.length < 3) return null
         val queries = LinkedHashSet<String>()
