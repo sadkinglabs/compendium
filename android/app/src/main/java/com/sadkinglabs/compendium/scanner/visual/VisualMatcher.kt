@@ -145,12 +145,32 @@ class VisualMatcher private constructor(
         }
 
         /** Load from model + fp16 index bytes and the parallel card_id / display-name lists (from index.json). */
-        fun load(modelBytes: ByteArray, indexBytes: ByteArray, cardIds: List<String>, displayNames: List<String>): VisualMatcher {
+        fun load(
+            modelBytes: ByteArray,
+            indexBytes: ByteArray,
+            cardIds: List<String>,
+            displayNames: List<String>,
+            expectDim: Int = DIM,
+            expectCount: Int = cardIds.size,
+            expectIndexSha256: String? = null,
+        ): VisualMatcher {
+            // Integrity: a mismatched index.f16 / index.json pair would silently attach valid vectors to
+            // the WRONG card ids, so every one of these is fatal rather than best-effort.
             require(cardIds.size == displayNames.size) { "cardIds/displayNames length mismatch" }
-            val env = OrtEnvironment.getEnvironment()
-            val session = env.createSession(modelBytes, OrtSession.SessionOptions())
+            require(expectDim == DIM) { "index dim $expectDim != matcher dim $DIM" }
+            require(cardIds.size == expectCount) { "index.json count $expectCount != ${cardIds.size} ids" }
+            require(indexBytes.size % (2 * DIM) == 0) {
+                "index.f16 is ${indexBytes.size} bytes, not a whole number of $DIM-d fp16 vectors"
+            }
             val n = indexBytes.size / 2 / DIM
             require(n == cardIds.size) { "index/cards mismatch: $n vectors vs ${cardIds.size} ids" }
+            if (expectIndexSha256 != null) {
+                val actual = java.security.MessageDigest.getInstance("SHA-256").digest(indexBytes)
+                    .joinToString("") { "%02x".format(it) }
+                require(actual == expectIndexSha256) { "index.f16 sha256 mismatch - index and manifest disagree" }
+            }
+            val env = OrtEnvironment.getEnvironment()
+            val session = env.createSession(modelBytes, OrtSession.SessionOptions())
             val proto = ArrayList<FloatArray>(n)
             var bi = 0
             for (i in 0 until n) {
@@ -168,25 +188,27 @@ class VisualMatcher private constructor(
             return VisualMatcher(env, session, proto, cardIds.toMutableList(), names)
         }
 
-        /** IEEE-754 half -> float, covering subnormals and inf/nan. */
+        /**
+         * IEEE-754 half -> float. Stated as arithmetic rather than bit-shuffling, because the previous
+         * hand-rolled subnormal branch decoded 577 of this index's 1,145 subnormal values incorrectly
+         * (0x0001 came out as 0.015625 instead of 2^-24). `Float.float16ToFloat` would do this for us but
+         * needs API 34; minSdk is 29.
+         *
+         *   exponent 0        -> signed zero, or a subnormal: mantissa * 2^-24
+         *   exponent 31       -> infinity (mantissa 0) or NaN
+         *   otherwise         -> 2^(exponent-15) * (1 + mantissa/1024)
+         */
         fun halfToFloat(h: Int): Float {
-            val s = (h ushr 15) and 0x1
-            val e = (h ushr 10) and 0x1F
-            val m = h and 0x3FF
-            val bits: Int = when (e) {
-                0 -> if (m == 0) s shl 31 else {
-                    var mant = m
-                    var exp = -1
-                    do {
-                        exp++
-                        mant = mant shl 1
-                    } while (mant and 0x400 == 0)
-                    (s shl 31) or ((exp + 112) shl 23) or ((mant and 0x3FF) shl 13)
-                }
-                0x1F -> (s shl 31) or (0xFF shl 23) or (m shl 13)
-                else -> (s shl 31) or ((e + 112) shl 23) or (m shl 13)
+            val sign = if ((h ushr 15) and 0x1 == 1) -1f else 1f
+            val exp = (h ushr 10) and 0x1F
+            val man = h and 0x3FF
+            return when (exp) {
+                0 -> sign * man.toFloat() * SUBNORMAL_SCALE          // includes +/-0 when man == 0
+                0x1F -> if (man == 0) sign * Float.POSITIVE_INFINITY else Float.NaN
+                else -> sign * Math.pow(2.0, (exp - 15).toDouble()).toFloat() * (1f + man / 1024f)
             }
-            return Float.fromBits(bits)
         }
+
+        private const val SUBNORMAL_SCALE = 5.9604645E-8f            // 2^-24
     }
 }

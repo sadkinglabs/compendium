@@ -65,7 +65,17 @@ class ScannerActivity : ComponentActivity() {
             val ids = ArrayList<String>(idsArr.length())
             val names = ArrayList<String>(namesArr.length())
             for (i in 0 until idsArr.length()) { ids.add(idsArr.getString(i)); names.add(namesArr.getString(i)) }
-            val matcher = VisualMatcher.load(model, index, ids, names)
+            // The manifest describes the index; hold the index to it, so a mismatched pair fails loudly
+            // instead of attaching valid vectors to the wrong card ids.
+            val matcher = VisualMatcher.load(
+                modelBytes = model,
+                indexBytes = index,
+                cardIds = ids,
+                displayNames = names,
+                expectDim = obj.optInt("dim", VisualMatcher.DIM),
+                expectCount = obj.optInt("count", ids.size),
+                expectIndexSha256 = obj.optString("sha256_f16").ifEmpty { null },
+            )
             loadUserProtos(userProtoFile, matcher)   // apply persisted corrections (this-device hardening)
             matcher
         }

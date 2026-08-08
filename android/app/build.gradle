@@ -95,6 +95,30 @@ repositories {
     }
 }
 
+// ===================== RECOGNITION ASSET GATE =====================
+// The card recogniser's model + prototype index are GENERATED artifacts (~27 MB), too large to track in
+// git, so they are gitignored. Without this gate a clean checkout would build and install happily and
+// then fail every scan with "Visual match unavailable" - a green build that does not deliver the feature.
+// Regenerate them with:
+//   scripts/recog/train/.venv/Scripts/python build_artifact.py && python build_index.py
+//   (then copy _out/{dinov2_s448_int8.onnx,index.f16,index.json} to android/app/src/main/assets/recog/)
+// index.json carries the dim/count/sha256 the loader checks the index against at runtime.
+def recogAssets = ['dinov2_s448_int8.onnx', 'index.f16', 'index.json']
+tasks.register('checkRecogAssets') {
+    doLast {
+        def dir = file('src/main/assets/recog')
+        def missing = recogAssets.findAll { !new File(dir, it).exists() }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "Card recogniser assets missing from ${dir}: ${missing.join(', ')}.\n" +
+                "The app would build but every scan would report 'Visual match unavailable'.\n" +
+                "Regenerate with scripts/recog/train/build_artifact.py + build_index.py (see BUILD.md)."
+            )
+        }
+    }
+}
+tasks.matching { it.name ==~ /merge.*Assets/ }.configureEach { dependsOn 'checkRecogAssets' }
+
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"

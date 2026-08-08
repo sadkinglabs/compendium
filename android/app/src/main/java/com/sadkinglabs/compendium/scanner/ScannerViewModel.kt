@@ -69,7 +69,6 @@ class ScannerViewModel : ViewModel() {
     @Volatile private var token = 0
     private var job: Job? = null
     @Volatile private var vmatcher: VisualMatcher? = null
-    @Volatile private var vmatcherTried = false
     @Volatile private var locked = false     // a result sheet (picked card or QR) is showing
     @Volatile private var startMs = 0L       // shutter -> suggestions timing (dev log)
     // The last capture's query embedding + what the visual index ranked first. If the user confirms a
@@ -77,6 +76,7 @@ class ScannerViewModel : ViewModel() {
     // this device recognises it next time. The VECTOR is kept, never the photo.
     @Volatile private var lastEmb: FloatArray? = null
     @Volatile private var lastTop: String? = null
+    private val inflight = java.util.concurrent.atomic.AtomicInteger(0)   // native inference in progress
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
@@ -123,6 +123,10 @@ class ScannerViewModel : ViewModel() {
         val work = runCatching { crop.copy(crop.config ?: Bitmap.Config.ARGB_8888, false) }.getOrNull()
         job?.cancel()
         job = viewModelScope.launch(Dispatchers.Default) {
+          // The job OWNS `work`: it is recycled here on every exit - success, supersession, cancellation
+          // or failure - so a Back/retake/background mid-inference cannot retain it.
+          try {
+            inflight.incrementAndGet()
             val m = ensureMatcher()
             // Wide visual pool (still only cards the model ranked) so OCR can rescue bland-art cards that
             // sit outside the shown top-5; display stays 5. OCR PROMOTES a pool member whose printed name
@@ -133,8 +137,6 @@ class ScannerViewModel : ViewModel() {
             // Embed once, keep the vector: it powers the match AND becomes the user prototype on a correction.
             val emb = if (m != null && work != null) runCatching { m.embed(work) }.getOrNull() else null
             val pool = if (m != null && emb != null) runCatching { m.matchEmbedding(emb, POOL) }.getOrNull() else null
-            lastEmb = emb
-            lastTop = pool?.firstOrNull()?.cardId
             var display = pool?.take(5)
             var promoted = false
             var agreed: CardRef? = null             // both signals named the SAME card
@@ -146,14 +148,19 @@ class ScannerViewModel : ViewModel() {
                     val head = VisualMatcher.Candidate(ocr.id, ocr.name, pool.firstOrNull { it.cardId == ocr.id }?.score ?: 0f)
                     display = (listOf(head) + pool.filter { it.cardId != ocr.id }).take(5)
                     promoted = true
-                    // Visual ranked it AND OCR read its printed name: two independent signals agreeing,
-                    // the strongest evidence available, so present the answer instead of asking. OCR
-                    // readings OUTSIDE the visual pool stay a pick-list - one signal is not enough.
-                    if (inPool) agreed = ocr
+                    // Dual-signal agreement (visual ranked it AND OCR read its printed name) is the
+                    // strongest evidence available, but it is NOT the sealed false-confirm bound the
+                    // approved contract requires before any result may skip human confirmation - and
+                    // "anywhere in a 50-card visual pool" is a weak second signal on its own. Until that
+                    // evidence exists, every result goes to the shortlist. Flip AUTO_CONFIRM only with it.
+                    if (AUTO_CONFIRM && inPool) agreed = ocr
                 }
             }
-            work?.recycle()                                     // the job owns its copy
-            if (t != token) return@launch
+            if (t != token) return@launch        // superseded: publish nothing, learn nothing
+            // Learning evidence is published ONLY past the token check, so a late result from a cancelled
+            // scan can never be attributed to a newer capture's confirmation.
+            lastEmb = emb
+            lastTop = pool?.firstOrNull()?.cardId
             Log.i(TAG, "shutter->result ${System.currentTimeMillis() - startMs}ms  " +
                 (if (m == null) "UNAVAILABLE" else display?.joinToString { "${it.cardId}=%.2f".format(it.score) } ?: "none"))
             val confirmed = agreed
@@ -172,6 +179,10 @@ class ScannerViewModel : ViewModel() {
                 }
                 else -> _snap.value = SnapState.Shortlist(display.map { SnapCandidate(it.cardId, it.displayName, it.score) })
             }
+          } finally {
+            work?.let { if (!it.isRecycled) it.recycle() }
+            inflight.decrementAndGet()
+          }
         }
     }
 
@@ -187,18 +198,20 @@ class ScannerViewModel : ViewModel() {
         }
         // The three orientations are independent - dispatch them together (ML Kit queues internally) so a
         // rotated site costs one pass of wall-clock rather than three.
-        val out = intArrayOf(0, 90, 270).map { rot ->
-            async(Dispatchers.IO) {
-                try {
-                    val text = Tasks.await(recognizer.process(InputImage.fromBitmap(src, rot)))
-                    text.textBlocks.flatMap { b -> b.lines.map { Norm.normalize(it.text) } }.filter { it.length >= 3 }
-                } catch (_: Throwable) {
-                    emptyList()
+        try {
+            intArrayOf(0, 90, 270).map { rot ->
+                async(Dispatchers.IO) {
+                    try {
+                        val text = Tasks.await(recognizer.process(InputImage.fromBitmap(src, rot)))
+                        text.textBlocks.flatMap { b -> b.lines.map { Norm.normalize(it.text) } }.filter { it.length >= 3 }
+                    } catch (_: Throwable) {
+                        emptyList()
+                    }
                 }
-            }
-        }.awaitAll().flatten()
-        if (src !== bmp) src.recycle()
-        out
+            }.awaitAll().flatten()
+        } finally {
+            if (src !== bmp && !src.isRecycled) src.recycle()   // also on cancellation
+        }
     }
 
     /** The card OCR confidently read from the still. PREFERS a visual-pool member (promote); otherwise
@@ -227,10 +240,12 @@ class ScannerViewModel : ViewModel() {
     /** Lazily load the ~27MB model + index once, off-thread, only on first shutter use. */
     private fun ensureMatcher(): VisualMatcher? {
         vmatcher?.let { return it }
-        if (vmatcherTried) return null
-        vmatcherTried = true
         val loader = ScannerChannel.visualLoader ?: return null
-        return runCatching { loader().also { vmatcher = it } }.getOrNull()
+        // Retry on each capture rather than latching the first failure: "Try another photo" would
+        // otherwise be a lie after a transient load failure (low memory, interrupted read).
+        return runCatching { loader().also { vmatcher = it } }
+            .onFailure { Log.w(TAG, "visual matcher unavailable: ${it.message}") }
+            .getOrNull()
     }
 
     /** User confirmed an identity (by card_id): build the same Recognition and enter the existing sheet flow. */
@@ -272,9 +287,13 @@ class ScannerViewModel : ViewModel() {
         val emb = lastEmb ?: return
         if (lastTop == cardId) { lastEmb = null; return }
         lastEmb = null
+        if (emb.isEmpty() || emb.any { !it.isFinite() }) return   // never learn from a degenerate vector
         runCatching {
+            // Session-scoped only for now: the correction sharpens THIS scanner session, and is not
+            // written to disk (PERSIST_CORRECTIONS) until persistence is bound to the artifact version
+            // and to an acknowledged write, and can repair a torn file.
             vmatcher?.addUserPrototype(cardId, displayName, emb)
-            ScannerChannel.userProtoSink?.invoke(cardId, displayName, emb)
+            if (PERSIST_CORRECTIONS) ScannerChannel.userProtoSink?.invoke(cardId, displayName, emb)
             Log.i(TAG, "learned correction: $cardId (was ${lastTop ?: "none"})")
         }
     }
@@ -328,14 +347,28 @@ class ScannerViewModel : ViewModel() {
         _still.value = null
     }
 
+    /**
+     * Teardown. A cancelled coroutine does NOT interrupt a synchronous native call already inside ORT or
+     * ML Kit, so closing those sessions immediately could free a session mid-run and crash in native code.
+     * Wait (briefly, bounded) for any in-flight inference to leave before closing.
+     */
     override fun onCleared() {
         token++
         job?.cancel()
         _still.value?.let { if (!it.isRecycled) it.recycle() }
         _still.value = null
+        var waited = 0
+        while (inflight.get() > 0 && waited < TEARDOWN_WAIT_MS) {
+            try {
+                Thread.sleep(TEARDOWN_POLL_MS.toLong())
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt(); break
+            }
+            waited += TEARDOWN_POLL_MS
+        }
         runCatching { vmatcher?.close() }
-        recognizer.close()
-        barcodeClient.close()
+        runCatching { recognizer.close() }
+        runCatching { barcodeClient.close() }
         analysisExecutor.shutdown()
     }
 
@@ -344,5 +377,14 @@ class ScannerViewModel : ViewModel() {
         const val SCAN_MS = 350L
         private const val FLOOR = 0.35f     // provisional T_floor; below this -> Empty (calibrate on corpus)
         private const val POOL = 50         // visual candidates OCR may promote from (display stays 5)
+        // Present a single identity without asking? OFF until a sealed evaluation establishes the
+        // false-confirm bound. Every result is a shortlist the user confirms.
+        private const val AUTO_CONFIRM = false
+        // Persist corrections as user prototypes across sessions? OFF for the first merge: the in-memory
+        // benefit is small and persistence needs artifact-version binding, write-acknowledged timing and
+        // torn-file repair before it can be trusted with recognition quality.
+        private const val PERSIST_CORRECTIONS = false
+        private const val TEARDOWN_WAIT_MS = 2000   // bound on waiting for in-flight native inference
+        private const val TEARDOWN_POLL_MS = 25
     }
 }
