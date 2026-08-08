@@ -38,7 +38,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -107,6 +109,7 @@ fun ScannerScreen(
     val sheet by viewModel.sheet.collectAsStateWithLifecycle()
     val searching by viewModel.searching.collectAsStateWithLifecycle()
     val lockEvent by viewModel.lockEvent.collectAsStateWithLifecycle()
+    val lastLearned by viewModel.lastLearned.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -274,6 +277,19 @@ fun ScannerScreen(
             ) {
                 Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(22.dp))
             }
+        }
+
+        // A correction was just learned from the pick. Offer an explicit undo - similarity-replacement
+        // only repairs a retake of the SAME photo, so a mis-pick corrected from a fresh photo would
+        // otherwise leave the mistake in place.
+        LaunchedEffect(lastLearned) {
+            val learned = lastLearned ?: return@LaunchedEffect
+            val res = snackbarHost.showSnackbar(
+                message = "Learned ${learned.displayName}",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Short,
+            )
+            if (res == SnackbarResult.ActionPerformed) viewModel.undoLastCorrection() else viewModel.clearLastLearned()
         }
 
         SnackbarHost(

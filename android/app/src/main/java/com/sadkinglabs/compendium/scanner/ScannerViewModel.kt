@@ -20,6 +20,7 @@ import com.sadkinglabs.compendium.scanner.model.ScannerQr
 import com.sadkinglabs.compendium.scanner.model.SnapCandidate
 import com.sadkinglabs.compendium.scanner.model.SnapState
 import com.sadkinglabs.compendium.scanner.ocr.BarcodeReader
+import com.sadkinglabs.compendium.scanner.visual.CorrectionStore
 import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -77,6 +78,10 @@ class ScannerViewModel : ViewModel() {
     @Volatile private var lastEmb: FloatArray? = null
     @Volatile private var lastTop: String? = null
     private val nativeClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+    // The correction just recorded, if any - the UI offers an explicit undo for it, because replacing on
+    // similarity only repairs a RETAKE of the same photograph, not a fresh photo of the same card.
+    private val _lastLearned = MutableStateFlow<CorrectionStore.Entry?>(null)
+    val lastLearned: StateFlow<CorrectionStore.Entry?> = _lastLearned.asStateFlow()
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
@@ -299,10 +304,26 @@ class ScannerViewModel : ViewModel() {
         runCatching {
             val m = vmatcher ?: return@runCatching
             m.addUserPrototype(cardId, displayName, emb)
+            _lastLearned.value = m.userPrototypes().lastOrNull()
             if (PERSIST_CORRECTIONS) ScannerChannel.userProtoSink?.invoke(m.userPrototypes())
             Log.i(TAG, "learned correction: $cardId (was ${lastTop ?: "none"})")
         }
     }
+
+    /** Undo the correction just recorded: remove it from the live index and rewrite the store without it. */
+    fun undoLastCorrection() {
+        val entry = _lastLearned.value ?: return
+        _lastLearned.value = null
+        runCatching {
+            val m = vmatcher ?: return@runCatching
+            if (m.removeUserPrototype(entry)) {
+                if (PERSIST_CORRECTIONS) ScannerChannel.userProtoSink?.invoke(m.userPrototypes())
+                Log.i(TAG, "undid correction: ${entry.cardId}")
+            }
+        }
+    }
+
+    fun clearLastLearned() { _lastLearned.value = null }
 
     /** Manual recovery: open the catalog name search (when the scan did not offer the right card). */
     fun openSearch() {

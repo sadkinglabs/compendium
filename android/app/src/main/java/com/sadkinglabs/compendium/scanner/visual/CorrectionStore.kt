@@ -97,31 +97,60 @@ class CorrectionStore(
      */
     fun rewrite(artifactId: String, entries: List<Entry>): Boolean {
         val tmp = File(file.parentFile, file.name + ".tmp")
+        val bak = File(file.parentFile, file.name + ".bak")
         return try {
             tmp.delete()
-            var wroteHeader = false
+            // The cap belongs here, not only on the append path: this IS the production writer, so an
+            // unbounded caller would otherwise grow derived storage without limit. Newest corrections are
+            // the most relevant, so the OLDEST are dropped when the budget is exceeded.
+            val encoded = entries
+                .filter { it.embedding.size == dim && it.embedding.all { v -> v.isFinite() } }
+                .map { it to encode(it) }
+            var budget = maxBytes - (4L + 2L + artifactId.toByteArray().size)     // header
+            val keep = ArrayList<ByteArray>(encoded.size)
+            for ((_, body) in encoded.asReversed()) {                            // newest first
+                val cost = body.size + 8L
+                if (cost > budget) break
+                budget -= cost
+                keep.add(body)
+            }
+            keep.reverse()                                                        // restore write order
+
             DataOutputStream(FileOutputStream(tmp).buffered()).use { dout ->
-                dout.writeInt(MAGIC); dout.writeUTF(artifactId); wroteHeader = true
-                for (e in entries) {
-                    if (e.embedding.size != dim || e.embedding.any { !it.isFinite() }) continue
-                    val body = ByteArrayOutputStream().also { bos ->
-                        DataOutputStream(bos).use { d ->
-                            d.writeUTF(e.cardId); d.writeUTF(e.displayName)
-                            for (v in e.embedding) d.writeFloat(v)
-                        }
-                    }.toByteArray()
-                    dout.writeInt(body.size); dout.write(body); dout.writeInt(checksum(body))
-                }
+                dout.writeInt(MAGIC); dout.writeUTF(artifactId)
+                for (body in keep) { dout.writeInt(body.size); dout.write(body); dout.writeInt(checksum(body)) }
             }
-            wroteHeader && run {
-                file.delete()                      // rename onto an existing file fails on some platforms
-                tmp.renameTo(file)
+            // True replace: keep the previous store until the new one is in place, so an interruption
+            // between the two renames leaves a recoverable file rather than nothing at all.
+            bak.delete()
+            val hadOld = file.exists()
+            if (hadOld && !file.renameTo(bak)) { tmp.delete(); return false }
+            if (!tmp.renameTo(file)) {
+                if (hadOld) bak.renameTo(file)          // put the old store back
+                tmp.delete()
+                return false
             }
+            bak.delete()
+            true
         } catch (_: Throwable) {
             tmp.delete()
+            if (!file.exists() && bak.exists()) bak.renameTo(file)   // recover an interrupted replace
             false
         }
     }
+
+    /** Recover a store left behind by an interruption between the two renames. */
+    fun recoverIfInterrupted() {
+        val bak = File(file.parentFile, file.name + ".bak")
+        if (!file.exists() && bak.exists()) bak.renameTo(file)
+    }
+
+    private fun encode(e: Entry): ByteArray = ByteArrayOutputStream().also { bos ->
+        DataOutputStream(bos).use { d ->
+            d.writeUTF(e.cardId); d.writeUTF(e.displayName)
+            for (v in e.embedding) d.writeFloat(v)
+        }
+    }.toByteArray()
 
     private fun decode(rec: ByteArray): Entry? = try {
         DataInputStream(rec.inputStream()).use { din ->

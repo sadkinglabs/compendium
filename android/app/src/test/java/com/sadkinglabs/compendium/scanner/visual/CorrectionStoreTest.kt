@@ -1,5 +1,6 @@
 package com.sadkinglabs.compendium.scanner.visual
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -148,5 +149,51 @@ class CorrectionStoreTest {
         val back = CorrectionStore(f, dim).load(artifact)
         assertEquals(1, back.size)
         assertEquals("ok", back[0].cardId)
+    }
+
+    @Test
+    fun `rewrite enforces the cap by dropping the oldest corrections`() {
+        val f = tmp.newFile().also { it.delete() }
+        val s = CorrectionStore(f, dim, maxBytes = 200L)
+        val many = (1..40).map { CorrectionStore.Entry("c$it", "C$it", vec(1f, 1f, 1f, it.toFloat())) }
+        assertTrue(s.rewrite(artifact, many))
+        assertTrue("the cap must bound the production writer, not just append()", f.length() <= 200L)
+
+        val back = CorrectionStore(f, dim).load(artifact)
+        assertTrue(back.isNotEmpty())
+        assertTrue("kept corrections must be the NEWEST", back.last().cardId == "c40")
+    }
+
+    @Test
+    fun `a failed rewrite leaves the previous store intact`() {
+        val f = tmp.newFile().also { it.delete() }
+        val s = CorrectionStore(f, dim)
+        assertTrue(s.rewrite(artifact, listOf(CorrectionStore.Entry("keep", "Keep", vec(1f, 1f, 1f, 1f)))))
+        val before = f.readBytes()
+
+        // Occupy the temp path with a NON-EMPTY directory: it cannot be deleted or opened as a file, so
+        // the rewrite is forced to fail partway.
+        val tmpPath = File(f.parentFile, f.name + ".tmp")
+        assertTrue(tmpPath.mkdirs())
+        File(tmpPath, "occupied").writeText("x")
+        assertFalse(s.rewrite(artifact, listOf(CorrectionStore.Entry("new", "New", vec(2f, 2f, 2f, 2f)))))
+
+        assertTrue("the old store must survive a failed replace", f.exists())
+        assertArrayEquals(before, f.readBytes())
+        assertEquals("keep", CorrectionStore(f, dim).load(artifact).single().cardId)
+    }
+
+    @Test
+    fun `recovers a store left behind by an interrupted replace`() {
+        val f = tmp.newFile().also { it.delete() }
+        val bak = File(f.parentFile, f.name + ".bak")
+        CorrectionStore(f, dim).rewrite(artifact, listOf(CorrectionStore.Entry("a", "A", vec(1f, 1f, 1f, 1f))))
+        // Simulate dying between the two renames: the live file is gone, the backup remains.
+        assertTrue(f.renameTo(bak))
+
+        val s = CorrectionStore(f, dim)
+        s.recoverIfInterrupted()
+        assertTrue("learning must not be lost by an interrupted replace", f.exists())
+        assertEquals("a", s.load(artifact).single().cardId)
     }
 }

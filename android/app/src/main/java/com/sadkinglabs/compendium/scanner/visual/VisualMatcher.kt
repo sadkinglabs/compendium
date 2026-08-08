@@ -107,6 +107,22 @@ class VisualMatcher private constructor(
     @Synchronized
     fun userPrototypes(): List<CorrectionStore.Entry> = userProtos.toList()
 
+    /**
+     * Remove one specific correction - the explicit undo. Replacement-on-similarity only repairs a RETAKE
+     * of the same photograph; a fresh photograph of the same card typically scores well below that
+     * threshold, so without this a mis-pick would survive. Identity is the exact embedding instance, so
+     * this can never remove a catalog prototype or a different correction.
+     */
+    @Synchronized
+    fun removeUserPrototype(entry: CorrectionStore.Entry): Boolean {
+        val i = userProtos.indexOfFirst { it.embedding === entry.embedding }
+        if (i < 0) return false
+        userProtos.removeAt(i)
+        val at = proto.indexOfFirst { it === entry.embedding }
+        if (at >= 0) { proto.removeAt(at); protoIds.removeAt(at) }
+        return true
+    }
+
     private fun cosine(a: FloatArray, b: FloatArray): Float {
         var s = 0f
         for (i in a.indices) s += a[i] * b[i]
