@@ -3,12 +3,20 @@ package com.sadkinglabs.compendium.scanner.ui
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,7 +36,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -37,15 +44,24 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -53,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sadkinglabs.compendium.scanner.ScannerHaptics
 import com.sadkinglabs.compendium.scanner.ScannerViewModel
 import com.sadkinglabs.compendium.scanner.camera.CameraController
 import com.sadkinglabs.compendium.scanner.model.Recognition
@@ -78,13 +95,13 @@ fun ScannerScreen(
     onAddToDeck: (Recognition, Int) -> Unit,
     onSaveDeck: (Recognition) -> Unit,
     onImportMatch: (Recognition) -> Unit,
-    onSearchByName: () -> Unit,
     onDismissSheet: () -> Unit,
     onClose: () -> Unit,
 ) {
     val snap by viewModel.snap.collectAsStateWithLifecycle()
     val still by viewModel.still.collectAsStateWithLifecycle()
     val sheet by viewModel.sheet.collectAsStateWithLifecycle()
+    val searching by viewModel.searching.collectAsStateWithLifecycle()
     val lockEvent by viewModel.lockEvent.collectAsStateWithLifecycle()
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -95,7 +112,8 @@ fun ScannerScreen(
 
     // Back: sheet -> dismiss; mid-snapshot -> cancel; else let Back close.
     BackHandler(enabled = sheet != null) { onDismissSheet() }
-    BackHandler(enabled = sheet == null && snap != SnapState.Ready) { viewModel.onCancelSnap() }
+    BackHandler(enabled = sheet == null && searching) { viewModel.closeSearch() }
+    BackHandler(enabled = sheet == null && !searching && snap != SnapState.Ready) { viewModel.onCancelSnap() }
 
     Box(Modifier.fillMaxSize()) {
         if (granted) {
@@ -148,18 +166,14 @@ fun ScannerScreen(
             )
         }
 
-        // Reading spinner (centre).
-        if (granted && (snap == SnapState.Capturing || snap == SnapState.Identifying)) {
-            CircularProgressIndicator(
-                color = PillarGold, strokeWidth = 3.dp,
-                modifier = Modifier.align(Alignment.Center).size(52.dp),
-            )
-        }
-
-        // Shutter (Ready only).
-        if (granted && snap == SnapState.Ready && sheet == null) {
-            Shutter(
-                onClick = viewModel::onShutter,
+        // The gilt shutter, which hands over to a violet reading arc mid-capture. Hidden once a panel/sheet is up.
+        val ss = snap
+        if (granted && sheet == null && (ss == SnapState.Ready || ss == SnapState.Capturing || ss == SnapState.Identifying)) {
+            val ctx = LocalContext.current
+            ShutterButton(
+                reading = ss == SnapState.Capturing || ss == SnapState.Identifying,
+                reduceMotion = reduceMotion,
+                onCapture = { ScannerHaptics.tick(ctx); viewModel.onShutter() },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
@@ -175,11 +189,21 @@ fun ScannerScreen(
                 onPick = viewModel::onPickCandidate,
                 onRetake = viewModel::onRetake,
                 onCancel = viewModel::onCancelSnap,
-                onSearchByName = onSearchByName,
+                onSearchByName = viewModel::openSearch,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 20.dp),
+            )
+        }
+
+        // Manual recovery: catalog name-search overlay (from "Search by name").
+        if (granted && searching && sheet == null) {
+            SearchOverlay(
+                onQuery = viewModel::search,
+                onPick = viewModel::onPickCandidate,
+                onClose = viewModel::closeSearch,
+                modifier = Modifier.fillMaxSize(),
             )
         }
 
@@ -219,21 +243,23 @@ fun ScannerScreen(
             )
         }
 
-        // Close (exit scanner).
-        Box(
-            Modifier
-                .align(Alignment.TopEnd)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(8.dp)
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(Color(0x59000000))
-                .border(1.dp, PillarGold.copy(alpha = 0.45f), CircleShape)
-                .clickable(onClick = onClose)
-                .semantics { contentDescription = "Close scanner" },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(22.dp))
+        // Close (exit scanner). Hidden during search - the search bar has its own back control, top-left.
+        if (!searching) {
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(8.dp)
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0x59000000))
+                    .border(1.dp, PillarGold.copy(alpha = 0.45f), CircleShape)
+                    .clickable(onClick = onClose)
+                    .semantics { contentDescription = "Close scanner" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(22.dp))
+            }
         }
 
         SnackbarHost(
@@ -246,20 +272,104 @@ fun ScannerScreen(
     }
 }
 
-/** The gilt seal shutter - a 72dp gold ring with a parchment centre dot. */
+/** Manual recovery: a catalog name search. Type a name, pick the card - it enters the same result sheet
+ *  as a scanned card. The path for cards the scanner cannot read or rank. */
 @Composable
-private fun Shutter(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Box(
+private fun SearchOverlay(
+    onQuery: (String) -> List<SnapCandidate>,
+    onPick: (String) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var q by remember { mutableStateOf("") }
+    val results = remember(q) { onQuery(q) }
+    Column(
         modifier
-            .size(72.dp)
-            .clip(CircleShape)
-            .background(Color(0x8C17130B))
-            .border(2.25.dp, PillarGold, CircleShape)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = "Capture card" },
+            .background(Color(0xF2120D06))
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClose)
+                    .semantics { contentDescription = "Back to scanning" },
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(20.dp)) }
+            Spacer(Modifier.width(8.dp))
+            Box(
+                Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(Color(0x26FFFFFF))
+                    .border(1.dp, PillarGold.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            ) {
+                if (q.isEmpty()) Text("Search cards by name", color = Color(0x80EFE7D8), fontSize = 16.sp)
+                BasicTextField(
+                    value = q, onValueChange = { q = it }, singleLine = true,
+                    textStyle = TextStyle(color = Color(0xFFEFE7D8), fontSize = 16.sp),
+                    cursorBrush = SolidColor(PillarGold),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        LazyColumn(Modifier.fillMaxWidth()) {
+            items(results) { c ->
+                Text(
+                    c.displayName, color = Color(0xFFEFE7D8), fontSize = 16.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onPick(c.cardId) }
+                        .padding(vertical = 12.dp, horizontal = 8.dp)
+                        .semantics { contentDescription = "Select ${c.displayName}" },
+                )
+            }
+        }
+    }
+}
+
+private val ReadViolet = Color(0xFFC79AD0)
+
+/**
+ * The gilt seal shutter (gold double-rule ring + parchment centre dot). While [reading] it hands the ring
+ * over to a violet arc sweeping the same circle - the read lives in the shutter, not a separate spinner.
+ * Reduced motion substitutes a static violet arc.
+ */
+@Composable
+private fun ShutterButton(reading: Boolean, reduceMotion: Boolean, onCapture: () -> Unit, modifier: Modifier = Modifier) {
+    if (!reading) {
+        Box(
+            modifier
+                .size(72.dp)
+                .clip(CircleShape)
+                .background(Color(0x8C17130B))
+                .border(2.25.dp, PillarGold, CircleShape)
+                .clickable(onClick = onCapture)
+                .semantics { contentDescription = "Capture card" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.size(56.dp).clip(CircleShape).border(1.dp, PillarGold.copy(alpha = 0.5f), CircleShape))
+            Box(Modifier.size(14.dp).clip(CircleShape).background(Color(0xFFEFE7D8)))
+        }
+        return
+    }
+    val t = rememberInfiniteTransition(label = "read")
+    val sweep by t.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing)), label = "sweep")
+    Box(
+        modifier.size(72.dp).semantics { contentDescription = "Reading the card" },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(14.dp).clip(CircleShape).background(Color(0xFFEFE7D8)))
+        Box(Modifier.size(72.dp).clip(CircleShape).background(Color(0x8C17130B)))
+        Canvas(Modifier.size(72.dp)) {
+            val stroke = 2.25.dp.toPx()
+            val tl = Offset(stroke / 2, stroke / 2)
+            val sz = Size(size.width - stroke, size.height - stroke)
+            if (reduceMotion) {
+                drawCircle(ReadViolet.copy(alpha = 0.3f), style = Stroke(stroke))
+                drawArc(ReadViolet, -90f, 90f, false, topLeft = tl, size = sz, style = Stroke(stroke, cap = StrokeCap.Round))
+            } else {
+                drawArc(ReadViolet, sweep, 100f, false, topLeft = tl, size = sz, style = Stroke(stroke, cap = StrokeCap.Round))
+            }
+        }
     }
 }
 

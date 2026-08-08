@@ -54,6 +54,7 @@ class ScannerActivity : ComponentActivity() {
         // off-thread, only if the user taps "Try visual match" - so the ~27MB model/index never load
         // during a normal OCR session.
         val appCtx = applicationContext
+        val userProtoFile = java.io.File(appCtx.filesDir, "recog-user-protos.dat")
         ScannerChannel.visualLoader = {
             val model = appCtx.assets.open("recog/dinov2_s448_int8.onnx").use { it.readBytes() }
             val index = appCtx.assets.open("recog/index.f16").use { it.readBytes() }
@@ -64,8 +65,11 @@ class ScannerActivity : ComponentActivity() {
             val ids = ArrayList<String>(idsArr.length())
             val names = ArrayList<String>(namesArr.length())
             for (i in 0 until idsArr.length()) { ids.add(idsArr.getString(i)); names.add(namesArr.getString(i)) }
-            VisualMatcher.load(model, index, ids, names)
+            val matcher = VisualMatcher.load(model, index, ids, names)
+            loadUserProtos(userProtoFile, matcher)   // apply persisted corrections (this-device hardening)
+            matcher
         }
+        ScannerChannel.userProtoSink = { id, name, emb -> appendUserProto(userProtoFile, id, name, emb) }
 
         setContent {
             CompendiumScannerTheme {
@@ -100,7 +104,6 @@ class ScannerActivity : ComponentActivity() {
                     onAddToDeck = { rec, qty -> onAddToDeck(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
-                    onSearchByName = { onSearchByName() },
                     onDismissSheet = { vm.onDismiss() },
                     onClose = { finish() },
                 )
@@ -112,12 +115,6 @@ class ScannerActivity : ComponentActivity() {
         sendTerminal(
             JSObject().put("action", "codex").put("cardId", rec.cardId).put("name", rec.title),
         )
-        finish()
-    }
-
-    /** Visual-match "Search by name": open Codex with no specific card so the user can search. */
-    private fun onSearchByName() {
-        sendTerminal(JSObject().put("action", "codex"))
         finish()
     }
 
@@ -161,6 +158,35 @@ class ScannerActivity : ComponentActivity() {
         if (terminalSent) return
         terminalSent = true
         ScannerChannel.onTerminal?.invoke(js)
+    }
+
+    /** Apply persisted corrections (card_id + display name + embedding VECTOR - never pixels) into the live
+     *  matcher, so on-device hardening survives across sessions. Corrupt store is ignored (resets). */
+    private fun loadUserProtos(file: java.io.File, matcher: com.sadkinglabs.compendium.scanner.visual.VisualMatcher) {
+        if (!file.exists()) return
+        try {
+            java.io.DataInputStream(file.inputStream().buffered()).use { din ->
+                while (true) {
+                    val id = try { din.readUTF() } catch (e: java.io.EOFException) { break }
+                    val name = din.readUTF()
+                    val emb = FloatArray(com.sadkinglabs.compendium.scanner.visual.VisualMatcher.DIM) { din.readFloat() }
+                    matcher.addUserPrototype(id, name, emb)
+                }
+            }
+        } catch (_: Throwable) { /* corrupt store: ignore, hardening resets */ }
+    }
+
+    /** Append one correction to the store. Capped so it cannot grow unbounded; best-effort. */
+    private fun appendUserProto(file: java.io.File, id: String, name: String, emb: FloatArray) {
+        if (emb.size != com.sadkinglabs.compendium.scanner.visual.VisualMatcher.DIM) return
+        try {
+            if (file.exists() && file.length() > 400L * 1600L) return   // ~600KB cap (~400 corrections)
+            java.io.DataOutputStream(java.io.FileOutputStream(file, true).buffered()).use { dout ->
+                dout.writeUTF(id)
+                dout.writeUTF(name)
+                for (v in emb) dout.writeFloat(v)
+            }
+        } catch (_: Throwable) { /* best-effort */ }
     }
 
     override fun onDestroy() {
