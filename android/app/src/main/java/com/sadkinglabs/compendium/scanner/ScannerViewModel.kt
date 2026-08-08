@@ -142,23 +142,40 @@ class ScannerViewModel : ViewModel() {
             lastTop = pool?.firstOrNull()?.cardId
             var display = pool?.take(5)
             var promoted = false
+            var agreed: CardRef? = null             // both signals named the SAME card
             val lines = ocrJob?.await().orEmpty()
             if (pool != null && work != null) {
                 val ocr = ocrCard(pool, lines)          // a card OCR confidently read (in pool or not)
                 if (ocr != null) {
+                    val inPool = pool.any { it.cardId == ocr.id }
                     val head = VisualMatcher.Candidate(ocr.id, ocr.name, pool.firstOrNull { it.cardId == ocr.id }?.score ?: 0f)
                     display = (listOf(head) + pool.filter { it.cardId != ocr.id }).take(5)
                     promoted = true
+                    // Visual ranked it AND OCR read its printed name: two independent signals agreeing,
+                    // the strongest evidence available, so present the answer instead of asking. OCR
+                    // readings OUTSIDE the visual pool stay a pick-list - one signal is not enough.
+                    if (inPool) agreed = ocr
                 }
             }
             work?.recycle()                                     // the job owns its copy
             if (t != token) return@launch
             Log.i(TAG, "shutter->result ${System.currentTimeMillis() - startMs}ms  " +
                 (if (m == null) "UNAVAILABLE" else display?.joinToString { "${it.cardId}=%.2f".format(it.score) } ?: "none"))
-            _snap.value = when {
-                m == null -> SnapState.Empty(unavailable = true)          // fail-closed
-                display.isNullOrEmpty() || (!promoted && display[0].score < FLOOR) -> SnapState.Empty(unavailable = false)
-                else -> SnapState.Shortlist(display.map { SnapCandidate(it.cardId, it.displayName, it.score) })
+            val confirmed = agreed
+            when {
+                m == null -> _snap.value = SnapState.Empty(unavailable = true)   // fail-closed
+                display.isNullOrEmpty() || (!promoted && display[0].score < FLOOR) ->
+                    _snap.value = SnapState.Empty(unavailable = false)
+                confirmed != null -> {
+                    lastTop = confirmed.id      // agreed identity: nothing to learn from confirming it
+                    lockTo(
+                        Recognition(
+                            ScanKind.CARD, confirmed.name, cardId = confirmed.id, sets = confirmed.sets,
+                            limit = confirmed.limit, inDeck = ScannerChannel.deckCounts[confirmed.id] ?: 0,
+                        ),
+                    )
+                }
+                else -> _snap.value = SnapState.Shortlist(display.map { SnapCandidate(it.cardId, it.displayName, it.score) })
             }
         }
     }
@@ -298,11 +315,11 @@ class ScannerViewModel : ViewModel() {
         _snap.value = SnapState.Ready
     }
 
+    /** Present a confirmed identity. The captured still is KEPT on screen so the reveal can stamp it -
+     *  it is the evidence the user just took; [onDismiss] clears it when they move on. */
     private fun lockTo(rec: Recognition) {
         locked = true
-        token++
         job?.cancel()
-        clearStill()
         _searching.value = false
         _snap.value = SnapState.Ready
         _sheet.value = rec

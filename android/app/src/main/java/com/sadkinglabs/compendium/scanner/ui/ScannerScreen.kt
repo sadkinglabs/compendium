@@ -51,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -132,9 +133,10 @@ fun ScannerScreen(
                     pv
                 },
             )
-            // Frozen still: the user's own photo becomes the subject while it is read / chosen.
+            // Frozen still: the user's own photo becomes the subject while it is read, chosen, and
+            // finally stamped by the reveal.
             val frozen = still
-            if (snap != SnapState.Ready && frozen != null && !frozen.isRecycled) {
+            if ((snap != SnapState.Ready || sheet != null) && frozen != null && !frozen.isRecycled) {
                 // The card crop that is actually being matched, shown whole (Fit) - what you see is what
                 // it reads. A dim wash sits under any panel.
                 Box(Modifier.fillMaxSize().background(Color(0xCC000000)))
@@ -144,6 +146,15 @@ fun ScannerScreen(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize().padding(12.dp),
                 )
+                // The reveal: on a confirmed identity the gilt double-rule stamps around the captured
+                // card - the snapshot becomes the manuscript plate. The sheet carries the name.
+                if (sheet != null) {
+                    GiltStamp(
+                        reveal = revealT,
+                        aspect = frozen.width.toFloat() / frozen.height.toFloat(),
+                        modifier = Modifier.fillMaxSize().padding(12.dp),
+                    )
+                }
             }
         } else {
             PermissionPrompt(onClose)
@@ -323,6 +334,60 @@ private fun SearchOverlay(
                         .semantics { contentDescription = "Select ${c.displayName}" },
                 )
             }
+        }
+    }
+}
+
+/**
+ * The Gilt Impression, retargeted from the old guide rect to the captured still: a gold double-rule
+ * stamps around the photographed card as the identity settles. Contact is fast, the inner rule and the
+ * halo follow - brightness and stroke weight only, never scale (the shipping reveal's law). [reveal] is
+ * the shared 0..1 clock; reduced motion arrives at 1 immediately, so this simply paints the settled state.
+ */
+@Composable
+private fun GiltStamp(reveal: Float, aspect: Float, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        // The image is drawn ContentScale.Fit, so the card occupies a letterboxed rect inside this box.
+        val boxAspect = size.width / size.height
+        val w = if (aspect > boxAspect) size.width else size.height * aspect
+        val h = if (aspect > boxAspect) size.width / aspect else size.height
+        val left = (size.width - w) / 2f
+        val top = (size.height - h) / 2f
+
+        fun seg(t: Float, a: Float, b: Float) = ((t - a) / (b - a)).coerceIn(0f, 1f)
+        val contact = seg(reveal, 0f, 0.18f)      // the strike
+        val inner = seg(reveal, 0.18f, 0.55f)     // the second rule follows
+        val halo = seg(reveal, 0.10f, 0.42f)      // a brief flare, then quiet
+        val haloAlpha = (halo * (1f - halo) * 4f).coerceIn(0f, 1f)
+
+        val outerStroke = 2.25.dp.toPx()
+        val inset = 6.dp.toPx()
+        val r = 10.dp.toPx()
+
+        if (haloAlpha > 0f) {
+            drawRoundRect(
+                color = PillarGold.copy(alpha = 0.22f * haloAlpha),
+                topLeft = Offset(left - inset, top - inset),
+                size = Size(w + inset * 2, h + inset * 2),
+                cornerRadius = CornerRadius(r + inset, r + inset),
+                style = Stroke(width = outerStroke * 3f),
+            )
+        }
+        drawRoundRect(
+            color = PillarGold.copy(alpha = 0.95f * contact),
+            topLeft = Offset(left, top),
+            size = Size(w, h),
+            cornerRadius = CornerRadius(r, r),
+            style = Stroke(width = outerStroke),
+        )
+        if (inner > 0f) {
+            drawRoundRect(
+                color = PillarGold.copy(alpha = 0.55f * inner),
+                topLeft = Offset(left + inset, top + inset),
+                size = Size(w - inset * 2, h - inset * 2),
+                cornerRadius = CornerRadius(r * 0.6f, r * 0.6f),
+                style = Stroke(width = 1.dp.toPx()),
+            )
         }
     }
 }
