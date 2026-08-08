@@ -10,6 +10,50 @@ a companion doc: [`card-recogniser-rev6-snapshot-interaction.md`](./card-recogni
 Owner directive, from a real device test: the live-lock scanner is being replaced by a **pure snapshot**
 model. This doc covers the technical/ML architecture only; the UX lives in the companion doc.
 
+## AS BUILT - deviations from the approved design (for Codex review)
+
+The scanner is built and device-validated. Four things differ from what Codex approved. Each was driven
+by device evidence, and each is recorded here rather than left silent.
+
+**1. OCR may OFFER a card outside the visual pool (relaxes "promote within the pool only").**
+Approved: OCR could only re-rank cards the visual index had already ranked. Built: if OCR confidently
+reads a card name that the visual index did NOT rank at all, that card is offered in the pick-list.
+*Why:* device logs showed `sold_out_cemetery` being read perfectly by OCR while the embedding ranked it
+outside the top 50 (bland art). Under the approved rule there was NO recovery - re-scanning returned the
+same wrong list. *Safety:* offered candidates are shortlist-only and always require an explicit user tap;
+they can never auto-confirm. The site-quotes-another-card failure this rule originally guarded against is
+still addressed, because a quoted card would have to independently clear the catalog matcher's name
+threshold on the captured still.
+
+**2. Automatic single Result when the two signals agree (relaxes "Shortlist-only until sealed evidence").**
+Approved: every visual result goes to a pick-list until a sealed evaluation proves a false-confirm bound.
+Built: when the visual index ranks a card AND OCR reads that same card's printed name, the result is
+presented directly. A card named by only ONE signal (visual-only, or an OCR reading outside the pool)
+still goes to the pick-list. *Why:* forcing a pick on every scan made the rapid-add loop three taps and
+the owner reported it as the main friction; on device, 9 of 10 scans now auto-confirm and the one that
+did not was correctly sent to the pick-list. *Note:* this is dual-signal agreement, which is stronger
+evidence than the visual-score threshold Codex was guarding against - but it is still NOT the sealed
+evaluation that was asked for. Nothing is written without a sheet action.
+
+**3. Correction-driven on-device hardening (new - the Rev 7 idea, built early at owner request).**
+When the user confirms a card the visual index did not rank first, that capture's L2-normalised embedding
+is added as an extra prototype for the confirmed card and persisted, so the device recognises it next
+time. *Privacy:* the 384-float VECTOR is stored, never the photo; the capture stays memory-only. Capped
+(~400 corrections) so it cannot grow unbounded; corrupt store is ignored and resets. Per-device, offline.
+*Evidence:* Simple Village went from 3rd at 0.72 to 1st at 0.92-0.95 after one correction, among the
+near-identical Simple/Humble/Rustic/Common Village family, and held across an app restart.
+
+**4. Card-aware crop replaced the fixed centre-square crop.** The centre crop won the offline experiment
+on tightly-framed corpus photos but collapsed in the hand (33% top-1 under loose framing, sites worst,
+because a centre SQUARE discards a landscape site's edges). Built: an edge-activity bounding box that
+trims uniform background to the card, preserving aspect. Offline-validated under simulated loose framing
+(`bbox_check.py`): sites 40% -> 67% top-1 and 67% -> 87% top-5 versus centre-square.
+
+**Also:** the OCR-strip era pipeline and its reliability harness were retired (nothing in production
+referenced them); `Matcher`/`Norm`/`Fuzzy` remain, as they power the OCR refine and the in-scanner name
+search. Remaining owed: the sealed corpus rebuild and the false-confirm bound that would properly
+authorise deviation 2, plus a signed-release APK measurement.
+
 ## Codex disposition (Changes required) - corrections recorded
 
 Accepted. The crop blocker was RUN; the four contract corrections and the lean state model are folded in
@@ -108,8 +152,11 @@ tap shutter -> freeze frame -> [ image-rec embed  +  OCR read ] on the SAME stil
   fp16 prototype index) embeds the captured still and returns a ranked shortlist of card names.
 - **Refiner: OCR** - ML Kit reads the same still. It can only **promote or confirm a card already in the
   visual shortlist**; it can never introduce a card the image matcher did not propose. This is the
-  structural fix for finding (1): a referenced card the player is not holding is not visually similar to
-  the site, so it is never in the shortlist, so OCR can never select it.
+  principal mitigation for finding (1) - NOT an absolute guarantee (see the Codex correction above and the
+  AS BUILT deviations): a referenced card the player is not holding is usually not visually similar to the
+  site, so it is usually not in the shortlist. It remains possible for a quoted card to appear if it is
+  both visually similar AND independently clears the name threshold, which is why no single-signal result
+  is ever auto-confirmed.
 - **No guide frame.** Cards are captured in natural orientation (portrait spells, landscape sites).
 - **Output feeds the existing sheet unchanged** (`RecognitionCard`: collection / wishlist / deck + printing
   picker). A confirmed identity is the only thing Rev 6 produces; every write still needs a sheet action.

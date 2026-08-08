@@ -42,10 +42,9 @@ stateDiagram-v2
     [*] --> Ready
     Ready --> Capturing : shutter press
     Capturing --> Identifying : frame frozen (≤80ms)
-    Identifying --> Result : decisive (one identity)
+    Identifying --> Sheet : both signals agree (no pick needed)
     Identifying --> Shortlist : plausible but uncertain
     Identifying --> Empty : nothing above floor
-    Result --> Sheet : reveal completes
     Shortlist --> Sheet : user picks a name
     Shortlist --> Ready : Try another photo / None of these
     Empty --> Ready : Try another photo
@@ -54,8 +53,9 @@ stateDiagram-v2
     Sheet --> [*] : Search Codex / close
 ```
 
-State names for implementation: `SnapState.Ready / Capturing / Identifying / Result / Shortlist / Empty`
-(replacing the live-loop `Phase.SEARCHING / DETECTING` machine). QR detection (shared decks/matches,
+State names as built: `SnapState.Ready / Capturing / Identifying / Shortlist / Empty` (replacing the
+live-loop `Phase.SEARCHING / DETECTING` machine). There is deliberately **no persistent `Result` state** -
+a confirmed identity populates the existing recognition sheet and triggers its reveal directly. QR detection (shared decks/matches,
 Share & Scan) continues to run passively on the live feed in Ready and is unaffected by this redesign.
 
 ---
@@ -153,7 +153,7 @@ reveal also had to *announce* that recognition had happened; in snapshot the cap
 that, and the rapid-add loop pays for every spare frame. (Owner may keep 800ms if the 650ms feel is thin
 on device - the clock is one constant.)
 
-**How OCR confirmation is surfaced.** Quietly, inside the sheet: when the identity was text-confirmed
+**How OCR confirmation is surfaced. [NOT IN MVP - captions removed; the sheet is unchanged and the frozen photo plus card name suffice.]** As originally designed, quietly inside the sheet: when the identity was text-confirmed
 (§3), a one-line caption sits under the sheet title in muted ink (`FontUi` 12sp, onSurface at 60%):
 
 > *Matched by art and printed name*
@@ -255,11 +255,12 @@ surround dim, no aspect hole - the old frame was an instruction to the OCR pipel
 longer needs it. An empty viewfinder also makes the shutter unmistakably the protagonist.
 
 **Orientation is invisible.** Spells and minions sit portrait; sites sit landscape. The engine handles
-rotation - the user simply photographs the card the way it lies on the table, and the UI never mentions
+both - the user simply photographs the card the way it lies on the table, and the UI never mentions
 orientation, rotates chrome, or asks the user to turn anything. The chrome (close, status, shutter)
-stays screen-oriented; the activity remains portrait-locked as today. First-run only (per profile), the
-Ready status line's first display reads *Any card, any way up - tap the shutter* for its first three
-appearances, then settles to the standard line; no coach marks, no diagrams.
+stays screen-oriented; the activity remains portrait-locked as today. **Scope: portrait or landscape only.
+Upside-down and arbitrary rotation are NOT claimed** - the corpus has no rotated captures, so it is
+unmeasured. The Ready line is one permanent string (*Fill the frame with one card, portrait or landscape,
+then tap*); the earlier "any way up" copy and the per-profile first-run counter are both dropped.
 
 **Distance forgiveness.** Because there is no frame to fill "correctly", a slightly loose or tight shot is
 fine by design; the Empty state's copy (*fill the frame with the card*) is the only place framing is ever
