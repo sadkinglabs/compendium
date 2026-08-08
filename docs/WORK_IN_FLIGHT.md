@@ -27,6 +27,15 @@ when the visual index and OCR independently name the same card - 9 of 10 device 
 list; search-field focus fix; the OCR-strip era pipeline and its reliability harness retired (nothing in
 production referenced them; ~1,500 lines out); as-built deviations recorded and superseded prose
 consolidated in the Rev 6 proposals.
+**Stabilization (post full-diff review) DONE + device-verified:** fp16 decode corrected (it was mis-decoding
+577 of the index's 1,145 subnormals) with an exhaustive 65,536-value test; auto-confirm tightened to require
+the OCR-named card to be in the visual top 5 above a score floor; corrections made REPLACEABLE so a mis-pick
+is repairable (scores aggregate by max per card, so a wrong prototype could never otherwise be outvoted);
+correction store bound to format+model+index, checksummed, torn-tail repairable, atomically rewritten,
+10 unit tests; bitmaps recycled in finally; teardown completion-driven (no main-thread sleep); Gradle gate
+fails the build when the generated recognition assets are absent; 16 KB increment cherry-picked onto this tip.
+Device: learning persists across restart (verified on disk and by rank), no crashes, and cards photographed
+off a SCREEN now identify - harder than the governed corpus, which excludes screens.
 **Next step:** send the as-built deviations to Codex for review (two relax rules it set: OCR may OFFER a
 card outside the visual pool, and dual-signal agreement auto-confirms without the sealed false-confirm
 bound). Then measure the signed-release APK, and merge. Still owed long-term: a fresh sealed corpus and
