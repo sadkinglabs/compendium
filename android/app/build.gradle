@@ -78,12 +78,15 @@ android {
             // works on an x86_64 host - putting this in defaultConfig would strip them
             // everywhere and quietly break emulator testing.
             //
-            // armeabi-v7a stays: minSdkVersion 22 admits 32-bit devices, and dropping
-            // the ABI without raising minSdk would let such a phone install the app and
-            // then crash in the scanner rather than being cleanly excluded from the
-            // store listing. Those two decisions move together or not at all.
+            // armeabi-v7a is now dropped too. To be precise about which lever does what: THIS FILTER
+            // is what excludes 32-bit-only devices - a build without their ABI is not offered to them -
+            // and minSdkVersion 29 is a separate decision that merely made the loss acceptable, since
+            // a 32-bit-only phone new enough for Android 10 is vanishingly rare. Together they mean
+            // such a device is cleanly excluded by the store listing rather than installing and then
+            // crashing in the scanner. arm64-only also halves the per-ABI native payload (ML Kit OCR +
+            // barcode, SQLCipher, ONNX Runtime are all per-ABI copies).
             ndk {
-                abiFilters 'arm64-v8a', 'armeabi-v7a'
+                abiFilters 'arm64-v8a'
             }
         }
     }
@@ -119,6 +122,14 @@ tasks.register('checkRecogAssets') {
 }
 tasks.matching { it.name ==~ /merge.*Assets/ }.configureEach { dependsOn 'checkRecogAssets' }
 
+// 16 KB page-size compatibility - KNOWN REMAINING GAP: libsqlcipher.so (4 KB-aligned LOAD segments).
+// It comes from @capacitor-community/sqlite 6.0.2, which pins the legacy, unmaintained artifact
+// net.zetetic:android-database-sqlcipher:4.5.3. The aligned successor (net.zetetic:sqlcipher-android)
+// is NOT a drop-in: it moved the package namespace, so substituting it crashes the plugin at startup
+// with NoClassDefFoundError net/sqlcipher/database/SQLiteDatabase (verified on device, 2026-08-08).
+// Closing this gap needs the plugin itself to adopt the new artifact - i.e. a Capacitor 7 upgrade -
+// which is its own change. Every other native library in the APK is 16 KB compatible.
+
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
@@ -130,7 +141,7 @@ dependencies {
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     // Card recogniser visual-match fallback (Rev 5.1): ONNX Runtime for on-device DINOv2-small int8
     // inference, run ONCE per user-tapped "Try visual match" (never per frame). Offline, bundled.
-    implementation "com.microsoft.onnxruntime:onnxruntime-android:1.20.0"
+    implementation "com.microsoft.onnxruntime:onnxruntime-android:1.22.0"
     implementation project(':capacitor-cordova-android-plugins')
 
     // --- Native card scanner ---
