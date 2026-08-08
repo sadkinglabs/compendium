@@ -76,7 +76,10 @@ class ScannerViewModel : ViewModel() {
     // this device recognises it next time. The VECTOR is kept, never the photo.
     @Volatile private var lastEmb: FloatArray? = null
     @Volatile private var lastTop: String? = null
-    private val inflight = java.util.concurrent.atomic.AtomicInteger(0)   // native inference in progress
+    private val nativeClosed = java.util.concurrent.atomic.AtomicBoolean(false)
+    // A correction is STAGED at the pick and only committed by an affirmative sheet action, so an
+    // accidental tap that is then dismissed never enters the index or the store.
+    @Volatile private var pendingLearn: Triple<String, String, FloatArray>? = null
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
@@ -126,7 +129,6 @@ class ScannerViewModel : ViewModel() {
           // The job OWNS `work`: it is recycled here on every exit - success, supersession, cancellation
           // or failure - so a Back/retake/background mid-inference cannot retain it.
           try {
-            inflight.incrementAndGet()
             val m = ensureMatcher()
             // Wide visual pool (still only cards the model ranked) so OCR can rescue bland-art cards that
             // sit outside the shown top-5; display stays 5. OCR PROMOTES a pool member whose printed name
@@ -188,7 +190,6 @@ class ScannerViewModel : ViewModel() {
             }
           } finally {
             work?.let { if (!it.isRecycled) it.recycle() }
-            inflight.decrementAndGet()
           }
         }
     }
@@ -295,10 +296,18 @@ class ScannerViewModel : ViewModel() {
         if (lastTop == cardId) { lastEmb = null; return }
         lastEmb = null
         if (emb.isEmpty() || emb.any { !it.isFinite() }) return   // never learn from a degenerate vector
+        // STAGE only. An accidental pick that the user then dismisses must leave no trace: a bad prototype
+        // cannot be undone by a later correction, because scores aggregate by max per card, so two cards
+        // would both hold a high-scoring near-identical vector.
+        pendingLearn = Triple(cardId, displayName, emb)
+    }
+
+    /** The user acted on the sheet (add / wishlist / deck / open in Codex): the identity is affirmed, so a
+     *  staged correction becomes real - in the live index and, if enabled, on disk. */
+    fun onAffirmativeAction() {
+        val (cardId, displayName, emb) = pendingLearn ?: return
+        pendingLearn = null
         runCatching {
-            // Session-scoped only for now: the correction sharpens THIS scanner session, and is not
-            // written to disk (PERSIST_CORRECTIONS) until persistence is bound to the artifact version
-            // and to an acknowledged write, and can repair a torn file.
             vmatcher?.addUserPrototype(cardId, displayName, emb)
             if (PERSIST_CORRECTIONS) ScannerChannel.userProtoSink?.invoke(cardId, displayName, emb)
             Log.i(TAG, "learned correction: $cardId (was ${lastTop ?: "none"})")
@@ -328,6 +337,7 @@ class ScannerViewModel : ViewModel() {
 
     /** "Scan another" from the result sheet. */
     fun onDismiss() {
+        pendingLearn = null      // dismissed without acting: the pick was not an affirmation
         locked = false
         token++
         job?.cancel()
@@ -361,22 +371,27 @@ class ScannerViewModel : ViewModel() {
      */
     override fun onCleared() {
         token++
-        job?.cancel()
         _still.value?.let { if (!it.isRecycled) it.recycle() }
         _still.value = null
-        var waited = 0
-        while (inflight.get() > 0 && waited < TEARDOWN_WAIT_MS) {
-            try {
-                Thread.sleep(TEARDOWN_POLL_MS.toLong())
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt(); break
-            }
-            waited += TEARDOWN_POLL_MS
+        val j = job
+        if (j != null && j.isActive) {
+            // Cancelling does not interrupt a synchronous native call already inside ORT or ML Kit, so
+            // close only once the job has actually left - driven by its completion, never by blocking the
+            // main thread on a poll loop.
+            j.invokeOnCompletion { closeNative() }
+            j.cancel()
+        } else {
+            closeNative()
         }
+        analysisExecutor.shutdown()
+    }
+
+    /** Idempotent: completion may fire from either the cancel path or a normal finish. */
+    private fun closeNative() {
+        if (!nativeClosed.compareAndSet(false, true)) return
         runCatching { vmatcher?.close() }
         runCatching { recognizer.close() }
         runCatching { barcodeClient.close() }
-        analysisExecutor.shutdown()
     }
 
     companion object {
@@ -394,7 +409,5 @@ class ScannerViewModel : ViewModel() {
         private const val AGREE_SCORE = 0.45f
         // Persist corrections so the scanner stays hardened across sessions - the point of learning at all.
         private const val PERSIST_CORRECTIONS = true
-        private const val TEARDOWN_WAIT_MS = 2000   // bound on waiting for in-flight native inference
-        private const val TEARDOWN_POLL_MS = 25
     }
 }

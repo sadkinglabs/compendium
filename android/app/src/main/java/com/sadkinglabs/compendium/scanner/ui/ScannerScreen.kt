@@ -231,21 +231,25 @@ fun ScannerScreen(
                 collectionMode = collectionMode,
                 deckMode = deckMode,
                 reveal = revealT,
-                onSearchCodex = { onSearchCodex(rec) },
+                onSearchCodex = { viewModel.onAffirmativeAction(); onSearchCodex(rec) },
                 onAddCollection = { set ->
+                    viewModel.onAffirmativeAction()
                     onSaveCollection(rec, 1, set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your collection") }
                 },
                 onAddWishlist = { set ->
+                    viewModel.onAffirmativeAction()
                     onAdd(rec, "wishlist", set)
                     scope.launch { snackbarHost.showSnackbar("Added ${rec.title} to your wishlist") }
                 },
                 onSaveCollection = { qty, set ->
+                    viewModel.onAffirmativeAction()
                     onSaveCollection(rec, qty, set)
                     scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title}") }
                     onDismissSheet()
                 },
                 onAddToDeck = { qty ->
+                    viewModel.onAffirmativeAction()
                     onAddToDeck(rec, qty)
                     scope.launch { snackbarHost.showSnackbar("Added $qty × ${rec.title} to the deck") }
                     onDismissSheet()

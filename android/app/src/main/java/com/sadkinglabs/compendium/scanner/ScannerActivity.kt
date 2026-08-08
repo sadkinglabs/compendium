@@ -78,8 +78,11 @@ class ScannerActivity : ComponentActivity() {
                 expectIndexSha256 = obj.optString("sha256_f16").ifEmpty { null },
             )
             // Corrections are only meaningful in the embedding space that produced them, so the store is
-            // keyed to this exact index; a regenerated index resets the learned history.
-            artifactId = obj.optString("sha256_f16").ifEmpty { "unversioned" }
+            // keyed to the FORMAT, the MODEL and the INDEX together; changing any of the three resets the
+            // learned history rather than reinterpreting old vectors in a new space.
+            val modelSha = java.security.MessageDigest.getInstance("SHA-256").digest(model)
+                .joinToString("") { "%02x".format(it) }
+            artifactId = "v1|$modelSha|${obj.optString("sha256_f16").ifEmpty { "noindexsha" }}"
             loadUserProtos(userProtoFile, matcher, artifactId)
             matcher
         }
