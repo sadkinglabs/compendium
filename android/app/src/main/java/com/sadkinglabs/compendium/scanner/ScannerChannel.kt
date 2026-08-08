@@ -23,7 +23,7 @@ object ScannerChannel {
     /** Persist a user correction (an L2-normalised query embedding + the confirmed card) so the on-device
      *  hardening survives across sessions. Set by the Activity (it owns filesDir); stores the VECTOR, never
      *  the photo. Null-safe: if unset, hardening is in-memory only. */
-    @Volatile var userProtoSink: ((cardId: String, displayName: String, emb: FloatArray) -> Unit)? = null
+    @Volatile var userProtoSink: ((entries: List<com.sadkinglabs.compendium.scanner.visual.CorrectionStore.Entry>) -> Unit)? = null
 
     /** Scanner mode: "universal" (Home/Decks - identify, then Codex / +1 collection /
      *  wishlist / deck / match) or "collection" (a focused build-your-collection loop:

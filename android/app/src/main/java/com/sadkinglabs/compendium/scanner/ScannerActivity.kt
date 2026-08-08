@@ -87,9 +87,11 @@ class ScannerActivity : ComponentActivity() {
             }
             matcher
         }
-        ScannerChannel.userProtoSink = { id, name, emb ->
-            val ok = correctionStore().append(artifactId, id, name, emb)
-            android.util.Log.i("ScannerVisual", "persist correction $id -> $ok")
+        ScannerChannel.userProtoSink = { entries ->
+            // Rewritten rather than appended: a correction can REPLACE an earlier one, which an
+            // append-only log cannot express. Temp-file + rename keeps the old store intact on failure.
+            val ok = correctionStore().rewrite(artifactId, entries)
+            android.util.Log.i("ScannerVisual", "persist ${entries.size} corrections -> $ok")
         }
 
         setContent {

@@ -90,6 +90,39 @@ class CorrectionStore(
         }
     }
 
+    /**
+     * Replace the whole store with [entries] - used when a correction REPLACES an earlier one, which an
+     * append-only log cannot express. Written to a temp file and renamed, so an interrupted rewrite leaves
+     * the previous store intact rather than a half-written one.
+     */
+    fun rewrite(artifactId: String, entries: List<Entry>): Boolean {
+        val tmp = File(file.parentFile, file.name + ".tmp")
+        return try {
+            tmp.delete()
+            var wroteHeader = false
+            DataOutputStream(FileOutputStream(tmp).buffered()).use { dout ->
+                dout.writeInt(MAGIC); dout.writeUTF(artifactId); wroteHeader = true
+                for (e in entries) {
+                    if (e.embedding.size != dim || e.embedding.any { !it.isFinite() }) continue
+                    val body = ByteArrayOutputStream().also { bos ->
+                        DataOutputStream(bos).use { d ->
+                            d.writeUTF(e.cardId); d.writeUTF(e.displayName)
+                            for (v in e.embedding) d.writeFloat(v)
+                        }
+                    }.toByteArray()
+                    dout.writeInt(body.size); dout.write(body); dout.writeInt(checksum(body))
+                }
+            }
+            wroteHeader && run {
+                file.delete()                      // rename onto an existing file fails on some platforms
+                tmp.renameTo(file)
+            }
+        } catch (_: Throwable) {
+            tmp.delete()
+            false
+        }
+    }
+
     private fun decode(rec: ByteArray): Entry? = try {
         DataInputStream(rec.inputStream()).use { din ->
             val id = din.readUTF()

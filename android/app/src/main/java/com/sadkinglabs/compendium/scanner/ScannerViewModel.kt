@@ -77,9 +77,6 @@ class ScannerViewModel : ViewModel() {
     @Volatile private var lastEmb: FloatArray? = null
     @Volatile private var lastTop: String? = null
     private val nativeClosed = java.util.concurrent.atomic.AtomicBoolean(false)
-    // A correction is STAGED at the pick and only committed by an affirmative sheet action, so an
-    // accidental tap that is then dismissed never enters the index or the store.
-    @Volatile private var pendingLearn: Triple<String, String, FloatArray>? = null
 
     val analyzer = TitleStripAnalyzer(
         scope = viewModelScope,
@@ -296,20 +293,13 @@ class ScannerViewModel : ViewModel() {
         if (lastTop == cardId) { lastEmb = null; return }
         lastEmb = null
         if (emb.isEmpty() || emb.any { !it.isFinite() }) return   // never learn from a degenerate vector
-        // STAGE only. An accidental pick that the user then dismisses must leave no trace: a bad prototype
-        // cannot be undone by a later correction, because scores aggregate by max per card, so two cards
-        // would both hold a high-scoring near-identical vector.
-        pendingLearn = Triple(cardId, displayName, emb)
-    }
-
-    /** The user acted on the sheet (add / wishlist / deck / open in Codex): the identity is affirmed, so a
-     *  staged correction becomes real - in the live index and, if enabled, on disk. */
-    fun onAffirmativeAction() {
-        val (cardId, displayName, emb) = pendingLearn ?: return
-        pendingLearn = null
+        // The pick IS the identification - the user looked at the card and named it, which is the whole
+        // signal. A mistaken pick is not permanent: addUserPrototype replaces any earlier correction
+        // describing the same capture, so correcting again repairs it rather than leaving two rivals.
         runCatching {
-            vmatcher?.addUserPrototype(cardId, displayName, emb)
-            if (PERSIST_CORRECTIONS) ScannerChannel.userProtoSink?.invoke(cardId, displayName, emb)
+            val m = vmatcher ?: return@runCatching
+            m.addUserPrototype(cardId, displayName, emb)
+            if (PERSIST_CORRECTIONS) ScannerChannel.userProtoSink?.invoke(m.userPrototypes())
             Log.i(TAG, "learned correction: $cardId (was ${lastTop ?: "none"})")
         }
     }
@@ -337,7 +327,6 @@ class ScannerViewModel : ViewModel() {
 
     /** "Scan another" from the result sheet. */
     fun onDismiss() {
-        pendingLearn = null      // dismissed without acting: the pick was not an affirmation
         locked = false
         token++
         job?.cancel()

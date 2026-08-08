@@ -21,6 +21,8 @@ class VisualMatcher private constructor(
     private val protoIds: MutableList<String>,    // parallel card_ids (multi-prototype; best score per id)
     private val names: MutableMap<String, String>, // card_id -> display name
 ) {
+    /** The user's own corrections, tracked apart from the catalog so they can be repaired and persisted. */
+    private val userProtos = ArrayList<CorrectionStore.Entry>()
     /** [cardId] is the catalog identity (keys every lookup/write); [displayName] is display only. */
     data class Candidate(val cardId: String, val displayName: String, val score: Float)
 
@@ -78,13 +80,37 @@ class VisualMatcher private constructor(
             .map { Candidate(it.key, names[it.key] ?: it.key, it.value) }
     }
 
-    /** On-device hardening: add a user-confirmed example (an L2-normalised query embedding) as a new
-     *  prototype for [cardId]. Extends the live index only; the caller persists it. */
+    /**
+     * On-device hardening: record a user-confirmed example (an L2-normalised query embedding) as a
+     * prototype for [cardId].
+     *
+     * A correction REPLACES any earlier user prototype describing the same photograph, whichever card it
+     * was filed under. Without that, a mis-tap would be permanent: scores aggregate by max per card, so a
+     * wrong prototype keeps scoring high forever and a later correction merely adds a rival rather than
+     * repairing the mistake. Catalog prototypes are never touched - only the user's own corrections.
+     */
     @Synchronized
     fun addUserPrototype(cardId: String, displayName: String, emb: FloatArray) {
+        val stale = userProtos.indexOfFirst { cosine(it.embedding, emb) >= SAME_CAPTURE }
+        if (stale >= 0) {
+            val old = userProtos.removeAt(stale)
+            val at = proto.indexOfFirst { it === old.embedding }
+            if (at >= 0) { proto.removeAt(at); protoIds.removeAt(at) }
+        }
         proto.add(emb)
         protoIds.add(cardId)
         names.putIfAbsent(cardId, displayName)
+        userProtos.add(CorrectionStore.Entry(cardId, displayName, emb))
+    }
+
+    /** The user's corrections, in order - the authoritative set for persistence. */
+    @Synchronized
+    fun userPrototypes(): List<CorrectionStore.Entry> = userProtos.toList()
+
+    private fun cosine(a: FloatArray, b: FloatArray): Float {
+        var s = 0f
+        for (i in a.indices) s += a[i] * b[i]
+        return s
     }
 
     fun close() = session.close()
@@ -92,6 +118,9 @@ class VisualMatcher private constructor(
     companion object {
         const val SIZE = 448
         const val DIM = 384
+        /** Cosine above which two corrections are treated as describing the SAME capture, so the newer
+         *  one replaces the older instead of both surviving under different cards. */
+        private const val SAME_CAPTURE = 0.98f
         private val MEAN = floatArrayOf(0.485f, 0.456f, 0.406f)
         private val STD = floatArrayOf(0.229f, 0.224f, 0.225f)
 

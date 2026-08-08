@@ -6,6 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.File
 import java.io.RandomAccessFile
 
 /**
@@ -114,5 +115,38 @@ class CorrectionStoreTest {
         assertTrue("the cap must stop growth", written in 1 until 50)
         // Everything written before the cap is still readable.
         assertEquals(written, CorrectionStore(f, dim).load(artifact).size)
+    }
+
+    @Test
+    fun `rewrite replaces the whole store atomically`() {
+        val f = tmp.newFile().also { it.delete() }
+        val s = CorrectionStore(f, dim)
+        s.append(artifact, "wrong", "Wrong", vec(1f, 1f, 1f, 1f))
+        // A correction supersedes the earlier one: append-only cannot express that, rewrite can.
+        assertTrue(s.rewrite(artifact, listOf(CorrectionStore.Entry("right", "Right", vec(2f, 2f, 2f, 2f)))))
+
+        val back = CorrectionStore(f, dim).load(artifact)
+        assertEquals(1, back.size)
+        assertEquals("right", back[0].cardId)
+        assertFalse("no temp file should be left behind", File(f.parentFile, f.name + ".tmp").exists())
+    }
+
+    @Test
+    fun `rewrite skips malformed entries but keeps the good ones`() {
+        val f = tmp.newFile().also { it.delete() }
+        val s = CorrectionStore(f, dim)
+        assertTrue(
+            s.rewrite(
+                artifact,
+                listOf(
+                    CorrectionStore.Entry("ok", "OK", vec(1f, 1f, 1f, 1f)),
+                    CorrectionStore.Entry("bad", "Bad", vec(1f, Float.NaN, 1f, 1f)),
+                    CorrectionStore.Entry("short", "Short", vec(1f)),
+                ),
+            ),
+        )
+        val back = CorrectionStore(f, dim).load(artifact)
+        assertEquals(1, back.size)
+        assertEquals("ok", back[0].cardId)
     }
 }
