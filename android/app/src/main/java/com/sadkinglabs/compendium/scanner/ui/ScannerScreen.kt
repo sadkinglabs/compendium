@@ -51,6 +51,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -64,6 +66,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -294,6 +297,14 @@ private fun SearchOverlay(
 ) {
     var q by remember { mutableStateOf("") }
     val results = remember(q) { onQuery(q) }
+    // Focus the field the moment search opens and raise the keyboard - without this the user has to
+    // hunt for the field and tap it before they can type.
+    val focus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focus.requestFocus()
+        keyboard?.show()
+    }
     Column(
         modifier
             .background(Color(0xF2120D06))
@@ -317,7 +328,7 @@ private fun SearchOverlay(
                     value = q, onValueChange = { q = it }, singleLine = true,
                     textStyle = TextStyle(color = Color(0xFFEFE7D8), fontSize = 16.sp),
                     cursorBrush = SolidColor(PillarGold),
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
                 )
             }
         }
