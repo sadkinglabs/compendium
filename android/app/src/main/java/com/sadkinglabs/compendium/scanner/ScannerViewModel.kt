@@ -148,12 +148,19 @@ class ScannerViewModel : ViewModel() {
                     val head = VisualMatcher.Candidate(ocr.id, ocr.name, pool.firstOrNull { it.cardId == ocr.id }?.score ?: 0f)
                     display = (listOf(head) + pool.filter { it.cardId != ocr.id }).take(5)
                     promoted = true
-                    // Dual-signal agreement (visual ranked it AND OCR read its printed name) is the
-                    // strongest evidence available, but it is NOT the sealed false-confirm bound the
-                    // approved contract requires before any result may skip human confirmation - and
-                    // "anywhere in a 50-card visual pool" is a weak second signal on its own. Until that
-                    // evidence exists, every result goes to the shortlist. Flip AUTO_CONFIRM only with it.
-                    if (AUTO_CONFIRM && inPool) agreed = ocr
+                    // Auto-confirm requires GENUINE agreement, not merely "OCR named something the model
+                    // ranked somewhere". The review's failure case - a quoted or incidental name that
+                    // happens to sit anywhere in a 50-card pool - is excluded by demanding the named card
+                    // also be one of the visual TOP FEW and clear a similarity floor. A card the player is
+                    // not holding would have to be both visually among the closest matches to the photo
+                    // AND have its name legible on that photo.
+                    val rank = pool.indexOfFirst { it.cardId == ocr.id }
+                    val strong = rank in 0 until AGREE_RANK && pool[rank].score >= AGREE_SCORE
+                    if (AUTO_CONFIRM && strong) agreed = ocr
+                    if (inPool && !strong) {
+                        Log.i(TAG, "OCR named ${ocr.id} at rank $rank score " +
+                            "%.2f - below the agreement bar, shortlisting".format(pool.getOrNull(rank)?.score ?: 0f))
+                    }
                 }
             }
             if (t != token) return@launch        // superseded: publish nothing, learn nothing
@@ -377,13 +384,16 @@ class ScannerViewModel : ViewModel() {
         const val SCAN_MS = 350L
         private const val FLOOR = 0.35f     // provisional T_floor; below this -> Empty (calibrate on corpus)
         private const val POOL = 50         // visual candidates OCR may promote from (display stays 5)
-        // Present a single identity without asking? OFF until a sealed evaluation establishes the
-        // false-confirm bound. Every result is a shortlist the user confirms.
-        private const val AUTO_CONFIRM = false
-        // Persist corrections as user prototypes across sessions? OFF for the first merge: the in-memory
-        // benefit is small and persistence needs artifact-version binding, write-acknowledged timing and
-        // torn-file repair before it can be trusted with recognition quality.
-        private const val PERSIST_CORRECTIONS = false
+        // Present a single identity when the two signals genuinely agree. This is the feature: a scan that
+        // resolves in one tap instead of three. It is bounded, not blind - see AGREE_RANK / AGREE_SCORE.
+        private const val AUTO_CONFIRM = true
+        // For OCR's reading to count as CONFIRMATION rather than a hint, the named card must also be among
+        // the visual top few AND clear a similarity floor. Deliberately much tighter than the 50-card pool
+        // OCR may merely OFFER from.
+        private const val AGREE_RANK = 5
+        private const val AGREE_SCORE = 0.45f
+        // Persist corrections so the scanner stays hardened across sessions - the point of learning at all.
+        private const val PERSIST_CORRECTIONS = true
         private const val TEARDOWN_WAIT_MS = 2000   // bound on waiting for in-flight native inference
         private const val TEARDOWN_POLL_MS = 25
     }

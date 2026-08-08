@@ -55,6 +55,7 @@ class ScannerActivity : ComponentActivity() {
         // during a normal OCR session.
         val appCtx = applicationContext
         val userProtoFile = java.io.File(appCtx.filesDir, "recog-user-protos.dat")
+        var artifactId = "unversioned"      // set when the index loads; binds the correction store to it
         ScannerChannel.visualLoader = {
             val model = appCtx.assets.open("recog/dinov2_s448_int8.onnx").use { it.readBytes() }
             val index = appCtx.assets.open("recog/index.f16").use { it.readBytes() }
@@ -76,10 +77,15 @@ class ScannerActivity : ComponentActivity() {
                 expectCount = obj.optInt("count", ids.size),
                 expectIndexSha256 = obj.optString("sha256_f16").ifEmpty { null },
             )
-            loadUserProtos(userProtoFile, matcher)   // apply persisted corrections (this-device hardening)
+            // Corrections are only meaningful in the embedding space that produced them, so the store is
+            // keyed to this exact index; a regenerated index resets the learned history.
+            artifactId = obj.optString("sha256_f16").ifEmpty { "unversioned" }
+            loadUserProtos(userProtoFile, matcher, artifactId)
             matcher
         }
-        ScannerChannel.userProtoSink = { id, name, emb -> appendUserProto(userProtoFile, id, name, emb) }
+        ScannerChannel.userProtoSink = { id, name, emb ->
+            appendUserProto(userProtoFile, artifactId, id, name, emb)
+        }
 
         setContent {
             CompendiumScannerTheme {
@@ -170,33 +176,68 @@ class ScannerActivity : ComponentActivity() {
         ScannerChannel.onTerminal?.invoke(js)
     }
 
-    /** Apply persisted corrections (card_id + display name + embedding VECTOR - never pixels) into the live
-     *  matcher, so on-device hardening survives across sessions. Corrupt store is ignored (resets). */
-    private fun loadUserProtos(file: java.io.File, matcher: com.sadkinglabs.compendium.scanner.visual.VisualMatcher) {
+    /**
+     * Apply persisted corrections (card_id + display name + embedding VECTOR - never pixels) into the live
+     * matcher, so hardening survives across sessions.
+     *
+     * The store is bound to the artifacts it was learned against: a header carries the index sha256, and a
+     * different model or index resets it, because an embedding only means anything in the space that
+     * produced it. Each record is length-prefixed and checksummed, so a torn append (process killed
+     * mid-write) truncates to the last good record instead of poisoning the index or losing the file.
+     */
+    private fun loadUserProtos(file: java.io.File, matcher: com.sadkinglabs.compendium.scanner.visual.VisualMatcher, artifactId: String) {
         if (!file.exists()) return
+        val dim = com.sadkinglabs.compendium.scanner.visual.VisualMatcher.DIM
+        var good = 0L
         try {
-            java.io.DataInputStream(file.inputStream().buffered()).use { din ->
-                while (true) {
-                    val id = try { din.readUTF() } catch (e: java.io.EOFException) { break }
-                    val name = din.readUTF()
-                    val emb = FloatArray(com.sadkinglabs.compendium.scanner.visual.VisualMatcher.DIM) { din.readFloat() }
-                    matcher.addUserPrototype(id, name, emb)
+            java.io.RandomAccessFile(file, "r").use { raf ->
+                if (raf.readInt() != USER_PROTO_MAGIC || raf.readUTF() != artifactId) {
+                    raf.close(); file.delete(); return          // learned against different artifacts
+                }
+                good = raf.filePointer
+                while (raf.filePointer < raf.length()) {
+                    val len = raf.readInt()
+                    if (len <= 0 || raf.filePointer + len > raf.length()) break   // torn tail
+                    val rec = ByteArray(len)
+                    raf.readFully(rec)
+                    val stored = raf.readInt()
+                    if (stored != rec.fold(17) { a, b -> a * 31 + b }) break      // corrupt record
+                    java.io.DataInputStream(rec.inputStream()).use { din ->
+                        val id = din.readUTF()
+                        val name = din.readUTF()
+                        val emb = FloatArray(dim) { din.readFloat() }
+                        if (emb.all { it.isFinite() }) matcher.addUserPrototype(id, name, emb)
+                    }
+                    good = raf.filePointer
                 }
             }
-        } catch (_: Throwable) { /* corrupt store: ignore, hardening resets */ }
-    }
-
-    /** Append one correction to the store. Capped so it cannot grow unbounded; best-effort. */
-    private fun appendUserProto(file: java.io.File, id: String, name: String, emb: FloatArray) {
-        if (emb.size != com.sadkinglabs.compendium.scanner.visual.VisualMatcher.DIM) return
+        } catch (_: Throwable) { /* fall through to the truncation below */ }
+        // Drop anything after the last verified record rather than discarding the whole history.
         try {
-            if (file.exists() && file.length() > 400L * 1600L) return   // ~600KB cap (~400 corrections)
-            java.io.DataOutputStream(java.io.FileOutputStream(file, true).buffered()).use { dout ->
-                dout.writeUTF(id)
-                dout.writeUTF(name)
-                for (v in emb) dout.writeFloat(v)
+            if (good in 1 until file.length()) {
+                java.io.RandomAccessFile(file, "rw").use { it.setLength(good) }
             }
         } catch (_: Throwable) { /* best-effort */ }
+    }
+
+    /** Append one correction. Header on first write binds the store to the current artifacts. */
+    private fun appendUserProto(file: java.io.File, artifactId: String, id: String, name: String, emb: FloatArray) {
+        if (emb.size != com.sadkinglabs.compendium.scanner.visual.VisualMatcher.DIM) return
+        if (emb.any { !it.isFinite() }) return
+        try {
+            if (file.exists() && file.length() > USER_PROTO_MAX_BYTES) return
+            val body = java.io.ByteArrayOutputStream().also { bos ->
+                java.io.DataOutputStream(bos).use { d ->
+                    d.writeUTF(id); d.writeUTF(name); for (v in emb) d.writeFloat(v)
+                }
+            }.toByteArray()
+            java.io.DataOutputStream(java.io.FileOutputStream(file, true).buffered()).use { dout ->
+                if (file.length() == 0L) { dout.writeInt(USER_PROTO_MAGIC); dout.writeUTF(artifactId) }
+                dout.writeInt(body.size)
+                dout.write(body)
+                dout.writeInt(body.fold(17) { a, b -> a * 31 + b })
+            }
+        } catch (_: Throwable) { /* best-effort; a lost correction is recoverable, a corrupt index is not */ }
     }
 
     override fun onDestroy() {
@@ -204,5 +245,10 @@ class ScannerActivity : ComponentActivity() {
         // Back button / system kill without an explicit action -> cancelled, so the retained
         // `await scan()` never hangs. Guarded so it can't override a real terminal already sent.
         if (!terminalSent) sendTerminal(JSObject().put("action", "cancelled"))
+    }
+
+    private companion object {
+        const val USER_PROTO_MAGIC = 0x43524331          // "CRC1" - correction store, format 1
+        const val USER_PROTO_MAX_BYTES = 700_000L        // ~400 corrections; bounded growth
     }
 }
