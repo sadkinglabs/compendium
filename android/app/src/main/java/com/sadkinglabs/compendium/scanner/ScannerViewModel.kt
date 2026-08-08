@@ -24,6 +24,9 @@ import com.sadkinglabs.compendium.scanner.ocr.StripExtractor
 import com.sadkinglabs.compendium.scanner.visual.VisualMatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -129,6 +132,9 @@ class ScannerViewModel : ViewModel() {
             // Wide visual pool (still only cards the model ranked) so OCR can rescue bland-art cards that
             // sit outside the shown top-5; display stays 5. OCR PROMOTES a pool member whose printed name
             // it confirms - never introduces a card the model did not rank (the site-quotes-card safeguard).
+            // OCR and the embedding are independent reads of the same still, so run them CONCURRENTLY:
+            // a scan then costs about the slower of the two instead of their sum.
+            val ocrJob = if (work != null) async { runCatching { ocrLines(work) }.getOrNull().orEmpty() } else null
             // Embed once, keep the vector: it powers the match AND becomes the user prototype on a correction.
             val emb = if (m != null && work != null) runCatching { m.embed(work) }.getOrNull() else null
             val pool = if (m != null && emb != null) runCatching { m.matchEmbedding(emb, POOL) }.getOrNull() else null
@@ -136,8 +142,8 @@ class ScannerViewModel : ViewModel() {
             lastTop = pool?.firstOrNull()?.cardId
             var display = pool?.take(5)
             var promoted = false
+            val lines = ocrJob?.await().orEmpty()
             if (pool != null && work != null) {
-                val lines = runCatching { ocrLines(work) }.getOrNull().orEmpty()
                 val ocr = ocrCard(pool, lines)          // a card OCR confidently read (in pool or not)
                 if (ocr != null) {
                     val head = VisualMatcher.Candidate(ocr.id, ocr.name, pool.firstOrNull { it.cardId == ocr.id }?.score ?: 0f)
@@ -159,7 +165,7 @@ class ScannerViewModel : ViewModel() {
 
     /** Full-image OCR of the still at three orientations (sites read vertically), normalised lines.
      *  Downscaled first - the name is large, and it roughly thirds the per-pass cost. */
-    private fun ocrLines(bmp: Bitmap): List<String> {
+    private suspend fun ocrLines(bmp: Bitmap): List<String> = coroutineScope {
         val big = maxOf(bmp.width, bmp.height)
         val src = if (big > 1000) {
             val sc = 1000f / big
@@ -167,20 +173,20 @@ class ScannerViewModel : ViewModel() {
         } else {
             bmp
         }
-        val out = ArrayList<String>()
-        for (rot in intArrayOf(0, 90, 270)) {
-            val text = try {
-                Tasks.await(recognizer.process(InputImage.fromBitmap(src, rot)))
-            } catch (_: Throwable) {
-                continue
+        // The three orientations are independent - dispatch them together (ML Kit queues internally) so a
+        // rotated site costs one pass of wall-clock rather than three.
+        val out = intArrayOf(0, 90, 270).map { rot ->
+            async(Dispatchers.IO) {
+                try {
+                    val text = Tasks.await(recognizer.process(InputImage.fromBitmap(src, rot)))
+                    text.textBlocks.flatMap { b -> b.lines.map { Norm.normalize(it.text) } }.filter { it.length >= 3 }
+                } catch (_: Throwable) {
+                    emptyList()
+                }
             }
-            for (b in text.textBlocks) for (l in b.lines) {
-                val n = Norm.normalize(l.text)
-                if (n.length >= 3) out.add(n)
-            }
-        }
+        }.awaitAll().flatten()
         if (src !== bmp) src.recycle()
-        return out
+        out
     }
 
     /** The card OCR confidently read from the still. PREFERS a visual-pool member (promote); otherwise
