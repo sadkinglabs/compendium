@@ -3,6 +3,9 @@ package com.sadkinglabs.compendium.scanner.session
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The scanner must be launchable again after ANY outcome - success, cancellation, or a startup that threw.
@@ -80,5 +83,48 @@ class ScanSessionGateTest {
         g.open()                       // retained + opened before anything fallible
         assertTrue(g.close())
         assertTrue(g.tryAcquire())
+    }
+
+    @Test
+    fun `the scanner stays taken until terminal cleanup has finished`() {
+        // The window that mattered: releasing the gate BEFORE teardown let the next scan acquire it and
+        // retain its own call, which the previous session's teardown then resolved and nulled - the new
+        // scan receiving the old scan's result, or losing the matcher it had just installed.
+        val g = ScanSessionGate()
+        assertTrue(g.tryAcquire())
+        g.open()
+
+        val cleanupStarted = CountDownLatch(1)
+        val finishCleanup = CountDownLatch(1)
+        val closed = AtomicBoolean(false)
+        val terminal = Thread {
+            closed.set(
+                g.close {
+                    cleanupStarted.countDown()
+                    finishCleanup.await(5, TimeUnit.SECONDS)   // teardown deliberately held open
+                },
+            )
+        }
+        terminal.start()
+        assertTrue(cleanupStarted.await(5, TimeUnit.SECONDS))
+
+        assertFalse("a new scan must NOT be admitted while teardown is still running", g.tryAcquire())
+
+        finishCleanup.countDown()
+        terminal.join(5_000)
+        assertTrue(closed.get())
+        assertTrue("and it must be admitted once teardown has finished", g.tryAcquire())
+    }
+
+    @Test
+    fun `a throwing cleanup still releases the scanner`() {
+        val g = ScanSessionGate()
+        g.tryAcquire(); g.open()
+        try {
+            g.close { throw IllegalStateException("teardown blew up") }
+        } catch (_: IllegalStateException) {
+            // expected - the caller sees it, but the scanner must not be wedged by it
+        }
+        assertTrue("a failed teardown must not make the scanner unlaunchable", g.tryAcquire())
     }
 }

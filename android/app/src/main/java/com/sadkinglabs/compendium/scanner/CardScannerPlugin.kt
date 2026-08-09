@@ -128,17 +128,24 @@ class CardScannerPlugin : Plugin() {
         call.resolve()
     }
 
+    /**
+     * Settle this scan exactly once. The teardown runs INSIDE the gate: the scanner is not released until
+     * this session has taken its call, answered it, and cleared the shared channel - otherwise the next
+     * scan could acquire the gate and install its own call and matcher, only for this teardown to resolve
+     * and null them, handing the new scan the old scan's result.
+     */
     private fun resolveOnce(js: JSObject) {
-        if (!gate.close()) return
-        val call = pendingCall
-        pendingCall = null
-        if (call != null) {
-            when (js.getString("action")) {
-                "permission_denied" -> call.reject(js.getString("message") ?: "Camera permission denied", "permission_denied")
-                "no_camera" -> call.reject("No camera available", "no_camera")
-                else -> call.resolve(js)
+        gate.close {
+            val call = pendingCall
+            pendingCall = null
+            if (call != null) {
+                when (js.getString("action")) {
+                    "permission_denied" -> call.reject(js.getString("message") ?: "Camera permission denied", "permission_denied")
+                    "no_camera" -> call.reject("No camera available", "no_camera")
+                    else -> call.resolve(js)
+                }
             }
+            ScannerChannel.clear()
         }
-        ScannerChannel.clear()
     }
 }

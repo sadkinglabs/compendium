@@ -30,10 +30,22 @@ class ScanSessionGate {
         settled.set(false)
     }
 
-    /** True for the FIRST terminal of an open session; false for later ones and for an unopened session. */
-    fun close(): Boolean {
+    /**
+     * Settle the session, running [cleanup] BEFORE the scanner is released. Returns true for the FIRST
+     * terminal of an open session; false for later ones and for a session that was never opened.
+     *
+     * Cleanup belongs inside the lock, not after it. Releasing first left a window where the next scan
+     * could acquire the gate and retain its own call, only for the previous session's teardown to resolve
+     * and null it - handing the new scan the old scan's result, or wiping the matcher and callbacks it had
+     * just installed. The release is in a `finally` so a throwing cleanup cannot wedge the scanner.
+     */
+    fun close(cleanup: () -> Unit = {}): Boolean {
         if (!settled.compareAndSet(false, true)) return false
-        active.set(false)
+        try {
+            cleanup()
+        } finally {
+            active.set(false)
+        }
         return true
     }
 
