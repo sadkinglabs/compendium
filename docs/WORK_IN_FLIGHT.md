@@ -14,44 +14,11 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 ## Open
 
-### `card-recogniser` - snapshot card scanner (image recognition + OCR)
+### `android-16kb-compat` - DO NOT MERGE
 
-**Status:** feature-complete and device-validated; housekeeping outstanding. Contains all of
-`scanner-phase2a` (verified: 0 unique commits there, so that branch is safe to delete).
-**Built:** pure-snapshot scanner (one-tap capture -> card-aware crop -> DINOv2-small int8 visual match ->
-OCR promotes/offers the named card -> user confirms -> existing result sheet); in-scanner search-by-name;
-correction-driven on-device hardening (a confirmed card the index ranked wrong stores its embedding as a
-user prototype, persisted, vectors never pixels); gilt shutter + violet reading arc.
-**Done since:** reveal choreography (Gilt Impression stamps the captured still) and automatic confirmation
-when the visual index and OCR independently name the same card - 9 of 10 device scans now skip the pick
-list; search-field focus fix; the OCR-strip era pipeline and its reliability harness retired (nothing in
-production referenced them; ~1,500 lines out); as-built deviations recorded and superseded prose
-consolidated in the Rev 6 proposals.
-**Stabilization (post full-diff review) DONE + device-verified:** fp16 decode corrected (it was mis-decoding
-577 of the index's 1,145 subnormals) with an exhaustive 65,536-value test; auto-confirm tightened to require
-the OCR-named card to be in the visual top 5 above a score floor; corrections made REPLACEABLE so a mis-pick
-is repairable (scores aggregate by max per card, so a wrong prototype could never otherwise be outvoted);
-correction store bound to format+model+index, checksummed, torn-tail repairable, atomically rewritten,
-10 unit tests; bitmaps recycled in finally; teardown completion-driven (no main-thread sleep); Gradle gate
-fails the build when the generated recognition assets are absent; 16 KB increment cherry-picked onto this tip.
-Device: learning persists across restart (verified on disk and by rank), no crashes, and cards photographed
-off a SCREEN now identify - harder than the governed corpus, which excludes screens.
-**Next step:** send the as-built deviations to Codex for review (two relax rules it set: OCR may OFFER a
-card outside the visual pool, and dual-signal agreement auto-confirms without the sealed false-confirm
-bound). Then measure the signed-release APK, and merge. Still owed long-term: a fresh sealed corpus and
-the false-confirm bound that would properly authorise auto-confirmation.
-**Docs:** `docs/proposals/card-recogniser-*.md` (Rev 6 + its interaction design are authoritative).
-
-### `android-16kb-compat` - Android 16 KB page-size compatibility
-
-**Status:** 6 of 7 native libraries fixed. Branched from `card-recogniser`, so it carries the scanner too.
-**Built:** minSdk 22 -> 29 (below 23 AGP force-compresses native libs, which fails the check), release ABI
-narrowed to `arm64-v8a`, CameraX 1.3.4 -> 1.4.1, ONNX Runtime 1.20.0 -> 1.22.0. Verified with
-`zipalign -c -P 16` plus an ELF `PT_LOAD` alignment check.
-**Next step:** `libsqlcipher.so` is still 4 KB-aligned. It comes from `@capacitor-community/sqlite` 6.0.2,
-which pins the legacy `net.zetetic:android-database-sqlcipher:4.5.3`. Substituting the modern artifact
-directly does NOT work (different package namespace; it crashes at startup - already tried and reverted).
-The fix is the Capacitor 8 upgrade below.
+**Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in
+`main`; the branch itself diverged before later scanner work, so merging it would REGRESS the scanner.
+**Next step:** delete it.
 
 ### `catalog-update-pipeline` - catalog drop + one-command update process
 
@@ -59,6 +26,22 @@ The fix is the Capacitor 8 upgrade below.
 wanted before investing.
 **Next step:** review what remains relevant (README, `.gitignore` hardening for signing secrets, catalog
 recovery runbook), then either finish and merge or close it out deliberately.
+
+## Post-merge follow-ups (card recogniser, agreed with Codex)
+
+Merged to `main` 2026-08-09. None of these blocks release of what shipped, but each is owed:
+
+- **Sealed auto-confirm evidence.** The bar is fixed and finite: >= 150 independent auto-confirmed capture
+  sessions with ZERO wrong identities, >= 75% auto-confirm coverage, >= 30 invalid/multi-card scenes with
+  zero auto-confirms, sessions as the unit, thresholds frozen before the sealed set is opened. Sealed v1 was
+  consumed as development data, so this needs a fresh collection. Until it exists, auto-confirm ships on a
+  reasoned rule plus device evidence, not a measured false-confirm bound.
+- **Accessibility matrix** - TalkBack, reduced motion and short layouts on device. Semantics and
+  reduced-motion paths are written but unverified by a real screen reader.
+- **Release peak-memory measurement** on the signed build.
+- **Licences and attribution** for DINOv2 (Apache-2.0) and ONNX Runtime.
+- **Capacitor 8** - closes `libsqlcipher.so`, the last library failing the 16 KB check. High-risk: a major
+  SQLite plugin upgrade against a live v11 schema holding real user data.
 
 ## Planned, not started
 
