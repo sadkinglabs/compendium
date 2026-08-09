@@ -38,19 +38,14 @@ class CardScannerPlugin : Plugin() {
     @PluginMethod
     fun scan(call: PluginCall) {
         if (!active.compareAndSet(false, true)) {
-            // A previous session that never delivered its terminal (process death, a swiped-away task,
-            // an Activity that could not reach onDestroy) would otherwise make the scanner permanently
-            // unlaunchable - the user sees "Scanner error" for ever with no way back. If no scanner
-            // Activity is alive, the flag is stale: reclaim it rather than refusing.
-            if (ScannerActivity.isAlive()) {
-                android.util.Log.i("ScannerVisual", "scan refused: a scanner is still alive")
-                call.reject("A scan is already in progress", "busy")
-                return
-            }
-            Logger.warn("CardScanner: stale active flag with no live scanner - reclaiming")
-            resolveOnce(JSObject().put("action", "cancelled"))
-            active.set(true)
-            terminated.set(false)
+            // A launch is refused whenever a scan is active - including while the FIRST one is still
+            // starting up. Treating "no Activity yet" as a stale flag raced legitimate startup: the
+            // matcher builds on a background thread before the Activity exists, so a fast second launch
+            // could cancel the first call and let two sessions overwrite the same shared channel.
+            // Sessions now end deterministically (ScannerActivity.onStop/onDestroy), so a stuck flag is
+            // no longer the failure mode this guarded against.
+            call.reject("A scan is already in progress", "busy")
+            return
         }
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
             active.set(false)
@@ -84,8 +79,10 @@ class CardScannerPlugin : Plugin() {
         // session that actually issued the request.
         val sessionId = call.getString("sessionId") ?: ""
 
-        // Build the index off the caller thread, then hand off + launch.
+        // Build the index off the caller thread, then hand off + launch. Any failure in here MUST
+        // release `active`, or one bad startup would make the scanner unlaunchable for the whole session.
         Thread {
+          try {
             val matcher = Matcher(CardIndex(cards), threshold)
             ScannerChannel.matcher = matcher
             ScannerChannel.minStreak = minStreak
@@ -103,6 +100,10 @@ class CardScannerPlugin : Plugin() {
             act.runOnUiThread {
                 act.startActivity(Intent(act, ScannerActivity::class.java))
             }
+          } catch (t: Throwable) {
+            Logger.error("CardScanner: scanner startup failed", t)
+            resolveOnce(JSObject().put("action", "cancelled"))
+          }
         }.start()
     }
 

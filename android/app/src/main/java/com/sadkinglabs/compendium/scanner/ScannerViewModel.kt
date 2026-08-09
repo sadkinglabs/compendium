@@ -73,12 +73,26 @@ class ScannerViewModel : ViewModel() {
     /** Outcome of each acknowledged write, delivered ONCE. A StateFlow the consumer had to clear
      *  cancelled its own snackbar (clearing changed the LaunchedEffect key mid-show), so this is a
      *  buffered event stream instead. */
-    private val _writeEvents = kotlinx.coroutines.flow.MutableSharedFlow<Pair<Boolean, String>>(extraBufferCapacity = 8)
-    val writeEvents: kotlinx.coroutines.flow.SharedFlow<Pair<Boolean, String>> = _writeEvents
+    private val _writeEvents = kotlinx.coroutines.flow.MutableSharedFlow<WriteOutcome>(extraBufferCapacity = 8)
+    val writeEvents: kotlinx.coroutines.flow.SharedFlow<WriteOutcome> = _writeEvents
+
+    /**
+     * [kind] is the action written ("collection" / "wishlist" / "deck"), so the confirmation can say what
+     * happened rather than a generic "saved". [status] distinguishes the three honest answers - and an
+     * unacknowledged write is UNCONFIRMED, never FAILED: JS may well have committed it, so claiming
+     * failure would be the UI lying about durable data.
+     */
+    data class WriteOutcome(val status: Status, val label: String, val kind: String) {
+        enum class Status { COMMITTED, FAILED, UNCONFIRMED, BLOCKED }
+        val ok: Boolean get() = status == Status.COMMITTED
+    }
 
     private var writeTimeout: Job? = null
 
-    fun onWriteStarted(label: String) {
+    @Volatile private var pendingKind = "collection"
+
+    fun onWriteStarted(label: String, kind: String) {
+        pendingKind = kind
         _writing.value = true
         // A missing acknowledgement must never strand the user. Without this the UI stayed "writing"
         // for ever: no result, Back swallowed, close disabled - unrecoverable without killing the app.
@@ -86,9 +100,11 @@ class ScannerViewModel : ViewModel() {
         writeTimeout = viewModelScope.launch {
             kotlinx.coroutines.delay(WRITE_TIMEOUT_MS)
             if (_writing.value) {
-                Log.w(TAG, "write not acknowledged within ${WRITE_TIMEOUT_MS}ms - releasing the UI")
+                // Release the UI so the user is not trapped, but do NOT claim the write failed: the
+                // registry still holds the mutation, and a late acknowledgement may yet report success.
+                Log.w(TAG, "write not acknowledged within ${WRITE_TIMEOUT_MS}ms - reporting as unconfirmed")
                 _writing.value = false
-                _writeEvents.tryEmit(false to label)
+                _writeEvents.tryEmit(WriteOutcome(WriteOutcome.Status.UNCONFIRMED, label, pendingKind))
             }
         }
     }
@@ -96,7 +112,9 @@ class ScannerViewModel : ViewModel() {
     fun onWriteAcked(ok: Boolean, label: String) {
         writeTimeout?.cancel()
         _writing.value = false
-        _writeEvents.tryEmit(ok to label)
+        _writeEvents.tryEmit(
+            WriteOutcome(if (ok) WriteOutcome.Status.COMMITTED else WriteOutcome.Status.FAILED, label, pendingKind),
+        )
     }
 
     @Volatile private var token = 0
@@ -342,10 +360,20 @@ class ScannerViewModel : ViewModel() {
         }
     }
 
-    /** Undo the correction just recorded: remove it from the live index and rewrite the store without it. */
-    fun undoLastCorrection() {
-        val entry = _lastLearned.value ?: return
-        _lastLearned.value = null
+    fun clearLastLearned() { _lastLearned.value = null }
+
+    /** A write could not even be submitted (one is still outstanding). Told to the user rather than
+     *  dropped - a tap that does nothing is indistinguishable from a broken button. */
+    fun onWriteBlocked(label: String, kind: String) {
+        _writeEvents.tryEmit(WriteOutcome(WriteOutcome.Status.BLOCKED, label, kind))
+    }
+
+    /**
+     * Undo a SPECIFIC correction. Bound to the entry itself rather than to "the last one", because the
+     * notice clears that slot as soon as it is shown - so an Undo tapped a second later would otherwise
+     * find nothing and silently do nothing while appearing to work.
+     */
+    fun undoCorrection(entry: CorrectionStore.Entry) {
         runCatching {
             val m = vmatcher ?: return@runCatching
             if (m.removeUserPrototype(entry)) {
@@ -354,8 +382,6 @@ class ScannerViewModel : ViewModel() {
             }
         }
     }
-
-    fun clearLastLearned() { _lastLearned.value = null }
 
     /** Manual recovery: open the catalog name search (when the scan did not offer the right card). */
     fun openSearch() {

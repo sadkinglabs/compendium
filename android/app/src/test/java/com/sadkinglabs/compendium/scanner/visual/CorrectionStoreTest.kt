@@ -196,4 +196,23 @@ class CorrectionStoreTest {
         assertEquals("learning must not be lost by an interrupted replace", "a", loaded.single().cardId)
         assertTrue("the store should be live again, not left as a backup", f.exists())
     }
+
+    @Test
+    fun `undo removes exactly the corrected entry and nothing else`() {
+        // Mirrors the live index's bookkeeping: undo must be bound to the entry the user was shown, not to
+        // "the most recent correction" - the notice clears that slot as soon as it appears, so a
+        // last-one-wins undo would find nothing and silently succeed at doing nothing.
+        val f = tmp.newFile().also { it.delete() }
+        val store = CorrectionStore(f, dim)
+        val a = CorrectionStore.Entry("a", "A", vec(1f, 0f, 0f, 0f))
+        val b = CorrectionStore.Entry("b", "B", vec(0f, 1f, 0f, 0f))
+        val c = CorrectionStore.Entry("c", "C", vec(0f, 0f, 1f, 0f))
+        assertTrue(store.rewrite(artifact, listOf(a, b, c)))
+
+        // Undo the MIDDLE one - the interesting case, since a naive implementation drops the last.
+        assertTrue(store.rewrite(artifact, listOf(a, c)))
+
+        val back = CorrectionStore(f, dim).load(artifact)
+        assertEquals(listOf("a", "c"), back.map { it.cardId })
+    }
 }

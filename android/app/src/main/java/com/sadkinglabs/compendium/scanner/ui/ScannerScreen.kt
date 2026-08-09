@@ -118,7 +118,11 @@ fun ScannerScreen(
     val scope = rememberCoroutineScope()
     // Confirmations are shown as a gilt notice near the top, NOT a Material snackbar over the shutter -
     // the shutter is the one control that must never be occluded, since the loop is scan-confirm-scan.
-    var notice by remember { mutableStateOf<Notice?>(null) }
+    // A QUEUE, not a slot: a "saved" confirmation must never evict an "Undo" the user has not answered
+    // yet. Notices are shown one at a time, in order, and each is retired only when its own window ends.
+    var notices by remember { mutableStateOf<List<Notice>>(emptyList()) }
+    val notice = notices.firstOrNull()
+    fun post(n: Notice) { notices = notices + n }
 
     val reveal = remember(lockEvent) { Animatable(if (reduceMotion) 1f else 0f) }
     LaunchedEffect(lockEvent) { if (lockEvent > 0 && !reduceMotion) reveal.animateTo(1f, tween(650)) }
@@ -146,7 +150,7 @@ fun ScannerScreen(
                     CameraController.bind(
                         ctx, lifecycleOwner, pv,
                         viewModel.analysisExecutor, viewModel.analyzer,
-                    ) { notice = Notice("Couldn't start the camera - close and try again") }
+                    ) { post(Notice("Couldn't start the camera - close and try again")) }
                     pv
                 },
             )
@@ -279,9 +283,24 @@ fun ScannerScreen(
         // The durable write acknowledged by JS. Native never claims success on its own, so this is the
         // only place a write is reported - and the sheet closes only on a committed write.
         LaunchedEffect(Unit) {
-            viewModel.writeEvents.collect { (ok, label) ->
-                if (ok) onDismissSheet()
-                notice = if (ok) Notice("$label saved") else Notice("Couldn't save $label", "Retry") { }
+            viewModel.writeEvents.collect { outcome ->
+                if (outcome.ok) onDismissSheet()
+                val what = when (outcome.kind) {
+                    "wishlist" -> "${outcome.label} added to wishlist"
+                    "deck" -> "${outcome.label} added to deck"
+                    else -> "${outcome.label} saved"
+                }
+                post(
+                    when (outcome.status) {
+                        ScannerViewModel.WriteOutcome.Status.COMMITTED -> Notice(what)
+                        // NOT a failure: the write may well have committed, so say exactly that.
+                        ScannerViewModel.WriteOutcome.Status.UNCONFIRMED ->
+                            Notice("${outcome.label} may not have saved - check and try again")
+                        ScannerViewModel.WriteOutcome.Status.BLOCKED ->
+                            Notice("Still saving - one moment")
+                        else -> Notice("Couldn't save ${outcome.label}")
+                    },
+                )
             }
         }
 
@@ -296,14 +315,16 @@ fun ScannerScreen(
         // otherwise leave the mistake in place.
         LaunchedEffect(lastLearned) {
             val learned = lastLearned ?: return@LaunchedEffect
-            notice = Notice("Learned ${learned.displayName}", "Undo") { viewModel.undoLastCorrection() }
+            // Bound to THIS entry: the slot is cleared immediately below, so an Undo that asked for
+            // "the last correction" would find nothing by the time it was tapped.
+            post(Notice("Learned ${learned.displayName}", "Undo") { viewModel.undoCorrection(learned) })
             viewModel.clearLastLearned()
         }
 
         NoticeBar(
             notice = notice,
             reduceMotion = reduceMotion,
-            onDone = { notice = null },
+            onDone = { notices = notices.drop(1) },
             modifier = Modifier.align(Alignment.TopCenter),
         )
     }

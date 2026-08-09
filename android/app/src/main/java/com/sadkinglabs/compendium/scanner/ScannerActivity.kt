@@ -157,20 +157,25 @@ class ScannerActivity : ComponentActivity() {
      * committed - JS owns the database - so the sheet reports nothing until the ack arrives. The
      * registry admits one mutation at a time and rejects duplicate or reused ids.
      */
-    private fun submitWrite(js: JSObject, label: String): Boolean {
+    private fun submitWrite(js: JSObject, label: String, kind: String): Boolean {
         // FAIL CLOSED. Without a registry or a session there is nobody to acknowledge the write, so
         // emitting it anyway would restore exactly the fire-and-forget behaviour this replaced.
         val reg = ScannerChannel.requests
         val session = ScannerChannel.sessionId
         if (reg == null || session.isEmpty()) {
+            vm.onWriteStarted(label, kind)     // so the outcome names the right action
             vm.onWriteAcked(false, label)
             return false
         }
         val requestId = java.util.UUID.randomUUID().toString()
         val admit = reg.submit(session, requestId, RequestRegistry.Kind.MUTATION)
-        if (admit != RequestRegistry.Admit.ACCEPTED) return false     // already one in flight
+        if (admit != RequestRegistry.Admit.ACCEPTED) {
+            // One mutation at a time is the contract; say so instead of leaving a dead-looking button.
+            vm.onWriteBlocked(label, kind)
+            return false
+        }
         pendingLabel = label
-        vm.onWriteStarted(label)
+        vm.onWriteStarted(label, kind)
         ScannerChannel.onEvent?.invoke(js.put("requestId", requestId).put("sessionId", session))
         return true
     }
@@ -180,7 +185,7 @@ class ScannerActivity : ComponentActivity() {
         // under schema v11, and dropping the selection here would make the picker decorative.
         val js = JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title)
         if (set != null) js.put("set", set)
-        submitWrite(js, rec.title)
+        submitWrite(js, rec.title, action)
     }
 
     /** Collection mode: emit +qty owned for the recognised card, onto the chosen
@@ -189,7 +194,7 @@ class ScannerActivity : ComponentActivity() {
     private fun onSaveCollection(rec: Recognition, qty: Int, set: String?) {
         val js = JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty)
         if (set != null) js.put("set", set)
-        submitWrite(js, rec.title)
+        submitWrite(js, rec.title, "collection")
     }
 
     /** Deck mode: emit +qty of the recognised card to the open deck (JS files it in
@@ -204,6 +209,7 @@ class ScannerActivity : ComponentActivity() {
         submitWrite(
             JSObject().put("action", "deck").put("cardId", id).put("name", rec.title).put("qty", qty),
             rec.title,
+            "deck",
         )
     }
 
