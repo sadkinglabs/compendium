@@ -38,7 +38,6 @@ class ScannerActivity : ComponentActivity() {
     private var pendingDeckCard: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        android.util.Log.i("ScannerVisual", "activity onCreate")
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -215,14 +214,12 @@ class ScannerActivity : ComponentActivity() {
     }
 
     private fun sendTerminal(js: JSObject) {
-        if (terminalSent) {
-            android.util.Log.i("ScannerVisual", "terminal SKIPPED (already sent): ${js.getString("action")}")
-            return
-        }
+        if (terminalSent) return
         terminalSent = true
-        val handler = ScannerChannel.onTerminal
-        android.util.Log.i("ScannerVisual", "terminal ${js.getString("action")} handler=${handler != null}")
-        handler?.invoke(js)
+        // Logged because its ABSENCE was once the whole bug: without a terminal the retained scan() call
+        // never resolves and the scanner cannot be launched again.
+        android.util.Log.i("ScannerVisual", "terminal: ${js.getString("action")}")
+        ScannerChannel.onTerminal?.invoke(js)
     }
 
     /**
