@@ -111,7 +111,7 @@ fun ScannerScreen(
     val lockEvent by viewModel.lockEvent.collectAsStateWithLifecycle()
     val lastLearned by viewModel.lastLearned.collectAsStateWithLifecycle()
     val writing by viewModel.writing.collectAsStateWithLifecycle()
-    val writeResult by viewModel.writeResult.collectAsStateWithLifecycle()
+
     val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -273,14 +273,14 @@ fun ScannerScreen(
 
         // The durable write acknowledged by JS. Native never claims success on its own, so this is the
         // only place a write is reported - and the sheet closes only on a committed write.
-        LaunchedEffect(writeResult) {
-            val (ok, label) = writeResult ?: return@LaunchedEffect
-            viewModel.clearWriteResult()
-            if (ok) {
-                onDismissSheet()
-                snackbarHost.showSnackbar("Saved $label")
-            } else {
-                snackbarHost.showSnackbar("Couldn't save $label - try again")
+        LaunchedEffect(Unit) {
+            viewModel.writeEvents.collect { (ok, label) ->
+                if (ok) {
+                    onDismissSheet()
+                    snackbarHost.showSnackbar("Saved $label")
+                } else {
+                    snackbarHost.showSnackbar("Couldn't save $label - try again")
+                }
             }
         }
 

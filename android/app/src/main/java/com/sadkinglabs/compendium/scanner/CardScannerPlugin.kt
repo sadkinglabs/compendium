@@ -9,6 +9,7 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.sadkinglabs.compendium.scanner.match.CardIndex
 import com.sadkinglabs.compendium.scanner.match.Catalog
+import com.getcapacitor.Logger
 import com.sadkinglabs.compendium.scanner.match.Matcher
 import com.sadkinglabs.compendium.scanner.session.RequestRegistry
 import java.util.concurrent.ConcurrentHashMap
@@ -37,8 +38,18 @@ class CardScannerPlugin : Plugin() {
     @PluginMethod
     fun scan(call: PluginCall) {
         if (!active.compareAndSet(false, true)) {
-            call.reject("A scan is already in progress", "busy")
-            return
+            // A previous session that never delivered its terminal (process death, a swiped-away task,
+            // an Activity that could not reach onDestroy) would otherwise make the scanner permanently
+            // unlaunchable - the user sees "Scanner error" for ever with no way back. If no scanner
+            // Activity is alive, the flag is stale: reclaim it rather than refusing.
+            if (ScannerActivity.isAlive()) {
+                call.reject("A scan is already in progress", "busy")
+                return
+            }
+            Logger.warn("CardScanner: stale active flag with no live scanner - reclaiming")
+            resolveOnce(JSObject().put("action", "cancelled"))
+            active.set(true)
+            terminated.set(false)
         }
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
             active.set(false)

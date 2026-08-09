@@ -70,13 +70,34 @@ class ScannerViewModel : ViewModel() {
     // reported only when JS acknowledges - native never claims a write it has not seen committed.
     private val _writing = MutableStateFlow(false)
     val writing: StateFlow<Boolean> = _writing.asStateFlow()
-    /** One-shot outcome of the last acknowledged write: true = committed, false = failed. */
-    private val _writeResult = MutableStateFlow<Pair<Boolean, String>?>(null)
-    val writeResult: StateFlow<Pair<Boolean, String>?> = _writeResult.asStateFlow()
+    /** Outcome of each acknowledged write, delivered ONCE. A StateFlow the consumer had to clear
+     *  cancelled its own snackbar (clearing changed the LaunchedEffect key mid-show), so this is a
+     *  buffered event stream instead. */
+    private val _writeEvents = kotlinx.coroutines.flow.MutableSharedFlow<Pair<Boolean, String>>(extraBufferCapacity = 8)
+    val writeEvents: kotlinx.coroutines.flow.SharedFlow<Pair<Boolean, String>> = _writeEvents
 
-    fun onWriteStarted() { _writing.value = true }
-    fun onWriteAcked(ok: Boolean, label: String) { _writing.value = false; _writeResult.value = ok to label }
-    fun clearWriteResult() { _writeResult.value = null }
+    private var writeTimeout: Job? = null
+
+    fun onWriteStarted(label: String) {
+        _writing.value = true
+        // A missing acknowledgement must never strand the user. Without this the UI stayed "writing"
+        // for ever: no result, Back swallowed, close disabled - unrecoverable without killing the app.
+        writeTimeout?.cancel()
+        writeTimeout = viewModelScope.launch {
+            kotlinx.coroutines.delay(WRITE_TIMEOUT_MS)
+            if (_writing.value) {
+                Log.w(TAG, "write not acknowledged within ${WRITE_TIMEOUT_MS}ms - releasing the UI")
+                _writing.value = false
+                _writeEvents.tryEmit(false to label)
+            }
+        }
+    }
+
+    fun onWriteAcked(ok: Boolean, label: String) {
+        writeTimeout?.cancel()
+        _writing.value = false
+        _writeEvents.tryEmit(ok to label)
+    }
 
     @Volatile private var token = 0
     private var job: Job? = null
@@ -417,6 +438,9 @@ class ScannerViewModel : ViewModel() {
 
     companion object {
         private const val TAG = "ScannerVisual"
+        // How long a durable write may go unacknowledged before the UI is released and the write is
+        // reported as failed. Generous - a real write is milliseconds - but bounded.
+        private const val WRITE_TIMEOUT_MS = 6000L
         const val SCAN_MS = 350L
         private const val FLOOR = 0.35f     // provisional T_floor; below this -> Empty (calibrate on corpus)
         private const val POOL = 50         // visual candidates OCR may promote from (display stays 5)

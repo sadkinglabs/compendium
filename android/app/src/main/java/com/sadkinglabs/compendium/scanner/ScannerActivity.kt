@@ -41,6 +41,7 @@ class ScannerActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        alive = true
 
         // Launched without a built matcher (process death / bad launch) - bail cleanly.
         if (ScannerChannel.matcher == null) {
@@ -169,7 +170,7 @@ class ScannerActivity : ComponentActivity() {
         val admit = reg.submit(session, requestId, RequestRegistry.Kind.MUTATION)
         if (admit != RequestRegistry.Admit.ACCEPTED) return false     // already one in flight
         pendingLabel = label
-        vm.onWriteStarted()
+        vm.onWriteStarted(label)
         ScannerChannel.onEvent?.invoke(js.put("requestId", requestId).put("sessionId", session))
         return true
     }
@@ -224,7 +225,13 @@ class ScannerActivity : ComponentActivity() {
             java.io.File(applicationContext.filesDir, "recog-user-protos.dat"),
         )
 
-    private companion object {
+    companion object {
+        @Volatile private var alive = false
+
+        /** True while a scanner Activity actually exists - the plugin uses this to distinguish a real
+         *  in-progress scan from an `active` flag left set by a session that died without a terminal. */
+        fun isAlive(): Boolean = alive
+
         const val USER_PROTO_MAGIC = 0x43524331          // "CRC1" - correction store, format 1
         const val USER_PROTO_MAX_BYTES = 700_000L        // ~400 corrections; bounded growth
     }
