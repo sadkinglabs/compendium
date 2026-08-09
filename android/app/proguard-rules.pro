@@ -42,6 +42,17 @@
 -keep interface net.sqlcipher.** { *; }
 -dontwarn net.sqlcipher.**
 
+# --- ONNX Runtime (card recogniser: native JNI resolves Java members by name) ---
+# libonnxruntime4j_jni.so calls back into these classes through JNI using their ORIGINAL names and
+# signatures - OrtSession.run, OnnxTensor, the value/type enums it constructs for results. R8 renames
+# them (OrtSession.run -> OrtSession.b), the native lookup fails, and the process ABORTS mid-inference
+# with SIGABRT. Debug builds never show it because they are not minified: the release APK crashed on
+# the first scan while every gate was green. Exactly the SQLCipher failure above, one library later.
+-keep class ai.onnxruntime.** { *; }
+-keep interface ai.onnxruntime.** { *; }
+-keepclassmembers class ai.onnxruntime.** { *; }
+-dontwarn ai.onnxruntime.**
+
 # --- WebView JS bridge ---
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
