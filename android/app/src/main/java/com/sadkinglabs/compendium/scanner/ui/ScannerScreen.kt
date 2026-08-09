@@ -3,6 +3,7 @@ package com.sadkinglabs.compendium.scanner.ui
 import androidx.activity.compose.BackHandler
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -54,12 +56,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -434,46 +438,64 @@ private data class Notice(val message: String, val action: String? = null, val o
 @Composable
 private fun NoticeBar(notice: Notice?, reduceMotion: Boolean, onDone: () -> Unit, modifier: Modifier = Modifier) {
     val shown = notice ?: return
-    val alpha = remember(shown) { Animatable(if (reduceMotion) 1f else 0f) }
+    // Matches the web toast exactly (`.cx-toast` in tokens.css): arrives from -10dp at 0.96 scale over
+    // 260ms, leaves the way it came over 200ms, so a scanner confirmation reads as the same object the
+    // rest of the app uses rather than a different mechanism that happens to look similar.
+    val t = remember(shown) { Animatable(if (reduceMotion) 1f else 0f) }
+    var leaving by remember(shown) { mutableStateOf(false) }
     LaunchedEffect(shown) {
-        if (!reduceMotion) alpha.animateTo(1f, tween(160))
+        if (!reduceMotion) t.animateTo(1f, tween(260, easing = CubicBezierEasing(0.2f, 0.9f, 0.3f, 1f)))
         kotlinx.coroutines.delay(if (shown.action != null) 4200 else 2200)
-        if (!reduceMotion) alpha.animateTo(0f, tween(220))
+        leaving = true
+        if (!reduceMotion) t.animateTo(0f, tween(200, easing = CubicBezierEasing(0.4f, 0f, 0.2f, 1f)))
         onDone()
     }
-    Row(
+    Box(
         modifier
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            // clears the close control in the top-right corner
-            .padding(start = 16.dp, end = 72.dp, top = 10.dp)
-            .graphicsLayer { this.alpha = alpha.value }
-            .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xF21A1206))
-            .border(1.dp, PillarGold.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
-            .padding(horizontal = 16.dp, vertical = 11.dp)
-            .semantics { liveRegion = LiveRegionMode.Polite },
-        verticalAlignment = Alignment.CenterVertically,
+            // Below the close control's row, so the notice is genuinely centred instead of being
+            // squeezed off-axis by chrome in the corner.
+            .padding(start = 16.dp, end = 16.dp, top = 64.dp)
+            .graphicsLayer {
+                alpha = t.value
+                translationY = (1f - t.value) * -10.dp.toPx()
+                val s2 = 0.96f + 0.04f * t.value
+                scaleX = s2; scaleY = s2
+            },
+        contentAlignment = Alignment.TopCenter,
     ) {
-        Text(
-            shown.message,
-            color = Color(0xFFEFE7D8),
-            fontSize = 14.5.sp,
-            fontFamily = FontUi,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        if (shown.action != null) {
-            Spacer(Modifier.width(14.dp))
+        Row(
+            Modifier
+                .widthIn(max = 420.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Brush.verticalGradient(listOf(Color(0xFF1A1712), Color(0xFF0E0C0A))))
+                .border(1.dp, PillarGold.copy(alpha = 0.28f), RoundedCornerShape(14.dp))
+                .padding(horizontal = 18.dp, vertical = 11.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                shown.action.uppercase(),
-                color = PillarGold,
+                shown.message,
+                color = Color(0xFFE9DCC0),
                 fontSize = 13.sp,
-                fontFamily = FontDisplay,
-                letterSpacing = 1.sp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { shown.onAction(); onDone() }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                fontFamily = FontUi,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f, fill = false),
             )
+            if (shown.action != null) {
+                Spacer(Modifier.width(14.dp))
+                Text(
+                    shown.action.uppercase(),
+                    color = PillarGold,
+                    fontSize = 12.sp,
+                    fontFamily = FontDisplay,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(enabled = !leaving) { shown.onAction(); onDone() }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                )
+            }
         }
     }
 }

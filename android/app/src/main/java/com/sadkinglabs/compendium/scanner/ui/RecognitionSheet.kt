@@ -199,6 +199,21 @@ fun RecognitionCard(
                             if (qty == 1) "Add 1 copy" else "Add $qty copies",
                             Icons.Filled.Add, accent, enabled = ready,
                         ) { onSaveCollection(qty, effectiveSet) }
+                        // Scanning a stack sorts into two piles - what you have, and what you still want -
+                        // so the wishlist has to be reachable from the collection loop too. Without it the
+                        // only route was to leave, scan again in universal mode, and come back. Adds ONE
+                        // want (the stepper counts copies you own; a want is a single item), on the same
+                        // selected printing, and stays disabled until a reprint has one chosen.
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedButton(
+                            onClick = { onAddWishlist(effectiveSet) },
+                            enabled = wishlistReady,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                        ) {
+                            Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Add to wishlist")
+                        }
                     } else {
                         PrimaryAction("Search Codex", Icons.Filled.Search, accent, onClick = onSearchCodex)
                         Spacer(Modifier.height(10.dp))
