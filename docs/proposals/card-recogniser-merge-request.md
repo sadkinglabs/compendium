@@ -9,7 +9,9 @@ documentation drift.
 ## Scope
 
 ```
-git diff a9c3679..HEAD        # the fix set (see `git log --oneline a9c3679..HEAD` for the exact count)
+git diff a9c3679..HEAD        # the fix set - run `git log --oneline a9c3679..HEAD` and
+                              # `git diff --shortstat a9c3679..HEAD` for the current counts rather than
+                              # trusting a number written here, which goes stale on the next commit
 git diff main..HEAD           # whole branch: 69 files, +9,677 / -704
 ```
 
@@ -128,8 +130,9 @@ already blocks at the copy limit before submission, so the failure path is a fal
   malformed-entry skipping, cap-drops-oldest, failed-replace, interrupted-replace recovery).
 - `npm run test:query` 827 pass, `test:app` 17 pass, `test:codex` 10 pass, `check:types` OK, `check:docs`
   PASS, `npm run build` OK. Debug assembles and installs.
-- Not yet run on device: the write-acknowledgement path itself (owner testing next), TalkBack, reduced
-  motion, and release peak memory.
+- The write-acknowledgement path IS now device-verified (see the round-5 checklist above): collection,
+  wishlist and deck writes, authoritative deck headroom, rapid double-tap, and Back during a pending write.
+- Still not run on device: TalkBack, reduced motion, short-layout, and release peak memory.
 
 ## Remaining, as agreed post-merge follow-ups
 
