@@ -12,8 +12,11 @@ documentation drift.
 git diff a9c3679..HEAD        # the fix set - run `git log --oneline a9c3679..HEAD` and
                               # `git diff --shortstat a9c3679..HEAD` for the current counts rather than
                               # trusting a number written here, which goes stale on the next commit
-git diff main..HEAD           # whole branch: 69 files, +9,677 / -704
+git diff main..HEAD           # whole branch
 ```
+
+Counts are deliberately not quoted here - they go stale on the next commit, which has already misled one
+review. Run `git diff --shortstat <range>` for the current figures.
 
 `a9c3679` is the tip of the range you last reviewed. Branch `card-recogniser`, local, not pushed. The
 16 KB increment is already inside this branch (cherry-picked); `android-16kb-compat` remains divergent and

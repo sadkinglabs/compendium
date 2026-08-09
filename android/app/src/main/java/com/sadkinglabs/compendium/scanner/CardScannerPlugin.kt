@@ -12,8 +12,8 @@ import com.sadkinglabs.compendium.scanner.match.Catalog
 import com.getcapacitor.Logger
 import com.sadkinglabs.compendium.scanner.match.Matcher
 import com.sadkinglabs.compendium.scanner.session.RequestRegistry
+import com.sadkinglabs.compendium.scanner.session.ScanSessionGate
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Bridge for the native card scanner. `scan()` builds the match index from the JS-
@@ -26,8 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 class CardScannerPlugin : Plugin() {
 
     @Volatile private var pendingCall: PluginCall? = null   // set on a worker thread, read on terminal
-    private val terminated = AtomicBoolean(false)
-    private val active = AtomicBoolean(false)               // one scan at a time - guards the retained call
+    // One scan at a time, settled exactly once. Kept together in a tested gate because their ORDER is the
+    // subtle part: a session must be declared open before any fallible startup, or a failure has nothing to
+    // close and the scanner wedges.
+    private val gate = ScanSessionGate()
 
     @PluginMethod
     fun isAvailable(call: PluginCall) {
@@ -37,7 +39,7 @@ class CardScannerPlugin : Plugin() {
 
     @PluginMethod
     fun scan(call: PluginCall) {
-        if (!active.compareAndSet(false, true)) {
+        if (!gate.tryAcquire()) {
             // A launch is refused whenever a scan is active - including while the FIRST one is still
             // starting up. Treating "no Activity yet" as a stale flag raced legitimate startup: the
             // matcher builds on a background thread before the Activity exists, so a fast second launch
@@ -48,13 +50,13 @@ class CardScannerPlugin : Plugin() {
             return
         }
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
-            active.set(false)
+            gate.abandon()
             call.reject("No camera available", "no_camera")
             return
         }
         val cards = Catalog.parse(call.getArray("cards"))
         if (cards.isEmpty()) {
-            active.set(false)
+            gate.abandon()
             call.reject("Empty catalog", "empty_catalog")
             return
         }
@@ -81,6 +83,13 @@ class CardScannerPlugin : Plugin() {
 
         // Build the index off the caller thread, then hand off + launch. Any failure in here MUST
         // release `active`, or one bad startup would make the scanner unlaunchable for the whole session.
+        // The session is opened and the call retained BEFORE the fallible work below, so a failure in
+        // index building or launching always has an open session (and a retained call) to settle. The
+        // previous order did the opposite: a throw after a completed scan hit a terminal that had already
+        // been consumed, so nothing was resolved and the scanner could never be launched again.
+        gate.open()
+        pendingCall = call
+        call.setKeepAlive(true)
         Thread {
           try {
             val matcher = Matcher(CardIndex(cards), threshold)
@@ -93,9 +102,6 @@ class CardScannerPlugin : Plugin() {
             ScannerChannel.requests = RequestRegistry(sessionId)
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }
-            terminated.set(false)
-            pendingCall = call
-            call.setKeepAlive(true)
             val act = activity ?: run { resolveOnce(JSObject().put("action", "cancelled")); return@Thread }
             act.runOnUiThread {
                 act.startActivity(Intent(act, ScannerActivity::class.java))
@@ -123,7 +129,7 @@ class CardScannerPlugin : Plugin() {
     }
 
     private fun resolveOnce(js: JSObject) {
-        if (!terminated.compareAndSet(false, true)) return
+        if (!gate.close()) return
         val call = pendingCall
         pendingCall = null
         if (call != null) {
@@ -134,6 +140,5 @@ class CardScannerPlugin : Plugin() {
             }
         }
         ScannerChannel.clear()
-        active.set(false)
     }
 }
