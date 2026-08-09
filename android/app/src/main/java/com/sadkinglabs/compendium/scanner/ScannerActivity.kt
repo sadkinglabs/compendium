@@ -157,15 +157,20 @@ class ScannerActivity : ComponentActivity() {
      * registry admits one mutation at a time and rejects duplicate or reused ids.
      */
     private fun submitWrite(js: JSObject, label: String): Boolean {
-        val reg = ScannerChannel.requests ?: run { ScannerChannel.onEvent?.invoke(js); return false }
+        // FAIL CLOSED. Without a registry or a session there is nobody to acknowledge the write, so
+        // emitting it anyway would restore exactly the fire-and-forget behaviour this replaced.
+        val reg = ScannerChannel.requests
+        val session = ScannerChannel.sessionId
+        if (reg == null || session.isEmpty()) {
+            vm.onWriteAcked(false, label)
+            return false
+        }
         val requestId = java.util.UUID.randomUUID().toString()
-        val admit = reg.submit(ScannerChannel.sessionId, requestId, RequestRegistry.Kind.MUTATION)
+        val admit = reg.submit(session, requestId, RequestRegistry.Kind.MUTATION)
         if (admit != RequestRegistry.Admit.ACCEPTED) return false     // already one in flight
         pendingLabel = label
         vm.onWriteStarted()
-        ScannerChannel.onEvent?.invoke(
-            js.put("requestId", requestId).put("sessionId", ScannerChannel.sessionId),
-        )
+        ScannerChannel.onEvent?.invoke(js.put("requestId", requestId).put("sessionId", session))
         return true
     }
 

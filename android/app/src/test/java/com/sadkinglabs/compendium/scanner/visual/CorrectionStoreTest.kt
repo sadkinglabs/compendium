@@ -191,9 +191,9 @@ class CorrectionStoreTest {
         // Simulate dying between the two renames: the live file is gone, the backup remains.
         assertTrue(f.renameTo(bak))
 
-        val s = CorrectionStore(f, dim)
-        s.recoverIfInterrupted()
-        assertTrue("learning must not be lost by an interrupted replace", f.exists())
-        assertEquals("a", s.load(artifact).single().cardId)
+        // Production only ever calls load(): recovery must happen there, with no separate step to forget.
+        val loaded = CorrectionStore(f, dim).load(artifact)
+        assertEquals("learning must not be lost by an interrupted replace", "a", loaded.single().cardId)
+        assertTrue("the store should be live again, not left as a backup", f.exists())
     }
 }

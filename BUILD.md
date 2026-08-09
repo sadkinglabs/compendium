@@ -401,54 +401,17 @@ baseline** below.
 aapt2 dump badging <apk> | grep native-code
 ```
 
-### Approved next Android baseline (minSdk 29, arm64-only) - not yet implemented
+### Android platform baseline (minSdk 29, arm64-only) - IMPLEMENTED
 
-**Owner architecture decision, 2026-08-03.** The next platform baseline is **minSdk 29 (Android 10)**
-with **arm64-v8a as the only release ABI**. This is an approved decision **on record, not a change
-that has shipped**: the values above (**minSdk 22**, release **arm64-v8a + armeabi-v7a**) are still
-what current builds produce.
+**Owner architecture decision of 2026-08-03, implemented 2026-08-08** on the card-recogniser branch.
+`variables.gradle` sets **minSdk 29 (Android 10)** and the release build filters to **arm64-v8a only**;
+debug still carries all four ABIs so the x86_64 emulator keeps working. compileSdk / targetSdk remain 35.
 
-| | Current shipping baseline | Approved next baseline |
-|---|---|---|
-| minSdk | 22 (Android 5.1) | **29 (Android 10)** |
-| Release ABIs | arm64-v8a + armeabi-v7a | **arm64-v8a only** |
-| Debug ABIs | all four (incl. x86_64) | **unchanged - x86_64 retained for emulators** |
-| compileSdk / targetSdk | 35 | 35 (separate 36 follow-up, below) |
-
-**Effective implementation gate.** The Gradle/ABI change is implemented at **card-recogniser Gate 2**
-(native inference integration, which needs single-ABI native libs anyway), or an **explicitly approved
-earlier platform-baseline increment** - never silently. See
-`docs/proposals/card-recogniser-embedding.md` §16 (the architecture record) and its Gate 2.
-
-**User impact.** Android 9 and earlier, and 32-bit-only devices, keep their existing installation and
-its data but cannot install future compatible APKs. No data is lost; those devices simply stop
-receiving updates. This trades obsolete-hardware reach for a modern camera/ML experience, smaller
-native APKs, current inference technology, and a narrower verification matrix.
-
-**Debug retains x86_64** so the emulator keeps working on an x86_64 host; only the release ABI list
-narrows.
-
-**Required implementation verification (run when the change actually lands, not in this doc increment):**
-- release manifest reports `minSdkVersion` 29;
-- release APK contains `arm64-v8a` only (`aapt2 dump badging <apk> | grep native-code`);
-- debug / emulator build still contains `x86_64`;
-- a signed release upgrade on a supported device preserves profile data;
-- installation on an unsupported ABI / API fails cleanly (excluded, not crash-on-launch);
-- release APK size recorded before and after.
-
-**Separate follow-up - targetSdk/compileSdk 35 -> 36.** Independent of the minSdk/ABI move and
-**required before future Google Play submissions** (Play mandates a recent target API for app
-updates). **The Play deadline for target API 36 on new and updated app submissions is
-August 31, 2026; compileSdk/targetSdk must reach 36 before then.** Android 17 / API 37 should be
-tested but is not the production target of this documentation change.
-
-**Card art is no longer bundled (art-cdn Phase 5).** The ~72 MB `public/cards/` WebP bundle was
-removed; card art is served from the CDN (`ART_CDN_BASE`) and cached on device on first view, so the
-APK dropped from ~90 MB to roughly the native-libs floor (~14 MB) plus the JSON catalog + set-hero
-logos. The resolver chain is `local cache -> remote CDN -> deterministic element-gradient placeholder`
-(no bundled legacy step). **Offline behaviour:** a fresh install with no network shows the placeholders
-for card art until the device has been online once; set-hero logos (`public/sets/`) stay bundled so the
-Collection landing is always legible offline. The `check:source` guard fails if `public/cards/` returns.
+The two levers do different jobs and the distinction matters: **the ABI filter is what excludes
+32-bit-only devices** (a build without their ABI is not offered to them), while **minSdk 29 is what makes
+that loss acceptable** - a 32-bit-only phone new enough for Android 10 is vanishingly rare. minSdk 29 is
+additionally a **16 KB page-size requirement**: below API 23 the Android Gradle Plugin packages native
+libraries compressed, and compressed libraries cannot be mapped directly from the APK.
 
 ## Notes
 

@@ -120,7 +120,11 @@ fun ScannerScreen(
     val revealT = reveal.value
 
     // Back: sheet -> dismiss; mid-snapshot -> cancel; else let Back close.
-    BackHandler(enabled = sheet != null) { onDismissSheet() }
+    // A pending durable write outranks every exit: Back is CONSUMED (not passed on) until the
+    // acknowledgement lands, so an add cannot be issued and then apparently cancelled while the write
+    // is still on its way to committing.
+    BackHandler(enabled = writing) { /* swallow */ }
+    BackHandler(enabled = !writing && sheet != null) { onDismissSheet() }
     BackHandler(enabled = sheet == null && searching) { viewModel.closeSearch() }
     BackHandler(enabled = sheet == null && !searching && snap != SnapState.Ready) { viewModel.onCancelSnap() }
 
@@ -230,7 +234,7 @@ fun ScannerScreen(
         val rec = sheet
         if (rec != null) {
             val key = rec.cardId ?: rec.url ?: rec.title
-            Box(Modifier.fillMaxSize().pointerInput(key) { detectTapGestures { onDismissSheet() } })
+            Box(Modifier.fillMaxSize().pointerInput(key, writing) { detectTapGestures { if (!writing) onDismissSheet() } })
             RecognitionCard(
                 rec = rec,
                 collectionMode = collectionMode,
@@ -259,7 +263,7 @@ fun ScannerScreen(
                     .clip(CircleShape)
                     .background(Color(0x59000000))
                     .border(1.dp, PillarGold.copy(alpha = 0.45f), CircleShape)
-                    .clickable(onClick = onClose)
+                    .clickable(enabled = !writing, onClick = onClose)
                     .semantics { contentDescription = "Close scanner" },
                 contentAlignment = Alignment.Center,
             ) {

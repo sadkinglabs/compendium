@@ -92,22 +92,20 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
   const sessionId = `scan-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   const registry = createScannerRegistry();
   const ack = async (ev, ok, extra = {}) => {
-    if (!ev.requestId) return;                    // legacy fire-and-forget event; nothing to answer
     try { await CardScanner.respond({ sessionId, requestId: ev.requestId, ok, ...extra }); } catch { /* native gone */ }
   };
 
   let failed = 0, deckAdded = 0, deckBlocked = 0;
   const sub = await CardScanner.addListener('scanAction', async (ev) => {
-    // Ignore anything not issued by THIS session, and let the registry answer duplicates without
-    // repeating the work (a replayed ack, never a second write).
-    if (ev.requestId && ev.sessionId && ev.sessionId !== sessionId) return;
-    if (ev.requestId) {
-      const fingerprint = `${ev.action}|${ev.cardId}|${ev.set || ''}|${ev.qty || 1}`;
-      const gate = registry.admit(ev.requestId, true, fingerprint);
-      if (gate.action === 'ignore') return;
-      if (gate.action === 'replay') { await ack(ev, gate.ack?.ok !== false, gate.ack?.extra || {}); return; }
-      if (gate.action === 'reject') { await ack(ev, false); return; }
-    }
+    // FAIL CLOSED: an event without correlation, or from another session, is not something this
+    // session can honestly acknowledge - so it is never written. Treating an uncorrelated event as
+    // "legacy and therefore fine" is exactly the fire-and-forget behaviour this replaced.
+    if (!ev.requestId || !ev.sessionId || ev.sessionId !== sessionId) return;
+    const fingerprint = `${ev.action}|${ev.cardId}|${ev.set || ''}|${ev.qty || 1}`;
+    const gate = registry.admit(ev.requestId, true, fingerprint);
+    if (gate.action === 'ignore') return;
+    if (gate.action === 'replay') { await ack(ev, gate.ack?.ok !== false, gate.ack?.extra || {}); return; }
+    if (gate.action === 'reject') { await ack(ev, false); return; }
     let ok = false;
     let extra = {};
     try {
@@ -146,7 +144,7 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
         else failed += 1;
       }
     } catch { failed += 1; }
-    if (ev.requestId) registry.resolve(ev.requestId, { ok, extra }, true);
+    registry.resolve(ev.requestId, { ok, extra }, true);
     await ack(ev, ok, extra);
   });
 

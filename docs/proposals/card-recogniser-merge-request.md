@@ -9,7 +9,7 @@ documentation drift.
 ## Scope
 
 ```
-git diff a9c3679..HEAD        # 2 commits, 11 files, +339 / -50     <- the fix set
+git diff a9c3679..HEAD        # the fix set (see `git log --oneline a9c3679..HEAD` for the exact count)
 git diff main..HEAD           # whole branch: 69 files, +9,677 / -704
 ```
 
@@ -64,6 +64,24 @@ arm64-only, the 72.3 MiB measured release APK, why minSdk 29 is a 16 KB requirem
 decision, and the recognition-asset provisioning commands plus the index hash binding. `DESIGN_SYSTEM.md`
 described the retired live-OCR guide frame and `CameraOverlay.kt`; it now describes the snapshot flow
 (shutter, frozen still, gilt stamp, withheld reveal on uncertainty) and marks the old states superseded.
+
+## Round-4 corrections (after the "two narrow integration holes" review)
+
+- **Recovery now runs in production.** `recoverIfInterrupted()` was implemented but only ever called by its
+  own test, so the interruption recovery the brief claimed did not actually happen. It is now the first
+  thing `load()` does - the only path production takes - and the test exercises `load()` rather than the
+  helper.
+- **Pending writes can no longer escape.** Back is CONSUMED while a write is outstanding (it no longer
+  dismisses the sheet, and a second Back cannot close the Activity), tap-outside and the close control are
+  disabled for the same window, and the fire-and-forget fallback is gone: with no registry or session the
+  submission **fails closed** and reports failure rather than emitting an unacknowledgeable write. On the JS
+  side an event without a request id, without a session id, or from another session is dropped rather than
+  treated as legacy-valid.
+- **Documentation corrected.** `BUILD.md`'s "approved next baseline - not yet implemented" subsection is now
+  implemented history (and states which lever does what: the ABI filter excludes 32-bit devices, minSdk 29
+  makes that acceptable and is separately a 16 KB requirement). `DESIGN_SYSTEM.md` is trimmed to what
+  `GiltStamp` actually renders - the double rule and halo - with the ink-shadow / sheen / corner-boss layers
+  and the retired "recognising" haptic explicitly marked as not rendered.
 
 ## Verification
 

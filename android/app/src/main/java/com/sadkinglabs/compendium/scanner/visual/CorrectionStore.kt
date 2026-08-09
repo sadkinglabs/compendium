@@ -34,6 +34,10 @@ class CorrectionStore(
      * artifacts, or its header is damaged. Any trailing damage is truncated so the good prefix survives.
      */
     fun load(artifactId: String): List<Entry> {
+        // A crash between the two renames of a replace leaves the store as a .bak with no live file.
+        // Recovery therefore belongs HERE, on the only path production actually takes - having it as a
+        // separate call that only a test remembered to make is the same as not having it.
+        recoverIfInterrupted()
         if (!file.exists() || file.length() == 0L) return emptyList()
         val out = ArrayList<Entry>()
         var good = -1L
@@ -139,7 +143,7 @@ class CorrectionStore(
         }
     }
 
-    /** Recover a store left behind by an interruption between the two renames. */
+    /** Recover a store left behind by an interruption between the two renames. Called by [load]. */
     fun recoverIfInterrupted() {
         val bak = File(file.parentFile, file.name + ".bak")
         if (!file.exists() && bak.exists()) bak.renameTo(file)
