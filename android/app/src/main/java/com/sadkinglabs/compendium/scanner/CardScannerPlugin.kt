@@ -9,9 +9,11 @@ import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 import com.sadkinglabs.compendium.scanner.match.CardIndex
 import com.sadkinglabs.compendium.scanner.match.Catalog
+import com.getcapacitor.Logger
 import com.sadkinglabs.compendium.scanner.match.Matcher
+import com.sadkinglabs.compendium.scanner.session.RequestRegistry
+import com.sadkinglabs.compendium.scanner.session.ScanSessionGate
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Bridge for the native card scanner. `scan()` builds the match index from the JS-
@@ -24,8 +26,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 class CardScannerPlugin : Plugin() {
 
     @Volatile private var pendingCall: PluginCall? = null   // set on a worker thread, read on terminal
-    private val terminated = AtomicBoolean(false)
-    private val active = AtomicBoolean(false)               // one scan at a time - guards the retained call
+    // One scan at a time, settled exactly once. Kept together in a tested gate because their ORDER is the
+    // subtle part: a session must be declared open before any fallible startup, or a failure has nothing to
+    // close and the scanner wedges.
+    private val gate = ScanSessionGate()
 
     @PluginMethod
     fun isAvailable(call: PluginCall) {
@@ -35,18 +39,24 @@ class CardScannerPlugin : Plugin() {
 
     @PluginMethod
     fun scan(call: PluginCall) {
-        if (!active.compareAndSet(false, true)) {
+        if (!gate.tryAcquire()) {
+            // A launch is refused whenever a scan is active - including while the FIRST one is still
+            // starting up. Treating "no Activity yet" as a stale flag raced legitimate startup: the
+            // matcher builds on a background thread before the Activity exists, so a fast second launch
+            // could cancel the first call and let two sessions overwrite the same shared channel.
+            // Sessions now end deterministically (ScannerActivity.onStop/onDestroy), so a stuck flag is
+            // no longer the failure mode this guarded against.
             call.reject("A scan is already in progress", "busy")
             return
         }
         if (!context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)) {
-            active.set(false)
+            gate.abandon()
             call.reject("No camera available", "no_camera")
             return
         }
         val cards = Catalog.parse(call.getArray("cards"))
         if (cards.isEmpty()) {
-            active.set(false)
+            gate.abandon()
             call.reject("Empty catalog", "empty_catalog")
             return
         }
@@ -67,39 +77,75 @@ class CardScannerPlugin : Plugin() {
 
         // The resolved reduced-motion preference, so the reveal shows still states.
         val reduceMotion = call.getBoolean("reduceMotion") ?: false
+        // JS owns the session id: native never invents one, so an ack can always be attributed to the
+        // session that actually issued the request.
+        val sessionId = call.getString("sessionId") ?: ""
 
-        // Build the index off the caller thread, then hand off + launch.
+        // Build the index off the caller thread, then hand off + launch. Any failure in here MUST
+        // release `active`, or one bad startup would make the scanner unlaunchable for the whole session.
+        // The session is opened and the call retained BEFORE the fallible work below, so a failure in
+        // index building or launching always has an open session (and a retained call) to settle. The
+        // previous order did the opposite: a throw after a completed scan hit a terminal that had already
+        // been consumed, so nothing was resolved and the scanner could never be launched again.
+        gate.open()
+        pendingCall = call
+        call.setKeepAlive(true)
         Thread {
+          try {
             val matcher = Matcher(CardIndex(cards), threshold)
             ScannerChannel.matcher = matcher
             ScannerChannel.minStreak = minStreak
             ScannerChannel.mode = mode
             ScannerChannel.deckCounts = counts
             ScannerChannel.reduceMotion = reduceMotion
+            ScannerChannel.sessionId = sessionId
+            ScannerChannel.requests = RequestRegistry(sessionId)
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }
-            terminated.set(false)
-            pendingCall = call
-            call.setKeepAlive(true)
             val act = activity ?: run { resolveOnce(JSObject().put("action", "cancelled")); return@Thread }
             act.runOnUiThread {
                 act.startActivity(Intent(act, ScannerActivity::class.java))
             }
+          } catch (t: Throwable) {
+            Logger.error("CardScanner: scanner startup failed", t)
+            resolveOnce(JSObject().put("action", "cancelled"))
+          }
         }.start()
     }
 
+    /**
+     * JS acknowledges a scanner write. Native treats this as the ONLY evidence a write happened: the
+     * result sheet reports success and deck headroom from here, never from having merely emitted the
+     * request. Unknown ids and foreign sessions are dropped by the registry.
+     */
+    @PluginMethod
+    fun respond(call: PluginCall) {
+        val session = call.getString("sessionId") ?: ""
+        val requestId = call.getString("requestId") ?: ""
+        val ok = call.getBoolean("ok") ?: false
+        val deckCount = if (call.getData().has("deckCount")) call.getInt("deckCount") else null
+        ScannerChannel.deliverAck(session, requestId, ok, deckCount)
+        call.resolve()
+    }
+
+    /**
+     * Settle this scan exactly once. The teardown runs INSIDE the gate: the scanner is not released until
+     * this session has taken its call, answered it, and cleared the shared channel - otherwise the next
+     * scan could acquire the gate and install its own call and matcher, only for this teardown to resolve
+     * and null them, handing the new scan the old scan's result.
+     */
     private fun resolveOnce(js: JSObject) {
-        if (!terminated.compareAndSet(false, true)) return
-        val call = pendingCall
-        pendingCall = null
-        if (call != null) {
-            when (js.getString("action")) {
-                "permission_denied" -> call.reject(js.getString("message") ?: "Camera permission denied", "permission_denied")
-                "no_camera" -> call.reject("No camera available", "no_camera")
-                else -> call.resolve(js)
+        gate.close {
+            val call = pendingCall
+            pendingCall = null
+            if (call != null) {
+                when (js.getString("action")) {
+                    "permission_denied" -> call.reject(js.getString("message") ?: "Camera permission denied", "permission_denied")
+                    "no_camera" -> call.reject("No camera available", "no_camera")
+                    else -> call.resolve(js)
+                }
             }
+            ScannerChannel.clear()
         }
-        ScannerChannel.clear()
-        active.set(false)
     }
 }

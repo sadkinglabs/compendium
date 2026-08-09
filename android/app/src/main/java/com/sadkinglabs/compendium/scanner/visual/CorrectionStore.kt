@@ -1,0 +1,188 @@
+package com.sadkinglabs.compendium.scanner.visual
+
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.io.RandomAccessFile
+
+/**
+ * The on-device correction store: user-confirmed embeddings that harden recognition across sessions.
+ *
+ * It holds VECTORS, never photographs. Three properties matter and each is enforced here rather than
+ * assumed:
+ *
+ *  - **Artifact binding.** A header records the format version + model + index the corrections were learned
+ *    against. An embedding is meaningless outside the space that produced it, so a different artifact set
+ *    resets the store instead of reinterpreting old vectors.
+ *  - **Torn-write repair.** Each record is length-prefixed and checksummed. A process killed mid-append
+ *    truncates to the last verified record rather than poisoning the index or discarding all history.
+ *  - **Bounded growth.** Appends stop at [maxBytes].
+ *
+ * Pure file I/O with no Android dependencies, so it is unit-testable.
+ */
+class CorrectionStore(
+    private val file: File,
+    private val dim: Int = VisualMatcher.DIM,
+    private val maxBytes: Long = 700_000L,
+) {
+    data class Entry(val cardId: String, val displayName: String, val embedding: FloatArray)
+
+    /**
+     * Read every intact record. Returns empty when the store is absent, was written against different
+     * artifacts, or its header is damaged. Any trailing damage is truncated so the good prefix survives.
+     */
+    fun load(artifactId: String): List<Entry> {
+        // A crash between the two renames of a replace leaves the store as a .bak with no live file.
+        // Recovery therefore belongs HERE, on the only path production actually takes - having it as a
+        // separate call that only a test remembered to make is the same as not having it.
+        recoverIfInterrupted()
+        if (!file.exists() || file.length() == 0L) return emptyList()
+        val out = ArrayList<Entry>()
+        var good = -1L
+        var unusable = false          // decided inside, acted on AFTER the handle is closed
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                if (raf.length() < 4 || raf.readInt() != MAGIC) { unusable = true; return@use }
+                val storedId = try { raf.readUTF() } catch (_: Throwable) { unusable = true; return@use }
+                if (storedId != artifactId) { unusable = true; return@use }   // learned in a different space
+                good = raf.filePointer
+                while (raf.filePointer < raf.length()) {
+                    if (raf.length() - raf.filePointer < 4) break
+                    val len = raf.readInt()
+                    if (len <= 0 || len > MAX_RECORD || raf.filePointer + len + 4 > raf.length()) break
+                    val rec = ByteArray(len)
+                    raf.readFully(rec)
+                    if (raf.readInt() != checksum(rec)) break      // corrupt record: stop, keep the prefix
+                    val entry = decode(rec) ?: break
+                    out.add(entry)
+                    good = raf.filePointer
+                }
+            }
+        } catch (_: Throwable) {
+            // fall through: keep whatever was verified, truncate the rest
+        }
+        // Deleting or truncating happens only once the read handle is closed - an open file cannot be
+        // removed on every platform, so doing it inside the block would silently leave a stale store.
+        if (unusable) return discard()
+        truncateTo(good)
+        return out
+    }
+
+    /** Append one correction. Writes the header on first use. Refuses malformed vectors and over-cap files. */
+    fun append(artifactId: String, cardId: String, displayName: String, embedding: FloatArray): Boolean {
+        if (embedding.size != dim || embedding.any { !it.isFinite() }) return false
+        if (file.exists() && file.length() > maxBytes) return false
+        return try {
+            val body = ByteArrayOutputStream().also { bos ->
+                DataOutputStream(bos).use { d ->
+                    d.writeUTF(cardId); d.writeUTF(displayName)
+                    for (v in embedding) d.writeFloat(v)
+                }
+            }.toByteArray()
+            val fresh = !file.exists() || file.length() == 0L
+            DataOutputStream(FileOutputStream(file, true).buffered()).use { dout ->
+                if (fresh) { dout.writeInt(MAGIC); dout.writeUTF(artifactId) }
+                dout.writeInt(body.size)
+                dout.write(body)
+                dout.writeInt(checksum(body))
+            }
+            true
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    /**
+     * Replace the whole store with [entries] - used when a correction REPLACES an earlier one, which an
+     * append-only log cannot express. Written to a temp file and renamed, so an interrupted rewrite leaves
+     * the previous store intact rather than a half-written one.
+     */
+    fun rewrite(artifactId: String, entries: List<Entry>): Boolean {
+        val tmp = File(file.parentFile, file.name + ".tmp")
+        val bak = File(file.parentFile, file.name + ".bak")
+        return try {
+            tmp.delete()
+            // The cap belongs here, not only on the append path: this IS the production writer, so an
+            // unbounded caller would otherwise grow derived storage without limit. Newest corrections are
+            // the most relevant, so the OLDEST are dropped when the budget is exceeded.
+            val encoded = entries
+                .filter { it.embedding.size == dim && it.embedding.all { v -> v.isFinite() } }
+                .map { it to encode(it) }
+            var budget = maxBytes - (4L + 2L + artifactId.toByteArray().size)     // header
+            val keep = ArrayList<ByteArray>(encoded.size)
+            for ((_, body) in encoded.asReversed()) {                            // newest first
+                val cost = body.size + 8L
+                if (cost > budget) break
+                budget -= cost
+                keep.add(body)
+            }
+            keep.reverse()                                                        // restore write order
+
+            DataOutputStream(FileOutputStream(tmp).buffered()).use { dout ->
+                dout.writeInt(MAGIC); dout.writeUTF(artifactId)
+                for (body in keep) { dout.writeInt(body.size); dout.write(body); dout.writeInt(checksum(body)) }
+            }
+            // True replace: keep the previous store until the new one is in place, so an interruption
+            // between the two renames leaves a recoverable file rather than nothing at all.
+            bak.delete()
+            val hadOld = file.exists()
+            if (hadOld && !file.renameTo(bak)) { tmp.delete(); return false }
+            if (!tmp.renameTo(file)) {
+                if (hadOld) bak.renameTo(file)          // put the old store back
+                tmp.delete()
+                return false
+            }
+            bak.delete()
+            true
+        } catch (_: Throwable) {
+            tmp.delete()
+            if (!file.exists() && bak.exists()) bak.renameTo(file)   // recover an interrupted replace
+            false
+        }
+    }
+
+    /** Recover a store left behind by an interruption between the two renames. Called by [load]. */
+    fun recoverIfInterrupted() {
+        val bak = File(file.parentFile, file.name + ".bak")
+        if (!file.exists() && bak.exists()) bak.renameTo(file)
+    }
+
+    private fun encode(e: Entry): ByteArray = ByteArrayOutputStream().also { bos ->
+        DataOutputStream(bos).use { d ->
+            d.writeUTF(e.cardId); d.writeUTF(e.displayName)
+            for (v in e.embedding) d.writeFloat(v)
+        }
+    }.toByteArray()
+
+    private fun decode(rec: ByteArray): Entry? = try {
+        DataInputStream(rec.inputStream()).use { din ->
+            val id = din.readUTF()
+            val name = din.readUTF()
+            val emb = FloatArray(dim) { din.readFloat() }
+            if (emb.all { it.isFinite() }) Entry(id, name, emb) else null
+        }
+    } catch (_: Throwable) {
+        null
+    }
+
+    private fun discard(): List<Entry> {
+        runCatching { file.delete() }
+        return emptyList()
+    }
+
+    private fun truncateTo(good: Long) {
+        runCatching {
+            if (good > 0 && file.exists() && good < file.length()) {
+                RandomAccessFile(file, "rw").use { it.setLength(good) }
+            }
+        }
+    }
+
+    private companion object {
+        const val MAGIC = 0x43524331          // "CRC1" - correction store, format 1
+        const val MAX_RECORD = 1 shl 16       // a record is id + name + dim floats; far under this
+        fun checksum(b: ByteArray): Int = b.fold(17) { a, x -> a * 31 + x }
+    }
+}

@@ -1,0 +1,219 @@
+CORPUS	device-capture-v1
+C	case-1-Enchantress	SPELL	I:Enchantress
+F	1785136544093	-	RIGHT_90:20 Alla an ee y ahenevet attiens Plameca
+F	1785136544590	-	RIGHT_90:t0G5Calaes Ar ©juss Pyas 2551 10Adam Kalpar etO Sastigs Cai O Fratta Grs AnCls Mikr ArtO Mus Frk AYOAbeak t OTrat Pirdn 20 ais an enemy, yo Whenever Battie Tap - Play Plamec%3A
+F	1785136544965	-	RIGHT_90:tress At O Fritta Curf ArC A Kalpar Art OAas Barke Art ©Harret Org Aran An C Sag Carss AnCAslak etOMss Frsk Ancbo 20 klls n enes Whenever Ba Tlamw
+F	1785136545330	-	RIGHT_90:atress Art O Frsitta Girs Ar CA Art© Aa Furie AtC Ca Claas Ar © Haret Ovga-s Art Oja Pys tOSueiCrssw Art OHmss Prk et D Trat Pirrih Kalpur 20 is an eses Whenever Tap - ver Flar
+F	1785136545730	-	RIGHT_90:A ka 20 lle an e Whesve atile TapPlv rlamec
+F	1785136547564	-	TOP:Enchantress 20 20
+F	1785136548264	-	RIGHT_90:20 YourA 20 Tap-+ P Shoot a Tap, Banm the sum	LEFT_270:Sur Ave DPla henever minion wi arget aur 20
+F	1785136550208	-	TOP:E antress
+F	1785136550764	-	TOP:E hantress 20
+F	1785136551407	-	RIGHT_90:nimate umph n aura	LEFT_270:miniop Whene target Your Tap 20 20
+F	1785136553303	-	TOP:20 Enchantress
+F	1785136553941	-	TOP:20 Enchantress
+F	1785136554638	-	TOP:20 Enchantress1
+F	1785136555487	-	TOP:hatress1
+F	1785136556118	-	LEFT_270:Tamera Spel 2
+F	1785136557416	-	LEFT_270:Tepotaumberat allies a ame aeicaachess Gyrc tippogrs aes s moe aa ra cant Eacehat bgca pcuat
+F	1785136558950	-	TOP:62 Gniard er
+F	1785136559348	-	TOP:6 6 Grandm
+C	case-2-Grandmaster_Wizard	SPELL	I:Grandmaster Wizard
+F	1785136559950	-	TOP:6A Grandnaster Wiz00
+F	1785136560552	-	TOP:6 Grandmasfer
+F	1785136561155	-	TOP:6 Grandmaster
+F	1785136561853	-	TOP:Art 6 Grandmaster
+F	1785136562481	-	TOP:Grandmaster
+F	1785136563050	-	TOP:6 Grandmaster
+F	1785136563717	-	TOP:6 Grandmaster Wizard
+F	1785136564415	-	TOP:6 6 Grandmaster Wizardo
+F	1785136565097	-	TOP:6 Grandmaster Wizard
+F	1785136565683	-	TOP:Grandnaster Wd0
+F	1785136566285	-	LEFT_270:wtree spells a Eagle iard ster
+F	1785136567583	-	LEFT_270:3 Headless Ha vis dragged to that location, a strike the hit unit when it arriv shoots a projectile. Ifit hits Art @ Alan Pullack ary hagicacrebhe
+F	1785136569326	-
+F	1785136570685	-	TOP:3APaned Pe 3
+C	case-3-Plumed_Pegasus	SPELL	I:Plumed Pegasus
+F	1785136571054	-	TOP:Pluned Pega 3A
+F	1785136571685	-	TOP:Plumed Pegasas 3A
+F	1785136572286	-	TOP:Plumed Pegasus 3A
+F	1785136572890	-	TOP:34 3A Plumed Pegasus
+F	1785136573506	-	TOP:Plumed Pegasas 3A
+F	1785136574222	-	TOP:Plurned Pegasus
+F	1785136574786	-
+F	1785136576053	-
+F	1785136577587	-
+F	1785136579351	-
+C	case-4-Disintegrate	SPELL	I:Disintegrate
+F	1785136580918	-	TOP:38 Disintegrate
+F	1785136581354	-	TOP:Disrut
+F	1785136582020	-	TOP:38 Disintegal
+F	1785136582622	-	TOP:Disintegrale
+F	1785136583222	-	TOP:38 Disintegrate
+F	1785136583924	-	TOP:38 Disintegrate
+F	1785136584694	-	TOP:Dirtiug
+F	1785136585457	-
+F	1785136586716	-
+C	case-5-The_Geistwood	SITE_RIGHT	I:The Geistwood
+F	1785136588185	-	RIGHT_90:The Geistwood-a unicue Site of denicd absolution Genesis abilities here are also Deathrite abilities. ir et tuir
+F	1785136589757	-	RIGHT_90:The Geistwooda unicue Ste of denied ahseluton Genesis abilities here are also Deathrite abilities.
+F	1785136591474	-	RIGHT_90:The Geistwooda untcue Site of denied ahsolutn Genesis abilities here are also Deathrite abilities
+F	1785136592757	-	RIGHT_90:The Geistwooda Unicue Site of dened ahsouten Genesis abilities here are also Deathrite abilities.
+F	1785136594426	-
+F	1785136595621	-	TOP:Deserts. Ernbs sity
+F	1785136595992	-	TOP:A Deserts. nsity
+F	1785136596627	-	TOP:serts.
+F	1785136597261	-	TOP:serts.
+C	case-6-Shifting_Sands	SITE_RIGHT	I:Shifting Sands
+F	1785136597959	-	RIGHT_90:Ariliy Ermoh Shifing Sands- An Exceptional Site of unsettled animosity Genesis -→ Reactivate the Genesis abilities of your nearby Deserts.
+F	1785136599489	-	TOP:5erts.
+F	1785136599989	-	TOP:erts.
+F	1785136600558	-	TOP:serts.
+F	1785136601190	-	TOP:serts. ty
+F	1785136601790	-	TOP:eserts. rmek aty
+F	1785136602326	-	TOP:TmokeU eserts. ty
+F	1785136602993	-	TOP:serts.
+F	1785136603627	-	TOP:trno sity
+C	case-7-Secret_Tunnel	SITE_RIGHT	I:Secret Tunnel
+F	1785136604321	-	RIGHT_90:Tion Genesis - Reactivate the Genesis abilities ofyour nearty Dlesets ur spelibook	LEFT_270:habd el A Secrel
+F	1785136605759	-	TOP:serts.
+F	1785136606125	-	TOP:ErmoAV Deserts. sity
+F	1785136606790	-	TOP:Tmoke eserts. ty
+F	1785136607388	-	TOP:ErmokV eserts. aty
+F	1785136607954	-	TOP:TmoRs serts. ty
+F	1785136608559	-	TOP:ErmoksV aty
+F	1785136609127	-	TOP:serts.
+F	1785136609699	-	RIGHT_90:Asiliy ErmeAs Shifing Sands An Exceptional Site of unsettled aninosity Genesis -Reactivate the Genesis abilities of your nearby Deserts.
+F	1785136611329	-	TOP:molke
+F	1785136611824	-	TOP:molacy
+F	1785136612392	-	TOP:molky A
+F	1785136613023	-	TOP:ErmokeV ity
+F	1785136613491	-	RIGHT_90:tsliy rme sv Shifing Sands- an Exceptional Site of unsettled aninosaty A Genesis Reactivate the
+F	1785136615027	-	RIGHT_90:Shibing Sands a Ecg Sae t Genests -Reactivate the Genesis ab
+F	1785136616300	-	TOP:Site of
+F	1785136616657	-	TOP:J Site of
+F	1785136617296	-
+F	1785136618553	-
+F	1785136620185	-	TOP:Deserts
+F	1785136620620	-	TOP:Serts.
+F	1785136621224	-	RIGHT_90:stitrmoV	LEFT_270:S Wee adjacent to your otherSes.
+F	1785136622525	-	TOP:ErmekV Sity
+F	1785136622988	-	TOP:rmokU Deserts. sity
+F	1785136623630	-	TOP:Deserts. Ermok sity
+F	1785136624360	-	TOP:erts.
+F	1785136624961	-	TOP:mokey 5erts.
+F	1785136625559	-	TOP:mokv eserts.
+F	1785136626127	-
+F	1785136627395	-	TOP:er sites. -age
+F	1785136627824	-	TOP:sites. age er
+F	1785136628393	-	TOP:sites.
+F	1785136628961	-	TOP:sites.
+F	1785136629626	-	TOP:er sites ge
+F	1785136630194	-	TOP:er sites.
+F	1785136630862	-	TOP:GS er sites. ge
+F	1785136631526	-	TOP:her sites. Sage
+F	1785136632092	-	TOP:sites.
+F	1785136632761	-	TOP:sites
+F	1785136633361	-	RIGHT_90:Arth Secret Tunnel-An Exceptional Site of subterranean passage Burrowed allies can move as if this were adjacent to your other sites
+F	1785136635064	-
+F	1785136636292	-
+F	1785136636660	-	RIGHT_90:o suimona Foot Soldier tolen hee lhge An Crdirary Site of fertility	LEFT_270:Secret Tunnel an Exceptisnal Sle
+F	1785136637026	-	RIGHT_90:on aRoot Soldiet token here Rustie kge an Crdnwy Ste of frtity	LEFT_270:Secret Tunnel an Eseplina Site t suberranNAn passaN Burruwed allies can move as it this were adacent to your other sites.
+F	1785136637395	-	TOP:Bur Se
+F	1785136637761	-	TOP:Burrowe Secre
+F	1785136638130	-	TOP:Burrowed a Secret
+F	1785136638792	-	TOP:Burrovw Secr
+F	1785136639425	-	TOP:Burr
+F	1785136639925	-	TOP:Burrowed all Secret Te
+F	1785136640426	-	TOP:Burrowed alE Secret T
+F	1785136641129	-	TOP:Secret
+F	1785136641726	-	LEFT_270:Secret Tunnel- An Excephional Site of subterr this were adjacent Burrowed allies can move as if
+F	1785136643063	-	TOP:Burr Se
+F	1785136643425	-	LEFT_270:Secret Tunnel- An Exceptional Site of sub Burrowed allies can move as if this were adjace
+F	1785136644560	-	LEFT_270:Secret Tunnel-An Exceptional Site of subt%3A Burrowed allies can move as if this were adiace
+F	1785136645768	-	LEFT_270:Secret Tunnel-An Exceptional Site of subb Burrowed allies can move as if this were adjacer
+F	1785136647233	-	LEFT_270:ernearhy sites lese t xestacks of Gnaak a tn
+F	1785136648493	-
+F	1785136650160	-	LEFT_270:Summona Fook Solcer oken hee
+F	1785136651614	-
+C	case-8-Watchtower	SITE_RIGHT	I:Watchtower
+F	1785136653095	-	RIGHT_90:Watchtower- an Exceptional Site safeguards the hons Enemy units atop nearby sites permanently lose Stea
+F	1785136654597	-	RIGHT_90:Watchtower - an Exceptional Site safeguards the horio Enemy units atop nearby sites permanently lose Stealth
+F	1785136656033	-	RIGHT_90:Watchtower-An Exceptional Site safeguards the horiz Enemy units atop nearby sites permanently lose Stealth
+F	1785136657663	-
+C	case-9-Summer_River	SITE_RIGHT	I:Summer River
+F	1785136659128	-	RIGHT_90:Sammer Riser
+F	1785136660663	-	RIGHT_90:Sumner River An Crdirary Site of ren Genesis Look at your next spell. You rnay put it on the hotonm o
+F	1785136661810	-	RIGHT_90:Summer River An Crdinary Site of renew Genesis - Look at your next spell. You may put it on the bottom of you spe
+F	1785136663100	-
+F	1785136664264	-
+C	case-10-Vaults_of_Zul	SITE_RIGHT	I:Vaults of Zul
+F	1785136665431	-	RIGHT_90:Vaults of Zul- inicue Site of beguilina riches The first time an Avatar stops here, they draw three cards and skip their next urn
+F	1785136666938	-	RIGHT_90:Vaults of Zul a Unicue Site of beguihng rches The first time an Avatar stops here, they draw three cards and skip the ast
+F	1785136668403	-	RIGHT_90:Vaults of Zul-a Unicue Site of beguiling riches The first time an Avatar stops here, they draw three cards and skip their next uro
+F	1785136669766	-
+F	1785136671028	-
+C	case-11-Apprentice_Wizard	SPELL	I:Apprentice Wizard
+F	1785136672731	-	TOP:01adtr Wiard
+F	1785136673430	-
+F	1785136675167	-	TOP:34 Apurrentice VWizard
+F	1785136675768	-	TOP:3A Apurrentice Wizard
+F	1785136676400	-	TOP:3A apurrentice Wizard
+F	1785136677034	-	TOP:34 Apurrentice Wizard
+F	1785136677702	-	TOP:3A Apurrentice WizardL
+F	1785136678339	-	TOP:3A Apurrentice Wizard
+F	1785136678968	-	TOP:3A Apurrentice Wizard
+F	1785136679668	-	TOP:34 Apurrentice Wizard
+F	1785136680265	-	TOP:3A apurrentice Wizard
+F	1785136680970	-	RIGHT_90:wto power spell Vizard
+F	1785136682802	-	TOP:Apurrentice Wizard 3A
+F	1785136683433	-	TOP:3A Apurrentice WizArd
+F	1785136684102	-	TOP:Apurrenice Wizard 3A
+F	1785136684701	-	LEFT_270:lopower 2ard spell.
+F	1785136686368	-	TOP:3A Apurrentice Wizard
+F	1785136687035	-	TOP:3A Aparentice WizArd 1
+F	1785136687601	-	TOP:3A Apurrenice WizArd
+F	1785136688202	-	TOP:3A Apurrentice WiArd 1
+F	1785136688835	-
+F	1785136690068	-	LEFT_270:Crdiarý thag target loca DestroY 2
+C	case-12-Dispel	SPELL	I:Dispel
+F	1785136691534	-	TOP:27 Dispe
+F	1785136692104	-	TOP:Dispel 2
+F	1785136692793	-	TOP:2)7 Dispel
+F	1785136693471	-	TOP:27 Dispel
+F	1785136694066	-	LEFT_270:Desty alla get Nat
+F	1785136695697	-	LEFT_270:WWereith
+F	1785136696896	-	TOP:tal mew e powes eleaster Draw a pell.
+C	case-13-Bone_Rabble	SPELL	I:Bone Rabble
+F	1785136697265	-	TOP:wrine Pineuy abble
+F	1785136697864	-	TOP:37 Bone Rabbie
+F	1785136698536	-	TOP:39 Bone Rabble
+F	1785136699174	-	TOP:39 Bone Rabble
+F	1785136699809	-
+F	1785136701230	-
+C	case-14-Valley	SITE_RIGHT	I:Valley
+F	1785136702630	-	TOP:raced by.gentle hille umber of Valley
+F	1785136703196	-	RIGHT_90:Valley- An Ordinary Site embraced by gentle hills Your atlas may include any number of Valleys.
+F	1785136704431	-	RIGHT_90:Valley An Ordinary Site embraced by gentle hills Your atlas may include any number of Valleys.
+F	1785136705865	-	TOP:t0alz0ns
+F	1785136706229	-	RIGHT_90:Valley An Ordinary Site enbraced by gentle hills Your atlas may include any number of Valleys.
+F	1785136707536	-
+F	1785136709001	-	TOP:alazanS A
+F	1785136709362	-	TOP:alazans
+C	case-15-Spire	SITE_RIGHT	I:Spire
+F	1785136709904	-	RIGHT_90:WArt az Spire An Ordinary Site bitten by violent wweather Your atlas may include any number of Spires.
+F	1785136711436	-	TOP:azans
+F	1785136711966	-	TOP:lazans A A
+F	1785136712436	-	RIGHT_90:At Cokzas Spire an Ordinary Site bitten by violent weather Your atlas may include any number of Spires.
+F	1785136714139	-	TOP:aazans
+F	1785136714534	-	TOP:azans
+F	1785136715136	-	TOP:azans A
+F	1785136715670	-	RIGHT_90:At o&2an5 Spire An Ordinary Site bitten by violent wwather A Your atlas may include any number of Spires.
+F	1785136717071	-	TOP:azans
+F	1785136717437	-	RIGHT_90:Art 6 Caohzans pire An Ordinary Site bitten by violent weather A Your atlas may include any number of Spires.
+F	1785136718771	-	RIGHT_90:Art 2lzns Spire An Ordinary Site bitten by violent weather Your atlas may include any number of Spires.
+F	1785136720135	-	RIGHT_90:1At o5zns Spire An Ordinary Site bitten by violentweather Your atlas may include any number of Spires.
+F	1785136721338	-	TOP:lazans A
+F	1785136721701	-	TOP:lazans A
+F	1785136722268	-
+F	1785136723336	-

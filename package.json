@@ -1,7 +1,7 @@
 {
   "name": "compendium",
   "version": "1.0.3-alpha",
-  "build": 207,
+  "build": 212,
   "private": true,
   "type": "module",
   "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
@@ -18,6 +18,9 @@
     "test:query": "node --test \"src/store/**/*.test.mjs\"",
     "test:ui": "node --test \"src/pillars/**/*.test.mjs\" \"src/components/**/*.test.mjs\"",
     "test:app": "node --test \"src/*.test.mjs\"",
+    "test:recog": "node --test \"scripts/recog/**/*.test.mjs\"",
+    "recog:intake": "node scripts/recog/intake.mjs",
+    "recog:score": "node scripts/recog/score.mjs",
     "check:types": "node --test scripts/check-types.test.mjs && node scripts/check-types.mjs",
     "check:cycles": "node --test scripts/check-cycles.test.mjs && node scripts/check-cycles.mjs",
     "check:source": "node --test scripts/check-source-guards.test.mjs && node scripts/check-source-guards.mjs",

@@ -349,36 +349,69 @@ adb shell dumpsys netstats detail | grep -A3 "uid=<uid>"
 `App measurement disabled via the manifest` is the pre-consent state. A byte counter
 that never moves is not proof of silence — Analytics batches uploads ~58 minutes out,
 so a short window sees nothing either way. Establish a positive control first.
+## Card-recogniser assets (required to build)
+
+The recogniser's model and prototype index are **generated artifacts** (~27 MB), too large to track
+in git, so `android/app/src/main/assets/recog/` is gitignored. A build without them would succeed and
+then fail every scan with "Visual match unavailable", so `:app:checkRecogAssets` **fails the build**
+when they are missing. Regenerate them with the pinned Python toolchain (`scripts/recog/train/`):
+
+```bash
+cd scripts/recog/train
+./.venv/Scripts/python build_artifact.py     # dinov2_s448_int8.onnx (+ _out/artifact.json provenance)
+./.venv/Scripts/python build_index.py        # index.f16 + index.json (card ids, dim, count, sha256)
+cp _out/dinov2_s448_int8.onnx _out/index.f16 _out/index.json ../../../android/app/src/main/assets/recog/
+```
+
+`index.json` records the index `sha256`, `dim` and `count`; the loader refuses to start on a
+mismatch, so a model and index from different builds can never be paired silently.
+
 ## APK size and ABIs
 
-Release builds ship **arm64-v8a + armeabi-v7a only**. That took the APK from **82.7 MB
-to 66.2 MB** (-20%): `x86`/`x86_64` are emulator architectures and no phone that can
-install this APK can execute them, so they were pure carry.
+Release builds ship **arm64-v8a only**, and `minSdkVersion` is **29** (Android 10). Those two
+move together: the ABI filter is what excludes 32-bit-only devices, and the minSdk floor is what
+makes that acceptable, since a 32-bit-only phone new enough for Android 10 is vanishingly rare.
+Dropping `x86`/`x86_64` came first (emulator architectures no phone can execute); dropping
+`armeabi-v7a` followed with the minSdk raise. The assembled arm64 release APK measures
+**72.3 MiB**, which includes the ~27 MB card-recogniser model and prototype index.
 
-The scanner is what makes ABIs expensive � ML Kit's OCR and barcode `.so` files plus
-SQLCipher are per-architecture, so each extra ABI is a full duplicate set.
+minSdk 29 is also a **16 KB page-size** requirement, not only a size decision: below API 23 the
+Android Gradle Plugin packages native libraries compressed, and compressed libraries cannot be
+mapped directly from the APK, which fails Android's 16 KB check. See the recognition asset and
+alignment notes below.
+
+The scanner is what makes ABIs expensive - ML Kit's OCR and barcode `.so` files, SQLCipher and
+ONNX Runtime are per-architecture, so each extra ABI is a full duplicate set.
 
 **Debug keeps all four**, so the emulator still works on an x86_64 host. The filter is
 scoped to `buildTypes.release` in `android/app/build.gradle`; moving it to
 `defaultConfig` would strip them everywhere and quietly break emulator testing.
 
-**`armeabi-v7a` and `minSdkVersion` move together.** minSdk 22 admits 32-bit devices, so
-dropping that ABI without raising minSdk would let such a phone install the app and then
-crash in the scanner, rather than being cleanly excluded from the store listing. Do not
-drop one without the other.
+**`armeabi-v7a` and `minSdkVersion` move together as a product baseline, not a technical
+dependency.** `minSdkVersion` and release ABIs are independent technical filters, but they move
+together in the approved product baseline: API 29 excludes older Android releases, and arm64-only
+excludes 32-bit devices. They are coupled by the owner's support decision, not because minSdk
+controls CPU architecture. An install with no compatible ABI (or below the minSdk) must fail
+cleanly - excluded, not install-then-crash - and that is verified when the baseline is implemented
+(checklist below). The owner has approved making both moves together as the **approved next
+baseline** below.
 
 ```bash
 # what the APK actually ships
 aapt2 dump badging <apk> | grep native-code
 ```
 
-**Card art is no longer bundled (art-cdn Phase 5).** The ~72 MB `public/cards/` WebP bundle was
-removed; card art is served from the CDN (`ART_CDN_BASE`) and cached on device on first view, so the
-APK dropped from ~90 MB to roughly the native-libs floor (~14 MB) plus the JSON catalog + set-hero
-logos. The resolver chain is `local cache -> remote CDN -> deterministic element-gradient placeholder`
-(no bundled legacy step). **Offline behaviour:** a fresh install with no network shows the placeholders
-for card art until the device has been online once; set-hero logos (`public/sets/`) stay bundled so the
-Collection landing is always legible offline. The `check:source` guard fails if `public/cards/` returns.
+### Android platform baseline (minSdk 29, arm64-only) - IMPLEMENTED
+
+**Owner architecture decision of 2026-08-03, implemented 2026-08-08** on the card-recogniser branch.
+`variables.gradle` sets **minSdk 29 (Android 10)** and the release build filters to **arm64-v8a only**;
+debug still carries all four ABIs so the x86_64 emulator keeps working. compileSdk / targetSdk remain 35.
+
+The two levers do different jobs and the distinction matters: **the ABI filter is what excludes
+32-bit-only devices** (a build without their ABI is not offered to them), while **minSdk 29 is what makes
+that loss acceptable** - a 32-bit-only phone new enough for Android 10 is vanishingly rare. minSdk 29 is
+additionally a **16 KB page-size requirement**: below API 23 the Android Gradle Plugin packages native
+libraries compressed, and compressed libraries cannot be mapped directly from the APK.
 
 ## Notes
 

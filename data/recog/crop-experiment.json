@@ -1,0 +1,73 @@
+{
+  "experiment": "rev6 frameless crop selection (whole / centre-square / rectify-control)",
+  "model": {
+    "file": "dinov2_s448_int8.onnx",
+    "sha256": "44770a907c13c90ebd738676e76f4edc7704b5321f6736b426def58c07d7014b"
+  },
+  "index": {
+    "file": "index.f16",
+    "sha256": "43ada1164cb5dd8815c55700a54b1499ecf201b003dee7ebe4090fc3089182c8"
+  },
+  "manifest_sha256": "1627acbe6e1490d496fa6353288a89466c721dcedbf0072cfb8c6e1eafe5e7c4",
+  "runtime": {
+    "onnxruntime": "1.28.0",
+    "resolution": 448,
+    "provider": "CPUExecutionProvider"
+  },
+  "n": {
+    "total": 33,
+    "portrait_spell": 18,
+    "landscape_site": 15
+  },
+  "splits_physical": {
+    "calibration": 13,
+    "sealed": 20
+  },
+  "rotated_upside_down": "UNMEASURED - corpus has off-axis tilt tags but no orientation tag",
+  "results": {
+    "A whole": {
+      "all": {
+        "top1": 0.4848,
+        "top5": 0.7879
+      },
+      "spell": {
+        "top1": 0.6111,
+        "top5": 0.7778
+      },
+      "site": {
+        "top1": 0.3333,
+        "top5": 0.8
+      }
+    },
+    "B centre": {
+      "all": {
+        "top1": 0.7576,
+        "top5": 0.8788
+      },
+      "spell": {
+        "top1": 0.7778,
+        "top5": 0.8889
+      },
+      "site": {
+        "top1": 0.7333,
+        "top5": 0.8667
+      }
+    },
+    "C rectify(ctrl)": {
+      "all": {
+        "top1": 0.7273,
+        "top5": 0.7879
+      },
+      "spell": {
+        "top1": 0.7222,
+        "top5": 0.7778
+      },
+      "site": {
+        "top1": 0.7333,
+        "top5": 0.8
+      }
+    }
+  },
+  "decision": "centre-square crop selected (beats whole-frame and rectify on every slice); portrait-or-landscape scope only; Shortlist-first per approved Rev 6",
+  "note": "sealed-v1 captures were consumed as dev data (declared in gate1-findings); this is development evidence, not a sealed gate. No image bytes or model artifacts are committed."
+}

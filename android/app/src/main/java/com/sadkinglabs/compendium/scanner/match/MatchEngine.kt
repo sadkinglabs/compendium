@@ -22,20 +22,24 @@ data class MatchResult(val card: CardRef, val score: Double)
 /**
  * Text normalization: the SAME rules applied to the OCR text AND the catalog names
  * so they compare on equal footing. NFD-strip diacritics, lowercase, punctuation to
- * spaces, collapse whitespace, and drop stray 1-2 digit tokens (mana / threshold
- * pips the OCR grabs). "Firebal" -> "firebal"; "Drgon Mage" -> "drgon mage".
+ * spaces, collapse whitespace, and drop mana-cost / threshold PIP tokens the OCR grabs
+ * from the card corner (a number with an optional element letter, e.g. "3A", "2V", "27",
+ * "3", and stray single element letters "a"/"v"). Device evidence: a pip left in sinks
+ * the whole-string fuzzy ratio of SHORT names below threshold - "3A Ghoul" scored ~0.63
+ * vs "Ghoul" and never matched; stripping the pip makes it "ghoul" -> exact.
  */
 object Norm {
     private val diacritics = Regex("\\p{Mn}+")
     private val punct = Regex("[^a-z0-9 ]")
     private val ws = Regex("\\s+")
-    private val digitsOnly = Regex("^[0-9]{1,2}$")
+    private val pip = Regex("^[0-9]{1,2}[a-z]?$")   // mana/threshold pip: 3, 27, 3a, 2v
+    private val singleLetter = Regex("^[a-z]$")      // stray element letter / article
 
     fun normalize(raw: String): String {
         val decomposed = Normalizer.normalize(raw, Normalizer.Form.NFD).replace(diacritics, "")
         val cleaned = punct.replace(decomposed.lowercase(Locale.ROOT), " ")
         return ws.split(cleaned)
-            .filter { it.isNotBlank() && !digitsOnly.matches(it) }
+            .filter { it.isNotBlank() && !pip.matches(it) && !singleLetter.matches(it) }
             .joinToString(" ")
             .trim()
     }
@@ -82,6 +86,10 @@ class CardIndex(cards: List<CardRef>) {
     val portrait: List<IndexedCard>
     val landscape: List<IndexedCard>
 
+    /** Every card by catalog card_id, for resolving a visual-match pick back to its CardRef (sets + limit)
+     *  so it enters the same recognition flow. Keyed on the stable id, never the display name (Codex). */
+    val byId: Map<String, CardRef> = cards.associateBy { it.id }
+
     init {
         val seen = HashSet<String>(cards.size * 2)
         val p = ArrayList<IndexedCard>()
@@ -116,6 +124,20 @@ class Matcher(
      * "Name + rules text", so the name is a leading prefix. Whole is tried first, so it
      * wins ties - standard cards prefer their full name; sites fall back to the prefix.
      */
+    /** Resolve a visual-match card_id back to its catalog CardRef (sets + limit). */
+    fun cardById(id: String): CardRef? = index.byId[id]
+
+    /** Substring name search over the catalog (prefix matches first) - the manual recovery when a scan does
+     *  not offer the right card. */
+    fun search(query: String, limit: Int = 25): List<CardRef> {
+        val q = query.trim().lowercase()
+        if (q.length < 2) return emptyList()
+        return index.byId.values.asSequence()
+            .filter { it.name.lowercase().contains(q) }
+            .sortedWith(compareBy({ !it.name.lowercase().startsWith(q) }, { it.name }))
+            .take(limit).toList()
+    }
+
     fun match(ocrNorm: String, siteDetected: Boolean): MatchResult? {
         if (ocrNorm.length < 3) return null
         val queries = LinkedHashSet<String>()

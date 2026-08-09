@@ -52,6 +52,11 @@ object GuideGeometry {
     // every strip each frame). Flip back to true to diagnose; false = normal fast scan.
     const val showReadZones = false
 
+    // DEV CAPTURE: record every frame's analyzer observation into a corpus file (written to the
+    // app's external files dir on scanner close) for the reliability harness. Adds a tiny per-frame
+    // append; NOT for release. TRUE only on the capture build - FLIP FALSE before merging to main.
+    const val captureCorpus = false
+
     val guide = RectFraction(0.06f, 0.12f, 0.94f, 0.81f)     // ~0.716 card within the 9:16 frame
 
     val topStrip = RectFraction(0.10f, 0.14f, 0.90f, 0.26f)  // standard name banner
@@ -62,3 +67,31 @@ object GuideGeometry {
 /** The frame-colour phase: purple while searching, gold while a (new) card is being
  *  confirmed. A lock flashes green then fades back - see [ScannerViewModel]. */
 enum class Phase { SEARCHING, DETECTING }
+
+/** One visual-match suggestion. [cardId] is the catalog identity (keys every write); [displayName] is
+ *  display only; [score] is cosine similarity (higher = closer). */
+data class SnapCandidate(val cardId: String, val displayName: String, val score: Float)
+
+/**
+ * The pure-snapshot scanner state (Rev 6). Every scan is one deliberate shutter press; image recognition
+ * is primary and runs once per capture. Shortlist-first: even a confident match is presented as a pick-list
+ * until a sealed evaluation authorises automatic single Result.
+ *  [Ready]       - open viewfinder; the shutter is armed (QR still detected passively).
+ *  [Capturing]   - shutter pressed; grabbing the current frame (throttle-bypassed).
+ *  [Identifying] - the frozen still is being embedded (one inference).
+ *  [Shortlist]   - up to five distinct-card suggestions to confirm.
+ *  [Empty]       - nothing above the floor ([unavailable]=false) OR the matcher could not load
+ *                  ([unavailable]=true, fail-closed: never falls back to unrestricted OCR).
+ */
+sealed interface SnapState {
+    data object Ready : SnapState
+    data object Capturing : SnapState
+    data object Identifying : SnapState
+    data class Shortlist(val items: List<SnapCandidate>) : SnapState
+    data class Empty(val unavailable: Boolean) : SnapState
+}
+
+/** Which strip a reading came from - the card's name-text orientation. EVIDENCE for the recognition
+ *  policy (Phase-2a: weighted evidence by default), NOT a hard class gate. Shared by the OCR
+ *  extractor, the session reducer, the shared FrameSelector, and the reliability corpus/harness. */
+enum class Source { TOP, LEFT_270, RIGHT_90 }

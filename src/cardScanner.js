@@ -4,6 +4,7 @@
 // owns every DB write (ownedRepository stays the single source of truth), and
 // drives Codex navigation. On web / in the preview it degrades to a graceful stub.
 import { registerPlugin } from '@capacitor/core';
+import { createScannerRegistry } from './store/scannerBridgeRegistry.js';
 import { query } from './store/db.js';
 import { addOwnedCopies, addOwnedCopiesInSet, addWantedForItem } from './store/ownedRepository.js';
 import { parseDeckShare } from './store/deckShare.js';
@@ -16,6 +17,7 @@ const CardScanner = registerPlugin('CardScanner', {
     isAvailable: async () => ({ available: false }),
     scan: async () => ({ action: 'unavailable' }),
     addListener: async () => ({ remove() {} }),
+    respond: async () => {},
     removeAllListeners: async () => {},
   },
 });
@@ -83,14 +85,47 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
   // so overlapping same-card taps can't lose an increment; failures are counted and
   // surfaced once the scanner closes (the WebView is behind the Activity, so a toast
   // mid-scan wouldn't be seen).
+  // JS owns the session id AND every durable write, so JS is the only party that can say a write
+  // committed. Each add is admitted through the registry (dedupe, one mutation in flight, id-reuse
+  // rejection), performed, and then ACKNOWLEDGED back to native, which reports success only from that
+  // ack. Without this the sheet claimed "Added" before the write had happened - or ever failed.
+  const sessionId = `scan-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const registry = createScannerRegistry();
+  const ack = async (ev, ok, extra = {}) => {
+    try { await CardScanner.respond({ sessionId, requestId: ev.requestId, ok, ...extra }); } catch { /* native gone */ }
+  };
+
   let failed = 0, deckAdded = 0, deckBlocked = 0;
   const sub = await CardScanner.addListener('scanAction', async (ev) => {
+    // FAIL CLOSED: an event without correlation, or from another session, is not something this
+    // session can honestly acknowledge - so it is never written. Treating an uncorrelated event as
+    // "legacy and therefore fine" is exactly the fire-and-forget behaviour this replaced.
+    if (!ev.requestId || !ev.sessionId || ev.sessionId !== sessionId) return;
+    const fingerprint = `${ev.action}|${ev.cardId}|${ev.set || ''}|${ev.qty || 1}`;
+    const gate = registry.admit(ev.requestId, true, fingerprint);
+    if (gate.action === 'ignore') return;
+    if (gate.action === 'replay') { await ack(ev, gate.ack?.ok !== false, gate.ack?.extra || {}); return; }
+    if (gate.action === 'reject') { await ack(ev, false); return; }
+    let ok = false;
+    let extra = {};
     try {
       const n = Math.max(1, ev.qty || 1);   // collection/deck modes pick a quantity; universal +1s
       if (ev.action === 'deck') {
         // Deck mode: file the card in its home zone, capped by the rarity copy limit.
         const res = deckId ? await addScannedToDeck(deckId, ev.cardId, n) : { ok: false };
         if (res.ok) deckAdded += n; else deckBlocked += 1;
+        ok = !!res.ok;
+        if (ok) {
+          // Return the AUTHORITATIVE count so the sheet's remaining headroom reflects what the
+          // database actually holds, not what native assumed it would.
+          try {
+            const rows = await query(
+              'SELECT SUM(quantity) n FROM deck_entries WHERE deck_id=? AND card_id=?;', [deckId, ev.cardId],
+            );
+            const n2 = rows?.[0]?.n;
+            if (n2 != null) extra = { deckCount: Number(n2) };
+          } catch { /* count is a nicety; the ack itself is what matters */ }
+        }
       } else if (ev.action === 'collection') {
         // Collection mode sends the chosen printing (ev.set: auto for single-set,
         // user-picked for a reprint). Universal +1 sends none -> auto-file if the
@@ -98,16 +133,19 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
         const set = ev.set || soleSet(ev.cardId);
         if (set) await addOwnedCopiesInSet(ev.cardId, set, n);
         else await addOwnedCopies(ev.cardId, n);   // multi-set + no pick -> Unspecified
+        ok = true;
       } else if (ev.action === 'wishlist') {
         // A want names its collector item. The sheet sends the chosen set (auto for a single-set
         // card, picked for a reprint, and the button is disabled until one exists), so this
         // never has to guess. Without a set the card is not in the catalog, and there is no
         // honest item to want - so it counts as a failure rather than reporting success.
         const wset = ev.set || soleSet(ev.cardId);
-        if (wset) await addWantedForItem(ev.cardId, { set: wset, foil: false }, n);
+        if (wset) { await addWantedForItem(ev.cardId, { set: wset, foil: false }, n); ok = true; }
         else failed += 1;
       }
     } catch { failed += 1; }
+    registry.resolve(ev.requestId, { ok, extra }, true);
+    await ack(ev, ok, extra);
   });
 
   // The resolved reduced-motion preference (user setting OR OS `prefers-reduced-motion`,
@@ -117,7 +155,7 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
 
   try {
     const cards = await catalogForScan();
-    const res = await CardScanner.scan({ cards, mode, deckCounts, reduceMotion });
+    const res = await CardScanner.scan({ cards, mode, deckCounts, reduceMotion, sessionId });
     if (res?.action === 'codex' && res.cardId) {
       onOpenCard?.(res.cardId, res.name);
     } else if (res?.action === 'deckUrl' && res.url) {

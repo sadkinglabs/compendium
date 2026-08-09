@@ -59,18 +59,31 @@ collection/deck/list state.
 `reduceMotion`, `imagesDisabled`, `catalogVersion`, **`fontScale`** (the app's `--ui-scale`
 preference, handed off like `reduceMotion` and applied to Compose `Density` — Phase-1 checklist #5
 found the native scanner honours neither OS font size nor the in-app slider today).
-**Session state machine** (pure Kotlin reducer, unit-tested):
+**Session state machine** (pure Kotlin reducer, unit-tested — implemented + Codex-hardened):
 ```
-Searching → Reading → Confirming(candidate, score, margin, source, elapsed)
-          → Result(immutable snapshot) → Committing(requestId) → Saved → AwaitingRemoval → Searching
-Reading   → NeedsHelp ("couldn't identify")     // presence-gated, Phase 2b, added last
-Result    → Rejected("Not this card") → AwaitingRemoval
-Committing → RetryableError (Result + selections preserved)
+Searching → Confirming(candidate, sinceMs, observations)
+          → Result(immutable snapshot)
+          → Committing(requestId) → Saved(snapshot, opaque outcome) → Suppressed(COMMITTED) → Searching
+Committing → RetryableError → (RetryRequested) → Committing        // retry with a fresh id
+Committing → Result                                                // AckRejected / AckCancelled
+Result     → Suppressed(REJECTED)                                  // "Not this card"
+Suppressed → Result(alternate)                                     // a DIFFERENT card fully confirms
+Suppressed → Searching                                            // blocked card cleared (time AND obs)
+// NeedsHelp ("couldn't identify") is presence-gated, Phase 2b, added last.
 ```
-Properties: **time-based + minimum-observation** confirmation (not raw `minStreak`); **Result identity
-immutable while shown**; **analysis pauses while a Result/write is actionable** (stop the 350ms OCR/QR
-loop the VM currently ignores); **"Not this card" suppresses the rejected candidate until the frame
-clears**; **a failed write preserves the Result + selections**.
+Key corrections from the Codex review of the implemented reducer:
+- **`AwaitingRemoval` and `Rejected` are unified into one `Suppressed(blockedId, reason, …)`** that
+  carries an in-progress *alternate* confirmation. Suppression lifts ONLY when the blocked card clears
+  for a sustained interval (**time AND a minimum observation count** — `candidate==null` is "no
+  confident match", not proven absence, so OCR dropout can't release it) **or** a *different* card
+  **completes** confirmation. A single transient alternate frame can never lift suppression (the bug
+  where a stationary committed/rejected card could relock).
+- **The write lifecycle is complete:** `Saved` carries an opaque `CommitOutcome` (for authoritative
+  counts + `mutationId`/undo) before rearming; `AckCancelled` and mismatched/stale acks are handled;
+  `RetryRequested(newId)` drives the inline retry; **Dismiss cannot rearm while `Committing`/`Saved`**
+  (terminal scanner closure is the Activity's concern, not a reducer rearm).
+Properties: time+observation confirmation; Result identity immutable while shown/committing/saved;
+analysis pauses while a Result/write is actionable; one mutation in flight.
 
 ## 4. The bridge — transport, lifecycle, idempotency
 Concrete Capacitor transport (this is where idempotency actually lives):
@@ -102,6 +115,20 @@ Native        plugin routes the response to the ACTIVE Activity's reducer inbox
   `planId`**; native never holds the authoritative plan. `applyDeckImport(planId)` **re-validates /
   re-parses the original payload in JS** before committing — a plan object round-tripped through native
   is never trusted.
+
+**Implementation status + mandatory integration checkpoint.** Step 2 has delivered the *pure cores*
+of this section: the session reducer and BOTH idempotency registries (native `RequestRegistry` —
+`@Synchronized`, since Compose submissions and Capacitor responses arrive on different threads,
+and rejecting a reused request id after completion; JS `createScannerRegistry` — dedupe/replay with
+fingerprint-bound resolved ids so a reused id with a different operation is rejected, not replayed).
+**NOT yet built:** the typed request/ack payloads over the wire, `scannerRequest` / `CardScanner.respond`,
+JS-owned session resolution, the `ScannerSessionCoordinator`, and end-to-end stale-session
+enforcement. Those are a **mandatory integration checkpoint before Step 5** (device-tested); until it
+lands, **no end-to-end idempotency or JS stale-session claim holds** — only the pure cores are proven.
+The checkpoint MUST also make the JS fingerprint check **fail-closed** (Codex): a **canonical
+fingerprint is mandatory for mutations**, and a **missing or mismatched fingerprint is rejected for
+both pending and resolved ids** (today's registry only rejects when both fingerprints are non-null —
+tightened when the coordinator that guarantees canonical fingerprints lands).
 
 ## 5. Mutation contracts (JS repository ops)
 All are atomic, validate parent ownership + the JS-captured profile, query catalog truth themselves
@@ -180,13 +207,30 @@ regression vs policy OFF; (b) **zero** cross-class false locks across the comple
 meaningfully lower-end Android device**. If that evidence is not available, **evidence-weighting ships
 and hard exclusion stays deferred.** No arbitrary absolute recall percentage is chosen up front.
 
-## 8. Frozen, versioned corpus + metrics (Phase 2a foundation)
-A **frozen, versioned** device corpus with expected identity + negative labels, covering: empty
-frames; non-card printed text; similar-name pairs; both site orientations; multi-set reprints;
-sleeved/foil/glare; partial title strips; QR-only and QR-near-card frames; same-card
-removal/reinsertion sequences. **Metrics tracked:** per-class precision & recall, false-lock rate on
-negatives, lock latency p50/p95. A debug-only replay harness drives it. ("Zero site→Smite errors"
-alone is too narrow — it is one negative slice of this.)
+## 8. Frozen, versioned corpus + metrics (Phase 2a foundation) — reworked after Codex review
+**Envelope (v2).** A case is a sequence of per-frame **analyzer observations**: the full set of strip
+readings the extractor would emit that frame — each an `OcrCandidate` carrying its **exact `Source`**
+(`TOP`/`LEFT_270`/`RIGHT_90`, now moved to `scanner.model` and emitted by `StripExtractor` instead of
+a collapsed `isSite`) — plus an **optional QR** payload. This is exactly the evidence production hands
+the selector, so a noisy TOP reading competing with a good site edge, QR-only, and QR-near-card are
+all representable (the old single-`siteDetected` reading could not).
+**Shared selection.** A single pure `FrameSelector.selectCard(candidates, matcher)` is used by BOTH
+`ScannerViewModel` and the harness, so a policy that passes the harness behaves identically on-device;
+Step 4 evolves source weighting inside it and both callers inherit it. QR precedes OCR in both.
+**QR is terminal in replay** (as in production): a compendium deck/match link ends the case (production's `onLink` freezes and ignores later OCR), so a QR frame followed by card frames can't false-lock a card. The terminal-QR predicate is shared by `BarcodeReader`, `onLink`, and the harness (`ScannerQr.isCompendiumLink`).
+**Execution-bound provenance.** A single immutable `RunSpec` OWNS the catalog + matcher/reducer config + a **typed `SelectionPolicy`** and CONSTRUCTS the matcher replay runs against; it **defensively snapshots** the catalog (later caller mutation can't change what ran). A `Report`'s threshold/margin/catalog-digest/size are the values that actually executed, and its **policy id is derived from the typed policy `FrameSelector` actually consumed** — so a run can't be mislabelled (e.g. "hard-exclusion" while running baseline). The catalog digest is **order-preserving** (since `CardIndex` de-dupes keeping the first same-name reprint, order affects behaviour and must change the digest). The **terminal-QR classifier `ScannerQr.isCompendiumLink` is shared** by the analyzer boundary (`BarcodeReader`), `onLink`, and the harness, so production's QR-vs-OCR choice and replay's terminal-QR agree exactly.
+**Fail-closed + reproducible.** `CorpusValidator` rejects malformed corpora (duplicate ids,
+non-monotonic timestamps, empty frame lists, unknown expected identities) and the run **aborts** on an
+unknown predicted/expected class (no silent omission). Every `Report` pins **corpus digest, catalog
+digest + size, coverage, policy mode, matcher threshold/margin, reducer config, device/build, and the
+metric denominators**, so ON/OFF policy runs are provably comparable and content drift without a
+version bump is detectable. **Metrics:** per-class precision/recall, false-lock rate on negatives,
+lock latency p50/p95. Cover categories include OCR-dropout-while-present (null ≠ absence).
+**Off-device now (`seed-v2`, 5-card fixture catalog) vs device tier:** the harness + validator + seed
++ margin/QR cases are unit-tested off-device; the on-device **capture** UI (logging real readings into
+the frozen corpus against the full catalog) is the remaining device-gated part — and when it lands the
+harness/capture code moves to a **debug-only source set** and `BUILD.md` documents the workflow
+(deferred Minor). The 5-card seed is a framework demonstration + baseline, NOT a recall verdict.
 
 ## 9. Performance budgets (baseline + allowed regression, recorded before 2a completes)
 | Metric | Budget |
