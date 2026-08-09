@@ -19,7 +19,15 @@ object Catalog {
                 for (j in 0 until setsArr.length()) {
                     val s = setsArr.optJSONObject(j) ?: continue
                     val code = s.optString("code").takeIf { it.isNotBlank() } ?: continue
-                    sets.add(SetRef(s.optString("name").ifBlank { code }, code))
+                    // Finishes default to standard-only: an older/partial payload must not
+                    // offer a foil the catalog cannot store.
+                    sets.add(
+                        SetRef(
+                            s.optString("name").ifBlank { code }, code,
+                            standard = s.optBoolean("standard", true),
+                            foil = s.optBoolean("foil", false),
+                        ),
+                    )
                 }
             }
             out.add(CardRef(id, name, o.optBoolean("isSite", false), sets, o.optInt("limit", 99)))

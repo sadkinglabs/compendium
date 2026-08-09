@@ -6,7 +6,10 @@ import android.graphics.Rect
 enum class ScanKind { CARD, DECK, MATCH }
 
 /** One printing's set - name for display, code ('001'…) written to the ledger. */
-data class SetRef(val name: String, val code: String)
+/** A printing of a card, and which finishes it EXISTS in. The recogniser matches artwork and can
+ *  never see foil, so [foil]/[standard] only decide what the sheet may OFFER: the foil toggle is
+ *  hidden when a printing has no foil, and locked on when foil is the only way it was printed. */
+data class SetRef(val name: String, val code: String, val standard: Boolean = true, val foil: Boolean = false)
 
 /** A locked scan result: a catalog card (cardId + its sets), or a shared deck /
  *  match QR (url). For a QR the native side does NOT decode the payload - it hands

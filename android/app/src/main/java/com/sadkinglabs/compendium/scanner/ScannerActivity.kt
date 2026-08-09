@@ -133,8 +133,8 @@ class ScannerActivity : ComponentActivity() {
                     deckMode = deckMode,
                     reduceMotion = reduceMotion,
                     onSearchCodex = { rec -> onSearchCodex(rec) },
-                    onAdd = { rec, action, set -> onAdd(rec, action, set) },
-                    onSaveCollection = { rec, qty, set -> onSaveCollection(rec, qty, set) },
+                    onAdd = { rec, action, set, foil -> onAdd(rec, action, set, foil) },
+                    onSaveCollection = { rec, qty, set, foil -> onSaveCollection(rec, qty, set, foil) },
                     onAddToDeck = { rec, qty -> onAddToDeck(rec, qty) },
                     onSaveDeck = { rec -> onShareLink(rec, "deckUrl") },
                     onImportMatch = { rec -> onShareLink(rec, "matchUrl") },
@@ -180,21 +180,25 @@ class ScannerActivity : ComponentActivity() {
         return true
     }
 
-    private fun onAdd(rec: Recognition, action: String, set: String? = null) {
+    private fun onAdd(rec: Recognition, action: String, set: String? = null, foil: Boolean = false) {
         // `set` carries the chosen printing for wishlist adds - a want names a collector item
         // under schema v11, and dropping the selection here would make the picker decorative.
         val js = JSObject().put("action", action).put("cardId", rec.cardId).put("name", rec.title)
         if (set != null) js.put("set", set)
-        submitWrite(js, rec.title, action)
+        // The finish the collector DECLARED on the sheet (the recogniser cannot see foil).
+        if (foil) js.put("foil", true)
+        // Name the finish back: the confirmation is the only place the declaration is echoed.
+        submitWrite(js, if (foil) "Foil ${rec.title}" else rec.title, action)
     }
 
     /** Collection mode: emit +qty owned for the recognised card, onto the chosen
      *  printing (set code) when one was picked/auto-selected. The scanner stays open
      *  (the screen dismisses the sheet) so the build-your-collection loop keeps going. */
-    private fun onSaveCollection(rec: Recognition, qty: Int, set: String?) {
+    private fun onSaveCollection(rec: Recognition, qty: Int, set: String?, foil: Boolean = false) {
         val js = JSObject().put("action", "collection").put("cardId", rec.cardId).put("name", rec.title).put("qty", qty)
         if (set != null) js.put("set", set)
-        submitWrite(js, rec.title, "collection")
+        if (foil) js.put("foil", true)
+        submitWrite(js, if (foil) "Foil ${rec.title}" else rec.title, "collection")
     }
 
     /** Deck mode: emit +qty of the recognised card to the open deck (JS files it in

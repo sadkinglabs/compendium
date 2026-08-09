@@ -648,16 +648,20 @@ async function addCopies(cardId, col, n) {
 // Atomic +N owned onto a specific PRINTING (set-coded row). Same overlap-safe
 // upsert as addOwnedCopies, but on the '001'/'002'/… row - the scanner uses this
 // to file a recognised single-set card under its (only) set instead of Uncategorised.
-export async function addOwnedCopiesInSet(cardId, set, n = 1) {
+export async function addOwnedCopiesInSet(cardId, set, n = 1, foil = false) {
   if (!cardId || !set || !(n > 0)) return;
   const pid = activeProfileId();
   const now = nowIso();
+  // Ownership is per collector ITEM, so the finish is part of the row identity: a foil copy
+  // upserts onto '001:f', a standard one onto '001'. The scanner can never read foil off a
+  // photograph, so this only ever reflects a finish the user declared on the sheet.
+  const slug = canonicalPrinting(set, foil);
   await run(
     `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
      VALUES(?,?,?,?,?,0,'',?,?)
      ON CONFLICT(profile_id,card_id,variant_slug)
      DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-    [uuid(), pid, cardId, set, n, now, now]
+    [uuid(), pid, cardId, slug, n, now, now]
   );
   bump();
 }

@@ -48,6 +48,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -74,9 +76,9 @@ fun RecognitionCard(
     deckMode: Boolean,
     reveal: Float,
     onSearchCodex: () -> Unit,
-    onAddCollection: (String?) -> Unit,
-    onAddWishlist: (String?) -> Unit,
-    onSaveCollection: (Int, String?) -> Unit,
+    onAddCollection: (String?, Boolean) -> Unit,
+    onAddWishlist: (String?, Boolean) -> Unit,
+    onSaveCollection: (Int, String?, Boolean) -> Unit,
     onAddToDeck: (Int) -> Unit,
     onSaveDeck: () -> Unit,
     onImportMatch: () -> Unit,
@@ -94,6 +96,10 @@ fun RecognitionCard(
     // Collection-mode set choice: a single-set card auto-selects; a reprint starts
     // null (a pick is required); an unknown card has no sets (files Unspecified).
     var selectedSet by remember(key) { mutableStateOf(if (rec.sets.size == 1) rec.sets[0].code else null) }
+    // Foil is a per-card declaration and resets with the card. It is deliberately NOT reset when
+    // the printing changes: the reading is derived below, so switching to a printing with no foil
+    // simply ignores it, and switching back restores what the collector already said.
+    var foil by remember(key) { mutableStateOf(false) }
     val eyebrow: String; val title: String; val subtitle: String?
     when (rec.kind) {
         ScanKind.CARD -> { eyebrow = "RECOGNISED CARD"; title = rec.title; subtitle = null }
@@ -183,6 +189,19 @@ fun RecognitionCard(
                         else -> null
                     }
                     val ready = rec.sets.size <= 1 || selectedSet != null
+                    // FOIL IS DECLARED, NOT RECOGNISED. The matcher compares artwork, and a foil
+                    // and a standard copy share it - so the scanner will never identify a foil on
+                    // its own. This toggle is how a collector says so, on the printing they picked.
+                    // Derived, not stored: a printing with no foil can't be toggled on, and a
+                    // foil-only printing (every Promotional card) is stated rather than asked.
+                    val chosen = rec.sets.firstOrNull { it.code == effectiveSet }
+                    val foilOnly = chosen != null && chosen.foil && !chosen.standard
+                    val canFoil = chosen?.foil == true
+                    val effectiveFoil = if (foilOnly) true else canFoil && foil
+                    if (canFoil) {
+                        FoilChoice(on = effectiveFoil, locked = foilOnly, accent = accent) { foil = it }
+                        Spacer(Modifier.height(18.dp))
+                    }
                     // WISHLIST NEEDS A REAL SET, ownership does not.
                     //
                     // A card the catalog places in no set can still be OWNED - it goes to the
@@ -198,7 +217,7 @@ fun RecognitionCard(
                         PrimaryAction(
                             if (qty == 1) "Add 1 copy" else "Add $qty copies",
                             Icons.Filled.Add, accent, enabled = ready,
-                        ) { onSaveCollection(qty, effectiveSet) }
+                        ) { onSaveCollection(qty, effectiveSet, effectiveFoil) }
                         // Scanning a stack sorts into two piles - what you have, and what you still want -
                         // so the wishlist has to be reachable from the collection loop too. Without it the
                         // only route was to leave, scan again in universal mode, and come back. Adds ONE
@@ -206,7 +225,7 @@ fun RecognitionCard(
                         // selected printing, and stays disabled until a reprint has one chosen.
                         Spacer(Modifier.height(10.dp))
                         OutlinedButton(
-                            onClick = { onAddWishlist(effectiveSet) },
+                            onClick = { onAddWishlist(effectiveSet, effectiveFoil) },
                             enabled = wishlistReady,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                         ) {
@@ -218,7 +237,7 @@ fun RecognitionCard(
                         PrimaryAction("Search Codex", Icons.Filled.Search, accent, onClick = onSearchCodex)
                         Spacer(Modifier.height(10.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            OutlinedButton(onClick = { onAddCollection(effectiveSet) }, enabled = ready, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                            OutlinedButton(onClick = { onAddCollection(effectiveSet, effectiveFoil) }, enabled = ready, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
                                 Icon(Icons.Filled.Add, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Collection")
@@ -227,7 +246,7 @@ fun RecognitionCard(
                             // action carries the SAME selected printing the collection action
                             // does - and is disabled for a reprint until one is chosen, rather
                             // than silently discarding the user's pick.
-                            OutlinedButton(onClick = { onAddWishlist(effectiveSet) }, enabled = wishlistReady, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                            OutlinedButton(onClick = { onAddWishlist(effectiveSet, effectiveFoil) }, enabled = wishlistReady, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
                                 Icon(Icons.Filled.FavoriteBorder, contentDescription = null)
                                 Spacer(Modifier.width(6.dp))
                                 Text("Wishlist")
@@ -259,6 +278,58 @@ private fun PrimaryAction(label: String, icon: ImageVector, accent: Color, enabl
         Icon(icon, contentDescription = null)
         Spacer(Modifier.width(8.dp))
         Text(label)
+    }
+}
+
+/**
+ * Finish declaration for the chosen printing. Two readings, never a lie:
+ *  - [locked]: the printing exists ONLY as foil, so it states the fact and cannot be turned off.
+ *  - otherwise: a two-up Standard / Foil choice, defaulting to Standard.
+ * Only rendered when the printing actually has a foil - a card with no foil never sees this.
+ */
+@Composable
+private fun FoilChoice(on: Boolean, locked: Boolean, accent: Color, onPick: (Boolean) -> Unit) {
+    val gilt = Brush.verticalGradient(listOf(Color(0xFFD8B872), Color(0xFFB8954F)))
+    Text("FINISH", color = accent, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 2.sp)
+    Spacer(Modifier.height(11.dp))
+    if (locked) {
+        Row(
+            Modifier
+                .clip(CircleShape).background(gilt)
+                .heightIn(min = 44.dp).padding(horizontal = 16.dp)
+                .semantics { contentDescription = "This printing exists only as foil" },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = null, tint = OnPillar, modifier = Modifier.size(15.dp))
+            Text("FOIL ONLY", color = OnPillar, fontSize = 12.5f.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2f.sp)
+        }
+        return
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        for ((label, isFoil) in listOf("STANDARD" to false, "FOIL" to true)) {
+            val sel = on == isFoil
+            Row(
+                Modifier
+                    .weight(1f)
+                    .clip(CircleShape)
+                    .selectable(selected = sel, role = Role.RadioButton) { onPick(isFoil) }
+                    .then(if (sel) Modifier.background(gilt) else Modifier.background(Color(0x14DCB86F)))
+                    .border(1.dp, if (sel) Color(0xFFE3C589) else accent.copy(alpha = 0.35f), CircleShape)
+                    .heightIn(min = 44.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                if (sel) {
+                    Icon(Icons.Filled.Check, contentDescription = null, tint = OnPillar, modifier = Modifier.size(15.dp))
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text(
+                    label, color = if (sel) OnPillar else accent,
+                    fontSize = 12.5f.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2f.sp,
+                )
+            }
+        }
     }
 }
 

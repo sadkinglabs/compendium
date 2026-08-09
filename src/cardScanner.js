@@ -7,6 +7,7 @@ import { registerPlugin } from '@capacitor/core';
 import { createScannerRegistry } from './store/scannerBridgeRegistry.js';
 import { query } from './store/db.js';
 import { addOwnedCopies, addOwnedCopiesInSet, addWantedForItem } from './store/ownedRepository.js';
+import { printingFinishes } from './store/printingRows.js';
 import { parseDeckShare } from './store/deckShare.js';
 import { importDeckShare, addScannedToDeck, copyLimit } from './store/deckRepository.js';
 import { toast } from './feedback.js';
@@ -26,15 +27,35 @@ const CardScanner = registerPlugin('CardScanner', {
 // collection-mode printing picker). ORDER BY is_site, card_id keeps reprints adjacent
 // so the native de-dupe-by-name is deterministic (prevents the identical-name deadlock).
 async function catalogForScan() {
-  const rows = await query('SELECT card_id, name, is_site, sets, rarity, rules_text FROM cards ORDER BY is_site ASC, card_id ASC;');
+  const rows = await query('SELECT card_id, name, is_site, sets, variants, rarity, rules_text FROM cards ORDER BY is_site ASC, card_id ASC;');
   return rows
     .filter((r) => r.card_id && r.name)
     .map((r) => {
       let sets = [];
       try { sets = JSON.parse(r.sets || '[]'); } catch { /* keep [] */ }
+      // Which finishes each printing EXISTS in, so the sheet's foil toggle offers only real
+      // collector items: hidden where a printing has no foil, locked ON where foil is the only
+      // way it was printed. The scanner cannot SEE foil - the recogniser matches artwork, which a
+      // foil and a standard copy share - so the finish is always the user's declaration.
+      //
+      // `printingFinishes` is the ONE place the catalog's three labels (Standard/Foil/Rainbow)
+      // become the binary v11 collector finish; Rainbow is a foil treatment by owner ruling. A
+      // local re-implementation here would silently mis-file every rainbow-only promo as standard.
+      // It is fail-closed and throws on catalog drift: hide the toggle rather than take a scan
+      // down, which also refuses to offer an item the ledger could not store.
       // limit = the deck-building copy cap (rarity, or 99 for "any number of"),
       // so deck-mode can gate the stepper at scan time without a DB round-trip.
-      return { id: r.card_id, name: r.name, isSite: !!r.is_site, sets, limit: copyLimit(r) };
+      return {
+        id: r.card_id,
+        name: r.name,
+        isSite: !!r.is_site,
+        sets: sets.map((s) => {
+          let f = { nonFoil: true, foil: false };
+          try { f = printingFinishes(r, s?.code); } catch { /* drift -> standard only */ }
+          return { ...s, standard: f.nonFoil, foil: f.foil };
+        }),
+        limit: copyLimit(r),
+      };
     });
 }
 
@@ -67,29 +88,24 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
   // are foil-only - every Promotional card is - so wanting a "standard" copy of one asks for an item the
   // catalog does not contain and the write fails. Scanning a promo into the wishlist errored for exactly
   // this reason.
-  const finishesById = new Map();   // card_id -> Map(setCode -> { standard: bool, foil: bool })
+  const cardById = new Map();       // card_id -> the row, for the strict finish reader
   try {
     const setRows = await query('SELECT card_id, sets, variants FROM cards;');
     for (const r of setRows) {
+      cardById.set(r.card_id, r);
       try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ }
-      try {
-        const bySet = new Map();
-        for (const v of JSON.parse(r.variants || '[]')) {
-          const code = v?.set;
-          if (!code) continue;
-          const cur = bySet.get(code) || { standard: false, foil: false };
-          if (String(v.finish).toLowerCase() === 'foil') cur.foil = true; else cur.standard = true;
-          bySet.set(code, cur);
-        }
-        finishesById.set(r.card_id, bySet);
-      } catch { /* skip */ }
     }
   } catch { /* fall back to Unspecified for all */ }
-  // Prefer a standard copy; fall back to foil when that is the only way the printing exists.
+  // The finish to use when the sheet did not declare one: prefer standard, and fall back to foil
+  // only when that is the sole way the printing exists. Same canonical reader as the catalog above
+  // (Rainbow counts as foil), fail-closed to standard on catalog drift.
   const wantFinish = (cardId, set) => {
-    const f = finishesById.get(cardId)?.get(set);
-    if (!f) return false;
-    return f.standard ? false : !!f.foil;
+    const row = cardById.get(cardId);
+    if (!row) return false;
+    try {
+      const f = printingFinishes(row, set);
+      return f.nonFoil ? false : !!f.foil;
+    } catch { return false; }
   };
   const soleSet = (cardId) => { const s = setsById.get(cardId); return s && s.length === 1 && s[0]?.code ? s[0].code : null; };
 
@@ -125,7 +141,7 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
     // session can honestly acknowledge - so it is never written. Treating an uncorrelated event as
     // "legacy and therefore fine" is exactly the fire-and-forget behaviour this replaced.
     if (!ev.requestId || !ev.sessionId || ev.sessionId !== sessionId) return;
-    const fingerprint = `${ev.action}|${ev.cardId}|${ev.set || ''}|${ev.qty || 1}`;
+    const fingerprint = `${ev.action}|${ev.cardId}|${ev.set || ''}|${ev.foil ? 'f' : ''}|${ev.qty || 1}`;
     const gate = registry.admit(ev.requestId, true, fingerprint);
     if (gate.action === 'ignore') return;
     if (gate.action === 'replay') { await ack(ev, gate.ack?.ok !== false, gate.ack?.extra || {}); return; }
@@ -155,7 +171,8 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
         // user-picked for a reprint). Universal +1 sends none -> auto-file if the
         // card is single-set, else Unspecified.
         const set = ev.set || soleSet(ev.cardId);
-        if (set) await addOwnedCopiesInSet(ev.cardId, set, n);
+        // `ev.foil` is the sheet's foil toggle: a declaration, never a recognition result.
+        if (set) await addOwnedCopiesInSet(ev.cardId, set, n, !!ev.foil || wantFinish(ev.cardId, set));
         else await addOwnedCopies(ev.cardId, n);   // multi-set + no pick -> Unspecified
         ok = true;
       } else if (ev.action === 'wishlist') {
@@ -165,7 +182,8 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
         // honest item to want - so it counts as a failure rather than reporting success.
         const wset = ev.set || soleSet(ev.cardId);
         if (wset) {
-          await addWantedForItem(ev.cardId, { set: wset, foil: wantFinish(ev.cardId, wset) }, n);
+          // Toggle wins where the user set it; otherwise fall back to the only finish that exists.
+          await addWantedForItem(ev.cardId, { set: wset, foil: !!ev.foil || wantFinish(ev.cardId, wset) }, n);
           ok = true;
         }
         else failed += 1;
