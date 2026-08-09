@@ -83,6 +83,44 @@ described the retired live-OCR guide frame and `CameraOverlay.kt`; it now descri
   `GiltStamp` actually renders - the double rule and halo - with the ink-shadow / sheen / corner-boss layers
   and the retired "recognising" haptic explicitly marked as not rendered.
 
+## Round-5: the device checklist, and what it found
+
+The requested Pixel write-path test was run. It passed, but only after it exposed a serious defect that
+static review and every green test suite had missed.
+
+**A regression I caused, found on device: the scanner could only be launched once per app run.** An earlier
+bulk text edit of mine - replacing everything between two markers to extract the correction-store codec -
+**silently deleted `ScannerActivity.onDestroy`**, which was the only place the `cancelled` terminal was
+sent. It compiled because an override is optional and nothing referenced it. From that commit onward no
+session ever terminated: the retained `scan()` call never resolved, the plugin's one-scan-at-a-time flag was
+never released, and every later launch was refused as busy until the app was killed.
+
+I misdiagnosed it three times before instrumenting the lifecycle and reading the log, which found it
+immediately. Restored, with `onStop` also finishing the Activity - navigating away by gesture only stops it,
+and leaving the scanner should end the scan. **Please sweep for other collateral from that bulk edit: I
+cannot assume `onDestroy` was the only casualty.**
+
+Also in this range, all found or prompted by the device run:
+
+- **A missing acknowledgement could trap the user.** The safety gates protecting a pending write had no way
+  to give up: `writing` stayed true for ever, disabling the close control, swallowing Back and suppressing
+  the result. Writes now time out (6s) and release the UI as failed.
+- **The success notice cancelled itself.** It ran in a `LaunchedEffect` keyed on state it cleared first,
+  which changed the key and killed the coroutine before the toast could show - so writes committed
+  silently. Results are now buffered one-shot events with a single long-lived collector.
+- **A stale session is reclaimable.** If `active` is set but no scanner Activity is alive, the flag is
+  reclaimed rather than blocking every future launch.
+- **The confirmation is now the app's toast**, not Material's: same motion as `.cx-toast` (in from -10dp at
+  0.96 scale over 260ms, out the way it came over 200ms), same gradient plate and gold hairline, moved off
+  the bottom because it occluded the shutter and the loop is scan-confirm-scan.
+- **Collection mode had no wishlist action.** Wanting a card meant leaving the collection loop, reopening in
+  universal mode and rescanning. The sheet now offers it alongside the copies action, same printing rules.
+
+**Device checklist results** (Pixel 9 Pro XL, owner-run): collection write PASS; deck write and
+authoritative headroom PASS; rapid double-tap PASS (one copy); Back during a pending write PASS; wishlist
+write - initially impossible, now added and PASS; forced write failure NOT REPRODUCIBLE because the sheet
+already blocks at the copy limit before submission, so the failure path is a fallback behind a guard.
+
 ## Verification
 
 - Android unit tests pass (the correction-store codec now has 13 covering round-trip, absent store, wrong
