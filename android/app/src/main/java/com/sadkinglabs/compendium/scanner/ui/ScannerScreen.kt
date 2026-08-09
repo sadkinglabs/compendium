@@ -27,11 +27,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
@@ -192,6 +194,7 @@ fun ScannerScreen(
             Text(
                 status, color = Color(0xFFEFE7D8), fontSize = 14.5.sp,
                 modifier = Modifier
+                    .semantics { liveRegion = LiveRegionMode.Polite }
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(top = 12.dp, start = 56.dp, end = 56.dp),
@@ -357,7 +360,7 @@ private fun SearchOverlay(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClose)
+                Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClose)
                     .semantics { contentDescription = "Back to scanning" },
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Filled.Close, contentDescription = null, tint = PillarGold, modifier = Modifier.size(20.dp)) }
@@ -372,7 +375,10 @@ private fun SearchOverlay(
                     value = q, onValueChange = { q = it }, singleLine = true,
                     textStyle = TextStyle(color = Color(0xFFEFE7D8), fontSize = 16.sp),
                     cursorBrush = SolidColor(PillarGold),
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(focus)
+                        .semantics { contentDescription = "Search cards by name" },
                 )
             }
         }
@@ -383,8 +389,10 @@ private fun SearchOverlay(
                     c.displayName, color = Color(0xFFEFE7D8), fontSize = 16.sp,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)          // the floor is the ROW, not just its padding
                         .clip(RoundedCornerShape(8.dp))
                         .clickable { onPick(c.cardId) }
+                        .wrapContentHeight(Alignment.CenterVertically)
                         .padding(vertical = 12.dp, horizontal = 8.dp)
                         .semantics { contentDescription = "Select ${c.displayName}" },
                 )
@@ -607,8 +615,10 @@ private fun SnapshotPanel(
                     c.displayName, color = Color(0xFFEFE7D8), fontSize = 16.sp,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .heightIn(min = 48.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .clickable { onPick(c.cardId) }
+                        .wrapContentHeight(Alignment.CenterVertically)
                         .padding(vertical = 12.dp, horizontal = 8.dp)
                         .semantics { contentDescription = "Select ${c.displayName}" },
                 )
