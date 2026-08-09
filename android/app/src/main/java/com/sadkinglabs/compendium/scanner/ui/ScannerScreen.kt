@@ -288,10 +288,14 @@ fun ScannerScreen(
         LaunchedEffect(Unit) {
             viewModel.writeEvents.collect { outcome ->
                 if (outcome.ok) onDismissSheet()
+                // Name the destination: "saved" does not say where it went, and in deck mode the
+                // deck's own name is the only unambiguous answer.
+                val deck = com.sadkinglabs.compendium.scanner.ScannerChannel.deckName
                 val what = when (outcome.kind) {
-                    "wishlist" -> "${outcome.label} added to wishlist"
-                    "deck" -> "${outcome.label} added to deck"
-                    else -> "${outcome.label} saved"
+                    "wishlist" -> "${outcome.label} added to Wishlist"
+                    "deck" -> if (deck.isNotBlank()) "${outcome.label} added to $deck"
+                              else "${outcome.label} added to deck"
+                    else -> "${outcome.label} added to Collection"
                 }
                 post(
                     when (outcome.status) {

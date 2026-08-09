@@ -47,7 +47,7 @@ async function catalogForScan() {
  * overlay) or 'collection' (a focused build-your-collection loop: identify, pick a
  * quantity, Add, keep scanning). Safe on web (shows a hint and returns).
  */
-export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onChanged, deckId = null, mode = 'universal' } = {}) {
+export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onChanged, deckId = null, deckName = '', mode = 'universal' } = {}) {
   if (!isNative()) {
     toast('Card scanning is available in the installed app.');
     return;
@@ -63,10 +63,34 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
   // reprinted across sets (Alpha/Beta) are ambiguous from the name alone, so they
   // fall back to Unspecified. Built once, up front (card_id -> [{name,code}]).
   const setsById = new Map();
+  // Which finishes each printing actually EXISTS in. A want names a collector item, and some printings
+  // are foil-only - every Promotional card is - so wanting a "standard" copy of one asks for an item the
+  // catalog does not contain and the write fails. Scanning a promo into the wishlist errored for exactly
+  // this reason.
+  const finishesById = new Map();   // card_id -> Map(setCode -> { standard: bool, foil: bool })
   try {
-    const setRows = await query('SELECT card_id, sets FROM cards;');
-    for (const r of setRows) { try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ } }
+    const setRows = await query('SELECT card_id, sets, variants FROM cards;');
+    for (const r of setRows) {
+      try { setsById.set(r.card_id, JSON.parse(r.sets || '[]')); } catch { /* skip */ }
+      try {
+        const bySet = new Map();
+        for (const v of JSON.parse(r.variants || '[]')) {
+          const code = v?.set;
+          if (!code) continue;
+          const cur = bySet.get(code) || { standard: false, foil: false };
+          if (String(v.finish).toLowerCase() === 'foil') cur.foil = true; else cur.standard = true;
+          bySet.set(code, cur);
+        }
+        finishesById.set(r.card_id, bySet);
+      } catch { /* skip */ }
+    }
   } catch { /* fall back to Unspecified for all */ }
+  // Prefer a standard copy; fall back to foil when that is the only way the printing exists.
+  const wantFinish = (cardId, set) => {
+    const f = finishesById.get(cardId)?.get(set);
+    if (!f) return false;
+    return f.standard ? false : !!f.foil;
+  };
   const soleSet = (cardId) => { const s = setsById.get(cardId); return s && s.length === 1 && s[0]?.code ? s[0].code : null; };
 
   // Deck mode: the deck's CURRENT per-card counts, so the recognition sheet can
@@ -140,7 +164,10 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
         // never has to guess. Without a set the card is not in the catalog, and there is no
         // honest item to want - so it counts as a failure rather than reporting success.
         const wset = ev.set || soleSet(ev.cardId);
-        if (wset) { await addWantedForItem(ev.cardId, { set: wset, foil: false }, n); ok = true; }
+        if (wset) {
+          await addWantedForItem(ev.cardId, { set: wset, foil: wantFinish(ev.cardId, wset) }, n);
+          ok = true;
+        }
         else failed += 1;
       }
     } catch { failed += 1; }
@@ -155,7 +182,7 @@ export async function launchScanner({ onOpenCard, onOpenDeck, onImportMatch, onC
 
   try {
     const cards = await catalogForScan();
-    const res = await CardScanner.scan({ cards, mode, deckCounts, reduceMotion, sessionId });
+    const res = await CardScanner.scan({ cards, mode, deckCounts, reduceMotion, sessionId, deckName });
     if (res?.action === 'codex' && res.cardId) {
       onOpenCard?.(res.cardId, res.name);
     } else if (res?.action === 'deckUrl' && res.url) {

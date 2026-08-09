@@ -80,6 +80,7 @@ class CardScannerPlugin : Plugin() {
         // JS owns the session id: native never invents one, so an ack can always be attributed to the
         // session that actually issued the request.
         val sessionId = call.getString("sessionId") ?: ""
+        val deckName = call.getString("deckName") ?: ""
 
         // Build the index off the caller thread, then hand off + launch. Any failure in here MUST
         // release `active`, or one bad startup would make the scanner unlaunchable for the whole session.
@@ -99,6 +100,7 @@ class CardScannerPlugin : Plugin() {
             ScannerChannel.deckCounts = counts
             ScannerChannel.reduceMotion = reduceMotion
             ScannerChannel.sessionId = sessionId
+            ScannerChannel.deckName = deckName
             ScannerChannel.requests = RequestRegistry(sessionId)
             ScannerChannel.onEvent = { js -> notifyListeners("scanAction", js) }
             ScannerChannel.onTerminal = { js -> resolveOnce(js) }

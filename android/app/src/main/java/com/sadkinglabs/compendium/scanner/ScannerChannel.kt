@@ -31,6 +31,9 @@ object ScannerChannel {
      *  identify -> pick a quantity -> Add -> keep scanning). */
     @Volatile var mode: String = "universal"
 
+    /** The open deck's name in deck mode, so a confirmation can say WHICH deck a card went to. */
+    @Volatile var deckName: String = ""
+
     /** Deck mode: the open deck's per-card counts (cardId -> qty across all zones).
      *  Seeded from JS at scan start and incremented as deck-adds stream this session,
      *  so the recognition sheet can gate "add N" at (card limit − already in deck)
@@ -82,6 +85,7 @@ object ScannerChannel {
         onEvent = null
         onTerminal = null
         mode = "universal"
+        deckName = ""
         deckCounts = ConcurrentHashMap()
         reduceMotion = false
     }

@@ -240,7 +240,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
             <Fab key="search" variant="deck" icon={<FabGlyph kind="search" />}
               label="Search all cards" onClick={onAddCards} />
             <Fab key="add" variant="lib" icon={<FabGlyph kind="add" />} className="fab-stacked" label="Add tools" items={[
-              { label: 'Add with scanner', icon: CameraSvg, onClick: () => launchScanner({ mode: 'deck', deckId: deckOpen.id, onOpenCard: onOpenCodex, onChanged }) },
+              { label: 'Add with scanner', icon: CameraSvg, onClick: () => launchScanner({ mode: 'deck', deckId: deckOpen.id, deckName: deckOpen.name || '', onOpenCard: onOpenCodex, onChanged }) },
               { label: 'Add from text', icon: TextImportSvg, onClick: () => setTextAddOpen(true) },
             ]} />
           </>
