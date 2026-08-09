@@ -42,6 +42,7 @@ class CardScannerPlugin : Plugin() {
             // an Activity that could not reach onDestroy) would otherwise make the scanner permanently
             // unlaunchable - the user sees "Scanner error" for ever with no way back. If no scanner
             // Activity is alive, the flag is stale: reclaim it rather than refusing.
+            android.util.Log.i("ScannerVisual", "scan REJECTED as busy; activityAlive=${ScannerActivity.isAlive()}")
             if (ScannerActivity.isAlive()) {
                 call.reject("A scan is already in progress", "busy")
                 return
@@ -121,7 +122,11 @@ class CardScannerPlugin : Plugin() {
     }
 
     private fun resolveOnce(js: JSObject) {
-        if (!terminated.compareAndSet(false, true)) return
+        if (!terminated.compareAndSet(false, true)) {
+            android.util.Log.i("ScannerVisual", "resolveOnce IGNORED (already terminated)")
+            return
+        }
+        android.util.Log.i("ScannerVisual", "resolveOnce -> releasing active; call=${pendingCall != null}")
         val call = pendingCall
         pendingCall = null
         if (call != null) {

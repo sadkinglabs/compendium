@@ -37,10 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarDuration
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -69,7 +65,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -112,8 +111,10 @@ fun ScannerScreen(
     val lastLearned by viewModel.lastLearned.collectAsStateWithLifecycle()
     val writing by viewModel.writing.collectAsStateWithLifecycle()
 
-    val snackbarHost = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    // Confirmations are shown as a gilt notice near the top, NOT a Material snackbar over the shutter -
+    // the shutter is the one control that must never be occluded, since the loop is scan-confirm-scan.
+    var notice by remember { mutableStateOf<Notice?>(null) }
 
     val reveal = remember(lockEvent) { Animatable(if (reduceMotion) 1f else 0f) }
     LaunchedEffect(lockEvent) { if (lockEvent > 0 && !reduceMotion) reveal.animateTo(1f, tween(650)) }
@@ -141,7 +142,7 @@ fun ScannerScreen(
                     CameraController.bind(
                         ctx, lifecycleOwner, pv,
                         viewModel.analysisExecutor, viewModel.analyzer,
-                    ) { scope.launch { snackbarHost.showSnackbar("Couldn't start the camera - close and try again.") } }
+                    ) { notice = Notice("Couldn't start the camera - close and try again") }
                     pv
                 },
             )
@@ -179,7 +180,7 @@ fun ScannerScreen(
             is SnapState.Shortlist -> "Couldn't be certain - pick the match"
             is SnapState.Empty -> if (s.unavailable) "Visual match unavailable" else ""
         }
-        if (granted && sheet == null && status.isNotEmpty()) {
+        if (granted && sheet == null && notice == null && status.isNotEmpty()) {
             Text(
                 status, color = Color(0xFFEFE7D8), fontSize = 14.5.sp,
                 modifier = Modifier
@@ -275,12 +276,8 @@ fun ScannerScreen(
         // only place a write is reported - and the sheet closes only on a committed write.
         LaunchedEffect(Unit) {
             viewModel.writeEvents.collect { (ok, label) ->
-                if (ok) {
-                    onDismissSheet()
-                    snackbarHost.showSnackbar("Saved $label")
-                } else {
-                    snackbarHost.showSnackbar("Couldn't save $label - try again")
-                }
+                if (ok) onDismissSheet()
+                notice = if (ok) Notice("$label saved") else Notice("Couldn't save $label", "Retry") { }
             }
         }
 
@@ -295,20 +292,15 @@ fun ScannerScreen(
         // otherwise leave the mistake in place.
         LaunchedEffect(lastLearned) {
             val learned = lastLearned ?: return@LaunchedEffect
-            val res = snackbarHost.showSnackbar(
-                message = "Learned ${learned.displayName}",
-                actionLabel = "Undo",
-                duration = SnackbarDuration.Short,
-            )
-            if (res == SnackbarResult.ActionPerformed) viewModel.undoLastCorrection() else viewModel.clearLastLearned()
+            notice = Notice("Learned ${learned.displayName}", "Undo") { viewModel.undoLastCorrection() }
+            viewModel.clearLastLearned()
         }
 
-        SnackbarHost(
-            snackbarHost,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .windowInsetsPadding(WindowInsets.safeDrawing)
-                .padding(bottom = 8.dp),
+        NoticeBar(
+            notice = notice,
+            reduceMotion = reduceMotion,
+            onDone = { notice = null },
+            modifier = Modifier.align(Alignment.TopCenter),
         )
     }
 }
@@ -425,6 +417,62 @@ private fun GiltStamp(reveal: Float, aspect: Float, modifier: Modifier = Modifie
                 size = Size(w - inset * 2, h - inset * 2),
                 cornerRadius = CornerRadius(r * 0.6f, r * 0.6f),
                 style = Stroke(width = 1.dp.toPx()),
+            )
+        }
+    }
+}
+
+/** A transient confirmation. [action] is optional; tapping it runs [onAction] and dismisses. */
+private data class Notice(val message: String, val action: String? = null, val onAction: () -> Unit = {})
+
+/**
+ * The scanner's confirmation surface, in the app's own language rather than Material's: an ink plate with
+ * the gilt double-rule, parchment text, Cinzel for the action. It sits at the TOP because the shutter owns
+ * the bottom and must stay reachable - a scan-confirm-scan loop is ruined by a toast over the button.
+ * Fades rather than slides; reduced motion presents it settled.
+ */
+@Composable
+private fun NoticeBar(notice: Notice?, reduceMotion: Boolean, onDone: () -> Unit, modifier: Modifier = Modifier) {
+    val shown = notice ?: return
+    val alpha = remember(shown) { Animatable(if (reduceMotion) 1f else 0f) }
+    LaunchedEffect(shown) {
+        if (!reduceMotion) alpha.animateTo(1f, tween(160))
+        kotlinx.coroutines.delay(if (shown.action != null) 4200 else 2200)
+        if (!reduceMotion) alpha.animateTo(0f, tween(220))
+        onDone()
+    }
+    Row(
+        modifier
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            // clears the close control in the top-right corner
+            .padding(start = 16.dp, end = 72.dp, top = 10.dp)
+            .graphicsLayer { this.alpha = alpha.value }
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xF21A1206))
+            .border(1.dp, PillarGold.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 11.dp)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            shown.message,
+            color = Color(0xFFEFE7D8),
+            fontSize = 14.5.sp,
+            fontFamily = FontUi,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (shown.action != null) {
+            Spacer(Modifier.width(14.dp))
+            Text(
+                shown.action.uppercase(),
+                color = PillarGold,
+                fontSize = 13.sp,
+                fontFamily = FontDisplay,
+                letterSpacing = 1.sp,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { shown.onAction(); onDone() }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
             )
         }
     }

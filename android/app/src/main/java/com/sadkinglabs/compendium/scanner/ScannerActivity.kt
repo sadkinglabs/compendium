@@ -38,6 +38,7 @@ class ScannerActivity : ComponentActivity() {
     private var pendingDeckCard: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        android.util.Log.i("ScannerVisual", "activity onCreate")
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -214,9 +215,34 @@ class ScannerActivity : ComponentActivity() {
     }
 
     private fun sendTerminal(js: JSObject) {
-        if (terminalSent) return
+        if (terminalSent) {
+            android.util.Log.i("ScannerVisual", "terminal SKIPPED (already sent): ${js.getString("action")}")
+            return
+        }
         terminalSent = true
-        ScannerChannel.onTerminal?.invoke(js)
+        val handler = ScannerChannel.onTerminal
+        android.util.Log.i("ScannerVisual", "terminal ${js.getString("action")} handler=${handler != null}")
+        handler?.invoke(js)
+    }
+
+    /**
+     * The scanner is a full-screen capture surface owned by one retained `scan()` call, so leaving it must
+     * end the session. Navigating away - Home, the gesture swipe, the recents switcher - only STOPS an
+     * Activity; without finishing here the session would never terminate, the retained call would never
+     * resolve, and every later launch would be refused as "a scan is already in progress".
+     */
+    override fun onStop() {
+        super.onStop()
+        if (!isChangingConfigurations && !isFinishing) finish()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        alive = false
+        // Back / system kill without an explicit action -> cancelled, so the retained `await scan()`
+        // never hangs and the plugin releases its one-scan-at-a-time flag. Guarded so it cannot override
+        // a real terminal already sent.
+        if (!terminalSent) sendTerminal(JSObject().put("action", "cancelled"))
     }
 
     /** The tested correction-store codec (artifact binding, checksums, torn-tail repair, cap). */
