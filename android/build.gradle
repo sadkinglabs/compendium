@@ -14,7 +14,9 @@ buildscript {
         classpath 'com.google.firebase:firebase-crashlytics-gradle:3.0.2'
         // Literal, NOT $kotlinVersion - buildscript{} is evaluated before
         // `apply from: variables.gradle` below, so the ext prop isn't defined yet.
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24'
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10'
+        // The Compose compiler, which from Kotlin 2.0 is a separate plugin versioned WITH Kotlin.
+        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.10'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

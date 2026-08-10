@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 // Version + build come from package.json, the single source shared with the web
 // layer (vite.config.js bakes the same two values in for the Credits screen). Keep
@@ -35,12 +36,12 @@ android {
     // --- Native card scanner: Compose + Kotlin JVM target (must equal
     //     capacitor.build.gradle's Java 17, else "Inconsistent JVM-target"). ---
     buildFeatures { compose true }
-    composeOptions { kotlinCompilerExtensionVersion composeCompilerVersion }
+    // No composeOptions block: the Compose compiler plugin applied above owns that now, and
+    // declaring kotlinCompilerExtensionVersion alongside it is an error rather than a duplicate.
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = '17' }
     packaging {
         resources {
             excludes += [
@@ -89,6 +90,15 @@ android {
                 abiFilters 'arm64-v8a'
             }
         }
+    }
+}
+
+// Kotlin's JVM target MUST equal the Java target above or the build fails with
+// "Inconsistent JVM-target compatibility". `kotlinOptions` is deprecated in Kotlin 2.x, so this is
+// the compilerOptions DSL. It moves to 21 with the rest of the toolchain.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
@@ -150,6 +160,14 @@ dependencies {
     implementation "androidx.compose.ui:ui"
     implementation "androidx.compose.ui:ui-graphics"
     implementation "androidx.compose.material3:material3"
+    // Declared EXPLICITLY, because it used to arrive by accident. material3 1.2.1 depended on
+    // material-icons transitively; 1.4.0 dropped that, so `Icons.Filled.*` stopped resolving the
+    // moment the Compose BOM moved. It was always a real dependency of the scanner UI - six icons
+    // across RecognitionSheet and ScannerScreen - and was simply never written down.
+    // The BOM pins it at 1.7.8: Google has frozen this library. Six inline vector paths would remove
+    // it entirely (the web layer already has its own icon set in components/icons.jsx), but that is
+    // feature work, not an upgrade, so it is recorded as a follow-up rather than done here.
+    implementation "androidx.compose.material:material-icons-core"
     implementation "androidx.activity:activity-compose:$activityComposeVersion"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:$lifecycleComposeVersion"
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleComposeVersion"

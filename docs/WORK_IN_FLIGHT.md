@@ -83,6 +83,18 @@ supplies the rollback *source baseline*, not the installable binary.
 **Gates:** `checkRecogAssets` and `checkReleaseForbiddenPermissions` bind to `assemble` + `bundle` +
 `install`, not `assemble` alone; the AAB is 16 KB-verified with `bundletool`.
 
+## Compose material-icons is a frozen dependency the scanner now declares
+
+Increment 2 surfaced it: `Icons.Filled.*` in `RecognitionSheet.kt` and `ScannerScreen.kt` used to
+resolve only because **material3 1.2.1 depended on `material-icons` transitively**. material3 1.4.0
+dropped that, so the symbols vanished the moment the Compose BOM moved. It was always a real
+dependency of the scanner UI and is now declared explicitly.
+
+Google has **frozen** that library - the BOM pins it at 1.7.8 and it is deprecated. Six icons are used
+across two files (Add x5, Check x3, FavoriteBorder x2, Close x2, Search, PlayArrow). Inlining them as
+vector paths would drop the dependency entirely, and there is precedent: the web layer already has its
+own set in `src/components/icons.jsx`. **Feature work, not an upgrade** - recorded rather than done.
+
 ## App.jsx has no automated coverage - found the hard way
 
 While retiring the Export/Import buttons I broke `App.jsx` with an unclosed JSX comment, and **all six
