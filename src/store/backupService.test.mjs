@@ -264,3 +264,67 @@ async function captureArchive() {
   }));
   return { text: JSON.stringify(file) };
 }
+
+/* ------------------------------------------------------------------ */
+/* Legacy single-profile files - the shape that actually exists today  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * REGRESSION. The Restore button rejected every profile export ever written, with "unreadable
+ * format", because parseBackup demands an integer bundleFormat and a legacy bundle has none. The
+ * unit tests missed it: they only ever fed v2 envelopes they had just sealed, so the one input shape
+ * that exists in the wild was the one never exercised. Found on a device, with a real archive.
+ */
+// Produced by the REAL legacy exporter, so the fixture cannot drift from what the app actually
+// writes. A hand-built one was too thin - it omitted columns every real export carries, and the
+// restore failed binding undefined, which said more about the fixture than about the code.
+async function legacyBundleText(name = 'Sadkingbilly') {
+  const { exportProfile } = await import('./profileTransfer.js');
+  const b = await exportProfile('p-one');
+  b.profile.name = name;
+  return JSON.stringify(b);
+}
+
+test('REGRESSION: a legacy profile export (no bundleFormat) is READ, not rejected', async () => {
+  const text = await legacyBundleText();
+  assert.equal(JSON.parse(text).bundleFormat, undefined, 'fixture must have NO bundleFormat');
+  const p = await previewBackup(text);
+  assert.equal(p.kind, 'profile');
+  assert.equal(p.profiles.length, 1);
+  assert.equal(p.profiles[0].name, 'Sadkingbilly');
+  assert.ok(p.profiles[0].decks >= 1);
+  assert.ok(p.profiles[0].ownedCards >= 1);
+});
+
+test('REGRESSION: bundleFormat 1 is read as legacy too', async () => {
+  const b = JSON.parse(await legacyBundleText());
+  const p = await previewBackup(JSON.stringify({ ...b, bundleFormat: 1 }));
+  assert.equal(p.kind, 'profile');
+});
+
+test('a legacy file restores through the existing per-profile import path', async () => {
+  const before = rows('SELECT COUNT(*) c FROM profiles;')[0].c;
+  const preview = await previewBackup(await legacyBundleText());
+  const r = await restoreAll(preview);
+  assert.equal(r.via, 'profile-import', 'must reuse importProfile, not re-plan the unit');
+  assert.equal(r.profiles, 1);
+  assert.equal(rows('SELECT COUNT(*) c FROM profiles;')[0].c, before + 1);
+  assert.equal(rows('SELECT COUNT(*) c FROM decks WHERE profile_id=?;', [r.activeProfileId])[0].c, 1);
+});
+
+test('a legacy restore does not disturb the existing default profile', async () => {
+  // Unlike a whole-app archive, a single profile carries no is_default claim, so it must not take
+  // the flag from whatever is already here.
+  const defBefore = rows('SELECT id FROM profiles WHERE is_default=1;')[0].id;
+  await restoreAll(await previewBackup(await legacyBundleText()));
+  assert.equal(rows('SELECT id FROM profiles WHERE is_default=1;')[0].id, defBefore);
+  assert.equal(rows('SELECT COUNT(*) c FROM profiles WHERE is_default=1;')[0].c, 1);
+});
+
+test('a whole-app archive is still routed as whole-app, not mistaken for legacy', async () => {
+  const { text } = await captureArchive();
+  const p = await previewBackup(text);
+  assert.equal(p.kind, 'whole-app');
+  const r = await restoreAll(p);
+  assert.equal(r.via, 'whole-app');
+});

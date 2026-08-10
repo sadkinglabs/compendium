@@ -1131,7 +1131,7 @@ function BackupSection({ onToast }) {
 function RestorePreviewModal({ preview, onClose, onToast }) {
   const [busy, setBusy] = useState(false);
   if (!preview) return null;
-  const { env, profiles, exportedAt } = preview;
+  const { profiles, exportedAt } = preview;
   const rows = profiles.reduce((a, p) => a + p.rows, 0);
 
   async function confirm() {
@@ -1139,7 +1139,7 @@ function RestorePreviewModal({ preview, onClose, onToast }) {
     setBusy(true);
     try {
       const { restoreAll } = await import('./store/backupService.js');
-      const r = await restoreAll(env);
+      const r = await restoreAll(preview);
       onClose();
       onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
     } catch (e) {

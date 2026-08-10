@@ -15,9 +15,9 @@ import { Preferences } from '@capacitor/preferences';
 import { snapshot, query, tx } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { listProfiles, activeProfileId } from './profileRepository.js';
-import { buildProfileUnit, planProfileUnit } from './profileTransfer.js';
-import { buildEnvelope, seal, parseBackup, summarise } from './backup.js';
-import { prepareBundle } from './importBoundary.js';
+import { buildProfileUnit, planProfileUnit, importProfile } from './profileTransfer.js';
+import { buildEnvelope, seal, parseBackup, readBackup, summarise } from './backup.js';
+import { prepareBundle, ITERATED_COLLECTIONS } from './importBoundary.js';
 import { uuid, nowIso } from './ids.js';
 import { saveTextFile } from '../native.js';
 
@@ -95,8 +95,31 @@ export async function backupAll({ appBuild = currentBuild(), now = new Date() } 
  * The UI shows this and waits for confirmation before `restoreAll` is called.
  */
 export async function previewBackup(text) {
-  const env = await parseBackup(text);
-  return { env, profiles: summarise(env), exportedAt: env.exportedAt, appBuild: env.appBuild };
+  const read = await readBackup(text);
+
+  // A legacy single-profile export. Every file written before this feature is one of these, so this
+  // is not a rare path - it is the common one until whole-app backups have been around a while.
+  if (read.kind === 'profile') {
+    const b = read.bundle;
+    const rows = ITERATED_COLLECTIONS.reduce((a, k) => a + (b[k]?.length ?? 0), 0);
+    return {
+      kind: 'profile',
+      bundle: b,
+      exportedAt: b.exportedAt ?? null,
+      appBuild: null,
+      profiles: [{
+        name: b.profile?.name ?? 'Profile',
+        isDefault: false,
+        decks: b.decks?.length ?? 0,
+        ownedCards: b.owned_cards?.length ?? 0,
+        matches: b.matches?.length ?? 0,
+        rows,
+      }],
+    };
+  }
+
+  const env = read.env;
+  return { kind: 'whole-app', env, profiles: summarise(env), exportedAt: env.exportedAt, appBuild: env.appBuild };
 }
 
 /** card_id -> set codes, read once for the whole restore rather than per profile. */
@@ -120,9 +143,18 @@ async function catalogSets() {
  * condition was unreachable and relaxing it would have deleted on a guess, so the design has no
  * profile-deletion path at all.
  *
- * `env` must already have come from `parseBackup` / `previewBackup`.
+ * Accepts what `previewBackup` returned. A LEGACY single-profile file is routed to the existing
+ * `importProfile` path unchanged - it is one profile, it has its own hardened import, and re-planning
+ * it here would be a second implementation of something that already works.
+ *
+ * A bare envelope is still accepted so callers (and tests) can pass `env` directly.
  */
-export async function restoreAll(env) {
+export async function restoreAll(preview) {
+  if (preview?.kind === 'profile') {
+    const pid = await importProfile(preview.bundle);
+    return { profiles: 1, activeProfileId: pid, statements: null, via: 'profile-import' };
+  }
+  const env = preview?.env ?? preview;
   const setsOf = await catalogSets();
   const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
 
@@ -181,5 +213,5 @@ export async function restoreAll(env) {
     await Preferences.set({ key: SEEN_BUILD_KEY, value: String(Math.min(Number(seen), build)) });
   }
 
-  return { profiles: created.length, activeProfileId: activePid, statements: statements.length };
+  return { profiles: created.length, activeProfileId: activePid, statements: statements.length, via: 'whole-app' };
 }

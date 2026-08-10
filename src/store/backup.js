@@ -256,13 +256,8 @@ function assertUnitShapes(env) {
   }
 }
 
-/**
- * The whole read path, in the order that leaves the database untouched on any rejection.
- *
- * Nothing here writes, so "leaves nothing behind" is structural rather than careful: a caller cannot
- * begin restoring until this has returned.
- */
-export async function parseBackup(text) {
+/** Size ceiling, then parse. Shared by both readers so the ordering cannot drift between them. */
+function parseText(text) {
   if (typeof text !== 'string') {
     throw new ImportRejected('malformed', 'That file is not a Compendium backup.');
   }
@@ -270,16 +265,59 @@ export async function parseBackup(text) {
   if (text.length > LIMITS.fileBytes) {
     throw new ImportRejected('too-large', 'That file is too large to be a Compendium backup.');
   }
-  let env;
-  try { env = JSON.parse(text); }
+  try { return JSON.parse(text); }
   catch { throw new ImportRejected('malformed', 'That file is not readable as a Compendium backup.'); }
+}
 
+/** Every whole-app envelope check, in the order that leaves the database untouched on a rejection. */
+async function verifyEnvelope(env) {
   assertEnvelopeShape(env);
   await verifyDigest(env);      // integrity before content: refuse a damaged file before walking it
   assertBounds(env);
   assertUnitShapes(env);
   assertCardinality(env);
+}
+
+/**
+ * The whole-app read path.
+ *
+ * Nothing here writes, so "leaves nothing behind" is structural rather than careful: a caller cannot
+ * begin restoring until this has returned. STRICT about the envelope - use `readBackup` if the file
+ * might be a legacy single-profile export.
+ */
+export async function parseBackup(text) {
+  const env = parseText(text);
+  await verifyEnvelope(env);
   return env;
+}
+
+/**
+ * ONE reader for both file shapes a user can actually hand us.
+ *
+ * This exists because `parseBackup` alone was wrong in the field: it requires an integer
+ * `bundleFormat`, and EVERY profile export written before this feature has none - so the Restore
+ * button rejected every real file with "unreadable format". The unit tests missed it because they
+ * only ever fed it v2 envelopes they had just sealed; the one input shape that exists in the wild
+ * was the one never exercised. Found on device.
+ *
+ * Returns `{ kind: 'whole-app', env }` or `{ kind: 'profile', bundle }`. A legacy bundle is validated
+ * by the SAME gate the live per-profile import uses, and is then restored through that same path -
+ * it carries no checksum and never did, so there is nothing here to verify beyond its shape.
+ */
+export async function readBackup(text) {
+  const obj = parseText(text);
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    throw new ImportRejected('malformed', 'That file is not a Compendium backup.');
+  }
+  if (obj.app !== 'compendium') {
+    throw new ImportRejected('not-compendium', 'That file is not a Compendium backup.');
+  }
+  if (isLegacyBundle(obj)) {
+    validateBundle(obj);                       // app / version / shape, unchanged
+    return { kind: 'profile', bundle: obj };
+  }
+  await verifyEnvelope(obj);
+  return { kind: 'whole-app', env: obj };
 }
 
 /** Counts for the restore preview. Pure; assumes `parseBackup` already accepted the envelope. */
