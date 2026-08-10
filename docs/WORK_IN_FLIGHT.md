@@ -45,14 +45,114 @@ Merged to `main` 2026-08-09. None of these blocks release of what shipped, but e
 
 ## Planned, not started
 
-### Capacitor 6 -> 8 upgrade
+### Increment A - whole-app backup and restore
 
-**Why:** closes the last 16 KB library. `@capacitor-community/sqlite` 8.1.1 uses the aligned
-`net.zetetic:sqlcipher-android:4.17.0`; every plugin in use has a current v8 release.
-**Requires:** Java 21, compileSdk 36, minSdk >= 24 (already 29), AGP/Gradle bumps.
-**Risk:** High - a major upgrade of the SQLite plugin against a live v11 schema holding real user data.
-Touches the durable-write and forward-only-schema invariants. Needs a proposal, its own branch, a device
-database backup, and post-upgrade verification that collection, decks and matches all still read.
+**Proposal:** [proposals/backup-and-restore.md](./proposals/backup-and-restore.md) (Revision 3, in review).
+**Why:** there is no single artifact representing a whole installation. Per-profile export covers one
+profile per file and carries no app-global state; Android Auto Backup is not user-invocable or verifiable.
+**Scope:** manual all-profile bundle taken from a **consistent snapshot** (read transaction + `db.js`
+write gate), whole-envelope digest, bounded, **one transaction** for the whole restore, no profile ever
+deleted, "backup prepared" wording since the app cannot see the destination. No scheduler, no retention,
+no encryption, no SAF - deliberately deferred (see below).
+**Hard prerequisite for Increment B:** it supplies both B's data safety net and the source for B's
+forward-installable rollback artifact.
+**Risk:** High.
+
+### Increment B - Capacitor 6 -> 8, Android 16, and the whole-tree dependency upgrade
+
+**Proposals:** [proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 4, in review),
+with [proposals/dependency-audit-2026-08.md](./proposals/dependency-audit-2026-08.md) as the evidence base.
+**Why:** closes `libsqlcipher.so`, the last 16 KB library, and future-proofs the target API level.
+**Scope (owner decision 2026-08-09: one job, everything folded in):** Capacitor 6 -> 8, target/compileSdk
+36, Java 21, Kotlin 2.4.10 + Compose plugin, AGP 8.13.0 / Gradle 8.14.3, the Capacitor 8 androidx set,
+CameraX 1.6.1, Firebase BoM 34.17.0, Lifecycle **2.10.0** (not 2.11.0 - it requires compileSdk 37/AGP 9.1),
+Cordova framework **15.1.0** (not the template's 14.0.1 - 14.x tops out at API 35), plus the web tier -
+React 19, Vite 8 + plugin-react 6, static-copy 4, sql.js, qrcode-generator 2, sharp, firebase-tools.
+**Risk:** High. Schema v11 and `MIGRATIONS` stay unchanged throughout.
+**Rollback:** a **same-`versionCode`, same-key replacement** - baseline source rebuilt at B's own
+`versionCode`, so `adb install -r` flips between upgrade and rollback in either direction as an ordinary
+same-version reinstall. The `adb install -r -d` downgrade path is **not** relied upon. The artifact is built
+and archived at the start of B and exercised inside B's device pass against the real upgrade build; A
+supplies the rollback *source baseline*, not the installable binary.
+**Gates:** `checkRecogAssets` and `checkReleaseForbiddenPermissions` bind to `assemble` + `bundle` +
+`install`, not `assemble` alone; the AAB is 16 KB-verified with `bundletool`.
+
+## Deferred upgrades - with the trigger that unblocks each
+
+Recorded so they are decisions with conditions rather than things nobody looked at. Full evidence in
+[proposals/dependency-audit-2026-08.md](./proposals/dependency-audit-2026-08.md).
+
+### AGP 9 / Gradle 9 - the one with a real deadline attached
+
+**Held at:** AGP 8.13.0, Gradle 8.14.3 (Capacitor 8's declared baseline).
+**Deferred, not impossible.** AGP 9 offers temporary opt-outs (`android.newDsl=false`, built-in-Kotlin
+escape hatches), but all ten vendored Capacitor Gradle modules use `lintOptions` and the legacy DSL AGP 9
+removed, and those opt-outs are themselves being withdrawn - so adopting it now buys a migration we would
+immediately redo, on modules we cannot patch.
+**Cost of waiting:** AGP 8.13 caps compileSdk at 36. **Targeting API 37 requires AGP 9**, and API 37 is
+also when the `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out that holds this portrait-only app
+portrait on >= 600dp displays is removed. Those two land together and should be planned together.
+**Trigger:** Capacitor ships modules on the AGP 9 DSL, or we need to target API 37 - whichever comes first.
+
+### TypeScript 7
+
+**Held at:** 6.0.3.
+**Deferred, not impossible.** TS 7.0 ships without a stable programmatic compiler API, and
+`scripts/check-types.mjs` drives `ts.createProgram` directly. Microsoft's `@typescript/typescript6`
+side-by-side package would let us move today, but carrying a shim until 7.1 buys nothing.
+**Cost of waiting:** low. `skipLibCheck: true` already mutes most third-party type drift.
+**Trigger:** TypeScript 7.1 ships its API. That is a **rewrite** of `check-types.mjs`, not a version bump.
+
+### ONNX Runtime
+
+**Held at:** 1.22.0 (latest 1.28.0).
+**Blocked by:** the device runtime, the recogniser export toolchain, and the shipped `index.f16` prototype
+index are one unit. **Correction:** an earlier note here claimed `requirements.txt` pins `onnx==1.22.0`. It
+does not - **neither `onnx` nor `onnxruntime` is pinned there at all**, so the export toolchain is currently
+unpinned. Pinning them is owed regardless of any version change.
+
+The loader validates the index file's sha256/dim/count - that is
+integrity on the index, **not parity on the model's outputs**. An int8 kernel change could shift embeddings
+and degrade retrieval with no gate catching it.
+**Cost of waiting:** missed inference performance; no security patches to a native library - though its only
+inputs are our own bundled model and our own camera frames, so the exposure is small.
+**Trigger:** the **sealed auto-confirm evidence** collection already owed above. That run produces the
+measured retrieval baseline an ORT bump needs, so bump it then and not before.
+
+### androidx held below latest - by the artifacts' own requirements
+
+Not template deference: each was checked against its published `minCompileSdk` / `minAGP`.
+`core` **1.17.0** because 1.19.0 requires compileSdk 37 + AGP 9.1.0. `lifecycle-*-compose` **2.10.0**
+because 2.11.0 requires the same. `webkit` 1.14.0 (latest 1.16.0) is unverified and not required.
+**Trigger:** the AGP 9 / API 37 move above, which lifts all three at once.
+
+### Pin the recogniser export toolchain
+
+`scripts/recog/train/requirements.txt` pins neither `onnx` nor `onnxruntime`, so the exported model is not
+reproducible from the recorded requirements. Owed independently of any ONNX version change, and a
+prerequisite for the ONNX trigger above being meaningful.
+
+Two related notes: `androidx.activity` will resolve to **1.13.0**, above Capacitor's declared 1.11.0,
+because `activity-compose:1.13.0` requires it - Increment B declares that explicitly rather than letting
+Gradle drift it silently. And `@capacitor-community/sqlite` pulls
+**`androidx.security:security-crypto:1.1.0-alpha06`** - an alpha shipping in our release build. The code
+path is unreachable (we never encrypt), it is not ours to fix, and it is recorded here so it is not
+rediscovered as a surprise.
+
+### Node
+
+Node stays on the **24 LTS** line (latest is 26.x) deliberately - Capacitor 8's CLI needs >= 22 and nothing
+needs 26.
+
+(Cordova is **not** deferred: it moves to **15.1.0** in Increment B, because 14.0.x supports only API 24-35
+and we target 36. The framework is unavoidable - `@capacitor/android`'s own runtime depends on it - even
+though the bridge module contains zero Cordova plugins.)
+
+### Backup features cut from Increment A's MVP
+
+Scheduler, tiered retention, optional passphrase encryption, and the SAF folder picker were all deliberately
+excluded (owner directive: leanest MVP first). **Encryption is the first one worth revisiting** - the bundle
+carries opponent names, a social graph of third parties, in plaintext.
 
 ## Retired
 
