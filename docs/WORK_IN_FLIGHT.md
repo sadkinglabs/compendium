@@ -113,6 +113,21 @@ supplies the rollback *source baseline*, not the installable binary.
 **Gates:** `checkRecogAssets` and `checkReleaseForbiddenPermissions` bind to `assemble` + `bundle` +
 `install`, not `assemble` alone; the AAB is 16 KB-verified with `bundletool`.
 
+## App.jsx has no automated coverage - found the hard way
+
+While retiring the Export/Import buttons I broke `App.jsx` with an unclosed JSX comment, and **all six
+`node --test` gates reported PASS while the app did not compile**. `test:ui` covers `src/pillars/**`
+and `src/components/**`; nothing imports `App.jsx`. Only `npm run build` caught it, and only because
+esbuild refused to parse the file.
+
+`App.jsx` is ~1,900 lines carrying the shell, tab routing, hardware-back dispatch, the profile sheet,
+Settings and now the Backup surfaces. Its entire automated protection is "does it parse".
+
+**Not a proposal yet, but the vehicle already exists:** the UI-state extraction pattern (pure,
+DOM-free modules under `test:ui`) is how `matchLife`, `navBack` and the alphabet rail were made
+testable. The same treatment applied to the App shell's state would close this. Worth doing before
+the shell grows again.
+
 ## Owner direction 2026-08-10
 
 ### Retire the per-profile Export / Import UI - DONE
