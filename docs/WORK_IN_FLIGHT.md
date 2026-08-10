@@ -113,18 +113,18 @@ supplies the rollback *source baseline*, not the installable binary.
 **Gates:** `checkRecogAssets` and `checkReleaseForbiddenPermissions` bind to `assemble` + `bundle` +
 `install`, not `assemble` alone; the AAB is 16 KB-verified with `bundletool`.
 
-## Owner direction 2026-08-10 - two follow-ons, both needing their own proposal
+## Owner direction 2026-08-10
 
-### Retire the per-profile Export / Import UI
+### Retire the per-profile Export / Import UI - DONE
 
-**Why:** a whole-app backup supersedes it. One file covering every profile, checksummed and versioned,
-beats a per-profile export the user must remember to run once per profile.
-**Not as simple as deleting two buttons.** `exportProfile` / `importProfile` must STAY:
-`duplicateProfile` (the copy icon in the profile sheet, `App.jsx:860`) is built on them, and
-`restoreAll` routes legacy files through `importProfile`. Only the two buttons retire.
-**Migration is already covered:** `readBackup` routes an old export to the Restore button, so every
-file a user already has stays restorable after the buttons go.
-**Classification:** Standard - removes a user-facing capability, touches no schema or stored data.
+Done on the `backup-and-restore` branch (2026-08-10), owner decision taken inline. Small Standard
+change; no schema, no stored data, no capability lost - Restore already reads legacy export files via
+`readBackup`'s shape routing.
+Removed: the two buttons, their handlers, the now-callerless `exportToFile` / `pickAndImport`, the
+then-unused `saveTextFile` import and two orphaned icon definitions.
+**Kept, deliberately:** `exportProfile` / `importProfile`. `duplicateProfile` is built on them and the
+whole-app restore routes legacy files through `importProfile`.
+Verified on device (build 217): the profile sheet is now New profile -> Settings.
 
 ### Prompt for, or automate, backups - with a user-designated directory
 
