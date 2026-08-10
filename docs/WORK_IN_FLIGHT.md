@@ -24,9 +24,29 @@ verified equal to the baseline's. Build is at **218**.
 **Recorded refinement:** the rollback APK is **disposable** - it must be rebuilt from `b66289e` at
 whatever `versionCode` is installed at the moment it is needed, because B's build number climbs as it
 iterates and a frozen artifact would become a downgrade. The SHA is the asset, not the APK.
-**Next step:** **Increment 1** - the web tier alone (React 19, Vite 8 + plugin-react 6,
-static-copy 4, sql.js, qrcode-generator 2, sharp, firebase-tools). Nothing native changes; gate is the
-full JS suite plus a hand pass in `npm run dev`.
+
+**Increments 1-9 DONE (2026-08-10).** Web tier, Kotlin 2.4.10 + Compose compiler plugin, Capacitor
+6 -> 8 with the whole toolchain (3a) then targetSdk 36 alone (3b), CameraX/Firebase, the manifest
+checklist and Gradle syntax, R8 keeps and gate bindings, the static 16 KB proof, the full gate set, and
+device install + rollback rehearsal on the Pixel 9 Pro XL.
+
+**The blocker is closed.** Every arm64 library in both the APK and the AAB is 16 KB aligned,
+`libsqlcipher.so` included; `bundletool dump config` reports `PAGE_ALIGNMENT_16K`. APK is 357,575 bytes
+SMALLER than the pre-upgrade baseline. Gates: 1,246 tests, 0 failures, 12/12 green, `check:smoke` 8/8
+routes. Rollback proven bidirectional with data identical (1832 cards / 4 decks / 9 matches) at every
+step.
+
+**Three latent defects found and fixed**, each a control that read correctly while protecting nothing:
+R8 keeps still naming `net.sqlcipher.*` after the package moved to `net.zetetic.database.*` (a
+release-only launch abort); the forbidden-permission gate bound to `assemble*` only, leaving the AAB
+that Play distributes entirely ungated; and `checkRecogAssets` fail-open on an AGP-internal task-name
+pattern. Also found: `MainActivity` never declared `screenOrientation`, so the app rotated despite
+being "portrait-only" - owner confirmed the lock.
+
+**Next step:** the manual device matrix that automation cannot cover - scanning a real card end to end,
+the predictive-back gesture, and the **>= 600dp portrait check on a tablet or tablet emulator** (device
+row 14, both with and without the opt-out property). Then Codex final review of the diff, then merge.
+Nothing is pushed; `main` is local-only and ~66 commits ahead of `origin`.
 
 ### `android-16kb-compat` - DO NOT MERGE
 

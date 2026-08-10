@@ -627,6 +627,14 @@ Coverage extends to debug, so an emulator build cannot silently ship without rec
 
 ### Portrait-only under target 36
 
+> **CORRECTION, found during implementation (2026-08-10).** This section asserted the app was already
+> portrait-only and treated the opt-out property as sufficient. It was not. Only `ScannerActivity`
+> declared `android:screenOrientation`; **`MainActivity` never has**, so the main app rotated into
+> landscape on phones. The property below only makes a declared orientation be HONOURED on >= 600dp
+> displays - it cannot create a lock that was never asked for, so on its own it would have left device
+> row 14 failing. `MainActivity` was locked to portrait in its own commit, owner-confirmed. The
+> intent recorded here was right; the claim about the existing code was wrong.
+
 The app is portrait-only, always, by product decision. Verified against the Android documentation:
 
 - The override applies **only to displays with smallest width >= 600dp** - tablets, unfolded foldables, and
