@@ -43,9 +43,19 @@ that Play distributes entirely ungated; and `checkRecogAssets` fail-open on an A
 pattern. Also found: `MainActivity` never declared `screenOrientation`, so the app rotated despite
 being "portrait-only" - owner confirmed the lock.
 
-**Next step:** the manual device matrix that automation cannot cover - scanning a real card end to end,
-the predictive-back gesture, and the **>= 600dp portrait check on a tablet or tablet emulator** (device
-row 14, both with and without the opt-out property). Then Codex final review of the diff, then merge.
+**Device pass done by the owner:** the scanner was exercised end to end and works; navigation and search
+are perceptibly faster.
+
+**NOT VERIFIED, deliberately deferred (owner decision 2026-08-10):** the **>= 600dp portrait check**
+(device row 14). No tablet pass was run, with or without the opt-out property, so
+`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` is declared and merged but **never observed doing its
+job**. Phones are exempt from the Android 16 override entirely, so phone portrait is unaffected either
+way and nothing shipping is at risk; what is unproven is large-screen behaviour only. Deferred to a
+dedicated tablet tune-up, where it belongs with the rest of the large-screen work. Until then, treat
+"portrait holds on tablets at target 36" as an untested claim.
+
+**Next step:** Codex adversarial review of the full diff (packet:
+[proposals/capacitor-8-review-packet.md](./proposals/capacitor-8-review-packet.md)), then merge.
 Nothing is pushed; `main` is local-only and ~66 commits ahead of `origin`.
 
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
