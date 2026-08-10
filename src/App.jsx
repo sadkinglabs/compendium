@@ -601,7 +601,7 @@ export default function App() {
       )}
       {/* Settings paints over the profile sheet, which stays mounted underneath so
           closing this returns the user to where they opened it from. */}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onToast={toast} />
       <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} onChangelog={() => setChangelogOpen(true)} />
       {/* Opened from Credits, so it shows the WHOLE history on demand. Nothing is
           recorded when it closes: reading the notes because you went looking is not
@@ -944,7 +944,7 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
 // applied live via applyAppearance. Match config (starting life, die) lives in
 // the life tracker; rarity colours is an add-cards filter; counter comforts live
 // in the tracker's Tweaks. Settings stays a single, focused surface.
-function SettingsModal({ open, onClose }) {
+function SettingsModal({ open, onClose, onToast }) {
   const [s, setS] = useState(null);
   // Telemetry consent is NOT a `settings` row and deliberately not per-profile: it
   // belongs to this install on this device, so it lives in native SharedPreferences
@@ -1022,6 +1022,9 @@ function SettingsModal({ open, onClose }) {
               is what makes this row one of the two surfaces allowed to grant consent
               (the other is the first-run disclosure). A bare switch here would be a
               third granting surface with nothing to read. */}
+          {label('BACKUP')}
+          <BackupSection onToast={onToast} />
+
           {label('PRIVACY')}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 2px', borderBottom: '1px solid var(--hair-12)' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1040,6 +1043,139 @@ function SettingsModal({ open, onClose }) {
               taps deep behind the accessibility toggles. */}
         </div>
       )}
+    </CenteredModal>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Whole-app backup and restore (Increment A)                          */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The Backup section of Settings.
+ *
+ * Wording is load-bearing here, not styling. The app hands the archive to the OS share sheet and
+ * CANNOT observe where it went - `saveTextFile` swallows a dismissal and returns the same value
+ * either way. So this says "prepared" and tells the user to save it, and the status line records
+ * "last prepared". Writing "backed up" would be a false safety signal on the one feature whose
+ * whole purpose is safety, which is worse than showing nothing.
+ */
+function BackupSection({ onToast }) {
+  const [busy, setBusy] = useState(false);
+  const [lastPrepared, setLastPrepared] = useState(null);
+  const [preview, setPreview] = useState(null);   // { env, profiles, exportedAt, appBuild }
+
+  async function prepare() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { backupAll } = await import('./store/backupService.js');
+      const r = await backupAll();
+      setLastPrepared(new Date());
+      onToast?.(`Backup prepared - ${r.profiles} profile${r.profiles === 1 ? '' : 's'}, ${r.rows.toLocaleString()} rows. Save it somewhere safe.`);
+    } catch (e) {
+      onToast?.(`Backup failed: ${e?.message || e}`, { tone: 'danger' });
+    } finally { setBusy(false); }
+  }
+
+  // Read + validate + preview. NOTHING is written until the user confirms in the modal.
+  async function choose() {
+    if (busy) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      setBusy(true);
+      try {
+        const { previewBackup } = await import('./store/backupService.js');
+        setPreview(await previewBackup(await file.text()));
+      } catch (e) {
+        onToast?.(`That file cannot be restored: ${e?.message || e}`, { tone: 'danger' });
+      } finally { setBusy(false); }
+    };
+    input.click();
+  }
+
+  return (
+    <>
+      <div style={{ padding: '4px 2px 14px', borderBottom: '1px solid var(--hair-12)' }}>
+        <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 12 }}>
+          One file containing every profile - decks, collection, matches and settings. It is
+          <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}> not encrypted</strong>, so keep it
+          somewhere you trust.
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={prepare} disabled={busy} aria-busy={busy}
+            style={{ ...BTN_GOLD, flex: 1, minHeight: 48, opacity: busy ? .55 : 1 }}>
+            {busy ? 'Working...' : 'Prepare backup'}
+          </button>
+          <button onClick={choose} disabled={busy}
+            style={{ ...BTN_GHOST, flex: 1, minHeight: 48, padding: '12px 14px', opacity: busy ? .55 : 1 }}>
+            Restore
+          </button>
+        </div>
+        <div style={{ font: "400 11px/1.4 var(--f-read)", color: 'var(--ink-faint)', marginTop: 10 }}>
+          {lastPrepared
+            ? `Last prepared ${lastPrepared.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Save the file and reopen it once to be sure it arrived.`
+            : 'The app cannot see where you save the file, so it never claims a backup is stored.'}
+        </div>
+      </div>
+      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast} />
+    </>
+  );
+}
+
+/** Shows exactly what a restore would add, and writes nothing until confirmed. */
+function RestorePreviewModal({ preview, onClose, onToast }) {
+  const [busy, setBusy] = useState(false);
+  if (!preview) return null;
+  const { env, profiles, exportedAt } = preview;
+  const rows = profiles.reduce((a, p) => a + p.rows, 0);
+
+  async function confirm() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { restoreAll } = await import('./store/backupService.js');
+      const r = await restoreAll(env);
+      onClose();
+      onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
+    } catch (e) {
+      onToast?.(`Restore failed: ${e?.message || e}`, { tone: 'danger' });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <CenteredModal open label="Restore from backup" maxWidth={360} onClose={busy ? undefined : onClose} boxStyle={{ overflow: 'hidden' }}>
+      <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', padding: '22px 44px 6px' }}>RESTORE</div>
+      <div className="cx-scroll" style={{ maxHeight: 'min(56dvh, 420px)', overflowY: 'auto', padding: '0 20px 4px' }}>
+        <div style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '0 0 14px' }}>
+          From {exportedAt ? new Date(exportedAt).toLocaleDateString() : 'an unknown date'}.
+          These profiles are <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>added</strong> alongside
+          what is already on this device. Nothing is deleted or overwritten.
+        </div>
+        {profiles.map((p, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '9px 2px', borderBottom: '1px solid var(--hair-12)' }}>
+            <span style={{ flex: 1, minWidth: 0, font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {p.name}{p.isDefault ? ' · default' : ''}
+            </span>
+            <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)', flex: 'none' }}>
+              {p.decks} decks · {p.ownedCards.toLocaleString()} cards · {p.matches} matches
+            </span>
+          </div>
+        ))}
+        <div style={{ font: "400 11px/1.4 var(--f-read)", color: 'var(--ink-faint)', margin: '12px 0 4px' }}>
+          {rows.toLocaleString()} rows in total. The file passed its checksum, so it is intact.
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 10, padding: '14px 20px calc(20px + env(safe-area-inset-bottom,0px))', borderTop: '1px solid var(--hair-12)' }}>
+        <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, minHeight: 48 }}>Cancel</button>
+        <button onClick={confirm} disabled={busy} aria-busy={busy} style={{ ...BTN_GOLD, flex: 1, minHeight: 48, opacity: busy ? .55 : 1 }}>
+          {busy ? 'Restoring...' : `Restore ${profiles.length}`}
+        </button>
+      </div>
     </CenteredModal>
   );
 }
