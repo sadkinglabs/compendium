@@ -297,3 +297,97 @@ that reproduces the original bug.
 - **>= 600dp portrait.** Deferred by owner to a dedicated tablet pass. `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` merges declared but never observed working. Phones are exempt from the override, so nothing shipping to a phone is affected.
 - **`App.jsx` has no test coverage.** Unchanged, still owed.
 - **No x86 pass.** The emulator could not run; the multi-user substitute is arm64.
+
+---
+
+# Round 2 disposition - response (2026-08-10)
+
+Both Majors and the Minor are addressed. All three findings were correct, and the first two were both
+cases of a fix that looked complete because the check I used could not see the hole.
+
+## Major - recogniser gate retained the producer bypass. FIXED.
+
+Correct, and the way it hid is the point: after moving the permission gate onto the producers I ran a
+six-entry-point graph table, saw `checkRecogAssets` PRESENT everywhere, and treated that as done. It
+was present at `packageRelease` only via the `merge.*Assets` line whose own comment calls it
+non-guaranteeing. My verification method could not distinguish "bound to the producer" from "inherited
+through the fail-open binding", so it confirmed what I wanted rather than what I needed.
+
+Now bound to `package<Variant>` and `package<Variant>Bundle`, the same producers as the permission
+gate. The opportunistic `merge.*Assets` binding remains for a faster trip, explicitly not as the
+guarantee.
+
+**Verified by simulating the failure rather than by re-reading the graph.** With the `merge.*Assets`
+binding commented out - an AGP rename, in effect - the gate is still scheduled by every producing path:
+
+| Entry point (merge-assets binding disabled) | `checkRecogAssets` |
+|---|---|
+| `packageRelease` | PRESENT |
+| `packageReleaseBundle` | PRESENT |
+| `assembleRelease` | PRESENT |
+| `bundleRelease` | PRESENT |
+
+`app/build.gradle` restored and confirmed unmodified afterwards.
+
+## Major - native restore-write acceptance. NOW EXECUTED, with one honest limitation.
+
+Executed end to end through the native plugin, on the real arm64 minified release APK, in a
+**disposable second Android user** (id 11) created for the purpose and removed afterwards:
+
+1. Fresh sandbox, cold launch: database created, first-run state (`WELCOME`, 0 cards / 0 decks /
+   0 matches, starter `Sorcerer`).
+2. Whole-app backup prepared **by the app under plugin 8.x** and saved to that user's Downloads.
+3. `pm clear --user 11` - app data wiped, a genuine fresh-install state. Relaunch confirmed first-run
+   again (second independent proof of clean-database creation).
+4. **Restore executed and CONFIRMED** through the production path: SAF picker, on-device read,
+   `"The file passed its checksum, so it is intact"`, then the confirm button - the real
+   `executeSet(..., true)` write, not a preview.
+5. **Result verified:** a new profile `Sorcerer (imported)` exists and is active. Name dedupe applied,
+   and the archive's default was adopted, which is the default-profile handling the criterion asks
+   for. No `SQLiteException`, no `FATAL EXCEPTION` (the logcat `AndroidRuntime` lines present are
+   uiautomator's own debug output, not crashes - checked rather than assumed).
+6. Device returned to Owner, user 11 removed, owner data verified untouched (1832 cards / 4 decks /
+   9 matches).
+
+**The limitation, stated plainly: this restore was ~0 rows, not ~1,476.** The archive came from an
+empty first-run profile, because a secondary Android user cannot receive a file from `adb` (`push` and
+MediaStore insert both denied) and so could not be given the owner's real archive. What is now proven
+is that the native `executeSet` transaction path executes, commits, dedupes the profile name and
+adopts the default under plugin 8.x. What is still **not** proven natively is behaviour at scale - the
+~1,476-statement boundary specifically raised. That boundary is covered only by `verify-archive`
+against the real archive on a different backend.
+
+Two ways to close the remainder, neither taken unilaterally:
+- restore the owner's real archive into their live profile and delete the imported duplicates
+  afterwards (touches real data), or
+- accept scale as unproven natively and record it.
+
+**Also observed, minor and worth recording:** immediately after the restore the profile sheet still
+listed only the pre-restore profile; the imported profile appeared after relaunch. Home reflected the
+restore, the sheet did not. Not data loss - the write had committed - but the UI-refresh-after-restore
+fix does not appear to reach the profile sheet.
+
+## Minor - renamed SQL WASM could still evade the stripper. FIXED.
+
+Correct, and it was the original defect wearing a third hat: searching recursively but only for the
+expected basename misses a rename, and my dist cross-check reused the same pattern, so both would have
+reported zero while the renamed file shipped.
+
+The script no longer searches for what it expects. It **enumerates every `.wasm`** in the synced tree
+and classifies each: `STRIP` (delete), `KEEP` (native-required, allowlisted, currently empty), or
+neither - which is a **hard error naming the file**. An unclassified wasm is exactly the rename signal.
+Adding a native wasm deliberately is a one-line `KEEP` entry. The dist cross-check is now an any-wasm
+recursive scan too.
+
+Idempotent zero-total success is preserved, as you allowed: the tree is enumerated in full, so absent
+means absent.
+
+**Four branches exercised:** normal strip (removed 644 kB); idempotent re-run (exit 0, explains why);
+**renamed `sqljs-XYZ123.wasm` (exit 1, names the file)**; relocated-but-correctly-named (found at depth
+and removed).
+
+## Unchanged from round 1
+
+- **>= 600dp portrait** - deferred by owner to a dedicated tablet pass; declared but never observed working.
+- **`App.jsx` has no test coverage.**
+- **No x86 pass** - the emulator cannot run on this machine (no hypervisor driver; enabling it needs admin plus a reboot). The multi-user substitute is arm64.
