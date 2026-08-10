@@ -25,7 +25,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
-import { exportProfile, importProfile, buildProfileUnit, planProfileUnit } from './profileTransfer.js';
+import { exportProfile, importProfile, buildProfileUnit, planProfileUnit, uniqueProfileName } from './profileTransfer.js';
 
 const require = createRequire(import.meta.url);
 const SRC = 'src-profile';
@@ -348,4 +348,46 @@ test('planProfileUnit accepts an explicit dashSeeded, and falls back to the lega
   assert.equal(marker(planProfileUnit(bundle, { pid: 'p', name: 'n', dashSeeded: false }).statements), false);
   // undefined -> the heuristic, which for a bundle carrying supported blocks marks it seeded
   assert.equal(marker(planProfileUnit(bundle, { pid: 'p', name: 'n' }).statements), true);
+});
+
+/* ------------------------------------------------------------------ */
+/* Profile-name uniqueness - one rule, both import paths               */
+/* ------------------------------------------------------------------ */
+
+test('uniqueProfileName never returns a name already taken, however many times it is called', () => {
+  const taken = new Set(['Sorcerer']);
+  const got = [];
+  for (let i = 0; i < 5; i++) { const n = uniqueProfileName('Sorcerer', taken); taken.add(n); got.push(n); }
+  assert.deepEqual(got, ['Sorcerer (imported)', 'Sorcerer (imported 2)', 'Sorcerer (imported 3)',
+    'Sorcerer (imported 4)', 'Sorcerer (imported 5)']);
+  assert.equal(new Set(got).size, got.length);
+});
+
+test('uniqueProfileName leaves a free name alone, and defaults an empty one', () => {
+  assert.equal(uniqueProfileName('Fresh', new Set(['Other'])), 'Fresh');
+  assert.equal(uniqueProfileName('', new Set()), 'Imported');
+  assert.equal(uniqueProfileName(undefined, new Set()), 'Imported');
+});
+
+test('REGRESSION: importing the same profile three times yields three DISTINCT names', async () => {
+  // It used to append "(imported)" exactly once with no loop, so the third import produced a second
+  // profile with an identical name. Nothing in the schema forbids that - profile names carry no
+  // unique index - so the database accepted it and the picker showed two rows nobody could tell
+  // apart. The whole-app restore had the correct loop; the per-profile import did not. Two
+  // implementations of one rule, and only one of them right.
+  const bundle = await exportProfile(SRC);
+  bundle.profile.name = 'Sentinel Source';          // force a collision with the seeded profile
+  for (let i = 0; i < 3; i++) await importProfile(bundle);
+  const names = rows("SELECT name FROM profiles WHERE name LIKE 'Sentinel Source%';").map((r) => r.name);
+  assert.equal(names.length, 4, 'expected the original plus three imports');
+  assert.equal(new Set(names).size, 4, `duplicate profile names: ${names.join(' | ')}`);
+});
+
+test('duplicateProfile twice does not produce two profiles called "X (copy)"', async () => {
+  const { duplicateProfile } = await import('./profileTransfer.js');
+  await duplicateProfile(SRC);
+  await duplicateProfile(SRC);
+  const names = rows("SELECT name FROM profiles WHERE name LIKE '%(copy)%';").map((r) => r.name);
+  assert.equal(names.length, 2);
+  assert.equal(new Set(names).size, 2, `duplicate copy names: ${names.join(' | ')}`);
 });

@@ -15,7 +15,7 @@ import { Preferences } from '@capacitor/preferences';
 import { snapshot, query, tx } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { listProfiles, activeProfileId } from './profileRepository.js';
-import { buildProfileUnit, planProfileUnit, importProfile } from './profileTransfer.js';
+import { buildProfileUnit, planProfileUnit, importProfile, uniqueProfileName } from './profileTransfer.js';
 import { buildEnvelope, seal, parseBackup, readBackup, summarise } from './backup.js';
 import { prepareBundle, ITERATED_COLLECTIONS } from './importBoundary.js';
 import { uuid, nowIso } from './ids.js';
@@ -166,12 +166,9 @@ export async function restoreAll(preview) {
     const { bundle } = prepareBundle(
       { app: 'compendium', schemaVersion: env.schemaVersion, ...unit }, setsOf);
 
-    // Restore under the original name, disambiguating against the device AND against names this
-    // same restore has already claimed - two archived profiles can share a name.
-    let name = bundle.profile?.name || 'Imported';
-    if (taken.has(name)) name = `${name} (imported)`;
-    let n = 2;
-    while (taken.has(name)) { name = `${bundle.profile?.name || 'Imported'} (imported ${n++})`; }
+    // Disambiguated against the device AND against names this same restore has already claimed -
+    // two archived profiles can share a name. Same helper the per-profile import uses.
+    const name = uniqueProfileName(bundle.profile?.name, taken);
     taken.add(name);
 
     let avatar = null;

@@ -14,6 +14,23 @@ import { safeHref } from '../util.js';
 
 const inClause = (ids) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
 
+/**
+ * A profile name not already in `taken`. Pure, and the ONE implementation of this rule.
+ *
+ * There were two, and only one was right: the whole-app restore looped until the name was free while
+ * `importProfile` appended "(imported)" exactly once, so importing the same profile a third time
+ * produced a SECOND profile with an identical name. Nothing in the schema forbids that - names carry
+ * no unique index - which is precisely why it went unnoticed: the database accepts it and the profile
+ * picker then shows two rows a user cannot tell apart.
+ */
+export function uniqueProfileName(base, taken) {
+  const root = base || 'Imported';
+  if (!taken.has(root)) return root;
+  let candidate = `${root} (imported)`;
+  for (let n = 2; taken.has(candidate); n++) candidate = `${root} (imported ${n})`;
+  return candidate;
+}
+
 /** Strip unsafe URLs from an imported 'urls' widget's config JSON so a crafted
  *  bundle can't smuggle a javascript: link past the render-time guard. */
 function sanitizeBlockConfig(type, configJson) {
@@ -123,13 +140,11 @@ export async function importProfile(rawBundle, { name } = {}) {
   }
   const { bundle } = prepareBundle(rawBundle, (cardId) => setsById.get(cardId) || []);
 
-  // Restore under the original name; only add "(imported)" if that name is already
-  // taken (e.g. importing your "Sorcerer" next to the fresh-install "Sorcerer").
-  let pname = name || bundle.profile?.name || 'Imported';
-  if (!name) {
-    const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
-    if (taken.has(pname)) pname = `${pname} (imported)`;
-  }
+  // Restore under the original name, disambiguated if that name is already on the device. This
+  // applies to an explicitly-supplied name too: `duplicateProfile` passes "X (copy)", and duplicating
+  // twice would otherwise produce two profiles called "X (copy)".
+  const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
+  const pname = uniqueProfileName(name || bundle.profile?.name, taken);
   // avatar is stored as a JSON string and is re-stringified on write, so parse it back.
   let avatar = null;
   try { avatar = bundle.profile?.avatar ? JSON.parse(bundle.profile.avatar) : null; } catch { avatar = null; }
