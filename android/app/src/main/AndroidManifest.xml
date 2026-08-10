@@ -55,10 +55,16 @@
              recreated", which for a WebView activity avoids tearing down and rebuilding the
              whole web app over a change it does not care about. Left off ScannerActivity
              deliberately: recreating a camera screen is cheap and safe, and the checklist
-             governs the Capacitor activity, not ours. -->
+             governs the Capacitor activity, not ours.
+
+             screenOrientation is portrait by product decision: the app has no landscape layouts
+             and needs none. It was NOT previously declared here - only ScannerActivity was
+             locked - so the main app rotated. The application-level opt-out above is what keeps
+             this honoured on >= 600dp displays at target 36; phones honour it regardless. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
