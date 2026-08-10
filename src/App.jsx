@@ -601,7 +601,8 @@ export default function App() {
       )}
       {/* Settings paints over the profile sheet, which stays mounted underneath so
           closing this returns the user to where they opened it from. */}
-      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onToast={toast} />
+      <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} onToast={toast}
+        onRestored={async () => { await reloadProfile(); bump(); }} />
       <CreditsModal open={creditsOpen} onClose={() => setCreditsOpen(false)} onChangelog={() => setChangelogOpen(true)} />
       {/* Opened from Credits, so it shows the WHOLE history on demand. Nothing is
           recorded when it closes: reading the notes because you went looking is not
@@ -944,7 +945,7 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
 // applied live via applyAppearance. Match config (starting life, die) lives in
 // the life tracker; rarity colours is an add-cards filter; counter comforts live
 // in the tracker's Tweaks. Settings stays a single, focused surface.
-function SettingsModal({ open, onClose, onToast }) {
+function SettingsModal({ open, onClose, onToast, onRestored }) {
   const [s, setS] = useState(null);
   // Telemetry consent is NOT a `settings` row and deliberately not per-profile: it
   // belongs to this install on this device, so it lives in native SharedPreferences
@@ -1023,7 +1024,7 @@ function SettingsModal({ open, onClose, onToast }) {
               (the other is the first-run disclosure). A bare switch here would be a
               third granting surface with nothing to read. */}
           {label('BACKUP')}
-          <BackupSection onToast={onToast} />
+          <BackupSection onToast={onToast} onRestored={onRestored} />
 
           {label('PRIVACY')}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 2px', borderBottom: '1px solid var(--hair-12)' }}>
@@ -1060,7 +1061,7 @@ function SettingsModal({ open, onClose, onToast }) {
  * "last prepared". Writing "backed up" would be a false safety signal on the one feature whose
  * whole purpose is safety, which is worse than showing nothing.
  */
-function BackupSection({ onToast }) {
+function BackupSection({ onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
   const [lastPrepared, setLastPrepared] = useState(null);
   const [preview, setPreview] = useState(null);   // { env, profiles, exportedAt, appBuild }
@@ -1122,13 +1123,13 @@ function BackupSection({ onToast }) {
             : 'The app cannot see where you save the file, so it never claims a backup is stored.'}
         </div>
       </div>
-      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast} />
+      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast} onRestored={onRestored} />
     </>
   );
 }
 
 /** Shows exactly what a restore would add, and writes nothing until confirmed. */
-function RestorePreviewModal({ preview, onClose, onToast }) {
+function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
   if (!preview) return null;
   const { profiles, exportedAt } = preview;
@@ -1141,7 +1142,11 @@ function RestorePreviewModal({ preview, onClose, onToast }) {
       const { restoreAll } = await import('./store/backupService.js');
       const r = await restoreAll(preview);
       onClose();
-      onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
+      // Refresh the shell rather than telling the user to relaunch. Without this the profile picker
+      // still showed the pre-restore list, which reads as "it did not work" on the one screen where
+      // that doubt is most expensive.
+      await onRestored?.();
+      onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}.`);
     } catch (e) {
       onToast?.(`Restore failed: ${e?.message || e}`, { tone: 'danger' });
     } finally { setBusy(false); }
@@ -1167,7 +1172,13 @@ function RestorePreviewModal({ preview, onClose, onToast }) {
           </div>
         ))}
         <div style={{ font: "400 11px/1.4 var(--f-read)", color: 'var(--ink-faint)', margin: '12px 0 4px' }}>
-          {rows.toLocaleString()} rows in total. The file passed its checksum, so it is intact.
+          {/* The integrity line must describe THIS file. A whole-app archive carries a checksum and
+              has just been verified; a legacy single-profile export carries none and never did, so
+              claiming one passed would be exactly the false reassurance this feature exists to avoid. */}
+          {rows.toLocaleString()} rows in total.{' '}
+          {preview.kind === 'profile'
+            ? 'This is an older single-profile export, which carries no checksum - its contents were checked instead.'
+            : 'The file passed its checksum, so it is intact.'}
         </div>
       </div>
       <div style={{ display: 'flex', gap: 10, padding: '14px 20px calc(20px + env(safe-area-inset-bottom,0px))', borderTop: '1px solid var(--hair-12)' }}>
