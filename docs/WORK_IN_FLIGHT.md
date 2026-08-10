@@ -113,6 +113,39 @@ supplies the rollback *source baseline*, not the installable binary.
 **Gates:** `checkRecogAssets` and `checkReleaseForbiddenPermissions` bind to `assemble` + `bundle` +
 `install`, not `assemble` alone; the AAB is 16 KB-verified with `bundletool`.
 
+## Owner direction 2026-08-10 - two follow-ons, both needing their own proposal
+
+### Retire the per-profile Export / Import UI
+
+**Why:** a whole-app backup supersedes it. One file covering every profile, checksummed and versioned,
+beats a per-profile export the user must remember to run once per profile.
+**Not as simple as deleting two buttons.** `exportProfile` / `importProfile` must STAY:
+`duplicateProfile` (the copy icon in the profile sheet, `App.jsx:860`) is built on them, and
+`restoreAll` routes legacy files through `importProfile`. Only the two buttons retire.
+**Migration is already covered:** `readBackup` routes an old export to the Restore button, so every
+file a user already has stays restorable after the buttons go.
+**Classification:** Standard - removes a user-facing capability, touches no schema or stored data.
+
+### Prompt for, or automate, backups - with a user-designated directory
+
+**Why (owner):** users should not be nagged, and **an uninstall should stop being destructive**. A
+first-launch prompt to designate a directory means backups can happen without asking again.
+**This deliberately re-opens what Increment A cut.** The SAF folder picker, the scheduler and
+retention were all explicit non-goals of A's MVP, on the owner's own "leanest first" directive. That
+was the right call for A and this is a legitimate next step - but it is a **new increment**, not an
+extension of A, and it needs its own proposal and Codex round.
+**What it actually requires:** a native plugin for `ACTION_OPEN_DOCUMENT_TREE` + persisted URI
+permission (`@capacitor/filesystem` cannot write tree URIs), a scheduler, and retention - unattended
+writes accumulate, so rotation stops being optional the moment writing is automatic.
+**The prize, precisely:** it is what would let the app honestly say **"stored"** instead of
+"prepared". Today `saveTextFile` cannot observe where the file went, which is why the UI refuses to
+claim durability. With a persisted tree URI the app can read the file back and verify it - the claim
+becomes true rather than hopeful.
+**Classification:** High-risk - new native plugin, new pattern, new scheduling surface.
+**Sequencing recommendation (owner's call):** **after** Increment B. A native plugin written against
+Capacitor 6 would be rewritten against Capacitor 8 within weeks; doing it after means writing it once,
+against the toolchain it will live on.
+
 ## Deferred upgrades - with the trigger that unblocks each
 
 Recorded so they are decisions with conditions rather than things nobody looked at. Full evidence in

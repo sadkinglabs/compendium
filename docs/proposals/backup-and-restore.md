@@ -744,7 +744,11 @@ JavaScript and identical across build types, and possible because the arm64-only
 - Backup writes and shares successfully; the reported profile and row counts match the database.
 - **Web Crypto availability** confirmed (Assumption 2) - the operation succeeds and produces a digest.
 - Airplane mode: backup and restore both succeed with no network.
-- Zero-image mode: restore preview and result are usable with all images absent.
+- Zero-image: the Backup section and restore preview carry **no art at all** - profile names, counts and
+  buttons are text and vector - so the functional bar (Constitution §3.6: missing art must not make core
+  behavior unusable) is met by construction rather than by inspection. The check is therefore one line:
+  with images disabled, the preview still states which profiles and how many rows, and Restore still
+  completes. It is not an aesthetic review.
 - Accessibility: the Backup section and the restore-confirm are reachable and labelled, meet the touch
   target floor, and remain legible at 200% font scale.
 

@@ -856,7 +856,9 @@ PASS / FAIL / NOT RUN individually.
 17. **Art cache:** an uncached card downloads and renders (`downloadFile`, and the `CapacitorHttp` ->
     base64 -> `writeFile` fallback).
 18. **Haptics** on a life-counter tap; **keep-awake** during a match.
-19. **Zero-image mode** still degrades gracefully.
+19. **Zero-image**: with images disabled, every pillar remains *usable* - build a deck, read a rule, add a
+    card to the collection, run the life counter. The bar is function, not appearance (Constitution §3.6);
+    art slots showing their deterministic fallback is a PASS, not a defect.
 20. `npm run check:smoke` - every route rendered.
 
 ### Web
