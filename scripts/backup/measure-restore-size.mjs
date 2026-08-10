@@ -21,11 +21,12 @@
 // A real export is produced today from the app: profile chip -> Export, once per profile. Pass every
 // profile's file to measure a true whole-app restore.
 import { createRequire } from 'node:module';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { MIGRATIONS, SCHEMA_VERSION } from '../../src/store/schema.js';
 import { __setBackendForTests } from '../../src/store/db.js';
 import { __setActiveIdForTests } from '../../src/store/profileRepository.js';
 import { importProfile } from '../../src/store/profileTransfer.js';
+import { cardSlug } from '../../src/store/cardSlug.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'measure-host';
@@ -153,13 +154,43 @@ const SCALES = [
 // would be a DIFFERENT measurement (unresolved-placeholder handling), not the one we want.
 const CATALOG_CARDS = Math.max(...SCALES.map(([, c]) => Math.ceil(c.owned / 2))) + 100;
 
-async function seedCatalog() {
+async function seedSyntheticCatalog() {
   sdb.run('DELETE FROM cards;');
   sdb.run('BEGIN;');
   for (let i = 0; i < CATALOG_CARDS; i++) {
     sdb.run(`INSERT INTO cards(card_id,name,sets) VALUES('card_${i}','Card ${i}','[{"code":"004"}]');`);
   }
   sdb.run('COMMIT;');
+}
+
+/**
+ * Seed the REAL catalog for a real-bundle measurement. This matters: `prepareBundle` resolves each
+ * owned row's printing against `cards.sets`, and v11 canonicalisation can SPLIT one legacy row into
+ * separate collector items. Against a synthetic catalog the real card ids resolve to nothing, no
+ * canonicalisation fires, and the statement count comes out as a lower bound rather than the truth.
+ * Keyed exactly as catalog.js does it, via cardSlug, so the ids match the bundle's.
+ */
+async function seedRealCatalog() {
+  const path = ['dist/catalog/cards.json', 'android/app/src/main/assets/public/catalog/cards.json']
+    .find((p) => existsSync(p));
+  if (!path) {
+    console.log('! No catalog found (dist/ or android assets). Falling back to a synthetic catalog:');
+    console.log('  real card ids will not resolve, v11 canonicalisation will not fire, and the');
+    console.log('  statement count will be a LOWER BOUND. Run `npm run build` to produce dist/catalog.\n');
+    await seedSyntheticCatalog();
+    return null;
+  }
+  const cardsObj = JSON.parse(readFileSync(path, 'utf8'));
+  sdb.run('DELETE FROM cards;');
+  sdb.run('BEGIN;');
+  for (const c of Object.values(cardsObj)) {
+    sdb.run('INSERT OR REPLACE INTO cards(card_id,name,sets,variants) VALUES(?,?,?,?);',
+      [cardSlug(c.name), c.name, JSON.stringify(c.sets ?? []), JSON.stringify(c.variants ?? [])]);
+  }
+  sdb.run('COMMIT;');
+  const n = rows('SELECT COUNT(*) c FROM cards;')[0].c;
+  console.log(`Catalog: ${fmt(n)} cards seeded from ${path} - printings resolve, so v11 canonicalisation is live.\n`);
+  return n;
 }
 
 function resetProfiles() {
@@ -223,15 +254,17 @@ async function measureBundles(label, bundles) {
 
 const files = process.argv.slice(2);
 await openDb();
-await seedCatalog();
 
 console.log('\nIncrement A, Stage 0 / measurement 1 - whole-restore statement set');
 console.log('Captured from the REAL importProfile path via db.js tx(); executed against live schema v' + SCHEMA_VERSION + '.\n');
 
 if (files.length) {
+  await seedRealCatalog();
   const bundles = files.map((f) => JSON.parse(readFileSync(f, 'utf8')));
-  await measureBundles('REAL (owner export)', bundles);
+  for (const [i, b] of bundles.entries()) await measureBundles(`profile ${i + 1} alone`, [b]);
+  if (bundles.length > 1) await measureBundles('ALL PROFILES (whole restore)', bundles);
 } else {
+  await seedSyntheticCatalog();
   for (const [label, cfg] of SCALES) {
     // One profile at this scale, then three profiles at this scale - a whole-app restore is N profiles.
     await measureBundles(label + ' x1', [syntheticBundle(cfg)]);

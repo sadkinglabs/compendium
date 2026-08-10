@@ -16,6 +16,13 @@ dist-apk/
 # Firebase project config (client keys; keep out of history)
 android/app/google-services.json
 
+# Exported profile bundles and whole-app backups. These are REAL USER DATA - a profile
+# export carries opponent names (a social graph of third parties), deck and card notes,
+# and the whole collection ledger. They land in the repo root when a bundle is dragged
+# off a device for a measurement or a repro, and must never reach history.
+compendium-*.json
+compendium-backup-*.json.gz
+
 # Catalog drop folder: gigabytes of source PNGs/CSVs, never in history.
 # Only the README (the drop how-to) is tracked.
 CATALOG_DROP/*

@@ -18,14 +18,16 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 **Status:** ACTIVE, started 2026-08-10. Proposal
 [proposals/backup-and-restore.md](./proposals/backup-and-restore.md) (Revision 4) is **owner-approved**
-after three Codex rounds. Currently at **Stage 0** - the two measurements that gate the design, before any
-feature code.
-**Next step:** report the Stage 0 checkpoint - (1) whole-restore statement-set count and serialised size
-against the owner's real data, which decides one-transaction (Options / H) versus the durable `_meta`
-journal (Options / J); (2) `crypto.subtle` availability in the Capacitor WebView, which the integrity
-design depends on. Both are blocking: the design forks on (1) and refuses to ship without (2).
-**Then:** Stages 1-7 in order. Stage 1 (characterization tests against unmodified code) must land before
-Stage 4 touches `importProfile`.
+after three Codex rounds. **Stage 0 is COMPLETE** (2026-08-10) and it closed the design fork:
+- Statement set for the owner's real profile: **1,479 statements / 0.38 MiB**, measured through the real
+  `importProfile` path with the real catalog seeded. **Options / H (one transaction) adopted; the durable
+  `_meta` journal, Options / J, is NOT built.**
+- `crypto.subtle`: `androidScheme` defaults to HTTPS with no override, so the WebView is a secure context.
+  Raised to High confidence; confirmed on the first device build rather than gating the design.
+**Next step:** **Stage 1** - characterization tests against unmodified code (the disconnected
+import-boundary bug, the orphan-profile bug, and the schema-derived all-table sentinel round trip). These
+must all pass before Stage 4 touches `importProfile`.
+**Then:** Stages 2-7 in order.
 
 ### `android-16kb-compat` - DO NOT MERGE
 

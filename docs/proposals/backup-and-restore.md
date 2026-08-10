@@ -190,8 +190,8 @@ the pure planner with boot canonicalisation.
 | # | Assumption | Confidence | Validation |
 |---|---|---|---|
 | 1 | **No `SCHEMA_VERSION` bump is needed.** Every column the protocol reads already exists; the format is read-time logic; app-global keys are Preferences, not schema. | **High** | The only fields added beyond today's export (`is_default`, `system`, timestamps, `dash_seeded`) all already exist. If a reviewer finds a needed column, the feature acquires its own migration and re-enters §12. |
-| 2 | `crypto.subtle.digest('SHA-256', ...)` is available in both runtimes. | **Medium-High** | Requires a secure context. The dev server is `http://localhost` (a potentially-trustworthy origin) and the Capacitor Android WebView serves from a localhost scheme, so both should qualify. **Verified explicitly on device before the format is finalised.** If it is unavailable, backup **fails loudly** rather than writing an unverifiable file (see Proposed design). |
-| 3 | One `tx()` covering **all** profiles is a workable statement-set size. | **Unknown - measured, not assumed** | Revision 2 asserted the opposite without measuring and designed a weaker restore around it. **Stage 0 measures it first** on the owner's real data. If it fails, Options / J (durable journal) enters scope and is reviewed before it is built. |
+| 2 | `crypto.subtle.digest('SHA-256', ...)` is available in both runtimes. | **High** (raised 2026-08-10) | Requires a secure context. `@capacitor/android` defaults `androidScheme` to **HTTPS** (`CapConfig.java:39`) and `capacitor.config.json` sets no `server.androidScheme` override, so the WebView origin is `https://localhost` - a secure context. The dev server is `http://localhost`, also potentially-trustworthy. This no longer forks the design; it is **confirmed on the first device build** (Stage 6). If it is unavailable, backup **fails loudly** rather than writing an unverifiable file (see Proposed design). |
+| 3 | One `tx()` covering **all** profiles is a workable statement-set size. | **MEASURED - confirmed 2026-08-10** | The owner's real profile restores as **1,479 statements / 0.38 MiB**. Synthetic scaling puts a heavy collector at 8 MiB for one profile. Options / H (one transaction) is adopted; **Options / J is not built**. See Stage 0 result below. |
 | 4 | The on-device database fits well inside the Android Auto Backup quota. | **Low** | Catalog JSON totals ~2.9 MB excluding the art manifest, so the seeded database plus user data is plausibly under the platform's 25 MB app-data cap - but this is inference from source sizes, not a measurement. **Measured on the emulator in the verification plan and reported, not acted on.** Auto Backup is not the mechanism this proposal relies on either way. |
 | 5 | A debug build on an emulator is a valid disposable environment for restore. | **High** | Restore is JavaScript and identical in both build types. The release ABI filter is scoped to `buildTypes.release` (`android/app/build.gradle:88`), so **debug keeps all four ABIs** and an x86_64 emulator runs it. This is exactly why that scoping decision was made. |
 
@@ -499,9 +499,42 @@ non-default and the user may delete it or keep it (Options / R4).
 `changelogSeenBuild` is **clamped** to the running build: restoring a higher value from a newer device would
 permanently hide release notes the user has not seen.
 
-### If the single transaction proves unsuitable
+### Stage 0 result: the single transaction is confirmed (2026-08-10)
 
-Stage 0 measures it. If the owner's real data cannot go through one `executeSet`, the fallback is a
+Measured with `scripts/backup/measure-restore-size.mjs`, which drives the **real** `importProfile` against
+in-memory sql.js and captures the exact statement set through `db.js` `tx()` - the same set that would be
+handed to `executeSet` on device - then executes it to prove it valid against schema v11, with the real
+catalog seeded so v11 canonicalisation is live.
+
+| Dataset | Rows | Statements | Serialised set |
+|---|---|---|---|
+| **The owner's real profile** | 1,470 | **1,479** | **0.38 MiB** |
+| synthetic, light x3 profiles | 2,874 | 2,958 | 0.71 MiB |
+| synthetic, moderate x3 | 22,905 | 23,373 | 5.61 MiB |
+| synthetic, heavy collector x3 | 102,486 | 103,857 | 24.39 MiB |
+
+**Decision: Options / H. One transaction over all database restoration.** The real figure is ~15x below
+the "moderate" synthetic and roughly two orders of magnitude below anything that would strain a bridge
+call. Even a 20x growth in the owner's collection stays inside single-MiB territory.
+
+**Options / J (durable `_meta` journal + startup recovery) is therefore NOT built.** That is the outcome
+worth naming: revision 2 assumed this measurement's answer, guessed it the wrong way, and designed
+boot-time recovery machinery around the guess. Measuring first deleted that machinery from the scope
+instead of shipping it.
+
+Two honest limits on the number:
+- It is **one** profile. A whole-app restore is the sum across profiles; at 0.38 MiB each, that stays
+  comfortable for any plausible profile count.
+- sql.js execution time (22 ms) says **nothing** about native `executeSet` across the Capacitor bridge.
+  The claim being made here is about **set size**, not speed. Restore duration is observed on device in
+  Stage 6, and the UI shows progress regardless.
+
+If a future dataset ever approached the heavy-collector row of that table, Options / J below is the
+reviewed fallback and this measurement is the trigger to revisit.
+
+### If the single transaction ever proves unsuitable (not the current case)
+
+Stage 0 measured it and it fits. If the owner's real data cannot go through one `executeSet`, the fallback is a
 **durable restore journal**, not in-memory compensation:
 
 ```text
