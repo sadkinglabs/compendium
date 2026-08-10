@@ -36,13 +36,16 @@ preimage contract.
 write gate honoured by `run`/`tx`/`exec` (reads deliberately ungated). Both backends implement
 `beginRead`/`endRead`. 7 tests, proven by provocation - ungating `run` fails the invisibility assertion,
 leaking the gate wedges the whole file, skipping `endRead` on throw leaves the transaction open.
-**Next step:** **Stage 4 - THE CHECKPOINT.** Extract `buildProfileUnit` / `planProfileUnit` from
-`exportProfile` / `importProfile`, add the missing profile columns and `dashSeeded`, extend
-`validateBundle` for the envelope. This is the stage that touches live import code; Stage 1's
-characterization tests are the safety net and must pass unchanged. **Stop for owner review before
-merging this stage.**
-**Then:** Stage 5 (backupAll/restoreAll + Settings UI), Stage 6 (verification incl. the disposable
-emulator restore), Stage 7 (handoff to Increment B).
+**Stage 4 is COMPLETE** (2026-08-10). `buildProfileUnit` / `planProfileUnit` extracted from
+`exportProfile` / `importProfile`; the planner is pure (no query, no tx, no DB-allocated id), which is
+what lets the whole-app restore use one transaction. `exportProfile` narrows the unit, so the legacy
+file format is byte-unchanged. Stage 1's characterization tests passed unchanged, which was the gate.
+**Next step:** **Stage 5** - `backupAll` / `restoreAll` in `src/store/backup.js` wired to the store
+(snapshot -> build units -> seal; parse -> plan every unit -> ONE `tx` -> adopt default -> preferences),
+plus the Settings UI: "Prepare backup", "Restore from backup", the restore preview, and the honest
+"last prepared" status line.
+**Then:** Stage 6 (verification incl. the disposable emulator restore), Stage 7 (handoff to Increment B:
+the backup, and the rollback SOURCE baseline commit by SHA).
 
 ### `android-16kb-compat` - DO NOT MERGE
 
