@@ -11,6 +11,22 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!-- Portrait-only, at target 36. From Android 16, a display whose smallest width is
+             >= 600dp (tablets, unfolded foldables, desktop windowing) IGNORES
+             android:screenOrientation, android:resizeableActivity, min/maxAspectRatio and
+             setRequestedOrientation() - unless the app declares this documented opt-out.
+             Phones (< 600dp) are exempt from the override entirely, so portrait holds there
+             with or without this.
+
+             Declared on <application> so it covers MainActivity and ScannerActivity together.
+
+             KNOWN EXPIRY, recorded so it is not rediscovered: the opt-out is REMOVED at API 37.
+             An app targeting 37+ cannot opt out and the restrictions always apply on >= 600dp.
+             Portrait stays enforceable on phones indefinitely, and on large screens only until
+             we target 37. That is a future product decision, not this change's business. -->
+        <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
+                  android:value="true" />
+
         <!-- ============================ TELEMETRY ============================
              Both SDKs collect NOTHING until the user answers the disclosure.
              These four flags are what make that true, and it is measured, not
@@ -34,8 +50,14 @@
         <meta-data android:name="google_analytics_default_allow_ad_personalization_signals"
                    android:value="false" />
         <!-- ================================================================== -->
+        <!-- configChanges carries navigation (added by the Capacitor 7 checklist) and density
+             (Capacitor 8). Both mean "handle this configuration change in-place rather than be
+             recreated", which for a WebView activity avoids tearing down and rebuilding the
+             whole web app over a change it does not care about. Left off ScannerActivity
+             deliberately: recreating a camera screen is cheap and safe, and the checklist
+             governs the Capacitor activity, not ours. -->
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"

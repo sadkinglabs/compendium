@@ -18,7 +18,7 @@ if (keystorePropsFile.exists()) {
 }
 
 android {
-    namespace "com.sadkinglabs.compendium"
+    namespace = "com.sadkinglabs.compendium"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.sadkinglabs.compendium"
@@ -30,12 +30,12 @@ android {
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
     // --- Native card scanner: Compose + Kotlin JVM target (must equal
-    //     capacitor.build.gradle's Java 17, else "Inconsistent JVM-target"). ---
-    buildFeatures { compose true }
+    //     capacitor.build.gradle's Java 21, else "Inconsistent JVM-target"). ---
+    buildFeatures { compose = true }
     // No composeOptions block: the Compose compiler plugin applied above owns that now, and
     // declaring kotlinCompilerExtensionVersion alongside it is an error rather than a duplicate.
     compileOptions {
@@ -64,10 +64,10 @@ android {
     buildTypes {
         release {
             minifyEnabled true
-            shrinkResources true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystorePropsFile.exists()) {
-                signingConfig signingConfigs.release
+                signingConfig = signingConfigs.release
             }
             // Ship only ABIs a phone can actually execute. x86/x86_64 exist for
             // emulators, and no device that can install this APK can run them - they
