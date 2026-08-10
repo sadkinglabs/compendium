@@ -14,6 +14,20 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 ## Open
 
+### `capacitor-8` - Increment B, Capacitor 6 -> 8 + Android 16 + whole-tree dependency upgrade
+
+**Status:** ACTIVE, started 2026-08-10. Proposal
+[proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 5), owner-approved.
+**Increment 0 DONE:** branch created off `main` at the Increment A merge; rollback artifact built from
+the baseline SHA `b66289e` and archived as `dist-apk/compendium-rollback-b218.apk`, signing certificate
+verified equal to the baseline's. Build is at **218**.
+**Recorded refinement:** the rollback APK is **disposable** - it must be rebuilt from `b66289e` at
+whatever `versionCode` is installed at the moment it is needed, because B's build number climbs as it
+iterates and a frozen artifact would become a downgrade. The SHA is the asset, not the APK.
+**Next step:** **Increment 1** - the web tier alone (React 19, Vite 8 + plugin-react 6,
+static-copy 4, sql.js, qrcode-generator 2, sharp, firebase-tools). Nothing native changes; gate is the
+full JS suite plus a hand pass in `npm run dev`.
+
 ### `android-16kb-compat` - DO NOT MERGE
 
 **Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in

@@ -215,6 +215,25 @@ A local artifact sharing a `versionCode` with a different build must **never** b
 `scripts/distribute.mjs` compares the APK's `versionCode` against `package.json` and could not tell them
 apart.
 
+#### Operational refinement, found while building it (Increment 0, 2026-08-10)
+
+The same-`versionCode` scheme is right, but it does not survive B **iterating**. The standing rule bumps
+`build` on every device install, so B climbs 218, 219, 220 - and a rollback artifact frozen at 218 is a
+*downgrade* from 220, which is the exact thing this design abandoned.
+
+Freezing B's `versionCode` instead would break the standing rule and make installs
+indistinguishable in a bug report, which is what that rule exists to prevent.
+
+**So the artifact is disposable and the SHA is the asset.** The rollback APK is rebuilt from
+`b66289e` at *whatever `versionCode` is currently installed* at the moment it is needed. That keeps
+every install a same-version reinstall in both directions, costs one build, and needs no exception to
+the bump rule.
+
+`dist-apk/compendium-rollback-b218.apk` is therefore a **proof that the procedure works from the
+recorded SHA** - baseline source builds cleanly and signs with the same certificate
+(`c64bbee4...8ba3`, verified equal to the baseline APK's) - and not a permanently valid artifact.
+Increment 9 rebuilds it at the then-current number before rehearsing.
+
 **The second recovery path, stated because a binary is not a data guarantee:** uninstall plus restore from
 A's verified backup. That is the answer if the app is somehow unbootable in both directions, and it is why
 A ships first. It costs the user nothing but time, and it is only credible because A's restore is proven on
