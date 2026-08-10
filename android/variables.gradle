@@ -43,7 +43,7 @@ ext {
     // Unblocked here: it needs sdk36 / agp8.9.1, both of which arrive in this increment.
     activityComposeVersion = '1.13.0'
     lifecycleComposeVersion = '2.10.0'          // 2.11.0 needs sdk37/AGP 9.1.0 - out of reach, by design
-    cameraxVersion = '1.4.1'                    // ImageProxy.toBitmap() + ResolutionSelector; 1.4.x = 16 KB aligned
+    cameraxVersion = '1.6.1'                    // ImageProxy.toBitmap() + ResolutionSelector; 16 KB aligned
     mlkitTextVersion = '16.0.1'                 // BUNDLED Latin model - NOT play-services-mlkit-*
     mlkitBarcodeVersion = '17.3.0'              // BUNDLED barcode/QR model - offline (Share & Scan)
     coroutinesVersion = '1.11.0'                // was 1.8.1 while Capacitor's own module pulled 1.10.2 - the build file was understating what shipped
