@@ -19,18 +19,19 @@
 // It is also fail-closed against the future: the profile-owned table set is read from the live schema
 // after migrations, so a v12 table that nobody teaches this test about turns it RED rather than passing
 // silently.
-import { test, before, beforeEach } from 'node:test';
+import { test, before, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
-import { exportProfile, importProfile } from './profileTransfer.js';
+import { exportProfile, importProfile, buildProfileUnit, planProfileUnit } from './profileTransfer.js';
 
 const require = createRequire(import.meta.url);
 const SRC = 'src-profile';
 
 let sdb;
+let realBackend;   // restored after any test that swaps it
 
 const rows = (sql, params = []) => {
   const st = sdb.prepare(sql);
@@ -156,13 +157,14 @@ before(async () => {
   const SQL = await initSqlJs({ locateFile: () => require.resolve('sql.js/dist/sql-wasm.wasm') });
   sdb = new SQL.Database();
   sdb.run('PRAGMA foreign_keys = ON;');
-  __setBackendForTests({
+  realBackend = {
     query: (s, p = []) => Promise.resolve(rows(s, p)),
     run: (s, p = []) => { sdb.run(s, p); return Promise.resolve(); },
     exec: (s) => { sdb.run(s); return Promise.resolve(); },
     tx: (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
     persist: () => Promise.resolve(),
-  });
+  };
+  __setBackendForTests(realBackend);
   for (const m of MIGRATIONS) sdb.run(m.sql);
   __setActiveIdForTests(SRC);
 });
@@ -188,6 +190,8 @@ beforeEach(() => {
 });
 
 /* ------------------------------------------------------------------ */
+
+afterEach(() => { __setBackendForTests(realBackend); });
 
 test('FAIL-CLOSED: every profile-owned table in the live schema has a sentinel seeder', () => {
   const missing = profileOwnedTables().filter((t) => !SEEDERS[t]);
@@ -296,4 +300,52 @@ test('the bundle carries no catalog content - only references to it', async () =
     assert.ok(!(t in bundle), `bundle leaked catalog table ${t}`);
   }
   assert.equal(bundle.owned_cards[0].card_id, 'sentinel_card', 'catalog refs are carried as ids');
+});
+
+/* ------------------------------------------------------------------ */
+/* Stage 4: the extraction's own contracts                             */
+/* ------------------------------------------------------------------ */
+
+test('buildProfileUnit carries MORE than the legacy bundle - the full profile row and dashSeeded', async () => {
+  sdb.run("INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?, '1');", [`dash_seeded:${SRC}`]);
+  const unit = await buildProfileUnit(SRC);
+  assert.deepEqual(Object.keys(unit.profile).sort(),
+    ['accent', 'avatar', 'created_at', 'is_default', 'name', 'system', 'updated_at']);
+  assert.equal(unit.profile.is_default, 1, 'is_default must survive into the unit');
+  assert.equal(unit.profile.system, 'sorcery');
+  assert.equal(unit.dashSeeded, true, 'the per-profile dashboard flag must be carried');
+});
+
+test('exportProfile NARROWS the unit - the legacy file format is unchanged by the extraction', async () => {
+  // Widening the legacy bundle here would change a format that already exists on devices. That is
+  // Increment A's job to do deliberately, not a side effect of refactoring.
+  const bundle = await exportProfile(SRC);
+  assert.deepEqual(Object.keys(bundle.profile).sort(), ['accent', 'avatar', 'name']);
+  assert.ok(!('dashSeeded' in bundle), 'legacy bundle must not gain dashSeeded');
+});
+
+test('PURITY CONTRACT: planProfileUnit plans with no database at all', async () => {
+  // The whole-app restore concatenates every profile's plan into ONE transaction (Options / H).
+  // That is only possible if planning needs no database round-trip, so prove it against a backend
+  // that throws on every call.
+  const bundle = await exportProfile(SRC);
+  __setBackendForTests(new Proxy({}, {
+    get: () => () => { throw new Error('planProfileUnit touched the database'); },
+  }));
+  const { pid, statements } = planProfileUnit(bundle, { pid: 'fixed-pid', name: 'Planned' });
+  assert.equal(pid, 'fixed-pid', 'the caller supplies the id; the planner never allocates one');
+  assert.ok(statements.length > 1, 'planner produced no statements');
+  assert.ok(statements.every(([sql]) => typeof sql === 'string'), 'statements must be [sql, params] pairs');
+  // First two statements are the profile row and its settings row, inside the same set as the data.
+  assert.match(statements[0][0], /^INSERT INTO profiles\(/);
+  assert.match(statements[1][0], /INSERT OR IGNORE INTO settings/);
+});
+
+test('planProfileUnit accepts an explicit dashSeeded, and falls back to the legacy heuristic', async () => {
+  const bundle = await exportProfile(SRC);
+  const marker = (sts) => sts.some(([sql]) => sql.includes('catalog_meta'));
+  assert.equal(marker(planProfileUnit(bundle, { pid: 'p', name: 'n', dashSeeded: true }).statements), true);
+  assert.equal(marker(planProfileUnit(bundle, { pid: 'p', name: 'n', dashSeeded: false }).statements), false);
+  // undefined -> the heuristic, which for a bundle carrying supported blocks marks it seeded
+  assert.equal(marker(planProfileUnit(bundle, { pid: 'p', name: 'n' }).statements), true);
 });
