@@ -48,6 +48,30 @@ the predictive-back gesture, and the **>= 600dp portrait check on a tablet or ta
 row 14, both with and without the opt-out property). Then Codex final review of the diff, then merge.
 Nothing is pushed; `main` is local-only and ~66 commits ahead of `origin`.
 
+### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
+
+**Status:** diagnosed 2026-08-10, not started. Owner decision: do it after the upgrade merges, as its own
+branch, so the Capacitor diff stays purely toolchain for Codex.
+
+**Symptom:** card art appears to reload on every pillar switch.
+
+**It is not a caching failure and not an upgrade regression.** `git diff main..capacitor-8` touches no art
+file. `artCache.resolved` (`src/store/artCache.js:42`) is a module-level session memo that survives pillar
+switches, and `peek()` returns it synchronously, so nothing is re-downloaded.
+
+**Actual cause:** `ArtImage` holds `loaded` in COMPONENT state (`src/components/ArtImage.jsx:68`). A pillar
+switch unmounts the pillar, so on return `loaded` resets, `shown` is false, and line 82 paints the `<img>`
+at `opacity: 0` behind a shimmer with a `.3s` transition - for every card, every time. The bytes are local;
+only the animation re-runs. Faster post-upgrade navigation made it more noticeable.
+
+**Measured on device (Pixel 9 Pro XL, build 218):** returning to Home with art already cached, deck panels
+are black at t=0, fully painted by 400ms, byte-identical at 400ms and 1.9s. A CDN round trip would be
+neither that fast nor that consistent.
+
+**Next step:** when `peek()` already supplies the candidate at first render, or the `<img>` reports
+`complete` on mount, paint at full opacity with no shimmer and no transition. Guard against the reverse
+regression - a genuine first load must still shimmer and fade - and cover both in `artSource`-level tests.
+
 ### `android-16kb-compat` - DO NOT MERGE
 
 **Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in
