@@ -142,19 +142,27 @@ tasks.matching { it.name ==~ /merge.*Assets/ }.configureEach { dependsOn 'checkR
 // already states.
 //
 // tasks.named() throws UnknownTaskException when the task does not exist, so the same rename that
-// used to unbind the gate now breaks the build loudly and names the task it wanted. assemble and
-// bundle are Gradle LIFECYCLE task names, not AGP internals, so they are stable by contract.
+// used to unbind the gate now breaks the build loudly and names the task it wanted.
+//
+// BOUND TO THE ARTIFACT PRODUCERS, package<Variant> and package<Variant>Bundle - the tasks that WRITE
+// the .apk and .aab - for the same reason the forbidden-permission gate below is. An earlier revision
+// bound this to assemble/bundle/install, which LOOKED complete because all six entry points showed
+// the gate in their task graph. They did: `packageRelease` was picking it up through the
+// merge-assets line above, the one whose own comment calls it non-guaranteeing. So a direct
+// `gradlew packageRelease` after an AGP rename would have silently lost the gate while the graph
+// check still passed. Binding to the producers makes coverage independent of that pattern.
+//
 // projectsEvaluated, not afterEvaluate: AGP creates its variant tasks during its OWN afterEvaluate,
 // so a plain afterEvaluate block here runs too early and tasks.named() throws for tasks that are
 // about to exist. projectsEvaluated fires once every project's evaluation is complete.
 gradle.projectsEvaluated {
     ['Debug', 'Release'].each { variant ->
-        ["assemble${variant}", "bundle${variant}"].each { name ->
+        ["package${variant}", "package${variant}Bundle"].each { name ->
             tasks.named(name).configure { it.dependsOn('checkRecogAssets') }
         }
-        // install<Variant> exists only when the variant has a signing config - always for debug,
-        // for release only when keystore.properties is present. Matched rather than required, so a
-        // clone without signing secrets still configures.
+        // install<Variant> reaches package<Variant> anyway; bound explicitly so `installDebug` fails
+        // at the gate rather than after building. Matched rather than required because
+        // install<Variant> only exists when the variant has a signing config.
         tasks.matching { it.name == "install${variant}" }.configureEach { it.dependsOn('checkRecogAssets') }
     }
 }
