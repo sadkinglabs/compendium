@@ -173,3 +173,127 @@ Ranked by my own confidence, lowest first. Attack these before the rest.
 - **Art re-fade on pillar switch** - diagnosed during this pass, **not a regression from this branch and
   not a cache failure**; `ArtImage` holds its loaded flag in component state. Queued to its own branch by
   owner decision so this diff stays purely toolchain.
+
+---
+
+# Round 1 disposition - response (2026-08-10)
+
+All four Majors and the Minor are addressed. Two of the findings were correct about a defect I had
+already "fixed" once, which is the useful part of this round.
+
+## Major 1 - forbidden-permission gate bypassable. FIXED, and the diagnosis was mine to own.
+
+Confirmed exactly as reported: `:app:installRelease --dry-run` scheduled `checkRecogAssets` and **not**
+the permission gate, because `installRelease` depends on `packageRelease`, not `assembleRelease`.
+
+The real defect is that I had bound this gate to **convenient names for the build** twice running - v1
+to `assemble` only (so `bundleRelease` shipped an ungated AAB), v2 adding `bundle` (so `package` and
+`install` still slipped past). Enumerating entry points and hoping the list is complete *is* the bug.
+
+Now bound to `package<Variant>` and `package<Variant>Bundle` - the tasks that **write** the `.apk` and
+`.aab`. Every route runs through one of them, so coverage is complete by construction and a new entry
+point cannot open a new bypass.
+
+**Graph evidence, all six entry points:**
+
+| Entry point | Permission gate | Recogniser gate |
+|---|---|---|
+| `assembleRelease` | PRESENT | PRESENT |
+| `bundleRelease` | PRESENT | PRESENT |
+| `packageRelease` | PRESENT | PRESENT |
+| `packageReleaseBundle` | PRESENT | PRESENT |
+| `signReleaseBundle` | PRESENT | PRESENT |
+| `installRelease` | PRESENT | PRESENT |
+
+**Provoked-negative:** with the `AD_ID` `tools:node="remove"` suppressed, `packageRelease`,
+`packageReleaseBundle` and `installRelease` each exited non-zero and named `AD_ID`. Manifest restored
+and verified byte-identical to HEAD afterwards.
+
+## Major 2 - clean-database and backup/restore under the upgraded plugin. CLOSED, mostly natively.
+
+The x86_64 emulator could not be used: this machine has no hypervisor driver and enabling one needs
+admin rights plus a reboot. Owner chose a better substitute - **a temporary second Android user on the
+Pixel**, which gives a genuinely empty app sandbox while running the **real arm64 minified release
+APK** (an emulator could only have run the debug build, since release is arm64-only).
+
+1. **Clean-install first-run database creation: PROVEN.** `pm install-existing --user 10`, empty data
+   sandbox, cold launch. The app created its database and rendered first-run state: `WELCOME` (not
+   `WELCOME BACK`), starter `Sorcerer` profile, 0 cards / 0 decks / 0 matches, owner data absent. No
+   crash. Test user removed afterwards; device returned to Owner.
+2. **Whole-app backup under the upgraded plugin: PROVEN, against real data.** Better than the empty
+   sandbox: a backup of the owner's live 1832-card database. `db.snapshot()` completed and the file was
+   produced - which is the specific concern raised ("transaction behavior breaks snapshot()").
+   Compared byte-for-byte against the **pre-upgrade** backup taken at build 216: **every table row count
+   identical** (991 `owned_cards`, 243 `deck_entries`, 184 `deck_history`, 34 `match_log_entries`, 9
+   matches, 4 decks). A full deep diff found **exactly one differing field** in the entire dataset -
+   one `owned_cards[].updated_at`, moved to today, consistent with the owner's scanner test writing
+   that row. Nothing else changed across the plugin major.
+3. **Restore into a fresh database with integrity verification: PROVEN.**
+   `scripts/backup/verify-archive.mjs` restored the **post-upgrade** archive into a database that had
+   never held it, reading through the production reader, **independently recomputing the digest**
+   rather than trusting the reader's verdict. `RESULT: ALL CHECKS PASSED` - 4 decks, 243 deck entries,
+   184 history rows, 9 matches, 34 log entries, **1832 owned copies**, exactly one default profile.
+4. **The native restore path, on device, under Capacitor 8: PROVEN up to the write.** SAF picker,
+   file selected, read and digest-verified on device, preview planned **1,476 rows**, Sadkingbilly
+   4 decks / 991 cards / 9 matches. Closed without confirming; owner data verified unchanged (1832).
+
+**Residual gap, stated precisely:** the final *write* of a native restore into a clean device install
+was not executed. A secondary Android user cannot receive a file from `adb` (`push` and MediaStore
+insert both denied), and the app saves backups through a share sheet the bare test user had no target
+for. So restore's write path is proven by `verify-archive` into a fresh database and by the on-device
+plan, but not by a native confirmed restore on an empty install. Confirming it in the owner's live
+profile would add duplicate profiles to real data, which I did not do unasked.
+
+## Major 3 - predictive back. TESTED, real edge gesture, three states.
+
+Static basis first: `@capacitor/app` 8.1.1 registers an `OnBackPressedCallback` on the
+`OnBackPressedDispatcher` - the predictive-back-compatible API, bridged to `OnBackInvokedCallback` by
+AndroidX Activity 1.13.0. `enableOnBackInvokedCallback` is not declared, and the platform default at
+target 36 is true. Then observed, with an edge swipe:
+
+| State | Result |
+|---|---|
+| Sheet open (Profiles) | Sheet closed, stayed in app, `MainActivity` still resumed - the JS consumer received it |
+| `ScannerActivity` | Returned to `MainActivity`; camera controller closed; 0 fatal / camera-error lines |
+| App root | Consumed with the "Press back again to exit" toast - deliberate double-back-to-exit (`App.jsx:380`), not a missed gesture. A second swipe within 2s exited to the launcher. Relaunch intact, 1832 cards |
+
+No case exposed the underlying Activity, exited unexpectedly, or left the scanner mis-lifecycled.
+
+## Major 4 - resolved graph and advisories. CLOSED, and the declared version was worse than stale.
+
+`androidxCoreVersion = '1.17.0'` was **referenced by nothing** - a dead knob carrying a comment shaped
+like a decision, so the documented version could never have won. Release resolved `androidx.core:core`
+to **1.18.0** via `activity:1.13.0` then `core-ktx:1.18.0`.
+
+**Adopted 1.18.0 and declared it explicitly.** Its AAR metadata says `minCompileSdk=36`,
+`minAndroidGradlePluginVersion=8.9.1`; the build is 36 / 8.13.0, so it is legal under the same
+both-sides test as everything else. Constraining to 1.17.0 would fight activity 1.13.0 to no benefit.
+`core:1.19.0` verified genuinely out of reach (`minCompileSdk=37`, `minAGP=9.1.0`). The resolved graph
+(228 modules) is recorded in the audit addendum.
+
+**Advisories dispositioned by hand.** Production surface: **0**. `npm audit fix` would **downgrade
+`@capacitor/cli` to 8.4.2 and `firebase-tools` to 14.23.0**, partially undoing this upgrade. Removed
+`@capacitor/assets` - a one-off icon generator no script references, unpatchable in place, and the sole
+source of the only **critical** (`tar`); it runs via `npx` when needed. `firebase-tools`,
+`@capacitor/cli` and `sharp` accepted with reasons (server-side or iOS-only advisories against tooling
+used as a client, with no `ios/` directory present). **22 to 17, critical eliminated, production still
+0.** Full table in the audit addendum.
+
+## Minor - wasm strip. FIXED, and the first fix was wrong too.
+
+Now matched by **specific name** (`sql-wasm.wasm` / `sql-wasm-<hash>.wasm`), so a future
+native-required wasm cannot be deleted for sharing an extension. More importantly it now walks the
+**whole synced asset tree**, because both earlier versions read a single directory - which is exactly
+how a relocated asset shipped 640 kB silently.
+
+I did not implement fail-on-zero as literally specified, and want that flagged rather than glossed:
+a hard error on zero breaks idempotency, since after a successful strip the file is legitimately
+absent. The recursive search is what makes "absent" trustworthy, so zero is reported with its reason
+and **multiple matches is the hard error**. All four branches exercised, including the relocation case
+that reproduces the original bug.
+
+## Still open, unchanged
+
+- **>= 600dp portrait.** Deferred by owner to a dedicated tablet pass. `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` merges declared but never observed working. Phones are exempt from the override, so nothing shipping to a phone is affected.
+- **`App.jsx` has no test coverage.** Unchanged, still owed.
+- **No x86 pass.** The emulator could not run; the multi-user substitute is arm64.

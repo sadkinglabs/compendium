@@ -54,9 +54,27 @@ way and nothing shipping is at risk; what is unproven is large-screen behaviour 
 dedicated tablet tune-up, where it belongs with the rest of the large-screen work. Until then, treat
 "portrait holds on tablets at target 36" as an untested claim.
 
-**Next step:** Codex adversarial review of the full diff (packet:
-[proposals/capacitor-8-review-packet.md](./proposals/capacitor-8-review-packet.md)), then merge.
-Nothing is pushed; `main` is local-only and ~66 commits ahead of `origin`.
+**Codex round 1: "Changes required" - all four Majors and the Minor now addressed** (response in the
+packet). The two findings worth remembering:
+
+- **The forbidden-permission gate was STILL bypassable** after I had already "fixed" it once.
+  `installRelease` depends on `packageRelease`, not `assembleRelease`. Both earlier bindings attached to
+  convenient LIFECYCLE names instead of the tasks that write the artifact. Now bound to
+  `package<Variant>` / `package<Variant>Bundle`, so coverage is complete by construction; all six entry
+  points verified, and provoked-negative on the three producers.
+- **`androidxCoreVersion` was referenced by nothing** - a dead knob whose comment read like a decision
+  while the release graph shipped `androidx.core:core` 1.18.0. Adopted 1.18.0 and declared it; the
+  resolved 228-module graph is now recorded in the audit addendum.
+
+Also: clean-install first-run DB creation proven on a temporary second Android user (real arm64 minified
+release APK, empty sandbox); backup under plugin 8.x proven against real data and diffed against the
+pre-upgrade backup (every row count identical, exactly one `updated_at` differs); restore into a
+never-used database verified with an independently recomputed digest; native SAF picker + on-device
+digest + restore preview exercised without writing. npm advisories dispositioned by hand, critical
+removed, production surface 0.
+
+**Next step:** return the response to Codex for round 2, then merge. Nothing is pushed; `main` is
+local-only and ~66 commits ahead of `origin`.
 
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
 
