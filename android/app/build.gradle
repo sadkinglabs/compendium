@@ -39,8 +39,8 @@ android {
     // No composeOptions block: the Compose compiler plugin applied above owns that now, and
     // declaring kotlinCompilerExtensionVersion alongside it is an error rather than a duplicate.
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
     packaging {
         resources {
@@ -95,10 +95,10 @@ android {
 
 // Kotlin's JVM target MUST equal the Java target above or the build fails with
 // "Inconsistent JVM-target compatibility". `kotlinOptions` is deprecated in Kotlin 2.x, so this is
-// the compilerOptions DSL. It moves to 21 with the rest of the toolchain.
+// the compilerOptions DSL.
 kotlin {
     compilerOptions {
-        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
     }
 }
 

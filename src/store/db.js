@@ -5,7 +5,6 @@
 import { Capacitor } from '@capacitor/core';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 
-const BASE = import.meta.env?.BASE_URL;   // optional: undefined under node --test (BASE only used by the web backend, which tests never open)
 const isWeb = Capacitor.getPlatform() === 'web';
 
 let backend = null;
@@ -119,7 +118,12 @@ export function __resetWriteGateForTests() { const r = writeGate; writeGate = nu
 /* ------------------------------------------------------------------ */
 async function webBackend() {
   const initSqlJs = (await import('sql.js')).default;
-  const SQL = await initSqlJs({ locateFile: () => `${BASE}assets/sql-wasm.wasm` });
+  // Resolved through Vite's asset pipeline rather than a hardcoded /assets path: `?url` yields the
+  // emitted, hashed, base-correct URL. The old hardcoded path broke silently when
+  // vite-plugin-static-copy changed where it put the file. Inside webBackend, so `node --test` -
+  // which never opens the web backend - never evaluates a Vite-only import specifier.
+  const wasmUrl = (await import('sql.js/dist/sql-wasm.wasm?url')).default;
+  const SQL = await initSqlJs({ locateFile: () => wasmUrl });
   const bytes = await idbLoad();
   const sdb = new SQL.Database(bytes || undefined);
   sdb.run('PRAGMA foreign_keys = ON;');
