@@ -28,10 +28,14 @@ after three Codex rounds. **Stage 0 is COMPLETE** (2026-08-10) and it closed the
 `importProfileBoundary.test.mjs`, so only the missing guard was written:
 `src/store/profileRoundTrip.test.mjs` - schema-derived, all-table, all-field round trip, proven by
 provocation (drop a table, null a field, add a v12 table: each fails the right assertion by name).
-**Next step:** **Stage 2** - `src/store/backup.js`, the pure core: canonical JSON, the `unsigned` digest
-preimage, envelope build/parse, bounds and cardinality validation. No UI, no wiring, `test:query` only.
-**Then:** Stage 3 (`db.js` snapshot + write gate), Stage 4 (the extraction - **checkpoint**, guarded by
-Stage 1's tests), Stages 5-7.
+**Stage 2 is COMPLETE** (2026-08-10). `src/store/backup.js` + 29 tests: canonical JSON, the `unsigned`
+digest preimage (named once, used by writer and reader), envelope build/parse, size bounds, cardinality.
+Nothing is reachable from the app. Proven by reintroducing Codex Blocker 6 - 21 tests fail, including the
+preimage contract.
+**Next step:** **Stage 3** - `db.js` `snapshot(fn)`: a read transaction plus an exclusive write gate
+honoured by `run`, `tx` and `exec`, with the concurrency regression test (a write during a snapshot must
+not appear in the archive, must not join the snapshot's transaction, and must not be lost).
+**Then:** Stage 4 (the extraction - **CHECKPOINT**, guarded by Stage 1's tests), Stages 5-7.
 
 ### `android-16kb-compat` - DO NOT MERGE
 
