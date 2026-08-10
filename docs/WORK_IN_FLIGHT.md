@@ -40,10 +40,16 @@ leaking the gate wedges the whole file, skipping `endRead` on throw leaves the t
 `exportProfile` / `importProfile`; the planner is pure (no query, no tx, no DB-allocated id), which is
 what lets the whole-app restore use one transaction. `exportProfile` narrows the unit, so the legacy
 file format is byte-unchanged. Stage 1's characterization tests passed unchanged, which was the gate.
-**Next step:** **Stage 5** - `backupAll` / `restoreAll` in `src/store/backup.js` wired to the store
-(snapshot -> build units -> seal; parse -> plan every unit -> ONE `tx` -> adopt default -> preferences),
-plus the Settings UI: "Prepare backup", "Restore from backup", the restore preview, and the honest
-"last prepared" status line.
+**Stage 5 is COMPLETE** (2026-08-10). `src/store/backupService.js` (`backupAll` / `previewBackup` /
+`restoreAll`, 11 tests) plus the Settings Backup section and restore-preview modal in `App.jsx`.
+**Divergence recorded:** the orchestration lives in a new `backupService.js` rather than in
+`backup.js`, because `backup.js` is pure and its tests depend on it staying so. The property this
+protects is the proposal's own.
+**Next step:** **Stage 6** - verification. Repository gates are green; what remains is the
+**disposable-environment restore** (debug build on a fresh emulator: restore, verify counts, exactly
+one default, no starter husk, idempotency on a second restore, truncated + edited files refused) and
+the device pass on the owner's phone (backup prepares, share sheet, Web Crypto confirmed, airplane
+mode, zero-image).
 **Then:** Stage 6 (verification incl. the disposable emulator restore), Stage 7 (handoff to Increment B:
 the backup, and the rollback SOURCE baseline commit by SHA).
 
