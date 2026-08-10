@@ -9,10 +9,26 @@ import { prepareBundle } from './importBoundary.js';
 import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
 import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
-import { saveTextFile } from '../native.js';
 import { safeHref } from '../util.js';
 
 const inClause = (ids) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
+
+/**
+ * A profile name not already in `taken`. Pure, and the ONE implementation of this rule.
+ *
+ * There were two, and only one was right: the whole-app restore looped until the name was free while
+ * `importProfile` appended "(imported)" exactly once, so importing the same profile a third time
+ * produced a SECOND profile with an identical name. Nothing in the schema forbids that - names carry
+ * no unique index - which is precisely why it went unnoticed: the database accepts it and the profile
+ * picker then shows two rows a user cannot tell apart.
+ */
+export function uniqueProfileName(base, taken) {
+  const root = base || 'Imported';
+  if (!taken.has(root)) return root;
+  let candidate = `${root} (imported)`;
+  for (let n = 2; taken.has(candidate); n++) candidate = `${root} (imported ${n})`;
+  return candidate;
+}
 
 /** Strip unsafe URLs from an imported 'urls' widget's config JSON so a crafted
  *  bundle can't smuggle a javascript: link past the render-time guard. */
@@ -25,8 +41,19 @@ function sanitizeBlockConfig(type, configJson) {
   } catch { return '{}'; }
 }
 
-/** Build the portable bundle for a profile (defaults to the active one). */
-export async function exportProfile(profileId = activeProfileId()) {
+/**
+ * Every profile-owned row for one profile, in the WHOLE-APP unit shape.
+ *
+ * Extracted from `exportProfile` so the per-profile path and the whole-app backup share one
+ * implementation - two would drift, and the drift would only ever show on restore, the least
+ * exercised path in the app (the same argument importBoundary.js makes about the shared planner).
+ *
+ * Richer than the legacy bundle in exactly two ways, both of which the whole-app format needs and
+ * the legacy wrapper narrows away again:
+ *   - the FULL profile row, not just name/avatar/accent
+ *   - `dashSeeded`, the per-profile dashboard flag that lives in `catalog_meta`
+ */
+export async function buildProfileUnit(profileId) {
   const profile = (await query('SELECT * FROM profiles WHERE id=?;', [profileId]))[0];
   if (!profile) throw new Error('Profile not found.');
 
@@ -38,10 +65,17 @@ export async function exportProfile(profileId = activeProfileId()) {
   const colIds = collections.map((c) => c.id);
   const matchIds = matches.map((m) => m.id);
   const listIds = cardLists.map((l) => l.id);
+  // Profile-owned, but stored in a catalog table (homeRepository.js:34). Carried inside the unit and
+  // re-keyed on restore; without it a faithfully restored dashboard is repopulated with starters.
+  const dashSeeded = (await query('SELECT 1 FROM catalog_meta WHERE key=?;', [`dash_seeded:${profileId}`])).length > 0;
 
   return {
-    app: 'compendium', schemaVersion: SCHEMA_VERSION, exportedAt: nowIso(),
-    profile: { name: profile.name, avatar: profile.avatar, accent: profile.accent },
+    profile: {
+      name: profile.name, avatar: profile.avatar, accent: profile.accent,
+      system: profile.system, is_default: profile.is_default,
+      created_at: profile.created_at, updated_at: profile.updated_at,
+    },
+    dashSeeded,
     decks,
     deck_entries: await query(`SELECT * FROM deck_entries WHERE deck_id IN ${inClause(deckIds)};`, deckIds),
     deck_history: await query(`SELECT * FROM deck_history WHERE deck_id IN ${inClause(deckIds)};`, deckIds),
@@ -60,6 +94,23 @@ export async function exportProfile(profileId = activeProfileId()) {
     dashboard_layouts: await query('SELECT * FROM dashboard_layouts WHERE profile_id=?;', [profileId]),
     resume: (await query('SELECT * FROM resume WHERE profile_id=?;', [profileId]))[0] || null,
     settings: (await query('SELECT * FROM settings WHERE profile_id=?;', [profileId]))[0] || null,
+  };
+}
+
+/**
+ * The portable single-profile bundle (defaults to the active profile).
+ *
+ * A NARROWING of `buildProfileUnit`: the legacy format carries only name/avatar/accent and has no
+ * `dashSeeded`, and that contract is asserted by profileRoundTrip.test.mjs. Widening it here would
+ * change a file format that already exists on users' devices, which is Increment A's job to do
+ * deliberately - not a side effect of an extraction.
+ */
+export async function exportProfile(profileId = activeProfileId()) {
+  const { profile, dashSeeded, ...tables } = await buildProfileUnit(profileId);
+  return {
+    app: 'compendium', schemaVersion: SCHEMA_VERSION, exportedAt: nowIso(),
+    profile: { name: profile.name, avatar: profile.avatar, accent: profile.accent },
+    ...tables,
   };
 }
 
@@ -88,13 +139,11 @@ export async function importProfile(rawBundle, { name } = {}) {
   }
   const { bundle } = prepareBundle(rawBundle, (cardId) => setsById.get(cardId) || []);
 
-  // Restore under the original name; only add "(imported)" if that name is already
-  // taken (e.g. importing your "Sorcerer" next to the fresh-install "Sorcerer").
-  let pname = name || bundle.profile?.name || 'Imported';
-  if (!name) {
-    const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
-    if (taken.has(pname)) pname = `${pname} (imported)`;
-  }
+  // Restore under the original name, disambiguated if that name is already on the device. This
+  // applies to an explicitly-supplied name too: `duplicateProfile` passes "X (copy)", and duplicating
+  // twice would otherwise produce two profiles called "X (copy)".
+  const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
+  const pname = uniqueProfileName(name || bundle.profile?.name, taken);
   // avatar is stored as a JSON string and is re-stringified on write, so parse it back.
   let avatar = null;
   try { avatar = bundle.profile?.avatar ? JSON.parse(bundle.profile.avatar) : null; } catch { avatar = null; }
@@ -110,13 +159,37 @@ export async function importProfile(rawBundle, { name } = {}) {
   // and storage failures are not properties of the input. Only atomicity closes it. So the
   // profile and settings rows are simply the first two statements below, and a rollback takes
   // the profile with it.
-  const pid = uuid();
+  const { pid, statements } = planProfileUnit(bundle, { pid: uuid(), name: pname, avatar });
+  if (statements.length) await tx(statements);
+  return pid;
+}
+
+/**
+ * PURE. Turn one prepared bundle/unit into the statement set that restores it under `pid`.
+ *
+ * No I/O: no query, no transaction, and no id taken from the database. That is what lets the
+ * whole-app restore concatenate the plans for every profile into ONE transaction (Options / H in
+ * backup-and-restore.md) instead of committing profile by profile and bookkeeping the difference.
+ *
+ * Extracted verbatim from `importProfile`, whose comments record two separately paid-for bugs. The
+ * safety net for that move is `profileRoundTrip.test.mjs` plus the orphan-profile and
+ * import-boundary characterizations, all written before this extraction existed.
+ *
+ * @param bundle  a PREPARED bundle (validated + normalised) or a whole-app profile unit
+ * @param pid     the profile id to restore under - generated by the caller, never by the database
+ * @param name    the resolved profile name (collision handling is the caller's, it needs a query)
+ * @param avatar  the parsed avatar object, or null
+ * @param dashSeeded  optional override; when undefined the legacy heuristic decides
+ */
+export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded } = {}) {
   const pts = nowIso();
   const stmts = [];
   const ins = (table, cols, vals) => stmts.push([`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(() => '?').join(',')});`, vals]);
 
+  // is_default is always 0 here. Exactly-one-default is re-asserted at boot (profileRepository.js:39),
+  // and the whole-app restore moves the flag deliberately in its own statement after every unit.
   ins('profiles', ['id', 'name', 'avatar', 'accent', 'system', 'schema_version', 'is_default', 'created_at', 'updated_at'],
-    [pid, pname, avatar ? JSON.stringify(avatar) : null, bundle.profile?.accent || 'gold', 'sorcery', SCHEMA_VERSION, 0, pts, pts]);
+    [pid, name, avatar ? JSON.stringify(avatar) : null, bundle.profile?.accent || 'gold', 'sorcery', SCHEMA_VERSION, 0, pts, pts]);
   stmts.push(['INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [pid]]);
 
   // id remaps (old -> new), so two imports never collide.
@@ -199,37 +272,20 @@ export async function importProfile(rawBundle, { name } = {}) {
   // even a deliberately empty one - is not repopulated with starter widgets; but an
   // old highlights-only dashboard (every block dropped) is left unseeded so first load
   // lays down the starter set rather than showing blank. See shouldMarkDashboardSeeded.
-  if (shouldMarkDashboardSeeded(bundle.dashboard_blocks, importedBlocks))
+  // A whole-app unit carries the flag explicitly; a legacy bundle has no such field, so the
+  // heuristic still decides for it. Same outcome for every file that exists today.
+  const markSeeded = dashSeeded === undefined
+    ? shouldMarkDashboardSeeded(bundle.dashboard_blocks, importedBlocks)
+    : dashSeeded;
+  if (markSeeded)
     stmts.push(["INSERT OR REPLACE INTO catalog_meta(key,value) VALUES(?, '1');", [`dash_seeded:${pid}`]]);
 
-  if (stmts.length) await tx(stmts);
-  return pid;
+  return { pid, statements: stmts };
 }
 
-/* ---- web file helpers (native build swaps in Filesystem + Share) ---- */
-
-export async function exportToFile(profileId) {
-  const bundle = await exportProfile(profileId);
-  const safe = (bundle.profile?.name || 'profile').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  await saveTextFile(`compendium-${safe}.json`, JSON.stringify(bundle, null, 2), 'application/json');
-  return bundle;
-}
-
-export function pickAndImport() {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'application/json,.json';
-    input.onchange = async () => {
-      try {
-        const file = input.files?.[0];
-        if (!file) return resolve(null);
-        const text = await file.text();
-        const pid = await importProfile(JSON.parse(text));
-        resolve(pid);
-      } catch (e) { reject(e); }
-    };
-    input.click();
-  });
-}
+/* NOTE: `exportToFile` and `pickAndImport` were removed with the profile Export/Import buttons
+   (owner decision 2026-08-10) - they had no other callers. `exportProfile` and `importProfile`
+   REMAIN and are load-bearing: `duplicateProfile` is built on them, and the whole-app restore routes
+   legacy single-profile files through `importProfile`. */
 
 export { renameProfile, switchProfile };

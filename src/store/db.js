@@ -1,7 +1,7 @@
 // Database layer with two backends behind one API:
 //   - web  : sql.js (wasm) + IndexedDB persistence  (dev preview, browser)
 //   - native: @capacitor-community/sqlite            (device builds)
-// Public API: openDatabase, query, run, exec, tx, persist.
+// Public API: openDatabase, query, run, exec, tx, persist, snapshot.
 import { Capacitor } from '@capacitor/core';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 
@@ -44,16 +44,75 @@ async function runMigrations() {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Snapshot reads, and the write gate that makes them consistent       */
+/* ------------------------------------------------------------------ */
+
+// Held while a snapshot is open. Every WRITE awaits it; reads do not.
+//
+// WHY A GATE AND NOT JUST A TRANSACTION. Both backends use ONE connection. So a write issued while a
+// snapshot's transaction is open does not merely race the snapshot's reads - it JOINS that
+// transaction, and is committed or rolled back with it. A transaction alone therefore makes the
+// problem worse, not better: it silently enrols unrelated work.
+//
+// This is the narrowest place to fix that, because db.js is already the single choke point for every
+// write in the app. Excluding only Collection writes would not do: `withExclusiveCollectionWrites`
+// governs the Collection queue, while deck saves, match recording and profile mutations come
+// straight here.
+//
+// Writes are DELAYED, never dropped: they await the gate and run after the snapshot commits.
+let writeGate = null;
+
+/** Resolves immediately unless a snapshot is open. */
+const whenWritable = () => writeGate ?? Promise.resolve();
+
 /* Public API - delegate to the active backend. */
 export const query = (sql, params = []) => backend.query(sql, params);
-export const run = (sql, params = []) => backend.run(sql, params);
-export const exec = (sql) => backend.exec(sql);
-export const tx = (statements) => backend.tx(statements);
+export const run = async (sql, params = []) => { await whenWritable(); return backend.run(sql, params); };
+export const exec = async (sql) => { await whenWritable(); return backend.exec(sql); };
+export const tx = async (statements) => { await whenWritable(); return backend.tx(statements); };
+// NOT gated: persist() flushes already-committed state and writes nothing new to the database. A
+// snapshot holds no uncommitted data, so flushing during one is a no-op on correctness.
 export const persist = () => backend.persist();
+
+/**
+ * Run `fn`'s reads against a consistent snapshot of the database.
+ *
+ * Takes the write gate for the duration AND opens a read transaction, then commits. `fn` must only
+ * read: any write it issues would await the gate this call is holding, and deadlock. That is a
+ * deliberate shape - it makes "a snapshot writes nothing" structural rather than a rule to remember.
+ *
+ * Snapshots serialise against each other, so two concurrent backups cannot interleave.
+ */
+export async function snapshot(fn) {
+  while (writeGate) await writeGate;          // wait out any snapshot already in progress
+  if (!backend.beginRead || !backend.endRead) {
+    throw new Error('db.snapshot: the active backend does not support snapshot reads.');
+  }
+  let release;
+  writeGate = new Promise((resolve) => { release = resolve; });
+  try {
+    await backend.beginRead();
+    try {
+      return await fn();
+    } finally {
+      // Ends the read transaction whether fn resolved or threw, so a failed backup never leaves a
+      // transaction open on the shared connection.
+      await backend.endRead();
+    }
+  } finally {
+    writeGate = null;
+    release();                                 // let queued writes through
+  }
+}
 
 // Test-only: inject a backend (a bare sql.js wrapper) so the store layer can run in
 // `node --test` without Capacitor/Vite. NEVER called by app code.
 export function __setBackendForTests(b) { backend = b; }
+
+// Test-only: the write gate is module state, so a test that throws mid-snapshot could otherwise
+// wedge every later test in the file. NEVER called by app code.
+export function __resetWriteGateForTests() { const r = writeGate; writeGate = null; return r; }
 
 /* ------------------------------------------------------------------ */
 /* web backend: sql.js + IndexedDB                                     */
@@ -100,6 +159,11 @@ async function webBackend() {
     },
     run(sql, params) { sdb.run(sql, params || []); return api.persist(); },
     exec(sql) { sdb.run(sql); return Promise.resolve(); },           // multi-statement, no persist
+    // Read snapshot. sql.js is synchronous, so nothing can interleave DURING one statement - but our
+    // reads are awaited one table at a time, and a write can land between two of those awaits. The
+    // transaction plus db.js's write gate is what closes that window.
+    beginRead() { sdb.run('BEGIN;'); return Promise.resolve(); },
+    endRead() { sdb.run('COMMIT;'); return Promise.resolve(); },
     tx(statements) {
       sdb.run('BEGIN;');
       try { for (const [s, p = []] of statements) sdb.run(s, p); sdb.run('COMMIT;'); }
@@ -198,6 +262,11 @@ async function nativeBackend() {
     async run(sql, params) { return db.run(sql, params, false); },
     async exec(sql) { return db.execute(stripSqlComments(sql), false); },
     async tx(statements) { return db.executeSet(statements.map(([statement, values = []]) => ({ statement, values })), true); },
+    // Read snapshot, via the plugin's own transaction control. Paired with db.js's write gate: the
+    // connection is shared, so without the gate an unrelated write would be enrolled INTO this
+    // transaction and committed or rolled back with the backup that opened it.
+    async beginRead() { return db.beginTransaction(); },
+    async endRead() { return db.commitTransaction(); },
     async persist() { /* native autosaves */ },
   };
 }
