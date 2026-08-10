@@ -32,10 +32,17 @@ provocation (drop a table, null a field, add a v12 table: each fails the right a
 digest preimage (named once, used by writer and reader), envelope build/parse, size bounds, cardinality.
 Nothing is reachable from the app. Proven by reintroducing Codex Blocker 6 - 21 tests fail, including the
 preimage contract.
-**Next step:** **Stage 3** - `db.js` `snapshot(fn)`: a read transaction plus an exclusive write gate
-honoured by `run`, `tx` and `exec`, with the concurrency regression test (a write during a snapshot must
-not appear in the archive, must not join the snapshot's transaction, and must not be lost).
-**Then:** Stage 4 (the extraction - **CHECKPOINT**, guarded by Stage 1's tests), Stages 5-7.
+**Stage 3 is COMPLETE** (2026-08-10). `db.js` gains `snapshot(fn)`: a read transaction plus an exclusive
+write gate honoured by `run`/`tx`/`exec` (reads deliberately ungated). Both backends implement
+`beginRead`/`endRead`. 7 tests, proven by provocation - ungating `run` fails the invisibility assertion,
+leaking the gate wedges the whole file, skipping `endRead` on throw leaves the transaction open.
+**Next step:** **Stage 4 - THE CHECKPOINT.** Extract `buildProfileUnit` / `planProfileUnit` from
+`exportProfile` / `importProfile`, add the missing profile columns and `dashSeeded`, extend
+`validateBundle` for the envelope. This is the stage that touches live import code; Stage 1's
+characterization tests are the safety net and must pass unchanged. **Stop for owner review before
+merging this stage.**
+**Then:** Stage 5 (backupAll/restoreAll + Settings UI), Stage 6 (verification incl. the disposable
+emulator restore), Stage 7 (handoff to Increment B).
 
 ### `android-16kb-compat` - DO NOT MERGE
 
