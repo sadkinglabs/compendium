@@ -45,11 +45,21 @@ file format is byte-unchanged. Stage 1's characterization tests passed unchanged
 **Divergence recorded:** the orchestration lives in a new `backupService.js` rather than in
 `backup.js`, because `backup.js` is pure and its tests depend on it staying so. The property this
 protects is the proposal's own.
-**Next step:** **Stage 6** - verification. Repository gates are green; what remains is the
-**disposable-environment restore** (debug build on a fresh emulator: restore, verify counts, exactly
-one default, no starter husk, idempotency on a second restore, truncated + edited files refused) and
-the device pass on the owner's phone (backup prepares, share sheet, Web Crypto confirmed, airplane
-mode, zero-image).
+**Stage 6 is MOSTLY DONE** (2026-08-10, Pixel 9 Pro XL / Android 16 / release build 216):
+- **Restore of a real legacy archive on device**: Sadkingbilly recovered - 4 decks, 991 ledger rows /
+  1,832 copies, 9 matches, 1,470 rows. Additive; the pre-existing Sorcerer profile untouched and still
+  default. Survived force-stop. Deck W-L recomputed from restored matches, not copied.
+- **Backup prepared on device** and pulled back: a valid v2 whole-app envelope, appBuild 216, BOTH
+  profiles, full profile rows, per-profile `dashSeeded`, `activeProfileIndex` and `changelogSeenBuild`.
+- **Digest independently recomputed = MATCH.** This also settles Assumption 2 empirically: the digest
+  was produced *on device*, so `crypto.subtle` works in the Capacitor WebView. No longer an inference.
+- **Whole-app restore into a clean database** via `scripts/backup/verify-archive.mjs`: every table
+  matches exactly, 1,832 copies preserved, exactly one default, starter retained. ALL CHECKS PASSED.
+- Three defects found and fixed on device (builds 215/216): Restore rejected every legacy export; the
+  preview claimed a checksum a legacy file does not have; a successful restore did not refresh the UI.
+**Next step:** the remaining Stage 6 rows - **airplane mode**, **zero-image mode**, TalkBack/48dp
+accessibility pass, and a second-restore idempotency check on device. Then Stage 7 (handoff to
+Increment B: the backup, and the rollback SOURCE baseline commit by SHA).
 **Then:** Stage 6 (verification incl. the disposable emulator restore), Stage 7 (handoff to Increment B:
 the backup, and the rollback SOURCE baseline commit by SHA).
 
