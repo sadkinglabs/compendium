@@ -24,10 +24,14 @@ after three Codex rounds. **Stage 0 is COMPLETE** (2026-08-10) and it closed the
   `_meta` journal, Options / J, is NOT built.**
 - `crypto.subtle`: `androidScheme` defaults to HTTPS with no override, so the WebView is a secure context.
   Raised to High confidence; confirmed on the first device build rather than gating the design.
-**Next step:** **Stage 1** - characterization tests against unmodified code (the disconnected
-import-boundary bug, the orphan-profile bug, and the schema-derived all-table sentinel round trip). These
-must all pass before Stage 4 touches `importProfile`.
-**Then:** Stages 2-7 in order.
+**Stage 1 is COMPLETE** (2026-08-10). The two historical bugs were already characterized in
+`importProfileBoundary.test.mjs`, so only the missing guard was written:
+`src/store/profileRoundTrip.test.mjs` - schema-derived, all-table, all-field round trip, proven by
+provocation (drop a table, null a field, add a v12 table: each fails the right assertion by name).
+**Next step:** **Stage 2** - `src/store/backup.js`, the pure core: canonical JSON, the `unsigned` digest
+preimage, envelope build/parse, bounds and cardinality validation. No UI, no wiring, `test:query` only.
+**Then:** Stage 3 (`db.js` snapshot + write gate), Stage 4 (the extraction - **checkpoint**, guarded by
+Stage 1's tests), Stages 5-7.
 
 ### `android-16kb-compat` - DO NOT MERGE
 
