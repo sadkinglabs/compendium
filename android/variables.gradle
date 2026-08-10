@@ -4,10 +4,13 @@ ext {
     // check even for correctly-aligned .so files. Raising it also lets the release build ship arm64 only.
     minSdkVersion = 29
     compileSdkVersion = 36
-    // targetSdk STAYS 35 in this step, deliberately. Increment 3a moves Capacitor, AGP, Gradle, Java
-    // and androidx; 3b flips target to 36 ALONE, so an Android 16 behaviour change is attributable to
-    // the platform rather than to the toolchain move that happened to land beside it.
-    targetSdkVersion = 35
+    // Android 16. Flipped ALONE in Increment 3b, one commit after the toolchain move, so that any
+    // behaviour change here is attributable to the platform rather than to Capacitor/AGP/Gradle.
+    // targetSdk is what opts the app in to a platform's behaviour changes; compileSdk above only
+    // decides which APIs it can see. The Android 16 changes that reach this app are edge-to-edge
+    // (no longer opt-out), predictive back, and the orientation/resizability overrides on large
+    // screens - the last of which does not apply, since the app is portrait-only by product decision.
+    targetSdkVersion = 36
     // Every version below is chosen from the artifact's OWN published minCompileSdk /
     // minAndroidGradlePluginVersion (read out of its AAR metadata), not from the Capacitor template
     // and not from a release date. That method caught three wrong answers the template would have
