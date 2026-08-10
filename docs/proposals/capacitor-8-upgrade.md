@@ -140,6 +140,20 @@ back handling, and the scanner.
 
 ## Prerequisite: Increment A
 
+> **STAGE 7 HANDOFF - SATISFIED 2026-08-10.** Increment A is merged and every prerequisite below now
+> has a concrete value:
+>
+> | Artifact | Value |
+> |---|---|
+> | **Rollback source baseline** | `b66289e6a6f13b1e7c685655e7b2cd4b3280bd63` (the `main` merge commit for Increment A) |
+> | Baseline APK | `dist-apk/compendium-baseline-b217.apk`, `versionCode` **217**, installed on the owner's device |
+> | Signing certificate SHA-256 | `c64bbee422da9fc47acc853e3f3eb26b9c866feff2c012ed98998c5e9aa38ba3` - **B's rollback build must match this**, or the reinstall is not an update |
+> | Verified whole-app backup | `dist-apk/compendium-baseline-backup-b216.json` - both profiles, 1,832 owned copies, digest verified, and re-verified against the merged code with `scripts/backup/verify-archive.mjs` (ALL CHECKS PASSED) |
+>
+> `dist-apk/` is gitignored, so neither the APK nor the backup - which is real user data - enters
+> history. B builds its rollback artifact by checking out that SHA and rebuilding at B's own
+> `versionCode`.
+
 B does not start until A is merged and:
 
 1. A signed release APK has been built from `main` **with A included** and installed on the owner's device.

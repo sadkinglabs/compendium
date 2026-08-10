@@ -14,55 +14,6 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 ## Open
 
-### `backup-and-restore` - Increment A, whole-app backup and restore
-
-**Status:** ACTIVE, started 2026-08-10. Proposal
-[proposals/backup-and-restore.md](./proposals/backup-and-restore.md) (Revision 4) is **owner-approved**
-after three Codex rounds. **Stage 0 is COMPLETE** (2026-08-10) and it closed the design fork:
-- Statement set for the owner's real profile: **1,479 statements / 0.38 MiB**, measured through the real
-  `importProfile` path with the real catalog seeded. **Options / H (one transaction) adopted; the durable
-  `_meta` journal, Options / J, is NOT built.**
-- `crypto.subtle`: `androidScheme` defaults to HTTPS with no override, so the WebView is a secure context.
-  Raised to High confidence; confirmed on the first device build rather than gating the design.
-**Stage 1 is COMPLETE** (2026-08-10). The two historical bugs were already characterized in
-`importProfileBoundary.test.mjs`, so only the missing guard was written:
-`src/store/profileRoundTrip.test.mjs` - schema-derived, all-table, all-field round trip, proven by
-provocation (drop a table, null a field, add a v12 table: each fails the right assertion by name).
-**Stage 2 is COMPLETE** (2026-08-10). `src/store/backup.js` + 29 tests: canonical JSON, the `unsigned`
-digest preimage (named once, used by writer and reader), envelope build/parse, size bounds, cardinality.
-Nothing is reachable from the app. Proven by reintroducing Codex Blocker 6 - 21 tests fail, including the
-preimage contract.
-**Stage 3 is COMPLETE** (2026-08-10). `db.js` gains `snapshot(fn)`: a read transaction plus an exclusive
-write gate honoured by `run`/`tx`/`exec` (reads deliberately ungated). Both backends implement
-`beginRead`/`endRead`. 7 tests, proven by provocation - ungating `run` fails the invisibility assertion,
-leaking the gate wedges the whole file, skipping `endRead` on throw leaves the transaction open.
-**Stage 4 is COMPLETE** (2026-08-10). `buildProfileUnit` / `planProfileUnit` extracted from
-`exportProfile` / `importProfile`; the planner is pure (no query, no tx, no DB-allocated id), which is
-what lets the whole-app restore use one transaction. `exportProfile` narrows the unit, so the legacy
-file format is byte-unchanged. Stage 1's characterization tests passed unchanged, which was the gate.
-**Stage 5 is COMPLETE** (2026-08-10). `src/store/backupService.js` (`backupAll` / `previewBackup` /
-`restoreAll`, 11 tests) plus the Settings Backup section and restore-preview modal in `App.jsx`.
-**Divergence recorded:** the orchestration lives in a new `backupService.js` rather than in
-`backup.js`, because `backup.js` is pure and its tests depend on it staying so. The property this
-protects is the proposal's own.
-**Stage 6 is MOSTLY DONE** (2026-08-10, Pixel 9 Pro XL / Android 16 / release build 216):
-- **Restore of a real legacy archive on device**: Sadkingbilly recovered - 4 decks, 991 ledger rows /
-  1,832 copies, 9 matches, 1,470 rows. Additive; the pre-existing Sorcerer profile untouched and still
-  default. Survived force-stop. Deck W-L recomputed from restored matches, not copied.
-- **Backup prepared on device** and pulled back: a valid v2 whole-app envelope, appBuild 216, BOTH
-  profiles, full profile rows, per-profile `dashSeeded`, `activeProfileIndex` and `changelogSeenBuild`.
-- **Digest independently recomputed = MATCH.** This also settles Assumption 2 empirically: the digest
-  was produced *on device*, so `crypto.subtle` works in the Capacitor WebView. No longer an inference.
-- **Whole-app restore into a clean database** via `scripts/backup/verify-archive.mjs`: every table
-  matches exactly, 1,832 copies preserved, exactly one default, starter retained. ALL CHECKS PASSED.
-- Three defects found and fixed on device (builds 215/216): Restore rejected every legacy export; the
-  preview claimed a checksum a legacy file does not have; a successful restore did not refresh the UI.
-**Next step:** the remaining Stage 6 rows - **airplane mode**, **zero-image mode**, TalkBack/48dp
-accessibility pass, and a second-restore idempotency check on device. Then Stage 7 (handoff to
-Increment B: the backup, and the rollback SOURCE baseline commit by SHA).
-**Then:** Stage 6 (verification incl. the disposable emulator restore), Stage 7 (handoff to Increment B:
-the backup, and the rollback SOURCE baseline commit by SHA).
-
 ### `android-16kb-compat` - DO NOT MERGE
 
 **Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in
@@ -95,6 +46,11 @@ Merged to `main` 2026-08-09. None of these blocks release of what shipped, but e
 ## Planned, not started
 
 ### Increment B - Capacitor 6 -> 8, Android 16, and the whole-tree dependency upgrade
+
+**READY TO START.** Increment A merged 2026-08-10 (`b66289e6a6f1`) and Stage 7 handed over:
+rollback source baseline = that SHA; baseline APK `dist-apk/compendium-baseline-b217.apk`
+(versionCode 217, on the device); signing cert SHA-256 `c64bbee422da9fc4...`;
+verified backup `dist-apk/compendium-baseline-backup-b216.json`.
 
 **Proposals:** [proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 5, owner-approved),
 with [proposals/dependency-audit-2026-08.md](./proposals/dependency-audit-2026-08.md) as the evidence base.
