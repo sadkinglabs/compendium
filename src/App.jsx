@@ -556,8 +556,7 @@ export default function App() {
       </nav>
       <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
         onSwitch={onSwitchProfile} onChanged={reloadProfile} onSettings={() => setSettingsOpen(true)}
-        onExport={async () => { try { const { exportToFile } = await import('./store/profileTransfer.js'); await exportToFile(profile.id); toast('Profile exported'); } catch (e) { toast('Export failed: ' + e.message, { tone: 'danger' }); } }}
-        onImport={async () => { try { const { pickAndImport } = await import('./store/profileTransfer.js'); const pid = await pickAndImport(); if (pid) { await onSwitchProfile(pid); toast('Profile imported'); } } catch (e) { toast('Import failed: ' + e.message, { tone: 'danger' }); } }} />
+        />
 
       {/* Create-deck wizard (mandatory name → avatar) */}
       {deckWizard && (
@@ -676,8 +675,6 @@ const IcBookmark = ({ filled, size = 19 }) => (
 );
 const IcX = (p) => <ASvg {...p}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></ASvg>;
 const IcPlus = (p) => <ASvg {...p}><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></ASvg>;
-const IcDownload = (p) => <ASvg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></ASvg>;
-const IcUpload = (p) => <ASvg {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></ASvg>;
 function ResultIcon({ kind }) {
   if (kind === 'deck') return <ASvg><rect x="3" y="5" width="13" height="16" rx="2" /><path d="M8 5V3h13v16h-2" /></ASvg>;
   if (kind === 'match' || kind === 'duel') return <ASvg><polyline points="14.5 17.5 3 6 3 3 6 3 17.5 14.5" /><polyline points="14.5 6.5 18 3 21 3 21 6 17.5 9.5" /></ASvg>;
@@ -827,7 +824,7 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
 // The default (oldest) profile is load-bearing and cannot be deleted; any
 // profile can be renamed (data keys off the id - names are just labels),
 // duplicated (full re-keyed copy) or exported.
-function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, onImport, onSettings }) {
+function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings }) {
   const [list, setList] = useState([]);
   const [stats, setStats] = useState({});
   const [adding, setAdding] = useState(false);
@@ -917,10 +914,12 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onExport, on
       ) : (
         <button onClick={() => setAdding(true)} style={{ ...S.btnGhost, marginTop: 16, width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}><IcPlus size={14} />New profile</button>
       )}
-      <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-        <button onClick={onExport} style={{ ...S.btnGhost, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcDownload size={14} />Export</button>
-        <button onClick={onImport} style={{ ...S.btnGhost, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7 }}><IcUpload size={14} />Import</button>
-      </div>
+      {/* Per-profile Export / Import retired (owner decision 2026-08-10). Settings -> Backup
+          supersedes both: one checksummed, versioned file covering EVERY profile plus the app-global
+          state, where an export covered one profile with no checksum and no version. Keeping it was
+          worse than redundant - a file that looks like a backup and is not one is the same false
+          safety signal this feature exists to remove. Old export files remain restorable: Restore
+          detects the legacy shape and routes it (backup.js readBackup). */}
       {/* Settings lives here because the profile chip is the app's account
           surface, and because a visible row beats the old binding: Settings used
           to open from a tap on the wordmark, which nothing advertised. This sheet

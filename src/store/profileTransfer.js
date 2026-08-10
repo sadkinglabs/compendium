@@ -9,7 +9,6 @@ import { prepareBundle } from './importBoundary.js';
 import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
 import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
-import { saveTextFile } from '../native.js';
 import { safeHref } from '../util.js';
 
 const inClause = (ids) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
@@ -284,30 +283,9 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
   return { pid, statements: stmts };
 }
 
-/* ---- web file helpers (native build swaps in Filesystem + Share) ---- */
-
-export async function exportToFile(profileId) {
-  const bundle = await exportProfile(profileId);
-  const safe = (bundle.profile?.name || 'profile').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  await saveTextFile(`compendium-${safe}.json`, JSON.stringify(bundle, null, 2), 'application/json');
-  return bundle;
-}
-
-export function pickAndImport() {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'application/json,.json';
-    input.onchange = async () => {
-      try {
-        const file = input.files?.[0];
-        if (!file) return resolve(null);
-        const text = await file.text();
-        const pid = await importProfile(JSON.parse(text));
-        resolve(pid);
-      } catch (e) { reject(e); }
-    };
-    input.click();
-  });
-}
+/* NOTE: `exportToFile` and `pickAndImport` were removed with the profile Export/Import buttons
+   (owner decision 2026-08-10) - they had no other callers. `exportProfile` and `importProfile`
+   REMAIN and are load-bearing: `duplicateProfile` is built on them, and the whole-app restore routes
+   legacy single-profile files through `importProfile`. */
 
 export { renameProfile, switchProfile };
