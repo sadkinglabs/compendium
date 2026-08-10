@@ -14,6 +14,19 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 ## Open
 
+### `backup-and-restore` - Increment A, whole-app backup and restore
+
+**Status:** ACTIVE, started 2026-08-10. Proposal
+[proposals/backup-and-restore.md](./proposals/backup-and-restore.md) (Revision 4) is **owner-approved**
+after three Codex rounds. Currently at **Stage 0** - the two measurements that gate the design, before any
+feature code.
+**Next step:** report the Stage 0 checkpoint - (1) whole-restore statement-set count and serialised size
+against the owner's real data, which decides one-transaction (Options / H) versus the durable `_meta`
+journal (Options / J); (2) `crypto.subtle` availability in the Capacitor WebView, which the integrity
+design depends on. Both are blocking: the design forks on (1) and refuses to ship without (2).
+**Then:** Stages 1-7 in order. Stage 1 (characterization tests against unmodified code) must land before
+Stage 4 touches `importProfile`.
+
 ### `android-16kb-compat` - DO NOT MERGE
 
 **Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in
