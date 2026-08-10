@@ -60,22 +60,9 @@ Merged to `main` 2026-08-09. None of these blocks release of what shipped, but e
 
 ## Planned, not started
 
-### Increment A - whole-app backup and restore
-
-**Proposal:** [proposals/backup-and-restore.md](./proposals/backup-and-restore.md) (Revision 3, in review).
-**Why:** there is no single artifact representing a whole installation. Per-profile export covers one
-profile per file and carries no app-global state; Android Auto Backup is not user-invocable or verifiable.
-**Scope:** manual all-profile bundle taken from a **consistent snapshot** (read transaction + `db.js`
-write gate), whole-envelope digest, bounded, **one transaction** for the whole restore, no profile ever
-deleted, "backup prepared" wording since the app cannot see the destination. No scheduler, no retention,
-no encryption, no SAF - deliberately deferred (see below).
-**Hard prerequisite for Increment B:** it supplies both B's data safety net and the source for B's
-forward-installable rollback artifact.
-**Risk:** High.
-
 ### Increment B - Capacitor 6 -> 8, Android 16, and the whole-tree dependency upgrade
 
-**Proposals:** [proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 4, in review),
+**Proposals:** [proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 5, owner-approved),
 with [proposals/dependency-audit-2026-08.md](./proposals/dependency-audit-2026-08.md) as the evidence base.
 **Why:** closes `libsqlcipher.so`, the last 16 KB library, and future-proofs the target API level.
 **Scope (owner decision 2026-08-09: one job, everything folded in):** Capacitor 6 -> 8, target/compileSdk
