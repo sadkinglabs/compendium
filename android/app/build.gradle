@@ -176,6 +176,10 @@ gradle.projectsEvaluated {
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Declared explicitly so the build file states the version that actually ships. It resolves to
+    // 1.18.0 transitively regardless (activity 1.13.0 -> core-ktx 1.18.0 -> core 1.18.0); leaving it
+    // undeclared meant variables.gradle could claim 1.17.0 indefinitely while 1.18.0 shipped.
+    implementation "androidx.core:core:$androidxCoreVersion"
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
@@ -305,23 +309,33 @@ androidComponents {
                 logger.lifecycle("Forbidden-permission gate: clean (${declared.size()} permissions in the release merged manifest).")
             }
         }
-        // Bind so the artifact cannot be produced without it, and so
-        // `gradlew checkReleaseForbiddenPermissions` also works alone.
+        // BIND TO THE ARTIFACT PRODUCERS, NOT TO THE LIFECYCLE TASKS.
         //
-        // BUNDLE AS WELL AS ASSEMBLE. This gate previously bound to assemble<Variant> only, which
-        // left the AAB - the artifact Play actually distributes and generates its per-device APKs
-        // from - completely ungated. `gradlew bundleRelease` produced a shippable bundle without
-        // ever running this check. That is the same defect class as the fail-open recogniser
-        // binding above: a control that exists, reads correctly, and is not attached to the thing
-        // being shipped.
+        // This gate has now been mis-bound twice, the same way each time: attached to a task that
+        // is a CONVENIENT name for the build rather than the task that actually makes the file.
+        //   v1 bound to assemble<Variant> only  -> `bundleRelease` shipped an ungated AAB.
+        //   v2 added bundle<Variant>            -> `installRelease` and `packageRelease` STILL
+        //                                          bypassed it, because installRelease depends on
+        //                                          packageRelease, not on assembleRelease.
+        //                                          Proven: `installRelease --dry-run` scheduled
+        //                                          checkRecogAssets and NOT this gate.
         //
-        // tasks.named() rather than tasks.matching(): an unknown task must throw, not quietly
-        // match nothing and leave the gate unbound again. Deferred to projectsEvaluated because
-        // onVariants runs BEFORE AGP has created assemble/bundle, so looking them up here would
-        // throw for tasks that are merely not created yet.
+        // package<Variant> and package<Variant>Bundle are the tasks that WRITE the .apk and .aab.
+        // Every route to a release artifact runs through one of them - assemble, install, bundle,
+        // or invoking the packaging task directly - so binding here is complete by construction
+        // rather than by enumerating entry points and hoping the list is exhaustive. Adding a new
+        // entry point cannot open a new bypass, which was the flaw in both earlier attempts.
+        //
+        // tasks.named() rather than tasks.matching(): an unknown task must throw, not quietly match
+        // nothing and leave the gate unbound. Deferred to projectsEvaluated because onVariants runs
+        // BEFORE AGP creates these tasks, so looking them up here would throw for tasks that are
+        // merely not created yet.
+        //
+        // No cycle: this task READS the merged manifest, produced by process<Variant>Manifest, which
+        // is upstream of packaging.
         def cap = variant.name.capitalize()
         gradle.projectsEvaluated {
-            ["assemble${cap}", "bundle${cap}"].each { name ->
+            ["package${cap}", "package${cap}Bundle"].each { name ->
                 tasks.named(name).configure { it.dependsOn(checkTask) }
             }
         }

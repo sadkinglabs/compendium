@@ -18,7 +18,17 @@ ext {
     androidxActivityVersion = '1.13.0'          // sdk36 / agp8.9.1 - forced by activity-compose 1.13.0
     androidxAppCompatVersion = '1.7.1'          // sdk34 / agp1.0.0
     androidxCoordinatorLayoutVersion = '1.3.0'
-    androidxCoreVersion = '1.17.0'              // 1.19.0 needs sdk37 / agp9.1.0 - genuinely out of reach
+    // 1.18.0, and DECLARED RATHER THAN INHERITED, which is a correction. This variable previously read
+    // 1.17.0 and was referenced by nothing at all - a dead knob carrying a comment that read like a
+    // decision. Meanwhile the release graph actually resolved androidx.core:core to 1.18.0, pulled
+    // through core-ktx by androidx.activity:activity:1.13.0 (which activity-compose 1.13.0 requires).
+    // So the documented version and the shipped version disagreed, and the documented one had no way
+    // to win. Now the declaration matches what resolves, and moving it has an effect.
+    // Adopted, not constrained: core 1.18.0 declares minCompileSdk=36 / minAGP=8.9.1 (read from its
+    // AAR metadata) and we build at 36 / 8.13.0, so it is legal here. Pinning back to 1.17.0 would
+    // fight activity 1.13.0's own requirement rather than resolve anything.
+    // 1.19.0 remains out of reach: minCompileSdk=37, minAGP=9.1.0 - verified, not assumed.
+    androidxCoreVersion = '1.18.0'
     androidxFragmentVersion = '1.8.9'           // sdk34 / agp1.0.0
     coreSplashScreenVersion = '1.2.0'           // sdk35 / agp8.6.0
     androidxWebkitVersion = '1.14.0'            // sdk34 / agp8.1.1

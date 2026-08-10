@@ -55,7 +55,6 @@
     "sql.js": "1.14.1"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.0",
     "@vitejs/plugin-react": "^6.0.5",
     "aws4fetch": "^1.0.20",
