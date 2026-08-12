@@ -474,3 +474,45 @@ that profile's lock screen. Offered rather than assumed.
 - **`App.jsx` has no test coverage** - and this round touched it again (the `rev` prop and the
   restore-reporting branch), so that gap now covers changed code.
 - **No x86 pass** - emulator unavailable on this machine.
+
+## Round 3 - device verification, and the scale residual closed (2026-08-12)
+
+Owner elected to test against their live profile rather than another disposable user ("I have backed
+up my data"), which closed the scale residual as a side effect. A fresh backup was taken at build 219
+and **independently verified on the PC before anything was touched** (`verify-archive`: ALL CHECKS
+PASSED, 1832 owned copies).
+
+**Build 219, release, signed, installed with `-r`.** The restore was the real archive: 2 profiles,
+1832 owned copies, 4 decks, 9 matches, 243 deck entries, 184 history rows - the ~1,476-statement
+native transaction Codex flagged as unmeasured.
+
+### The fix, verified where the unit tests cannot reach
+
+| Assertion | Result |
+|---|---|
+| Restore commits at full scale through the native plugin | committed, 0 `SQLiteException` / `FATAL EXCEPTION` |
+| **Active profile settles immediately, no relaunch** | Home showed `Sadkingbilly (imported)` as active the moment the restore returned |
+| **Profile sheet refreshes immediately, no relaunch** | all four profiles listed at once, with `DEFAULT` and `ACTIVE` on the imported pair |
+| Owner data intact throughout | 1832 cards / 4 decks / 9 matches / 2 marginalia, unchanged |
+
+Before this fix the runtime id would have stayed on the pre-restore profile while Preferences pointed
+elsewhere. Both halves are now observed on device, at real scale, which is exactly the boundary the
+unit regressions could not prove.
+
+### NEW FINDING - a restore leaves an undeletable profile
+
+Not caused by this upgrade, and not by the fix above. Surfaced by running a real restore end to end.
+
+`restoreAll` adopts the archive's default **in the same transaction as the rows**, which is correct and
+deliberate. The consequence is not: the imported profile now holds the `is_default` flag,
+`deleteProfile()` refuses to delete the default, and **the app exposes no way to move the flag**
+(`ProfileSheet` reads `is_default` only to hide the Delete button; there is no "set default" action
+anywhere).
+
+So after any restore the user keeps an extra profile they can never remove, while their original
+starter sits beside it demoted. The only way out through the UI is to delete the ORIGINAL and rename
+the import - which is what was done here to return the device to its prior state.
+
+Not fixed in this branch: it belongs to backup/restore, not to the Capacitor upgrade, and the obvious
+repair (a set-default control, or leaving the flag where it is) is a product decision. Recorded in
+`WORK_IN_FLIGHT.md`.

@@ -76,6 +76,59 @@ removed, production surface 0.
 **Next step:** return the response to Codex for round 2, then merge. Nothing is pushed; `main` is
 local-only and ~66 commits ahead of `origin`.
 
+### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
+
+**Status:** raised by the owner 2026-08-12 after watching a real restore. Not started. Not caused by
+the Capacitor upgrade; it questions a decision made in Increment A.
+
+**The owner's question, which is the real one:** a backup is a snapshot, and restoring a snapshot is
+conventionally a REVERT - the state becomes the backup's state. Compendium's restore instead ADDS the
+archive's profiles alongside what is already there, so restoring your own backup gives you two of
+everything. That is not what "restore" means to most people, and the undeletable-profile symptom below
+is a consequence of it rather than a separate bug.
+
+**History, because this reverses an approved decision rather than filling a gap.** Additive was
+deliberate in Increment A and survived three adversarial review rounds: "NOTHING IS DELETED. No
+profile-deletion path exists." The reasoning was that a destructive restore on an offline-first app
+with no cloud copy can annihilate data that exists nowhere else - restore an older archive by mistake
+and everything since is gone, with no undo. Additive can never do that.
+
+**The trade, stated plainly.** Additive is safe and surprising; replace is expected and destructive.
+The mitigation that makes replace defensible is an automatic pre-restore snapshot written to app
+storage (`Directory.Data`) - no share sheet, no picker, no user interaction - so a mistaken revert is
+always undoable. Without that, replace is a data-loss feature.
+
+**Symptom that surfaced it:** after ANY whole-app restore the user keeps a profile they can never delete.
+
+**Mechanism, and the correct half first:** `restoreAll` adopts the archive's default in the same
+transaction as the rows, so the database is never momentarily without a default or with two. That part
+is deliberate and right. The consequence is not: the imported profile now holds `is_default`,
+`deleteProfile()` refuses to delete the default (`profileRepository.js` - "The default profile cannot
+be deleted"), and **nothing in the app can move the flag**. `ProfileSheet` reads `is_default` only to
+hide the Delete button; there is no "set default" action anywhere in the UI.
+
+The user's original starter is demoted to non-default and stays deletable, while the imported copy is
+permanently stuck at the top of the profile picker. The only escape through the UI is to delete the
+ORIGINAL and rename the import - which is what was done on the owner's device to restore its prior
+state, and is not something a user should have to work out.
+
+**Next step: a proposal, not code.** This is High-risk under the constitution - it makes restore a
+destructive user-data operation and touches the transactional-integrity and profile-isolation
+invariants. The proposal must settle:
+
+1. **Replace or merge, and is it a choice?** A single "Restore (replace everything)" is honest and
+   simple. Offering both on the confirm screen is more capable and doubles the ways to get it wrong.
+2. **The automatic pre-restore snapshot** - mandatory if restore becomes destructive. To
+   `Directory.Data`, before the transaction, with a visible way back.
+3. **One transaction still.** Delete-then-insert must commit or change nothing, or a failed restore
+   leaves the user with neither their data nor the archive's. This is the property the current design
+   already has and the new one must not lose.
+4. **The confirm copy**, which currently promises the opposite: "These profiles are added alongside
+   what is already on this device. Nothing is deleted or overwritten."
+5. **Whether the default flag still transfers** - the undeletable-profile symptom disappears under
+   replace semantics, so this may need no separate fix. If merge survives as an option, it does: add a
+   set-default control to the profile sheet.
+
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
 
 **Status:** diagnosed 2026-08-10, not started. Owner decision: do it after the upgrade merges, as its own
