@@ -100,6 +100,34 @@ export async function backupAll({ appBuild = currentBuild(), now = new Date() } 
  * Parse and fully validate a backup, returning what a restore WOULD do. Writes nothing.
  * The UI shows this and waits for confirmation before `restoreAll` is called.
  */
+/* ------------------------------------------------------------------ */
+/* Which operation is this file, and which is it NOT                   */
+/* ------------------------------------------------------------------ */
+
+/** The two operations a backup file can name. A file is one or the other, never both. */
+export const REPLACE_ALL = 'replace-all';
+export const IMPORT_PROFILE = 'import-profile';
+
+/**
+ * Classify a file into the operation it authorises, in ONE place.
+ *
+ * The knowledge used to be spread: `previewBackup` branched on shape, `restoreAll` branched again,
+ * and `replaceAll` re-derived the same distinction to refuse. Three readings of one question is how
+ * a caller ends up routing a single-profile export into a whole-app replacement - and that is the
+ * one mistake this operation must never make, because a single-profile file is not authority to
+ * delete everything else on the device.
+ *
+ * Callers should switch on `operation` and hand the SAME preview to the matching executor.
+ */
+export async function classifyBackup(text) {
+  const preview = await previewBackup(text);
+  return {
+    ...preview,
+    operation: preview.kind === 'whole-app' ? REPLACE_ALL : IMPORT_PROFILE,
+    destructive: preview.kind === 'whole-app',
+  };
+}
+
 export async function previewBackup(text) {
   const read = await readBackup(text);
 
@@ -158,7 +186,15 @@ async function catalogSets() {
 export async function restoreAll(preview) {
   if (preview?.kind === 'profile') {
     const pid = await importProfile(preview.bundle);
-    return { profiles: 1, activeProfileId: pid, statements: null, via: 'profile-import' };
+    // OPEN IT. This used to return `activeProfileId: pid` without switching, so the field named a
+    // profile that was not active - the caller was told where the data went and the app kept
+    // showing somewhere else. Same family as the restore authority split: reporting an id is not
+    // the same as making it true. planProfileUnit always writes is_default 0, so opening an
+    // imported profile cannot take the Primary role from whoever holds it.
+    let activeReconciled = false;
+    try { await switchProfile(pid); activeReconciled = true; }
+    catch { /* the rows are committed; the user can switch by hand */ }
+    return { profiles: 1, activeProfileId: pid, activeReconciled, statements: null, via: 'profile-import' };
   }
   const env = preview?.env ?? preview;
   const setsOf = await catalogSets();
