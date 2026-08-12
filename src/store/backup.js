@@ -146,6 +146,77 @@ export async function seal(envelope) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Canonical content digest - "is this the same data?"                 */
+/* ------------------------------------------------------------------ */
+
+// The envelope digest above answers "is this file intact?". It cannot answer "do these two
+// archives describe the same data?", because its preimage includes `exportedAt` and `appBuild` -
+// two backups of identical data taken minutes apart hash differently by construction. The restore
+// design (restore-semantics.md §5) needs exactly that comparison: a fresh capture against an
+// external archive, where a mismatch means the archive is stale. This digest exists for that.
+//
+// WHAT IS IN THE PREIMAGE, AND WHY:
+//   - `schemaVersion` - the payload's meaning depends on it; identical bytes under different
+//     schemas are not the same data.
+//   - every profile unit, with each collection sorted by row id - SQL row order is an accident of
+//     storage, not data, and Codex flagged that unsorted rows would make identical databases
+//     compare unequal (a safe but corrosive false mismatch).
+//   - which profile is ACTIVE, by identity rather than by array position - the units themselves
+//     are sorted below, so the raw `activeProfileIndex` would point somewhere else entirely.
+// WHAT IS EXCLUDED, AND WHY:
+//   - `exportedAt`, `appBuild`, `integrity` - the volatile envelope, the whole reason this exists.
+//   - `app`, `bundleFormat` - constants; carrying them would add nothing and could only ever
+//     manufacture a mismatch across a future format bump of identical data.
+//   - `appGlobal.changelogSeenBuild` - device-install state, not user data; §8 of the proposal
+//     excludes it from the format, and merely opening the release notes between two backups must
+//     not make identical data compare unequal.
+
+/** Stable per-row sort key: the id where present, the canonical row otherwise. */
+function rowKey(row) {
+  if (row && typeof row === 'object' && !Array.isArray(row) && row.id != null) return 'i:' + String(row.id);
+  return 'j:' + (canonicalJson(row) ?? 'null');
+}
+
+function canonicalUnit(unit) {
+  if (!unit || typeof unit !== 'object') return unit;
+  const out = { ...unit };
+  for (const key of ITERATED_COLLECTIONS) {
+    // Absent and empty are the same data: no rows.
+    const rows = Array.isArray(unit[key]) ? [...unit[key]] : [];
+    rows.sort((a, b) => { const ka = rowKey(a), kb = rowKey(b); return ka < kb ? -1 : ka > kb ? 1 : 0; });
+    out[key] = rows;
+  }
+  return out;
+}
+
+/**
+ * The content preimage, pure and synchronous so tests can inspect determinism directly.
+ * Assumes the envelope already passed `parseBackup` - this is a comparison tool, not a validator.
+ */
+export function contentPreimage(env) {
+  const units = (env?.payload?.profiles ?? []).map(canonicalUnit);
+  // Sort the units by their own canonical text: profile rows carry no id in this format, and
+  // `listProfiles` orders by created_at, which can tie - so unit order is not evidence of anything.
+  const keyed = units.map((u) => ({ u, key: canonicalJson(u) ?? 'null' }));
+  const idx = env?.payload?.appGlobal?.activeProfileIndex;
+  const activeKey = idx != null && keyed[idx] ? keyed[idx].key : null;
+  keyed.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  // Re-expressed as a position in the SORTED order. Two identical units tie on key, and then it
+  // does not matter which of them is named - they are the same data.
+  const activeProfile = activeKey == null ? null : keyed.findIndex((k) => k.key === activeKey);
+  return {
+    schemaVersion: env?.schemaVersion ?? null,
+    activeProfile: activeProfile === -1 ? null : activeProfile,
+    profiles: keyed.map((k) => k.u),
+  };
+}
+
+/** The canonical content digest of an archive envelope. */
+export async function contentDigestOf(env) {
+  return sha256Hex(canonicalJson(contentPreimage(env)));
+}
+
+/* ------------------------------------------------------------------ */
 /* Reading: every reason to refuse, in the order that writes nothing   */
 /* ------------------------------------------------------------------ */
 
