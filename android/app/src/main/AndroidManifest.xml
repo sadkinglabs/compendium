@@ -11,21 +11,27 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
-        <!-- Portrait-only, at target 36. From Android 16, a display whose smallest width is
-             >= 600dp (tablets, unfolded foldables, desktop windowing) IGNORES
-             android:screenOrientation, android:resizeableActivity, min/maxAspectRatio and
-             setRequestedOrientation() - unless the app declares this documented opt-out.
-             Phones (< 600dp) are exempt from the override entirely, so portrait holds there
-             with or without this.
+        <!-- PORTRAIT ON PHONES, FREE ROTATION ON TABLETS - and the way to get that is to declare
+             NOTHING here, which is why this comment exists in place of a property.
 
-             Declared on <application> so it covers MainActivity and ScannerActivity together.
+             From Android 16, a display whose smallest width is >= 600dp (tablets, unfolded
+             foldables, desktop windowing) IGNORES android:screenOrientation,
+             android:resizeableActivity, min/maxAspectRatio and setRequestedOrientation().
+             Phones (< 600dp) are exempt from that override entirely.
 
-             KNOWN EXPIRY, recorded so it is not rediscovered: the opt-out is REMOVED at API 37.
-             An app targeting 37+ cannot opt out and the restrictions always apply on >= 600dp.
-             Portrait stays enforceable on phones indefinitely, and on large screens only until
-             we target 37. That is a future product decision, not this change's business. -->
-        <property android:name="android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY"
-                  android:value="true" />
+             So the platform default already splits exactly where we want it: the activities below
+             keep android:screenOrientation="portrait", phones honour it, and large screens do not.
+
+             android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY was declared here briefly
+             and REMOVED on owner decision (2026-08-12) after seeing it on hardware. It forces
+             portrait on large screens too, and the result is a letterboxed phone-shaped app on a
+             tablet - which is worse than either alternative. Measured on a Lenovo TB321FU
+             (Android 16, 640dp): with the property the display was pinned to ROTATION_0 and the
+             app rendered 1600x2560; without it the tablet rotates and the app renders 2560x1600
+             full screen.
+
+             Do not re-add it to "fix" tablet rotation. Rotation on a tablet is the intent. -->
+
 
         <!-- ============================ TELEMETRY ============================
              Both SDKs collect NOTHING until the user answers the disclosure.
