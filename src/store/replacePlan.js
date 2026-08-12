@@ -16,12 +16,14 @@
 //   about a replacement that already happened, and startup would then abandon (delete) the only
 //   recovery point for it. Inside the list, marker and data are one fact.
 //
-// Deletion is targeted by §8's ownership table, never by "everything that looks app-global":
-// profiles (cascading every profile-owned table) and the captured profiles' `dash_seeded:` keys.
-// `catalog_meta.version`, catalog rows, the recovery pointer and everything unregistered are
-// PRESERVED by never being named here.
+// Deletion is targeted by §8's ownership table, never by "everything that looks app-global" -
+// and since Increment 6 that table is CODE: the delete phase is derived from the persisted-state
+// registry (persistedState.js), so nothing can be deleted here without a registered `replace` or
+// `re-key` disposition saying so. `catalog_meta.version`, catalog rows, the recovery pointer and
+// everything unregistered are PRESERVED by never being named.
 import { planProfileUnit } from './profileTransfer.js';
 import { prepareBundle } from './importBoundary.js';
+import { replacementDeletes } from './persistedState.js';
 import { uuid } from './ids.js';
 
 /** The catalog_meta journal key. Present = the replacement committed; absent = it did not.
@@ -55,14 +57,12 @@ export function planReplace(env, { candidateId, profileIds = [], setsOf = () => 
 
   const statements = [];
 
-  // DELETES FIRST. One statement takes every profile and, through ON DELETE CASCADE, every
-  // profile-owned row (asserted table-by-table in replaceAll.test.mjs, not trusted). The captured
-  // profiles' dash_seeded keys live in catalog_meta - device-owned storage the cascade cannot
-  // reach - so they are dropped by name, and only for the pids this plan is deleting.
-  statements.push(['DELETE FROM profiles;']);
-  for (const pid of profileIds) {
-    statements.push(['DELETE FROM catalog_meta WHERE key=?;', [`dash_seeded:${pid}`]]);
-  }
+  // DELETES FIRST, derived from the registry rather than spelled here: `DELETE FROM profiles`
+  // takes every profile-owned row through ON DELETE CASCADE (asserted table-by-table in
+  // replaceAll.test.mjs, not trusted), and the captured profiles' dash_seeded keys - device-side
+  // storage the cascade cannot reach - are dropped by name, only for the pids this plan is
+  // deleting. Anything the registry does not mark destructive cannot appear in this phase.
+  statements.push(...replacementDeletes(profileIds));
 
   const created = [];
   for (const unit of units) {
