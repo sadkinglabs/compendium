@@ -73,7 +73,28 @@ never-used database verified with an independently recomputed digest; native SAF
 digest + restore preview exercised without writing. npm advisories dispositioned by hand, critical
 removed, production surface 0.
 
-**Next step:** return the response to Codex for round 2, then merge. Nothing is pushed; `main` is
+**Codex rounds 2 and 3 also closed.** Round 2: the recogniser gate had the SAME producer bypass I had
+just fixed beside it - my six-entry-point table showed it PRESENT everywhere only because
+`packageRelease` inherited it through the fail-open `merge.*Assets` line. Now producer-bound, proven by
+disabling the opportunistic binding and re-checking. The wasm stripper now enumerates and classifies
+every `.wasm` rather than searching for the expected name.
+
+Round 3 was a **Blocker**: restore wrote the active id straight to Preferences, so the database,
+Preferences and `profileRepository`'s in-memory `activeId` disagreed - the running process kept
+writing the PRE-restore profile while the next launch was promised another. A profile-isolation break,
+now reconciled through `switchProfile()`, with post-commit failures reported as caveats (a retry after
+a committed restore re-imports the whole archive). Device-verified 2026-08-12 at full scale on the
+owner's real archive (~1,476 statements): active profile and profile sheet both settle immediately, no
+relaunch.
+
+**Build is 219** (device install, standing rule). The archived rollback APK is at 218 and is therefore
+now a downgrade - per the refinement above it is disposable and must be rebuilt from `b66289e` at the
+installed `versionCode` when actually needed.
+
+**Next step:** Codex round 4 sign-off on the updated packet
+([proposals/capacitor-8-review-packet.md](./proposals/capacitor-8-review-packet.md)), then **merge**.
+Two gaps are deliberately carried rather than closed: the >= 600dp tablet check above, and `App.jsx`
+still has no test coverage while this branch has now twice modified it. Nothing is pushed; `main` is
 local-only and ~66 commits ahead of `origin`.
 
 ### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
@@ -112,7 +133,12 @@ permanently stuck at the top of the profile picker. The only escape through the 
 ORIGINAL and rename the import - which is what was done on the owner's device to restore its prior
 state, and is not something a user should have to work out.
 
-**Next step: a proposal, not code.** This is High-risk under the constitution - it makes restore a
+**Owner decision 2026-08-12: REPLACE ONLY**, with the pre-restore snapshot, the one-transaction
+property and the rewritten confirm copy all agreed. Proposal drafted at
+[proposals/restore-semantics.md](./proposals/restore-semantics.md); awaiting Codex review, then
+implementation.
+
+**Why a proposal and not code.** This is High-risk under the constitution - it makes restore a
 destructive user-data operation and touches the transactional-integrity and profile-isolation
 invariants. The proposal must settle:
 
