@@ -63,10 +63,14 @@
              deliberately: recreating a camera screen is cheap and safe, and the checklist
              governs the Capacitor activity, not ours.
 
-             screenOrientation is portrait by product decision: the app has no landscape layouts
-             and needs none. It was NOT previously declared here - only ScannerActivity was
-             locked - so the main app rotated. The application-level opt-out above is what keeps
-             this honoured on >= 600dp displays at target 36; phones honour it regardless. -->
+             screenOrientation is portrait, and on a PHONE that is what you get. On a display
+             >= 600dp Android 16 ignores it, and that is deliberate - see the note at the top of
+             <application>. Tablets rotate to full screen; do not "fix" that by re-adding the
+             opt-out property.
+
+             There are no landscape layouts. On a tablet the portrait design simply stretches,
+             which the owner accepted on hardware as better than a letterboxed phone-shaped app.
+             Landscape layout work is a recorded follow-up, not a supported design. -->
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"

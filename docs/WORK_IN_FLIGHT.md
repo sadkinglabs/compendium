@@ -319,9 +319,10 @@ Recorded so they are decisions with conditions rather than things nobody looked 
 escape hatches), but all ten vendored Capacitor Gradle modules use `lintOptions` and the legacy DSL AGP 9
 removed, and those opt-outs are themselves being withdrawn - so adopting it now buys a migration we would
 immediately redo, on modules we cannot patch.
-**Cost of waiting:** AGP 8.13 caps compileSdk at 36. **Targeting API 37 requires AGP 9**, and API 37 is
-also when the `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out that holds this portrait-only app
-portrait on >= 600dp displays is removed. Those two land together and should be planned together.
+**Cost of waiting:** AGP 8.13 caps compileSdk at 36. **Targeting API 37 requires AGP 9.**
+(The API 37 removal of `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` used to be listed here as a second
+reason to plan them together. It no longer applies: the opt-out was removed on 2026-08-12 and the app now
+runs portrait on phones and free-rotating on tablets, so there is nothing left for API 37 to take away.)
 **Trigger:** Capacitor ships modules on the AGP 9 DSL, or we need to target API 37 - whichever comes first.
 
 ### TypeScript 7
