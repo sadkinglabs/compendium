@@ -140,6 +140,31 @@ These are **`[Shipping]` constraints** — codify, do not change.
 - **Native vs web (Capacitor)** — use `env(safe-area-inset-*)` for edges and the CSS `--kb` keyboard token (**divided by `--ui-scale`**) for keyboard lift — never a native plugin or hand-rolled offset. Every native capability (haptics, share, status bar, blur) is progressive enhancement with a web fallback.
 - **Accessibility floor** — ≥44px hit target today; **≥48dp is the `[Target]` floor** (OD-15) — `COMPENDIUM_ARCHITECTURE.md:201,203` mandate 48dp twice; current 44px recipe + the 34/30px offenders (RefineSheet operator/flip, OwnedControl stepper) are recorded as **adoption debt** (the RefineSheet numeric cluster wants a re-layout, not slop-padding). `--ui-scale` zoom; `body.hc` high-contrast (reaches only `--ink-*`/`--hair-*` — hence the warm-muted-ink gap, OD-3); reduced-motion still-fallbacks; dialogs `role=dialog` + focus-trap + back-registered.
 
+### Destructive confirmation — `[Shipping]` (whole-app replace)
+
+The pattern for an action that destroys user data. Used by Restore backup; any future destructive
+action should follow it rather than invent its own.
+
+- **The button names the consequence, not the intention.** "Replace all data", not "Restore".
+- **`BTN_DANGER`, never `BTN_GOLD`.** Gold is the affirmative everywhere in this app; an
+  irreversible replacement must not wear the same clothes as "Add".
+- **Show both sides.** What the file contains AND what is on the device now that will be removed,
+  with counts. A consequence the user cannot see is not a consequence they consented to.
+- **No typed confirmation phrase.** Clear copy, a destructive-styled button and a verified,
+  reachable safety copy are the protection. A phrase to copy out mostly trains people to copy
+  phrases.
+- **A reachable way back.** The safety copy is surfaced afterwards, persists across restarts, and
+  returning to it uses this same pattern - undoing a replacement is itself a replacement.
+
+**Accessibility contract:**
+
+- **Initial focus lands on the consequence text, not the destructive button.** A screen reader must
+  read what will be removed before reaching the control that removes it.
+- The recovery affordance is a **labelled region**, because after a replacement it is the most
+  important control on the screen and has to be findable.
+- **Back cancels without writing**, and is suppressed while the operation is in flight.
+- The button carries `aria-busy` during the operation.
+
 ### Foil — `[Shipping]` in the full-art viewer only
 **Built and device-verified in `CardArtViewer.jsx`** (Pixel 9 Pro XL, build 162): a finger-tracked holographic sheen for foil printings — a `color-dodge` rainbow that ignites on the artwork's highlights plus an `overlay` glare, both under `isolation: isolate`, driven by one `requestAnimationFrame` spring loop. It meets every outcome constraint: **offline** (CSS gradients, no network/third-party textures), **reduced-motion safe** (a static sheen, no motion), **zero-image safe** (gated on **decoded** art identity `{src, gen}`, so it never renders over the element-gradient fallback), and **non-load-bearing** (removing it leaves a legible card). Finish comes from the active Collection printing; deck viewing is non-foil.
 

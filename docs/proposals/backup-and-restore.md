@@ -1,5 +1,14 @@
 # Proposal: Whole-app backup and restore (Increment A)
 
+> **SUPERSEDED IN PART (2026-08-12) by `restore-semantics.md`.** This proposal's design is intact and
+> shipped, with one deliberate reversal: it specified that restore is ADDITIVE and that "NOTHING is
+> deleted". A whole-app restore now REPLACES, on owner decision, because a backup is a snapshot and
+> restoring one should return the app to it. The reasoning recorded here for additive restore - that a
+> destructive restore on an offline-first app with no cloud copy can annihilate data existing nowhere
+> else - was not wrong, and is answered rather than dismissed: replacement now takes a verified,
+> crash-recoverable safety copy first, and is disabled outright on a runtime that cannot promise to
+> keep it. Single-profile imports remain additive exactly as described here.
+
 ## Status and classification
 
 **Revision 4.** Supersedes revision 3. Codex round 2 returned it as **Changes required** (hash preimage,

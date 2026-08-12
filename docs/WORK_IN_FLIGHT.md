@@ -32,63 +32,45 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 - **Branch `capacitor-8` still exists locally** and is fully contained in `main` (0 unique commits
   after the merge), so it is safe to delete whenever.
 
-### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
+### `restore-semantics` - IN PROGRESS, 9 of 11 increments built
 
-**Status:** raised by the owner 2026-08-12 after watching a real restore. Not started. Not caused by
-the Capacitor upgrade; it questions a decision made in Increment A.
+**Status:** ACTIVE. Proposal [proposals/restore-semantics.md](./proposals/restore-semantics.md)
+**Rev 4, Codex APPROVED** after three rounds (2 Blockers, then 2 Blockers, then 1 Major + 2 Minors).
+Branch `restore-semantics`, nothing pushed.
 
-**The owner's question, which is the real one:** a backup is a snapshot, and restoring a snapshot is
-conventionally a REVERT - the state becomes the backup's state. Compendium's restore instead ADDS the
-archive's profiles alongside what is already there, so restoring your own backup gives you two of
-everything. That is not what "restore" means to most people, and the undeletable-profile symptom below
-is a consequence of it rather than a separate bug.
+**Owner decision:** whole-app **Restore REPLACES**; single-profile **Import ADDS**; Primary is a
+transferable role.
 
-**History, because this reverses an approved decision rather than filling a gap.** Additive was
-deliberate in Increment A and survived three adversarial review rounds: "NOTHING IS DELETED. No
-profile-deletion path exists." The reasoning was that a destructive restore on an offline-first app
-with no cloud copy can annihilate data that exists nowhere else - restore an older archive by mistake
-and everything since is gone, with no undo. Additive can never do that.
+**Built and gated (test:query 1002, all 12 gates green):**
 
-**The trade, stated plainly.** Additive is safe and surprising; replace is expected and destructive.
-The mitigation that makes replace defensible is an automatic pre-restore snapshot written to app
-storage (`Directory.Data`) - no share sheet, no picker, no user interaction - so a mistaken revert is
-always undoable. Without that, replace is a data-loss feature.
+| # | Increment | Note |
+|---|---|---|
+| 0 | Primary as a transferable role | Fixes the undeletable-profile trap on its own. **Device-verified** |
+| 1 | Admission boundary | Stop condition NOT triggered; all three consumers coexist. Acquisition is bounded, or a stuck write would leave the app read-only for the life of the process |
+| 2 | Recovery store + canonical content digest | Immutable ids, pointer in `catalog_meta` (a database write, so atomic) |
+| 3 | Fail-closed durability policy + external-archive binding | Web disables Replace rather than warning; the archive binds to the frozen capture |
+| 4 | `planReplace()` + journal row in the SAME transaction | First destructive code. Atomicity proven at three injection points by full byte dump |
+| 5 | Startup reconciliation | Runs before `initProfiles()` AND before the ledger canonicalisation |
+| 6 | Persisted-state registry | Consumed by `replacePlan`, not documentation. Preserve-by-default |
+| 7 | Legacy routing to Import | `classifyBackup` decides once |
+| 8 | Confirm screen + accessibility + reachable Undo | Copy previously promised the opposite of what the code does |
 
-**Symptom that surfaced it:** after ANY whole-app restore the user keeps a profile they can never delete.
+**NOT DONE:**
 
-**Mechanism, and the correct half first:** `restoreAll` adopts the archive's default in the same
-transaction as the rows, so the database is never momentarily without a default or with two. That part
-is deliberate and right. The consequence is not: the imported profile now holds `is_default`,
-`deleteProfile()` refuses to delete the default (`profileRepository.js` - "The default profile cannot
-be deleted"), and **nothing in the app can move the flag**. `ProfileSheet` reads `is_default` only to
-hide the Delete button; there is no "set default" action anywhere in the UI.
+- **Increment 9, the device pass.** Blocked only on the phone being plugged in. It must cover: a real
+  archive replaced and returned via "Return to previous state"; restoring an OLDER archive to confirm
+  newer data is genuinely gone; and killing the app mid-restore to prove startup finishes it. Build
+  221 is built but was never installed, so `package.json` is still at 220.
+- **Increment 10, docs** - this entry plus the six documents in the impact table (done).
 
-The user's original starter is demoted to non-default and stays deletable, while the imported copy is
-permanently stuck at the top of the profile picker. The only escape through the UI is to delete the
-ORIGINAL and rename the import - which is what was done on the owner's device to restore its prior
-state, and is not something a user should have to work out.
+**Owner decisions recorded during the build:**
 
-**Owner decision 2026-08-12: REPLACE ONLY**, with the pre-restore snapshot, the one-transaction
-property and the rewritten confirm copy all agreed. Proposal drafted at
-[proposals/restore-semantics.md](./proposals/restore-semantics.md); awaiting Codex review, then
-implementation.
+- Open matches are not precious, so orphaned `cx-ongoing-match:<pid>` keys stay as harmless litter.
+  **The `resume` row still travels inside the archive** - if backups should not carry in-progress
+  matches at all, that is a format change and has not been made.
 
-**Why a proposal and not code.** This is High-risk under the constitution - it makes restore a
-destructive user-data operation and touches the transactional-integrity and profile-isolation
-invariants. The proposal must settle:
-
-1. **Replace or merge, and is it a choice?** A single "Restore (replace everything)" is honest and
-   simple. Offering both on the confirm screen is more capable and doubles the ways to get it wrong.
-2. **The automatic pre-restore snapshot** - mandatory if restore becomes destructive. To
-   `Directory.Data`, before the transaction, with a visible way back.
-3. **One transaction still.** Delete-then-insert must commit or change nothing, or a failed restore
-   leaves the user with neither their data nor the archive's. This is the property the current design
-   already has and the new one must not lose.
-4. **The confirm copy**, which currently promises the opposite: "These profiles are added alongside
-   what is already on this device. Nothing is deleted or overwritten."
-5. **Whether the default flag still transfers** - the undeletable-profile symptom disappears under
-   replace semantics, so this may need no separate fix. If merge survives as an option, it does: add a
-   set-default control to the profile sheet.
+**Carried, not closed:** `App.jsx` still has no test coverage and Increment 8 put real branching in
+it. TalkBack announcement order is asserted by construction, not observed.
 
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
 
