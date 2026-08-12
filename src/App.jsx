@@ -3,6 +3,7 @@ import { openDatabase } from './store/db.js';
 import {
   initProfiles, getActiveProfile, listProfiles, profileStats,
   createProfile, switchProfile, renameProfile, deleteProfile,
+  setPrimary, deleteProfileTransferringPrimary,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
 import { initArtCache } from './store/artCacheInstance.js';
@@ -824,9 +825,11 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
 
 // Profiles - the spine of the app, so the picker earns some ceremony: monogram
 // discs, per-profile digests (decks · matches), gold ring on the active one.
-// The default (oldest) profile is load-bearing and cannot be deleted; any
-// profile can be renamed (data keys off the id - names are just labels),
-// duplicated (full re-keyed copy) or exported.
+// The default flag is a transferable ROLE, not a property of one immortal row:
+// any profile can be made default, and deleting the default hands the role to
+// another profile in the same confirmation - only the sole remaining profile is
+// undeletable. Any profile can be renamed (data keys off the id - names are
+// just labels) or duplicated (full re-keyed copy).
 function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSettings }) {
   const [list, setList] = useState([]);
   const [stats, setStats] = useState({});
@@ -862,8 +865,23 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
     finally { setBusy(false); }
   }
   async function remove(p) {
-    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body: 'This removes the profile and everything it owns - decks, matches, marginalia. This can’t be undone.', confirmLabel: 'Delete profile', danger: true }))) return;
-    try { await deleteProfile(p.id); await onChanged(); refresh(); toast('Profile deleted'); }
+    // Deleting the default is allowed, but the role must land somewhere first - the
+    // transfer is offered inside the same confirmation (list order = oldest heir),
+    // and the repository commits transfer + delete as one transaction.
+    const heir = p.is_default ? list.find((x) => x.id !== p.id) : null;
+    const body = heir
+      ? `This removes the profile and everything it owns - decks, matches, marginalia. “${heir.name}” becomes the default. This can’t be undone.`
+      : 'This removes the profile and everything it owns - decks, matches, marginalia. This can’t be undone.';
+    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body, confirmLabel: 'Delete profile', danger: true }))) return;
+    try {
+      if (heir) await deleteProfileTransferringPrimary(p.id, heir.id);
+      else await deleteProfile(p.id);
+      await onChanged(); refresh(); toast('Profile deleted');
+    }
+    catch (e) { toast(e.message, { tone: 'danger' }); }
+  }
+  async function makeDefault(p) {
+    try { await setPrimary(p.id); await onChanged(); refresh(); toast(`“${p.name}” is now the default`); }
     catch (e) { toast(e.message, { tone: 'danger' }); }
   }
   if (!open) return null;
@@ -893,14 +911,19 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
                   <span className="pf-name">
                     {p.name}
                     {isActive && <span className="pf-tag">ACTIVE</span>}
-                    {p.id === defaultId && !isActive && <span className="pf-tag dim">DEFAULT</span>}
+                    {/* Shown even when the row is also ACTIVE. It used to be hidden there, which was
+                        survivable while the default was a fixed row nobody could move - but now that
+                        the role is transferable, "which profile is the default" is a question the user
+                        can act on, and it must be answerable while looking at it. */}
+                    {p.id === defaultId && <span className="pf-tag dim">DEFAULT</span>}
                   </span>
                   <span className="pf-meta">{meta(p)}</span>
                 </span>
                 <span className="pf-actions">
                   <IconButton glyph="✎" tone="muted" size={27} onClick={() => setEditing({ id: p.id, name: p.name })} title="Rename" />
                   <IconButton glyph="⧉" tone="muted" size={27} onClick={() => duplicate(p)} title="Duplicate" />
-                  {p.id !== defaultId && list.length > 1 && <IconButton glyph="✕" tone="danger" size={27} onClick={() => remove(p)} title="Delete" />}
+                  {p.id !== defaultId && <IconButton glyph="★" tone="muted" size={27} onClick={() => makeDefault(p)} title="Make default" />}
+                  {list.length > 1 && <IconButton glyph="✕" tone="danger" size={27} onClick={() => remove(p)} title="Delete" />}
                 </span>
               </>
             )}

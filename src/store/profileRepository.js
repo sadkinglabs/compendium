@@ -3,7 +3,7 @@
 // reads profile data without an active profile id; switching is atomic
 // (set active id -> callers reload their partition fully, then render).
 import { Preferences } from '@capacitor/preferences';
-import { query, run, persist } from './db.js';
+import { query, run, tx, persist } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { withProfileSwitchWriteBarrier } from './collectionWrites.js';
@@ -26,6 +26,12 @@ export function __setActiveIdForTests(id) { activeId = id; }
  *  every boot so it can never be lost to migrations or imports). */
 const DEFAULT_NAME = 'Sorcerer';   // starter profile name - a little flavour out of the box
 
+// Deterministic role repair: lowest created_at wins, then lowest id. Decided here in
+// JS rather than by SQL row order, because ORDER BY leaves ties unspecified - the same
+// rows must crown the same profile on every device and in every insertion order.
+const oldestFirst = (a, b) =>
+  a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : a.id < b.id ? -1 : 1;
+
 export async function initProfiles() {
   let profiles = await listProfiles();
   if (profiles.length === 0) {
@@ -36,8 +42,16 @@ export async function initProfiles() {
     const stored = (await Preferences.get({ key: ACTIVE_KEY })).value;
     activeId = profiles.some((p) => p.id === stored) ? stored : profiles[0].id;
   }
-  if (!profiles.some((p) => p.is_default)) {
-    await run('UPDATE profiles SET is_default=1 WHERE id=?;', [profiles[0].id]);
+  // Repair to EXACTLY one: zero defaults crowns the oldest profile, multiples collapse
+  // to the oldest holder. Clear-all and set-one commit together so the repair itself
+  // can never be the moment the database has zero or two.
+  const holders = profiles.filter((p) => p.is_default);
+  if (holders.length !== 1) {
+    const winner = (holders.length ? holders : profiles).slice().sort(oldestFirst)[0];
+    await tx([
+      ['UPDATE profiles SET is_default=0;'],
+      ['UPDATE profiles SET is_default=1 WHERE id=?;', [winner.id]],
+    ]);
   }
   // One-time flavour migration: an existing default still on the old auto name
   // "Default" (i.e. never renamed by the user) becomes "Sorcerer".
@@ -103,9 +117,51 @@ export async function switchProfile(id, { timeoutMs } = {}) {
   return getActiveProfile();
 }
 
+/** Move the Primary role (the is_default flag) to another profile. Clear-all and
+ *  set-one commit together, so no moment - not even mid-operation - has the database
+ *  without a Primary or holding two. */
+export async function setPrimary(id) {
+  const exists = await query('SELECT id FROM profiles WHERE id=?;', [id]);
+  if (!exists.length) throw new Error('Unknown profile: ' + id);
+  await tx([
+    ['UPDATE profiles SET is_default=0;'],
+    ['UPDATE profiles SET is_default=1 WHERE id=?;', [id]],
+  ]);
+  await persist();
+}
+
+/** Delete a Primary by handing the role to another profile - transfer and delete in
+ *  ONE transaction, so a crash between them can never leave zero Primaries (which the
+ *  boot repair would hand to an arbitrary survivor, not the one the user chose).
+ *  If the deleted profile was active, reconcile through switchProfile() - never by
+ *  writing Preferences directly, which would leave the runtime id pointing at a
+ *  deleted profile until relaunch. */
+export async function deleteProfileTransferringPrimary(id, newPrimaryId) {
+  if (id === newPrimaryId) throw new Error('The new default must be a different profile.');
+  const profiles = await listProfiles();
+  if (profiles.length <= 1) throw new Error('Cannot delete the only profile.');
+  const target = profiles.find((p) => p.id === id);
+  if (!target) throw new Error('Unknown profile: ' + id);
+  if (!profiles.some((p) => p.id === newPrimaryId)) throw new Error('Unknown profile: ' + newPrimaryId);
+  // The role must actually be moving. Without this the function would happily delete a
+  // NON-default profile and hand the role to newPrimaryId anyway - a silent reassignment
+  // no caller asked for, from a function whose name promises the opposite. Deleting an
+  // ordinary profile is deleteProfile()'s job.
+  if (!target.is_default) throw new Error('Not the default profile - use deleteProfile(): ' + id);
+  await tx([
+    ['UPDATE profiles SET is_default=0;'],
+    ['UPDATE profiles SET is_default=1 WHERE id=?;', [newPrimaryId]],
+    ['DELETE FROM profiles WHERE id=?;', [id]],   // ON DELETE CASCADE clears data
+  ]);
+  await persist();
+  if (activeId === id) await switchProfile(newPrimaryId);
+  return getActiveProfile();
+}
+
 /** Delete a profile (cascades all its data). The default profile (explicit
  *  is_default flag) and the last remaining profile are protected; if the
- *  active profile is deleted, fall back to another existing profile. */
+ *  active profile is deleted, fall back to another existing profile. To delete
+ *  the default, transfer the role: deleteProfileTransferringPrimary(). */
 export async function deleteProfile(id) {
   const profiles = await listProfiles();
   if (profiles.length <= 1) throw new Error('Cannot delete the only profile.');
