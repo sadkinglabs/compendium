@@ -554,7 +554,10 @@ export default function App() {
           );
         })}
       </nav>
-      <ProfileSheet open={profileSheet} active={profile} onClose={() => setProfileSheet(false)}
+      {/* `rev` is a refresh signal, not decoration: the sheet used to reload its list only when
+          `open` changed, so a restore performed while it was already open (Settings paints over it)
+          left the pre-restore profiles on screen until it was closed and reopened. */}
+      <ProfileSheet open={profileSheet} active={profile} rev={rev} onClose={() => setProfileSheet(false)}
         onSwitch={onSwitchProfile} onChanged={reloadProfile} onSettings={() => setSettingsOpen(true)}
         />
 
@@ -824,7 +827,7 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
 // The default (oldest) profile is load-bearing and cannot be deleted; any
 // profile can be renamed (data keys off the id - names are just labels),
 // duplicated (full re-keyed copy) or exported.
-function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings }) {
+function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSettings }) {
   const [list, setList] = useState([]);
   const [stats, setStats] = useState({});
   const [adding, setAdding] = useState(false);
@@ -839,7 +842,7 @@ function ProfileSheet({ open, active, onClose, onSwitch, onChanged, onSettings }
     for (const p of ps) st[p.id] = await profileStats(p.id);
     setStats(st);
   }
-  useEffect(() => { refresh(); if (!open) { setEditing(null); setAdding(false); } /* eslint-disable-next-line */ }, [open]);
+  useEffect(() => { refresh(); if (!open) { setEditing(null); setAdding(false); } /* eslint-disable-next-line */ }, [open, rev]);
   async function add() {
     if (!name.trim() || busy) return;
     setBusy(true);
@@ -1139,13 +1142,25 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
     setBusy(true);
     try {
       const { restoreAll } = await import('./store/backupService.js');
+      // Past this await the rows are COMMITTED. Nothing after it may report a plain failure: the
+      // user would retry, and a retry imports the whole archive a second time.
       const r = await restoreAll(preview);
       onClose();
       // Refresh the shell rather than telling the user to relaunch. Without this the profile picker
       // still showed the pre-restore list, which reads as "it did not work" on the one screen where
       // that doubt is most expensive.
-      await onRestored?.();
-      onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}.`);
+      try {
+        await onRestored?.();
+      } catch {
+        // Refresh is presentation. The data is in; say so, and name the one thing that fixes it.
+        onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
+        return;
+      }
+      onToast?.(r.activeReconciled === false
+        // The rows committed but the active-profile pointer did not settle. initProfiles() resolves
+        // it from the restored database on the next boot, so this is a caveat, not a failure.
+        ? `Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to finish switching.`
+        : `Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}.`);
     } catch (e) {
       onToast?.(`Restore failed: ${e?.message || e}`, { tone: 'danger' });
     } finally { setBusy(false); }

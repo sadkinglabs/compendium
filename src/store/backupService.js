@@ -14,14 +14,17 @@
 import { Preferences } from '@capacitor/preferences';
 import { snapshot, query, tx } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
-import { listProfiles, activeProfileId } from './profileRepository.js';
+import { listProfiles, activeProfileId, switchProfile } from './profileRepository.js';
 import { buildProfileUnit, planProfileUnit, importProfile, uniqueProfileName } from './profileTransfer.js';
 import { buildEnvelope, seal, parseBackup, readBackup, summarise } from './backup.js';
 import { prepareBundle, ITERATED_COLLECTIONS } from './importBoundary.js';
 import { uuid, nowIso } from './ids.js';
 import { saveTextFile } from '../native.js';
 
-const ACTIVE_KEY = 'activeProfileId';
+// No ACTIVE_KEY here on purpose. This module used to keep its own copy of profileRepository's
+// 'activeProfileId' Preferences key and write it directly - a second authority over which profile is
+// active, which is exactly how restore ended up disagreeing with the repository. The key belongs to
+// profileRepository; this module goes through switchProfile().
 const SEEN_BUILD_KEY = 'changelogSeenBuild';
 
 // vite defines __APP_BUILD__; `node --test` does not, and this module is unit-tested.
@@ -195,20 +198,52 @@ export async function restoreAll(preview) {
   // ONE transaction. Commits entirely or changes nothing (Options / H, size-measured in Stage 0).
   await tx(statements);
 
-  // AFTER the commit, and separately recoverable: both are derivable from the restored database, so
-  // a process death here costs at most "the wrong profile is active", which initProfiles() resolves
-  // on the next boot.
+  // ONE TRANSACTION, ONE COMMIT POINT. Everything below this line runs AFTER the data is durable,
+  // and therefore MUST NOT be able to make a committed restore look like a failed one. A generic
+  // "Restore failed" here would invite a retry, and a retry imports the whole archive AGAIN.
   const idx = env.payload.appGlobal?.activeProfileIndex;
   const activePid = (idx != null && created[idx]) ? created[idx].pid : newDefault?.pid;
-  if (activePid) await Preferences.set({ key: ACTIVE_KEY, value: activePid });
+  let activeReconciled = false;
 
-  const seen = env.payload.appGlobal?.changelogSeenBuild;
-  const build = currentBuild();
-  if (seen != null && build != null) {
-    // CLAMPED: restoring a higher value from a newer device would permanently hide release notes
-    // the user on this build has never seen.
-    await Preferences.set({ key: SEEN_BUILD_KEY, value: String(Math.min(Number(seen), build)) });
-  }
+  try {
+    // THROUGH THE REPOSITORY, NOT AROUND IT. This used to write ACTIVE_KEY straight to Preferences,
+    // which left THREE authorities disagreeing about who is active: the database (restored default),
+    // Preferences (the new id) and profileRepository's in-memory activeId (still the OLD profile,
+    // because only initProfiles/switchProfile ever set it).
+    //
+    // That is a profile-isolation break, not a cosmetic one. activeProfileId() is the gate every
+    // profile-scoped read and write goes through, so after a restore the running process kept
+    // reading and WRITING the pre-restore profile while Preferences promised a different one to the
+    // next launch. Work done between restore and relaunch would land in profile A and then appear
+    // to vanish when B became active.
+    //
+    // switchProfile is the single boundary that owns both halves - it validates the id, takes the
+    // write barrier so in-flight profile-scoped writes finish under the old profile, then sets the
+    // in-memory id and Preferences together.
+    if (activePid) { await switchProfile(activePid); activeReconciled = true; }
+  } catch { /* committed already - see below */ }
 
-  return { profiles: created.length, activeProfileId: activePid, statements: statements.length, via: 'whole-app' };
+  try {
+    const seen = env.payload.appGlobal?.changelogSeenBuild;
+    const build = currentBuild();
+    if (seen != null && build != null) {
+      // CLAMPED: restoring a higher value from a newer device would permanently hide release notes
+      // the user on this build has never seen.
+      await Preferences.set({ key: SEEN_BUILD_KEY, value: String(Math.min(Number(seen), build)) });
+    }
+  } catch { /* cosmetic; never worth failing a committed restore over */ }
+
+  // activeReconciled false means the rows are in and only the "which profile is active" pointer did
+  // not settle. Stated precisely rather than optimistically: the next boot resolves to whatever
+  // Preferences holds (or the first profile if that id is gone), which may be the PRE-restore
+  // profile - the restored data is all present and selectable, but the user may have to switch to it
+  // by hand. That is a caveat worth surfacing, and NEVER a failure the user might retry, because a
+  // retry would import the whole archive again.
+  return {
+    profiles: created.length,
+    activeProfileId: activePid,
+    activeReconciled,
+    statements: statements.length,
+    via: 'whole-app',
+  };
 }

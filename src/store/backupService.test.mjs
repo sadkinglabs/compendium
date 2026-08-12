@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 import { __setBackendForTests, __resetWriteGateForTests } from './db.js';
-import { __setActiveIdForTests } from './profileRepository.js';
+import { __setActiveIdForTests, activeProfileId, getActiveProfile, listProfiles } from './profileRepository.js';
 import { backupAll, previewBackup, restoreAll } from './backupService.js';
 
 const require = createRequire(import.meta.url);
@@ -217,6 +217,79 @@ test('app-global state is carried: the active profile follows the archive', asyn
   const result = await restoreAll(env);
   const activeName = rows('SELECT name FROM profiles WHERE id=?;', [result.activeProfileId])[0].name;
   assert.match(activeName, /^Beta/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// THE ACTIVE PROFILE HAS ONE AUTHORITY, IMMEDIATELY - not after a relaunch.
+//
+// Restore used to write the new id straight to Preferences, leaving three authorities disagreeing:
+// the database (restored default), Preferences (new id) and profileRepository's in-memory activeId
+// (still the OLD profile, since only initProfiles/switchProfile set it). activeProfileId() is the
+// gate every profile-scoped read and write passes through, so the running process kept writing to
+// the pre-restore profile while the next launch was promised a different one - work done in between
+// would appear to vanish. That is a profile-isolation break, and these tests are its regression.
+//
+// The old test asserted only the id RETURNED by restoreAll(), which was correct the whole time. That
+// is why the bug survived: the assertion never touched the authority that was wrong.
+
+test('after restore the RUNTIME active id is the restored profile, with no relaunch', async () => {
+  const { text } = await captureArchive();
+  const { env } = await previewBackup(text);
+  assert.equal(activeProfileId(), 'p-two', 'precondition: the pre-restore profile is active');
+
+  const result = await restoreAll(env);
+
+  assert.equal(result.activeReconciled, true, 'restore must report that it settled the active profile');
+  assert.equal(activeProfileId(), result.activeProfileId,
+    'the repository runtime id must equal the restored active id - not the pre-restore one');
+  assert.notEqual(activeProfileId(), 'p-two',
+    'still pointing at the pre-restore profile means every later write lands in the wrong partition');
+});
+
+test('after restore getActiveProfile() returns the restored profile, not the pre-restore one', async () => {
+  const { text } = await captureArchive();
+  const { env } = await previewBackup(text);
+  const result = await restoreAll(env);
+
+  const active = await getActiveProfile();
+  assert.equal(active.id, result.activeProfileId);
+  assert.match(active.name, /^Beta/, "the archive's active profile was Beta, so its restored copy is active");
+  assert.notEqual(active.id, 'p-two');
+});
+
+test('the visible profile list shows the imported profiles immediately', async () => {
+  const { text } = await captureArchive();
+  const { env } = await previewBackup(text);
+  const before = (await listProfiles()).length;
+
+  const result = await restoreAll(env);
+
+  const after = await listProfiles();
+  assert.equal(after.length, before + result.profiles, 'every restored profile must be listable at once');
+  assert.ok(after.some((p) => p.id === result.activeProfileId), 'the newly active profile must be in the list');
+  // Exactly one default survives - the deletion shield cannot be lost to an import.
+  assert.equal(after.filter((p) => p.is_default).length, 1);
+});
+
+test('a post-commit Preferences failure is a CAVEAT, never a retryable failure', async () => {
+  // A retry after a committed restore imports the whole archive a second time, so this is the one
+  // place where reporting failure honestly would do more damage than reporting success.
+  const { text } = await captureArchive();
+  const { env } = await previewBackup(text);
+  const realSet = globalThis.window.localStorage.setItem;
+  globalThis.window.localStorage.setItem = () => { throw new Error('Preferences unavailable'); };
+
+  let result;
+  try {
+    result = await restoreAll(env);           // must NOT reject
+  } finally {
+    globalThis.window.localStorage.setItem = realSet;
+  }
+
+  assert.equal(result.activeReconciled, false, 'the caller needs to know the pointer did not settle');
+  assert.equal(result.profiles, 2, 'the rows committed regardless');
+  const names = rows('SELECT name FROM profiles;').map((r) => r.name).sort();
+  assert.equal(names.length, 4, 'two originals plus two restored copies are on disk');
 });
 
 test('the dashboard-seeded flag is carried explicitly, per profile', async () => {
