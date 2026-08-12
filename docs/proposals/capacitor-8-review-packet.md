@@ -547,9 +547,8 @@ preview fills the screen and it recognised a real card in landscape with zero `C
 or fatal lines - but its disambiguation sheet is portrait-designed and reads cramped. Landscape layout
 remains an explicit non-goal and a recorded follow-up.
 
-**Still unverified:** the phone half. The Pixel is < 600dp and therefore exempt, so portrait should be
-untouched, but the phone was unplugged when this landed - reasoning, not measurement. Flagged rather
-than claimed.
+**Phone half verified** (Pixel 9 Pro XL, landscape forced): `ROTATION_0`, renders 1344x2992 portrait.
+Both sides of the split are measured, not reasoned.
 
 Gates re-run after the change: `check:types`, `check:cycles`, `check:source`, `build`, `check:docs` all
 pass.

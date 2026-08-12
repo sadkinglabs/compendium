@@ -62,9 +62,9 @@ rotates. On a tablet `ScannerActivity` rotates too - it works (recognised a real
 zero camera errors) but its sheets are portrait-designed. Landscape layout remains a non-goal and a
 recorded follow-up.
 
-**STILL UNVERIFIED:** the phone half of that split. The Pixel is < 600dp and therefore exempt, so
-portrait should be untouched - but the phone was unplugged when the change landed, so this is reasoning
-rather than measurement. Confirm before merge.
+**Phone half VERIFIED 2026-08-12** on the Pixel 9 Pro XL with landscape forced: `ROTATION_0`, app
+renders 1344x2992 portrait. Both sides of the split are now measured rather than reasoned - phone
+locked, tablet free.
 
 **Codex round 1: "Changes required" - all four Majors and the Minor now addressed** (response in the
 packet). The two findings worth remembering:
