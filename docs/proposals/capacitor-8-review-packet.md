@@ -516,3 +516,40 @@ the import - which is what was done here to return the device to its prior state
 Not fixed in this branch: it belongs to backup/restore, not to the Capacitor upgrade, and the obvious
 repair (a set-default control, or leaving the flag where it is) is a product decision. Recorded in
 `WORK_IN_FLIGHT.md`.
+
+---
+
+# Round 4 addendum - the >= 600dp check is done, and it reversed the decision (2026-08-12)
+
+The item carried as "NOT RUN" through three rounds is now measured, on a **Lenovo TB321FU: Android 16
+(API 36), arm64, 1600x2560 @ 400dpi = 640dp smallest width** - the exact platform class where the
+override applies.
+
+**Both directions, device forced to landscape:**
+
+| Build | Display rotation | App renders |
+|---|---|---|
+| WITH `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` | `ROTATION_0` | 1600x2560 (portrait, letterboxed) |
+| WITHOUT it | `ROTATION_90` | **2560x1600 full screen** |
+
+The control build is what makes this evidence rather than an observation: it proves the tablet really
+does enforce the Android 16 override at target 36, rather than the app merely appearing portrait.
+
+**Outcome inverted by owner decision.** Row 14 assumed portrait-everywhere was the goal. Seeing a
+letterboxed phone-shaped app on a 12-inch screen, the owner reversed it: **portrait on phones, free
+rotation on tablets.** The property is **removed**; both activities keep
+`screenOrientation="portrait"`, phones honour it (exempt from the override), large screens do not. The
+implementation is a deletion, and it retires the API 37 expiry the property carried.
+
+**Caveat, stated rather than absorbed:** the opt-out is application-level, so `ScannerActivity` cannot
+be pinned to portrait while the app rotates. On a tablet the scanner rotates too. It works - camera
+preview fills the screen and it recognised a real card in landscape with zero `CameraAccessException`
+or fatal lines - but its disambiguation sheet is portrait-designed and reads cramped. Landscape layout
+remains an explicit non-goal and a recorded follow-up.
+
+**Still unverified:** the phone half. The Pixel is < 600dp and therefore exempt, so portrait should be
+untouched, but the phone was unplugged when this landed - reasoning, not measurement. Flagged rather
+than claimed.
+
+Gates re-run after the change: `check:types`, `check:cycles`, `check:source`, `build`, `check:docs` all
+pass.

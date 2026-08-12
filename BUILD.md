@@ -435,10 +435,21 @@ Versions here were chosen from each artifact's **own** published `minCompileSdk`
 release dates. That method rejected three answers the template would have given: Kotlin 2.2.20,
 Lifecycle 2.11.0 (needs sdk37 / AGP 9.1.0) and cordova-android 14.0.1.
 
-**Portrait-only.** Both activities declare `android:screenOrientation="portrait"`, and
-`<application>` declares `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY`, without which Android 16
-ignores the orientation lock on displays >= 600dp. **That opt-out is removed at API 37** - targeting 37
-will make large screens rotate regardless, which is a product decision waiting to be made.
+**Portrait on phones, free rotation on tablets.** Both activities declare
+`android:screenOrientation="portrait"`. From Android 16, displays with smallest width **>= 600dp**
+ignore that attribute, and phones (< 600dp) are exempt from the override - so the platform default
+already splits where we want it, and **no manifest property is needed to get it**.
+
+`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` would force portrait on large screens too. It was
+declared briefly and **removed on owner decision (2026-08-12)** after seeing the result on hardware: a
+letterboxed phone-shaped app on a 12-inch tablet. Measured on a Lenovo TB321FU (Android 16, 640dp),
+device forced landscape - **with** the property `ROTATION_0` and 1600x2560; **without** it
+`ROTATION_90` and 2560x1600 full screen. Do not re-add it to "fix" tablet rotation; rotation there is
+the intent.
+
+Consequence worth knowing: the opt-out is application-level, so the scanner cannot be pinned to
+portrait while the rest of the app rotates. On a tablet `ScannerActivity` rotates too. It works, but
+its sheets are portrait-designed - landscape layout is a known follow-up, not a supported design.
 
 ### Verifying 16 KB page alignment
 

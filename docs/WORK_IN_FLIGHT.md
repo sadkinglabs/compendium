@@ -46,13 +46,25 @@ being "portrait-only" - owner confirmed the lock.
 **Device pass done by the owner:** the scanner was exercised end to end and works; navigation and search
 are perceptibly faster.
 
-**NOT VERIFIED, deliberately deferred (owner decision 2026-08-10):** the **>= 600dp portrait check**
-(device row 14). No tablet pass was run, with or without the opt-out property, so
-`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` is declared and merged but **never observed doing its
-job**. Phones are exempt from the Android 16 override entirely, so phone portrait is unaffected either
-way and nothing shipping is at risk; what is unproven is large-screen behaviour only. Deferred to a
-dedicated tablet tune-up, where it belongs with the rest of the large-screen work. Until then, treat
-"portrait holds on tablets at target 36" as an untested claim.
+**>= 600dp check: DONE 2026-08-12, and it changed the decision.** Run on a Lenovo TB321FU (Android 16,
+arm64, 640dp smallest width), both with and without the opt-out property, device forced to landscape:
+**with** it `ROTATION_0` / 1600x2560, **without** it `ROTATION_90` / 2560x1600 full screen. The control
+is what makes it evidence rather than an observation - it proves the tablet genuinely enforces the
+Android 16 override at target 36.
+
+Seeing it on hardware, the owner reversed the goal: a letterboxed phone-shaped app on a 12-inch screen
+is worse than either alternative. **`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` is now REMOVED** -
+phones stay portrait (exempt from the override), tablets rotate full screen. The implementation is a
+deletion, and it retires the API 37 expiry the property carried.
+
+**Caveat:** the opt-out is application-level, so the scanner cannot be pinned to portrait while the app
+rotates. On a tablet `ScannerActivity` rotates too - it works (recognised a real card in landscape,
+zero camera errors) but its sheets are portrait-designed. Landscape layout remains a non-goal and a
+recorded follow-up.
+
+**STILL UNVERIFIED:** the phone half of that split. The Pixel is < 600dp and therefore exempt, so
+portrait should be untouched - but the phone was unplugged when the change landed, so this is reasoning
+rather than measurement. Confirm before merge.
 
 **Codex round 1: "Changes required" - all four Majors and the Minor now addressed** (response in the
 packet). The two findings worth remembering:

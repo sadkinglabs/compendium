@@ -627,6 +627,15 @@ Coverage extends to debug, so an emulator build cannot silently ship without rec
 
 ### Portrait-only under target 36
 
+> **SUPERSEDED, 2026-08-12.** This whole section's premise - portrait everywhere, held on large
+> screens by the opt-out property - was reversed by the owner after seeing it on hardware. The
+> >= 600dp check was finally run on a Lenovo TB321FU (Android 16, 640dp) with and without the
+> property: with it, ROTATION_0 and a 1600x2560 letterboxed phone-shaped app on a 12-inch screen;
+> without it, ROTATION_90 and 2560x1600 full screen. **The property is removed.** Phones are exempt
+> from the Android 16 override and stay portrait; tablets rotate. Device matrix row 14 is closed, with
+> its expected outcome inverted. The API 37 expiry noted below no longer applies, because there is no
+> longer an opt-out to expire.
+
 > **CORRECTION, found during implementation (2026-08-10).** This section asserted the app was already
 > portrait-only and treated the opt-out property as sufficient. It was not. Only `ScannerActivity`
 > declared `android:screenOrientation`; **`MainActivity` never has**, so the main app rotated into
