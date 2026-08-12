@@ -105,8 +105,9 @@ installed `versionCode` when actually needed.
 
 **Next step:** Codex round 4 sign-off on the updated packet
 ([proposals/capacitor-8-review-packet.md](./proposals/capacitor-8-review-packet.md)), then **merge**.
-Two gaps are deliberately carried rather than closed: the >= 600dp tablet check above, and `App.jsx`
-still has no test coverage while this branch has now twice modified it. Nothing is pushed; `main` is
+The >= 600dp check is now DONE (above). **One gap is deliberately carried:** `App.jsx` still has no
+test coverage while this branch has modified it three times (BackupSection, the `rev` prop, the
+restore-reporting branch). Nothing is pushed; `main` is
 local-only and ~66 commits ahead of `origin`.
 
 ### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
