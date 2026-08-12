@@ -1,45 +1,48 @@
 # Proposal: Restore replaces, Import adds, and Primary is a role
 
-**Revision 2** (2026-08-12). Revision 1 is superseded: it was dispositioned **Changes required** with two
-Blockers, and the product architecture below replaces its framing.
+**Revision 3** (2026-08-12). Rev 1 and Rev 2 are superseded. The product contract is settled and
+unchanged since Rev 2; this revision makes it **executable and crash-deterministic**.
 
 ## Status and classification
 
-**Draft, revision 2.** Risk: **High** - restore becomes a destructive user-data operation on an
+**Draft, revision 3.** Risk: **High** - restore becomes a destructive user-data operation on an
 offline-first app with no cloud copy.
 
 Owner/approver: project owner (replace-only chosen 2026-08-12). Author: Claude Code.
-Reviewer: Codex / ChatGPT - Rev 1 dispositioned *Changes required*; the recommended contract in that
-review is adopted here largely intact.
+Reviewer: Codex - Rev 1 *Changes required* (2 Blockers), Rev 2 *Changes required* (2 Blockers, 3
+Majors, 1 Minor). Every finding is addressed below.
 
-### What revision 1 got wrong, named rather than quietly patched
+### What Rev 2 got wrong
 
-1. **"Partial failure is impossible by construction - one transaction."** False, and wrong in a way I
-   should have caught: the snapshot **file**, the SQLite **transaction**, the in-memory **`activeId`**
-   and **Preferences** are four separate authorities. A database transaction protects the data
-   replacement; it says nothing about the boundaries between those four. This is the *same* error as
-   the active-profile split fixed days earlier on `capacitor-8` - taking one authority's guarantee for
-   the whole system's. Twice is a pattern, so §"Crash-safe protocol" below is written as a state
-   machine rather than a sequence of steps.
-2. **Snapshot and replacement were two operations.** `backupAll()` releases `db.snapshot()` after its
-   reads (`backupService.js:57`) and seals/writes afterwards, so a write could commit into the gap and
-   be destroyed by a replacement whose recovery snapshot never contained it.
-3. **"Exact equality, field by field."** Unachievable and wrong to promise: `planProfileUnit()`
-   re-keys every id, regenerates timestamps, sanitises URLs and recomputes deck results.
-4. **Legacy files were left as an open question.** They are a decision, and it is made below.
+Rev 2 answered "recovery must be a protocol" with a protocol that could not run on this codebase.
+
+1. **The session could not deliver its own guarantee.** `db.js:70` awaits `whenWritable()` and then
+   calls the backend - an admitted write is **never tracked again**. "Drain in-flight writes" was
+   unimplementable against a gate that cannot see them. Worse, `snapshot()` deliberately deadlocks any
+   write issued inside its gate (`db.js:77-81`), so restore holding that gate would deadlock **its own**
+   replacement transaction.
+2. **The recovery point was created before the user confirmed.** That either holds an exclusive session
+   open across human deliberation, or releases it and reopens the exact write gap Blocker 1 forbids.
+3. **`committed` was not atomic with the commit.** A crash between the database transaction and the
+   marker write would leave startup reading `candidate-verified`, concluding the database was untouched,
+   and **deleting the only recovery point for a replacement that had already happened.** Rev 2 made the
+   marker a separate authority - the identical error it was written to fix.
+4. **Promotion assumed atomic file replacement.** Capacitor's Filesystem documents `rename`, not atomic
+   overwrite.
+5. **Canonical comparison matched profiles by name.** Names are not unique in the schema.
+6. **The unknown-key test was described as stronger than a test can be.** A fixture only contains keys
+   its author put there.
 
 ---
 
 ## Problem and success criteria
 
-Restoring a whole-app backup currently **adds** the archive's profiles alongside what is on the
-device. Restore your own backup and you get two of everything. That is not what a backup means.
+Restore currently **adds** the archive's profiles alongside what is on the device, so restoring your own
+backup gives you two of everything. The imported profile also takes `is_default`, `deleteProfile()`
+refuses to delete the default, and nothing in the app can move that flag - so every restore leaves a
+profile the user can never remove.
 
-A second defect falls out of the same design: the imported profile takes the `is_default` flag,
-`deleteProfile()` refuses to delete the default, and nothing in the app can move that flag - so every
-restore leaves a profile the user can never remove.
-
-### The contract this ships
+### The contract
 
 | Operation | Meaning | Existing data |
 |---|---|---|
@@ -47,47 +50,38 @@ restore leaves a profile the user can never remove.
 | **Restore backup** | Return Compendium to that snapshot | **Replaced** |
 | **Import profile** | Add one profile from a single-profile file | Preserved |
 
-This is the industry-standard split (Anki replaces on collection import, adds on deck import; Firefox
-*Restore* replaces bookmarks, *Import* merges). **No merge option during restore** - it drags
-duplicate handling, name collisions, default-profile transfer and identity rules into the single most
-dangerous workflow in the app.
+Industry-standard split (Anki replaces on collection import and adds on deck import; Firefox *Restore*
+replaces, *Import* merges). **No merge during restore.**
 
-### Primary is a role, not an immortal record
+### Primary is a role
 
-The undeletable-profile trap is a *default-profile* bug, not a restore bug, and it is fixed here
-independently:
-
-- Exactly one profile is **Primary**.
-- **Any profile can be made Primary** - a control the app does not currently have at all.
+- Exactly one profile is **Primary**, enforced at initialisation.
+- **Any profile can be made Primary** - a control the app does not currently have.
 - The sole remaining profile cannot be deleted.
-- A Primary profile *can* be deleted once another is made Primary, offered in the same confirmation.
-- The starter `Sorcerer` profile is created only for a genuinely empty first launch.
-- A whole-app restore deletes the current starter along with everything else.
+- A Primary profile can be deleted once another is made Primary, offered in the same confirmation.
+- The starter `Sorcerer` is created only for a genuinely empty first launch, and a restore deletes it
+  along with everything else.
 - The archive's Primary becomes Primary; the archive's active profile becomes active. **They may
-  differ**, and the model must carry both.
-- A single-profile **Import** creates an ordinary, non-Primary profile and opens it without stealing
-  the role.
+  differ.**
+- **Import** creates an ordinary, non-Primary profile and opens it.
 
 ### Success criteria
 
-1. After a restore, user-visible state is **canonically equivalent** to the archive: same profiles by
-   name and content, same decks, entries, matches, lists, notes, the same Primary and the same active
-   profile. Defined precisely in §"Idempotency and equivalence" - **not** byte-identical rows.
-2. Restoring the same archive twice yields canonically equivalent state both times.
-3. **No committed user write is lost between the recovery snapshot and the replacement.** No write may
-   land in that window, and none may resume against a deleted profile id.
-4. A mistaken restore is recoverable **without the user having planned ahead**, and the recovery point
-   survives process death, a second restore attempt, and a failed restore.
-5. An interrupted restore leaves the app in a state that startup can deterministically finish or
-   abandon - never half-applied, never with an Undo that describes the wrong operation.
-6. Restoring an older archive migrates it forward; a newer-schema archive is refused, as today.
+1. After a restore, state is **canonically equivalent** to the archive (§"Equivalence") - not
+   byte-identical.
+2. Restoring the same archive twice is canonically equivalent both times.
+3. **No committed user write is lost between capture and replacement**, and no admitted write may still
+   be in flight when capture begins.
+4. A mistaken restore is recoverable without prior planning, and the recovery point survives process
+   death, a failed restore, and a subsequent restore.
+5. An interrupted restore is **deterministically** finished or abandoned at startup - never
+   half-applied, never with a recovery point describing the wrong operation.
+6. **The same guarantee on both runtimes, or the destructive action is not offered** (§"Web").
+7. Older archives migrate forward; newer-schema archives are refused.
 
 ### Non-goals
 
-- Merging two devices' data. That capability is **withdrawn** from restore and lives only in Import.
-- Selective/per-profile restore from a whole-app archive.
-- Preserving physical UUIDs across a restore (see §"Idempotency and equivalence").
-- Cloud or scheduled backups.
+Merging during restore; selective restore; preserving physical UUIDs; cloud or scheduled backups.
 
 ---
 
@@ -95,197 +89,168 @@ independently:
 
 | Concern | Location |
 |---|---|
-| Restore orchestration | `backupService.js` - `restoreAll()` |
-| Snapshot released before sealing | `backupService.js:57`, gate released at `db.js:102` |
-| Per-profile planning, and the re-keying | `profileTransfer.js` - `planProfileUnit()` |
-| Name dedupe that exists only because restore is additive | `uniqueProfileName()` |
-| Default flag, and the deletion shield | `profileRepository.js` - `deleteProfile()` |
-| No set-default control anywhere | `App.jsx` - `ProfileSheet` reads `is_default` only to hide Delete |
-| Native file write | `native.js:64` - `Directory.Cache` + Share; **no `Directory.Data`, no browser store** |
-| Confirm copy promising the opposite | `App.jsx` - `RestorePreviewModal` |
-
-**A documented contradiction this proposal must settle:** `COMPENDIUM_DATA_MODEL.md:68` states "App-global
-Preferences keys are not user data and are **never exported**", while `backupService.js:71` puts
-`changelogSeenBuild` in the archive's `appGlobal`. The document is right and the code is wrong - see the
-disposition table.
-
----
-
-## Assumptions and confidence
-
-1. **A durable, app-private snapshot store exists on both runtimes.** Native: `Directory.Data`. Web:
-   IndexedDB. Confidence: high native (the Filesystem plugin already writes files), **medium web** -
-   IndexedDB is durable but evictable under storage pressure. Validation: §"Snapshot store" defines one
-   interface with the same semantics on both, and the web implementation requests persistent storage
-   and reports honestly when it is refused.
-2. **An exclusive restore session can hold the write gate across file + database work.** Confidence:
-   high - `db.js` already has a write gate with exactly this shape for `snapshot()`. Validation: the
-   gate is extended, not reinvented.
-3. **Refusing writes during a restore is acceptable.** Confidence: high - the confirm modal blocks the
-   UI, and a restore is seconds. Validation: refusal is explicit and typed, not a silent queue.
-4. **`DELETE FROM profiles` cascades all profile-owned rows.** Confidence: high. Validation: assert
-   row counts across **every** profile-owned table, not just `profiles`.
-5. **The archive's ~1,476-statement scale is representative.** Confidence: medium - measured once.
-   Replace roughly doubles the work (snapshot + deletes + inserts). Validation: re-measure.
-
----
-
-## Affected systems and invariants
-
-**§3.5 Transactional user-data operations** - the deletes and inserts stay in one `tx()`.
-**§3.2 Profile isolation** - the active id must never point at a deleted profile, transiently or after
-a crash; queued writes must never resume against deleted identities.
-**§3.3 Durable offline-first writes** - the recovery snapshot is only a safety net if it is durable and
-**verified** before the destructive transaction begins.
-**§3.4 Forward-only schema evolution** - older archives migrate forward; newer are refused.
-**§3.8 Cross-runtime integrity** - the snapshot store must have equivalent guarantees on web and
-native, or the destructive operation is not equally safe on both.
-
----
-
-## Options considered
-
-| Option | Verdict |
-|---|---|
-| A. Status quo (additive restore) | Rejected by the owner. Also leaves the undeletable-profile trap. |
-| B. Replace, no recovery | **Rejected.** A data-loss feature. |
-| C. Replace + best-effort snapshot file (**Rev 1**) | **Rejected by review.** The recovery guarantee was a file operation, not a protocol; it could be defeated by a crash, a second restore, or a write landing between capture and replacement. |
-| D. **Replace + verified, crash-safe recovery point; Import stays additive; Primary becomes a role** | **PROPOSED.** |
-| E. Additive + set-default control only | The self-critique's alternative. Materially smaller and safer, and it fixes the undeletable profile - but it does not deliver the owner's chosen meaning of *restore*. Recorded, not chosen. |
+| Gate admits then forgets | `db.js:65-72` - `whenWritable()` then `backend.run/exec/tx` |
+| Snapshot's deliberate write-deadlock | `db.js:77-81` |
+| Snapshot released before sealing | `backupService.js:57` |
+| Re-keying, timestamps, sanitisation | `profileTransfer.js` - `planProfileUnit()` |
+| Default flag and deletion shield | `profileRepository.js` - `deleteProfile()` |
+| Zero-Primary repaired, multiple **not** | `profileRepository.js` - `initProfiles()` |
+| No set-Primary control | `App.jsx` - `ProfileSheet` |
+| Native file write only to Cache + Share | `native.js:64` |
+| Doc/code contradiction | `COMPENDIUM_DATA_MODEL.md:68` says app-global Preferences are never exported; `backupService.js:71` exports `changelogSeenBuild` |
 
 ---
 
 ## Proposed design
 
-### One exclusive restore session
+### 1. Admission boundary (replaces the write gate)
 
-Everything from capture to reconciliation runs inside a single boundary that owns the write gate:
+The gate becomes a boundary that **tracks admitted writes to settlement**:
 
 ```
-validate archive (no writes)
-  ↓
-ENTER RESTORE SESSION ─ drain in-flight writes, then REFUSE new profile-scoped writes
-  ↓
-capture current state          (inside the same gate hold as the replacement)
-  ↓
-write candidate snapshot       → recovery/candidate-<id>.json
-  ↓
-read back + verify digest      (a snapshot that cannot be verified ABORTS the restore)
-  ↓
-ONE DB TRANSACTION: delete profile-owned state → insert archive state → set Primary
-  ↓
-reconcile Primary + active profile through profileRepository
-  ↓
-PROMOTE candidate → recovery/last.json   (the previous one is replaced only HERE)
-  ↓
-EXIT SESSION ─ resume writes
+admit(kind)         // kind: 'write' | 'snapshot' | 'exclusive'
+  - refuses with RestoreInProgressError when an exclusive session is open
+    and the caller does not hold the session token
+  - otherwise increments inFlight and returns a settle() the caller MUST call
+
+awaitQuiescence()   // resolves when inFlight === 0
 ```
 
-Pending writes are **drained** before capture and **refused** thereafter, with a typed
-`RestoreInProgressError`. They are not queued: a queued write carrying a now-deleted `profile_id` is
-precisely the isolation break §3.2 forbids.
+- `run`/`exec`/`tx` admit as `write` and settle in a `finally`. A write is now visible from admission
+  until completion, which is what "drain" requires.
+- **Restore owns an escape hatch, and it is scoped, not a bypass.** The session issues its capture and
+  its replacement through `session.tx(...)`, which carries the session token and therefore admits
+  while external writes are refused. Rev 2's deadlock is structural, so the fix is structural: the
+  owner is admitted *because* it is the owner.
+- `snapshot()` keeps its write-deadlock property for external callers - it is a useful guarantee, and
+  it is reimplemented on this primitive rather than replaced.
 
-### Crash-safe protocol
+**Regression required by review:** a backend write that has passed admission and is deliberately held
+unresolved. Capture must not begin until it settles.
 
-A durable **restore marker** records the phase. It is the only thing that makes recovery a property
-rather than a hope.
+### 2. Sequence - the recovery point is created after consent
 
-| Phase | Meaning | Startup action if found |
+Rev 2 created it during preview. Corrected:
+
+```
+1. Validate archive + build preview          READ ONLY, no session
+2. User presses "Replace all data"           consent
+3. ENTER EXCLUSIVE SESSION                   drain admitted writes, refuse new ones
+4. Capture current state                     via session.tx
+5. Write candidate under an IMMUTABLE id
+6. Read back + verify digest                 failure here ABORTS, nothing destroyed
+7. Replacement transaction                   (see 3)
+8. Reconcile Primary + active
+9. Publish recovery pointer, clear journal
+10. EXIT SESSION
+```
+
+The session never spans human deliberation, and no window exists between capture and replacement.
+
+### 3. The journal row is written *inside* the replacement transaction
+
+This is the correction that makes crash recovery deterministic. `restore_pending` is **not** a separate
+authority - it is a row in `catalog_meta`, written in the **same** `tx()` as the deletes and inserts, so
+it commits exactly when the replacement does:
+
+```
+ONE TRANSACTION:
+  delete profile-owned state
+  insert archive state
+  set Primary
+  write restore_pending = { candidateId, intendedActiveId, intendedPrimaryId }
+```
+
+`catalog_meta` is device-owned and preserved by the replacement (§"Persisted state"), so the journal
+survives the very operation it describes.
+
+**Startup, after migrations and database open, BEFORE `initProfiles()`, any UI, or any repository
+write:**
+
+| Observed | Meaning | Action |
 |---|---|---|
-| `capturing` | Session opened, nothing written | Delete candidate; nothing happened |
-| `candidate-written` | Candidate exists, not yet verified | Delete candidate; DB untouched |
-| `candidate-verified` | Candidate durable and digest-checked | Delete candidate; DB untouched |
-| `committed` | **DB transaction committed** | **Finish**: reconcile Primary/active, promote candidate, clear marker |
-| `promoted` | Recovery point published | Clear marker; nothing to do |
+| no `restore_pending` | the replacement did **not** commit | abandon any candidate; nothing happened |
+| `restore_pending` present | the replacement **did** commit | finish idempotently: reconcile active/Primary from the row, publish the recovery pointer, delete the row |
 
-Two properties fall out, and both were broken in Rev 1:
+There is no phase where the wrong inference is possible, because the marker and the data commit
+together. Rev 2's five phases collapse to one durable fact.
 
-- **A failed attempt never discards the last good recovery point.** `recovery/last.json` is replaced
-  only at `promoted`; a candidate that never commits is deleted.
-- **A crash after commit is finishable.** The marker carries the intended active/Primary ids, so
-  startup completes the reconciliation instead of booting into the pre-restore profile.
+### 4. Recovery points: immutable files, durable pointer
 
-### Snapshot store - one interface, two backings
+Capacitor does not document atomic file replacement, so the design does not need it:
 
-```
-listRecoveryPoints() -> [{id, createdAt, profiles, rows, digest}]
-writeCandidate(text) -> id        // temp name, never the published name
-verifyCandidate(id)  -> boolean   // read back, recompute digest
-promote(id)                       // atomic rename/replace of the published point
-readRecoveryPoint(id) -> text
-deleteRecoveryPoint(id)
-```
+- Candidates are written under **immutable ids** (`recovery/<uuid>.json`) and never overwritten.
+- The **pointer** to the current recovery point is a `catalog_meta` key - so "which recovery point is
+  current" is decided by a database write, which *is* atomic.
+- The previous recovery point is deleted **only after** the new pointer is committed. A crash leaves an
+  orphan file, which the next startup sweeps - orphaned bytes are cheap; a missing recovery point is not.
 
-**Native:** `Directory.Data`, temp file then rename.
-**Web:** IndexedDB object store, request `navigator.storage.persist()`, and **surface refusal** - if
-the browser will not persist, the confirm screen says the recovery point may be evicted rather than
-implying a guarantee that does not exist.
+### 5. Web fails closed
 
-Retention: **one** published recovery point. Unbounded copies of the whole database in app storage is
-its own defect.
+Rev 2 warned and continued. Corrected: **if `navigator.storage.persist()` is refused, "Replace all
+data" is disabled.** The user is offered the alternative that restores the guarantee - export a backup
+and re-open it to verify it arrived - which then enables replacement for that session. The same button
+never ships with materially weaker guarantees on one runtime (§3.8).
 
-### Persisted-state disposition
+### 6. Primary storage: DECIDED - keep `is_default`
 
-Deletion targets state **by ownership**, not by the vague category "app-global".
+No second singleton; a new authority is the thing this proposal keeps being punished for. Instead:
 
-| State | Owner | Disposition on restore |
+- `setPrimary(id)` - one transactional repository operation (clear all, set one).
+- `deleteProfileTransferringPrimary(id, newPrimaryId)` - role transfer and deletion in **one**
+  transaction, then active-profile reconciliation through `switchProfile()`.
+- `initProfiles()` enforces **exactly one** Primary: it already repairs zero, and must now collapse
+  **multiple** deterministically (lowest `created_at`, then lowest id - stable and order-independent).
+
+### 7. Equivalence, and comparing profiles that share a name
+
+Profile names are **not unique**, so name matching is wrong. Equivalence compares a **multiset of
+complete canonical profile signatures** - each signature covering the profile's own fields plus its
+decks, entries, collection items, matches, log entries, lists and notes - and additionally checks the
+**ordered archive-unit mapping** so position is verified where the archive defines it.
+
+Excluded from comparison: physical UUIDs, planner-regenerated timestamps, and fields the planner
+normalises by contract - enumerated in one reviewable helper. **A duplicate-profile-name case is a
+required test**, with the two profiles holding different decks.
+
+### 8. Persisted state - ownership, and preserve-by-default
+
+| State | Owner | Disposition |
 |---|---|---|
-| `profiles` and all profile-owned tables | Profile | **Replace** - deleted, re-created from archive |
-| `dash_seeded:<pid>` in `catalog_meta` | Profile (keyed by pid) | **Re-key** - delete keys for deleted pids; write keys for restored pids |
-| `catalog_meta.version` and catalog rows | Device/catalog | **Preserve** - never touched; the catalog is shared, read-only (§3.1) |
-| `activeProfileId` (Preferences) | Profile authority | **Reconcile** - set through `switchProfile()`, never written directly |
-| Primary/`is_default` | Profile role | **Reconcile** - archive's Primary, inside the transaction |
-| `changelogSeenBuild` (Preferences) | **Device install** | **Exclude** - stop exporting and stop restoring it. `COMPENDIUM_DATA_MODEL.md:68` already says install-global keys are never exported; the code contradicted the document. Losing it costs one redundant modal |
-| Native telemetry consent | Device | **Exclude** - deliberately device-owned and non-exportable |
+| `profiles` + all profile-owned tables | Profile | **Replace** |
+| `dash_seeded:<pid>` | Profile (keyed) | **Re-key** - drop deleted pids, write restored pids |
+| `catalog_meta.version`, catalog rows | Device/catalog | **Preserve** |
+| `restore_pending` journal | Device (transient) | **Written in the replacement tx**, cleared on completion |
+| Recovery pointer + metadata | Device | **Preserve** - it must outlive the data it protects |
+| `activeProfileId` | Profile authority | **Reconcile** via `switchProfile()` |
+| `is_default` (Primary) | Profile role | **Reconcile** inside the transaction |
+| `changelogSeenBuild` | Device install | **Exclude** - stop exporting and restoring; `COMPENDIUM_DATA_MODEL.md:68` already forbids it and the code contradicted the document |
+| Native telemetry consent | Device | **Exclude** |
 
-**Unknown keys fail the build, not the user.** A test enumerates every `catalog_meta` key prefix and
-every Preferences key and fails on one this table does not classify. An allow-list only protects
-against what its author already thought of; this fails closed on the thing nobody thought of, which is
-the actual risk.
+**Unknown state is PRESERVED, not deleted** - the safe default, and the correction to Rev 2's
+overclaim. Deletion is targeted by ownership (`dash_seeded:<pid>` for deleted pids), never by "everything
+that looks app-global". A **key-namespace registry consumed by production code** is the discovery
+mechanism; a test asserts every namespace the registry declares appears in this table. That is an honest
+guarantee: it catches an unregistered *namespace*, and it cannot catch a key nobody registered - which is
+why the default is preserve.
 
-### Idempotency and equivalence
-
-`planProfileUnit()` re-keys ids, regenerates timestamps, sanitises URLs, drops retired dashboard
-blocks and recomputes deck results. **Byte equality is therefore impossible without redesigning the
-format and the planner, and that redesign buys the user nothing.**
-
-Success is **canonical logical equivalence**: profiles matched by name; per profile the same decks,
-entries, collection items, matches, log entries, lists and notes by content; relationships intact;
-same Primary; same active profile. Explicitly **excluded** from comparison: physical UUIDs, `created_at`
-/ `updated_at` regenerated by the planner, and fields the planner normalises by contract. The
-comparison lives in a test helper so what is ignored is enumerated in one reviewable place, not
-scattered through assertions.
-
-### Archive compatibility
+### 9. Archive compatibility
 
 | File | Route | Behaviour |
 |---|---|---|
-| `bundleFormat: 2` (whole-app) | **Restore backup** | Replaces everything |
-| absent / `bundleFormat: 1` (single profile) | **Import profile** | Additive, non-Primary, opened after import |
+| `bundleFormat: 2` | **Restore backup** | Replaces everything |
+| absent / `bundleFormat: 1` | **Import profile** | Additive, non-Primary, opened after import |
 
-**A single-profile export is never authority to delete the whole app.** This is Codex's recommendation
-and it is right: it keeps legacy files working, keeps their existing meaning, and does not contradict
-replace-only for whole-app backups.
+A single-profile export is never authority to delete the whole app. Whole-app archives must carry at
+least one profile and exactly one Primary; older archives lacking Primary migrate deterministically
+(archived active, else first).
 
-Whole-app archives must contain at least one profile and exactly one Primary. Older valid archives
-lacking Primary use a deterministic migration: archived active profile, else the first profile.
+### 10. The restore experience
 
-### The restore experience
-
-1. Select a whole-app backup.
-2. **Validate completely, writing nothing.**
-3. Show: backup date and app version; profiles/decks/collection/matches **being restored**; the
-   **corresponding counts currently on the device**; and "Everything currently in Compendium will be
-   replaced."
-4. Create and verify the recovery point automatically.
-5. Destructive button: **Replace all data**. No typed confirmation phrase - clear consequence copy, a
-   destructive button and a verified recovery point are sufficient.
-6. Replace atomically.
-7. Result: "Backup restored · **Return to previous state**", and that action persists in Settings
-   across restarts.
-
-Today's copy promises the opposite ("added alongside... Nothing is deleted or overwritten") and is
-rewritten wholesale.
+Validate and preview writing nothing; show backup date and version, what is being restored, **the
+corresponding counts currently on the device**, and "Everything currently in Compendium will be
+replaced."; destructive **Replace all data** button (no typed phrase); atomic replacement; then
+"Backup restored · **Return to previous state**", persisting in Settings across restarts.
 
 ---
 
@@ -293,138 +258,114 @@ rewritten wholesale.
 
 | # | Increment | Gate |
 |---|---|---|
-| 0 | **Primary as a role**: set-Primary control, delete-Primary-after-reassign, starter only on empty first launch | Unit + device. Independently useful; fixes the undeletable profile on its own |
-| 1 | Snapshot store interface + both backings, with listing/verify/promote/delete | Unit both runtimes; web persistence refusal surfaced |
-| 2 | Restore session: drain, refuse, single gate hold across capture + replacement | Unit: a write attempted mid-session is refused, not queued; no write lands in the window |
-| 3 | Restore marker + startup reconciliation | Unit: kill at each of the five phases; assert the table's startup action, and that a failed attempt keeps the previous recovery point |
-| 4 | `planReplace()` - deletes + inserts in one list, no name dedupe | Canonical-equivalence test; idempotent on second run |
-| 5 | Persisted-state disposition + the unknown-key test | Unit: an unclassified key fails the suite |
-| 6 | Legacy routing: single-profile → **Import profile** | Unit + UI copy |
-| 7 | UI: validate screen with both-sides counts, Replace button, persistent Undo | Manual, both runtimes, **plus accessibility below** |
-| 8 | Device pass | Real archive; undo returns to prior state; kill-and-restart mid-restore |
-| 9 | Docs | Per the impact table |
+| 0 | **Primary as a role**: `setPrimary`, `deleteProfileTransferringPrimary`, init enforces exactly one (collapse multiples) | Unit + device. Independently useful; fixes the undeletable profile alone |
+| 1 | **Admission boundary**: track to settlement, `awaitQuiescence`, session token, `snapshot()` re-based on it | Unit: held-unresolved write blocks capture; external write refused mid-session; owner's own tx does **not** deadlock |
+| 2 | Snapshot store: immutable ids, verify, pointer in `catalog_meta`, orphan sweep - native + web | Unit both backings; corrupted candidate rejected |
+| 3 | Web durability probe + **fail-closed** disable of Replace | Unit + manual with persistence refused |
+| 4 | `planReplace()` + journal row **in the same tx** | Canonical-equivalence incl. duplicate names; idempotent |
+| 5 | Startup reconciliation before `initProfiles()` | Kill after commit / before commit / mid-publish; assert the two-row table, and that a failed attempt keeps the previous point |
+| 6 | Persisted-state registry + disposition | Unit: unregistered namespace fails |
+| 7 | Legacy routing → **Import profile** | Unit + copy |
+| 8 | UI + accessibility | Manual both runtimes |
+| 9 | Device pass | Real archive; undo; kill-and-restart mid-restore |
+| 10 | Docs | Impact table below |
 
 ---
 
 ## Data migration and compatibility
 
-No schema change for the restore mechanics. **One schema question is deliberately raised, not assumed:**
-Primary is currently `profiles.is_default`, which is adequate for a transferable role, so the intent is
-**no migration** - but if review prefers an explicit `primary_profile_id` singleton, that is a schema
-change and belongs in Increment 0.
-
-`bundleFormat` 2 is unchanged, so **existing archives restore under the new semantics**. Archives
-written after this change omit `changelogSeenBuild`; readers ignore it when present, so old and new
-archives are mutually readable.
-
----
+No schema change: Primary stays `profiles.is_default`, and the journal and pointer are `catalog_meta`
+keys. `bundleFormat` 2 is unchanged, so existing archives restore under the new semantics. New archives
+omit `changelogSeenBuild`; readers ignore it when present, so old and new archives stay mutually
+readable.
 
 ## Rollback and recovery
 
-- **Code:** revert; the format is unchanged and archives stay readable.
-- **Data:** the published recovery point, reachable from Settings, surviving restarts.
-- **Partial failure:** governed by the marker state machine, not by an assertion that it cannot happen.
-- **Point of no return:** the `tx()` commit - **and past it the operation is finishable, not abandoned**,
-  which is the property Rev 1 lacked.
-
----
+Code: revert; format unchanged. Data: the published recovery point, reachable from Settings.
+Partial failure: governed by the journal row, which commits with the data.
+**Point of no return: the `tx()` commit - and past it the operation is finishable, not abandoned.**
 
 ## Verification plan
 
-- **Automated:** canonical equivalence; idempotency; atomicity at three injection points; a write
-  attempted mid-session is refused; kill at each marker phase; a failed restore preserves the previous
-  recovery point; an unclassified persisted key fails; snapshot verify rejects a corrupted candidate.
-- **Cross-runtime:** the snapshot store suite runs against both backings (§3.8). `node --test` uses
-  sql.js and is not proof of native.
-- **Manual:** restore an **older** archive and confirm newer data is genuinely gone - the destructive
-  case verified deliberately rather than avoided - then Undo and confirm return. Kill the app mid-restore
-  and confirm startup resolves it.
-- **Accessibility (destructive flow):** the confirm screen announces what will be **removed**, not only
-  what will be added; focus lands on the consequence text, not the destructive button; Back/predictive
-  back cancels without writing; after restore, focus reaches the Undo affordance and it is announced;
-  Undo is reachable by screen reader from Settings afterwards.
-- **Regression:** the 19 existing backup/restore tests, each change reviewed individually - a test
-  updated to match new behaviour is the ideal hiding place for a real regression.
-
----
+- **Automated:** canonical equivalence incl. duplicate names; idempotency; atomicity at three injection
+  points; a held-unresolved write blocks capture; an external write mid-session is refused; the owner's
+  transaction does not deadlock; kill before/after commit and mid-publish; a failed restore preserves the
+  previous recovery point; corrupted candidate rejected; unregistered namespace fails.
+- **Cross-runtime:** the snapshot-store suite runs against both backings; web persistence-refused path
+  disables Replace (§3.8).
+- **Manual:** restore an **older** archive and confirm newer data is genuinely gone, then Undo. Kill the
+  app mid-restore and confirm startup resolves it.
+- **Accessibility:** the confirm screen announces what will be **removed**; focus lands on the
+  consequence, not the destructive button; Back cancels without writing; Undo is focusable and
+  announced afterwards, and reachable by screen reader from Settings.
+- **Regression:** the 19 existing backup/restore tests, each change reviewed individually.
 
 ## Documentation impact
 
 | Document | Impact |
 |---|---|
-| `COMPENDIUM_FEATURE_MATRIX.md` | **Changes** - Restore/Import become distinct capabilities; Primary-as-role is new |
-| `COMPENDIUM_DATA_MODEL.md` | **Changes** - persisted-state ownership table; resolves the `changelogSeenBuild` contradiction; Primary/active as separate authorities |
-| `COMPENDIUM_ARCHITECTURE.md` | **Changes** - the snapshot store is a new owned boundary spanning both runtimes |
-| `BUILD.md` | **Changes** - how to exercise recovery and interrupted restores on device |
-| `DESIGN_SYSTEM.md` | **Changes** - destructive-confirmation pattern and its accessibility contract |
+| `COMPENDIUM_FEATURE_MATRIX.md` | **Changes** - Restore/Import split; Primary-as-role |
+| `COMPENDIUM_DATA_MODEL.md` | **Changes** - ownership table; `changelogSeenBuild` contradiction; journal + pointer keys; Primary/active as separate authorities |
+| `COMPENDIUM_ARCHITECTURE.md` | **Changes** - admission boundary and snapshot store as owned boundaries across both runtimes |
+| `BUILD.md` | **Changes** - exercising recovery and interrupted restores |
+| `DESIGN_SYSTEM.md` | **Changes** - destructive-confirmation pattern + accessibility contract |
 | `backup-and-restore.md` | **Superseded in part** - marked, not rewritten |
-| `ENGINEERING_CONSTITUTION.md` / `AGENTS.md` | **Unchanged** - no process change |
-
----
+| `ENGINEERING_CONSTITUTION.md` / `AGENTS.md` | **Unchanged** |
 
 ## Security, privacy, performance, and operations
 
-Recovery points are unencrypted user data in app-private storage - the same posture as the archives the
-app already writes, and they never leave the device. They contain opponent names (third-party data), so
-they must not be logged, shared, or included in diagnostics. **On web, IndexedDB is origin-scoped and
-not app-private in the same sense** - stated plainly rather than glossed. Cost: one extra whole-database
-write per restore (~0.4 MiB today), bounded by single-point retention.
-
----
+Recovery points are unencrypted user data in app-private storage, never leaving the device, containing
+opponent names - never logged, shared, or in diagnostics. **On web, IndexedDB is origin-scoped, not
+app-private in the same sense.** Cost: one extra whole-database write per restore (~0.4 MiB), bounded by
+single-point retention plus orphan sweeping.
 
 ## Risks and unanswered questions
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Replace destroys data the user did not intend to lose | **Severe** | Verified recovery point; both-sides counts before confirming; persistent Undo |
-| Browser evicts the recovery point | High (web) | Request persistence; **surface refusal in the confirm copy** rather than implying a guarantee |
-| A persisted key is missed and silently deleted | Medium | Unknown-key test fails closed |
-| Crash between commit and reconciliation | Medium | Marker + startup completion |
+| Replace destroys data the user did not intend to lose | **Severe** | Verified recovery point; both-sides counts; persistent Undo |
+| Web durability refused | High | **Fail closed** - Replace disabled until an external backup is saved and verified |
+| A persisted key is missed | Medium | Preserve-by-default + namespace registry |
+| Crash between commit and reconciliation | Medium | Journal row commits with the data; startup finishes |
+| Three features on one lock (snapshot, profile-switch barrier, restore session) | Medium | One primitive, one owner concept; deadlock tests are explicit gates in Increment 1 |
 | Larger transaction hits a native limit | Low | Re-measure at Increment 4 |
-| Primary-as-role interacts with existing deletion rules | Medium | Increment 0 lands first, independently tested |
 
-**Open for the reviewer:** whether Primary stays `is_default` or becomes an explicit
-`primary_profile_id` (schema change). I lean to keeping `is_default`; I do not feel strongly.
-
----
+**No open questions remain for the reviewer.** Primary storage is decided (§6); legacy routing is decided
+(§9); web durability is decided (§5).
 
 ## Self-Critique
 
-**The strongest case against this proposal is now narrower than in Rev 1, and worth stating exactly.**
-Rev 1's safety argument genuinely lost to the self-critique: a best-effort file write is not a recovery
-guarantee. Rev 2 answers that by making recovery a protocol - but the honest cost is that this is no
-longer a small change. It is a snapshot store on two runtimes, a session boundary, a durable state
-machine, and a profile-role redesign. **Option E (additive + set-default) still fixes the undeletable
-profile and still cannot destroy anything, at a fraction of the size.** If the owner's real complaint
-had been the duplicates rather than the meaning of the word *restore*, E would be the right answer, and
-this proposal would be over-engineering with a data-loss risk attached.
+**The strongest case against this proposal is its size, and it has grown twice under review.** Rev 1 was
+a file write. Rev 3 is an admission boundary, a snapshot store on two runtimes, a journal that commits
+with the data, a startup reconciliation phase, and a profile-role redesign - to change what one verb
+means. **Option E (additive + a set-Primary control) still fixes the undeletable profile, still cannot
+destroy anything, and is roughly Increment 0 alone.** If the owner's complaint had been the duplicates
+rather than the meaning of *restore*, E wins outright, and the correct read of two review rounds is that
+the cost of replace-only is being discovered rather than paid down.
 
-**Hidden coupling:** `uniqueProfileName()` stops being needed by restore but stays live for Import, so
-its dedupe rules must remain correct in a path this proposal barely touches. The restore session's
-write gate is shared with `snapshot()` and the profile-switch barrier - three features on one lock, and
-a deadlock there is a hang with no error message.
+**Hidden coupling:** `snapshot()`, the profile-switch write barrier and the restore session now share one
+primitive. That is right - three locks would be worse - but a deadlock there is a hang with no error
+message, on the path that holds the user's whole database.
 
-**The failure most likely to escape tests:** the web snapshot backing. It is the runtime nobody uses
-daily, IndexedDB eviction is invisible in a test suite, and "the recovery point was quietly evicted"
-looks identical to "there was never one" at exactly the moment it is needed.
+**The failure most likely to escape tests:** the web snapshot backing. Eviction is invisible in a suite,
+and "quietly evicted" is indistinguishable from "never existed" at the moment it matters. Failing closed
+reduces this to a usability problem instead of a data-loss one, which is why §5 changed.
 
-**Second most likely:** the marker state machine's `committed` phase. It is the only phase where the
-correct action is *finish* rather than *abandon*, it is reached only by a crash in a millisecond-wide
-window, and getting it backwards means a restored database with the pre-restore profile active - which
-looks like the restore failed and invites the retry that re-imports everything.
+**Second most likely:** the startup reconciliation running at the wrong moment. It must execute after
+migrations and before `initProfiles()`. Anything that reads a profile earlier - a lazy import, a
+telemetry init, a splash-screen query - silently reintroduces the pre-restore profile, and the symptom
+appears one boot later.
 
-**Evidence that would change the decision:** if the web snapshot store cannot be made durable enough to
-justify the word "recovery", the honest options are to restrict replace-only to native and keep the web
-build additive, or to take option E. Shipping the same destructive button with materially weaker
-guarantees on one runtime is not one of them.
-
----
+**Evidence that would change the decision:** if Increment 1 cannot produce an admission boundary with no
+deadlock under the existing three consumers, the honest conclusion is that this codebase cannot carry a
+destructive restore safely yet, and option E is the answer.
 
 ## Approval record
 
 | Date | Who | Disposition |
 |---|---|---|
-| 2026-08-12 | Owner | Replace-only chosen; snapshot + one-transaction + confirm-copy agreed |
-| 2026-08-12 | Codex | **Rev 1: Changes required** - 2 Blockers, 4 Majors, 2 Minors; recommended contract adopted |
-| 2026-08-12 | Claude | **Rev 2** addressing all findings; awaiting review |
+| 2026-08-12 | Owner | Replace-only chosen |
+| 2026-08-12 | Codex | **Rev 1: Changes required** - 2 Blockers, 4 Majors, 2 Minors |
+| 2026-08-12 | Codex | **Rev 2: Changes required** - 2 Blockers unclosed, 3 Majors, 1 Minor |
+| 2026-08-12 | Claude | **Rev 3** - all findings addressed; no open questions returned to the reviewer |
 | | Owner | Pending final approval |
