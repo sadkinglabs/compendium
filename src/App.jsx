@@ -33,7 +33,7 @@ import { CHANGELOG } from './content/changelog.js';
 import { getSeenBuild, setSeenBuild, pendingEntries } from './store/changelog.js';
 import { reconcile as reconcileTelemetry, grantConsent, denyConsent, getConsent, isOn as telemetryOn, needsDisclosure, UNSET } from './store/telemetry.js';
 import { TELEMETRY_SETTING } from './content/telemetry.js';
-import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, BTN_DANGER, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
@@ -1098,6 +1098,39 @@ function BackupSection({ onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
   const [lastPrepared, setLastPrepared] = useState(null);
   const [preview, setPreview] = useState(null);   // { env, profiles, exportedAt, appBuild }
+  // The recovery point left by the last replacement. A safety copy nobody can reach is not a safety
+  // copy, so this is read on mount and after every restore - it must survive app restarts, which is
+  // why it comes from the store's pointer and not from component state.
+  const [recovery, setRecovery] = useState(null);
+
+  async function refreshRecovery() {
+    try {
+      const { listRecoveryPoints } = await import('./store/recoveryStore.js');
+      const points = await listRecoveryPoints();
+      setRecovery(points[0] ?? null);
+    } catch { setRecovery(null); }   // no recovery point is a normal state, not an error
+  }
+  useEffect(() => { refreshRecovery(); }, []);
+
+  // Returning to the previous state is itself a replacement, so it goes through the same
+  // destructive path with the same confirmation - not a quiet one-tap revert.
+  async function undoLastReplace() {
+    if (busy || !recovery) return;
+    setBusy(true);
+    try {
+      const { readRecoveryPoint } = await import('./store/recoveryStore.js');
+      const { classifyBackup } = await import('./store/backupService.js');
+      const text = await readRecoveryPoint(recovery.id);
+      if (!text) { onToast?.('That safety copy is no longer on this device.', { tone: 'danger' }); return; }
+      const classified = await classifyBackup(text);
+      const { listProfiles, profileStats } = await import('./store/profileRepository.js');
+      const here = [];
+      for (const p of await listProfiles()) here.push({ name: p.name, ...(await profileStats(p.id)) });
+      setPreview({ ...classified, deviceProfiles: here });
+    } catch (e) {
+      onToast?.(`That safety copy cannot be read: ${e?.message || e}`, { tone: 'danger' });
+    } finally { setBusy(false); }
+  }
 
   async function prepare() {
     if (busy) return;
@@ -1123,8 +1156,15 @@ function BackupSection({ onToast, onRestored }) {
       if (!file) return;
       setBusy(true);
       try {
-        const { previewBackup } = await import('./store/backupService.js');
-        setPreview(await previewBackup(await file.text()));
+        // classifyBackup, not previewBackup: it decides in ONE place whether this file authorises a
+        // whole-app REPLACE or a single-profile IMPORT, so the modal cannot get that wrong. It also
+        // reports the counts already on this device, which the destructive path has to show.
+        const { classifyBackup } = await import('./store/backupService.js');
+        const classified = await classifyBackup(await file.text());
+        const { listProfiles, profileStats } = await import('./store/profileRepository.js');
+        const here = [];
+        for (const p of await listProfiles()) here.push({ name: p.name, ...(await profileStats(p.id)) });
+        setPreview({ ...classified, deviceProfiles: here });
       } catch (e) {
         onToast?.(`That file cannot be restored: ${e?.message || e}`, { tone: 'danger' });
       } finally { setBusy(false); }
@@ -1155,8 +1195,27 @@ function BackupSection({ onToast, onRestored }) {
             ? `Last prepared ${lastPrepared.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Save the file and reopen it once to be sure it arrived.`
             : 'The app cannot see where you save the file, so it never claims a backup is stored.'}
         </div>
+        {/* Only rendered when a recovery point actually exists, so it never advertises a way back
+            that is not there. Announced as a region because after a replacement this is the single
+            most important control on the screen and a screen reader user has to be able to find it. */}
+        {recovery && (
+          <div role="group" aria-label="Return to the state before the last replacement"
+            style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--hair-12)' }}>
+            <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 10 }}>
+              A safety copy was taken before the last replacement
+              {recovery.createdAt ? ` on ${new Date(recovery.createdAt).toLocaleString()}` : ''}
+              {recovery.profiles != null ? ` - ${recovery.profiles} profile${recovery.profiles === 1 ? '' : 's'}` : ''}.
+              Returning to it replaces what is here now.
+            </div>
+            <button onClick={undoLastReplace} disabled={busy}
+              style={{ ...BTN_GHOST, width: '100%', minHeight: 48, opacity: busy ? .55 : 1 }}>
+              Return to previous state
+            </button>
+          </div>
+        )}
       </div>
-      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast} onRestored={onRestored} />
+      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast}
+        onRestored={async () => { await onRestored?.(); await refreshRecovery(); }} />
     </>
   );
 }
@@ -1164,18 +1223,32 @@ function BackupSection({ onToast, onRestored }) {
 /** Shows exactly what a restore would add, and writes nothing until confirmed. */
 function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
+  const consequenceRef = useRef(null);
+  // Focus the consequence, not the destructive button. A screen reader must read what is about to
+  // be removed before it reaches the control that removes it; landing on "Replace all data" states
+  // the action and hides the cost.
+  useEffect(() => { if (preview) consequenceRef.current?.focus(); }, [preview]);
   if (!preview) return null;
-  const { profiles, exportedAt } = preview;
+  const { profiles, exportedAt, destructive = false, deviceProfiles = [] } = preview;
   const rows = profiles.reduce((a, p) => a + p.rows, 0);
+  const deviceTotals = deviceProfiles.reduce(
+    (a, p) => ({ profiles: a.profiles + 1, decks: a.decks + (p.decks ?? 0), matches: a.matches + (p.matches ?? 0) }),
+    { profiles: 0, decks: 0, matches: 0 },
+  );
 
   async function confirm() {
     if (busy) return;
     setBusy(true);
     try {
-      const { restoreAll } = await import('./store/backupService.js');
+      const svc = await import('./store/backupService.js');
+      // ROUTED BY THE CLASSIFIER, not by this component's reading of the file. A whole-app archive
+      // REPLACES; a single-profile export is additive and only ever imports. Deciding that here as
+      // well would be the fourth place it was decided, which is how the wrong file reaches the
+      // destructive path.
+      const replacing = preview.operation === svc.REPLACE_ALL;
       // Past this await the rows are COMMITTED. Nothing after it may report a plain failure: the
-      // user would retry, and a retry imports the whole archive a second time.
-      const r = await restoreAll(preview);
+      // user would retry, and on the additive path a retry imports the archive a second time.
+      const r = replacing ? await svc.replaceAll(preview) : await svc.restoreAll(preview);
       onClose();
       // Refresh the shell rather than telling the user to relaunch. Without this the profile picker
       // still showed the pre-restore list, which reads as "it did not work" on the one screen where
@@ -1201,11 +1274,28 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
     <CenteredModal open label="Restore from backup" maxWidth={360} onClose={busy ? undefined : onClose} boxStyle={{ overflow: 'hidden' }}>
       <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', padding: '22px 44px 6px' }}>RESTORE</div>
       <div className="cx-scroll" style={{ maxHeight: 'min(56dvh, 420px)', overflowY: 'auto', padding: '0 20px 4px' }}>
-        <div style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '0 0 14px' }}>
-          From {exportedAt ? new Date(exportedAt).toLocaleDateString() : 'an unknown date'}.
-          These profiles are <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>added</strong> alongside
-          what is already on this device. Nothing is deleted or overwritten.
+        {/* The consequence, in the user's terms, and it differs completely between the two
+            operations. A whole-app restore REPLACES - saying "added alongside" there would be a
+            promise the code no longer keeps. tabIndex/-1 plus the ref below puts initial focus
+            HERE rather than on the destructive button, so a screen reader reads what will happen
+            before reaching the control that does it. */}
+        <div ref={consequenceRef} tabIndex={-1} style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '0 0 14px', outline: 'none' }}>
+          From {exportedAt ? new Date(exportedAt).toLocaleDateString() : 'an unknown date'}.{' '}
+          {destructive ? (
+            <>Everything currently in Compendium will be <strong style={{ color: 'var(--danger, #e2777a)', fontWeight: 600 }}>replaced</strong> by
+              this backup. {deviceTotals.profiles} profile{deviceTotals.profiles === 1 ? '' : 's'} now
+              on this device{deviceTotals.profiles ? `, holding ${deviceTotals.decks} decks and ${deviceTotals.matches} matches,` : ''} will
+              be removed. A safety copy is taken first, so you can return to this state.</>
+          ) : (
+            <>This profile is <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>added</strong> alongside
+              what is already on this device. Nothing is deleted or overwritten.</>
+          )}
         </div>
+        {destructive && (
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.12em', color: 'var(--ink-faint)', margin: '0 0 6px' }}>
+            THIS BACKUP CONTAINS
+          </div>
+        )}
         {profiles.map((p, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '9px 2px', borderBottom: '1px solid var(--hair-12)' }}>
             <span style={{ flex: 1, minWidth: 0, font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1228,8 +1318,15 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
       </div>
       <div style={{ display: 'flex', gap: 10, padding: '14px 20px calc(20px + env(safe-area-inset-bottom,0px))', borderTop: '1px solid var(--hair-12)' }}>
         <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, minHeight: 48 }}>Cancel</button>
-        <button onClick={confirm} disabled={busy} aria-busy={busy} style={{ ...BTN_GOLD, flex: 1, minHeight: 48, opacity: busy ? .55 : 1 }}>
-          {busy ? 'Restoring...' : `Restore ${profiles.length}`}
+        {/* The label names the CONSEQUENCE, not the feature. "Replace all data" is what the button
+            does; "Restore" describes an intention and hides that something is destroyed. No typed
+            confirmation phrase: clear copy, a destructive-styled button and a verified safety copy
+            are the protection, and a phrase to copy out mostly trains people to copy phrases. */}
+        <button onClick={confirm} disabled={busy} aria-busy={busy}
+          style={{ ...(destructive ? BTN_DANGER : BTN_GOLD), flex: 1, minHeight: 48, opacity: busy ? .55 : 1 }}>
+          {busy
+            ? (destructive ? 'Replacing...' : 'Importing...')
+            : (destructive ? 'Replace all data' : 'Import profile')}
         </button>
       </div>
     </CenteredModal>
