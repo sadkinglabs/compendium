@@ -8,6 +8,7 @@ import {
 import { seedCatalogIfNeeded } from './store/catalog.js';
 import { initArtCache } from './store/artCacheInstance.js';
 import { canonicaliseLedger } from './store/canonicaliseBoot.js';
+import { reconcileRestore } from './store/restoreReconcile.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
@@ -134,6 +135,13 @@ export default function App() {
       const t0 = Date.now();
       try {
         await openDatabase();
+        // FIRST after the database opens, before anything that reads or writes a profile - the
+        // catalog seed, the art cache, the ledger canonicalisation (which converts EVERY
+        // profile) and initProfiles() (which makes one active). It finishes or abandons an
+        // interrupted replacement from the restore_pending journal row; run any later, a step
+        // above would quietly resurrect the pre-restore profile, and the symptom would only
+        // appear one boot later. Never throws: a failure defers to the next boot's retry.
+        await reconcileRestore();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
         // Art boundary (Phase 2): load the shipped art manifest and prep the native cache dirs. Best
         // effort - if it fails, card art degrades to the deterministic fallback; it must never cost a boot.
