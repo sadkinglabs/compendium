@@ -391,3 +391,86 @@ and removed).
 - **>= 600dp portrait** - deferred by owner to a dedicated tablet pass; declared but never observed working.
 - **`App.jsx` has no test coverage.**
 - **No x86 pass** - the emulator cannot run on this machine (no hypervisor driver; enabling it needs admin plus a reboot). The multi-user substitute is arm64.
+
+---
+
+# Round 3 disposition - response (2026-08-12)
+
+Blocker accepted and fixed. The scale residual is recorded as you disposed it, and live owner data was
+not altered to close it.
+
+## Blocker - restore split the active-profile authority. FIXED.
+
+Confirmed exactly as traced, and it is worse than the symptom suggested. `activeProfileId()` is the
+gate **every** profile-scoped read and write passes through, so between a restore and the next launch
+the process kept reading and WRITING the pre-restore profile while Preferences promised a different
+one to the next boot. Work done in that window landed in profile A and then appeared to vanish when B
+became active. Profile isolation, not presentation.
+
+**It also invalidates my round-2 note.** I recorded the profile sheet as a UI-refresh gap. The sheet
+was not stale - it was correctly reporting a runtime id that had never changed. I filed the symptom
+and missed the cause.
+
+### What changed
+
+- **Reconciled through the repository.** Restore now calls `switchProfile()`, the single boundary that
+  owns both halves: it validates the id, takes the profile-switch write barrier so in-flight
+  profile-scoped writes finish under the old profile, then sets the in-memory id and Preferences
+  together.
+- **Deleted `backupService`'s private `ACTIVE_KEY`.** A second module holding the key is how it
+  acquired a second authority. The key belongs to `profileRepository`.
+- **Profile sheet takes `rev`**, so a restore performed while it is open - Settings paints over it -
+  refreshes it immediately rather than on reopen.
+- **Post-commit failures are caveats, never failures.** Past `tx()` the rows are durable, so a generic
+  failure would invite the one action that does damage: a retry re-imports the whole archive. The
+  reconciliation and the changelog clamp are individually guarded, `restoreAll` returns
+  `activeReconciled`, and the UI says "Reopen the app to finish switching" instead of claiming
+  failure. The `onRestored()` refresh call is guarded too - presentation must not be able to report a
+  committed restore as failed.
+
+The caveat wording is deliberately precise rather than reassuring: if the pointer does not settle, the
+next boot resolves to whatever Preferences holds, which **may be the pre-restore profile**. All
+restored data is present and selectable; the user may have to switch to it by hand.
+
+### Regressions - verified against the broken code, not merely added
+
+Reverting the post-commit block to its original form fails **three of the four**:
+
+| Test | Old code | New code |
+|---|---|---|
+| runtime `activeProfileId()` equals the restored id, no relaunch | **FAIL** | pass |
+| `getActiveProfile()` returns the restored profile, not the pre-restore one | **FAIL** | pass |
+| post-commit Preferences failure is a caveat, not a retryable failure | **FAIL** | pass |
+| visible profile list shows imported profiles immediately | pass | pass |
+
+The fourth passes either way because `listProfiles()` reads the database directly - it was never
+broken. It is a guard, and it is labelled as one rather than counted as a regression.
+
+**Why the bug survived the existing suite:** the pre-existing test asserted only the id **returned by**
+`restoreAll()`, which was correct the whole time. The assertion never touched the authority that was
+wrong - the same shape as the round-2 gate finding, where a graph check confirmed presence without
+distinguishing how the gate got there.
+
+Gates: 12/12, **1,250 tests, 0 failures** (`test:query` 894 -> 898).
+
+## Scale residual - accepted as disposed
+
+Recorded as non-blocking, and **live owner data was not altered to close it**. Noted for a future
+disposable full-data corpus: the practical obstacle is that a secondary Android user cannot be handed
+an archive (`adb push` and MediaStore insert are both denied), so a full-data corpus needs the app
+itself to generate one in the disposable environment - e.g. repeated additive restores to grow a
+sandbox profile to the target size.
+
+## Device re-verification of this fix - NOT yet run
+
+The unit regressions cover the authority and the reporting. The **on-device** behaviour of this
+specific fix - restore, then observe the profile sheet update without relaunch - has not been
+re-exercised, because it needs another disposable Android user and the owner physically dismissing
+that profile's lock screen. Offered rather than assumed.
+
+## Unchanged
+
+- **>= 600dp portrait** - deferred to a dedicated tablet pass; declared but never observed working.
+- **`App.jsx` has no test coverage** - and this round touched it again (the `rev` prop and the
+  restore-reporting branch), so that gap now covers changed code.
+- **No x86 pass** - emulator unavailable on this machine.
