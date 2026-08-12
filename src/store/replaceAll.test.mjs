@@ -225,7 +225,15 @@ function normalisedUnit(unit) {
   u.match_log_entries = scrub(u.match_log_entries, ({ id, ...r }) => ({ ...r, match_id: matchMap.get(r.match_id) }));
   u.dashboard_blocks = scrub(u.dashboard_blocks, ({ id, profile_id, ...r }) => r);
   u.dashboard_layouts = scrub(u.dashboard_layouts, ({ id, profile_id, ...r }) => r);
-  if (u.resume) { const { profile_id, ...r } = u.resume; u.resume = r; }
+  if (u.resume) {
+    const { profile_id, ...r } = u.resume;
+    // resume.target_id is a profile-owned reference when it names a deck, so it is remapped like
+    // every other one above. It was left raw here because nothing exercised it - and while the
+    // restore wrote the id verbatim, both sides held the SAME dead id and compared equal. Two
+    // faults cancelling out is not equivalence, and this line stops them cancelling.
+    // `card` and `rule` targets are catalog ids and must pass through untouched.
+    u.resume = r.target_type === 'deck' ? { ...r, target_id: deckMap.get(r.target_id) ?? null } : r;
+  }
   if (u.settings) { const { profile_id, ...r } = u.settings; u.settings = r; }
   return u;
 }

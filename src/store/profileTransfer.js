@@ -243,8 +243,24 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
     ins('dashboard_blocks', ['id', 'profile_id', 'type', 'width', 'config', 'sort_order', 'created_at'], [uuid(), pid, b.type, b.width, sanitizeBlockConfig(b.type, b.config), b.sort_order, b.created_at]);
   for (const l of bundle.dashboard_layouts || [])
     ins('dashboard_layouts', ['id', 'profile_id', 'name', 'blocks', 'saved_at'], [uuid(), pid, l.name, filterLayoutBlocks(l.blocks), l.saved_at]);
-  if (bundle.resume)
-    stmts.push(['INSERT OR REPLACE INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);', [pid, bundle.resume.target_type, bundle.resume.target_id, bundle.resume.title, bundle.resume.at]]);
+  // "Jump back in" - the last deck, card or rule opened. Navigation memory, not game state: a
+  // half-played duel lives in localStorage and has never travelled in an archive.
+  //
+  // THE TARGET MUST FOLLOW THE RE-KEY. A `deck` target is a profile-owned id that this plan
+  // rewrites, so writing it verbatim guaranteed a dead pointer - and nothing looked broken because
+  // overview() deletes a resume row whose target no longer resolves, which is precisely why it went
+  // unnoticed: the deck case silently never worked. `card` and `rule` targets are catalog ids, stable
+  // across a restore, and those were always fine. Same treatment matches.deck_id already gets.
+  if (bundle.resume) {
+    const t = bundle.resume.target_type;
+    const target = t === 'deck' ? (deckMap.get(bundle.resume.target_id) || null) : bundle.resume.target_id;
+    // A deck target that is not in this bundle has nothing to point at; drop the row rather than
+    // write a pointer we know is dead.
+    if (target) {
+      stmts.push(['INSERT OR REPLACE INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);',
+        [pid, t, target, bundle.resume.title, bundle.resume.at]]);
+    }
+  }
   if (bundle.settings) {
     const s = bundle.settings;
     // Restore EVERY live setting, including the accessibility trio (font_scale /

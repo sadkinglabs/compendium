@@ -202,3 +202,34 @@ test('a whole-app archive still replaces, and replacement does NOT dedupe names'
   assert.deepEqual(names, ['Alpha', 'Beta'], 'replace leaves exactly the archive, with no (imported) suffixes');
   assert.equal(defaults().length, 1, 'exactly one Primary survives');
 });
+
+/* ------------------------------ "Jump back in" survives a re-key ------------------------------ */
+
+test('a resume pointer at a DECK follows the re-key instead of pointing at a dead id', async () => {
+  // The bug this covers was invisible: overview() deletes a resume row whose target does not
+  // resolve, so a verbatim deck id simply vanished on first Home load and the deck case silently
+  // never worked across a restore.
+  sdb.run('INSERT INTO decks(id,profile_id,name,created_at,updated_at) VALUES(?,?,?,?,?);',
+    ['p-one-deck', 'p-one', 'Brambles', '2026-01-01', '2026-01-01']);
+  sdb.run('INSERT INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);',
+    ['p-one', 'deck', 'p-one-deck', 'Brambles', '2026-01-01']);
+
+  await replaceAll(await previewBackup(await wholeAppText()));
+
+  const r = rows("SELECT target_type,target_id FROM resume WHERE target_type='deck';")[0];
+  assert.ok(r, 'the resume row must survive the replacement');
+  assert.notEqual(r.target_id, 'p-one-deck', 'the archived deck id is not the restored deck id');
+  const deck = rows('SELECT id,name FROM decks WHERE id=?;', [r.target_id])[0];
+  assert.ok(deck, 'the resume target must point at a deck that actually exists');
+  assert.equal(deck.name, 'Brambles', 'and at the right one');
+});
+
+test('a resume pointer at a CARD is left alone - catalog ids are stable across a restore', async () => {
+  sdb.run('INSERT INTO resume(profile_id,target_type,target_id,title,at) VALUES(?,?,?,?,?);',
+    ['p-one', 'card', 'sentinel_card', 'Sentinel', '2026-01-01']);
+
+  await replaceAll(await previewBackup(await wholeAppText()));
+
+  const r = rows("SELECT target_id FROM resume WHERE target_type='card';")[0];
+  assert.equal(r.target_id, 'sentinel_card', 'a catalog id must pass through unchanged');
+});
