@@ -14,101 +14,23 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 ## Open
 
-### `capacitor-8` - Increment B, Capacitor 6 -> 8 + Android 16 + whole-tree dependency upgrade
+### Left behind by `capacitor-8` (merged 2026-08-12) - carried, not closed
 
-**Status:** ACTIVE, started 2026-08-10. Proposal
-[proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 5), owner-approved.
-**Increment 0 DONE:** branch created off `main` at the Increment A merge; rollback artifact built from
-the baseline SHA `b66289e` and archived as `dist-apk/compendium-rollback-b218.apk`, signing certificate
-verified equal to the baseline's. Build is at **218**.
-**Recorded refinement:** the rollback APK is **disposable** - it must be rebuilt from `b66289e` at
-whatever `versionCode` is installed at the moment it is needed, because B's build number climbs as it
-iterates and a frozen artifact would become a downgrade. The SHA is the asset, not the APK.
+The branch is merged and its row is gone per the rule above. These outlived it and are owed:
 
-**Increments 1-9 DONE (2026-08-10).** Web tier, Kotlin 2.4.10 + Compose compiler plugin, Capacitor
-6 -> 8 with the whole toolchain (3a) then targetSdk 36 alone (3b), CameraX/Firebase, the manifest
-checklist and Gradle syntax, R8 keeps and gate bindings, the static 16 KB proof, the full gate set, and
-device install + rollback rehearsal on the Pixel 9 Pro XL.
-
-**The blocker is closed.** Every arm64 library in both the APK and the AAB is 16 KB aligned,
-`libsqlcipher.so` included; `bundletool dump config` reports `PAGE_ALIGNMENT_16K`. APK is 357,575 bytes
-SMALLER than the pre-upgrade baseline. Gates: 1,246 tests, 0 failures, 12/12 green, `check:smoke` 8/8
-routes. Rollback proven bidirectional with data identical (1832 cards / 4 decks / 9 matches) at every
-step.
-
-**Three latent defects found and fixed**, each a control that read correctly while protecting nothing:
-R8 keeps still naming `net.sqlcipher.*` after the package moved to `net.zetetic.database.*` (a
-release-only launch abort); the forbidden-permission gate bound to `assemble*` only, leaving the AAB
-that Play distributes entirely ungated; and `checkRecogAssets` fail-open on an AGP-internal task-name
-pattern. Also found: `MainActivity` never declared `screenOrientation`, so the app rotated despite
-being "portrait-only" - owner confirmed the lock.
-
-**Device pass done by the owner:** the scanner was exercised end to end and works; navigation and search
-are perceptibly faster.
-
-**>= 600dp check: DONE 2026-08-12, and it changed the decision.** Run on a Lenovo TB321FU (Android 16,
-arm64, 640dp smallest width), both with and without the opt-out property, device forced to landscape:
-**with** it `ROTATION_0` / 1600x2560, **without** it `ROTATION_90` / 2560x1600 full screen. The control
-is what makes it evidence rather than an observation - it proves the tablet genuinely enforces the
-Android 16 override at target 36.
-
-Seeing it on hardware, the owner reversed the goal: a letterboxed phone-shaped app on a 12-inch screen
-is worse than either alternative. **`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` is now REMOVED** -
-phones stay portrait (exempt from the override), tablets rotate full screen. The implementation is a
-deletion, and it retires the API 37 expiry the property carried.
-
-**Caveat:** the opt-out is application-level, so the scanner cannot be pinned to portrait while the app
-rotates. On a tablet `ScannerActivity` rotates too - it works (recognised a real card in landscape,
-zero camera errors) but its sheets are portrait-designed. Landscape layout remains a non-goal and a
-recorded follow-up.
-
-**Phone half VERIFIED 2026-08-12** on the Pixel 9 Pro XL with landscape forced: `ROTATION_0`, app
-renders 1344x2992 portrait. Both sides of the split are now measured rather than reasoned - phone
-locked, tablet free.
-
-**Codex round 1: "Changes required" - all four Majors and the Minor now addressed** (response in the
-packet). The two findings worth remembering:
-
-- **The forbidden-permission gate was STILL bypassable** after I had already "fixed" it once.
-  `installRelease` depends on `packageRelease`, not `assembleRelease`. Both earlier bindings attached to
-  convenient LIFECYCLE names instead of the tasks that write the artifact. Now bound to
-  `package<Variant>` / `package<Variant>Bundle`, so coverage is complete by construction; all six entry
-  points verified, and provoked-negative on the three producers.
-- **`androidxCoreVersion` was referenced by nothing** - a dead knob whose comment read like a decision
-  while the release graph shipped `androidx.core:core` 1.18.0. Adopted 1.18.0 and declared it; the
-  resolved 228-module graph is now recorded in the audit addendum.
-
-Also: clean-install first-run DB creation proven on a temporary second Android user (real arm64 minified
-release APK, empty sandbox); backup under plugin 8.x proven against real data and diffed against the
-pre-upgrade backup (every row count identical, exactly one `updated_at` differs); restore into a
-never-used database verified with an independently recomputed digest; native SAF picker + on-device
-digest + restore preview exercised without writing. npm advisories dispositioned by hand, critical
-removed, production surface 0.
-
-**Codex rounds 2 and 3 also closed.** Round 2: the recogniser gate had the SAME producer bypass I had
-just fixed beside it - my six-entry-point table showed it PRESENT everywhere only because
-`packageRelease` inherited it through the fail-open `merge.*Assets` line. Now producer-bound, proven by
-disabling the opportunistic binding and re-checking. The wasm stripper now enumerates and classifies
-every `.wasm` rather than searching for the expected name.
-
-Round 3 was a **Blocker**: restore wrote the active id straight to Preferences, so the database,
-Preferences and `profileRepository`'s in-memory `activeId` disagreed - the running process kept
-writing the PRE-restore profile while the next launch was promised another. A profile-isolation break,
-now reconciled through `switchProfile()`, with post-commit failures reported as caveats (a retry after
-a committed restore re-imports the whole archive). Device-verified 2026-08-12 at full scale on the
-owner's real archive (~1,476 statements): active profile and profile sheet both settle immediately, no
-relaunch.
-
-**Build is 219** (device install, standing rule). The archived rollback APK is at 218 and is therefore
-now a downgrade - per the refinement above it is disposable and must be rebuilt from `b66289e` at the
-installed `versionCode` when actually needed.
-
-**Next step:** Codex round 4 sign-off on the updated packet
-([proposals/capacitor-8-review-packet.md](./proposals/capacitor-8-review-packet.md)), then **merge**.
-The >= 600dp check is now DONE (above). **One gap is deliberately carried:** `App.jsx` still has no
-test coverage while this branch has modified it three times (BackupSection, the `rev` prop, the
-restore-reporting branch). Nothing is pushed; `main` is
-local-only and ~66 commits ahead of `origin`.
+- **`App.jsx` has no test coverage.** The branch modified it three times (BackupSection, the `rev`
+  refresh prop, the restore-reporting branch) and a JSX syntax break once passed six green gates,
+  caught only by `npm run build`. Codex ruled it non-blocking because the high-risk authority logic is
+  covered below the component, but a focused component test is still owed.
+- **Tablet landscape LAYOUT.** Tablets now rotate to full screen and the portrait design simply
+  stretches. The scanner's disambiguation sheet in particular reads cramped in landscape. Accepted by
+  the owner as shippable; real landscape layouts are a separate piece of work.
+- **The archived rollback APK is stale.** `dist-apk/compendium-rollback-b218.apk` is `versionCode` 218
+  and the device is on 219, so `adb install -r` would refuse it as a downgrade. Per the standing
+  refinement it is DISPOSABLE: rebuild from baseline SHA `b66289e` at whatever `versionCode` is
+  installed at the moment it is actually needed. The SHA is the asset, not the APK.
+- **Branch `capacitor-8` still exists locally** and is fully contained in `main` (0 unique commits
+  after the merge), so it is safe to delete whenever.
 
 ### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
 
