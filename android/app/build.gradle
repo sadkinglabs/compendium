@@ -1,5 +1,6 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
 // Version + build come from package.json, the single source shared with the web
 // layer (vite.config.js bakes the same two values in for the Credits screen). Keep
@@ -17,7 +18,7 @@ if (keystorePropsFile.exists()) {
 }
 
 android {
-    namespace "com.sadkinglabs.compendium"
+    namespace = "com.sadkinglabs.compendium"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.sadkinglabs.compendium"
@@ -29,18 +30,18 @@ android {
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
-            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
     // --- Native card scanner: Compose + Kotlin JVM target (must equal
-    //     capacitor.build.gradle's Java 17, else "Inconsistent JVM-target"). ---
-    buildFeatures { compose true }
-    composeOptions { kotlinCompilerExtensionVersion composeCompilerVersion }
+    //     capacitor.build.gradle's Java 21, else "Inconsistent JVM-target"). ---
+    buildFeatures { compose = true }
+    // No composeOptions block: the Compose compiler plugin applied above owns that now, and
+    // declaring kotlinCompilerExtensionVersion alongside it is an error rather than a duplicate.
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_21
+        targetCompatibility JavaVersion.VERSION_21
     }
-    kotlinOptions { jvmTarget = '17' }
     packaging {
         resources {
             excludes += [
@@ -63,10 +64,10 @@ android {
     buildTypes {
         release {
             minifyEnabled true
-            shrinkResources true
+            shrinkResources = true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystorePropsFile.exists()) {
-                signingConfig signingConfigs.release
+                signingConfig = signingConfigs.release
             }
             // Ship only ABIs a phone can actually execute. x86/x86_64 exist for
             // emulators, and no device that can install this APK can run them - they
@@ -89,6 +90,15 @@ android {
                 abiFilters 'arm64-v8a'
             }
         }
+    }
+}
+
+// Kotlin's JVM target MUST equal the Java target above or the build fails with
+// "Inconsistent JVM-target compatibility". `kotlinOptions` is deprecated in Kotlin 2.x, so this is
+// the compilerOptions DSL.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21
     }
 }
 
@@ -120,18 +130,64 @@ tasks.register('checkRecogAssets') {
         }
     }
 }
+// Opportunistic early binding: catches the problem before any packaging work happens.
+// It is NOT the guarantee - see the fail-closed binding below.
 tasks.matching { it.name ==~ /merge.*Assets/ }.configureEach { dependsOn 'checkRecogAssets' }
 
-// 16 KB page-size compatibility - KNOWN REMAINING GAP: libsqlcipher.so (4 KB-aligned LOAD segments).
-// It comes from @capacitor-community/sqlite 6.0.2, which pins the legacy, unmaintained artifact
-// net.zetetic:android-database-sqlcipher:4.5.3. The aligned successor (net.zetetic:sqlcipher-android)
-// is NOT a drop-in: it moved the package namespace, so substituting it crashes the plugin at startup
-// with NoClassDefFoundError net/sqlcipher/database/SQLiteDatabase (verified on device, 2026-08-08).
-// Closing this gap needs the plugin itself to adopt the new artifact - i.e. a Capacitor 7 upgrade -
-// which is its own change. Every other native library in the APK is 16 KB compatible.
+// FAIL-CLOSED BINDING. The line above, on its own, was the whole gate - and it is fail-OPEN by
+// construction: `merge.*Assets` matches AGP-internal task names, so an AGP upgrade that renames
+// them matches nothing, the gate silently stops running, and the build stays green while shipping
+// an app whose every scan reports "Visual match unavailable". A gate that cannot find its input and
+// passes is worse than no gate, which is the same principle the forbidden-permission gate below
+// already states.
+//
+// tasks.named() throws UnknownTaskException when the task does not exist, so the same rename that
+// used to unbind the gate now breaks the build loudly and names the task it wanted.
+//
+// BOUND TO THE ARTIFACT PRODUCERS, package<Variant> and package<Variant>Bundle - the tasks that WRITE
+// the .apk and .aab - for the same reason the forbidden-permission gate below is. An earlier revision
+// bound this to assemble/bundle/install, which LOOKED complete because all six entry points showed
+// the gate in their task graph. They did: `packageRelease` was picking it up through the
+// merge-assets line above, the one whose own comment calls it non-guaranteeing. So a direct
+// `gradlew packageRelease` after an AGP rename would have silently lost the gate while the graph
+// check still passed. Binding to the producers makes coverage independent of that pattern.
+//
+// projectsEvaluated, not afterEvaluate: AGP creates its variant tasks during its OWN afterEvaluate,
+// so a plain afterEvaluate block here runs too early and tasks.named() throws for tasks that are
+// about to exist. projectsEvaluated fires once every project's evaluation is complete.
+gradle.projectsEvaluated {
+    ['Debug', 'Release'].each { variant ->
+        ["package${variant}", "package${variant}Bundle"].each { name ->
+            tasks.named(name).configure { it.dependsOn('checkRecogAssets') }
+        }
+        // install<Variant> reaches package<Variant> anyway; bound explicitly so `installDebug` fails
+        // at the gate rather than after building. Matched rather than required because
+        // install<Variant> only exists when the variant has a signing config.
+        tasks.matching { it.name == "install${variant}" }.configureEach { it.dependsOn('checkRecogAssets') }
+    }
+}
+
+// 16 KB page-size compatibility - GAP CLOSED. Every native library in the APK now has 16 KB-aligned
+// PT_LOAD segments, libsqlcipher.so included.
+//
+// The history, because it explains why this app is on Capacitor 8 at all: @capacitor-community/sqlite
+// 6.0.2 pinned the legacy, unmaintained net.zetetic:android-database-sqlcipher:4.5.3, whose .so is
+// 4 KB-aligned. Its aligned successor net.zetetic:sqlcipher-android is NOT a drop-in - it moved the
+// package namespace, so simply substituting it crashed at startup with NoClassDefFoundError
+// net/sqlcipher/database/SQLiteDatabase (verified on device, 2026-08-08). Only the plugin itself could
+// adopt it, and the version that does requires @capacitor/core >= 8. That single .so is what pulled
+// the whole Capacitor 6 -> 8 upgrade, Android 16 and Java 21 along with it.
+//
+// Plugin 8.1.1 now brings net.zetetic:sqlcipher-android:4.17.0. Verified by parsing PT_LOAD p_align
+// out of every lib/arm64-v8a/*.so in the assembled APK, not from the AAR and not from release notes.
+// proguard-rules.pro was updated in the same change: the JNI keeps had to follow the package move.
 
 dependencies {
     implementation fileTree(include: ['*.jar'], dir: 'libs')
+    // Declared explicitly so the build file states the version that actually ships. It resolves to
+    // 1.18.0 transitively regardless (activity 1.13.0 -> core-ktx 1.18.0 -> core 1.18.0); leaving it
+    // undeclared meant variables.gradle could claim 1.17.0 indefinitely while 1.18.0 shipped.
+    implementation "androidx.core:core:$androidxCoreVersion"
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
@@ -150,6 +206,14 @@ dependencies {
     implementation "androidx.compose.ui:ui"
     implementation "androidx.compose.ui:ui-graphics"
     implementation "androidx.compose.material3:material3"
+    // Declared EXPLICITLY, because it used to arrive by accident. material3 1.2.1 depended on
+    // material-icons transitively; 1.4.0 dropped that, so `Icons.Filled.*` stopped resolving the
+    // moment the Compose BOM moved. It was always a real dependency of the scanner UI - six icons
+    // across RecognitionSheet and ScannerScreen - and was simply never written down.
+    // The BOM pins it at 1.7.8: Google has frozen this library. Six inline vector paths would remove
+    // it entirely (the web layer already has its own icon set in components/icons.jsx), but that is
+    // feature work, not an upgrade, so it is recorded as a follow-up rather than done here.
+    implementation "androidx.compose.material:material-icons-core"
     implementation "androidx.activity:activity-compose:$activityComposeVersion"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:$lifecycleComposeVersion"
     implementation "androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycleComposeVersion"
@@ -174,7 +238,7 @@ dependencies {
     // getInstance() in TelemetryPlugin throws into its own catch. That degrades to "no
     // telemetry", which is the correct posture for a config-less clone anyway.
     // BoM pins one compatible set of versions.
-    implementation platform("com.google.firebase:firebase-bom:33.7.0")
+    implementation platform("com.google.firebase:firebase-bom:34.17.0")
     implementation "com.google.firebase:firebase-analytics"
     implementation "com.google.firebase:firebase-crashlytics"
 }
@@ -253,10 +317,35 @@ androidComponents {
                 logger.lifecycle("Forbidden-permission gate: clean (${declared.size()} permissions in the release merged manifest).")
             }
         }
-        // Bind to the artifact's producing task so assembleRelease cannot succeed
-        // without it, and so `gradlew checkReleaseForbiddenPermissions` also works alone.
-        tasks.matching { it.name == "assemble${variant.name.capitalize()}" }.configureEach {
-            it.dependsOn(checkTask)
+        // BIND TO THE ARTIFACT PRODUCERS, NOT TO THE LIFECYCLE TASKS.
+        //
+        // This gate has now been mis-bound twice, the same way each time: attached to a task that
+        // is a CONVENIENT name for the build rather than the task that actually makes the file.
+        //   v1 bound to assemble<Variant> only  -> `bundleRelease` shipped an ungated AAB.
+        //   v2 added bundle<Variant>            -> `installRelease` and `packageRelease` STILL
+        //                                          bypassed it, because installRelease depends on
+        //                                          packageRelease, not on assembleRelease.
+        //                                          Proven: `installRelease --dry-run` scheduled
+        //                                          checkRecogAssets and NOT this gate.
+        //
+        // package<Variant> and package<Variant>Bundle are the tasks that WRITE the .apk and .aab.
+        // Every route to a release artifact runs through one of them - assemble, install, bundle,
+        // or invoking the packaging task directly - so binding here is complete by construction
+        // rather than by enumerating entry points and hoping the list is exhaustive. Adding a new
+        // entry point cannot open a new bypass, which was the flaw in both earlier attempts.
+        //
+        // tasks.named() rather than tasks.matching(): an unknown task must throw, not quietly match
+        // nothing and leave the gate unbound. Deferred to projectsEvaluated because onVariants runs
+        // BEFORE AGP creates these tasks, so looking them up here would throw for tasks that are
+        // merely not created yet.
+        //
+        // No cycle: this task READS the merged manifest, produced by process<Variant>Manifest, which
+        // is upstream of packaging.
+        def cap = variant.name.capitalize()
+        gradle.projectsEvaluated {
+            ["package${cap}", "package${cap}Bundle"].each { name ->
+                tasks.named(name).configure { it.dependsOn(checkTask) }
+            }
         }
     }
 }

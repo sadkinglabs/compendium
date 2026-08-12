@@ -33,14 +33,23 @@
 
 # --- @capacitor-community/sqlite (native JNI + reflection) ---
 -keep class com.getcapacitor.community.database.sqlite.** { *; }
--keep class io.liteglue.** { *; }
--dontwarn io.liteglue.**
 # SQLCipher: libsqlcipher.so's JNI_OnLoad resolves these Java classes by their
-# ORIGINAL names via FindClass - R8 renaming/removing them aborts the native load
+# ORIGINAL names via FindClass - R8 renaming or removing them aborts the native load
 # at launch (register_android_database_SQLiteCompiledSql -> abort). Keep names + members.
--keep class net.sqlcipher.** { *; }
--keep interface net.sqlcipher.** { *; }
--dontwarn net.sqlcipher.**
+#
+# THE PACKAGE MOVED. Plugin 8.x depends on net.zetetic:sqlcipher-android:4.17.0, whose
+# classes live under net.zetetic.database.*; the legacy artifact it replaced used
+# net.sqlcipher.*. Keeping the old prefix would have protected nothing while looking
+# exactly as safe as before - and the failure mode is a launch-time abort in the release
+# build only, since debug is not minified.
+#
+# Not reasoned from the version bump: the unminified debug dex was searched for each
+# prefix. net/zetetic/database/sqlcipher is PRESENT, net/sqlcipher is ABSENT.
+-keep class net.zetetic.database.** { *; }
+-keep interface net.zetetic.database.** { *; }
+-dontwarn net.zetetic.database.**
+# io.liteglue.** keeps removed here: the same dex scan shows the package is ABSENT.
+# It belonged to the old native SQLite bridge and the rules had outlived it.
 
 # --- ONNX Runtime (card recogniser: native JNI resolves Java members by name) ---
 # libonnxruntime4j_jni.so calls back into these classes through JNI using their ORIGINAL names and

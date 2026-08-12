@@ -1,7 +1,7 @@
 {
   "name": "compendium",
   "version": "1.0.3-alpha",
-  "build": 217,
+  "build": 219,
   "private": true,
   "type": "module",
   "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
@@ -37,32 +37,30 @@
     "fb:login": "firebase login"
   },
   "dependencies": {
-    "@capacitor-community/keep-awake": "^5.0.1",
-    "@capacitor-community/sqlite": "^6.0.2",
-    "@capacitor/android": "^6.2.1",
-    "@capacitor/app": "^6.0.3",
-    "@capacitor/core": "^6.2.0",
-    "@capacitor/filesystem": "^6.0.4",
-    "@capacitor/haptics": "^6.0.3",
-    "@capacitor/keyboard": "^6.0.4",
-    "@capacitor/preferences": "^6.0.3",
-    "@capacitor/share": "^6.0.4",
-    "@capacitor/status-bar": "^6.0.3",
+    "@capacitor-community/keep-awake": "^8.0.1",
+    "@capacitor-community/sqlite": "^8.1.1",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/app": "^8.1.1",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/keyboard": "^8.0.5",
+    "@capacitor/preferences": "^8.0.1",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/status-bar": "^8.0.3",
     "fflate": "^0.8.3",
-    "qrcode-generator": "^1.4.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "sql.js": "1.11.0"
+    "qrcode-generator": "^2.0.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "sql.js": "1.14.1"
   },
   "devDependencies": {
-    "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^6.2.0",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@capacitor/cli": "^8.5.0",
+    "@vitejs/plugin-react": "^6.0.5",
     "aws4fetch": "^1.0.20",
-    "firebase-tools": "^15.23.0",
-    "sharp": "0.32.6",
+    "firebase-tools": "^15.26.0",
+    "sharp": "0.35.3",
     "typescript": "6.0.3",
-    "vite": "^6.0.7",
-    "vite-plugin-static-copy": "^2.2.0"
+    "vite": "^8.2.1"
   }
 }

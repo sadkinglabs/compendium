@@ -418,3 +418,67 @@ The single most important correction to the existing plan: **AGP 9 and TypeScrip
 deferred, not unavailable**, and "cutting edge" therefore means *the newest version each artifact's own
 published requirements permit* - not latest everywhere, and not vendor-deference either. §2's table is now
 the method: check both sides of every pair.
+
+---
+
+# Addendum - resolved graph and advisory disposition (2026-08-10)
+
+Owed by this proposal and closed here, after Codex flagged that the audit reasoned from **declared**
+versions while the APK ships **resolved** ones.
+
+## The declared/resolved gap, and a dead knob
+
+`variables.gradle` declared `androidxCoreVersion = '1.17.0'`. The release graph resolved
+`androidx.core:core` to **1.18.0**.
+
+The cause is worse than a stale number: **that variable was referenced by nothing.** It was a dead knob
+carrying a comment that read like a decision, so the documented version could never have won regardless
+of what it said. The real driver is `androidx.activity:activity:1.13.0` (required by activity-compose
+1.13.0) pulling `core-ktx:1.18.0` and with it `core:1.18.0`.
+
+**Disposition: adopt 1.18.0 and declare it.** `core:1.18.0` publishes `minCompileSdk=36`,
+`minAndroidGradlePluginVersion=8.9.1` in its AAR metadata; the build is at 36 / 8.13.0, so it is legal
+under the same both-sides test as everything else. Constraining back to 1.17.0 would fight activity
+1.13.0's own requirement to no benefit. `androidx.core:core` is now declared explicitly in
+`app/build.gradle`, so declaration and resolution agree and the variable does something.
+
+`core:1.19.0` stays out of reach, now verified rather than asserted: `minCompileSdk=37`,
+`minAndroidGradlePluginVersion=9.1.0`.
+
+**Method correction for future upgrades:** read `:app:dependencies --configuration
+releaseRuntimeClasspath`, not the declarations. 228 modules resolve there; the ones that matter:
+
+| Module | Resolved |
+|---|---|
+| `androidx.core:core` / `core-ktx` | 1.18.0 |
+| `androidx.activity:activity` / `-compose` | 1.13.0 |
+| `androidx.camera:*` | 1.6.1 |
+| `androidx.lifecycle:lifecycle-runtime-compose` | 2.10.0 |
+| `androidx.compose.material:material-icons-core` | 1.7.8 |
+| `net.zetetic:sqlcipher-android` | 4.17.0 |
+| `com.microsoft.onnxruntime:onnxruntime-android` | 1.22.0 |
+| `com.google.firebase:firebase-analytics` / `-crashlytics` | 23.2.0 / 20.1.0 |
+| `com.google.mlkit:text-recognition` / `barcode-scanning` | 16.0.1 / 17.3.0 |
+| `org.apache.cordova:framework` | 15.1.0 |
+
+## npm advisory disposition
+
+**Production surface: 0 vulnerabilities** (`npm audit --omit=dev`). Nothing here reaches a user's device;
+every finding is build-time tooling.
+
+The full audit reported **22** (1 critical / 11 high / 10 moderate). Dispositioned individually, because
+`npm audit fix` here proposes **downgrading `@capacitor/cli` to 8.4.2 and `firebase-tools` to 14.23.0** -
+it would partially undo this upgrade to "fix" tools that never run against hostile input.
+
+| Owner | Findings | Disposition |
+|---|---|---|
+| **`@capacitor/assets`** | critical `tar`, plus `minimatch`, `brace-expansion`, an old vendored `@capacitor/cli@5.7.8` and `sharp@0.32.6` | **REMOVED.** It is a one-off icon/splash generator referenced by no script. `fixAvailable: false`, so it could not be patched in place. Run it as `npx @capacitor/assets` when icons change - same capability, no permanent tree. **This alone removed the only critical.** |
+| **`firebase-tools`** | `undici`, `re2`, `hono`, `@hono/node-server`, `ip-address`, `fast-uri`, `js-yaml`, `@opentelemetry/core`, `gaxios`, `@google-cloud/pubsub`, `@modelcontextprotocol/sdk` | **ACCEPTED.** Required for distribution. Every advisory is a *server* handling hostile input (CORS ReDoS, path traversal, response desync); this repo invokes it only as a client - `firebase login` and distribution uploads to Google's own endpoints. The offered fix is a major downgrade. |
+| **`@capacitor/cli`** | `xcode` -> `uuid`; `tar` | **ACCEPTED, and not downgraded.** Required, and 8.4.2 would sit below the Capacitor 8.5.0 runtime. The `xcode`/`uuid` path is iOS tooling and **unreachable - there is no `ios/` directory**. |
+| **`sharp` 0.35.3** | libvips CVEs | **ACCEPTED with a stated boundary.** `fixAvailable: false` - no patched release exists. Used by `make-brand-assets.mjs` and `recog/intake.mjs` on **first-party images only** (brand SVGs we author, recogniser photos the owner supplies); it never processes third-party input and never ships. Re-evaluate when sharp patches. The exact pin must survive - `npm install` has silently loosened it before. |
+
+**Result: 22 -> 17 findings, the critical eliminated, production still 0.** The remaining 17 are
+`firebase-tools` and `@capacitor/cli` transitives, accepted above with reasons rather than silenced.
+
+**Standing rule: never run `npm audit fix` in this repo.** It downgrades pinned tooling and loosens exact
+pins. Disposition findings by hand, as above.

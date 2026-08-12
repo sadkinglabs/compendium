@@ -405,13 +405,66 @@ aapt2 dump badging <apk> | grep native-code
 
 **Owner architecture decision of 2026-08-03, implemented 2026-08-08** on the card-recogniser branch.
 `variables.gradle` sets **minSdk 29 (Android 10)** and the release build filters to **arm64-v8a only**;
-debug still carries all four ABIs so the x86_64 emulator keeps working. compileSdk / targetSdk remain 35.
+debug still carries all four ABIs so the x86_64 emulator keeps working. compileSdk / targetSdk are
+**36 (Android 16)** as of the Capacitor 8 upgrade - see the toolchain table below.
 
 The two levers do different jobs and the distinction matters: **the ABI filter is what excludes
 32-bit-only devices** (a build without their ABI is not offered to them), while **minSdk 29 is what makes
 that loss acceptable** - a 32-bit-only phone new enough for Android 10 is vanishingly rare. minSdk 29 is
 additionally a **16 KB page-size requirement**: below API 23 the Android Gradle Plugin packages native
 libraries compressed, and compressed libraries cannot be mapped directly from the APK.
+
+### Build toolchain (Capacitor 8 / Android 16) - IMPLEMENTED 2026-08-10
+
+| | Version | Note |
+|---|---|---|
+| Capacitor | **8.5.0** | core / android / cli, plus all nine plugins |
+| Android Gradle Plugin | **8.13.0** | AGP 9 deferred, see the dependency audit |
+| Gradle wrapper | **8.14.4** | not 8.14.3: KGP 2.4.10 deprecates it, and Kotlin 2.5.0 sets its floor at 8.14.4 |
+| Java / Kotlin JVM target | **21** | both, or the build fails "Inconsistent JVM-target compatibility" |
+| Kotlin | **2.4.10** | KGP's matrix caps 2.2.20 at AGP 8.11.1, below the 8.13.0 Capacitor ships |
+| compileSdk / targetSdk | **36 / 36** | Android 16 |
+| minSdk | **29** | unchanged |
+| cordova-android | **15.1.0** | not the template's 14.0.1, which supports API <= 35 |
+
+**You need JDK 21.** Android Studio's bundled JBR is 21; if `./gradlew` picks a different JDK, set
+`JAVA_HOME` to it.
+
+Versions here were chosen from each artifact's **own** published `minCompileSdk` /
+`minAndroidGradlePluginVersion` (its AAR metadata), not from the Capacitor template and not from
+release dates. That method rejected three answers the template would have given: Kotlin 2.2.20,
+Lifecycle 2.11.0 (needs sdk37 / AGP 9.1.0) and cordova-android 14.0.1.
+
+**Portrait on phones, free rotation on tablets.** Both activities declare
+`android:screenOrientation="portrait"`. From Android 16, displays with smallest width **>= 600dp**
+ignore that attribute, and phones (< 600dp) are exempt from the override - so the platform default
+already splits where we want it, and **no manifest property is needed to get it**.
+
+`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` would force portrait on large screens too. It was
+declared briefly and **removed on owner decision (2026-08-12)** after seeing the result on hardware: a
+letterboxed phone-shaped app on a 12-inch tablet. Measured on a Lenovo TB321FU (Android 16, 640dp),
+device forced landscape - **with** the property `ROTATION_0` and 1600x2560; **without** it
+`ROTATION_90` and 2560x1600 full screen. Do not re-add it to "fix" tablet rotation; rotation there is
+the intent.
+
+Consequence worth knowing: the opt-out is application-level, so the scanner cannot be pinned to
+portrait while the rest of the app rotates. On a tablet `ScannerActivity` rotates too. It works, but
+its sheets are portrait-designed - landscape layout is a known follow-up, not a supported design.
+
+### Verifying 16 KB page alignment
+
+Both shipping artifacts must be checked; proving only the sideload APK proves the wrong one.
+
+```bash
+# APK: every lib/arm64-v8a/*.so must be STORED and 16 KB aligned
+zipalign -c -P 16 -v 4 app-release.apk        # expect "Verification successful", zero BAD
+
+# AAB: the bundle-level request that makes Play's generated APKs align
+bundletool dump config --bundle=app-release.aab   # expect "alignment": "PAGE_ALIGNMENT_16K"
+
+# AAB: then check the APKs Play would actually deliver, every arm64 split, not one sample
+bundletool build-apks --bundle=app-release.aab --output=out.apks --mode=default
+```
 
 ## Notes
 

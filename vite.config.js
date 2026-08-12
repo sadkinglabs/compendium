@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
 
 // package.json is the ONE source of version + build. Baked in here, and read by
 // android/app/build.gradle for versionName/versionCode, so the number on the
@@ -15,12 +14,14 @@ const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 
 export default defineConfig({
   plugins: [
     react(),
-    // jeep-sqlite (web SQLite) loads the sql.js wasm from /assets/sql-wasm.wasm.
-    viteStaticCopy({
-      targets: [
-        { src: 'node_modules/sql.js/dist/sql-wasm.wasm', dest: 'assets' },
-      ],
-    }),
+    // The sql.js wasm used to be copied here by viteStaticCopy to a hardcoded /assets/sql-wasm.wasm.
+    // vite-plugin-static-copy v4 changed its path semantics and started preserving the SOURCE
+    // directory (assets/node_modules/sql.js/dist/...), which silently broke the web SQLite backend -
+    // db.js asked for a path that no longer existed. `rename` does not flatten it either.
+    //
+    // So the wasm now goes through Vite's own asset pipeline instead: db.js imports it with `?url`
+    // and gets whatever hashed, base-correct URL Vite emitted. No hardcoded path to drift, and one
+    // fewer plugin in the chain.
   ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),

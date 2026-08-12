@@ -3,28 +3,58 @@ ext {
     // package native libraries COMPRESSED (useLegacyPackaging), which fails Android's 16 KB page-size
     // check even for correctly-aligned .so files. Raising it also lets the release build ship arm64 only.
     minSdkVersion = 29
-    compileSdkVersion = 35
-    targetSdkVersion = 35
-    androidxActivityVersion = '1.8.0'
-    androidxAppCompatVersion = '1.6.1'
-    androidxCoordinatorLayoutVersion = '1.2.0'
-    androidxCoreVersion = '1.12.0'
-    androidxFragmentVersion = '1.6.2'
-    coreSplashScreenVersion = '1.0.1'
-    androidxWebkitVersion = '1.9.0'
+    compileSdkVersion = 36
+    // Android 16. Flipped ALONE in Increment 3b, one commit after the toolchain move, so that any
+    // behaviour change here is attributable to the platform rather than to Capacitor/AGP/Gradle.
+    // targetSdk is what opts the app in to a platform's behaviour changes; compileSdk above only
+    // decides which APIs it can see. The Android 16 changes that reach this app are edge-to-edge
+    // (no longer opt-out), predictive back, and the orientation/resizability overrides on large
+    // screens - the last of which does not apply, since the app is portrait-only by product decision.
+    targetSdkVersion = 36
+    // Every version below is chosen from the artifact's OWN published minCompileSdk /
+    // minAndroidGradlePluginVersion (read out of its AAR metadata), not from the Capacitor template
+    // and not from a release date. That method caught three wrong answers the template would have
+    // given: Kotlin 2.2.20, Lifecycle 2.11.0 and Cordova 14.0.1.
+    androidxActivityVersion = '1.13.0'          // sdk36 / agp8.9.1 - forced by activity-compose 1.13.0
+    androidxAppCompatVersion = '1.7.1'          // sdk34 / agp1.0.0
+    androidxCoordinatorLayoutVersion = '1.3.0'
+    // 1.18.0, and DECLARED RATHER THAN INHERITED, which is a correction. This variable previously read
+    // 1.17.0 and was referenced by nothing at all - a dead knob carrying a comment that read like a
+    // decision. Meanwhile the release graph actually resolved androidx.core:core to 1.18.0, pulled
+    // through core-ktx by androidx.activity:activity:1.13.0 (which activity-compose 1.13.0 requires).
+    // So the documented version and the shipped version disagreed, and the documented one had no way
+    // to win. Now the declaration matches what resolves, and moving it has an effect.
+    // Adopted, not constrained: core 1.18.0 declares minCompileSdk=36 / minAGP=8.9.1 (read from its
+    // AAR metadata) and we build at 36 / 8.13.0, so it is legal here. Pinning back to 1.17.0 would
+    // fight activity 1.13.0's own requirement rather than resolve anything.
+    // 1.19.0 remains out of reach: minCompileSdk=37, minAGP=9.1.0 - verified, not assumed.
+    androidxCoreVersion = '1.18.0'
+    androidxFragmentVersion = '1.8.9'           // sdk34 / agp1.0.0
+    coreSplashScreenVersion = '1.2.0'           // sdk35 / agp8.6.0
+    androidxWebkitVersion = '1.14.0'            // sdk34 / agp8.1.1
     junitVersion = '4.13.2'
-    androidxJunitVersion = '1.1.5'
-    androidxEspressoCoreVersion = '3.5.1'
-    cordovaAndroidVersion = '10.1.1'
+    androidxJunitVersion = '1.3.0'
+    androidxEspressoCoreVersion = '3.7.0'
+    // 15.1.0, NOT the Capacitor 8 template's 14.0.1: cordova-android 14.0.x supports API 24-35 and we
+    // target 36. Compendium uses no Cordova plugins, but the framework is not optional -
+    // @capacitor/android's own runtime depends on it and cap sync regenerates the empty bridge module.
+    cordovaAndroidVersion = '15.1.0'
 
     // --- Native card scanner: Kotlin + Compose + CameraX + ML Kit (bundled, offline) ---
-    kotlinVersion = '1.9.24'
-    composeCompilerVersion = '1.5.14'          // hard-locked to Kotlin 1.9.24
-    composeBomVersion = '2024.06.00'           // ui 1.6.8 / material3 1.2.1 / foundation 1.6.8
-    activityComposeVersion = '1.9.0'
-    lifecycleComposeVersion = '2.8.3'
-    cameraxVersion = '1.4.1'                    // ImageProxy.toBitmap() + ResolutionSelector; 1.4.x = 16 KB aligned
+    // Kotlin 2.4.10, NOT the 2.2.20 that @capacitor/filesystem declares. Kotlin's own compatibility
+    // matrix caps KGP 2.2.20 at AGP 8.11.1, and Capacitor 8's template ships AGP 8.13.0 - so the
+    // vendor's declared pairing is outside Kotlin's supported window. 2.4.x supports AGP 8.5.2-9.1.0
+    // and Gradle 7.6.3-9.5.0, which covers both this increment's AGP 8.6.0 and the 8.13.0 to come.
+    kotlinVersion = '2.4.10'
+    // composeCompilerVersion is GONE: from Kotlin 2.0 the Compose compiler ships as its own Gradle
+    // plugin (org.jetbrains.kotlin.plugin.compose), versioned with Kotlin. Leaving a
+    // composeOptions.kotlinCompilerExtensionVersion alongside it is an error, not a redundancy.
+    composeBomVersion = '2026.06.01'            // runtime/ui 1.11.4, material3 1.4.0
+    // Unblocked here: it needs sdk36 / agp8.9.1, both of which arrive in this increment.
+    activityComposeVersion = '1.13.0'
+    lifecycleComposeVersion = '2.10.0'          // 2.11.0 needs sdk37/AGP 9.1.0 - out of reach, by design
+    cameraxVersion = '1.6.1'                    // ImageProxy.toBitmap() + ResolutionSelector; 16 KB aligned
     mlkitTextVersion = '16.0.1'                 // BUNDLED Latin model - NOT play-services-mlkit-*
     mlkitBarcodeVersion = '17.3.0'              // BUNDLED barcode/QR model - offline (Share & Scan)
-    coroutinesVersion = '1.8.1'
+    coroutinesVersion = '1.11.0'                // was 1.8.1 while Capacitor's own module pulled 1.10.2 - the build file was understating what shipped
 }

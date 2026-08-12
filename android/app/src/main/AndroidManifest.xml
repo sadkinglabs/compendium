@@ -11,6 +11,28 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!-- PORTRAIT ON PHONES, FREE ROTATION ON TABLETS - and the way to get that is to declare
+             NOTHING here, which is why this comment exists in place of a property.
+
+             From Android 16, a display whose smallest width is >= 600dp (tablets, unfolded
+             foldables, desktop windowing) IGNORES android:screenOrientation,
+             android:resizeableActivity, min/maxAspectRatio and setRequestedOrientation().
+             Phones (< 600dp) are exempt from that override entirely.
+
+             So the platform default already splits exactly where we want it: the activities below
+             keep android:screenOrientation="portrait", phones honour it, and large screens do not.
+
+             android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY was declared here briefly
+             and REMOVED on owner decision (2026-08-12) after seeing it on hardware. It forces
+             portrait on large screens too, and the result is a letterboxed phone-shaped app on a
+             tablet - which is worse than either alternative. Measured on a Lenovo TB321FU
+             (Android 16, 640dp): with the property the display was pinned to ROTATION_0 and the
+             app rendered 1600x2560; without it the tablet rotates and the app renders 2560x1600
+             full screen.
+
+             Do not re-add it to "fix" tablet rotation. Rotation on a tablet is the intent. -->
+
+
         <!-- ============================ TELEMETRY ============================
              Both SDKs collect NOTHING until the user answers the disclosure.
              These four flags are what make that true, and it is measured, not
@@ -34,9 +56,25 @@
         <meta-data android:name="google_analytics_default_allow_ad_personalization_signals"
                    android:value="false" />
         <!-- ================================================================== -->
+        <!-- configChanges carries navigation (added by the Capacitor 7 checklist) and density
+             (Capacitor 8). Both mean "handle this configuration change in-place rather than be
+             recreated", which for a WebView activity avoids tearing down and rebuilding the
+             whole web app over a change it does not care about. Left off ScannerActivity
+             deliberately: recreating a camera screen is cheap and safe, and the checklist
+             governs the Capacitor activity, not ours.
+
+             screenOrientation is portrait, and on a PHONE that is what you get. On a display
+             >= 600dp Android 16 ignores it, and that is deliberate - see the note at the top of
+             <application>. Tablets rotate to full screen; do not "fix" that by re-adding the
+             opt-out property.
+
+             There are no landscape layouts. On a tablet the portrait design simply stretches,
+             which the owner accepted on hardware as better than a letterboxed phone-shaped app.
+             Landscape layout work is a recorded follow-up, not a supported design. -->
         <activity
-            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"

@@ -14,6 +14,184 @@ Git records what changed; this records **what is left and how to resume**. Witho
 
 ## Open
 
+### `capacitor-8` - Increment B, Capacitor 6 -> 8 + Android 16 + whole-tree dependency upgrade
+
+**Status:** ACTIVE, started 2026-08-10. Proposal
+[proposals/capacitor-8-upgrade.md](./proposals/capacitor-8-upgrade.md) (Rev 5), owner-approved.
+**Increment 0 DONE:** branch created off `main` at the Increment A merge; rollback artifact built from
+the baseline SHA `b66289e` and archived as `dist-apk/compendium-rollback-b218.apk`, signing certificate
+verified equal to the baseline's. Build is at **218**.
+**Recorded refinement:** the rollback APK is **disposable** - it must be rebuilt from `b66289e` at
+whatever `versionCode` is installed at the moment it is needed, because B's build number climbs as it
+iterates and a frozen artifact would become a downgrade. The SHA is the asset, not the APK.
+
+**Increments 1-9 DONE (2026-08-10).** Web tier, Kotlin 2.4.10 + Compose compiler plugin, Capacitor
+6 -> 8 with the whole toolchain (3a) then targetSdk 36 alone (3b), CameraX/Firebase, the manifest
+checklist and Gradle syntax, R8 keeps and gate bindings, the static 16 KB proof, the full gate set, and
+device install + rollback rehearsal on the Pixel 9 Pro XL.
+
+**The blocker is closed.** Every arm64 library in both the APK and the AAB is 16 KB aligned,
+`libsqlcipher.so` included; `bundletool dump config` reports `PAGE_ALIGNMENT_16K`. APK is 357,575 bytes
+SMALLER than the pre-upgrade baseline. Gates: 1,246 tests, 0 failures, 12/12 green, `check:smoke` 8/8
+routes. Rollback proven bidirectional with data identical (1832 cards / 4 decks / 9 matches) at every
+step.
+
+**Three latent defects found and fixed**, each a control that read correctly while protecting nothing:
+R8 keeps still naming `net.sqlcipher.*` after the package moved to `net.zetetic.database.*` (a
+release-only launch abort); the forbidden-permission gate bound to `assemble*` only, leaving the AAB
+that Play distributes entirely ungated; and `checkRecogAssets` fail-open on an AGP-internal task-name
+pattern. Also found: `MainActivity` never declared `screenOrientation`, so the app rotated despite
+being "portrait-only" - owner confirmed the lock.
+
+**Device pass done by the owner:** the scanner was exercised end to end and works; navigation and search
+are perceptibly faster.
+
+**>= 600dp check: DONE 2026-08-12, and it changed the decision.** Run on a Lenovo TB321FU (Android 16,
+arm64, 640dp smallest width), both with and without the opt-out property, device forced to landscape:
+**with** it `ROTATION_0` / 1600x2560, **without** it `ROTATION_90` / 2560x1600 full screen. The control
+is what makes it evidence rather than an observation - it proves the tablet genuinely enforces the
+Android 16 override at target 36.
+
+Seeing it on hardware, the owner reversed the goal: a letterboxed phone-shaped app on a 12-inch screen
+is worse than either alternative. **`PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` is now REMOVED** -
+phones stay portrait (exempt from the override), tablets rotate full screen. The implementation is a
+deletion, and it retires the API 37 expiry the property carried.
+
+**Caveat:** the opt-out is application-level, so the scanner cannot be pinned to portrait while the app
+rotates. On a tablet `ScannerActivity` rotates too - it works (recognised a real card in landscape,
+zero camera errors) but its sheets are portrait-designed. Landscape layout remains a non-goal and a
+recorded follow-up.
+
+**Phone half VERIFIED 2026-08-12** on the Pixel 9 Pro XL with landscape forced: `ROTATION_0`, app
+renders 1344x2992 portrait. Both sides of the split are now measured rather than reasoned - phone
+locked, tablet free.
+
+**Codex round 1: "Changes required" - all four Majors and the Minor now addressed** (response in the
+packet). The two findings worth remembering:
+
+- **The forbidden-permission gate was STILL bypassable** after I had already "fixed" it once.
+  `installRelease` depends on `packageRelease`, not `assembleRelease`. Both earlier bindings attached to
+  convenient LIFECYCLE names instead of the tasks that write the artifact. Now bound to
+  `package<Variant>` / `package<Variant>Bundle`, so coverage is complete by construction; all six entry
+  points verified, and provoked-negative on the three producers.
+- **`androidxCoreVersion` was referenced by nothing** - a dead knob whose comment read like a decision
+  while the release graph shipped `androidx.core:core` 1.18.0. Adopted 1.18.0 and declared it; the
+  resolved 228-module graph is now recorded in the audit addendum.
+
+Also: clean-install first-run DB creation proven on a temporary second Android user (real arm64 minified
+release APK, empty sandbox); backup under plugin 8.x proven against real data and diffed against the
+pre-upgrade backup (every row count identical, exactly one `updated_at` differs); restore into a
+never-used database verified with an independently recomputed digest; native SAF picker + on-device
+digest + restore preview exercised without writing. npm advisories dispositioned by hand, critical
+removed, production surface 0.
+
+**Codex rounds 2 and 3 also closed.** Round 2: the recogniser gate had the SAME producer bypass I had
+just fixed beside it - my six-entry-point table showed it PRESENT everywhere only because
+`packageRelease` inherited it through the fail-open `merge.*Assets` line. Now producer-bound, proven by
+disabling the opportunistic binding and re-checking. The wasm stripper now enumerates and classifies
+every `.wasm` rather than searching for the expected name.
+
+Round 3 was a **Blocker**: restore wrote the active id straight to Preferences, so the database,
+Preferences and `profileRepository`'s in-memory `activeId` disagreed - the running process kept
+writing the PRE-restore profile while the next launch was promised another. A profile-isolation break,
+now reconciled through `switchProfile()`, with post-commit failures reported as caveats (a retry after
+a committed restore re-imports the whole archive). Device-verified 2026-08-12 at full scale on the
+owner's real archive (~1,476 statements): active profile and profile sheet both settle immediately, no
+relaunch.
+
+**Build is 219** (device install, standing rule). The archived rollback APK is at 218 and is therefore
+now a downgrade - per the refinement above it is disposable and must be rebuilt from `b66289e` at the
+installed `versionCode` when actually needed.
+
+**Next step:** Codex round 4 sign-off on the updated packet
+([proposals/capacitor-8-review-packet.md](./proposals/capacitor-8-review-packet.md)), then **merge**.
+The >= 600dp check is now DONE (above). **One gap is deliberately carried:** `App.jsx` still has no
+test coverage while this branch has modified it three times (BackupSection, the `rev` prop, the
+restore-reporting branch). Nothing is pushed; `main` is
+local-only and ~66 commits ahead of `origin`.
+
+### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
+
+**Status:** raised by the owner 2026-08-12 after watching a real restore. Not started. Not caused by
+the Capacitor upgrade; it questions a decision made in Increment A.
+
+**The owner's question, which is the real one:** a backup is a snapshot, and restoring a snapshot is
+conventionally a REVERT - the state becomes the backup's state. Compendium's restore instead ADDS the
+archive's profiles alongside what is already there, so restoring your own backup gives you two of
+everything. That is not what "restore" means to most people, and the undeletable-profile symptom below
+is a consequence of it rather than a separate bug.
+
+**History, because this reverses an approved decision rather than filling a gap.** Additive was
+deliberate in Increment A and survived three adversarial review rounds: "NOTHING IS DELETED. No
+profile-deletion path exists." The reasoning was that a destructive restore on an offline-first app
+with no cloud copy can annihilate data that exists nowhere else - restore an older archive by mistake
+and everything since is gone, with no undo. Additive can never do that.
+
+**The trade, stated plainly.** Additive is safe and surprising; replace is expected and destructive.
+The mitigation that makes replace defensible is an automatic pre-restore snapshot written to app
+storage (`Directory.Data`) - no share sheet, no picker, no user interaction - so a mistaken revert is
+always undoable. Without that, replace is a data-loss feature.
+
+**Symptom that surfaced it:** after ANY whole-app restore the user keeps a profile they can never delete.
+
+**Mechanism, and the correct half first:** `restoreAll` adopts the archive's default in the same
+transaction as the rows, so the database is never momentarily without a default or with two. That part
+is deliberate and right. The consequence is not: the imported profile now holds `is_default`,
+`deleteProfile()` refuses to delete the default (`profileRepository.js` - "The default profile cannot
+be deleted"), and **nothing in the app can move the flag**. `ProfileSheet` reads `is_default` only to
+hide the Delete button; there is no "set default" action anywhere in the UI.
+
+The user's original starter is demoted to non-default and stays deletable, while the imported copy is
+permanently stuck at the top of the profile picker. The only escape through the UI is to delete the
+ORIGINAL and rename the import - which is what was done on the owner's device to restore its prior
+state, and is not something a user should have to work out.
+
+**Owner decision 2026-08-12: REPLACE ONLY**, with the pre-restore snapshot, the one-transaction
+property and the rewritten confirm copy all agreed. Proposal drafted at
+[proposals/restore-semantics.md](./proposals/restore-semantics.md); awaiting Codex review, then
+implementation.
+
+**Why a proposal and not code.** This is High-risk under the constitution - it makes restore a
+destructive user-data operation and touches the transactional-integrity and profile-isolation
+invariants. The proposal must settle:
+
+1. **Replace or merge, and is it a choice?** A single "Restore (replace everything)" is honest and
+   simple. Offering both on the confirm screen is more capable and doubles the ways to get it wrong.
+2. **The automatic pre-restore snapshot** - mandatory if restore becomes destructive. To
+   `Directory.Data`, before the transaction, with a visible way back.
+3. **One transaction still.** Delete-then-insert must commit or change nothing, or a failed restore
+   leaves the user with neither their data nor the archive's. This is the property the current design
+   already has and the new one must not lose.
+4. **The confirm copy**, which currently promises the opposite: "These profiles are added alongside
+   what is already on this device. Nothing is deleted or overwritten."
+5. **Whether the default flag still transfers** - the undeletable-profile symptom disappears under
+   replace semantics, so this may need no separate fix. If merge survives as an option, it does: add a
+   set-default control to the profile sheet.
+
+### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
+
+**Status:** diagnosed 2026-08-10, not started. Owner decision: do it after the upgrade merges, as its own
+branch, so the Capacitor diff stays purely toolchain for Codex.
+
+**Symptom:** card art appears to reload on every pillar switch.
+
+**It is not a caching failure and not an upgrade regression.** `git diff main..capacitor-8` touches no art
+file. `artCache.resolved` (`src/store/artCache.js:42`) is a module-level session memo that survives pillar
+switches, and `peek()` returns it synchronously, so nothing is re-downloaded.
+
+**Actual cause:** `ArtImage` holds `loaded` in COMPONENT state (`src/components/ArtImage.jsx:68`). A pillar
+switch unmounts the pillar, so on return `loaded` resets, `shown` is false, and line 82 paints the `<img>`
+at `opacity: 0` behind a shimmer with a `.3s` transition - for every card, every time. The bytes are local;
+only the animation re-runs. Faster post-upgrade navigation made it more noticeable.
+
+**Measured on device (Pixel 9 Pro XL, build 218):** returning to Home with art already cached, deck panels
+are black at t=0, fully painted by 400ms, byte-identical at 400ms and 1.9s. A CDN round trip would be
+neither that fast nor that consistent.
+
+**Next step:** when `peek()` already supplies the candidate at first render, or the `<img>` reports
+`complete` on mount, paint at full opacity with no shimmer and no transition. Guard against the reverse
+regression - a genuine first load must still shimmer and fade - and cover both in `artSource`-level tests.
+
 ### `android-16kb-compat` - DO NOT MERGE
 
 **Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in
@@ -68,6 +246,18 @@ and archived at the start of B and exercised inside B's device pass against the 
 supplies the rollback *source baseline*, not the installable binary.
 **Gates:** `checkRecogAssets` and `checkReleaseForbiddenPermissions` bind to `assemble` + `bundle` +
 `install`, not `assemble` alone; the AAB is 16 KB-verified with `bundletool`.
+
+## Compose material-icons is a frozen dependency the scanner now declares
+
+Increment 2 surfaced it: `Icons.Filled.*` in `RecognitionSheet.kt` and `ScannerScreen.kt` used to
+resolve only because **material3 1.2.1 depended on `material-icons` transitively**. material3 1.4.0
+dropped that, so the symbols vanished the moment the Compose BOM moved. It was always a real
+dependency of the scanner UI and is now declared explicitly.
+
+Google has **frozen** that library - the BOM pins it at 1.7.8 and it is deprecated. Six icons are used
+across two files (Add x5, Check x3, FavoriteBorder x2, Close x2, Search, PlayArrow). Inlining them as
+vector paths would drop the dependency entirely, and there is precedent: the web layer already has its
+own set in `src/components/icons.jsx`. **Feature work, not an upgrade** - recorded rather than done.
 
 ## App.jsx has no automated coverage - found the hard way
 
@@ -129,9 +319,10 @@ Recorded so they are decisions with conditions rather than things nobody looked 
 escape hatches), but all ten vendored Capacitor Gradle modules use `lintOptions` and the legacy DSL AGP 9
 removed, and those opt-outs are themselves being withdrawn - so adopting it now buys a migration we would
 immediately redo, on modules we cannot patch.
-**Cost of waiting:** AGP 8.13 caps compileSdk at 36. **Targeting API 37 requires AGP 9**, and API 37 is
-also when the `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out that holds this portrait-only app
-portrait on >= 600dp displays is removed. Those two land together and should be planned together.
+**Cost of waiting:** AGP 8.13 caps compileSdk at 36. **Targeting API 37 requires AGP 9.**
+(The API 37 removal of `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` used to be listed here as a second
+reason to plan them together. It no longer applies: the opt-out was removed on 2026-08-12 and the app now
+runs portrait on phones and free-rotating on tablets, so there is nothing left for API 37 to take away.)
 **Trigger:** Capacitor ships modules on the AGP 9 DSL, or we need to target API 37 - whichever comes first.
 
 ### TypeScript 7

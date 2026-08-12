@@ -57,7 +57,7 @@ artifact's own published requirements permit*, which is neither "latest everywhe
 | CameraX, Firebase BoM, coroutines pinned unless a failure forces it | **CameraX 1.6.1, Firebase BoM 34.17.0, coroutines 1.11.0 are planned scope** | Owner decision. ONNX Runtime and ML Kit remain out - see Non-goals |
 | Scope was Capacitor + toolchain only | **The web tier joins the same increment**: React 19, Vite 8, `@vitejs/plugin-react` 6, `vite-plugin-static-copy` 4, sql.js 1.14.1, qrcode-generator 2.0.4, sharp 0.35.3, firebase-tools 15.26.0 | Owner decision: one job. Recorded tradeoff in Self-Critique |
 | `androidxActivityVersion` follows Capacitor's 1.11.0 | **Set explicitly to 1.13.0** | `activity-compose:1.13.0` requires `activity:1.13.0`; Gradle would resolve upward silently. The build file must not misreport what ships |
-| The large-screen orientation override was the top target-36 risk, with an owner decision pending | **Resolved.** The app is portrait-only; the documented `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out holds portrait at target 36, and phones are exempt from the override entirely | Owner decision (portrait-only, always) plus verified Android documentation |
+| The large-screen orientation override was the top target-36 risk, with an owner decision pending | **Resolved, then REVERSED on hardware (2026-08-12).** Final behaviour: **portrait on phones, free rotation on tablets**. Phones are exempt from the override, so `screenOrientation="portrait"` holds there; displays >= 600dp ignore it and the app goes full screen. `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` was declared briefly and **removed** - it forced portrait on tablets too, producing a letterboxed phone-shaped app | Measured on a 640dp Android 16 tablet both with and without the property, plus the Pixel; owner decision |
 
 ### What changed from revision 1
 
@@ -132,7 +132,7 @@ back handling, and the scanner.
   needs nothing.
 - **No feature work, no UI redesign, no scanner refactor.** Dependency versions move; application behavior
   does not.
-- **No adaptive or landscape layout work.** The app is portrait-only.
+- **No adaptive or landscape layout work.** Still a non-goal, but note the reason changed: the app is **not** portrait-only any more. Tablets rotate (owner decision, 2026-08-12) and the portrait design simply stretches there. Building real landscape layouts is a recorded follow-up, deliberately outside this branch.
 - **No permanent 16 KB Gradle gate.** Recommended follow-up.
 - **iOS.** No iOS project exists.
 
@@ -214,6 +214,25 @@ B and archived outside `android/app/build/` as `dist-apk/compendium-rollback-b<c
 A local artifact sharing a `versionCode` with a different build must **never** be distributed:
 `scripts/distribute.mjs` compares the APK's `versionCode` against `package.json` and could not tell them
 apart.
+
+#### Operational refinement, found while building it (Increment 0, 2026-08-10)
+
+The same-`versionCode` scheme is right, but it does not survive B **iterating**. The standing rule bumps
+`build` on every device install, so B climbs 218, 219, 220 - and a rollback artifact frozen at 218 is a
+*downgrade* from 220, which is the exact thing this design abandoned.
+
+Freezing B's `versionCode` instead would break the standing rule and make installs
+indistinguishable in a bug report, which is what that rule exists to prevent.
+
+**So the artifact is disposable and the SHA is the asset.** The rollback APK is rebuilt from
+`b66289e` at *whatever `versionCode` is currently installed* at the moment it is needed. That keeps
+every install a same-version reinstall in both directions, costs one build, and needs no exception to
+the bump rule.
+
+`dist-apk/compendium-rollback-b218.apk` is therefore a **proof that the procedure works from the
+recorded SHA** - baseline source builds cleanly and signs with the same certificate
+(`c64bbee4...8ba3`, verified equal to the baseline APK's) - and not a permanently valid artifact.
+Increment 9 rebuilds it at the then-current number before rehearsing.
 
 **The second recovery path, stated because a binary is not a data guarantee:** uninstall plus restore from
 A's verified backup. That is the answer if the app is somehow unbootable in both directions, and it is why
@@ -601,12 +620,29 @@ Coverage extends to debug, so an emulator build cannot silently ship without rec
 | **Predictive back is default-on** at target 36; the legacy `KeyEvent` path is gone | `src/back.js` consumer registry, `src/navBack.js` precedence table, `App.addListener('backButton')`, scanner Activity back | Both v6 and v8 `@capacitor/app` use `OnBackPressedDispatcher`, the AndroidX mechanism that bridges to `OnBackInvokedCallback`; androidx.activity 1.11.0 is the matching runtime. Verified device-side across every layer. **Bounded fallback:** `android:enableOnBackInvokedCallback="false"` on the activity |
 | **Edge-to-edge enforced**; the opt-out is ignored at 36 | The whole shell: `S.app` uses `env(safe-area-inset-top/bottom)` (`App.jsx:1270`), sheets and the counter use their own insets | Already inset-aware today at target 35. Verified visually; a bounded correction is pre-authorised |
 | `statusBarColor` / `navigationBarColor` **deprecated and ignored** | `Theme.Compendium.Scanner` sets both (`styles.xml`); `StatusBar.setBackgroundColor` in `initNative()` (`src/native.js:20`) | Both already no-ops at 35; at 36 they are dead code. Removed from the theme if verification confirms; the `setBackgroundColor` call already sits inside a `try` |
-| **Orientation and resizability restrictions ignored on displays >= 600dp** | `ScannerActivity android:screenOrientation="portrait"` (`AndroidManifest.xml:74`); the app is portrait-only by product decision | **Declare the documented opt-out app-wide** (below). Phones (< 600dp) are exempt from the override entirely, so portrait already holds there unconditionally |
+| **Orientation and resizability restrictions ignored on displays >= 600dp** | Both activities declare `android:screenOrientation="portrait"` | **ACCEPT the override; declare no opt-out.** Phones (< 600dp) are exempt and stay portrait; tablets ignore the attribute and rotate to full screen, which is the intent. The opt-out property was declared briefly and removed after measurement - re-adding it restores the rejected letterboxed behaviour |
 | Keyboard / IME inset behavior | `Keyboard.setResizeMode(None)` + `--kb` from VisualViewport (`src/appearance.js:13-20`) | Verified in a search field and a bottom sheet |
 | `elegantTextHeight` deprecated and ignored | Arabic, Thai and several Indic scripts | **Not applicable** - the app is Latin-only |
 | Local network access will require `NEARBY_WIFI_DEVICES` (enforcement 26Q2) | Art CDN traffic | **Not applicable** - the app talks to a public CDN, never to LAN devices |
 
 ### Portrait-only under target 36
+
+> **SUPERSEDED, 2026-08-12.** This whole section's premise - portrait everywhere, held on large
+> screens by the opt-out property - was reversed by the owner after seeing it on hardware. The
+> >= 600dp check was finally run on a Lenovo TB321FU (Android 16, 640dp) with and without the
+> property: with it, ROTATION_0 and a 1600x2560 letterboxed phone-shaped app on a 12-inch screen;
+> without it, ROTATION_90 and 2560x1600 full screen. **The property is removed.** Phones are exempt
+> from the Android 16 override and stay portrait; tablets rotate. Device matrix row 14 is closed, with
+> its expected outcome inverted. The API 37 expiry noted below no longer applies, because there is no
+> longer an opt-out to expire.
+
+> **CORRECTION, found during implementation (2026-08-10).** This section asserted the app was already
+> portrait-only and treated the opt-out property as sufficient. It was not. Only `ScannerActivity`
+> declared `android:screenOrientation`; **`MainActivity` never has**, so the main app rotated into
+> landscape on phones. The property below only makes a declared orientation be HONOURED on >= 600dp
+> displays - it cannot create a lock that was never asked for, so on its own it would have left device
+> row 14 failing. `MainActivity` was locked to portrait in its own commit, owner-confirmed. The
+> intent recorded here was right; the claim about the existing code was wrong.
 
 The app is portrait-only, always, by product decision. Verified against the Android documentation:
 
@@ -646,8 +682,10 @@ A **bounded** compatibility correction is pre-authorised within this named surfa
 - `android/app/src/main/res/values/styles.xml` - removing the dead deprecated bar-colour attributes.
 
 Anything outside that surface is a **scope expansion requiring a §12 checkpoint and approval**, not
-something to write while debugging. In particular, no adaptive or landscape layout work is in scope: the
-app is portrait-only and the manifest opt-out holds it that way at target 36.
+something to write while debugging. In particular, no adaptive or landscape layout work is in scope.
+(Superseded detail: this said the app is portrait-only and the manifest opt-out holds it that way. As of
+2026-08-12 it is portrait on phones and free-rotating on tablets, with no opt-out. Landscape LAYOUT work
+remains out of scope either way, which is why the sentence still stands.)
 
 ### What does not change
 
@@ -708,10 +746,13 @@ telemetry regression is not attributed to the Capacitor move. **ONNX Runtime and
 *Gate:* `assembleDebug`; the merged-manifest permission list is unchanged (the `AD_ID` lesson).
 
 **Increment 5 - Manifest and Gradle syntax (the checklist's remaining items).** Add `navigation` (v7) and
-`density` (v8) to `android:configChanges`; declare
-`android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` on `<application>` to hold portrait at
-target 36; apply assignment syntax in the three files we own. *Gate:* `assembleDebug`; the merged manifest
-shows both configChanges values and the property.
+`density` (v8) to `android:configChanges`; ~~declare
+`android.window.PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` on `<application>`~~; apply assignment
+syntax in the three files we own. *Gate:* `assembleDebug`; the merged manifest shows both configChanges
+values.
+**The property step is struck out, not merely dated:** it was done here and then UNDONE on 2026-08-12
+after row 14 was measured on a tablet. The shipped manifest declares no such property. Read as a record
+of what happened, not as an instruction to follow.
 
 **Increment 6 - ProGuard, the recog gate, and the release build.** New SQLCipher keeps; audit
 `io.liteglue.**`; replace the `checkRecogAssets` binding; replace the stale "KNOWN REMAINING GAP" comment at
@@ -857,11 +898,14 @@ PASS / FAIL / NOT RUN individually.
 12. **Deep links:** `compendium://deck?…` and `compendium://match?…` open the import screen, both from cold
     start and from background.
 13. **Reduced motion:** with the per-profile setting on, animated surfaces respect it.
-14. **>= 600dp portrait lock:** on a `600dp+` emulator (a tablet profile), rotate the device and open the
-    scanner. **The app and the scanner must both stay portrait**, proving the
-    `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out is being honoured. Then temporarily remove the
-    property and confirm the app *does* rotate - proving the property is what is holding it, rather than an
-    emulator that was never going to rotate anyway.
+14. **>= 600dp orientation - DONE 2026-08-12, and the expected outcome INVERTED.** Run on real hardware
+    (Lenovo TB321FU, Android 16, 640dp) rather than an emulator, both ways as this row demanded: **with**
+    the opt-out `ROTATION_0` / 1600x2560, **without** it `ROTATION_90` / 2560x1600 full screen. The
+    control is what makes it evidence rather than an observation.
+    This row originally required the app and scanner to **stay portrait**. Seeing the letterboxed result
+    on a 12-inch screen, the owner reversed the goal: **portrait on phones, rotation on tablets**, and the
+    opt-out is removed. The re-run criterion is therefore the opposite - a tablet MUST rotate to full
+    screen, and the Pixel MUST NOT (verified: `ROTATION_0`, 1344x2992).
 
 **Plugins**
 15. **Scanner:** full OCR scan, "Try visual match" (ONNX under R8), QR scan (ML Kit barcode).
@@ -929,7 +973,7 @@ APK's `versionCode` to `package.json`.
 | 1 | Kotlin 2.4 / K2 + Compose 2.x strong skipping changes scanner recomposition behavior in a way only a human eye catches | Med | **High** | Isolated in Increment 2; scanner rows 8 and 15 on the device matrix | Claude |
 | 2 | React 19 or Vite 8 regresses UI behavior that no test covers | Med | Med | Increment 1 lands alone with the full web gate suite plus a hand pass in `npm run dev`; device rows re-check the same surfaces in the shipping WebView | Claude |
 | 2b | The single-increment scope makes a failure hard to attribute | **High** | Med | Owner decision, accepted. Mitigated by ordering: ten individually gated steps, cheapest and most isolated first | **Owner (accepted)** |
-| 3 | The `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` opt-out is not honoured, so the app rotates on >= 600dp despite being portrait-only | Low | **High** | Device row 14 proves it both ways (with and without the property). Phones are exempt from the override regardless | Claude |
+| 3 | ~~The opt-out is not honoured, so the app rotates on >= 600dp~~ **RETIRED 2026-08-12: rotating on >= 600dp is now the intended behaviour, not the risk.** Device row 14 measured it both ways and the owner reversed the goal; the opt-out is removed. The residual risk is the inverse - someone re-adds the property as an apparent fix - which the manifest comment and BUILD.md now warn against | Low | Low | Manifest comment, BUILD.md, and this row | Claude |
 | 4 | Predictive back breaks a back layer despite the AndroidX dispatcher path | Low-Med | **High** | Device row 7 covers every layer; bounded fallback `enableOnBackInvokedCallback="false"` | Claude |
 | 5 | R8 keep correct at launch but wrong for `CursorWindow`, failing only on a large result set | Med | **High** | Parent-package keep; device row 3 forces paging | Claude |
 | 6 | Edge-to-edge enforcement shifts chrome or insets | Med | Med | Device rows 9-11; bounded correction surface pre-authorised | Claude |
@@ -960,7 +1004,9 @@ counter-argument is real - one device verification pass instead of two - and the
 reviewer should notice that Increment 2 is where four independent risk sources merge into one commit, and
 should press on whether targetSdk 36 could land as its own increment *after* the upgrade is proven, at the
 cost of a second device pass. (The orientation override, which revision 1 treated as the largest target-36
-risk, is now resolved by a documented manifest opt-out and is no longer part of this argument.)
+risk, is no longer part of this argument. Resolution as of 2026-08-12: the override is **accepted, not
+opted out of** - phones stay portrait because they are exempt, tablets rotate because that is now the
+intent.)
 
 **The assumption with the highest consequence if false.** Assumption 3 - Kotlin 2.4.10 compiles the scanner
 unchanged. K2 is a different frontend, and 3,778 lines of Compose/CameraX/coroutine code is enough surface
@@ -1035,8 +1081,10 @@ stops at the §12 checkpoints rather than being absorbed silently.
    `versionCode`.
 5. **Target API 36 is future-proofing.** It becomes the minimum required target within months, so it is
    absorbed by this increment rather than deferred into a second native change and a second device pass.
-6. **The app is portrait-only, always.** It needs no landscape support whatsoever. Portrait is a fixed
-   product property, not a question for this increment to resolve.
+6. ~~**The app is portrait-only, always.**~~ **SUPERSEDED 2026-08-12, by the owner, on hardware.**
+   Recorded as decided here and then reversed once a 640dp Android 16 tablet was actually available:
+   portrait is fixed on PHONES, and tablets rotate to full screen. The original entry is left visible
+   because it was the premise for the opt-out property this branch later removed.
 7. Remove the Kotlin-1.9 / AGP-8.13 probe and the lower-AGP fallback.
 
 ### Owner decisions recorded (2026-08-09, second round) - do not re-litigate
