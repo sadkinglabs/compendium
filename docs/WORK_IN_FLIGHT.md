@@ -32,88 +32,18 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 - **Branch `capacitor-8` still exists locally** and is fully contained in `main` (0 unique commits
   after the merge), so it is safe to delete whenever.
 
-### `restore-semantics` - COMPLETE: Codex-APPROVED, device-verified on the final build, ready to merge
+### Left behind by `restore-semantics` (merged 2026-08-13) - carried, not closed
 
-**Status:** ACTIVE. Proposal [proposals/restore-semantics.md](./proposals/restore-semantics.md)
-**Rev 4, Codex APPROVED** after three rounds (2 Blockers, then 2 Blockers, then 1 Major + 2 Minors).
-Branch `restore-semantics`, nothing pushed.
-
-**Owner decision:** whole-app **Restore REPLACES**; single-profile **Import ADDS**; Primary is a
-transferable role.
-
-**Built and gated (test:query 1014, all 12 gates green):**
-
-| # | Increment | Note |
-|---|---|---|
-| 0 | Primary as a transferable role | Fixes the undeletable-profile trap on its own. **Device-verified** |
-| 1 | Admission boundary | Stop condition NOT triggered; all three consumers coexist. Acquisition is bounded, or a stuck write would leave the app read-only for the life of the process |
-| 2 | Recovery store + canonical content digest | Immutable ids, pointer in `catalog_meta` (a database write, so atomic) |
-| 3 | Fail-closed durability policy + external-archive binding | Web disables Replace rather than warning; the archive binds to the frozen capture |
-| 4 | `planReplace()` + journal row in the SAME transaction | First destructive code. Atomicity proven at three injection points by full byte dump |
-| 5 | Startup reconciliation | Runs before `initProfiles()` AND before the ledger canonicalisation |
-| 6 | Persisted-state registry | Consumed by `replacePlan`, not documentation. Preserve-by-default |
-| 7 | Legacy routing to Import | `classifyBackup` decides once |
-| 8 | Confirm screen + accessibility + reachable Undo | Copy previously promised the opposite of what the code does |
-| 9 | **Device pass** | Build 221 on a Pixel 9 Pro XL. Details below |
-| 10 | Docs | This entry plus the six documents in the impact table |
-
-**INCREMENT 9 - what was actually done, 2026-08-13, build 221.**
-
-Run in a **disposable second Android user**, not the owner's profile. The destructive path had never
-executed on hardware and the owner's data is the only copy of it, so the risk was removed rather than
-accepted: `pm create-user` + `pm install-existing` gives an empty sandbox running the REAL arm64
-minified release APK and the REAL native SQLite, and `pm remove-user` reverses it.
-
-- **Replace is genuinely destructive.** Device state Sorcerer + Alpha + Beta; archive held Sorcerer +
-  Alpha. After Replace: exactly two profiles, **Beta gone**, and no `(imported)` suffixes - so it
-  replaced rather than merged, and the name dedupe correctly did not run.
-- **That is also the older-archive case.** The archive predated Beta, and restoring it destroyed newer
-  data deliberately, which is the behaviour the owner chose and the one most worth proving.
-- **Undo returns.** "Return to previous state" described the pre-replace state correctly (3 profiles,
-  timestamped) and restored it - Beta came back.
-- **Killed mid-replace.** Process force-stopped ~350ms after confirming. On relaunch the state was
-  COHERENT - fully replaced, never half - the recovery point had been published and still described
-  the pre-replace state, and the app booted with no error. Honest limit: the exact millisecond window
-  between commit and reconciliation cannot be hit deterministically by hand, so this shows the
-  operation survives process death; the per-phase crash behaviour is proven by the Increment 5 unit
-  tests, which construct each crash state exactly.
-- **Confirm screen, on device:** "Everything currently in Compendium will be replaced by this backup.
-  3 profiles now on this device ... will be removed. A safety copy is taken first."
-- **Zero** FATAL, "Restore failed" or "reconciliation failed" lines across the entire pass.
-- **Owner's real profile re-verified afterwards**: Sadkingbilly, 1,832 cards, 4 decks, 9 matches, 2
-  marginalia - untouched. `check:smoke` 8/8 on build 221 before the pass, with `reconcileRestore()`
-  now running first at every boot.
-
-**Codex reviewed the IMPLEMENTATION over three rounds and APPROVED it** (2026-08-13). One Blocker -
-a post-commit failure was reported as a failed restore, and the retry it invited could have destroyed
-the recovery point. Then a Major of my own making: the round-1 guard retired the journal even when
-active reconciliation had not completed, making the "reopen to finish" promise impossible.
-
-**Final device pass on build 222** (Pixel 9 Pro XL, **Android 17 / API 37**, WebView 150.0.7871.181,
-release/minified/signed/arm64) in disposable user 13: Replace destroyed Beta with no `(imported)`
-suffixes, Undo brought it back, kill-mid-replace left a coherent state with the recovery point intact,
-zero fatal lines. `check:smoke` 8/8. The owner's profile was never involved and was re-verified
-untouched.
-
-**The browser gate was WITHDRAWN as my error.** There is no web deploy target and the constitution
-calls the browser the DEVELOPMENT runtime; I had written a browser release gate into my own proposal
-and Codex reviewed against it. The fail-closed code stays; verifying it in a browser is not a release
-condition.
-
-**Follow-up, presentation only:** "Return to previous state" sits below the fold of the Settings sheet
-on a 6.8-inch phone. Fine for an ordinary setting, worth reconsidering for the one control that undoes
-a destructive operation.
-
-**Owner decisions recorded during the build:**
-
-- Open matches are not precious, so orphaned `cx-ongoing-match:<pid>` keys stay as harmless litter.
-  **The `resume` row still travels inside the archive** - if backups should not carry in-progress
-  matches at all, that is a format change and has not been made.
-
-**Carried, not closed:** the confirm screen's DECISIONS are now covered - `restoreFlow.js` holds
-routing, the destructive gate, outcome messaging and failure, with the inline copies deleted so the 14
-tests describe the shipped screen. What remains uncovered is `App.jsx`'s markup and effects, which is
-the older, broader gap rather than this branch's. TalkBack announcement order is asserted by construction, not observed.
+- **`App.jsx` markup and effects still have no component test.** Its DECISIONS are now covered by
+  `restoreFlow.js` (routing, the destructive gate, outcome messaging, failure), with the inline copies
+  deleted so those tests describe the shipped screen. What remains is the component itself.
+- **"Return to previous state" sits below the fold** of the Settings sheet on a 6.8-inch phone. Two
+  attempts to press it during the device pass landed on the backdrop and closed the sheet. Fine for an
+  ordinary setting; worth reconsidering for the one control that undoes a destructive operation.
+- **`resume` still travels inside the archive.** Owner decision: open matches are not precious, so
+  orphaned `cx-ongoing-match:<pid>` keys stay as harmless litter. Removing `resume` from the format
+  would be a format change and has not been made.
+- **Branch `restore-semantics`** is fully contained in `main` and safe to delete.
 
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
 
