@@ -1258,10 +1258,13 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
     (a, p) => ({ profiles: a.profiles + 1, decks: a.decks + (p.decks ?? 0), matches: a.matches + (p.matches ?? 0) }),
     { profiles: 0, decks: 0, matches: 0 },
   );
-  // Destructive, the runtime cannot promise a durable recovery point, and nothing is bound to stand
-  // in for one. Disabled rather than warned about: an evictable recovery point is indistinguishable
-  // from none at the only moment it matters.
-  const blocked = destructive && policy != null && !policy.allowed && !binding;
+  // Destructive, and either the runtime cannot promise a durable recovery point or we do not YET
+  // know. Both are blocked. The `policy != null` version of this failed OPEN for the width of an
+  // async import: the button was live before the answer arrived, so a quick confirm on a
+  // non-persistent browser produced exactly the "offered, then failed" experience the fail-closed
+  // work existed to remove. Unknown is not permission.
+  const policyPending = destructive && policy == null;
+  const blocked = destructive && !binding && (policy == null || !policy.allowed);
 
   /** Bind an external backup as the durable substitute. Verified against the archive itself here;
    *  it is re-checked against the FROZEN CAPTURE inside the session, which is the part that makes
@@ -1411,7 +1414,9 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
           style={{ ...(destructive ? BTN_DANGER : BTN_GOLD), flex: 1, minHeight: 48, opacity: (busy || blocked) ? .45 : 1 }}>
           {busy
             ? (destructive ? 'Replacing...' : 'Importing...')
-            : (destructive ? 'Replace all data' : 'Import profile')}
+            : policyPending
+              ? 'Checking safety copy...'
+              : (destructive ? 'Replace all data' : 'Import profile')}
         </button>
       </div>
     </CenteredModal>

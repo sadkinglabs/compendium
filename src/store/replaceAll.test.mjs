@@ -644,3 +644,37 @@ test('and the next boot makes that deferred recovery point reachable', async () 
   assert.equal(rows('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]).length, 0,
     'and the journal is retired');
 });
+
+test('a failed ACTIVE-PROFILE reconciliation keeps the journal, and the next boot adopts the archive\'s profile', async () => {
+  // The mirror image of the pointer-failure case, and the one that slipped through: switchProfile
+  // fails, publication then SUCCEEDS, and retiring the journal unconditionally would delete the only
+  // record of intendedActiveId. The next boot would find nothing pending, be unable to adopt the
+  // archive's active profile, and fall back to whichever restored profile sorts first - while the
+  // toast had promised that reopening would finish the job.
+  const preview = await previewBackup(await archiveText());
+  __setBackingForTests(memoryBacking());
+
+  // switchProfile writes the active id through Preferences; failing that fails reconciliation
+  // without disturbing the commit, which is the state this test is about.
+  const realSet = globalThis.window.localStorage.setItem;
+  globalThis.window.localStorage.setItem = () => { throw new Error('Preferences unavailable'); };
+  let r;
+  try { r = await replaceAll(preview); }
+  finally { globalThis.window.localStorage.setItem = realSet; }
+
+  assert.equal(r.activeReconciled, false, 'precondition: the active profile did not settle');
+  assert.equal(r.published, true, 'precondition: the pointer DID publish, which is what used to retire the journal');
+  assert.equal(r.settled, false, 'the caller must not be told this is finished');
+
+  const journal = rows('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+  assert.equal(journal.length, 1, 'the retry ticket must survive - startup cannot finish without it');
+  assert.equal(JSON.parse(journal[0].value).intendedActiveId, r.activeProfileId);
+
+  // THE PROMISE THE TOAST MAKES, kept: reopening finishes it.
+  const { reconcileRestore } = await import('./restoreReconcile.js');
+  const outcome = await reconcileRestore();
+  assert.equal(outcome.status, 'finished');
+  assert.equal(activeProfileId(), r.activeProfileId, "the archive's active profile is adopted, not an arbitrary survivor");
+  assert.equal(rows('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]).length, 0,
+    'and only now is the journal retired');
+});

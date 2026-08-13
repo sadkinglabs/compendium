@@ -15,13 +15,13 @@ import { Preferences } from '@capacitor/preferences';
 import { snapshot, query, tx, acquireExclusiveSession } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { listProfiles, activeProfileId, switchProfile } from './profileRepository.js';
-import { buildProfileUnit, planProfileUnit, importProfile, uniqueProfileName } from './profileTransfer.js';
+import { buildProfileUnit, importProfile } from './profileTransfer.js';
 import { buildEnvelope, seal, parseBackup, readBackup, summarise } from './backup.js';
-import { prepareBundle, ITERATED_COLLECTIONS } from './importBoundary.js';
+import { ITERATED_COLLECTIONS } from './importBoundary.js';
 import { writeCandidate, verifyCandidate, promote } from './recoveryStore.js';
 import { replacementPolicy, assertBoundArchiveMatches, ReplaceRefused } from './replacementPolicy.js';
 import { planReplace, RESTORE_PENDING_KEY } from './replacePlan.js';
-import { uuid, nowIso } from './ids.js';
+import { nowIso } from './ids.js';
 import { saveTextFile } from '../native.js';
 
 // No ACTIVE_KEY here on purpose. This module used to keep its own copy of profileRepository's
@@ -96,10 +96,6 @@ export async function backupAll({ appBuild = currentBuild(), now = new Date() } 
 /* Restore                                                             */
 /* ------------------------------------------------------------------ */
 
-/**
- * Parse and fully validate a backup, returning what a restore WOULD do. Writes nothing.
- * The UI shows this and waits for confirmation before `restoreAll` is called.
- */
 /* ------------------------------------------------------------------ */
 /* Which operation is this file, and which is it NOT                   */
 /* ------------------------------------------------------------------ */
@@ -128,6 +124,10 @@ export async function classifyBackup(text) {
   };
 }
 
+/**
+ * Parse and fully validate a backup, returning what a restore WOULD do. Writes nothing.
+ * The UI shows this and waits for confirmation before an executor is called.
+ */
 export async function previewBackup(text) {
   const read = await readBackup(text);
 
@@ -206,100 +206,12 @@ export async function restoreAll(preview) {
   //
   // The classifier decides which operation a file authorises; this makes the executor refuse to be
   // the wrong one.
-  if (Array.isArray((preview?.env ?? preview)?.payload?.profiles)) {
-    throw new ReplaceRefused('whole-app-archive',
-      'That is a whole-app backup, which replaces all data. Restore it with Replace all data, not Import.');
-  }
-
-  const env = preview?.env ?? preview;
-  const setsOf = await catalogSets();
-  const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
-
-  const statements = [];
-  const created = [];
-
-  for (const unit of env.payload.profiles) {
-    // Same boundary the per-profile import trusts: validate, then normalise v10 -> v11, in memory.
-    const { bundle } = prepareBundle(
-      { app: 'compendium', schemaVersion: env.schemaVersion, ...unit }, setsOf);
-
-    // Disambiguated against the device AND against names this same restore has already claimed -
-    // two archived profiles can share a name. Same helper the per-profile import uses.
-    const name = uniqueProfileName(bundle.profile?.name, taken);
-    taken.add(name);
-
-    let avatar = null;
-    try { avatar = bundle.profile?.avatar ? JSON.parse(bundle.profile.avatar) : null; } catch { avatar = null; }
-
-    const plan = planProfileUnit(bundle, {
-      pid: uuid(), name, avatar,
-      // Carried explicitly by a v2 unit, so a faithfully restored dashboard - including a
-      // deliberately empty one - is not repopulated with starter widgets.
-      dashSeeded: unit.dashSeeded,
-    });
-    statements.push(...plan.statements);
-    created.push({ pid: plan.pid, name, wasDefault: unit.profile?.is_default === 1 });
-  }
-
-  // Adopt the archive's default. IN THE SAME TRANSACTION as the rows, so the database is never
-  // momentarily without a default or with two.
-  const newDefault = created.find((c) => c.wasDefault) ?? created[0];
-  if (newDefault) {
-    statements.push(['UPDATE profiles SET is_default=0;', []]);
-    statements.push(['UPDATE profiles SET is_default=1 WHERE id=?;', [newDefault.pid]]);
-  }
-
-  // ONE transaction. Commits entirely or changes nothing (Options / H, size-measured in Stage 0).
-  await tx(statements);
-
-  // ONE TRANSACTION, ONE COMMIT POINT. Everything below this line runs AFTER the data is durable,
-  // and therefore MUST NOT be able to make a committed restore look like a failed one. A generic
-  // "Restore failed" here would invite a retry, and a retry imports the whole archive AGAIN.
-  const idx = env.payload.appGlobal?.activeProfileIndex;
-  const activePid = (idx != null && created[idx]) ? created[idx].pid : newDefault?.pid;
-  let activeReconciled = false;
-
-  try {
-    // THROUGH THE REPOSITORY, NOT AROUND IT. This used to write ACTIVE_KEY straight to Preferences,
-    // which left THREE authorities disagreeing about who is active: the database (restored default),
-    // Preferences (the new id) and profileRepository's in-memory activeId (still the OLD profile,
-    // because only initProfiles/switchProfile ever set it).
-    //
-    // That is a profile-isolation break, not a cosmetic one. activeProfileId() is the gate every
-    // profile-scoped read and write goes through, so after a restore the running process kept
-    // reading and WRITING the pre-restore profile while Preferences promised a different one to the
-    // next launch. Work done between restore and relaunch would land in profile A and then appear
-    // to vanish when B became active.
-    //
-    // switchProfile is the single boundary that owns both halves - it validates the id, takes the
-    // write barrier so in-flight profile-scoped writes finish under the old profile, then sets the
-    // in-memory id and Preferences together.
-    if (activePid) { await switchProfile(activePid); activeReconciled = true; }
-  } catch { /* committed already - see below */ }
-
-  try {
-    const seen = env.payload.appGlobal?.changelogSeenBuild;
-    const build = currentBuild();
-    if (seen != null && build != null) {
-      // CLAMPED: restoring a higher value from a newer device would permanently hide release notes
-      // the user on this build has never seen.
-      await Preferences.set({ key: SEEN_BUILD_KEY, value: String(Math.min(Number(seen), build)) });
-    }
-  } catch { /* cosmetic; never worth failing a committed restore over */ }
-
-  // activeReconciled false means the rows are in and only the "which profile is active" pointer did
-  // not settle. Stated precisely rather than optimistically: the next boot resolves to whatever
-  // Preferences holds (or the first profile if that id is gone), which may be the PRE-restore
-  // profile - the restored data is all present and selectable, but the user may have to switch to it
-  // by hand. That is a caveat worth surfacing, and NEVER a failure the user might retry, because a
-  // retry would import the whole archive again.
-  return {
-    profiles: created.length,
-    activeProfileId: activePid,
-    activeReconciled,
-    statements: statements.length,
-    via: 'whole-app',
-  };
+  // A whole-app envelope reaches the end of this function and no further: the additive whole-app
+  // implementation that used to live below has been DELETED, not merely guarded. Leaving unreachable
+  // destructive-adjacent code behind would make it ambiguous which behaviour is authoritative, and
+  // the retired tests that described it are documented in backupService.test.mjs.
+  throw new ReplaceRefused('whole-app-archive',
+    'That is a whole-app backup, which replaces all data. Restore it with Replace all data, not Import.');
 }
 
 /* ------------------------------------------------------------------ */
@@ -428,11 +340,26 @@ export async function replaceAll(preview, { binding = null } = {}) {
     // rows are in and startup reconciliation completes the rest idempotently from the journal row,
     // which is exactly why the row is retired LAST.
     let published = false;
+    let retired = false;
     try {
       const write = (sql, params) => session.tx([[sql, params]]);
       await promote(candidateId, { write });
-      await write('DELETE FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
       published = true;
+      // THE JOURNAL IS THE RETRY TICKET, so it may only be torn up when there is nothing left to
+      // retry. Retiring it here unconditionally covered the case where publication failed and
+      // missed the mirror image: switchProfile fails, publication then SUCCEEDS, and the row is
+      // deleted anyway - taking with it the only record of `intendedActiveId`. The next boot would
+      // find no pending operation, be unable to adopt the archive's active profile, and fall back to
+      // whichever restored profile sorts first, while the toast had promised that reopening would
+      // finish the job. The promise was made durable by a row this line then removed.
+      //
+      // So: retire only when the active profile settled too. Otherwise leave it and let startup
+      // reconciliation finish - it is idempotent, and re-promoting an already-published id is a
+      // no-op by design.
+      if (activeReconciled) {
+        await write('DELETE FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+        retired = true;
+      }
     } catch { /* the journal row survives; the next boot finishes it */ }
 
     return {
@@ -442,7 +369,10 @@ export async function replaceAll(preview, { binding = null } = {}) {
       recoveryPointId: candidateId,
       statements: plan.statements.length,
       // false => committed but not fully settled. The caller MUST NOT present this as a failure.
-      settled: published && activeReconciled,
+      // All three matter: a lingering journal row is not cosmetic, because it REFUSES the next
+      // replacement until a relaunch clears it - so leaving one is a reason to tell the user to
+      // reopen, not to call the operation done.
+      settled: published && activeReconciled && retired,
       published,
       via: 'replace',
     };
