@@ -45,65 +45,17 @@ The branch is merged and its row is gone per the rule above. These outlived it a
   would be a format change and has not been made.
 - **Branch `restore-semantics`** is fully contained in `main` and safe to delete.
 
-### `art-first-paint` - ACTIVE, proposal written, not started (folds in `art-fade-fix`)
+### Left behind by `art-first-paint` (merged 2026-08-13) - carried, not closed
 
-**Status:** branch created 2026-08-13. Proposal
-[proposals/art-first-paint.md](./proposals/art-first-paint.md), **Standard risk, awaiting review**.
-Nothing built yet.
-
-**One symptom, TWO unrelated causes.** The owner reported images popping in - "a quick flash of missing
-image then back in immediately", worst on avatars. The previously queued `art-fade-fix` had diagnosed
-one of them; the other was found on 2026-08-13 and is the one that produces the *missing-image* flash.
-
-**Cause 1 - the cache index is cold at every launch (new).** `peek()` is synchronous, so it can only
-consult the in-memory `resolved` memo (`artCache.js:69`). That memo is written only by the async
-`resolve()` and `initArtCache()` never seeds it, so it is EMPTY at every launch. The first sighting of
-each key therefore has no `src`, and `ArtImg` renders nothing (`ArtImage.jsx:52`) while the monogram
-disc shows through. The bytes were on disk the whole time; the knowledge that they were is what the app
-discards. **Native-only** - on web `peek` answers immediately - and **once per key per launch**, since
-`resolved` survives navigation.
-
-**Cause 2 - the fade replays on every remount (diagnosed 2026-08-10).** `ArtImage` holds `loaded` in
-COMPONENT state (`ArtImage.jsx:68`), so a pillar switch resets it and the `<img>` paints at `opacity:0`
-behind a shimmer with a `.3s` transition, every time. Measured on device (build 218): deck panels black
-at t=0, painted by 400ms, byte-identical at 400ms and 1.9s - too fast and too consistent for a CDN
-round trip.
-
-**Rev 1 was dispositioned Changes required and BOTH fixes were wrong.** Worth carrying forward as a
-lesson rather than a footnote: I checked the mechanism and not the wiring.
-
-- The optimistic `peek` would have served files without the exact-size manifest check that
-  `artCache.js:7` documents as fail-closed. `onError` catches a decode failure, NOT wrong-but-decodable
-  bytes - so a truncated or mismatched image would paint silently.
-- The fade fix targeted `ArtImage`, which has **zero call sites**. The live framed path is
-  `CardArt.jsx` (16 call sites), which owns its own `loaded` state and identical fade. The change would
-  have shipped green and altered nothing visible. `grep '<ArtImage'` returns zero and takes seconds.
-
-**Rev 2 proposes:** seed the memo at boot from one `io.list('art')`, admitting only entries whose size
-matches the manifest - the same validation `resolve()` performs, just batched, with no new index. It
-cannot race first paint because `initArtCache()` is awaited before render (the reason Rev 1 gave for
-rejecting this was false). Plus a `painted` set consulted by **`CardArt`**, invalidated on
-`quarantine`/`clear`.
-
-**The risk to hold on to:** the reverse regression. A genuine first load - including a re-download
-after a quarantine - must still shimmer, or a slow CDN fetch will look like a broken image.
-
-**BUILT AND DEVICE-VERIFIED (build 224, owner-confirmed live).** Increment 1 plus an owner-approved
-checkpoint: the 223 device pass exposed that early-boot `_capacitor_file_` loads can fail transiently
-and the boundary deleted good files on that evidence - `quarantine()` now verifies against the
-manifest first. The shimmer sweep animates `background-position` instead of a transform, which also
-cured the Deck Library streak (owner-confirmed). Both fixes fail-first verified.
-
-**Follow-ups recorded, not built:**
-
-- **Cards resize slightly on pillar change** (owner, 2026-08-13): plausibly `ArtImg`, which reserves
-  no box - it renders nothing until a source exists, so the tile lays out without the image and
-  adapts when it arrives. `CardArt` reserves via `aspect-ratio` and does not do this. Small,
-  self-contained; wants its own look.
-- The pillar-slide flag closed: the streak was the shimmer transform after all.
-
-**Next step:** Codex implementation review of the diff - a VERIFICATION pass against the approved
-contract and checkpoint, one round, defects only - then merge.
+- **Cards resize slightly on pillar change** (owner observation). Plausible mechanism: `ArtImg`
+  reserves no box - it renders nothing until a source exists, so the tile lays out without the image
+  and adapts when it arrives. `CardArt` reserves via `aspect-ratio` and does not do this. Small and
+  self-contained.
+- **The pillar entrance slide** (`cx-pillar-slide`, translateX over a pane containing overflow
+  scrollers and masked cards) remains a flagged WebView-tearing suspect IF a streak ever reappears -
+  the Library streak turned out to be the shimmer, owner-confirmed, so this flag is dormant, not
+  active.
+- **Branch `art-first-paint`** is fully contained in `main` and safe to delete.
 
 ### `android-16kb-compat` - DO NOT MERGE
 
