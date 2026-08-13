@@ -45,29 +45,39 @@ The branch is merged and its row is gone per the rule above. These outlived it a
   would be a format change and has not been made.
 - **Branch `restore-semantics`** is fully contained in `main` and safe to delete.
 
-### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
+### `art-first-paint` - ACTIVE, proposal written, not started (folds in `art-fade-fix`)
 
-**Status:** diagnosed 2026-08-10, not started. Owner decision: do it after the upgrade merges, as its own
-branch, so the Capacitor diff stays purely toolchain for Codex.
+**Status:** branch created 2026-08-13. Proposal
+[proposals/art-first-paint.md](./proposals/art-first-paint.md), **Standard risk, awaiting review**.
+Nothing built yet.
 
-**Symptom:** card art appears to reload on every pillar switch.
+**One symptom, TWO unrelated causes.** The owner reported images popping in - "a quick flash of missing
+image then back in immediately", worst on avatars. The previously queued `art-fade-fix` had diagnosed
+one of them; the other was found on 2026-08-13 and is the one that produces the *missing-image* flash.
 
-**It is not a caching failure and not an upgrade regression.** `git diff main..capacitor-8` touches no art
-file. `artCache.resolved` (`src/store/artCache.js:42`) is a module-level session memo that survives pillar
-switches, and `peek()` returns it synchronously, so nothing is re-downloaded.
+**Cause 1 - the cache index is cold at every launch (new).** `peek()` is synchronous, so it can only
+consult the in-memory `resolved` memo (`artCache.js:69`). That memo is written only by the async
+`resolve()` and `initArtCache()` never seeds it, so it is EMPTY at every launch. The first sighting of
+each key therefore has no `src`, and `ArtImg` renders nothing (`ArtImage.jsx:52`) while the monogram
+disc shows through. The bytes were on disk the whole time; the knowledge that they were is what the app
+discards. **Native-only** - on web `peek` answers immediately - and **once per key per launch**, since
+`resolved` survives navigation.
 
-**Actual cause:** `ArtImage` holds `loaded` in COMPONENT state (`src/components/ArtImage.jsx:68`). A pillar
-switch unmounts the pillar, so on return `loaded` resets, `shown` is false, and line 82 paints the `<img>`
-at `opacity: 0` behind a shimmer with a `.3s` transition - for every card, every time. The bytes are local;
-only the animation re-runs. Faster post-upgrade navigation made it more noticeable.
+**Cause 2 - the fade replays on every remount (diagnosed 2026-08-10).** `ArtImage` holds `loaded` in
+COMPONENT state (`ArtImage.jsx:68`), so a pillar switch resets it and the `<img>` paints at `opacity:0`
+behind a shimmer with a `.3s` transition, every time. Measured on device (build 218): deck panels black
+at t=0, painted by 400ms, byte-identical at 400ms and 1.9s - too fast and too consistent for a CDN
+round trip.
 
-**Measured on device (Pixel 9 Pro XL, build 218):** returning to Home with art already cached, deck panels
-are black at t=0, fully painted by 400ms, byte-identical at 400ms and 1.9s. A CDN round trip would be
-neither that fast nor that consistent.
+**Proposed:** an optimistic local candidate from `peek` (the URI is derivable from the key; `resolve()`
+only goes async to VERIFY, and the existing `onError` chain already handles a miss), plus a
+module-level `painted` set so a key already shown this session mounts at full opacity.
 
-**Next step:** when `peek()` already supplies the candidate at first render, or the `<img>` reports
-`complete` on mount, paint at full opacity with no shimmer and no transition. Guard against the reverse
-regression - a genuine first load must still shimmer and fade - and cover both in `artSource`-level tests.
+**The risk to hold on to:** the reverse regression. A genuine first load must still shimmer and fade, or
+a slow CDN fetch will look like a broken image. Increment 0 measures fresh-install error churn before
+Increment 1 relies on the optimistic path.
+
+**Next step:** Codex review of the proposal, then Increment 0.
 
 ### `android-16kb-compat` - DO NOT MERGE
 
