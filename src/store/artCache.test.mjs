@@ -210,14 +210,24 @@ test('scratch orphans are swept on sweepScratch() and on clear()', async () => {
   assert.ok(!fake.files.has(`art/${KEY}`), 'clear() removed art/ too');
 });
 
-test('quarantine: first offence deletes + re-resolves (fresh); repeat offence returns remote, no download', async () => {
-  const fake = fakeIo({ art: { [`art/${KEY}`]: 100 }, remote: { [REMOTE(KEY)]: { ok: true, size: 100 } } });
+// The fixture is a SIZE-MISMATCHED file: a valid one now takes the verify-before-quarantine path
+// (see the boot-race section below), so the delete + retry-once contract is proved on bad bytes.
+test('quarantine: a genuinely bad file is deleted and re-downloaded once (fresh)', async () => {
+  const fake = fakeIo({ art: { [`art/${KEY}`]: 60 }, remote: { [REMOTE(KEY)]: { ok: true, size: 100 } } });
   const { cache } = make({ fake });
-  await cache.resolve(KEY);
   const first = await cache.quarantine(KEY);
-  assert.equal(first.kind, 'local');
+  assert.deepEqual(first, localCand(KEY), 'the sanctioned refill re-downloaded the object');
+  assert.ok(fake.ops.includes(`delete art/${KEY}`), 'the untrusted bytes were removed');
+  assert.equal(fake.ops.filter((o) => o.startsWith('download ')).length, 1);
+});
+
+test('quarantine: repeat offence on a genuinely bad key returns remote, no further download', async () => {
+  const fake = fakeIo({ art: { [`art/${KEY}`]: 60 }, remote: { [REMOTE(KEY)]: { ok: false } } });
+  const { cache } = make({ fake });
+  assert.deepEqual(await cache.quarantine(KEY), remoteCand(KEY), 'delete + retry, the download misses');
   const dloads = fake.ops.filter((o) => o.startsWith('download ')).length;
-  const second = await cache.quarantine(KEY);
+  assert.equal(dloads, 1);
+  const second = await cache.quarantine(KEY);   // the file is gone and the retried slot is spent
   assert.deepEqual(second, remoteCand(KEY));
   assert.equal(fake.ops.filter((o) => o.startsWith('download ')).length, dloads, 'no further download on repeat');
 });
@@ -290,7 +300,9 @@ test('a clear() DURING the seeding list wins: nothing repopulates the wiped memo
 /* ------------------------------------------------------------------ */
 
 test('painted is marked, read, and evicted by quarantine and clear', async () => {
-  const { cache } = make({ fake: fakeIo({ art: { [`art/${KEY}`]: 100, [`art/${KEY2}`]: 200 } }) });
+  // KEY is size-mismatched so quarantine takes the delete path: a VALID file now survives its
+  // quarantine with painted intact (proved in the boot-race section below).
+  const { cache } = make({ fake: fakeIo({ art: { [`art/${KEY}`]: 60, [`art/${KEY2}`]: 200 } }) });
   assert.equal(cache.hasPainted(KEY), false, 'nothing is painted at boot');
 
   cache.markPainted(KEY);
@@ -312,4 +324,51 @@ test('markPainted ignores a null key rather than growing the set', async () => {
   cache.markPainted(null);
   cache.markPainted(undefined);
   assert.equal(cache._debug.painted.size, 0);
+});
+
+/* ------------------------------------------------------------------ */
+/* Verify before quarantine - the boot-race fix                        */
+/* ------------------------------------------------------------------ */
+
+test('quarantine on a VALID file keeps it: local candidate back, no delete, painted intact, no download', async () => {
+  const fake = fakeIo({ art: { [`art/${KEY}`]: 100 } });   // exact manifest size: the load failure lied
+  const { cache } = make({ fake });
+  cache.markPainted(KEY);
+  const out = await cache.quarantine(KEY);
+  assert.deepEqual(out, localCand(KEY), 'the same local candidate returns for a remount retry');
+  assert.ok(!fake.ops.some((o) => o.startsWith('delete ')), 'the valid file was never deleted');
+  assert.equal(cache.hasPainted(KEY), true, 'no re-download is happening, so the no-refade state survives');
+  assert.ok(!fake.ops.some((o) => o.startsWith('download ')), 'no bandwidth spent on a file we already have');
+});
+
+test('the transient retry is bounded: the third quarantine returns remote and the file SURVIVES', async () => {
+  const fake = fakeIo({ art: { [`art/${KEY}`]: 100 } });
+  const { cache } = make({ fake });
+  assert.deepEqual(await cache.quarantine(KEY), localCand(KEY));
+  assert.deepEqual(await cache.quarantine(KEY), localCand(KEY));
+  assert.deepEqual(await cache.quarantine(KEY), remoteCand(KEY), 'past the cap this session falls back to remote');
+  assert.ok(fake.files.has(`art/${KEY}`), 'the valid file is kept for the next session');
+  assert.ok(!fake.ops.some((o) => o.startsWith('delete ')), 'never deleted');
+  assert.ok(!fake.ops.some((o) => o.startsWith('download ')), 'never re-downloaded');
+});
+
+test('quarantine on a MISSING file still takes the delete + retry-once path', async () => {
+  const fake = fakeIo({ remote: { [REMOTE(KEY)]: { ok: true, size: 100 } } });   // nothing on disk
+  const { cache } = make({ fake });
+  const out = await cache.quarantine(KEY);
+  assert.deepEqual(out, localCand(KEY), 'the sanctioned refill downloaded the object');
+  assert.equal(fake.ops.filter((o) => o.startsWith('download ')).length, 1);
+});
+
+test('clear() during the verification stat wins: staleResult, nothing deleted by quarantine, nothing seeded', async () => {
+  const fake = fakeIo({ art: { [`art/${KEY}`]: 100 } });
+  const g = fake.gate('stat');
+  const { cache } = make({ fake });
+  const p = cache.quarantine(KEY);
+  await g.entered;                // the verification stat is provably in flight
+  await cache.clear();            // epoch++ while quarantine is parked in its stat
+  g.release();
+  assert.deepEqual(await p, remoteCand(KEY), 'the cleared quarantine degrades to remote');
+  assert.ok(!fake.ops.some((o) => o === `delete art/${KEY}`), 'quarantine itself wrote nothing');
+  assert.equal(cache._debug.resolved.size, 0, 'nothing seeded into the new epoch');
 });

@@ -172,6 +172,32 @@ quarantine case is easy to forget entirely - which is why it is a named gate rat
 
 **Evidence that would change the decision:** a materially expensive boot scan sends this to option C.
 
+## Checkpoint - Increment 2 found the design wrong (2026-08-13, owner-approved scope addition)
+
+The device pass on build 223 stopped early: the first Home paint showed Chromium's broken-image glyph
+on the deck tiles, then recovered. The owner independently reported the same flash on avatars, plus
+Collection thumbnails that "load every time", plus a vertical streak on Deck Library cards - and
+correctly dated the flashes to the Capacitor 8 upgrade, before this branch.
+
+**The mechanism, verified.** Loads of `_capacitor_file_` URLs can fail TRANSIENTLY during early boot -
+the Capacitor 8 local server is not ready; the file is fine. Seeding did not create that race, but it
+maximises exposure: every cached image now presents a local URL on the very first frame. And the
+boundary's response to `onError` is the design flaw this checkpoint corrects: it treats every local
+failure as "the file is bad", quarantines it, DELETES it and re-downloads - so each cold launch was
+destroying good cache entries. Worse, quarantine (correctly) evicts `painted`, so the false
+quarantines kept resetting the no-refade fix, which is exactly the recurring shimmer the owner saw on
+Collection.
+
+**Approved additions (owner, 2026-08-13):**
+
+1. **Verify before quarantine.** On a local-candidate `onError`, stat + `validSize` first. A VALID
+   file means a transient load failure: no deletion, `painted` kept, the same candidate retried
+   (bounded per key per session; past the bound, fall to the remote candidate WITHOUT deleting the
+   valid file). Only a missing or invalid file takes today's quarantine path.
+2. **The shimmer sweep animates without a transform.** `cx-art-shimmer::after` translateX inside
+   `overflow: hidden` is the repo's known WebView paint hazard; the streak is its partial frame.
+3. Seeding stays as approved - with (1), the boot race costs a retry rather than a deletion.
+
 ## Approval record
 
 | Date | Who | Disposition |
@@ -179,4 +205,6 @@ quarantine case is easy to forget entirely - which is why it is a named gate rat
 | 2026-08-13 | Owner | Both causes on one branch; no over-engineering; two review rounds maximum |
 | 2026-08-13 | Codex | **Rev 1: Changes required** - 2 Majors, both valid |
 | 2026-08-13 | Claude | **Rev 2** - both fixes replaced; final round |
+| 2026-08-13 | Codex | **Rev 2: APPROVED** with a final implementation contract |
+| 2026-08-13 | Owner | **Checkpoint approved**: verify-before-quarantine + non-transform shimmer added after the device pass exposed the onError assumption |
 | | Owner | Pending approval |

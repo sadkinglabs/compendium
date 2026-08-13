@@ -509,13 +509,18 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 @keyframes cxpop { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 
 /* Card-art loading shimmer (Phase 2): a subtle gold sheen over the deterministic fallback while the
-   resolved image loads, so a cold/loading card reads as "loading", not "broken". Used by ArtImage. */
-@keyframes cx-art-sheen { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
-.cx-art-shimmer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.cx-art-shimmer::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(100deg, transparent 25%, rgba(220,184,111,.12) 50%, transparent 75%);
-  transform: translateX(-100%); animation: cx-art-sheen 1.4s ease-in-out infinite;
+   resolved image loads, so a cold/loading card reads as "loading", not "broken". Used by ArtImage.
+   The sweep animates background-position over an oversized gradient - NEVER an animated transform:
+   a translating layer inside the overflow:hidden art frame partially composites on Android WebView
+   and paints a vertical streak (same hazard family as the transform+overflow-scroll sheet gotcha -
+   see the .cx-ofm-panel note below). The band is 20% of the 250% layer = the same half-width band
+   the old translateX sweep drew, travelling edge-to-edge on the same 1.4s ease-in-out beat. */
+@keyframes cx-art-sheen { 0% { background-position: 100% 0; } 100% { background-position: 0% 0; } }
+.cx-art-shimmer {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 40%, rgba(220,184,111,.12) 50%, transparent 60%) no-repeat;
+  background-size: 250% 100%; background-position: 100% 0;
+  animation: cx-art-sheen 1.4s ease-in-out infinite;
 }
 
 /* Header overflow menu (OverflowMenu.jsx). Glyphs are sized to the FAB-menu language here as a

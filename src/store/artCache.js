@@ -41,6 +41,9 @@ export function createArtCache(deps) {
   const inflight = new Map();   // key -> { epoch, promise }  (single-flight; joinable only within one epoch)
   const resolved = new Map();   // key -> {kind,src}          (session memo; feeds peek)
   const retried  = new Set();   // keys quarantined+retried once this session
+  const transientRetries = new Map();   // key -> count of verified-transient quarantine retries (on device
+                                        // the _capacitor_file_ server can refuse loads during early boot
+                                        // while the file is fine; bounded so a boot race cannot loop forever)
   const painted  = new Set();   // keys whose <img> completed a decode this session (feeds the no-refade
                                 // decision; quarantine/clear evict, so a genuine re-download shimmers)
   let   epoch    = 0;           // cache generation; clear() increments it
@@ -186,11 +189,29 @@ export function createArtCache(deps) {
     return { done, total: keys.length, stopped };
   }
 
-  /** onError for a LOCAL candidate: delete + retry once (fresh download), then fall back to remote.
-   *  Epoch-checked; a clear() during the locked delete yields staleResult without re-resolving. */
+  /** onError for a LOCAL candidate. The load failure does not prove the file is bad: on device the
+   *  _capacitor_file_ server can refuse loads during early boot while the bytes on disk are perfect,
+   *  and deleting on that evidence alone cost a fresh download of every deck art on cold launch. So
+   *  verify first: a file still matching the manifest is handed back for a bounded remount retry;
+   *  only a missing or wrong-size file gets the delete + retry-once + remote fallback. Epoch-checked
+   *  after every await; a clear() mid-verification wins with staleResult and no writes. */
   async function quarantine(key) {
     if (!key || !isNative()) return staleResult(key);
     const reqEpoch = epoch;
+    const st = await io.stat(`art/${key}`).catch(() => null);           // a throwing stat reads as missing:
+                                                                        // fail toward today's quarantine, never reject
+    if (reqEpoch !== epoch) return staleResult(key);                    // cleared mid-stat: no writes, no seeding
+    if (st && validSize(key, st.size)) {
+      // The file is exactly what the manifest promised, so the failure was transient. Keep the file,
+      // keep painted (nothing is re-downloading, so a shimmer would lie), keep the once-per-session
+      // retried slot; return the local candidate so the hook remounts the <img> and retries the load.
+      // Past two retries this session the key falls back to remote WITHOUT deleting - the file is
+      // valid and the next session serves it.
+      const n = (transientRetries.get(key) || 0) + 1;
+      transientRetries.set(key, n);
+      if (n > 2) return staleResult(key);
+      return { kind: 'local', src: convertFileSrc(`art/${key}`) };
+    }
     resolved.delete(key);
     painted.delete(key);   // the re-download is a genuine first load again, so it must shimmer
     await withPromotionLock(() => (reqEpoch === epoch ? io.delete(`art/${key}`).catch(noop) : null));
@@ -206,6 +227,7 @@ export function createArtCache(deps) {
     inflight.clear();
     resolved.clear();
     retried.clear();
+    transientRetries.clear();   // the files are gone; post-clear failures are a new story, not this one
     painted.clear();       // post-clear loads are first loads; suppressing their shimmer would hide them
     await withPromotionLock(() => io.deleteTree('art').catch(noop));
     // Best-effort scratch sweep: remove ordinary orphaned temps too (a stale flight that lands after
@@ -233,6 +255,6 @@ export function createArtCache(deps) {
   return {
     resolve, download, downloadAll, quarantine, clear, stats, peek, sweepScratch,
     seedFromDisk, hasPainted, markPainted,
-    _debug: { get epoch() { return epoch; }, inflight, resolved, retried, painted },
+    _debug: { get epoch() { return epoch; }, inflight, resolved, retried, painted, transientRetries },
   };
 }
