@@ -88,7 +88,22 @@ rejecting this was false). Plus a `painted` set consulted by **`CardArt`**, inva
 **The risk to hold on to:** the reverse regression. A genuine first load - including a re-download
 after a quarantine - must still shimmer, or a slow CDN fetch will look like a broken image.
 
-**Next step:** Codex round 2, which is the final round per owner instruction.
+**BUILT AND DEVICE-VERIFIED (build 224, owner-confirmed live).** Increment 1 plus an owner-approved
+checkpoint: the 223 device pass exposed that early-boot `_capacitor_file_` loads can fail transiently
+and the boundary deleted good files on that evidence - `quarantine()` now verifies against the
+manifest first. The shimmer sweep animates `background-position` instead of a transform, which also
+cured the Deck Library streak (owner-confirmed). Both fixes fail-first verified.
+
+**Follow-ups recorded, not built:**
+
+- **Cards resize slightly on pillar change** (owner, 2026-08-13): plausibly `ArtImg`, which reserves
+  no box - it renders nothing until a source exists, so the tile lays out without the image and
+  adapts when it arrives. `CardArt` reserves via `aspect-ratio` and does not do this. Small,
+  self-contained; wants its own look.
+- The pillar-slide flag closed: the streak was the shimmer transform after all.
+
+**Next step:** Codex implementation review of the diff - a VERIFICATION pass against the approved
+contract and checkpoint, one round, defects only - then merge.
 
 ### `android-16kb-compat` - DO NOT MERGE
 

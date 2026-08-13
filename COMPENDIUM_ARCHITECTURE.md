@@ -148,6 +148,26 @@ write, and finishes an interrupted replacement idempotently.
 profile can be given it, and deleting the holder transfers it in the same transaction. See
 `docs/proposals/restore-semantics.md`.
 
+### The art boundary's first-frame contract
+
+Card art resolves only through the art boundary (`useArtSource` / `CardArt` / `ArtImg` over
+`artCache`), and since `art-first-paint` that boundary makes three promises:
+
+- **The cache index is warmed at boot.** `initArtCache()` seeds the in-memory memo from one
+  directory listing, admitting a file only when the manifest knows its key AND its on-disk size
+  matches - the same fail-closed validation `resolve()` applies per file. Cached art therefore
+  paints on the first frame after a relaunch instead of waiting out a per-image stat.
+- **A load failure is not proof the file is bad.** On device, `_capacitor_file_` loads can fail
+  transiently during early boot while the bytes are perfect. `quarantine()` verifies the file
+  against the manifest FIRST: a valid file is retried (bounded per session) and never deleted; only
+  a missing or wrong-size file is quarantined, deleted and re-fetched. Deleting on `onError` alone
+  destroyed good cache entries on every cold launch before this.
+- **An image fades in once per session.** `artCache` keeps a `painted` set (evicted by quarantine
+  and clear, so genuine re-downloads still shimmer); the display decision is `paintState()` in
+  `artSource.js`, pure and tested. The loading shimmer animates `background-position`, never a
+  transform - a translating layer inside an `overflow: hidden` art frame tears on the Android
+  WebView and paints as a streak.
+
 ### Profile and persistence model
 
 **A. Profile as the top-level partition.**
