@@ -32,7 +32,7 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 - **Branch `capacitor-8` still exists locally** and is fully contained in `main` (0 unique commits
   after the merge), so it is safe to delete whenever.
 
-### `restore-semantics` - ALL 11 INCREMENTS BUILT AND DEVICE-VERIFIED
+### `restore-semantics` - COMPLETE: Codex-APPROVED, device-verified on the final build, ready to merge
 
 **Status:** ACTIVE. Proposal [proposals/restore-semantics.md](./proposals/restore-semantics.md)
 **Rev 4, Codex APPROVED** after three rounds (2 Blockers, then 2 Blockers, then 1 Major + 2 Minors).
@@ -41,7 +41,7 @@ Branch `restore-semantics`, nothing pushed.
 **Owner decision:** whole-app **Restore REPLACES**; single-profile **Import ADDS**; Primary is a
 transferable role.
 
-**Built and gated (test:query 1002, all 12 gates green):**
+**Built and gated (test:query 1014, all 12 gates green):**
 
 | # | Increment | Note |
 |---|---|---|
@@ -84,14 +84,36 @@ minified release APK and the REAL native SQLite, and `pm remove-user` reverses i
   marginalia - untouched. `check:smoke` 8/8 on build 221 before the pass, with `reconcileRestore()`
   now running first at every boot.
 
+**Codex reviewed the IMPLEMENTATION over three rounds and APPROVED it** (2026-08-13). One Blocker -
+a post-commit failure was reported as a failed restore, and the retry it invited could have destroyed
+the recovery point. Then a Major of my own making: the round-1 guard retired the journal even when
+active reconciliation had not completed, making the "reopen to finish" promise impossible.
+
+**Final device pass on build 222** (Pixel 9 Pro XL, **Android 17 / API 37**, WebView 150.0.7871.181,
+release/minified/signed/arm64) in disposable user 13: Replace destroyed Beta with no `(imported)`
+suffixes, Undo brought it back, kill-mid-replace left a coherent state with the recovery point intact,
+zero fatal lines. `check:smoke` 8/8. The owner's profile was never involved and was re-verified
+untouched.
+
+**The browser gate was WITHDRAWN as my error.** There is no web deploy target and the constitution
+calls the browser the DEVELOPMENT runtime; I had written a browser release gate into my own proposal
+and Codex reviewed against it. The fail-closed code stays; verifying it in a browser is not a release
+condition.
+
+**Follow-up, presentation only:** "Return to previous state" sits below the fold of the Settings sheet
+on a 6.8-inch phone. Fine for an ordinary setting, worth reconsidering for the one control that undoes
+a destructive operation.
+
 **Owner decisions recorded during the build:**
 
 - Open matches are not precious, so orphaned `cx-ongoing-match:<pid>` keys stay as harmless litter.
   **The `resume` row still travels inside the archive** - if backups should not carry in-progress
   matches at all, that is a format change and has not been made.
 
-**Carried, not closed:** `App.jsx` still has no test coverage and Increment 8 put real branching in
-it. TalkBack announcement order is asserted by construction, not observed.
+**Carried, not closed:** the confirm screen's DECISIONS are now covered - `restoreFlow.js` holds
+routing, the destructive gate, outcome messaging and failure, with the inline copies deleted so the 14
+tests describe the shipped screen. What remains uncovered is `App.jsx`'s markup and effects, which is
+the older, broader gap rather than this branch's. TalkBack announcement order is asserted by construction, not observed.
 
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
 

@@ -359,3 +359,26 @@ could be entered. This remains genuinely open.
 API 37 is exactly where `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` ceases to exist. That property
 was already removed, so nothing regresses - but every earlier device claim on this branch and on
 `capacitor-8` was made against Android 16, and this is the first evidence from 17.
+
+### COMPLETED 2026-08-13 - the destructive pass on build 222
+
+Run in disposable Android user 13, removed afterwards. The owner's profile was never involved.
+
+- **Replace.** Device: Sorcerer + Alpha + Beta. Archive: Sorcerer + Alpha. After: **two profiles, Beta
+  gone, zero `(imported)` suffixes** - replaced rather than merged, with the dedupe correctly absent.
+- **Confirm copy, verbatim:** "Everything currently in Compendium will be replaced by this backup. 3
+  profiles now on this device, holding 0 decks and 0 matches, will be removed. A safety copy is taken
+  first, so you can return to this state."
+- **Undo.** The affordance described the pre-replace state correctly (3 profiles, timestamped),
+  routed through its own destructive confirm, and **Beta came back** - three profiles.
+- **Killed mid-replace** (force-stop ~300ms after confirming). Relaunch showed a **coherent** state -
+  fully replaced, never half - the recovery point was published and still described the pre-replace
+  state, and boot was clean.
+- **Zero** FATAL / "Restore failed" / "reconciliation failed" lines across the whole pass.
+
+**A usability finding, not a defect.** "Return to previous state" sits **below the fold** of the
+Settings sheet on a 6.8-inch phone: reaching it needs a scroll, and my first two attempts to press it
+landed on the backdrop and closed the sheet instead. For an ordinary setting that is nothing; for the
+one control that undoes a destructive operation it is worth reconsidering placement. Recorded as
+follow-up work rather than fixed here, because it is presentation rather than correctness and this
+branch is closed for review.
