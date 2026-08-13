@@ -146,3 +146,98 @@ Lowest confidence first. **Attack these before the rest.**
   **The `resume` row still travels inside the archive** - removing it would be a format change and
   has not been made.
 - **No web runtime pass.** The durability probe and IndexedDB backing are unit-tested only.
+
+---
+
+# Round 1 disposition - response (2026-08-13)
+
+All five findings addressed. Two gaps you named are **not** fully closed and are stated as such at the
+end rather than counted as done.
+
+## Blocker - post-commit failure could destroy the recovery point. FIXED.
+
+Confirmed exactly as traced, and worse than a wording problem. The comment directly above that code
+already read *"from here the operation is finished, not failed"* - true in prose, false in code,
+because `promote()` and the journal retirement were unguarded. That is the same shape as the
+fail-open build gates on `capacitor-8`: **a control that reads correctly and protects nothing.**
+
+Your chain is the part that makes it severe. `planReplace` writes the journal with `INSERT OR
+REPLACE`, so the retry the error message invited would capture the **already-replaced** state as its
+candidate, overwrite the row naming the real pre-restore one, and leave the user's only copy of what
+they had as an orphan for the next sweep.
+
+**Two guards:**
+
+1. **Past the commit there is no failure, only finished or DEFERRED.** `promote` and the journal
+   delete are guarded; the result carries `settled: false`, and startup reconciliation completes it
+   from the journal row - which is why the row is retired last.
+2. **A pending journal row REFUSES a second replacement** (`ReplaceRefused('reconciliation-pending')`).
+   A row still present means a previous replacement committed without finishing, so overwriting it is
+   precisely the data-loss step. The way forward is a relaunch, which reconciles.
+
+**Tests, as required - injected at pointer publication and at journal retirement, each followed by an
+immediate retry:**
+
+| Test | Removing the fix |
+|---|---|
+| pointer-publication failure is DEFERRED, not a rejection | fails |
+| journal-retirement failure is DEFERRED, not a rejection | fails |
+| after a deferred replacement a RETRY is refused and the recovery point survives | fails |
+| and the next boot makes that deferred recovery point reachable | fails |
+
+Removing the post-commit guard fails four; removing the pending-journal guard fails exactly the retry
+test.
+
+**Worth flagging, because it nearly produced a false pass:** my first injection matched on SQL text
+and aborted the **commit** rather than the retirement - testing a pre-commit failure, which correctly
+rejects. Both predicates are now pinned to the single-statement post-commit writes, because
+`RESTORE_PENDING_KEY` and `DELETE FROM catalog_meta` both also appear inside the replacement
+transaction itself.
+
+## Major - routing was an untested App.jsx responsibility. BOUNDARY FIXED, coverage NOT as asked.
+
+`restoreAll` now **refuses a whole-app archive outright** (`ReplaceRefused('whole-app-archive')`), so
+a dropped or renamed `operation` field cannot silently reinstate additive whole-app restore. The
+classifier decides which operation a file authorises; the executor now refuses to be the wrong one.
+
+That refusal retired **thirteen tests** asserting the superseded additive contract. They are
+**deleted, not rewritten to pass**, and the file carries an audit trail mapping every property they
+protected to where it is now asserted on the replace path. One - *"NOTHING is deleted by a restore"* -
+is explicitly **RETIRED**, because the owner reversed that property and the opposite is now asserted.
+You warned that rewriting tests to match new behaviour is where a regression hides, so that mapping is
+in the source rather than in this packet.
+
+**Not closed:** there is still no component test executing the UI-to-executor decision or Undo. I
+consider the boundary refusal the stronger control, but it is not the coverage you asked for.
+
+## Major - the web fail-closed experience did not exist. IMPLEMENTED.
+
+You were right that `bindExternalArchive` had no production caller. The policy is now asked **before**
+the button is offered; when durability is refused the destructive button is **disabled**, the reason
+is announced via `role="alert"` rather than left as a dead control, and the remedy is a real flow:
+choose a backup, bind it, and it is re-checked against the **frozen capture** inside the session.
+
+**Not closed:** no web runtime pass. This path is unit-tested and reasoned, never executed in a
+browser.
+
+## Minors - both fixed
+
+- **`verify-archive.mjs`** ran the additive path and reported the surviving starter profile as
+  expected. It now runs `replaceAll` through the real session, and **fails** if the starter survives.
+  It also reports whether the recovery point was written and whether the operation settled.
+- **`COMPENDIUM_DATA_MODEL.md`** placed the journal and pointer under Preferences. They are
+  `catalog_meta` rows, now stated with the reason: the journal has to commit in the **same
+  transaction** as the replacement, which is only possible inside the database.
+
+## Gates
+
+`test:query` **999**, plus `test:codex` 10, `test:app` 17, `test:ui` 185, `test:catalog` 124,
+`test:docs` 3, `test:recog` 13, `check:types`, `check:cycles`, `check:source`, `build`, `check:docs`.
+The count fell from 1,004 because thirteen superseded tests were retired and eight added.
+
+## Still open, stated plainly
+
+1. **No component test for UI routing or Undo.** Boundary-enforced instead.
+2. **No web runtime pass.** The fail-closed flow has never run in a browser.
+3. **Device evidence is from the previous build.** The fixes above are not re-verified on hardware;
+   the destructive path was last exercised at build 221, before this round.
