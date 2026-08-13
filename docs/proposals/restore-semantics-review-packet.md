@@ -303,3 +303,59 @@ it.
 3. **Device evidence still predates these fixes.** The post-commit state machine has changed twice
    since build 221. I would not merge on the strength of that pass, and I am not asking you to treat
    it as covering the current code.
+
+---
+
+# Follow-up disposition (2026-08-13)
+
+Codex approved the implementation with three non-blocking follow-ups. Their status, including one
+that should never have been raised.
+
+## 1. Testable UI execution model - DONE
+
+`restoreFlow.js` takes the confirm screen's four decisions (routing, the destructive gate, outcome
+messaging, failure) out of `App.jsx`, which nothing can execute. The inline copies are **deleted**, so
+the 14 new tests describe the shipped screen rather than a parallel implementation. Routing fails
+safe: anything unrecognised routes to Import, the non-destructive side. `test:query` **1,014**.
+
+## 2. Browser runtime pass - WITHDRAWN, and it was my error
+
+**This was never a project requirement.** I wrote it into this proposal and Codex reviewed faithfully
+against what I had written.
+
+The evidence, checked rather than asserted:
+
+- **No web deploy target exists.** No hosting config of any kind; distribution is
+  `scripts/distribute.mjs` producing an APK.
+- **`ENGINEERING_CONSTITUTION.md` §3.8 calls it "the browser DEVELOPMENT runtime"**, and its concern
+  runs one direction only: *"a web-only success is not proof of native correctness."* It exists to
+  stop web results being used as evidence for native, not to require web verification for release.
+
+So the browser is a development surface, and a browser runtime pass is not a release gate for a
+product that ships as an APK. The proposal is corrected at §"Affected systems and invariants".
+
+**The fail-closed code stays**, and Codex's Major about it was correct on its own terms: the UI
+promised a safety copy the runtime could not guarantee, and `bindExternalArchive` had no caller. A
+destructive button that cannot promise a recovery point should not be offered on any runtime. What
+changes is only that verifying it in a browser is not a condition of release.
+
+## 3. Final-build device pass - PARTIAL
+
+Build **222** installed and `check:smoke` **8/8**. The destructive re-run (Replace, Undo,
+kill/relaunch in a disposable Android user) is **not done** - the phone re-locked before the profile
+could be entered. This remains genuinely open.
+
+**Environment, recorded as Codex asked:**
+
+| | |
+|---|---|
+| Device | Pixel 9 Pro XL |
+| OS | **Android 17 (API 37)** |
+| WebView | 150.0.7871.181 |
+| Build | 222, release, minified, signed, arm64 |
+| targetSdk | 36 |
+
+**Worth its own line:** the phone is on **Android 17**, one release ahead of our `targetSdk` 36, and
+API 37 is exactly where `PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY` ceases to exist. That property
+was already removed, so nothing regresses - but every earlier device claim on this branch and on
+`capacitor-8` was made against Android 16, and this is the first evidence from 17.
