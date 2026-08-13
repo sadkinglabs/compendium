@@ -241,3 +241,65 @@ The count fell from 1,004 because thirteen superseded tests were retired and eig
 2. **No web runtime pass.** The fail-closed flow has never run in a browser.
 3. **Device evidence is from the previous build.** The fixes above are not re-verified on hardware;
    the destructive path was last exercised at build 221, before this round.
+
+---
+
+# Round 2 disposition - response (2026-08-13)
+
+All three findings addressed. The Major was a hole my own round-1 guard created.
+
+## Major - a failed active reconciliation retired its own retry journal. FIXED.
+
+Traced exactly right. I guarded `promote()` failing and missed the mirror image: `switchProfile`
+fails, publication then **succeeds**, and the journal row was deleted anyway - taking with it the only
+record of `intendedActiveId`.
+
+The consequence is the one that matters: the next boot finds nothing pending, cannot adopt the
+archive's active profile, and falls back to whichever restored profile sorts first - while the toast
+has just promised that reopening will finish the job. **The promise was made durable by a row the same
+function then removed.**
+
+**The journal is the retry ticket, so it is now torn up only when there is nothing left to retry.**
+Retirement requires the active profile to have settled, and `settled` now requires publication AND
+reconciliation AND retirement.
+
+That third condition is not pedantry. A lingering journal row **refuses the next replacement** until a
+relaunch clears it, so leaving one is a reason to tell the user to reopen, not to call the operation
+done. Tightening it correctly broke the journal-retirement test, which had been asserting the looser
+meaning - that failure was the fix working.
+
+**New test, as required:** an injected Preferences failure fails `switchProfile` without disturbing
+the commit; the test asserts `activeReconciled: false`, `published: true` (the precondition that used
+to trigger the bug), the journal surviving with the right `intendedActiveId`, and then that
+`reconcileRestore()` adopts the archive's profile and only then retires the row.
+
+**Fail-first:** retire unconditionally again and exactly that test fails - journal gone, startup
+unable to adopt the archive's profile.
+
+## Minor - the UI failed open while the policy loaded. FIXED.
+
+`blocked` was only computed once `policy` resolved, so the destructive button was live for the width
+of an async import. **Unknown is not permission:** unresolved is now blocked, and the button reads
+"Checking safety copy..." rather than presenting itself as ready.
+
+## Minor - the retired additive executor is DELETED. FIXED.
+
+Roughly ninety lines of unreachable destructive-adjacent code and its now-false documentation were
+still sitting behind the guard after its tests were deliberately retired. Removed, along with four
+newly-dead imports. The audit trail stays in `backupService.test.mjs`, where a reader will look for
+it.
+
+## Gates
+
+`test:query` **1,000**, plus `test:codex` 10, `test:app` 17, `test:ui` 185, `test:catalog` 124,
+`test:docs` 3, `test:recog` 13, `check:types`, `check:cycles`, `check:source`, `build`, `check:docs`.
+
+## Still open - unchanged from round 1, and not claimed as done
+
+1. **No component test for UI routing, Undo, deferred messaging or policy loading.** Enforcement sits
+   at the service boundary instead. The policy-loading fix above is itself untested at the UI level,
+   which is the same gap making itself felt again.
+2. **No web runtime pass.** The fail-closed flow has never executed in a browser.
+3. **Device evidence still predates these fixes.** The post-commit state machine has changed twice
+   since build 221. I would not merge on the strength of that pass, and I am not asking you to treat
+   it as covering the current code.
