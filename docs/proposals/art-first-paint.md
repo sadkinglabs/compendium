@@ -7,6 +7,12 @@ change, no user data touched, no new persistence of user content.
 
 Owner/approver: project owner. Author: Claude Code. Reviewer: Codex.
 
+> **REVIEW BUDGET: TWO ROUNDS MAXIMUM, and ideally one.** This is a cosmetic rendering fix on a
+> well-understood boundary - no data at risk, no schema, no destructive path, fully revertible by
+> deleting two small changes. Owner instruction: do not over-engineer it. Raise what would break the
+> app or mislead a user; leave anything that is merely tidier. If a finding would make the change
+> larger rather than safer, say so and let the owner weigh it rather than treating it as required.
+
 Branch `art-first-paint`, folding in the previously queued `art-fade-fix`. The two were logged as one
 symptom and are two distinct causes; fixing either alone leaves the complaint standing.
 
@@ -98,7 +104,8 @@ cost is bounded and the machinery is not new.
 
 **Why B might be wrong, honestly:** on a fresh install with no art downloaded, EVERY key guesses wrong
 and every image fires an error before falling back. That is a lot of wasted `<img>` churn on exactly
-the device state that is already slowest. Increment 1 measures it before Increment 2 relies on it.
+the device state that is already slowest. Increment 2 observes it on a cleared cache, and option C is
+the pre-chosen fallback if it is material.
 
 ## Proposed design
 
@@ -115,13 +122,18 @@ the device state that is already slowest. Increment 1 measures it before Increme
 
 ## Implementation plan
 
+Two changes and one device pass. Deliberately not staged further - each piece is a few lines, and
+gating them separately would cost more ceremony than the change is worth.
+
 | # | Increment | Gate |
 |---|---|---|
-| 0 | Measure: instrument a debug build to count first-frame misses and error-path loads on a warm cache and on a fresh install | Numbers recorded in this document before anything is changed |
-| 1 | Optimistic `peek` + tests | Unit: warm-cache key paints on first frame; unknown key still reaches the fallback via `onError`; zero-image unchanged |
-| 2 | `painted` set + tests | Unit: a painted key mounts at full opacity; an unpainted one shimmers and fades |
-| 3 | Device pass | Relaunch with warm cache: no gap. Fresh install: loading affordance still present |
-| 4 | Docs | `COMPENDIUM_ARCHITECTURE.md` art boundary note; retire the `art-fade-fix` ledger row |
+| 1 | Optimistic `peek` + `painted` set, with tests | Unit: warm-cache key paints on the first frame; a painted key mounts at full opacity; **an unpainted key still shimmers and fades**; an optimistic miss advances the candidate chain; zero-image unchanged |
+| 2 | Device pass, and the fresh-install measurement taken **here** rather than as its own increment | Relaunch on a warm cache: no gap. **Cleared art cache: the loading affordance is still there**, and the error-path churn is observed rather than assumed |
+| 3 | Docs | Art-boundary note; retire the ledger row |
+
+**The one thing that stays a decision point:** if Increment 2 shows fresh-install error churn is
+material, switch cause 1 to option C (persist the verified key set) rather than shipping the
+optimistic path. That is a fallback already chosen, not a new design round.
 
 ## Verification plan
 
@@ -137,7 +149,7 @@ the device state that is already slowest. Increment 1 measures it before Increme
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| Fresh install fires an error per image | Medium - churn on the slowest device state | Increment 0 measures it first; option C is the fallback |
+| Fresh install fires an error per image | Medium - churn on the slowest device state | Observed at Increment 2; option C is the pre-chosen fallback |
 | Dropping the shimmer hides a slow CDN fetch | **Medium-high** - a genuine load would look broken | Success criterion 3, with an explicit test for the reverse regression |
 | `painted` grows unbounded | Low | Keys are short strings and bounded by the catalog; measure at Increment 2 |
 
@@ -153,7 +165,7 @@ the shimmer is easy; proving a genuinely slow load still shows one requires simu
 that test is weak the app will look broken on exactly the network conditions where feedback matters
 most.
 
-**Evidence that would change the decision:** if Increment 0 shows the fresh-install error churn is
+**Evidence that would change the decision:** if Increment 2 shows the fresh-install error churn is
 material, option C - persisting the verified key set - is the better trade despite the second index.
 
 ## Approval record
