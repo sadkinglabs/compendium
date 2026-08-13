@@ -10,6 +10,7 @@ import {
   planDeckTextAdd, applyDeckAdds, setAvatar,
 } from '../store/deckRepository.js';
 import { deckBuildabilityBulk, subscribeCollection } from '../store/ownedRepository.js';
+import { activeProfileId } from '../store/profileRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
 import { DeckCard } from './Decks.jsx';
 import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
@@ -36,12 +37,33 @@ const TextImportSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
 const QrSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><line x1="14" y1="14" x2="14" y2="17" /><line x1="17" y1="14" x2="21" y2="14" /><line x1="21" y1="17" x2="21" y2="21" /><line x1="14" y1="21" x2="17" y2="21" /></svg>;
 const CameraSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 8h3l1.5-2.2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" /><circle cx="12" cy="13" r="3.2" /></svg>;
 
+// The last buildability map AND the last deck list, kept across pillar mounts (module state, same
+// pattern as artCache's memo) so the Library paints complete on the first frame - cards, badges and
+// (via the art memo) heroes together - instead of arriving in waves that resize the tiles. Both are
+// stale-while-revalidate: the mount effects refresh them silently. Profile-keyed, so a switch can
+// never show another profile's library.
+let buildBadgeCache = { pid: null, map: new Map() };
+let deckListCache = { pid: null, decks: null };
+
 export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
   const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
   const setEditMode = onEditMode;   // lifted to App so it survives the add-cards flow
-  const [decks, setDecks] = useState(null);
-  const [buildMap, setBuildMap] = useState(new Map());   // deck_id -> buildability report (library badges)
+  const [decks, setDecks] = useState(() => {
+    try { return activeProfileId() === deckListCache.pid ? deckListCache.decks : null; }
+    catch { return null; }
+  });
+  // deck_id -> buildability report (library badges). Seeded from the last computed map so the badges
+  // are PRESENT at first paint: they start empty on every mount, and their late arrival used to wrap
+  // the record row and grow every Library tile on every pillar entry - the "cards resize slightly"
+  // the owner reported. (Diagnosed as this, NOT ArtImg: every art container reserves its box.)
+  // Stale-while-revalidate - the effect below refreshes it silently. Keyed by profile so a switch
+  // can never show another profile's badges; deck ids are per-profile uuids anyway, so a mismatched
+  // cache would merely miss every lookup, but the key makes that structural rather than lucky.
+  const [buildMap, setBuildMap] = useState(() => {
+    try { return activeProfileId() === buildBadgeCache.pid ? buildBadgeCache.map : new Map(); }
+    catch { return new Map(); }
+  });
   const [libQ, setLibQ] = useState('');
   // Deck-actions FAB state (Deckbuilder's #deck-fab menu).
   const [meta, setMeta] = useState(null);            // loaded deck (for star state)
@@ -55,14 +77,25 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
   const flash = (msg, ms) => toast(msg, ms ? { ms } : {});
 
 
-  async function refresh() { setDecks(await listDecks()); }
+  async function refresh() {
+    const d = await listDecks();
+    try { deckListCache = { pid: activeProfileId(), decks: d }; } catch { /* pre-init: not cached */ }
+    setDecks(d);
+  }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
   // Library buildability badges: all decks vs the collection in ONE batched pass
   // (no N+1), refreshed on the deck list AND when ownership changes.
   useEffect(() => {
-    if (!decks || !decks.length) { setBuildMap(new Map()); return; }
+    // null is the MOUNT TRANSIENT, not an answer: decks have not loaded yet, and resetting here
+    // wiped the seeded cache before the first card ever rendered - which is why the badge fix
+    // shipped inert. Only a genuinely empty deck list clears the badges.
+    if (!decks) return;
+    if (!decks.length) { setBuildMap(new Map()); return; }
     let alive = true;
-    const load = () => deckBuildabilityBulk(decks.map((d) => d.id)).then((m) => alive && setBuildMap(m));
+    const load = () => deckBuildabilityBulk(decks.map((d) => d.id)).then((m) => {
+      try { buildBadgeCache = { pid: activeProfileId(), map: m }; } catch { /* pre-init: not cached */ }
+      if (alive) setBuildMap(m);
+    });
     load();
     const off = subscribeCollection(load);
     return () => { alive = false; off(); };
