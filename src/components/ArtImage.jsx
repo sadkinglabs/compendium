@@ -6,7 +6,7 @@
 // the caching/downloading/validating lives in artCache (unit-tested core). This is the LIVE art path at
 // every render site (card art is CDN-served + on-device cached). See art-cdn-rev2-architecture.md B4.
 import { useReducer, useEffect, useCallback, useState } from 'react';
-import { reduce, initial, visibleCandidate } from '../store/artSource.js';
+import { reduce, initial, visibleCandidate, paintState } from '../store/artSource.js';
 import { artCache } from '../store/artCacheInstance.js';
 
 /**
@@ -66,10 +66,15 @@ export function ArtImage({ artKey, alt = '', fallback, className, style, imgClas
   // SAME uri under a new gen, and matching on src alone would treat the fresh <img> as already
   // decoded - suppressing the shimmer and flashing the stale frame. Both must match to fade in.
   const [loaded, setLoaded] = useState({ src: null, gen: -1 });
-  const shown = src && loaded.src === src && loaded.gen === gen;
+  // Same no-refade rule as CardArt (the LIVE framed component - this one currently has no call
+  // sites, and is kept in step so adopting it later does not resurrect the replaying fade).
+  const { shown, shimmer, transition } = paintState({
+    src, gen, loadedSrc: loaded.src, loadedGen: loaded.gen,
+    painted: !!artKey && artCache.hasPainted(artKey),
+  });
   return (
     <div className={className} style={{ position: 'relative', ...style, backgroundImage: fallback, backgroundSize: 'cover', backgroundPosition: 'center' }}>
-      {src && !shown && <div className="cx-art-shimmer" aria-hidden="true" />}
+      {shimmer && <div className="cx-art-shimmer" aria-hidden="true" />}
       {src && (
         <img
           key={gen}                 /* remount on a quarantine re-resolve even if the uri is unchanged */
@@ -77,9 +82,9 @@ export function ArtImage({ artKey, alt = '', fallback, className, style, imgClas
           alt={alt}
           loading={loading}
           className={imgClassName}
-          onLoad={() => setLoaded({ src, gen })}
+          onLoad={() => { setLoaded({ src, gen }); artCache.markPainted(artKey); }}
           onError={onError}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: shown ? 1 : 0, transition: 'opacity .3s ease', ...imgStyle }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity: shown ? 1 : 0, transition, ...imgStyle }}
         />
       )}
     </div>

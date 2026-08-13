@@ -240,3 +240,76 @@ test('downloadAll: bounded, epoch-aware, reports progress', async () => {
   assert.deepEqual(res, { done: 2, total: 2, stopped: false });
   assert.deepEqual(seen.at(-1), [2, 2]);
 });
+
+/* ------------------------------------------------------------------ */
+/* Boot seeding - the cold-index fix (art-first-paint Increment 1)     */
+/* ------------------------------------------------------------------ */
+
+test('seedFromDisk warms peek() for exact-size files, and ONLY those', async () => {
+  const { cache } = make({ fake: fakeIo({ art: {
+    [`art/${KEY}`]: 100,      // exact manifest size -> seeded
+    [`art/${KEY2}`]: 150,     // manifest says 200 -> NOT seeded (truncated/corrupt)
+    [`art/${GHOST}`]: 300,    // not in the manifest -> NOT seeded, fail closed
+  } }) });
+  assert.equal(cache.peek(KEY), null, 'precondition: the memo starts cold');
+
+  const n = await cache.seedFromDisk();
+
+  assert.equal(n, 1, 'exactly the one valid file is admitted');
+  assert.deepEqual(cache.peek(KEY), localCand(KEY), 'a seeded key answers peek synchronously');
+  assert.equal(cache.peek(KEY2), null, 'a size mismatch is left for resolve() to delete and re-fetch');
+  assert.equal(cache.peek(GHOST), null, 'a key the manifest cannot describe is never served');
+});
+
+test('seedFromDisk does NOTHING on web or under zero-image - not even the directory list', async () => {
+  for (const over of [{ isNative: () => false }, { imagesDisabled: () => true }]) {
+    const f = fakeIo({ art: { [`art/${KEY}`]: 100 } });
+    const { cache } = make({ ...over, fake: f });
+    assert.equal(await cache.seedFromDisk(), 0);
+    assert.equal(f.ops.length, 0, 'no io at all');
+  }
+});
+
+test('a clear() DURING the seeding list wins: nothing repopulates the wiped memo', async () => {
+  const f = fakeIo({ art: { [`art/${KEY}`]: 100 } });
+  // Gate the list call so clear() can be interleaved while it is provably in flight.
+  const origList = f.io.list;
+  let release; const held = new Promise((r) => { release = r; });
+  f.io.list = async (dir) => { const p = origList(dir); await held; return p; };
+  const { cache } = make({ fake: f });
+
+  const seeding = cache.seedFromDisk();
+  await cache.clear();
+  release();
+  assert.equal(await seeding, 0, 'the stale listing must not seed the new epoch');
+  assert.equal(cache.peek(KEY), null);
+});
+
+/* ------------------------------------------------------------------ */
+/* The painted registry - the no-refade half                           */
+/* ------------------------------------------------------------------ */
+
+test('painted is marked, read, and evicted by quarantine and clear', async () => {
+  const { cache } = make({ fake: fakeIo({ art: { [`art/${KEY}`]: 100, [`art/${KEY2}`]: 200 } }) });
+  assert.equal(cache.hasPainted(KEY), false, 'nothing is painted at boot');
+
+  cache.markPainted(KEY);
+  cache.markPainted(KEY2);
+  assert.equal(cache.hasPainted(KEY), true);
+
+  // Quarantine evicts THAT key only: its re-download is a first load again and must shimmer.
+  await cache.quarantine(KEY);
+  assert.equal(cache.hasPainted(KEY), false, 'a quarantined key must not skip the shimmer');
+  assert.equal(cache.hasPainted(KEY2), true, 'other keys keep their painted status');
+
+  // clear() evicts everything: post-clear loads are first loads.
+  await cache.clear();
+  assert.equal(cache.hasPainted(KEY2), false, 'a cache clear resets the no-refade state');
+});
+
+test('markPainted ignores a null key rather than growing the set', async () => {
+  const { cache } = make({});
+  cache.markPainted(null);
+  cache.markPainted(undefined);
+  assert.equal(cache._debug.painted.size, 0);
+});

@@ -41,6 +41,8 @@ export function createArtCache(deps) {
   const inflight = new Map();   // key -> { epoch, promise }  (single-flight; joinable only within one epoch)
   const resolved = new Map();   // key -> {kind,src}          (session memo; feeds peek)
   const retried  = new Set();   // keys quarantined+retried once this session
+  const painted  = new Set();   // keys whose <img> completed a decode this session (feeds the no-refade
+                                // decision; quarantine/clear evict, so a genuine re-download shimmers)
   let   epoch    = 0;           // cache generation; clear() increments it
   let   promotionLock = Promise.resolve();   // serializes rename/delete ONLY, never a download
 
@@ -71,6 +73,41 @@ export function createArtCache(deps) {
     if (!isNative()) return remoteCand(key);
     return resolved.get(key) || null;
   }
+
+  /**
+   * Warm peek()'s memo from disk, once, at boot - the fix for the cold-index flash: the memo used to
+   * start empty every launch, so the first sighting of every key rendered nothing while an io.stat
+   * ran, even though the file was sitting in art/ the whole time.
+   *
+   * One io.list() for the whole directory, and an entry is admitted ONLY when the manifest knows the
+   * key and the on-disk size equals the manifest's byte count - the same fail-closed rule resolve()
+   * applies per file (Codex: peek must never get ahead of validation). Anything that does not match
+   * exactly is left unseeded, so the first resolve() of that key stats, deletes and re-fetches it
+   * just as it does today.
+   *
+   * Epoch-guarded like every other flight: a clear() while the list is in the air must not let stale
+   * entries repopulate the memo it just wiped.
+   */
+  async function seedFromDisk() {
+    if (!isNative() || imagesDisabled()) return 0;   // zero-image: no I/O; web: peek is already immediate
+    const reqEpoch = epoch;
+    const files = await io.list('art').catch(() => []);
+    if (reqEpoch !== epoch) return 0;
+    let n = 0;
+    for (const f of files) {
+      if (!resolved.has(f.name) && validSize(f.name, f.size || 0)) {
+        resolved.set(f.name, { kind: 'local', src: convertFileSrc(`art/${f.name}`) });
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** Has this key's <img> completed a decode this session? Read by CardArt at render time to skip
+   *  the shimmer/fade on a remount - presentation state, deliberately NOT part of resolution. */
+  const hasPainted = (key) => painted.has(key);
+  /** Called from the <img> onLoad. */
+  const markPainted = (key) => { if (key) painted.add(key); };
 
   /** The ONLY art entry point. NEVER rejects: adapter failures degrade to staleResult. */
   function resolve(key) {
@@ -155,6 +192,7 @@ export function createArtCache(deps) {
     if (!key || !isNative()) return staleResult(key);
     const reqEpoch = epoch;
     resolved.delete(key);
+    painted.delete(key);   // the re-download is a genuine first load again, so it must shimmer
     await withPromotionLock(() => (reqEpoch === epoch ? io.delete(`art/${key}`).catch(noop) : null));
     if (reqEpoch !== epoch) return staleResult(key);
     if (!retried.has(key)) { retried.add(key); return resolve(key); }   // sanctioned refill (live decode error)
@@ -168,6 +206,7 @@ export function createArtCache(deps) {
     inflight.clear();
     resolved.clear();
     retried.clear();
+    painted.clear();       // post-clear loads are first loads; suppressing their shimmer would hide them
     await withPromotionLock(() => io.deleteTree('art').catch(noop));
     // Best-effort scratch sweep: remove ordinary orphaned temps too (a stale flight that lands after
     // this stays safe - its own finally deletes its unique temp). Not under the lock: art-tmp is never
@@ -193,6 +232,7 @@ export function createArtCache(deps) {
 
   return {
     resolve, download, downloadAll, quarantine, clear, stats, peek, sweepScratch,
-    _debug: { get epoch() { return epoch; }, inflight, resolved, retried },
+    seedFromDisk, hasPainted, markPainted,
+    _debug: { get epoch() { return epoch; }, inflight, resolved, retried, painted },
   };
 }
