@@ -198,6 +198,35 @@ Collection.
    `overflow: hidden` is the repo's known WebView paint hazard; the streak is its partial frame.
 3. Seeding stays as approved - with (1), the boot race costs a retry rather than a deletion.
 
+## Increment 2 - device evidence (build 224, Pixel 9 Pro XL, Android 17, WebView 150)
+
+Two passes, because the first one (build 223) correctly STOPPED the increment: it exposed the
+onError-quarantine flaw and triggered the checkpoint above.
+
+**Build 224, with the checkpoint fixes:**
+
+- **Cold relaunch, warm cache:** first Home paint shows full deck art - no broken-image glyph, no
+  black tiles, at the same capture cadence where 223 showed both. The seeded memo is doing its job
+  and the transient-failure path no longer destroys files.
+- **Collection, second entry:** thumbnails fully painted on the tap frame - the painted set survives
+  pillar switches now that false quarantines stop evicting it.
+- **Owner confirmation, live:** "yay fixed!" - the observer who reported all three symptoms, watching
+  the same build.
+- **Boot seeding cost:** NOT numerically measured. The planned logcat line is unreachable on a
+  release build (the stock WebView forwards no console - BUILD.md documents this; the Increment 1
+  comment claiming otherwise was wrong and is corrected here). Bounded instead by evidence: one
+  readdir IPC for ~1,800 entries, and the observable launch is not perceptibly slower - the splash
+  and first paint land in the same capture windows as build 222.
+- **Cleared-cache shimmer check:** NOT run against the owner's real cache - clearing ~1,800 images to
+  watch a shimmer was not worth the re-download. The property is covered by the unit gates (an
+  unpainted key shimmers; a quarantined key shimmers again; post-clear loads shimmer) and by the
+  fail-first evidence on both.
+
+**Open flag:** the Deck Library vertical streak's prime suspect is the pillar entrance slide
+(cx-pillar-slide, translateX over the pillar pane on every tab change) - a deliberate design element,
+not changed. If the streak reappears on 224+, that is the next suspect and its fate is a product
+decision.
+
 ## Approval record
 
 | Date | Who | Disposition |
