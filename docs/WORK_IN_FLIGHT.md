@@ -47,10 +47,12 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 
 ### Left behind by `art-first-paint` (merged 2026-08-13) - carried, not closed
 
-- **Cards resize slightly on pillar change** (owner observation). Plausible mechanism: `ArtImg`
-  reserves no box - it renders nothing until a source exists, so the tile lays out without the image
-  and adapts when it arrives. `CardArt` reserves via `aspect-ratio` and does not do this. Small and
-  self-contained.
+- ~~Cards resize slightly on pillar change~~ **FIXED on `deck-badge-settle` - and the recorded
+  mechanism was wrong.** An audit of all 14 `ArtImg` call sites found every container reserves its
+  box (fixed sizes, aspect-ratios, or absolute fills), so the image hypothesis died. The real cause:
+  `buildMap` started empty on every Decks mount, and the buildability badges' late arrival wrapped
+  the record row and grew every Library tile. Now stale-while-revalidate from a profile-keyed module
+  cache, so badges paint on the first frame and refresh silently.
 - **The pillar entrance slide** (`cx-pillar-slide`, translateX over a pane containing overflow
   scrollers and masked cards) remains a flagged WebView-tearing suspect IF a streak ever reappears -
   the Library streak turned out to be the shimmer, owner-confirmed, so this flag is dormant, not
