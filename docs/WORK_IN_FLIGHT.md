@@ -45,24 +45,17 @@ The branch is merged and its row is gone per the rule above. These outlived it a
   would be a format change and has not been made.
 - **Branch `restore-semantics`** is fully contained in `main` and safe to delete.
 
-### Left behind by `art-first-paint` (merged 2026-08-13) - carried, not closed
+### Left behind by `art-first-paint` + `deck-badge-settle` (both merged 2026-08-13)
 
-- ~~Cards resize slightly on pillar change~~ **FIXED on `deck-badge-settle` (build 226,
-  owner-confirmed: subsequent loads perfect, first load per session settles once by design).** Three
-  diagnoses deep, each disproving the last, and the record keeps all three: (1) the image hypothesis
-  died by audit - all 14 `ArtImg` sites reserve their boxes; (2) the badge-cache fix shipped INERT -
-  the refresh effect fired on mount while `decks` was null, treated null as "no decks", and wiped the
-  seeded map before the first card rendered. Caught by frame-by-frame screen recording, the fix
-  having passed every test gate. (3) The real shape: the Decks pillar rebuilt its world from scratch
-  each visit - deck list re-queried (empty pane + spinner), then cards, then badges growing the
-  tiles, then art. Both the deck list and the badge map are now stale-while-revalidate module caches,
-  profile-keyed, refreshed silently; `null` is treated as the mount transient it is. LESSON, again:
-  gates cannot see rendering waves - perceptual fixes are verified by recording, not by test counts.
-- **The pillar entrance slide** (`cx-pillar-slide`, translateX over a pane containing overflow
-  scrollers and masked cards) remains a flagged WebView-tearing suspect IF a streak ever reappears -
-  the Library streak turned out to be the shimmer, owner-confirmed, so this flag is dormant, not
-  active.
-- **Branch `art-first-paint`** is fully contained in `main` and safe to delete.
+- **The pillar entrance slide** (`cx-pillar-slide`) remains a DORMANT WebView-tearing suspect. The
+  Library streak died with the shimmer fix and content now stays stable during the slide on warm
+  entries, so the tear surface is small - but if a streak is ever seen again, this is the suspect,
+  and its fate is a product decision about the entrance animation.
+- **First entry per session still settles once** on Decks (and art fades once) - the module caches
+  have nothing to seed from until each subsystem has run once. Accepted as the design's contract; a
+  persisted cache would be new machinery for one transition per launch.
+- **Branches `art-first-paint` and `deck-badge-settle`** are fully contained in `main`, safe to
+  delete.
 
 ### `android-16kb-compat` - DO NOT MERGE
 
