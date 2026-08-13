@@ -41,6 +41,11 @@ export function createArtCache(deps) {
   const inflight = new Map();   // key -> { epoch, promise }  (single-flight; joinable only within one epoch)
   const resolved = new Map();   // key -> {kind,src}          (session memo; feeds peek)
   const retried  = new Set();   // keys quarantined+retried once this session
+  const transientRetries = new Map();   // key -> count of verified-transient quarantine retries (on device
+                                        // the _capacitor_file_ server can refuse loads during early boot
+                                        // while the file is fine; bounded so a boot race cannot loop forever)
+  const painted  = new Set();   // keys whose <img> completed a decode this session (feeds the no-refade
+                                // decision; quarantine/clear evict, so a genuine re-download shimmers)
   let   epoch    = 0;           // cache generation; clear() increments it
   let   promotionLock = Promise.resolve();   // serializes rename/delete ONLY, never a download
 
@@ -71,6 +76,41 @@ export function createArtCache(deps) {
     if (!isNative()) return remoteCand(key);
     return resolved.get(key) || null;
   }
+
+  /**
+   * Warm peek()'s memo from disk, once, at boot - the fix for the cold-index flash: the memo used to
+   * start empty every launch, so the first sighting of every key rendered nothing while an io.stat
+   * ran, even though the file was sitting in art/ the whole time.
+   *
+   * One io.list() for the whole directory, and an entry is admitted ONLY when the manifest knows the
+   * key and the on-disk size equals the manifest's byte count - the same fail-closed rule resolve()
+   * applies per file (Codex: peek must never get ahead of validation). Anything that does not match
+   * exactly is left unseeded, so the first resolve() of that key stats, deletes and re-fetches it
+   * just as it does today.
+   *
+   * Epoch-guarded like every other flight: a clear() while the list is in the air must not let stale
+   * entries repopulate the memo it just wiped.
+   */
+  async function seedFromDisk() {
+    if (!isNative() || imagesDisabled()) return 0;   // zero-image: no I/O; web: peek is already immediate
+    const reqEpoch = epoch;
+    const files = await io.list('art').catch(() => []);
+    if (reqEpoch !== epoch) return 0;
+    let n = 0;
+    for (const f of files) {
+      if (!resolved.has(f.name) && validSize(f.name, f.size || 0)) {
+        resolved.set(f.name, { kind: 'local', src: convertFileSrc(`art/${f.name}`) });
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** Has this key's <img> completed a decode this session? Read by CardArt at render time to skip
+   *  the shimmer/fade on a remount - presentation state, deliberately NOT part of resolution. */
+  const hasPainted = (key) => painted.has(key);
+  /** Called from the <img> onLoad. */
+  const markPainted = (key) => { if (key) painted.add(key); };
 
   /** The ONLY art entry point. NEVER rejects: adapter failures degrade to staleResult. */
   function resolve(key) {
@@ -149,12 +189,36 @@ export function createArtCache(deps) {
     return { done, total: keys.length, stopped };
   }
 
-  /** onError for a LOCAL candidate: delete + retry once (fresh download), then fall back to remote.
-   *  Epoch-checked; a clear() during the locked delete yields staleResult without re-resolving. */
+  /** onError for a LOCAL candidate. The load failure does not prove the file is bad: on device the
+   *  _capacitor_file_ server can refuse loads during early boot while the bytes on disk are perfect,
+   *  and deleting on that evidence alone cost a fresh download of every deck art on cold launch. So
+   *  verify first: a file still matching the manifest is handed back for a bounded remount retry;
+   *  only a missing or wrong-size file gets the delete + retry-once + remote fallback. Epoch-checked
+   *  after every await; a clear() mid-verification wins with staleResult and no writes. */
   async function quarantine(key) {
     if (!key || !isNative()) return staleResult(key);
     const reqEpoch = epoch;
+    let st;
+    try { st = await io.stat(`art/${key}`); }
+    catch { return staleResult(key); }      // OPERATIONAL stat failure - not "missing". Indeterminate
+                                            // evidence must not destroy anything: keep the file, the
+                                            // memo, painted and the retry counters untouched, and show
+                                            // the display-only remote candidate this one time. The
+                                            // adapter only returns null for a POSITIVE not-found.
+    if (reqEpoch !== epoch) return staleResult(key);                    // cleared mid-stat: no writes, no seeding
+    if (st && validSize(key, st.size)) {
+      // The file is exactly what the manifest promised, so the failure was transient. Keep the file,
+      // keep painted (nothing is re-downloading, so a shimmer would lie), keep the once-per-session
+      // retried slot; return the local candidate so the hook remounts the <img> and retries the load.
+      // Past two retries this session the key falls back to remote WITHOUT deleting - the file is
+      // valid and the next session serves it.
+      const n = (transientRetries.get(key) || 0) + 1;
+      transientRetries.set(key, n);
+      if (n > 2) return staleResult(key);
+      return { kind: 'local', src: convertFileSrc(`art/${key}`) };
+    }
     resolved.delete(key);
+    painted.delete(key);   // the re-download is a genuine first load again, so it must shimmer
     await withPromotionLock(() => (reqEpoch === epoch ? io.delete(`art/${key}`).catch(noop) : null));
     if (reqEpoch !== epoch) return staleResult(key);
     if (!retried.has(key)) { retried.add(key); return resolve(key); }   // sanctioned refill (live decode error)
@@ -168,6 +232,8 @@ export function createArtCache(deps) {
     inflight.clear();
     resolved.clear();
     retried.clear();
+    transientRetries.clear();   // the files are gone; post-clear failures are a new story, not this one
+    painted.clear();       // post-clear loads are first loads; suppressing their shimmer would hide them
     await withPromotionLock(() => io.deleteTree('art').catch(noop));
     // Best-effort scratch sweep: remove ordinary orphaned temps too (a stale flight that lands after
     // this stays safe - its own finally deletes its unique temp). Not under the lock: art-tmp is never
@@ -193,6 +259,7 @@ export function createArtCache(deps) {
 
   return {
     resolve, download, downloadAll, quarantine, clear, stats, peek, sweepScratch,
-    _debug: { get epoch() { return epoch; }, inflight, resolved, retried },
+    seedFromDisk, hasPainted, markPainted,
+    _debug: { get epoch() { return epoch; }, inflight, resolved, retried, painted, transientRetries },
   };
 }

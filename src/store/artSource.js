@@ -94,3 +94,24 @@ export function reduce(state, ev) {
 export function visibleCandidate(state, propKey) {
   return state.key === propKey ? state.cand : null;
 }
+
+/**
+ * The first-paint display decision for a framed card image - pure, so the no-refade rule is testable
+ * without a DOM. `painted` is passed IN (artCache owns that registry, alongside the quarantine/clear
+ * lifecycles that evict from it); this module stays stateless.
+ *
+ * A key that has already painted this session shows at once: no shimmer, no opacity transition. A key
+ * that has not - a genuine first load, a re-download after quarantine, anything after a cache clear -
+ * keeps today's behaviour exactly: shimmer while decoding, then the .3s fade.
+ * @param {{ src: string|null, gen: number, loadedSrc: string|null, loadedGen: number, painted: boolean }} p
+ * @returns {{ shown: boolean, shimmer: boolean, transition: string }}
+ */
+export function paintState({ src, gen, loadedSrc, loadedGen, painted }) {
+  const decoded = !!src && loadedSrc === src && loadedGen === gen;
+  const shown = !!src && (painted || decoded);
+  return {
+    shown,
+    shimmer: !!src && !shown,
+    transition: painted ? 'none' : 'opacity .3s ease',
+  };
+}

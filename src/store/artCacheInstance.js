@@ -37,9 +37,17 @@ export const artCache = createArtCache({
   rand: () => `${Date.now().toString(36)}${(seq++).toString(36)}`,
 });
 
-/** Boot init: prepare native dirs + cache the Data root, sweep crash-orphan scratch, load the manifest.
- *  Safe on web (no native calls) and native. Call once from the app boot (Phase 2b wires it in). */
+/** Boot init: prepare native dirs + cache the Data root, sweep crash-orphan scratch, load the
+ *  manifest, then warm peek()'s memo from disk. Safe on web (no native calls) and native.
+ *  Call once from the app boot (Phase 2b wires it in). */
 export async function initArtCache() {
   if (isNative()) { await initArtIo(); await artCache.sweepScratch(); }
   await loadArtManifest();
+  // AFTER the manifest, necessarily: seeding admits a file only when its size matches the manifest's
+  // byte count, so with an empty holder it would admit nothing. One directory list. The log line is a
+  // DEV-BUILD aid only - a stock release WebView forwards no console (BUILD.md documents this), which
+  // is why the device measurement was bounded by observation instead.
+  const t0 = Date.now();
+  const seeded = await artCache.seedFromDisk();
+  if (seeded > 0) console.info(`art: seeded ${seeded} cached entries in ${Date.now() - t0}ms`);
 }

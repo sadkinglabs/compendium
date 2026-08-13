@@ -58,3 +58,45 @@ test('visibleCandidate returns null on a key mismatch (no stale paint on a recyc
   assert.equal(visibleCandidate(stateA, 'A'), stateA.cand, 'matching key paints its candidate');
   assert.equal(visibleCandidate(stateA, 'B'), null, 'a tile flipped to B must NOT paint A for a frame');
 });
+
+/* ------------------------------------------------------------------ */
+/* paintState - the no-refade decision (art-first-paint Increment 1)   */
+/* ------------------------------------------------------------------ */
+import { paintState } from './artSource.js';
+
+test('a painted key shows at once: no shimmer, no transition', () => {
+  const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: true });
+  assert.equal(p.shown, true, 'painted must not wait for a fresh decode');
+  assert.equal(p.shimmer, false);
+  assert.equal(p.transition, 'none', 'a .3s transition would replay the fade the fix removes');
+});
+
+test('REVERSE REGRESSION: an unpainted key still shimmers and still fades', () => {
+  // The criterion that matters most: a genuine first load - and equally a re-download after a
+  // quarantine, since quarantine evicts painted - must keep its loading affordance, or a slow CDN
+  // fetch looks like a broken image.
+  const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: false });
+  assert.equal(p.shown, false, 'not decoded yet, not painted: must not be visible');
+  assert.equal(p.shimmer, true, 'the loading affordance must be present');
+  assert.equal(p.transition, 'opacity .3s ease', 'and the decode must still fade in');
+});
+
+test('an unpainted key becomes shown when THIS src+gen has decoded', () => {
+  const p = paintState({ src: 'cap://art/k', gen: 2, loadedSrc: 'cap://art/k', loadedGen: 2, painted: false });
+  assert.equal(p.shown, true);
+  assert.equal(p.shimmer, false);
+});
+
+test('a quarantine re-resolve (same src, NEW gen) is treated as undecoded - the stale-frame guard holds', () => {
+  const p = paintState({ src: 'cap://art/k', gen: 3, loadedSrc: 'cap://art/k', loadedGen: 2, painted: false });
+  assert.equal(p.shown, false, 'gen mismatch means the fresh <img> has not decoded');
+  assert.equal(p.shimmer, true);
+});
+
+test('no src means nothing to show and nothing to shimmer over', () => {
+  for (const painted of [true, false]) {
+    const p = paintState({ src: null, gen: 0, loadedSrc: null, loadedGen: -1, painted });
+    assert.equal(p.shown, false);
+    assert.equal(p.shimmer, false, 'a shimmer with no candidate would advertise a load that is not happening');
+  }
+});
