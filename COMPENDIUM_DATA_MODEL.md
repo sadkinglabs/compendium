@@ -59,7 +59,8 @@ A child-table query is profile-safe only when it joins or first resolves through
 |---|---|---|---|
 | Relational data | sql.js in memory, persisted as a database image in IndexedDB | `@capacitor-community/sqlite` | Same schema and repository API |
 | Active profile | Capacitor Preferences web adapter | Native Preferences | One `activeProfileId` key |
-| App-global install state | Capacitor Preferences web adapter | Native Preferences | Small, non-profile singletons: `changelogSeenBuild`, plus the restore journal and recovery pointer described in section 3.1 |
+| App-global install state | Capacitor Preferences web adapter | Native Preferences | Small, non-profile singletons. Currently `changelogSeenBuild` only |
+| Restore journal and recovery pointer | `catalog_meta` rows in the database | `catalog_meta` rows in the database | **Not Preferences.** The journal commits in the SAME transaction as the replacement it describes, which is only possible inside the database - that is the property the whole crash-safety design rests on, so its home is not an implementation detail. The pointer sits beside it so "which recovery point is current" is settled by an atomic database write rather than a file rename |
 | Files and sharing | Browser download, file picker, clipboard/share fallbacks | Filesystem and Share plugins | Same validated domain payloads |
 | Catalog assets | Bundled application data and configured art sources | Bundled application data and configured art sources | Images are optional; catalog text remains usable |
 

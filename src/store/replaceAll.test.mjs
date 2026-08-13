@@ -429,12 +429,18 @@ test('duplicate profile names come back as duplicates - no "(imported)" suffix a
 });
 
 test('CONTRAST: the additive path still suffixes - which is exactly what replace removes', async () => {
-  // The fail-first evidence for the no-suffix property: run the SAME archive through the old
-  // additive restore and the suffix appears. If replaceAll shared that plumbing, the test above
-  // could not pass.
-  const preview = await previewBackup(await archiveText());
+  // The fail-first evidence for the no-suffix property: the same colliding name through the
+  // ADDITIVE path gets a suffix, so the absence of one above is a property of replace and not an
+  // accident of the fixture.
+  //
+  // Driven with a legacy single-profile file, because that is now the only input the additive
+  // executor accepts - it refuses whole-app archives at the boundary, which is what stops a UI
+  // routing slip from quietly reinstating additive whole-app restore.
+  const { exportProfile } = await import('./profileTransfer.js');
+  const bundle = await exportProfile('p-one');            // 'Alpha', a name already on the device
+  const preview = await previewBackup(JSON.stringify(bundle));
   await restoreAll(preview);
-  assert.ok(count("profiles WHERE name LIKE '%(imported)%'") > 0, 'restoreAll (additive) is expected to disambiguate');
+  assert.ok(count("profiles WHERE name LIKE '%(imported)%'") > 0, 'import is expected to disambiguate');
 });
 
 test('the catalog and device state survive: catalog_meta.version, catalog rows, and the pointer', async () => {
@@ -537,4 +543,104 @@ test('replaceAll refuses a single-profile file - it is never authority to delete
   await assert.rejects(replaceAll({ kind: 'profile', bundle: {} }),
     (e) => e.name === 'ReplaceRefused' && e.code === 'single-profile');
   assert.deepEqual(dump(), before);
+});
+
+/* ------------------------------------------------------------------ */
+/* POST-COMMIT: finished or deferred, NEVER failed                     */
+/* ------------------------------------------------------------------ */
+//
+// The blocker this section exists for. The destructive transaction commits, and THEN the pointer is
+// published and the journal retired. Those two used to be unguarded, so either rejecting took the
+// whole call down - and the UI said "Restore failed" for an operation whose data was already gone.
+//
+// That is not merely misleading. It invites a retry, and a retry would capture the ALREADY-REPLACED
+// state as the new candidate and overwrite the journal row naming the real pre-restore one, leaving
+// the user's only copy of what they had as an orphan for the next sweep. The error message would
+// have destroyed the recovery point.
+
+/** A backend whose tx() throws when `match(statements)` says so.
+ *
+ *  Matching has to be precise here. The post-commit steps go through session.tx as SINGLE-statement
+ *  transactions, while the replacement itself is one large multi-statement tx that ALSO touches
+ *  catalog_meta - it writes the journal row and deletes the re-keyed dash_seeded keys. Keying on the
+ *  SQL text alone therefore aborts the commit and tests a pre-commit failure, which is a different
+ *  thing that correctly rejects. So each predicate below pins the single-statement shape. */
+function failingWhen(match, label) {
+  return {
+    ...realBackend,
+    tx: (st) => (match(st) ? Promise.reject(new Error(`injected failure: ${label}`)) : realBackend.tx(st)),
+  };
+}
+const isLone = (st, sqlPart, param) =>
+  st.length === 1 && st[0][0].includes(sqlPart) && (param === undefined || (st[0][1] || []).includes(param));
+
+const failPointer = () => failingWhen(
+  (st) => isLone(st, 'catalog_meta', RECOVERY_POINTER_KEY), 'pointer publication');
+const failRetire = () => failingWhen(
+  (st) => isLone(st, 'DELETE FROM catalog_meta', RESTORE_PENDING_KEY), 'journal retirement');
+
+for (const step of [
+  { label: 'POINTER PUBLICATION', backend: failPointer },
+  { label: 'JOURNAL RETIREMENT', backend: failRetire },
+]) {
+  test(`a ${step.label} failure after the commit is DEFERRED, not a rejection`, async () => {
+    const preview = await previewBackup(await archiveText());
+    sdb.run("INSERT INTO profiles(id,name,avatar,accent,system,schema_version,is_default,created_at,updated_at) VALUES('p-extra','Gamma',NULL,'gold','sorcery',11,0,'2026-01-03','2026-01-03');");
+    __setBackendForTests(step.backend());
+
+    // MUST NOT reject. The rows are committed; a rejection here is the bug.
+    const r = await replaceAll(preview);
+
+    assert.equal(r.via, 'replace');
+    assert.equal(r.settled, false, 'the caller must be told this did not fully settle');
+    assert.equal(count('profiles'), 2, 'the replacement itself committed - Gamma is gone');
+  });
+}
+
+test('after a deferred replacement, a RETRY is refused and the recovery point survives', async () => {
+  // The data-loss half. planReplace writes the journal with INSERT OR REPLACE, so an unguarded
+  // retry would overwrite the row naming the pre-restore candidate with one naming a candidate
+  // captured from the already-replaced state.
+  const preview = await previewBackup(await archiveText());
+  const backing = memoryBacking();
+  __setBackingForTests(backing);
+  __setBackendForTests(failPointer());
+
+  const first = await replaceAll(preview);
+  assert.equal(first.settled, false);
+
+  const journal = rows('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+  assert.equal(journal.length, 1, 'the journal row is the retry ticket and must survive');
+  const originalCandidate = JSON.parse(journal[0].value).candidateId;
+  assert.ok(backing.files.has(originalCandidate), 'the pre-restore capture must still be on disk');
+
+  // THE RETRY. Refused, so the journal is not overwritten and the candidate is not orphaned.
+  __setBackendForTests(realBackend);
+  await assert.rejects(replaceAll(preview), (e) => e.code === 'reconciliation-pending');
+
+  const after = rows('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+  assert.equal(JSON.parse(after[0].value).candidateId, originalCandidate,
+    'the retry overwrote the journal - the original pre-restore copy is now unreachable');
+  assert.ok(backing.files.has(originalCandidate), 'the original capture must still exist');
+});
+
+test('and the next boot makes that deferred recovery point reachable', async () => {
+  // Deferred is only acceptable because reconciliation finishes it. This is that promise, kept.
+  const preview = await previewBackup(await archiveText());
+  const backing = memoryBacking();
+  __setBackingForTests(backing);
+  __setBackendForTests(failPointer());
+  const r = await replaceAll(preview);
+  assert.equal(r.settled, false);
+
+  __setBackendForTests(realBackend);
+  const { reconcileRestore } = await import('./restoreReconcile.js');
+  const outcome = await reconcileRestore();
+
+  assert.equal(outcome.status, 'finished');
+  const pointer = rows('SELECT value FROM catalog_meta WHERE key=?;', [RECOVERY_POINTER_KEY]);
+  assert.equal(pointer.length, 1, 'the recovery point is published after reconciliation');
+  assert.equal(JSON.parse(pointer[0].value).id, r.recoveryPointId);
+  assert.equal(rows('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]).length, 0,
+    'and the journal is retired');
 });

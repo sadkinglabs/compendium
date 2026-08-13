@@ -196,6 +196,21 @@ export async function restoreAll(preview) {
     catch { /* the rows are committed; the user can switch by hand */ }
     return { profiles: 1, activeProfileId: pid, activeReconciled, statements: null, via: 'profile-import' };
   }
+
+  // A WHOLE-APP ARCHIVE IS REFUSED HERE, at the boundary, not merely routed away from by the caller.
+  // This function is the ADDITIVE executor, and additive is no longer what a whole-app backup means:
+  // it authorises replacement. Leaving the boundary permissive meant one dropped or renamed
+  // `operation` field in App.jsx could silently reinstate the superseded behaviour - two of
+  // everything - with every routing test still green, because the tests checked classification while
+  // the executor accepted either.
+  //
+  // The classifier decides which operation a file authorises; this makes the executor refuse to be
+  // the wrong one.
+  if (Array.isArray((preview?.env ?? preview)?.payload?.profiles)) {
+    throw new ReplaceRefused('whole-app-archive',
+      'That is a whole-app backup, which replaces all data. Restore it with Replace all data, not Import.');
+  }
+
   const env = preview?.env ?? preview;
   const setsOf = await catalogSets();
   const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
@@ -330,6 +345,21 @@ export async function replaceAll(preview, { binding = null } = {}) {
 
   const session = await acquireExclusiveSession();
   try {
+    // A PENDING JOURNAL ROW BLOCKS A SECOND REPLACEMENT, and this is a data-loss guard rather than
+    // tidiness. A row still here means a previous replacement COMMITTED but never finished
+    // publishing its recovery pointer. planReplace writes the journal with INSERT OR REPLACE, so
+    // proceeding would overwrite the row naming the ORIGINAL pre-restore candidate with one naming
+    // a candidate captured from the already-replaced state - and the only copy of what the user had
+    // before would become an orphan for the next sweep to delete.
+    //
+    // Startup reconciliation finishes the previous operation, so the way forward is a relaunch, not
+    // a retry here.
+    const pending = await query('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+    if (pending.length) {
+      throw new ReplaceRefused('reconciliation-pending',
+        'A previous restore has not finished. Reopen the app to complete it, then try again.');
+    }
+
     // CAPTURE, after the drain, through the owner-scoped consistent read. This is the exact state
     // the replacement will destroy - the candidate, the binding check and the plan's dash_seeded
     // re-key all derive from it and nothing else.
@@ -386,9 +416,24 @@ export async function replaceAll(preview, { binding = null } = {}) {
     // Publish the pointer with the session's own admitted write - external admission is closed,
     // so recoveryStore's default run() would be refused - then retire the journal: the pointer
     // now carries everything the row was protecting.
-    const write = (sql, params) => session.tx([[sql, params]]);
-    await promote(candidateId, { write });
-    await write('DELETE FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+    //
+    // GUARDED, because the comment above has to be true in code and not only in prose. An
+    // unguarded rejection here propagated out of replaceAll and the UI reported "Restore failed"
+    // for an operation whose data had already committed. That invited a retry, and a retry would
+    // have captured the ALREADY-REPLACED state and overwritten the journal naming the real
+    // pre-restore candidate - destroying the user's only copy of what they had, through the very
+    // action the error message suggested.
+    //
+    // So past the commit there is no failure, only "finished" or "deferred". Deferred means the
+    // rows are in and startup reconciliation completes the rest idempotently from the journal row,
+    // which is exactly why the row is retired LAST.
+    let published = false;
+    try {
+      const write = (sql, params) => session.tx([[sql, params]]);
+      await promote(candidateId, { write });
+      await write('DELETE FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+      published = true;
+    } catch { /* the journal row survives; the next boot finishes it */ }
 
     return {
       profiles: plan.profiles.length,
@@ -396,6 +441,9 @@ export async function replaceAll(preview, { binding = null } = {}) {
       activeReconciled,
       recoveryPointId: candidateId,
       statements: plan.statements.length,
+      // false => committed but not fully settled. The caller MUST NOT present this as a failure.
+      settled: published && activeReconciled,
+      published,
       via: 'replace',
     };
   } finally {

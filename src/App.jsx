@@ -1223,11 +1223,34 @@ function BackupSection({ onToast, onRestored }) {
 /** Shows exactly what a restore would add, and writes nothing until confirmed. */
 function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
+  // The durability policy, and the external archive that substitutes for it when the runtime cannot
+  // promise one. Without this the destructive button was always offered and, on a browser that
+  // refuses persistent storage, could only ever fail - the store refused safely while the UI still
+  // promised "a safety copy is taken first". `bindExternalArchive` existed with no caller.
+  const [policy, setPolicy] = useState(null);
+  const [binding, setBinding] = useState(null);
   const consequenceRef = useRef(null);
   // Focus the consequence, not the destructive button. A screen reader must read what is about to
   // be removed before it reaches the control that removes it; landing on "Replace all data" states
   // the action and hides the cost.
   useEffect(() => { if (preview) consequenceRef.current?.focus(); }, [preview]);
+  // Asked BEFORE the button is offered, not discovered when it is pressed.
+  useEffect(() => {
+    let live = true;
+    setBinding(null);
+    if (!preview?.destructive) { setPolicy(null); return () => { live = false; }; }
+    (async () => {
+      try {
+        const { replacementPolicy } = await import('./store/replacementPolicy.js');
+        const p = await replacementPolicy();
+        if (live) setPolicy(p);
+      } catch {
+        // Fail closed: an unreadable policy is not permission.
+        if (live) setPolicy({ allowed: false, code: 'not-durable', reason: 'Durability could not be checked.', remedy: 'Supply a backup file to protect this replacement.' });
+      }
+    })();
+    return () => { live = false; };
+  }, [preview]);
   if (!preview) return null;
   const { profiles, exportedAt, destructive = false, deviceProfiles = [] } = preview;
   const rows = profiles.reduce((a, p) => a + p.rows, 0);
@@ -1235,6 +1258,31 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
     (a, p) => ({ profiles: a.profiles + 1, decks: a.decks + (p.decks ?? 0), matches: a.matches + (p.matches ?? 0) }),
     { profiles: 0, decks: 0, matches: 0 },
   );
+  // Destructive, the runtime cannot promise a durable recovery point, and nothing is bound to stand
+  // in for one. Disabled rather than warned about: an evictable recovery point is indistinguishable
+  // from none at the only moment it matters.
+  const blocked = destructive && policy != null && !policy.allowed && !binding;
+
+  /** Bind an external backup as the durable substitute. Verified against the archive itself here;
+   *  it is re-checked against the FROZEN CAPTURE inside the session, which is the part that makes
+   *  it a guarantee rather than a reassurance. */
+  async function chooseProtector() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const { bindExternalArchive } = await import('./store/replacementPolicy.js');
+        setBinding(await bindExternalArchive(await file.text()));
+        onToast?.('Backup accepted. It will be checked against your data before anything is replaced.');
+      } catch (e) {
+        onToast?.(e?.message || String(e), { tone: 'danger' });
+      }
+    };
+    input.click();
+  }
 
   async function confirm() {
     if (busy) return;
@@ -1247,8 +1295,10 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
       // destructive path.
       const replacing = preview.operation === svc.REPLACE_ALL;
       // Past this await the rows are COMMITTED. Nothing after it may report a plain failure: the
-      // user would retry, and on the additive path a retry imports the archive a second time.
-      const r = replacing ? await svc.replaceAll(preview) : await svc.restoreAll(preview);
+      // user would retry, and on the additive path a retry imports the archive a second time - on
+      // the destructive path a retry is refused outright, because it could destroy the recovery
+      // point.
+      const r = replacing ? await svc.replaceAll(preview, { binding }) : await svc.restoreAll(preview);
       onClose();
       // Refresh the shell rather than telling the user to relaunch. Without this the profile picker
       // still showed the pre-restore list, which reads as "it did not work" on the one screen where
@@ -1260,12 +1310,21 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
         onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
         return;
       }
-      onToast?.(r.activeReconciled === false
-        // The rows committed but the active-profile pointer did not settle. initProfiles() resolves
-        // it from the restored database on the next boot, so this is a caveat, not a failure.
-        ? `Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to finish switching.`
-        : `Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}.`);
+      // THREE OUTCOMES, and only one of them is a failure - which is not reachable from here at all,
+      // because past the commit replaceAll returns instead of rejecting. `settled: false` means the
+      // rows are in and the pointer or the active profile did not finish; the next launch completes
+      // it from the journal row. Saying "failed" here would invite the retry that could destroy the
+      // recovery point, which is the whole reason this branch exists.
+      const noun = `${r.profiles} profile${r.profiles === 1 ? '' : 's'}`;
+      const done = r.via === 'replace' ? `Replaced everything with ${noun}.` : `Restored ${noun}.`;
+      const deferred = r.via === 'replace'
+        ? `Replaced everything with ${noun}. Reopen the app to finish tidying up.`
+        : `Restored ${noun}. Reopen the app to finish switching.`;
+      const settled = r.via === 'replace' ? r.settled !== false : r.activeReconciled !== false;
+      onToast?.(settled ? done : deferred);
     } catch (e) {
+      // Only pre-commit refusals reach here: a wrong-route file, a policy refusal, a stale bound
+      // archive, or a previous restore that has not reconciled. Nothing has been destroyed.
       onToast?.(`Restore failed: ${e?.message || e}`, { tone: 'danger' });
     } finally { setBusy(false); }
   }
@@ -1315,6 +1374,31 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
             ? 'This is an older single-profile export, which carries no checksum - its contents were checked instead.'
             : 'The file passed its checksum, so it is intact.'}
         </div>
+        {/* FAIL CLOSED, with a way forward. This runtime cannot promise the safety copy survives, so
+            replacement is disabled rather than offered with a warning - and the remedy is an
+            external backup, bound here and re-checked against the frozen capture before anything is
+            destroyed. Announced as an alert so a screen reader hears WHY the button is unavailable
+            rather than finding a dead control. */}
+        {destructive && policy != null && !policy.allowed && (
+          <div role="alert" style={{ margin: '4px 0 10px', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--hair-18)', background: 'var(--ink-02, rgba(255,255,255,.03))' }}>
+            <div style={{ font: "600 11px/1.4 var(--f-display)", letterSpacing: '.1em', color: 'var(--danger, #e2777a)', marginBottom: 6 }}>
+              NO SAFETY COPY IS POSSIBLE HERE
+            </div>
+            <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-muted)' }}>
+              {policy.reason} {binding ? '' : policy.remedy}
+            </div>
+            {binding
+              ? <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-body)', marginTop: 6 }}>
+                  Protected by your backup of {binding.profiles} profile{binding.profiles === 1 ? '' : 's'}
+                  {binding.exportedAt ? ` from ${new Date(binding.exportedAt).toLocaleDateString()}` : ''}.
+                  It will be checked against your current data first.
+                </div>
+              : <button onClick={chooseProtector} disabled={busy}
+                  style={{ ...BTN_GHOST, marginTop: 8, minHeight: 40, width: '100%' }}>
+                  Choose a backup file to protect this
+                </button>}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 10, padding: '14px 20px calc(20px + env(safe-area-inset-bottom,0px))', borderTop: '1px solid var(--hair-12)' }}>
         <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, minHeight: 48 }}>Cancel</button>
@@ -1322,8 +1406,9 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
             does; "Restore" describes an intention and hides that something is destroyed. No typed
             confirmation phrase: clear copy, a destructive-styled button and a verified safety copy
             are the protection, and a phrase to copy out mostly trains people to copy phrases. */}
-        <button onClick={confirm} disabled={busy} aria-busy={busy}
-          style={{ ...(destructive ? BTN_DANGER : BTN_GOLD), flex: 1, minHeight: 48, opacity: busy ? .55 : 1 }}>
+        <button onClick={confirm} disabled={busy || blocked} aria-busy={busy}
+          title={blocked ? policy?.remedy : undefined}
+          style={{ ...(destructive ? BTN_DANGER : BTN_GOLD), flex: 1, minHeight: 48, opacity: (busy || blocked) ? .45 : 1 }}>
           {busy
             ? (destructive ? 'Replacing...' : 'Importing...')
             : (destructive ? 'Replace all data' : 'Import profile')}

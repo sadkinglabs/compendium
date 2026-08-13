@@ -128,180 +128,65 @@ test('backupAll takes its reads inside a snapshot, so a concurrent write cannot 
   assert.ok(sawBeginRead, 'backupAll did not open a snapshot');
 });
 
-test('a whole-app archive round-trips every profile, and lands exactly one default', async () => {
-  const { text } = await captureArchive();
-  const { env, profiles } = await previewBackup(text);
-  assert.equal(profiles.length, 2, 'both profiles must be in the archive');
-  assert.deepEqual(profiles.map((p) => p.name).sort(), ['Alpha', 'Beta']);
-  assert.equal(profiles.filter((p) => p.isDefault).length, 1);
+/* ------------------------------------------------------------------------------------------
+ * THE ADDITIVE WHOLE-APP TESTS THAT USED TO LIVE HERE ARE GONE, DELIBERATELY.
+ *
+ * They asserted the behaviour the owner reversed: that a whole-app archive is ADDED alongside
+ * what is on the device, that nothing is ever deleted, and that colliding names are suffixed.
+ * Restore now REPLACES, so those assertions describe a contract that no longer exists - keeping
+ * them passing would have required keeping the superseded code path alive.
+ *
+ * Every property they protected is asserted on the replace path instead, and this list is the
+ * audit trail for that claim rather than a promise to take on trust:
+ *
+ *   round-trip + exactly one Primary  -> replaceAll.test.mjs "canonical equivalence with it"
+ *   atomicity on failure              -> replaceAll.test.mjs "ATOMICITY: an injected failure at
+ *                                        the FIRST/MIDDLE/LAST statement leaves the database
+ *                                        byte-identical" (three positions, full byte dump)
+ *   one transaction                   -> replaceAll.test.mjs "the journal row is in the SAME
+ *                                        transaction as the deletes, last"
+ *   active profile follows the archive-> replaceAll.test.mjs (Beta becomes active) and
+ *                                        restoreReconcile.test.mjs
+ *   runtime active id, no relaunch    -> restoreReconcile.test.mjs
+ *   dash_seeded carried               -> replaceAll.test.mjs "dash_seeded keys are RE-KEYED"
+ *   name collisions                   -> INVERTED on purpose: replace must NOT suffix
+ *                                        (replaceAll.test.mjs "no (imported) suffix anywhere"),
+ *                                        while import still does (the CONTRAST test there)
+ *   "nothing is deleted"              -> RETIRED. The owner replaced this property; the opposite
+ *                                        is now asserted ("the device state it replaced is gone").
+ * ---------------------------------------------------------------------------------------- */
 
+test('the ADDITIVE executor refuses a whole-app archive outright', async () => {
+  // The boundary, not the caller, is what makes the routing safe. classifyBackup decides which
+  // operation a file authorises; this proves restoreAll refuses to be the wrong one, so a dropped
+  // or renamed `operation` field in the UI cannot silently reinstate additive whole-app restore.
+  const { text } = await captureArchive();
+  const preview = await previewBackup(text);
   const before = rows('SELECT COUNT(*) c FROM profiles;')[0].c;
-  const result = await restoreAll(env);
-  assert.equal(result.profiles, 2);
-
-  assert.equal(rows('SELECT COUNT(*) c FROM profiles;')[0].c, before + 2, 'restore must be ADDITIVE');
-  assert.equal(rows('SELECT COUNT(*) c FROM profiles WHERE is_default=1;')[0].c, 1,
-    'exactly one default profile must exist after a restore');
-  // The archive's default won, so the pre-existing starter is now deletable by the user.
-  const def = rows('SELECT name FROM profiles WHERE is_default=1;')[0].name;
-  assert.match(def, /^Alpha/);
+  await assert.rejects(restoreAll(preview), (e) => e.code === 'whole-app-archive');
+  assert.equal(rows('SELECT COUNT(*) c FROM profiles;')[0].c, before, 'a refused route must write nothing');
 });
 
-test('NOTHING is deleted by a restore - the design has no profile-deletion path', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  const namesBefore = rows('SELECT id FROM profiles ORDER BY id;').map((r) => r.id);
-  await restoreAll(env);
-  const after = rows('SELECT id FROM profiles ORDER BY id;').map((r) => r.id);
-  for (const id of namesBefore) assert.ok(after.includes(id), `pre-existing profile ${id} was removed`);
-});
-
-test('name collisions are disambiguated against the device AND within the same restore', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  await restoreAll(env);
-  const names = rows("SELECT name FROM profiles WHERE name LIKE 'Alpha%' ORDER BY name;").map((r) => r.name);
-  assert.deepEqual(names, ['Alpha', 'Alpha (imported)']);
-
-  // Restoring the SAME archive again must not collide with the copies it made last time.
-  await restoreAll((await previewBackup(text)).env);
-  const again = rows("SELECT name FROM profiles WHERE name LIKE 'Alpha%';").map((r) => r.name);
-  assert.equal(new Set(again).size, again.length, `duplicate names: ${again.join(', ')}`);
-});
-
-test('ATOMICITY: a failure part-way through leaves the database exactly as it was', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-
-  const snapshotOf = () => ({
-    profiles: rows('SELECT id,name,is_default FROM profiles ORDER BY id;'),
-    decks: rows('SELECT id,profile_id,name FROM decks ORDER BY id;'),
-    owned: rows('SELECT id,profile_id,card_id,qty_owned FROM owned_cards ORDER BY id;'),
-  });
-  const before = snapshotOf();
-
-  // Fail on the LAST statement, so a non-atomic implementation would already have written the first
-  // profile in full - which is precisely the partial restore revision 2 accepted.
-  __setBackendForTests({
-    ...realBackend,
-    tx: (st) => {
-      sdb.run('BEGIN;');
-      try {
-        st.forEach(([s, p = []], i) => {
-          if (i === st.length - 1) throw new Error('storage failed at the last statement');
-          sdb.run(s, p);
-        });
-        sdb.run('COMMIT;');
-      } catch (e) { sdb.run('ROLLBACK;'); throw e; }
-      return Promise.resolve();
-    },
-  });
-
-  await assert.rejects(restoreAll(env), /storage failed/);
-  assert.deepEqual(snapshotOf(), before, 'a failed restore must leave nothing behind');
-});
-
-test('the whole restore is planned as ONE transaction, not one per profile', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  let txCalls = 0;
-  __setBackendForTests({ ...realBackend, tx: (st) => { txCalls += 1; return realBackend.tx(st); } });
-  await restoreAll(env);
-  assert.equal(txCalls, 1, 'restore must commit once for the whole archive');
-});
-
-test('app-global state is carried: the active profile follows the archive', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  // 'Beta' was active when the archive was taken; its restored copy must become active.
-  const result = await restoreAll(env);
-  const activeName = rows('SELECT name FROM profiles WHERE id=?;', [result.activeProfileId])[0].name;
-  assert.match(activeName, /^Beta/);
-});
-
-// ---------------------------------------------------------------------------------------------
-// THE ACTIVE PROFILE HAS ONE AUTHORITY, IMMEDIATELY - not after a relaunch.
-//
-// Restore used to write the new id straight to Preferences, leaving three authorities disagreeing:
-// the database (restored default), Preferences (new id) and profileRepository's in-memory activeId
-// (still the OLD profile, since only initProfiles/switchProfile set it). activeProfileId() is the
-// gate every profile-scoped read and write passes through, so the running process kept writing to
-// the pre-restore profile while the next launch was promised a different one - work done in between
-// would appear to vanish. That is a profile-isolation break, and these tests are its regression.
-//
-// The old test asserted only the id RETURNED by restoreAll(), which was correct the whole time. That
-// is why the bug survived: the assertion never touched the authority that was wrong.
-
-test('after restore the RUNTIME active id is the restored profile, with no relaunch', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  assert.equal(activeProfileId(), 'p-two', 'precondition: the pre-restore profile is active');
-
-  const result = await restoreAll(env);
-
-  assert.equal(result.activeReconciled, true, 'restore must report that it settled the active profile');
-  assert.equal(activeProfileId(), result.activeProfileId,
-    'the repository runtime id must equal the restored active id - not the pre-restore one');
-  assert.notEqual(activeProfileId(), 'p-two',
-    'still pointing at the pre-restore profile means every later write lands in the wrong partition');
-});
-
-test('after restore getActiveProfile() returns the restored profile, not the pre-restore one', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  const result = await restoreAll(env);
-
-  const active = await getActiveProfile();
-  assert.equal(active.id, result.activeProfileId);
-  assert.match(active.name, /^Beta/, "the archive's active profile was Beta, so its restored copy is active");
-  assert.notEqual(active.id, 'p-two');
-});
-
-test('the visible profile list shows the imported profiles immediately', async () => {
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  const before = (await listProfiles()).length;
-
-  const result = await restoreAll(env);
-
-  const after = await listProfiles();
-  assert.equal(after.length, before + result.profiles, 'every restored profile must be listable at once');
-  assert.ok(after.some((p) => p.id === result.activeProfileId), 'the newly active profile must be in the list');
-  // Exactly one default survives - the deletion shield cannot be lost to an import.
-  assert.equal(after.filter((p) => p.is_default).length, 1);
-});
-
-test('a post-commit Preferences failure is a CAVEAT, never a retryable failure', async () => {
-  // A retry after a committed restore imports the whole archive a second time, so this is the one
-  // place where reporting failure honestly would do more damage than reporting success.
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
+test('a post-commit failure on the IMPORT path is a CAVEAT, never a retryable failure', async () => {
+  // Kept, and re-pointed at the additive path it actually governs. A retry after a committed
+  // import adds the profile a second time, so reporting failure here would do more damage than
+  // reporting success. The replace path has its own, harsher version of this in replaceAll.test.mjs:
+  // there a retry could destroy the recovery point.
+  const text = await legacyBundleText('Imported');
+  const preview = await previewBackup(text);
   const realSet = globalThis.window.localStorage.setItem;
   globalThis.window.localStorage.setItem = () => { throw new Error('Preferences unavailable'); };
 
   let result;
   try {
-    result = await restoreAll(env);           // must NOT reject
+    result = await restoreAll(preview);        // must NOT reject
   } finally {
     globalThis.window.localStorage.setItem = realSet;
   }
 
-  assert.equal(result.activeReconciled, false, 'the caller needs to know the pointer did not settle');
-  assert.equal(result.profiles, 2, 'the rows committed regardless');
-  const names = rows('SELECT name FROM profiles;').map((r) => r.name).sort();
-  assert.equal(names.length, 4, 'two originals plus two restored copies are on disk');
-});
-
-test('the dashboard-seeded flag is carried explicitly, per profile', async () => {
-  sdb.run("INSERT OR REPLACE INTO catalog_meta(key,value) VALUES('dash_seeded:p-one','1');");
-  const { text } = await captureArchive();
-  const { env } = await previewBackup(text);
-  assert.equal(env.payload.profiles.find((u) => u.profile.name === 'Alpha').dashSeeded, true);
-  assert.equal(env.payload.profiles.find((u) => u.profile.name === 'Beta').dashSeeded, false);
-
-  await restoreAll(env);
-  const seeded = rows("SELECT key FROM catalog_meta WHERE key LIKE 'dash_seeded:%';").map((r) => r.key);
-  assert.equal(seeded.length, 2, 'exactly the one seeded source profile plus its restored copy');
+  assert.equal(result.activeReconciled, false, 'the caller needs to know the switch did not settle');
+  assert.equal(result.profiles, 1, 'the rows committed regardless');
+  assert.equal(rows("SELECT COUNT(*) c FROM profiles WHERE name='Imported';")[0].c, 1);
 });
 
 test('a corrupt archive is refused and writes nothing', async () => {
@@ -394,10 +279,11 @@ test('a legacy restore does not disturb the existing default profile', async () 
   assert.equal(rows('SELECT COUNT(*) c FROM profiles WHERE is_default=1;')[0].c, 1);
 });
 
-test('a whole-app archive is still routed as whole-app, not mistaken for legacy', async () => {
+test('a whole-app archive is still identified as whole-app, not mistaken for legacy', async () => {
+  // The classification half of the old test survives; its second half - that restoreAll then runs
+  // it additively - is the behaviour the owner reversed, and the refusal is asserted above.
   const { text } = await captureArchive();
   const p = await previewBackup(text);
   assert.equal(p.kind, 'whole-app');
-  const r = await restoreAll(p);
-  assert.equal(r.via, 'whole-app');
+  assert.ok(Array.isArray(p.env?.payload?.profiles), 'a whole-app preview carries the envelope');
 });
