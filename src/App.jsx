@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { openDatabase } from './store/db.js';
+import { executorFor, confirmState, outcomeMessage, failureMessage } from './store/restoreFlow.js';
 import {
   initProfiles, getActiveProfile, listProfiles, profileStats,
   createProfile, switchProfile, renameProfile, deleteProfile,
@@ -1258,13 +1259,9 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
     (a, p) => ({ profiles: a.profiles + 1, decks: a.decks + (p.decks ?? 0), matches: a.matches + (p.matches ?? 0) }),
     { profiles: 0, decks: 0, matches: 0 },
   );
-  // Destructive, and either the runtime cannot promise a durable recovery point or we do not YET
-  // know. Both are blocked. The `policy != null` version of this failed OPEN for the width of an
-  // async import: the button was live before the answer arrived, so a quick confirm on a
-  // non-persistent browser produced exactly the "offered, then failed" experience the fail-closed
-  // work existed to remove. Unknown is not permission.
-  const policyPending = destructive && policy == null;
-  const blocked = destructive && !binding && (policy == null || !policy.allowed);
+  // Every judgement on this screen comes from restoreFlow, which is pure and therefore testable -
+  // App.jsx is not. What stays here is effects and markup.
+  const { blocked, pending: policyPending } = confirmState({ destructive, policy, binding, busy });
 
   /** Bind an external backup as the durable substitute. Verified against the archive itself here;
    *  it is re-checked against the FROZEN CAPTURE inside the session, which is the part that makes
@@ -1296,7 +1293,7 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
       // REPLACES; a single-profile export is additive and only ever imports. Deciding that here as
       // well would be the fourth place it was decided, which is how the wrong file reaches the
       // destructive path.
-      const replacing = preview.operation === svc.REPLACE_ALL;
+      const replacing = executorFor(preview) === 'replace';
       // Past this await the rows are COMMITTED. Nothing after it may report a plain failure: the
       // user would retry, and on the additive path a retry imports the archive a second time - on
       // the destructive path a retry is refused outright, because it could destroy the recovery
@@ -1313,22 +1310,11 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
         onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
         return;
       }
-      // THREE OUTCOMES, and only one of them is a failure - which is not reachable from here at all,
-      // because past the commit replaceAll returns instead of rejecting. `settled: false` means the
-      // rows are in and the pointer or the active profile did not finish; the next launch completes
-      // it from the journal row. Saying "failed" here would invite the retry that could destroy the
-      // recovery point, which is the whole reason this branch exists.
-      const noun = `${r.profiles} profile${r.profiles === 1 ? '' : 's'}`;
-      const done = r.via === 'replace' ? `Replaced everything with ${noun}.` : `Restored ${noun}.`;
-      const deferred = r.via === 'replace'
-        ? `Replaced everything with ${noun}. Reopen the app to finish tidying up.`
-        : `Restored ${noun}. Reopen the app to finish switching.`;
-      const settled = r.via === 'replace' ? r.settled !== false : r.activeReconciled !== false;
-      onToast?.(settled ? done : deferred);
+      onToast?.(outcomeMessage(r).text);
     } catch (e) {
       // Only pre-commit refusals reach here: a wrong-route file, a policy refusal, a stale bound
       // archive, or a previous restore that has not reconciled. Nothing has been destroyed.
-      onToast?.(`Restore failed: ${e?.message || e}`, { tone: 'danger' });
+      onToast?.(failureMessage(e).text, { tone: 'danger' });
     } finally { setBusy(false); }
   }
 
