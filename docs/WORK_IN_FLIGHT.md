@@ -32,7 +32,7 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 - **Branch `capacitor-8` still exists locally** and is fully contained in `main` (0 unique commits
   after the merge), so it is safe to delete whenever.
 
-### `restore-semantics` - IN PROGRESS, 9 of 11 increments built
+### `restore-semantics` - ALL 11 INCREMENTS BUILT AND DEVICE-VERIFIED
 
 **Status:** ACTIVE. Proposal [proposals/restore-semantics.md](./proposals/restore-semantics.md)
 **Rev 4, Codex APPROVED** after three rounds (2 Blockers, then 2 Blockers, then 1 Major + 2 Minors).
@@ -54,14 +54,35 @@ transferable role.
 | 6 | Persisted-state registry | Consumed by `replacePlan`, not documentation. Preserve-by-default |
 | 7 | Legacy routing to Import | `classifyBackup` decides once |
 | 8 | Confirm screen + accessibility + reachable Undo | Copy previously promised the opposite of what the code does |
+| 9 | **Device pass** | Build 221 on a Pixel 9 Pro XL. Details below |
+| 10 | Docs | This entry plus the six documents in the impact table |
 
-**NOT DONE:**
+**INCREMENT 9 - what was actually done, 2026-08-13, build 221.**
 
-- **Increment 9, the device pass.** Blocked only on the phone being plugged in. It must cover: a real
-  archive replaced and returned via "Return to previous state"; restoring an OLDER archive to confirm
-  newer data is genuinely gone; and killing the app mid-restore to prove startup finishes it. Build
-  221 is built but was never installed, so `package.json` is still at 220.
-- **Increment 10, docs** - this entry plus the six documents in the impact table (done).
+Run in a **disposable second Android user**, not the owner's profile. The destructive path had never
+executed on hardware and the owner's data is the only copy of it, so the risk was removed rather than
+accepted: `pm create-user` + `pm install-existing` gives an empty sandbox running the REAL arm64
+minified release APK and the REAL native SQLite, and `pm remove-user` reverses it.
+
+- **Replace is genuinely destructive.** Device state Sorcerer + Alpha + Beta; archive held Sorcerer +
+  Alpha. After Replace: exactly two profiles, **Beta gone**, and no `(imported)` suffixes - so it
+  replaced rather than merged, and the name dedupe correctly did not run.
+- **That is also the older-archive case.** The archive predated Beta, and restoring it destroyed newer
+  data deliberately, which is the behaviour the owner chose and the one most worth proving.
+- **Undo returns.** "Return to previous state" described the pre-replace state correctly (3 profiles,
+  timestamped) and restored it - Beta came back.
+- **Killed mid-replace.** Process force-stopped ~350ms after confirming. On relaunch the state was
+  COHERENT - fully replaced, never half - the recovery point had been published and still described
+  the pre-replace state, and the app booted with no error. Honest limit: the exact millisecond window
+  between commit and reconciliation cannot be hit deterministically by hand, so this shows the
+  operation survives process death; the per-phase crash behaviour is proven by the Increment 5 unit
+  tests, which construct each crash state exactly.
+- **Confirm screen, on device:** "Everything currently in Compendium will be replaced by this backup.
+  3 profiles now on this device ... will be removed. A safety copy is taken first."
+- **Zero** FATAL, "Restore failed" or "reconciliation failed" lines across the entire pass.
+- **Owner's real profile re-verified afterwards**: Sadkingbilly, 1,832 cards, 4 decks, 9 matches, 2
+  marginalia - untouched. `check:smoke` 8/8 on build 221 before the pass, with `reconcileRestore()`
+  now running first at every boot.
 
 **Owner decisions recorded during the build:**
 
