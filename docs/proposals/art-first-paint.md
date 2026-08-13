@@ -66,7 +66,12 @@ black at t=0, fully painted by 400ms, byte-identical at 400ms and 1.9s.
 2. **Art already painted this session does not shimmer or fade again** on a later mount.
 3. **A genuine first load still shimmers and fades.** The reverse regression is the one that matters:
    silently dropping the loading affordance would make a slow CDN fetch look like a broken image.
-4. **Zero-image mode is unchanged** - no render and no I/O.
+4. **Graceful degradation still holds, and its harness still works.** The property is
+   ENGINEERING_CONSTITUTION §3.6: missing art must never make the app unusable. `imagesDisabled()` is
+   not a user-facing mode - nothing in the app writes `cx-no-images`, and BUILD.md documents setting it
+   by hand as the way to VERIFY the property. So this change must keep `peek`/`resolve` returning
+   early on that flag, because that switch is how the invariant is exercised, and must not make any
+   surface depend on art being present.
 5. No additional network requests, and no additional disk reads on the hot path.
 
 ### Non-goals
@@ -138,8 +143,8 @@ optimistic path. That is a fallback already chosen, not a new design round.
 ## Verification plan
 
 - **Automated:** `artSource` decides first paint from a peeked candidate; a painted key skips the
-  shimmer; an unpainted key does not; zero-image mode renders nothing and performs no I/O; an
-  optimistic miss advances the candidate chain exactly as a corrupt file does today.
+  shimmer; an unpainted key does not; the `cx-no-images` flag still short-circuits before any render or
+  I/O; an optimistic miss advances the candidate chain exactly as a corrupt file does today.
 - **Device:** relaunch with a warm cache and confirm no empty-source gap on avatars or deck panels;
   clear the art cache and confirm the shimmer and fade still appear on a genuine first load.
 - **Regression:** `check:source` still passes - the `artUrl` seam is not bypassed. `check:cycles`
@@ -152,6 +157,11 @@ optimistic path. That is a fallback already chosen, not a new design round.
 | Fresh install fires an error per image | Medium - churn on the slowest device state | Observed at Increment 2; option C is the pre-chosen fallback |
 | Dropping the shimmer hides a slow CDN fetch | **Medium-high** - a genuine load would look broken | Success criterion 3, with an explicit test for the reverse regression |
 | `painted` grows unbounded | Low | Keys are short strings and bounded by the catalog; measure at Increment 2 |
+
+**A note on the optimistic path and §3.6.** Rendering an `<img>` that may fail is not a degradation
+risk in itself - `onError` already falls through to the deterministic placeholder, which is the same
+path a deleted file takes today. What would breach §3.6 is any surface that assumes art resolves; this
+change adds none.
 
 ## Self-Critique
 
