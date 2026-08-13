@@ -69,15 +69,26 @@ behind a shimmer with a `.3s` transition, every time. Measured on device (build 
 at t=0, painted by 400ms, byte-identical at 400ms and 1.9s - too fast and too consistent for a CDN
 round trip.
 
-**Proposed:** an optimistic local candidate from `peek` (the URI is derivable from the key; `resolve()`
-only goes async to VERIFY, and the existing `onError` chain already handles a miss), plus a
-module-level `painted` set so a key already shown this session mounts at full opacity.
+**Rev 1 was dispositioned Changes required and BOTH fixes were wrong.** Worth carrying forward as a
+lesson rather than a footnote: I checked the mechanism and not the wiring.
 
-**The risk to hold on to:** the reverse regression. A genuine first load must still shimmer and fade, or
-a slow CDN fetch will look like a broken image. Increment 0 measures fresh-install error churn before
-Increment 1 relies on the optimistic path.
+- The optimistic `peek` would have served files without the exact-size manifest check that
+  `artCache.js:7` documents as fail-closed. `onError` catches a decode failure, NOT wrong-but-decodable
+  bytes - so a truncated or mismatched image would paint silently.
+- The fade fix targeted `ArtImage`, which has **zero call sites**. The live framed path is
+  `CardArt.jsx` (16 call sites), which owns its own `loaded` state and identical fade. The change would
+  have shipped green and altered nothing visible. `grep '<ArtImage'` returns zero and takes seconds.
 
-**Next step:** Codex review of the proposal, then Increment 0.
+**Rev 2 proposes:** seed the memo at boot from one `io.list('art')`, admitting only entries whose size
+matches the manifest - the same validation `resolve()` performs, just batched, with no new index. It
+cannot race first paint because `initArtCache()` is awaited before render (the reason Rev 1 gave for
+rejecting this was false). Plus a `painted` set consulted by **`CardArt`**, invalidated on
+`quarantine`/`clear`.
+
+**The risk to hold on to:** the reverse regression. A genuine first load - including a re-download
+after a quarantine - must still shimmer, or a slow CDN fetch will look like a broken image.
+
+**Next step:** Codex round 2, which is the final round per owner instruction.
 
 ### `android-16kb-compat` - DO NOT MERGE
 
