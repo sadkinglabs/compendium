@@ -44,8 +44,9 @@ export async function initArtCache() {
   if (isNative()) { await initArtIo(); await artCache.sweepScratch(); }
   await loadArtManifest();
   // AFTER the manifest, necessarily: seeding admits a file only when its size matches the manifest's
-  // byte count, so with an empty holder it would admit nothing. One directory list; the log line is
-  // the Increment 2 measurement (visible in logcat via the WebView console bridge).
+  // byte count, so with an empty holder it would admit nothing. One directory list. The log line is a
+  // DEV-BUILD aid only - a stock release WebView forwards no console (BUILD.md documents this), which
+  // is why the device measurement was bounded by observation instead.
   const t0 = Date.now();
   const seeded = await artCache.seedFromDisk();
   if (seeded > 0) console.info(`art: seeded ${seeded} cached entries in ${Date.now() - t0}ms`);

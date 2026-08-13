@@ -372,3 +372,24 @@ test('clear() during the verification stat wins: staleResult, nothing deleted by
   assert.ok(!fake.ops.some((o) => o === `delete art/${KEY}`), 'quarantine itself wrote nothing');
   assert.equal(cache._debug.resolved.size, 0, 'nothing seeded into the new epoch');
 });
+
+test('an OPERATIONAL stat failure destroys nothing: no delete, no download, painted intact', async () => {
+  // Codex verification finding: null-from-stat means "positively missing" and takes the destructive
+  // path, so an adapter that flattened bridge/permission errors into null let an operational hiccup
+  // delete a manifest-valid file - the exact churn the checkpoint exists to stop. The core's contract:
+  // a THROWING stat is indeterminate evidence, and indeterminate evidence must not destroy anything.
+  const f = fakeIo({ art: { [`art/${KEY}`]: 100 } });
+  const origStat = f.io.stat;
+  f.io.stat = async (p) => { if (p === `art/${KEY}`) throw new Error('bridge unavailable'); return origStat(p); };
+  const { cache } = make({ fake: f });
+  cache.markPainted(KEY);
+
+  const out = await cache.quarantine(KEY);
+
+  assert.deepEqual(out, remoteCand(KEY), 'display-only remote for this one render');
+  assert.ok(f.files.has(`art/${KEY}`), 'the file must survive an indeterminate failure');
+  assert.equal(f.ops.filter((o) => o.startsWith('delete')).length, 0, 'nothing deleted');
+  assert.equal(f.ops.filter((o) => o.startsWith('download')).length, 0, 'nothing downloaded');
+  assert.equal(cache.hasPainted(KEY), true, 'painted must not be evicted on indeterminate evidence');
+  assert.equal(cache._debug.transientRetries.size, 0, 'and the transient budget is not spent');
+});

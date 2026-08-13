@@ -198,8 +198,13 @@ export function createArtCache(deps) {
   async function quarantine(key) {
     if (!key || !isNative()) return staleResult(key);
     const reqEpoch = epoch;
-    const st = await io.stat(`art/${key}`).catch(() => null);           // a throwing stat reads as missing:
-                                                                        // fail toward today's quarantine, never reject
+    let st;
+    try { st = await io.stat(`art/${key}`); }
+    catch { return staleResult(key); }      // OPERATIONAL stat failure - not "missing". Indeterminate
+                                            // evidence must not destroy anything: keep the file, the
+                                            // memo, painted and the retry counters untouched, and show
+                                            // the display-only remote candidate this one time. The
+                                            // adapter only returns null for a POSITIVE not-found.
     if (reqEpoch !== epoch) return staleResult(key);                    // cleared mid-stat: no writes, no seeding
     if (st && validSize(key, st.size)) {
       // The file is exactly what the manifest promised, so the failure was transient. Keep the file,

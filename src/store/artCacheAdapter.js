@@ -53,10 +53,22 @@ export function makeArtIo({ fs = Filesystem, getHttp = nativeHttp, dir = DIR } =
   };
   const deleteIfPresent = async (path) => { try { await fs.deleteFile({ path, directory: dir }); } catch { /* gone */ } };
 
+  // Is this stat rejection "the file does not exist", as opposed to an OPERATIONAL failure (bridge
+  // unavailable, permission, plugin error)? Capacitor distinguishes them - OS-PLUG-FILE-0008 / a
+  // "does not exist" message is not-found - and the distinction is load-bearing: null from stat()
+  // sends quarantine down the DESTRUCTIVE path, so flattening every error into null let a bridge
+  // hiccup delete a manifest-valid cached file, recreating exactly the churn the verify-before-
+  // quarantine checkpoint exists to stop.
+  const isNotFound = (e) =>
+    e?.code === 'OS-PLUG-FILE-0008' || /does not exist|ENOENT|not found/i.test(String(e?.message || e));
+
   return {
+    // null means POSITIVELY MISSING, nothing else. An operational failure rethrows, and the callers
+    // treat it non-destructively: quarantine() returns the display-only remote candidate touching
+    // nothing; resolve()'s outer catch settles to staleResult without deleting or downloading.
     stat: async (path) => {
       try { const s = await fs.stat({ path, directory: dir }); return { size: s.size }; }
-      catch { return null; }
+      catch (e) { if (isNotFound(e)) return null; throw e; }
     },
     size: async (path) => {
       try { const s = await fs.stat({ path, directory: dir }); return s.size || 0; }

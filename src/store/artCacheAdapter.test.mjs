@@ -77,3 +77,32 @@ test('a THROWN HTTP get is caught, returns false, and removes any partial', asyn
   assert.equal(await s.io.download(URL, PATH, BYTES), false);
   assert.ok(!s.files.has(PATH));
 });
+
+test('stat: not-found maps to null; an OPERATIONAL error rethrows - the distinction is load-bearing', async () => {
+  // null sends artCache.quarantine down the DESTRUCTIVE path, so it must mean "positively missing"
+  // and nothing else. Flattening a bridge or permission failure into null let an operational hiccup
+  // delete a manifest-valid cached file.
+  const notFoundShapes = [
+    Object.assign(new Error('File does not exist'), { code: 'OS-PLUG-FILE-0008' }),
+    new Error('File does not exist'),
+    new Error('ENOENT'),
+  ];
+  for (const err of notFoundShapes) {
+    const io = makeArtIo({ fs: { stat: async () => { throw err; } }, getHttp: () => null, dir: 'DATA' });
+    assert.equal(await io.stat('art/x'), null, `not-found shape must map to null: ${err.message}`);
+  }
+  const operationalShapes = [
+    new Error('bridge unavailable'),
+    Object.assign(new Error('permission denied'), { code: 'OS-PLUG-FILE-0004' }),
+  ];
+  for (const err of operationalShapes) {
+    const io = makeArtIo({ fs: { stat: async () => { throw err; } }, getHttp: () => null, dir: 'DATA' });
+    await assert.rejects(io.stat('art/x'), (e) => e === err, `operational error must rethrow: ${err.message}`);
+  }
+});
+
+test('stat: a real file still stats normally', async () => {
+  const s = setup();
+  s.files.set('art/x', 123);
+  assert.deepEqual(await s.io.stat('art/x'), { size: 123 });
+});
