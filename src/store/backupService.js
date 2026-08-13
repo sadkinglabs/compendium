@@ -12,13 +12,16 @@
 //   the whole restore commits or none of it does - including across process death (Codex Blocker 2).
 //   Stage 0 measured this: the owner's real profile plans to ~1,479 statements / 0.38 MiB.
 import { Preferences } from '@capacitor/preferences';
-import { snapshot, query, tx } from './db.js';
+import { snapshot, query, tx, acquireExclusiveSession } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { listProfiles, activeProfileId, switchProfile } from './profileRepository.js';
-import { buildProfileUnit, planProfileUnit, importProfile, uniqueProfileName } from './profileTransfer.js';
+import { buildProfileUnit, importProfile } from './profileTransfer.js';
 import { buildEnvelope, seal, parseBackup, readBackup, summarise } from './backup.js';
-import { prepareBundle, ITERATED_COLLECTIONS } from './importBoundary.js';
-import { uuid, nowIso } from './ids.js';
+import { ITERATED_COLLECTIONS } from './importBoundary.js';
+import { writeCandidate, verifyCandidate, promote } from './recoveryStore.js';
+import { replacementPolicy, assertBoundArchiveMatches, ReplaceRefused } from './replacementPolicy.js';
+import { planReplace, RESTORE_PENDING_KEY } from './replacePlan.js';
+import { nowIso } from './ids.js';
 import { saveTextFile } from '../native.js';
 
 // No ACTIVE_KEY here on purpose. This module used to keep its own copy of profileRepository's
@@ -93,9 +96,37 @@ export async function backupAll({ appBuild = currentBuild(), now = new Date() } 
 /* Restore                                                             */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* Which operation is this file, and which is it NOT                   */
+/* ------------------------------------------------------------------ */
+
+/** The two operations a backup file can name. A file is one or the other, never both. */
+export const REPLACE_ALL = 'replace-all';
+export const IMPORT_PROFILE = 'import-profile';
+
+/**
+ * Classify a file into the operation it authorises, in ONE place.
+ *
+ * The knowledge used to be spread: `previewBackup` branched on shape, `restoreAll` branched again,
+ * and `replaceAll` re-derived the same distinction to refuse. Three readings of one question is how
+ * a caller ends up routing a single-profile export into a whole-app replacement - and that is the
+ * one mistake this operation must never make, because a single-profile file is not authority to
+ * delete everything else on the device.
+ *
+ * Callers should switch on `operation` and hand the SAME preview to the matching executor.
+ */
+export async function classifyBackup(text) {
+  const preview = await previewBackup(text);
+  return {
+    ...preview,
+    operation: preview.kind === 'whole-app' ? REPLACE_ALL : IMPORT_PROFILE,
+    destructive: preview.kind === 'whole-app',
+  };
+}
+
 /**
  * Parse and fully validate a backup, returning what a restore WOULD do. Writes nothing.
- * The UI shows this and waits for confirmation before `restoreAll` is called.
+ * The UI shows this and waits for confirmation before an executor is called.
  */
 export async function previewBackup(text) {
   const read = await readBackup(text);
@@ -155,95 +186,199 @@ async function catalogSets() {
 export async function restoreAll(preview) {
   if (preview?.kind === 'profile') {
     const pid = await importProfile(preview.bundle);
-    return { profiles: 1, activeProfileId: pid, statements: null, via: 'profile-import' };
+    // OPEN IT. This used to return `activeProfileId: pid` without switching, so the field named a
+    // profile that was not active - the caller was told where the data went and the app kept
+    // showing somewhere else. Same family as the restore authority split: reporting an id is not
+    // the same as making it true. planProfileUnit always writes is_default 0, so opening an
+    // imported profile cannot take the Primary role from whoever holds it.
+    let activeReconciled = false;
+    try { await switchProfile(pid); activeReconciled = true; }
+    catch { /* the rows are committed; the user can switch by hand */ }
+    return { profiles: 1, activeProfileId: pid, activeReconciled, statements: null, via: 'profile-import' };
+  }
+
+  // A WHOLE-APP ARCHIVE IS REFUSED HERE, at the boundary, not merely routed away from by the caller.
+  // This function is the ADDITIVE executor, and additive is no longer what a whole-app backup means:
+  // it authorises replacement. Leaving the boundary permissive meant one dropped or renamed
+  // `operation` field in App.jsx could silently reinstate the superseded behaviour - two of
+  // everything - with every routing test still green, because the tests checked classification while
+  // the executor accepted either.
+  //
+  // The classifier decides which operation a file authorises; this makes the executor refuse to be
+  // the wrong one.
+  // A whole-app envelope reaches the end of this function and no further: the additive whole-app
+  // implementation that used to live below has been DELETED, not merely guarded. Leaving unreachable
+  // destructive-adjacent code behind would make it ambiguous which behaviour is authoritative, and
+  // the retired tests that described it are documented in backupService.test.mjs.
+  throw new ReplaceRefused('whole-app-archive',
+    'That is a whole-app backup, which replaces all data. Restore it with Replace all data, not Import.');
+}
+
+/* ------------------------------------------------------------------ */
+/* Replace - restore-semantics.md §2, the destructive path              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Replace EVERYTHING profile-owned with the archive. The first destructive operation in the app,
+ * built to be abortable before it is anything else: every failure before the one commit leaves
+ * the device byte-identical, and past the commit the operation is finishable, never abandoned.
+ *
+ * The sequence is the proposal's §2, inside one exclusive session:
+ *   acquire (close admission, drain) -> capture via session.readTransaction -> write + verify the
+ *   recovery candidate -> [bind check when durability is refused] -> ONE tx (deletes + inserts +
+ *   Primary + journal row) -> reconcile active via switchProfile() -> publish the recovery
+ *   pointer, clear the journal -> release.
+ *
+ * POLICY IS ENFORCED HERE, not merely available: replacementPolicy() runs before the session is
+ * even claimed, and when it refuses, the ONLY way forward is a bound external archive checked
+ * against the CAPTURED envelope after drain (assertBoundArchiveMatches) - a stale file aborts
+ * with nothing destroyed. The policy module cannot enforce its own use; this call site is where
+ * "impossible without it" is made true.
+ *
+ * Accepts what `previewBackup` returned (or a bare envelope). A legacy single-profile file is
+ * REFUSED: it is never authority to delete the whole app (§9) - route it through restoreAll's
+ * import path instead.
+ */
+export async function replaceAll(preview, { binding = null } = {}) {
+  if (preview?.kind === 'profile') {
+    throw new ReplaceRefused('single-profile',
+      'That file is a single-profile export, so it cannot replace all data. Import it as a profile instead.');
   }
   const env = preview?.env ?? preview;
-  const setsOf = await catalogSets();
-  const taken = new Set((await query('SELECT name FROM profiles;')).map((p) => p.name));
-
-  const statements = [];
-  const created = [];
-
-  for (const unit of env.payload.profiles) {
-    // Same boundary the per-profile import trusts: validate, then normalise v10 -> v11, in memory.
-    const { bundle } = prepareBundle(
-      { app: 'compendium', schemaVersion: env.schemaVersion, ...unit }, setsOf);
-
-    // Disambiguated against the device AND against names this same restore has already claimed -
-    // two archived profiles can share a name. Same helper the per-profile import uses.
-    const name = uniqueProfileName(bundle.profile?.name, taken);
-    taken.add(name);
-
-    let avatar = null;
-    try { avatar = bundle.profile?.avatar ? JSON.parse(bundle.profile.avatar) : null; } catch { avatar = null; }
-
-    const plan = planProfileUnit(bundle, {
-      pid: uuid(), name, avatar,
-      // Carried explicitly by a v2 unit, so a faithfully restored dashboard - including a
-      // deliberately empty one - is not repopulated with starter widgets.
-      dashSeeded: unit.dashSeeded,
-    });
-    statements.push(...plan.statements);
-    created.push({ pid: plan.pid, name, wasDefault: unit.profile?.is_default === 1 });
+  if (!Array.isArray(env?.payload?.profiles)) {
+    throw new ReplaceRefused('single-profile', 'Only a whole-app backup can replace all data.');
   }
 
-  // Adopt the archive's default. IN THE SAME TRANSACTION as the rows, so the database is never
-  // momentarily without a default or with two.
-  const newDefault = created.find((c) => c.wasDefault) ?? created[0];
-  if (newDefault) {
-    statements.push(['UPDATE profiles SET is_default=0;', []]);
-    statements.push(['UPDATE profiles SET is_default=1 WHERE id=?;', [newDefault.pid]]);
+  // The gate, before anything is claimed or written. Refusal here costs nothing.
+  const policy = await replacementPolicy();
+  if (!policy.allowed && !binding) {
+    throw new ReplaceRefused(policy.code, policy.reason);
   }
 
-  // ONE transaction. Commits entirely or changes nothing (Options / H, size-measured in Stage 0).
-  await tx(statements);
-
-  // ONE TRANSACTION, ONE COMMIT POINT. Everything below this line runs AFTER the data is durable,
-  // and therefore MUST NOT be able to make a committed restore look like a failed one. A generic
-  // "Restore failed" here would invite a retry, and a retry imports the whole archive AGAIN.
-  const idx = env.payload.appGlobal?.activeProfileIndex;
-  const activePid = (idx != null && created[idx]) ? created[idx].pid : newDefault?.pid;
-  let activeReconciled = false;
-
+  const session = await acquireExclusiveSession();
   try {
-    // THROUGH THE REPOSITORY, NOT AROUND IT. This used to write ACTIVE_KEY straight to Preferences,
-    // which left THREE authorities disagreeing about who is active: the database (restored default),
-    // Preferences (the new id) and profileRepository's in-memory activeId (still the OLD profile,
-    // because only initProfiles/switchProfile ever set it).
+    // A PENDING JOURNAL ROW BLOCKS A SECOND REPLACEMENT, and this is a data-loss guard rather than
+    // tidiness. A row still here means a previous replacement COMMITTED but never finished
+    // publishing its recovery pointer. planReplace writes the journal with INSERT OR REPLACE, so
+    // proceeding would overwrite the row naming the ORIGINAL pre-restore candidate with one naming
+    // a candidate captured from the already-replaced state - and the only copy of what the user had
+    // before would become an orphan for the next sweep to delete.
     //
-    // That is a profile-isolation break, not a cosmetic one. activeProfileId() is the gate every
-    // profile-scoped read and write goes through, so after a restore the running process kept
-    // reading and WRITING the pre-restore profile while Preferences promised a different one to the
-    // next launch. Work done between restore and relaunch would land in profile A and then appear
-    // to vanish when B became active.
-    //
-    // switchProfile is the single boundary that owns both halves - it validates the id, takes the
-    // write barrier so in-flight profile-scoped writes finish under the old profile, then sets the
-    // in-memory id and Preferences together.
-    if (activePid) { await switchProfile(activePid); activeReconciled = true; }
-  } catch { /* committed already - see below */ }
-
-  try {
-    const seen = env.payload.appGlobal?.changelogSeenBuild;
-    const build = currentBuild();
-    if (seen != null && build != null) {
-      // CLAMPED: restoring a higher value from a newer device would permanently hide release notes
-      // the user on this build has never seen.
-      await Preferences.set({ key: SEEN_BUILD_KEY, value: String(Math.min(Number(seen), build)) });
+    // Startup reconciliation finishes the previous operation, so the way forward is a relaunch, not
+    // a retry here.
+    const pending = await query('SELECT value FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+    if (pending.length) {
+      throw new ReplaceRefused('reconciliation-pending',
+        'A previous restore has not finished. Reopen the app to complete it, then try again.');
     }
-  } catch { /* cosmetic; never worth failing a committed restore over */ }
 
-  // activeReconciled false means the rows are in and only the "which profile is active" pointer did
-  // not settle. Stated precisely rather than optimistically: the next boot resolves to whatever
-  // Preferences holds (or the first profile if that id is gone), which may be the PRE-restore
-  // profile - the restored data is all present and selectable, but the user may have to switch to it
-  // by hand. That is a caveat worth surfacing, and NEVER a failure the user might retry, because a
-  // retry would import the whole archive again.
-  return {
-    profiles: created.length,
-    activeProfileId: activePid,
-    activeReconciled,
-    statements: statements.length,
-    via: 'whole-app',
-  };
+    // CAPTURE, after the drain, through the owner-scoped consistent read. This is the exact state
+    // the replacement will destroy - the candidate, the binding check and the plan's dash_seeded
+    // re-key all derive from it and nothing else.
+    const captured = await session.readTransaction(async () => {
+      const profiles = await listProfiles();
+      const units = [];
+      for (const p of profiles) units.push(await buildProfileUnit(p.id));
+      let active = null;
+      try { active = activeProfileId(); } catch { active = null; }   // pre-init: not an error here
+      const idx = profiles.findIndex((p) => p.id === active);
+      return {
+        units,
+        activeProfileIndex: idx >= 0 ? idx : null,
+        profileIds: profiles.map((p) => p.id),
+        setsOf: await catalogSets(),
+      };
+    });
+
+    // changelogSeenBuild is device-install state the format is dropping (§8 Exclude); the recovery
+    // candidate never carries it, and contentDigestOf ignores it, so a user's own export - which
+    // still does - binds against this capture cleanly.
+    const captureEnv = await seal(buildEnvelope({
+      schemaVersion: SCHEMA_VERSION, appBuild: currentBuild(), exportedAt: nowIso(),
+      appGlobal: { activeProfileIndex: captured.activeProfileIndex, changelogSeenBuild: null },
+      profiles: captured.units,
+    }));
+
+    // The recovery point, written under an immutable id and read back through the same digest
+    // check a restore would use. Any answer but "verified" aborts with nothing destroyed.
+    const candidateId = await writeCandidate(JSON.stringify(captureEnv));
+    if (!(await verifyCandidate(candidateId))) {
+      throw new Error('The safety snapshot could not be verified on this device, so nothing was replaced.');
+    }
+
+    // Durability refused: the user's external file must describe THIS capture, not whatever the
+    // state was when they exported it. Checked after drain, so nothing can settle in between.
+    if (!policy.allowed) await assertBoundArchiveMatches(binding, captureEnv);
+
+    // ONE TRANSACTION. Deletes, re-keyed inserts, Primary and the journal row commit together or
+    // not at all - the property everything downstream (startup reconciliation, Undo) rests on.
+    const plan = planReplace(env, {
+      candidateId, profileIds: captured.profileIds, setsOf: captured.setsOf,
+    });
+    await session.tx(plan.statements);
+
+    // COMMITTED. From here the operation is finished, not failed: the journal row is durable, so
+    // even if every step below dies, startup reconciliation completes idempotently from it.
+    // Through the repository, never a direct Preferences write - restoreAll's comment records the
+    // three-authorities break that rule exists to prevent.
+    let activeReconciled = false;
+    try { await switchProfile(plan.intendedActiveId); activeReconciled = true; }
+    catch { /* the journal row still names the intent; startup finishes it */ }
+
+    // Publish the pointer with the session's own admitted write - external admission is closed,
+    // so recoveryStore's default run() would be refused - then retire the journal: the pointer
+    // now carries everything the row was protecting.
+    //
+    // GUARDED, because the comment above has to be true in code and not only in prose. An
+    // unguarded rejection here propagated out of replaceAll and the UI reported "Restore failed"
+    // for an operation whose data had already committed. That invited a retry, and a retry would
+    // have captured the ALREADY-REPLACED state and overwritten the journal naming the real
+    // pre-restore candidate - destroying the user's only copy of what they had, through the very
+    // action the error message suggested.
+    //
+    // So past the commit there is no failure, only "finished" or "deferred". Deferred means the
+    // rows are in and startup reconciliation completes the rest idempotently from the journal row,
+    // which is exactly why the row is retired LAST.
+    let published = false;
+    let retired = false;
+    try {
+      const write = (sql, params) => session.tx([[sql, params]]);
+      await promote(candidateId, { write });
+      published = true;
+      // THE JOURNAL IS THE RETRY TICKET, so it may only be torn up when there is nothing left to
+      // retry. Retiring it here unconditionally covered the case where publication failed and
+      // missed the mirror image: switchProfile fails, publication then SUCCEEDS, and the row is
+      // deleted anyway - taking with it the only record of `intendedActiveId`. The next boot would
+      // find no pending operation, be unable to adopt the archive's active profile, and fall back to
+      // whichever restored profile sorts first, while the toast had promised that reopening would
+      // finish the job. The promise was made durable by a row this line then removed.
+      //
+      // So: retire only when the active profile settled too. Otherwise leave it and let startup
+      // reconciliation finish - it is idempotent, and re-promoting an already-published id is a
+      // no-op by design.
+      if (activeReconciled) {
+        await write('DELETE FROM catalog_meta WHERE key=?;', [RESTORE_PENDING_KEY]);
+        retired = true;
+      }
+    } catch { /* the journal row survives; the next boot finishes it */ }
+
+    return {
+      profiles: plan.profiles.length,
+      activeProfileId: plan.intendedActiveId,
+      activeReconciled,
+      recoveryPointId: candidateId,
+      statements: plan.statements.length,
+      // false => committed but not fully settled. The caller MUST NOT present this as a failure.
+      // All three matter: a lingering journal row is not cosmetic, because it REFUSES the next
+      // replacement until a relaunch clears it - so leaving one is a reason to tell the user to
+      // reopen, not to call the operation done.
+      settled: published && activeReconciled && retired,
+      published,
+      via: 'replace',
+    };
+  } finally {
+    // Always - a failed replace must cost the restore, never leave the app read-only. An orphaned
+    // candidate is startup's sweep to collect; a missing release has no collector.
+    session.release();
+  }
 }

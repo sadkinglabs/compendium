@@ -451,6 +451,33 @@ Consequence worth knowing: the opt-out is application-level, so the scanner cann
 portrait while the rest of the app rotates. On a tablet `ScannerActivity` rotates too. It works, but
 its sheets are portrait-designed - landscape layout is a known follow-up, not a supported design.
 
+### Exercising restore recovery and an interrupted restore
+
+A destructive restore is only as good as its recovery path, and neither the recovery point nor the
+crash path is reachable from a unit test. On a device:
+
+```bash
+# Interrupt a restore AFTER its transaction commits, to prove startup finishes it rather than
+# abandoning it. The journal row commits WITH the data, so this is the honest crash point.
+adb shell am force-stop com.sadkinglabs.compendium     # during the replace
+adb shell monkey -p com.sadkinglabs.compendium -c android.intent.category.LAUNCHER 1
+# Expected: the restored data is present, the correct profile is active, and Settings offers
+# "Return to previous state". A journal row left behind means reconciliation did not run.
+```
+
+Checks worth making by hand, because they are the ones that matter:
+
+- **Replace, then Return to previous state.** The counts before, after, and after the return should
+  be the pre-restore counts exactly.
+- **Restore an OLDER archive on purpose** and confirm newer data is genuinely gone. Verifying the
+  destructive case deliberately is the point; avoiding it proves nothing.
+- **A clean install** (`pm create-user` plus `pm install-existing --user N` - never uninstall, it
+  holds real data) to prove first-run database creation.
+
+Testing a clean install without uninstalling, and the traps in doing so, are in the notes on
+multi-user testing: `/sdcard` is per-user, so dump uiautomator output to `/data/local/tmp/`, and
+wireless adb drops on a user switch.
+
 ### Verifying 16 KB page alignment
 
 Both shipping artifacts must be checked; proving only the sideload APK proves the wrong one.

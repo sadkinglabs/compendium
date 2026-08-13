@@ -104,7 +104,13 @@ crash; no admitted write may resume against deleted identities.
 **§3.3 Durable offline-first writes** - the recovery point must be durable *and verified* before the
 destructive transaction.
 **§3.4 Forward-only schema evolution** - older archives migrate forward; newer are refused.
-**§3.8 Cross-runtime integrity** - equivalent guarantees on web and native, or the action is not offered.
+**§3.8 Cross-runtime integrity** - equivalent guarantees on web and native, or the action is not
+offered. **Scope, corrected 2026-08-13:** §3.8 calls the browser "the browser DEVELOPMENT runtime",
+and its concern runs one way - a web-only success does not prove native correctness. Compendium ships
+as an APK and has no web deploy target, so the browser is a development surface and a browser runtime
+pass is **not** a release gate. Earlier revisions of this proposal implied one; that was this
+document's invention, not a project requirement. The fail-closed policy still stands as code, because
+a destructive button that cannot promise a recovery point should not be offered on any runtime.
 **§3.1 Catalog/profile boundary** - the catalog is never touched by a restore.
 
 Surfaces: `db.js` (admission), `backupService.js`, `profileTransfer.js`, `profileRepository.js`
@@ -315,7 +321,8 @@ commit - past it the operation is finishable, not abandoned.**
   failed restore preserves the previous point; corrupted candidate rejected; **stale external archive
   aborts**; unregistered namespace fails.
 - **Cross-runtime:** snapshot-store suite against both backings; persistence-refused path disables
-  Replace (§3.8).
+  Replace (§3.8). Unit-level, and that is the whole requirement - see the §3.8 scope note above. The
+  shipping runtime is Android, and it is verified on a device.
 - **Manual:** restore an **older** archive, confirm newer data is genuinely gone, then Undo. Kill the app
   mid-restore and confirm startup resolves it.
 - **Accessibility:** the confirm screen announces what will be **removed**; focus lands on the

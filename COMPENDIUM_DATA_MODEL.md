@@ -59,11 +59,51 @@ A child-table query is profile-safe only when it joins or first resolves through
 |---|---|---|---|
 | Relational data | sql.js in memory, persisted as a database image in IndexedDB | `@capacitor-community/sqlite` | Same schema and repository API |
 | Active profile | Capacitor Preferences web adapter | Native Preferences | One `activeProfileId` key |
-| App-global install state | Capacitor Preferences web adapter | Native Preferences | Small, non-profile singletons. Currently one key: `changelogSeenBuild`, the last build whose release notes were dismissed |
+| App-global install state | Capacitor Preferences web adapter | Native Preferences | Small, non-profile singletons. Currently `changelogSeenBuild` only |
+| Restore journal and recovery pointer | `catalog_meta` rows in the database | `catalog_meta` rows in the database | **Not Preferences.** The journal commits in the SAME transaction as the replacement it describes, which is only possible inside the database - that is the property the whole crash-safety design rests on, so its home is not an implementation detail. The pointer sits beside it so "which recovery point is current" is settled by an atomic database write rather than a file rename |
 | Files and sharing | Browser download, file picker, clipboard/share fallbacks | Filesystem and Share plugins | Same validated domain payloads |
 | Catalog assets | Bundled application data and configured art sources | Bundled application data and configured art sources | Images are optional; catalog text remains usable |
 
 `localStorage` may hold non-authoritative UI or diagnostic preferences, but it must not become a profile data store. Browser persistence is a supported runtime, not merely an in-memory preview.
+
+### 3.1 Persisted state ownership, and what a replacement may delete
+
+`src/store/persistedState.js` is the registry, and production code consumes it: `replacePlan.js`
+derives its delete phase from it rather than from hardcoded strings, so a namespace without a
+disposition fails the build instead of being silently skipped.
+
+Each namespace declares an **owner** (`profile` / `device` / `catalog`) and a **disposition** on a
+whole-app replacement:
+
+| Disposition | Meaning |
+|---|---|
+| Replace | deleted and re-created from the archive |
+| Re-key | dropped for deleted profile ids, written for restored ones |
+| Preserve | never touched |
+| Reconcile | set through the owning repository, not written directly |
+| Exclude | neither exported nor restored |
+
+**Unknown state is PRESERVED, not deleted.** Deletion is targeted by ownership, never by "everything
+that looks app-global". The registry's honest limit is stated in its own comments: it catches an
+unregistered *namespace* at a recognised callsite, not a key nobody wrote recognisably - which is
+exactly why the default is preserve.
+
+Two device keys the restore machinery owns:
+
+- **`restore_pending`** - the journal row, written INSIDE the replacement transaction so it commits
+  with the data. Its absence means the replacement never committed; its presence means it did.
+  Startup reconciliation reads it before `initProfiles()`.
+- **the recovery pointer** - names the current recovery point. It is a database write, so "which
+  point is current" is decided atomically, and recovery point files are immutable and never
+  overwritten.
+
+**Primary and active are separate authorities.** `is_default` is the Primary role - transferable to
+any profile - while `activeProfileId` is which profile is open. A restore adopts the archive's
+Primary and the archive's active profile, and they may differ.
+
+**CORRECTION (2026-08-12):** the paragraph below said app-global Preferences keys are never
+exported. That was the intent and the code contradicted it - `changelogSeenBuild` was being written
+into whole-app archives. The document was right; the code is now fixed, and the key is `Exclude`.
 
 **App-global Preferences keys are not user data and are never exported.** `changelogSeenBuild` describes *this install on this device*, not the person using it: it is deliberately outside the profile boundary and outside `profileTransfer`. A profile-owned equivalent would replay the release notes on every profile switch, and a profile imported from another device would carry a foreign stamp that either suppresses unread notes or replays read ones. Anything with that shape — install-local, not owned by whoever is signed in — belongs in this tier rather than in `settings`. Losing a key here costs at most one redundant modal, which is why it may live outside the durable-write guarantee that governs user data.
 

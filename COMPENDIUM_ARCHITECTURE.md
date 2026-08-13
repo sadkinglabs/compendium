@@ -116,6 +116,38 @@ Rules, each one paid for:
 
 All user data is **on-device** and partitioned by profile. Getting this wrong can expose, merge, or destroy a person's collection, so profile isolation is a structural repository invariant rather than a UI convention.
 
+### Backup, restore, and the boundaries that make replacement safe
+
+**A whole-app restore REPLACES; a single-profile import ADDS.** A backup is a snapshot, so restoring
+one returns the app to that snapshot rather than adding a second copy of everything. A single-profile
+export is never authority to delete the rest of the device. `backupService.classifyBackup()` decides
+which operation a file authorises, in one place, so no caller re-derives that distinction.
+
+Two owned boundaries exist to make a destructive restore survivable, and both span the browser and
+Capacitor runtimes:
+
+- **The admission boundary** (`src/store/db.js`). Every mutation is admitted before it reaches the
+  backend and settles when it finishes, so the set of in-flight writes is knowable. An exclusive
+  session closes external admission with a synchronous check-and-set *before* draining, refuses a
+  second claimant rather than queueing it, and excludes itself from the set it drains. Acquisition is
+  bounded: a write that never settles costs the restore, never the database. The owner works through
+  token-carrying `readTransaction` and `tx`, so it cannot deadlock against its own gate.
+- **The recovery snapshot store** (`src/store/recoveryStore.js`). One interface over `Directory.Data`
+  and IndexedDB. Recovery points use immutable ids and are never overwritten, so the design never
+  needs atomic file replacement; the pointer naming the current point is a database write, which is
+  atomic. Where a runtime cannot promise durability, the destructive action is **disabled** rather
+  than warned about, and any external archive offered as a substitute is bound by content digest to
+  the frozen capture.
+
+Crash safety is a protocol, not a best effort: the `restore_pending` journal row commits *inside* the
+replacement transaction, so its absence means the replacement never happened and its presence means
+it did. Startup reconciliation runs after migrations and **before** `initProfiles()` or any repository
+write, and finishes an interrupted replacement idempotently.
+
+**Primary is a transferable role, not an immortal row.** Exactly one profile holds `is_default`, any
+profile can be given it, and deleting the holder transfers it in the same transaction. See
+`docs/proposals/restore-semantics.md`.
+
 ### Profile and persistence model
 
 **A. Profile as the top-level partition.**

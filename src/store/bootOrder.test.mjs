@@ -22,6 +22,28 @@ const at = (needle) => {
   return i;
 };
 
+test('restore reconciliation is the FIRST thing after the database opens', () => {
+  // Increment 5 (restore-semantics §3): the journal row must be read and acted on before
+  // ANYTHING reads or writes a profile. The canonicalisation is the easy one to miss - it
+  // converts every profile, so it is a profile-owned write - and initProfiles() makes one
+  // active. Either running first against an unreconciled replacement silently resurrects the
+  // pre-restore profile, and the symptom only appears one boot later.
+  const rec = at('await reconcileRestore()');
+  assert.ok(rec > at('await openDatabase()'), 'the journal row lives in the database, so the database opens first');
+  assert.ok(rec < at('seedCatalogIfNeeded('), 'reconciliation precedes the catalog seed');
+  assert.ok(rec < at('await initArtCache()'), 'reconciliation precedes the art cache');
+  assert.ok(rec < at('await canonicaliseLedger()'), 'reconciliation precedes the ledger canonicalisation - a profile-owned write');
+  assert.ok(rec < at('await initProfiles()'), 'reconciliation precedes initProfiles() making a profile active');
+});
+
+test('nothing else is awaited between openDatabase and reconciliation', () => {
+  // "Immediately after openDatabase()" made structural: any await slipped in between is a
+  // candidate profile touch, and this effect is exactly where one would be added in good faith.
+  const between = src.slice(at('await openDatabase()'), at('await reconcileRestore()'));
+  assert.equal((between.match(/await /g) || []).length, 1,
+    'only the openDatabase await itself may precede reconciliation');
+});
+
 test('canonicalisation runs AFTER the catalog seed', () => {
   assert.ok(at('await canonicaliseLedger()') > at('seedCatalogIfNeeded('),
     'it reads the catalog to place ambiguous wants; before the seed it would decide against nothing');

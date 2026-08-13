@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useRef, lazy, Suspense } from 'react';
 import { openDatabase } from './store/db.js';
+import { executorFor, confirmState, outcomeMessage, failureMessage } from './store/restoreFlow.js';
 import {
   initProfiles, getActiveProfile, listProfiles, profileStats,
   createProfile, switchProfile, renameProfile, deleteProfile,
+  setPrimary, deleteProfileTransferringPrimary,
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
 import { initArtCache } from './store/artCacheInstance.js';
 import { canonicaliseLedger } from './store/canonicaliseBoot.js';
+import { reconcileRestore } from './store/restoreReconcile.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
 import { searchAll } from './store/searchRepository.js';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
@@ -31,7 +34,7 @@ import { CHANGELOG } from './content/changelog.js';
 import { getSeenBuild, setSeenBuild, pendingEntries } from './store/changelog.js';
 import { reconcile as reconcileTelemetry, grantConsent, denyConsent, getConsent, isOn as telemetryOn, needsDisclosure, UNSET } from './store/telemetry.js';
 import { TELEMETRY_SETTING } from './content/telemetry.js';
-import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, CenteredModal } from './components/ui.jsx';
+import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, BTN_DANGER, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
@@ -133,6 +136,13 @@ export default function App() {
       const t0 = Date.now();
       try {
         await openDatabase();
+        // FIRST after the database opens, before anything that reads or writes a profile - the
+        // catalog seed, the art cache, the ledger canonicalisation (which converts EVERY
+        // profile) and initProfiles() (which makes one active). It finishes or abandons an
+        // interrupted replacement from the restore_pending journal row; run any later, a step
+        // above would quietly resurrect the pre-restore profile, and the symptom would only
+        // appear one boot later. Never throws: a failure defers to the next boot's retry.
+        await reconcileRestore();
         const { counts } = await seedCatalogIfNeeded((msg) => setBoot({ status: 'loading', msg }));
         // Art boundary (Phase 2): load the shipped art manifest and prep the native cache dirs. Best
         // effort - if it fails, card art degrades to the deterministic fallback; it must never cost a boot.
@@ -824,9 +834,11 @@ function CodexScopeBar({ hasQuery, scope, setScope, searchKind, setSearchKind, l
 
 // Profiles - the spine of the app, so the picker earns some ceremony: monogram
 // discs, per-profile digests (decks · matches), gold ring on the active one.
-// The default (oldest) profile is load-bearing and cannot be deleted; any
-// profile can be renamed (data keys off the id - names are just labels),
-// duplicated (full re-keyed copy) or exported.
+// The default flag is a transferable ROLE, not a property of one immortal row:
+// any profile can be made default, and deleting the default hands the role to
+// another profile in the same confirmation - only the sole remaining profile is
+// undeletable. Any profile can be renamed (data keys off the id - names are
+// just labels) or duplicated (full re-keyed copy).
 function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSettings }) {
   const [list, setList] = useState([]);
   const [stats, setStats] = useState({});
@@ -862,8 +874,23 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
     finally { setBusy(false); }
   }
   async function remove(p) {
-    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body: 'This removes the profile and everything it owns - decks, matches, marginalia. This can’t be undone.', confirmLabel: 'Delete profile', danger: true }))) return;
-    try { await deleteProfile(p.id); await onChanged(); refresh(); toast('Profile deleted'); }
+    // Deleting the default is allowed, but the role must land somewhere first - the
+    // transfer is offered inside the same confirmation (list order = oldest heir),
+    // and the repository commits transfer + delete as one transaction.
+    const heir = p.is_default ? list.find((x) => x.id !== p.id) : null;
+    const body = heir
+      ? `This removes the profile and everything it owns - decks, matches, marginalia. “${heir.name}” becomes the default. This can’t be undone.`
+      : 'This removes the profile and everything it owns - decks, matches, marginalia. This can’t be undone.';
+    if (!(await confirmAction({ title: `Delete “${p.name}”?`, body, confirmLabel: 'Delete profile', danger: true }))) return;
+    try {
+      if (heir) await deleteProfileTransferringPrimary(p.id, heir.id);
+      else await deleteProfile(p.id);
+      await onChanged(); refresh(); toast('Profile deleted');
+    }
+    catch (e) { toast(e.message, { tone: 'danger' }); }
+  }
+  async function makeDefault(p) {
+    try { await setPrimary(p.id); await onChanged(); refresh(); toast(`“${p.name}” is now the default`); }
     catch (e) { toast(e.message, { tone: 'danger' }); }
   }
   if (!open) return null;
@@ -893,14 +920,19 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
                   <span className="pf-name">
                     {p.name}
                     {isActive && <span className="pf-tag">ACTIVE</span>}
-                    {p.id === defaultId && !isActive && <span className="pf-tag dim">DEFAULT</span>}
+                    {/* Shown even when the row is also ACTIVE. It used to be hidden there, which was
+                        survivable while the default was a fixed row nobody could move - but now that
+                        the role is transferable, "which profile is the default" is a question the user
+                        can act on, and it must be answerable while looking at it. */}
+                    {p.id === defaultId && <span className="pf-tag dim">DEFAULT</span>}
                   </span>
                   <span className="pf-meta">{meta(p)}</span>
                 </span>
                 <span className="pf-actions">
                   <IconButton glyph="✎" tone="muted" size={27} onClick={() => setEditing({ id: p.id, name: p.name })} title="Rename" />
                   <IconButton glyph="⧉" tone="muted" size={27} onClick={() => duplicate(p)} title="Duplicate" />
-                  {p.id !== defaultId && list.length > 1 && <IconButton glyph="✕" tone="danger" size={27} onClick={() => remove(p)} title="Delete" />}
+                  {p.id !== defaultId && <IconButton glyph="★" tone="muted" size={27} onClick={() => makeDefault(p)} title="Make default" />}
+                  {list.length > 1 && <IconButton glyph="✕" tone="danger" size={27} onClick={() => remove(p)} title="Delete" />}
                 </span>
               </>
             )}
@@ -1067,6 +1099,39 @@ function BackupSection({ onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
   const [lastPrepared, setLastPrepared] = useState(null);
   const [preview, setPreview] = useState(null);   // { env, profiles, exportedAt, appBuild }
+  // The recovery point left by the last replacement. A safety copy nobody can reach is not a safety
+  // copy, so this is read on mount and after every restore - it must survive app restarts, which is
+  // why it comes from the store's pointer and not from component state.
+  const [recovery, setRecovery] = useState(null);
+
+  async function refreshRecovery() {
+    try {
+      const { listRecoveryPoints } = await import('./store/recoveryStore.js');
+      const points = await listRecoveryPoints();
+      setRecovery(points[0] ?? null);
+    } catch { setRecovery(null); }   // no recovery point is a normal state, not an error
+  }
+  useEffect(() => { refreshRecovery(); }, []);
+
+  // Returning to the previous state is itself a replacement, so it goes through the same
+  // destructive path with the same confirmation - not a quiet one-tap revert.
+  async function undoLastReplace() {
+    if (busy || !recovery) return;
+    setBusy(true);
+    try {
+      const { readRecoveryPoint } = await import('./store/recoveryStore.js');
+      const { classifyBackup } = await import('./store/backupService.js');
+      const text = await readRecoveryPoint(recovery.id);
+      if (!text) { onToast?.('That safety copy is no longer on this device.', { tone: 'danger' }); return; }
+      const classified = await classifyBackup(text);
+      const { listProfiles, profileStats } = await import('./store/profileRepository.js');
+      const here = [];
+      for (const p of await listProfiles()) here.push({ name: p.name, ...(await profileStats(p.id)) });
+      setPreview({ ...classified, deviceProfiles: here });
+    } catch (e) {
+      onToast?.(`That safety copy cannot be read: ${e?.message || e}`, { tone: 'danger' });
+    } finally { setBusy(false); }
+  }
 
   async function prepare() {
     if (busy) return;
@@ -1092,8 +1157,15 @@ function BackupSection({ onToast, onRestored }) {
       if (!file) return;
       setBusy(true);
       try {
-        const { previewBackup } = await import('./store/backupService.js');
-        setPreview(await previewBackup(await file.text()));
+        // classifyBackup, not previewBackup: it decides in ONE place whether this file authorises a
+        // whole-app REPLACE or a single-profile IMPORT, so the modal cannot get that wrong. It also
+        // reports the counts already on this device, which the destructive path has to show.
+        const { classifyBackup } = await import('./store/backupService.js');
+        const classified = await classifyBackup(await file.text());
+        const { listProfiles, profileStats } = await import('./store/profileRepository.js');
+        const here = [];
+        for (const p of await listProfiles()) here.push({ name: p.name, ...(await profileStats(p.id)) });
+        setPreview({ ...classified, deviceProfiles: here });
       } catch (e) {
         onToast?.(`That file cannot be restored: ${e?.message || e}`, { tone: 'danger' });
       } finally { setBusy(false); }
@@ -1124,8 +1196,27 @@ function BackupSection({ onToast, onRestored }) {
             ? `Last prepared ${lastPrepared.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. Save the file and reopen it once to be sure it arrived.`
             : 'The app cannot see where you save the file, so it never claims a backup is stored.'}
         </div>
+        {/* Only rendered when a recovery point actually exists, so it never advertises a way back
+            that is not there. Announced as a region because after a replacement this is the single
+            most important control on the screen and a screen reader user has to be able to find it. */}
+        {recovery && (
+          <div role="group" aria-label="Return to the state before the last replacement"
+            style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--hair-12)' }}>
+            <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', marginBottom: 10 }}>
+              A safety copy was taken before the last replacement
+              {recovery.createdAt ? ` on ${new Date(recovery.createdAt).toLocaleString()}` : ''}
+              {recovery.profiles != null ? ` - ${recovery.profiles} profile${recovery.profiles === 1 ? '' : 's'}` : ''}.
+              Returning to it replaces what is here now.
+            </div>
+            <button onClick={undoLastReplace} disabled={busy}
+              style={{ ...BTN_GHOST, width: '100%', minHeight: 48, opacity: busy ? .55 : 1 }}>
+              Return to previous state
+            </button>
+          </div>
+        )}
       </div>
-      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast} onRestored={onRestored} />
+      <RestorePreviewModal preview={preview} onClose={() => setPreview(null)} onToast={onToast}
+        onRestored={async () => { await onRestored?.(); await refreshRecovery(); }} />
     </>
   );
 }
@@ -1133,18 +1224,81 @@ function BackupSection({ onToast, onRestored }) {
 /** Shows exactly what a restore would add, and writes nothing until confirmed. */
 function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
   const [busy, setBusy] = useState(false);
+  // The durability policy, and the external archive that substitutes for it when the runtime cannot
+  // promise one. Without this the destructive button was always offered and, on a browser that
+  // refuses persistent storage, could only ever fail - the store refused safely while the UI still
+  // promised "a safety copy is taken first". `bindExternalArchive` existed with no caller.
+  const [policy, setPolicy] = useState(null);
+  const [binding, setBinding] = useState(null);
+  const consequenceRef = useRef(null);
+  // Focus the consequence, not the destructive button. A screen reader must read what is about to
+  // be removed before it reaches the control that removes it; landing on "Replace all data" states
+  // the action and hides the cost.
+  useEffect(() => { if (preview) consequenceRef.current?.focus(); }, [preview]);
+  // Asked BEFORE the button is offered, not discovered when it is pressed.
+  useEffect(() => {
+    let live = true;
+    setBinding(null);
+    if (!preview?.destructive) { setPolicy(null); return () => { live = false; }; }
+    (async () => {
+      try {
+        const { replacementPolicy } = await import('./store/replacementPolicy.js');
+        const p = await replacementPolicy();
+        if (live) setPolicy(p);
+      } catch {
+        // Fail closed: an unreadable policy is not permission.
+        if (live) setPolicy({ allowed: false, code: 'not-durable', reason: 'Durability could not be checked.', remedy: 'Supply a backup file to protect this replacement.' });
+      }
+    })();
+    return () => { live = false; };
+  }, [preview]);
   if (!preview) return null;
-  const { profiles, exportedAt } = preview;
+  const { profiles, exportedAt, destructive = false, deviceProfiles = [] } = preview;
   const rows = profiles.reduce((a, p) => a + p.rows, 0);
+  const deviceTotals = deviceProfiles.reduce(
+    (a, p) => ({ profiles: a.profiles + 1, decks: a.decks + (p.decks ?? 0), matches: a.matches + (p.matches ?? 0) }),
+    { profiles: 0, decks: 0, matches: 0 },
+  );
+  // Every judgement on this screen comes from restoreFlow, which is pure and therefore testable -
+  // App.jsx is not. What stays here is effects and markup.
+  const { blocked, pending: policyPending } = confirmState({ destructive, policy, binding, busy });
+
+  /** Bind an external backup as the durable substitute. Verified against the archive itself here;
+   *  it is re-checked against the FROZEN CAPTURE inside the session, which is the part that makes
+   *  it a guarantee rather than a reassurance. */
+  async function chooseProtector() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json,.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const { bindExternalArchive } = await import('./store/replacementPolicy.js');
+        setBinding(await bindExternalArchive(await file.text()));
+        onToast?.('Backup accepted. It will be checked against your data before anything is replaced.');
+      } catch (e) {
+        onToast?.(e?.message || String(e), { tone: 'danger' });
+      }
+    };
+    input.click();
+  }
 
   async function confirm() {
     if (busy) return;
     setBusy(true);
     try {
-      const { restoreAll } = await import('./store/backupService.js');
+      const svc = await import('./store/backupService.js');
+      // ROUTED BY THE CLASSIFIER, not by this component's reading of the file. A whole-app archive
+      // REPLACES; a single-profile export is additive and only ever imports. Deciding that here as
+      // well would be the fourth place it was decided, which is how the wrong file reaches the
+      // destructive path.
+      const replacing = executorFor(preview) === 'replace';
       // Past this await the rows are COMMITTED. Nothing after it may report a plain failure: the
-      // user would retry, and a retry imports the whole archive a second time.
-      const r = await restoreAll(preview);
+      // user would retry, and on the additive path a retry imports the archive a second time - on
+      // the destructive path a retry is refused outright, because it could destroy the recovery
+      // point.
+      const r = replacing ? await svc.replaceAll(preview, { binding }) : await svc.restoreAll(preview);
       onClose();
       // Refresh the shell rather than telling the user to relaunch. Without this the profile picker
       // still showed the pre-restore list, which reads as "it did not work" on the one screen where
@@ -1156,13 +1310,11 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
         onToast?.(`Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to see them.`);
         return;
       }
-      onToast?.(r.activeReconciled === false
-        // The rows committed but the active-profile pointer did not settle. initProfiles() resolves
-        // it from the restored database on the next boot, so this is a caveat, not a failure.
-        ? `Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}. Reopen the app to finish switching.`
-        : `Restored ${r.profiles} profile${r.profiles === 1 ? '' : 's'}.`);
+      onToast?.(outcomeMessage(r).text);
     } catch (e) {
-      onToast?.(`Restore failed: ${e?.message || e}`, { tone: 'danger' });
+      // Only pre-commit refusals reach here: a wrong-route file, a policy refusal, a stale bound
+      // archive, or a previous restore that has not reconciled. Nothing has been destroyed.
+      onToast?.(failureMessage(e).text, { tone: 'danger' });
     } finally { setBusy(false); }
   }
 
@@ -1170,11 +1322,28 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
     <CenteredModal open label="Restore from backup" maxWidth={360} onClose={busy ? undefined : onClose} boxStyle={{ overflow: 'hidden' }}>
       <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', padding: '22px 44px 6px' }}>RESTORE</div>
       <div className="cx-scroll" style={{ maxHeight: 'min(56dvh, 420px)', overflowY: 'auto', padding: '0 20px 4px' }}>
-        <div style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '0 0 14px' }}>
-          From {exportedAt ? new Date(exportedAt).toLocaleDateString() : 'an unknown date'}.
-          These profiles are <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>added</strong> alongside
-          what is already on this device. Nothing is deleted or overwritten.
+        {/* The consequence, in the user's terms, and it differs completely between the two
+            operations. A whole-app restore REPLACES - saying "added alongside" there would be a
+            promise the code no longer keeps. tabIndex/-1 plus the ref below puts initial focus
+            HERE rather than on the destructive button, so a screen reader reads what will happen
+            before reaching the control that does it. */}
+        <div ref={consequenceRef} tabIndex={-1} style={{ font: "400 12px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '0 0 14px', outline: 'none' }}>
+          From {exportedAt ? new Date(exportedAt).toLocaleDateString() : 'an unknown date'}.{' '}
+          {destructive ? (
+            <>Everything currently in Compendium will be <strong style={{ color: 'var(--danger, #e2777a)', fontWeight: 600 }}>replaced</strong> by
+              this backup. {deviceTotals.profiles} profile{deviceTotals.profiles === 1 ? '' : 's'} now
+              on this device{deviceTotals.profiles ? `, holding ${deviceTotals.decks} decks and ${deviceTotals.matches} matches,` : ''} will
+              be removed. A safety copy is taken first, so you can return to this state.</>
+          ) : (
+            <>This profile is <strong style={{ color: 'var(--ink-body)', fontWeight: 600 }}>added</strong> alongside
+              what is already on this device. Nothing is deleted or overwritten.</>
+          )}
         </div>
+        {destructive && (
+          <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.12em', color: 'var(--ink-faint)', margin: '0 0 6px' }}>
+            THIS BACKUP CONTAINS
+          </div>
+        )}
         {profiles.map((p, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '9px 2px', borderBottom: '1px solid var(--hair-12)' }}>
             <span style={{ flex: 1, minWidth: 0, font: "500 14px/1.2 var(--f-ui)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1194,11 +1363,46 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
             ? 'This is an older single-profile export, which carries no checksum - its contents were checked instead.'
             : 'The file passed its checksum, so it is intact.'}
         </div>
+        {/* FAIL CLOSED, with a way forward. This runtime cannot promise the safety copy survives, so
+            replacement is disabled rather than offered with a warning - and the remedy is an
+            external backup, bound here and re-checked against the frozen capture before anything is
+            destroyed. Announced as an alert so a screen reader hears WHY the button is unavailable
+            rather than finding a dead control. */}
+        {destructive && policy != null && !policy.allowed && (
+          <div role="alert" style={{ margin: '4px 0 10px', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--hair-18)', background: 'var(--ink-02, rgba(255,255,255,.03))' }}>
+            <div style={{ font: "600 11px/1.4 var(--f-display)", letterSpacing: '.1em', color: 'var(--danger, #e2777a)', marginBottom: 6 }}>
+              NO SAFETY COPY IS POSSIBLE HERE
+            </div>
+            <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-muted)' }}>
+              {policy.reason} {binding ? '' : policy.remedy}
+            </div>
+            {binding
+              ? <div style={{ font: "400 11.5px/1.5 var(--f-read)", color: 'var(--ink-body)', marginTop: 6 }}>
+                  Protected by your backup of {binding.profiles} profile{binding.profiles === 1 ? '' : 's'}
+                  {binding.exportedAt ? ` from ${new Date(binding.exportedAt).toLocaleDateString()}` : ''}.
+                  It will be checked against your current data first.
+                </div>
+              : <button onClick={chooseProtector} disabled={busy}
+                  style={{ ...BTN_GHOST, marginTop: 8, minHeight: 40, width: '100%' }}>
+                  Choose a backup file to protect this
+                </button>}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 10, padding: '14px 20px calc(20px + env(safe-area-inset-bottom,0px))', borderTop: '1px solid var(--hair-12)' }}>
         <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, minHeight: 48 }}>Cancel</button>
-        <button onClick={confirm} disabled={busy} aria-busy={busy} style={{ ...BTN_GOLD, flex: 1, minHeight: 48, opacity: busy ? .55 : 1 }}>
-          {busy ? 'Restoring...' : `Restore ${profiles.length}`}
+        {/* The label names the CONSEQUENCE, not the feature. "Replace all data" is what the button
+            does; "Restore" describes an intention and hides that something is destroyed. No typed
+            confirmation phrase: clear copy, a destructive-styled button and a verified safety copy
+            are the protection, and a phrase to copy out mostly trains people to copy phrases. */}
+        <button onClick={confirm} disabled={busy || blocked} aria-busy={busy}
+          title={blocked ? policy?.remedy : undefined}
+          style={{ ...(destructive ? BTN_DANGER : BTN_GOLD), flex: 1, minHeight: 48, opacity: (busy || blocked) ? .45 : 1 }}>
+          {busy
+            ? (destructive ? 'Replacing...' : 'Importing...')
+            : policyPending
+              ? 'Checking safety copy...'
+              : (destructive ? 'Replace all data' : 'Import profile')}
         </button>
       </div>
     </CenteredModal>

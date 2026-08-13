@@ -32,63 +32,88 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 - **Branch `capacitor-8` still exists locally** and is fully contained in `main` (0 unique commits
   after the merge), so it is safe to delete whenever.
 
-### `restore-semantics` - QUEUED, own branch, HIGH-RISK, needs a proposal first
+### `restore-semantics` - COMPLETE: Codex-APPROVED, device-verified on the final build, ready to merge
 
-**Status:** raised by the owner 2026-08-12 after watching a real restore. Not started. Not caused by
-the Capacitor upgrade; it questions a decision made in Increment A.
+**Status:** ACTIVE. Proposal [proposals/restore-semantics.md](./proposals/restore-semantics.md)
+**Rev 4, Codex APPROVED** after three rounds (2 Blockers, then 2 Blockers, then 1 Major + 2 Minors).
+Branch `restore-semantics`, nothing pushed.
 
-**The owner's question, which is the real one:** a backup is a snapshot, and restoring a snapshot is
-conventionally a REVERT - the state becomes the backup's state. Compendium's restore instead ADDS the
-archive's profiles alongside what is already there, so restoring your own backup gives you two of
-everything. That is not what "restore" means to most people, and the undeletable-profile symptom below
-is a consequence of it rather than a separate bug.
+**Owner decision:** whole-app **Restore REPLACES**; single-profile **Import ADDS**; Primary is a
+transferable role.
 
-**History, because this reverses an approved decision rather than filling a gap.** Additive was
-deliberate in Increment A and survived three adversarial review rounds: "NOTHING IS DELETED. No
-profile-deletion path exists." The reasoning was that a destructive restore on an offline-first app
-with no cloud copy can annihilate data that exists nowhere else - restore an older archive by mistake
-and everything since is gone, with no undo. Additive can never do that.
+**Built and gated (test:query 1014, all 12 gates green):**
 
-**The trade, stated plainly.** Additive is safe and surprising; replace is expected and destructive.
-The mitigation that makes replace defensible is an automatic pre-restore snapshot written to app
-storage (`Directory.Data`) - no share sheet, no picker, no user interaction - so a mistaken revert is
-always undoable. Without that, replace is a data-loss feature.
+| # | Increment | Note |
+|---|---|---|
+| 0 | Primary as a transferable role | Fixes the undeletable-profile trap on its own. **Device-verified** |
+| 1 | Admission boundary | Stop condition NOT triggered; all three consumers coexist. Acquisition is bounded, or a stuck write would leave the app read-only for the life of the process |
+| 2 | Recovery store + canonical content digest | Immutable ids, pointer in `catalog_meta` (a database write, so atomic) |
+| 3 | Fail-closed durability policy + external-archive binding | Web disables Replace rather than warning; the archive binds to the frozen capture |
+| 4 | `planReplace()` + journal row in the SAME transaction | First destructive code. Atomicity proven at three injection points by full byte dump |
+| 5 | Startup reconciliation | Runs before `initProfiles()` AND before the ledger canonicalisation |
+| 6 | Persisted-state registry | Consumed by `replacePlan`, not documentation. Preserve-by-default |
+| 7 | Legacy routing to Import | `classifyBackup` decides once |
+| 8 | Confirm screen + accessibility + reachable Undo | Copy previously promised the opposite of what the code does |
+| 9 | **Device pass** | Build 221 on a Pixel 9 Pro XL. Details below |
+| 10 | Docs | This entry plus the six documents in the impact table |
 
-**Symptom that surfaced it:** after ANY whole-app restore the user keeps a profile they can never delete.
+**INCREMENT 9 - what was actually done, 2026-08-13, build 221.**
 
-**Mechanism, and the correct half first:** `restoreAll` adopts the archive's default in the same
-transaction as the rows, so the database is never momentarily without a default or with two. That part
-is deliberate and right. The consequence is not: the imported profile now holds `is_default`,
-`deleteProfile()` refuses to delete the default (`profileRepository.js` - "The default profile cannot
-be deleted"), and **nothing in the app can move the flag**. `ProfileSheet` reads `is_default` only to
-hide the Delete button; there is no "set default" action anywhere in the UI.
+Run in a **disposable second Android user**, not the owner's profile. The destructive path had never
+executed on hardware and the owner's data is the only copy of it, so the risk was removed rather than
+accepted: `pm create-user` + `pm install-existing` gives an empty sandbox running the REAL arm64
+minified release APK and the REAL native SQLite, and `pm remove-user` reverses it.
 
-The user's original starter is demoted to non-default and stays deletable, while the imported copy is
-permanently stuck at the top of the profile picker. The only escape through the UI is to delete the
-ORIGINAL and rename the import - which is what was done on the owner's device to restore its prior
-state, and is not something a user should have to work out.
+- **Replace is genuinely destructive.** Device state Sorcerer + Alpha + Beta; archive held Sorcerer +
+  Alpha. After Replace: exactly two profiles, **Beta gone**, and no `(imported)` suffixes - so it
+  replaced rather than merged, and the name dedupe correctly did not run.
+- **That is also the older-archive case.** The archive predated Beta, and restoring it destroyed newer
+  data deliberately, which is the behaviour the owner chose and the one most worth proving.
+- **Undo returns.** "Return to previous state" described the pre-replace state correctly (3 profiles,
+  timestamped) and restored it - Beta came back.
+- **Killed mid-replace.** Process force-stopped ~350ms after confirming. On relaunch the state was
+  COHERENT - fully replaced, never half - the recovery point had been published and still described
+  the pre-replace state, and the app booted with no error. Honest limit: the exact millisecond window
+  between commit and reconciliation cannot be hit deterministically by hand, so this shows the
+  operation survives process death; the per-phase crash behaviour is proven by the Increment 5 unit
+  tests, which construct each crash state exactly.
+- **Confirm screen, on device:** "Everything currently in Compendium will be replaced by this backup.
+  3 profiles now on this device ... will be removed. A safety copy is taken first."
+- **Zero** FATAL, "Restore failed" or "reconciliation failed" lines across the entire pass.
+- **Owner's real profile re-verified afterwards**: Sadkingbilly, 1,832 cards, 4 decks, 9 matches, 2
+  marginalia - untouched. `check:smoke` 8/8 on build 221 before the pass, with `reconcileRestore()`
+  now running first at every boot.
 
-**Owner decision 2026-08-12: REPLACE ONLY**, with the pre-restore snapshot, the one-transaction
-property and the rewritten confirm copy all agreed. Proposal drafted at
-[proposals/restore-semantics.md](./proposals/restore-semantics.md); awaiting Codex review, then
-implementation.
+**Codex reviewed the IMPLEMENTATION over three rounds and APPROVED it** (2026-08-13). One Blocker -
+a post-commit failure was reported as a failed restore, and the retry it invited could have destroyed
+the recovery point. Then a Major of my own making: the round-1 guard retired the journal even when
+active reconciliation had not completed, making the "reopen to finish" promise impossible.
 
-**Why a proposal and not code.** This is High-risk under the constitution - it makes restore a
-destructive user-data operation and touches the transactional-integrity and profile-isolation
-invariants. The proposal must settle:
+**Final device pass on build 222** (Pixel 9 Pro XL, **Android 17 / API 37**, WebView 150.0.7871.181,
+release/minified/signed/arm64) in disposable user 13: Replace destroyed Beta with no `(imported)`
+suffixes, Undo brought it back, kill-mid-replace left a coherent state with the recovery point intact,
+zero fatal lines. `check:smoke` 8/8. The owner's profile was never involved and was re-verified
+untouched.
 
-1. **Replace or merge, and is it a choice?** A single "Restore (replace everything)" is honest and
-   simple. Offering both on the confirm screen is more capable and doubles the ways to get it wrong.
-2. **The automatic pre-restore snapshot** - mandatory if restore becomes destructive. To
-   `Directory.Data`, before the transaction, with a visible way back.
-3. **One transaction still.** Delete-then-insert must commit or change nothing, or a failed restore
-   leaves the user with neither their data nor the archive's. This is the property the current design
-   already has and the new one must not lose.
-4. **The confirm copy**, which currently promises the opposite: "These profiles are added alongside
-   what is already on this device. Nothing is deleted or overwritten."
-5. **Whether the default flag still transfers** - the undeletable-profile symptom disappears under
-   replace semantics, so this may need no separate fix. If merge survives as an option, it does: add a
-   set-default control to the profile sheet.
+**The browser gate was WITHDRAWN as my error.** There is no web deploy target and the constitution
+calls the browser the DEVELOPMENT runtime; I had written a browser release gate into my own proposal
+and Codex reviewed against it. The fail-closed code stays; verifying it in a browser is not a release
+condition.
+
+**Follow-up, presentation only:** "Return to previous state" sits below the fold of the Settings sheet
+on a 6.8-inch phone. Fine for an ordinary setting, worth reconsidering for the one control that undoes
+a destructive operation.
+
+**Owner decisions recorded during the build:**
+
+- Open matches are not precious, so orphaned `cx-ongoing-match:<pid>` keys stay as harmless litter.
+  **The `resume` row still travels inside the archive** - if backups should not carry in-progress
+  matches at all, that is a format change and has not been made.
+
+**Carried, not closed:** the confirm screen's DECISIONS are now covered - `restoreFlow.js` holds
+routing, the destructive gate, outcome messaging and failure, with the inline copies deleted so the 14
+tests describe the shipped screen. What remains uncovered is `App.jsx`'s markup and effects, which is
+the older, broader gap rather than this branch's. TalkBack announcement order is asserted by construction, not observed.
 
 ### `art-fade-fix` - QUEUED, own branch after `capacitor-8` merges
 
