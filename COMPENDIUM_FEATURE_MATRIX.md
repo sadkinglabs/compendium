@@ -122,6 +122,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Play tools | Draw/redraw a hand and draw supported zone cards without mutating the saved deck | Derived transient state | **Implemented** |
 | Deck notes and history | Persist notes, Curiosa URL, and bounded change history | `decks`, `deck_history` | **Implemented** |
 | Import | Import Curiosa URLs and supported text formats; preserve unresolved entries visibly | `decks`, `deck_entries` | **Implemented** |
+| Curiosa re-sync | Re-poll a deck's saved Curiosa URL, show an add/remove/quantity/avatar/name diff, and apply the confirmed one-way sync in one transaction with a deck-log entry; the name follows Curiosa (profile-unique dedup), notes are never modified | `deck_entries`, `decks`, `deck_history` | **Implemented** |
 | Export and sharing | Produce readable and Curiosa-compatible text plus supported deck sharing formats | Derived from deck data | **Implemented** |
 | Deck poster | Generate and share a visual deck summary with graceful art fallback | Derived from deck data | **Implemented** |
 
