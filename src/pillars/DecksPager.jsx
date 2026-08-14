@@ -44,8 +44,18 @@ const CameraSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 // this retired with the library badges - owner call 2026-08-14.)
 let deckListCache = { pid: null, decks: null };
 
+// The last Decks view, kept across pillar mounts: leaving the pillar from the
+// LIBRARY returns to the Library, even while a deck stays open - parity with the
+// app-wide nav/back behaviour (owner call 2026-08-14). `ref` is the deckOpen
+// OBJECT the view belonged to: every explicit open (deck card, Home carousel,
+// import, resume) creates a fresh object in App, so identity distinguishes a
+// plain tab-return (same object - honour the memo) from a genuine open (new
+// object - jump to My Deck), even when the deck id is unchanged.
+let viewMemo = { view: null, ref: null };
+
 export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
-  const [view, setView] = useState(deckOpen ? 'mydeck' : 'library');
+  const [view, setView] = useState(() =>
+    deckOpen ? ((viewMemo.ref === deckOpen && viewMemo.view) || 'mydeck') : 'library');
   const [statTab, setStatTab] = useState('list');   // My Deck inner: list | stats
   const setEditMode = onEditMode;   // lifted to App so it survives the add-cards flow
   const [decks, setDecks] = useState(() => {
@@ -71,15 +81,21 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
     setDecks(d);
   }
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [rev]);
+  // Remember the view (and the deckOpen object it belonged to) across pillar mounts.
+  useEffect(() => { viewMemo = { view, ref: deckOpen ?? null }; }, [view, deckOpen]);
   // Opening/creating/importing a deck (deckOpen changes id) jumps to My Deck;
-  // the user can still toggle back to Library freely afterward. editMode is only
-  // dropped on a genuine id change - NOT on the remount after the add-cards flow
-  // (which is why editMode lives in App, not here).
+  // the user can still toggle back to Library freely afterward. A pillar-return
+  // REMOUNT is not an open - the guard below skips it, so the remembered view
+  // survives (pre-fix, this effect forced My Deck on every return). editMode is
+  // only dropped on a genuine id change - NOT on the remount after the add-cards
+  // flow (which is why editMode lives in App, not here).
   const prevIdRef = useRef(deckOpen?.id);
   useEffect(() => {
+    if (prevIdRef.current === deckOpen?.id) return;
     if (deckOpen) { setView('mydeck'); setStatTab('list'); }
     else setView('library');   // closing the deck (incl. hardware back) returns to the Library list
-    if (prevIdRef.current !== deckOpen?.id) { setEditMode(false); prevIdRef.current = deckOpen?.id; }
+    setEditMode(false);
+    prevIdRef.current = deckOpen?.id;
     // eslint-disable-next-line
   }, [deckOpen?.id]);
   // Leaving the deck (or its list view) always exits edit mode.
