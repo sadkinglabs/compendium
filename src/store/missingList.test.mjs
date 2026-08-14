@@ -59,12 +59,15 @@ const LINES = [
   { card_id: 'gamma', missing: 0, owned: 4, required: 4 },   // owned in full: excluded
 ];
 
-test('creates a wanted list holding exactly the missing quantities', async () => {
+test('creates a PLAIN custom list holding exactly the missing quantities', async () => {
+  // Custom, never wanted: wanted tracking matched "want 1" against copies
+  // already owned, so a deck short 1-of-2 read as "Complete" (owner report
+  // 2026-08-14). A missing list is a shopping list, not a tracked goal.
   const r = await generateMissingList('Missing for Fire', LINES);
   assert.equal(r.created, true);
   assert.equal(r.count, 2);
   const list = rows("SELECT kind, name, profile_id FROM card_lists;")[0];
-  assert.equal(list.kind, 'wanted');
+  assert.equal(list.kind, 'custom');
   assert.equal(list.name, 'Missing for Fire');
   assert.equal(list.profile_id, 'p1');
   const entries = rows('SELECT card_id, quantity FROM card_list_entries ORDER BY card_id;');
@@ -78,6 +81,13 @@ test('regenerating REPLACES the same-named list - one list, fresh entries, same 
   assert.equal(second.id, first.id);
   assert.equal(rows('SELECT COUNT(*) c FROM card_lists;')[0].c, 1);
   assert.deepEqual(rows('SELECT card_id, quantity FROM card_list_entries;'), [{ card_id: 'beta', quantity: 2 }]);
+});
+
+test('regenerating HEALS a pre-fix wanted-kind list to custom', async () => {
+  sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,sort_order) VALUES('L1','p1','wanted','Missing for Fire',0);");
+  const r = await generateMissingList('Missing for Fire', LINES);
+  assert.equal(r.created, false);
+  assert.equal(rows("SELECT kind FROM card_lists WHERE id='L1';")[0].kind, 'custom');
 });
 
 test("another profile's same-named list is never matched or touched", async () => {

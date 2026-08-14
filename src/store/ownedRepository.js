@@ -856,12 +856,15 @@ export async function createList(kind, name, description = '') {
   bump();
   return id;
 }
-/** Generate (or REgenerate) a named wanted list from compare-report missing
- *  lines [{card_id, missing}] - the "Missing for <deck>" flow (owner call
- *  2026-08-14: a shareable dedicated list, not the Wishlist). Deterministic by
- *  name: an existing same-named list is REPLACED in one tx, so regenerating
- *  after pulls or deck edits refreshes one list instead of spawning "(1)"
- *  clutter. Returns { id, created, count }. */
+/** Generate (or REgenerate) a named PLAIN list from compare-report missing
+ *  lines [{card_id, missing}] - the "Missing for <deck>" flow. Kind is CUSTOM,
+ *  never wanted (owner call 2026-08-14): wanted-list tracking matches "want 1"
+ *  against copies already owned, so a deck short 1-of-2 rendered as "Complete" -
+ *  exactly the confusion this list exists to avoid. It is a shopping list, not a
+ *  tracked goal. Deterministic by name: an existing same-named list is REPLACED
+ *  in one tx (and its kind healed to custom, fixing lists generated before this
+ *  call), so regenerating refreshes one list instead of spawning "(1)" clutter.
+ *  Returns { id, created, count }. */
 export async function generateMissingList(name, lines) {
   const pid = activeProfileId();
   const clean = String(name || '').trim() || 'Missing cards';
@@ -871,9 +874,9 @@ export async function generateMissingList(name, lines) {
   const id = existing?.id || uuid();
   const stmts = existing
     ? [['DELETE FROM card_list_entries WHERE list_id=?;', [id]],
-       ['UPDATE card_lists SET updated_at=? WHERE id=? AND profile_id=?;', [now, id, pid]]]
+       ["UPDATE card_lists SET kind='custom', updated_at=? WHERE id=? AND profile_id=?;", [now, id, pid]]]
     : [['INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?);',
-       [id, pid, 'wanted', clean, '', now, now]]];
+       [id, pid, 'custom', clean, '', now, now]]];
   for (const l of items) {
     stmts.push(['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);',
       [uuid(), id, l.card_id, l.missing | 0, '', now]]);
