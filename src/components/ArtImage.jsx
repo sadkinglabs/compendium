@@ -47,23 +47,57 @@ export function useArtSource(key) {
  * inside .map() (it is a component, so the hook is called once per instance). `artKey` is the
  * content-addressed key (a printing/card `image_slug` after the Phase-2 repoint).
  */
+// SEAM-FREE REVEAL. Frame-by-frame device capture (builds 232-233, rec2/rec3)
+// pinned the Library "streak" and the My Deck "broken image" to the img's OWN
+// compositor layer: a bright 2-3px vertical line at screen x~1010 = img left
+// edge (~495; the card hero is 64% wide = 813px) + 512, Chromium's raster tile
+// width - a texture-edge bleed where a not-yet-uploaded tile meets an uploaded
+// one on the img's first visible frame. It was never the pillar entrance (the
+// seam survived a build with fade-only entrances), and instant reveals cannot
+// fix it: hiding at opacity 0 skips raster entirely, and pre-rastering at 2%
+// opacity was defeated by tile priorities - the flip still outran the upload
+// (rec3 f049: full-brightness seam one frame before the art).
+//
+// The cure stops RACING the tile pipeline and rides it instead: reveal through
+// a short compositor-driven opacity TRANSITION. Tiles that land staggered do so
+// during the low-alpha ramp where a seam is arithmetically invisible (155 * 7%
+// ~ 11/255 on frame one); by the time alpha is high, every tile is up. This is
+// exactly why the framed CardArt path - which has always faded - never seamed.
+// The paint-once cache keeps the contract: a key that has painted this session
+// renders instantly with no fade (warm re-entries stay blink-free).
+const FADE = 'opacity .16s linear';
+// VISIBILITY FOLLOWS THIS ELEMENT'S OWN LIFECYCLE, never the key's history.
+// rec6 f016 caught the My Deck "broken image": the hero's first src transiently
+// ERRORS (the Cap-8 lesson again - the candidate chain recovers one frame
+// later), and the paint-once fast path made the failing img visible from mount,
+// so the browser's broken-image glyph painted for a frame. hasPainted now
+// decides only HOW a loaded img appears (instantly vs the seam-masking fade);
+// an img that has not fired load for its CURRENT src is never visible, so an
+// error state has nothing to paint and the chain swaps src invisibly.
 export function ArtImg({ artKey, alt = '', ...imgProps }) {
   const { src, gen, onError } = useArtSource(artKey || null);
-  // ATOMIC PAINT (owner report 2026-08-14: the My Deck hero painted progressively -
-  // the "broken image" effect - as large JPEGs decoded on screen). The img stays
-  // invisible until the load event, then appears whole. The paint-once cache keeps
-  // re-entries instant: a key that has painted this session shows immediately, so
-  // this cannot resurrect the warm-entry blink the art-first-paint work removed.
-  const [loadedId, setLoadedId] = useState(null);          // `${gen}|${src}` once fully loaded
+  const [phase, setPhase] = useState({ id: null, at: 'wait' });
+  const id = `${gen}|${src}`;
   if (!src) return null;
-  const show = (!!artKey && artCache.hasPainted(artKey)) || loadedId === `${gen}|${src}`;
+  const at = phase.id === id ? phase.at : 'wait';
+  const onLoad = () => {
+    if (artKey && artCache.hasPainted(artKey)) { setPhase({ id, at: 'settled' }); return; }   // warm: instant, no fade
+    // Cold: fade on the compositor (masks raster-tile arrival - see above), then
+    // drop the inline styles once it is safely over.
+    setPhase({ id, at: 'show' });
+    if (artKey) artCache.markPainted(artKey);
+    setTimeout(() => setPhase((p) => (p.id === id && p.at === 'show' ? { id, at: 'settled' } : p)), 300);
+  };
+  const reveal = at === 'settled' ? null
+    : at === 'show' ? { opacity: 1, transition: FADE }
+    : { opacity: 0, transition: 'none' };
   // imgProps (className/style/loading/aria-hidden/...) pass through; src + onError are the boundary's,
   // placed last so a stray caller prop can never override the candidate-chain error handling.
   return (
     <img key={gen} alt={alt} {...imgProps}
-      style={{ ...(imgProps.style || null), ...(show ? null : { opacity: 0 }) }}
+      style={{ ...(imgProps.style || null), ...reveal }}
       src={src}
-      onLoad={() => { setLoadedId(`${gen}|${src}`); if (artKey) artCache.markPainted(artKey); }}
+      onLoad={at === 'settled' ? undefined : onLoad}
       onError={onError} />
   );
 }
