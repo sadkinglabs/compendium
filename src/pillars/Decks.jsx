@@ -41,13 +41,13 @@ export function DeckCard({ deck, build, onClick }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ font: "400 13px/1 var(--f-read)", color: '#8a8175' }}>{record}</span>
-            {build && build.totalRequired > 0 && (
+            {/* Incomplete decks show NOTHING here (owner call 2026-08-14: users
+                disliked the "x missing" badge; the detail lives in the deck view). */}
+            {build && build.totalRequired > 0 && build.complete && (
               <span title="Buildability from your collection" style={{
                 display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 10, font: "600 10.5px/1 var(--f-ui)", letterSpacing: '.04em',
-                color: build.complete ? 'var(--accent-jade)' : '#c76d85',
-                background: build.complete ? 'rgba(143,211,168,.1)' : 'rgba(199,109,133,.1)',
-                border: `1px solid ${build.complete ? 'rgba(143,211,168,.3)' : 'rgba(199,109,133,.3)'}`,
-              }}>{build.complete ? <><CheckSvg />Buildable</> : `${build.totalMissing} missing`}</span>
+                color: 'var(--accent-jade)', background: 'rgba(143,211,168,.1)', border: '1px solid rgba(143,211,168,.3)',
+              }}><CheckSvg />Buildable</span>
             )}
           </div>
         </div>
