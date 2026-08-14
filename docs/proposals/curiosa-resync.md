@@ -241,6 +241,14 @@ Owner approved 2026-08-14 with both open decisions resolved as recommended: cont
 sync and transaction-only v1 (no snapshot/undo). Scope amendment, owner-directed later the
 same day: the deck NAME now syncs too (versioned upstream names flow through); the plan
 resolves the effective name up front via the profile-unique dedup rule excluding the deck
-itself, and the commit re-dedups against fresh state - notes remain untouched. Codex
-adversarial review disposition: pending. Native device evidence: pending (pre-merge
-checkpoint).
+itself, and the commit re-dedups the RAW upstream name against fresh state - notes remain
+untouched. Native device evidence: COMPLETED (build 230, joint owner/agent pass: import,
+in-sync breadcrumb, full diff sheet, verbatim over-limit write, offline error, dead-URL
+error). Codex adversarial review delivered 2026-08-14, disposition "Changes required":
+2 blocking (a failed sideboard read became an authoritative empty sideboard; the check
+breadcrumb bypassed the active-profile boundary), 4 should-fix (duplicate-only
+normalisation discarded as a no-op; commit re-dedupped the already-suffixed name;
+placeholder rows undisclosed in the sheet; sheet dismissible mid-commit), 1 nit (this
+record contradicting itself). All implemented on `curiosa-resync-bolster` the same day
+with regression tests per finding; over-limit handling, skipped unknowns, undo, and
+collection overflow were explicitly not reopened.

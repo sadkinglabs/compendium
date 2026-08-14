@@ -16,12 +16,17 @@ import { __setActiveIdForTests } from './profileRepository.js';
 import { commitCuriosaSync, logCuriosaChecked, planCuriosaSync, importCuriosaUrl } from './deckRepository.js';
 import { slugify } from './ids.js';
 
-/** Stub the web fetch path of curiosaQuery: routes tRPC procedure -> json payload. */
+/** Stub the web fetch path of curiosaQuery: routes tRPC procedure -> json payload.
+ *  A value of `{ __http: N }` makes that procedure fail with HTTP status N. */
 function stubCuriosa(byProc) {
   const real = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const proc = Object.keys(byProc).find((p) => String(url).includes(p));
-    return { ok: true, status: 200, json: async () => [{ result: { data: { json: proc ? byProc[proc] : null } } }] };
+    const v = proc ? byProc[proc] : undefined;
+    if (v && typeof v === 'object' && !Array.isArray(v) && v.__http) {
+      return { ok: false, status: v.__http, json: async () => [] };
+    }
+    return { ok: true, status: 200, json: async () => [{ result: { data: { json: v === undefined ? null : v } } }] };
   };
   return () => { globalThis.fetch = real; };
 }
@@ -74,7 +79,9 @@ beforeEach(() => {
   sdb.run('DELETE FROM deck_history; DELETE FROM deck_entries; DELETE FROM decks; DELETE FROM profiles; DELETE FROM cards;');
   sdb.run("INSERT INTO profiles(id,name,schema_version) VALUES('p1','Test',11);");
   for (const [id, name] of [['alpha', 'Alpha'], ['beta', 'Beta'], ['gamma', 'Gamma'], ['pond', 'Pond'], ['old-av', 'Old Avatar'], ['new-av', 'New Avatar']]) {
-    sdb.run('INSERT INTO cards(card_id,name) VALUES(?,?);', [id, name]);
+    // JSON columns seeded as valid JSON: getCatalog's jp() defaults only fire on
+    // a PARSE ERROR, and JSON.parse(null) "succeeds" as null.
+    sdb.run("INSERT INTO cards(card_id,name,elements,thresholds,sets,variants) VALUES(?,?,'[]','{}','[]','[]');", [id, name]);
   }
   sdb.run("INSERT INTO decks(id,profile_id,name,notes,curiosa_url,avatar_card_id,updated_at) VALUES('d1','p1','My Deck','my notes','https://curiosa.io/decks/abcdef1234567890','old-av','2026-01-01T00:00:00.000Z');");
   // alpha: qty 3 with a chosen variant - the row a sync must not clobber.
@@ -108,7 +115,7 @@ test('atomicity: an injected mid-transaction failure changes nothing', async () 
 
 test('delta apply converges on the remote list and reports counts', async () => {
   const r = await commitCuriosaSync('d1', TARGET);
-  assert.deepEqual(r, { applied: true, adds: 1, removes: 1, changes: 1, avatarChanged: true, renamedTo: null });
+  assert.deepEqual(r, { applied: true, adds: 1, removes: 1, changes: 1, duplicates: 0, avatarChanged: true, renamedTo: null });
 
   const alpha = rows("SELECT quantity, variant_slug FROM deck_entries WHERE card_id='alpha';")[0];
   assert.equal(alpha.quantity, 4);
@@ -176,7 +183,7 @@ test('a null remote avatar never clears the local one', async () => {
 });
 
 test('rename follows the remote name: slug updates, notes survive, log names it', async () => {
-  const r = await commitCuriosaSync('d1', { ...TARGET, name: 'Blood & Thunder v2' });
+  const r = await commitCuriosaSync('d1', { ...TARGET, rawName: 'Blood & Thunder v2' });
   assert.equal(r.renamedTo, 'Blood & Thunder v2');
   const deck = rows("SELECT name, slug, notes FROM decks WHERE id='d1';")[0];
   assert.equal(deck.name, 'Blood & Thunder v2');
@@ -191,16 +198,16 @@ test('a name-only change still applies, with zero entry counts', async () => {
     { zone: 'spellbook', cardId: 'beta', qty: 2 },
     { zone: 'atlas', cardId: 'pond', qty: 4 },
   ];
-  const r = await commitCuriosaSync('d1', { avatar: null, entries: inSyncEntries, name: 'Fresh Name' });
-  assert.deepEqual(r, { applied: true, adds: 0, removes: 0, changes: 0, avatarChanged: false, renamedTo: 'Fresh Name' });
+  const r = await commitCuriosaSync('d1', { avatar: null, entries: inSyncEntries, rawName: 'Fresh Name' });
+  assert.deepEqual(r, { applied: true, adds: 0, removes: 0, changes: 0, duplicates: 0, avatarChanged: false, renamedTo: 'Fresh Name' });
   assert.equal(rows("SELECT text FROM deck_history;")[0].text, 'Synced from Curiosa (renamed to Fresh Name)');
 });
 
 test('rename dedups against a sibling deck and re-running settles - no rename loop', async () => {
   sdb.run("INSERT INTO decks(id,profile_id,name) VALUES('d3','p1','Fire v2');");
-  const first = await commitCuriosaSync('d1', { ...TARGET, name: 'Fire v2' });
+  const first = await commitCuriosaSync('d1', { ...TARGET, rawName: 'Fire v2' });
   assert.equal(first.renamedTo, 'Fire v2 (1)');            // sibling owns the bare name
-  const again = await commitCuriosaSync('d1', { ...TARGET, name: 'Fire v2' });
+  const again = await commitCuriosaSync('d1', { ...TARGET, rawName: 'Fire v2' });
   assert.equal(again.applied, false);                       // dedup lands on the current name: settled
   assert.equal(again.renamedTo, null);
   assert.equal(rows("SELECT name FROM decks WHERE id='d1';")[0].name, 'Fire v2 (1)');
@@ -223,6 +230,98 @@ test('REGRESSION: importing a dead Curiosa URL errors instead of creating an emp
     await assert.rejects(() => importCuriosaUrl('https://curiosa.io/decks/abcdef1234567890'), /no deck at this URL/);
     assert.equal(rows("SELECT COUNT(*) c FROM decks;")[0].c, 1);   // no ghost deck created
   } finally { restore(); }
+});
+
+test('BLOCKING regression: a failed sideboard read aborts the plan - never an authoritative empty sideboard', async () => {
+  // Pre-fix, every sideboard failure was swallowed into [] and confirming would
+  // delete the whole local Collection. Curiosa's evidenced no-sideboard contract
+  // is a 200 with an empty ARRAY; everything else must abort.
+  const cases = [
+    ['HTTP 500', { __http: 500 }, /HTTP 500/],
+    ['200 + null', null, /read Curiosa's response/],
+    ['malformed row', [{ quantity: 2, card: {} }], /read Curiosa's response/],
+  ];
+  for (const [label, sideVal, msgRe] of cases) {
+    const restore = stubCuriosa({
+      'deck.getById': { name: 'My Deck', avatars: [] },
+      'deck.getDecklistById': [{ quantity: 4, card: { name: 'Alpha', category: 'Spell' } }],
+      'deck.getSideboardById': sideVal,
+    });
+    try { await assert.rejects(() => planCuriosaSync('d1'), msgRe, `sideboard ${label}`); }
+    finally { restore(); }
+  }
+});
+
+test('malformed or unplaceable main-list rows abort instead of being silently skipped', async () => {
+  // A skipped row is absent from the target, so the sync would REMOVE that card
+  // locally - shape drift must fail closed.
+  const cases = [
+    [{ quantity: 4, card: { category: 'Spell' } }],                       // name missing
+    [{ quantity: 4, card: { name: 'Alpha', category: 'Relic' } }],        // category we cannot place
+    [{ quantity: 'four', card: { name: 'Alpha', category: 'Spell' } }],   // quantity shape drift
+  ];
+  for (const main of cases) {
+    const restore = stubCuriosa({ 'deck.getById': { name: 'X', avatars: [] }, 'deck.getDecklistById': main, 'deck.getSideboardById': [] });
+    try { await assert.rejects(() => planCuriosaSync('d1'), /read Curiosa's response/); }
+    finally { restore(); }
+  }
+});
+
+test('plan: a valid payload resolves and reports duplicates, placeholders, and the raw name', async () => {
+  sdb.run("INSERT INTO deck_entries(id,deck_id,zone,card_id,quantity,variant_slug) VALUES('e5','d1','spellbook','alpha',1,'');");
+  const restore = stubCuriosa({
+    'deck.getById': { name: 'My Deck', avatars: [{ card: { name: 'Old Avatar' } }] },
+    'deck.getDecklistById': [
+      { quantity: 4, card: { name: 'Alpha', category: 'Spell' } },
+      { quantity: 4, card: { name: 'Pond', category: 'Site' } },
+    ],
+    'deck.getSideboardById': [],
+  });
+  try {
+    const p = await planCuriosaSync('d1');
+    assert.equal(p.duplicateGroups, 1);                     // alpha sits on two rows
+    assert.equal(p.placeholderCount, 1);                    // the seeded NULL row
+    assert.equal(p.remoteTarget.rawName, 'My Deck');
+    assert.equal(p.diff.name, null);                        // remote name equals local
+    assert.equal(p.diff.avatar, null);                      // same avatar
+    assert.deepEqual(p.diff.removes.map((r) => r.cardId), ['beta']);
+    assert.equal(p.diff.changes.length, 0);                 // 3+1 aggregated = remote 4
+  } finally { restore(); }
+});
+
+test('duplicate-only cleanup still applies - not discarded as a no-op', async () => {
+  sdb.run("INSERT INTO deck_entries(id,deck_id,zone,card_id,quantity,variant_slug) VALUES('e5','d1','spellbook','alpha',1,'');");
+  const inSync = { avatar: null, entries: [
+    { zone: 'spellbook', cardId: 'alpha', qty: 4 },         // 3 + 1 across two local rows
+    { zone: 'spellbook', cardId: 'beta', qty: 2 },
+    { zone: 'atlas', cardId: 'pond', qty: 4 },
+  ] };
+  const r = await commitCuriosaSync('d1', inSync);
+  assert.deepEqual(r, { applied: true, adds: 0, removes: 0, changes: 0, duplicates: 1, avatarChanged: false, renamedTo: null });
+  const alphas = rows("SELECT quantity, variant_slug FROM deck_entries WHERE card_id='alpha';");
+  assert.equal(alphas.length, 1);
+  assert.equal(alphas[0].quantity, 4);
+  assert.equal(alphas[0].variant_slug, 'alpha-foil');       // survivor keeps its variant
+  assert.equal(rows('SELECT text FROM deck_history;')[0].text, 'Synced from Curiosa (tidied 1 duplicate)');
+  const again = await commitCuriosaSync('d1', inSync);
+  assert.equal(again.applied, false);                       // idempotent after the tidy
+});
+
+test('rename settles in ONE sync when a plan-time collision has disappeared (raw-name re-dedup)', async () => {
+  // Upstream says "Fire v2"; during planning a sibling owned it, so the plan
+  // DISPLAYED "Fire v2 (1)". The sibling is gone by commit time - commit dedups
+  // the RAW name against fresh state and takes the bare name directly.
+  const r = await commitCuriosaSync('d1', { ...TARGET, rawName: 'Fire v2' });
+  assert.equal(r.renamedTo, 'Fire v2');
+});
+
+test('the check breadcrumb refuses a deck outside the active profile', async () => {
+  sdb.run("INSERT INTO profiles(id,name,schema_version) VALUES('p2','Other',11);");
+  sdb.run("INSERT INTO decks(id,profile_id,name) VALUES('d2','p2','Not Mine');");
+  await logCuriosaChecked('d2');
+  assert.equal(rows("SELECT COUNT(*) c FROM deck_history WHERE deck_id='d2';")[0].c, 0);   // refused
+  await logCuriosaChecked('d1');
+  assert.equal(rows("SELECT COUNT(*) c FROM deck_history WHERE deck_id='d1';")[0].c, 1);   // owned deck still logs
 });
 
 test('a deck outside the active profile is refused', async () => {

@@ -626,18 +626,23 @@ function syncError(message) { const e = new Error(message); e.friendly = true; r
  *  can't resolve go to `unknown` (shown, never applied - anonymous placeholder
  *  rows can't be reconciled on a later sync); existing placeholder rows are
  *  counted and left alone. Returns
- *  { diff, remoteTarget, unknown, placeholderCount, remoteName }. */
+ *  { diff, remoteTarget, unknown, overLimit, placeholderCount, duplicateGroups, remoteName }. */
 export async function planCuriosaSync(deckId) {
   const deck = (await query('SELECT name, curiosa_url, avatar_card_id FROM decks WHERE id=? AND profile_id=?;', [deckId, activeProfileId()]))[0];
   if (!deck) throw syncError('This deck no longer exists.');
   const id = curiosaIdFrom(deck.curiosa_url);
   if (!id) throw syncError("The saved link isn't a Curiosa deck URL.");
 
-  let meta, main, side = [];
+  let meta, main, side;
   try {
     meta = await curiosaQuery('deck.getById', id);
     main = await curiosaQuery('deck.getDecklistById', id);
-    try { side = await curiosaQuery('deck.getSideboardById', id); } catch { side = []; }
+    // The sideboard fetch gets NO lenient fallback (Codex review 2026-08-14): a
+    // read failure substituted as [] becomes an authoritative empty sideboard,
+    // and confirming would delete the whole local Collection. Curiosa's real
+    // no-sideboard contract is a 200 with an empty ARRAY (probed on a deck with
+    // no sideboard) - anything else is a failure and aborts the plan below.
+    side = await curiosaQuery('deck.getSideboardById', id);
   } catch (e) {
     const code = /HTTP (\d+)/.exec(String(e?.message || ''))?.[1];
     if (code && +code >= 400 && +code < 500) throw syncError('Curiosa has no deck at this link any more - it may be deleted or private.');
@@ -650,7 +655,15 @@ export async function planCuriosaSync(deckId) {
   // check an absent deck reads as an EMPTY deck and the diff proposes removing
   // every card in the local one.
   if (!meta) throw syncError('Curiosa has no deck at this link any more - it may be deleted or private.');
-  if (!Array.isArray(main)) throw syncError("Couldn't read Curiosa's response.");
+  // Shape validation, fail closed: a row whose name/quantity shape drifted, or a
+  // main-list category we can't place, must abort rather than be skipped -
+  // skipping means the sync would REMOVE that card locally.
+  const shapeOk = (e) => !!(e && e.card && typeof e.card.name === 'string' && e.card.name.trim()
+    && (e.quantity == null || (Number.isFinite(e.quantity) && e.quantity >= 0)));
+  if (!Array.isArray(main) || !Array.isArray(side) || ![...main, ...side].every(shapeOk)
+    || !main.every((e) => e.card.category === 'Spell' || e.card.category === 'Site')) {
+    throw syncError("Couldn't read Curiosa's response.");
+  }
 
   const cat = await getCatalog();
   const byName = new Map(cat.map((c) => [c._nameLc, c]));
@@ -683,6 +696,17 @@ export async function planCuriosaSync(deckId) {
   const rows = await query('SELECT e.zone, e.card_id, e.quantity, c.name FROM deck_entries e LEFT JOIN cards c ON c.card_id=e.card_id WHERE e.deck_id=?;', [deckId]);
   const current = rows.filter((r) => r.card_id).map((r) => ({ zone: r.zone, cardId: r.card_id, qty: r.quantity, name: r.name }));
   const placeholderCount = rows.length - current.length;
+  // Duplicate (zone, card) rows: the commit collapses them, so the plan must see
+  // them too - or a duplicate-only sync reads as "already in sync" and the
+  // cleanup never gets offered (Codex review 2026-08-14).
+  const rowsPerKey = new Map();
+  let duplicateGroups = 0;
+  for (const r of current) {
+    const k = `${r.zone}|${r.cardId}`;
+    const n = (rowsPerKey.get(k) || 0) + 1;
+    rowsPerKey.set(k, n);
+    if (n === 2) duplicateGroups++;
+  }
 
   // Name follows Curiosa (owner amendment 2026-08-14: versioned upstream names flow
   // through). The EFFECTIVE name is resolved here, profile-unique via the app-wide
@@ -699,7 +723,11 @@ export async function planCuriosaSync(deckId) {
   // Copy-limit breaches in the INCOMING list. Written verbatim (one-way sync,
   // consistent with import; owner decision 2026-08-14) - surfaced, not enforced.
   const overLimit = overLimitEntries(remoteEntries, (id) => limitByCardId.get(id));
-  return { diff, remoteTarget: { avatar: remoteAvatar, entries: remoteEntries, name: effectiveName }, unknown, overLimit, placeholderCount, remoteName: remoteNameRaw || null };
+  // remoteTarget carries the RAW upstream name; the suffixed effective name is
+  // display-only (diff.name). Commit re-dedups the raw name against fresh state,
+  // so a collision that disappears between plan and commit settles in ONE sync
+  // (Codex review 2026-08-14).
+  return { diff, remoteTarget: { avatar: remoteAvatar, entries: remoteEntries, rawName: remoteNameRaw || null }, unknown, overLimit, placeholderCount, duplicateGroups, remoteName: remoteNameRaw || null };
 }
 
 /** Apply a sync plan's remote target. Re-reads current entries and re-diffs, so
@@ -732,7 +760,7 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
   }
 
   const stmts = [];
-  let adds = 0, removes = 0, changes = 0;
+  let adds = 0, removes = 0, changes = 0, duplicates = 0;
   for (const [k, qty] of target) {
     const g = groups.get(k);
     if (!g) {
@@ -742,6 +770,7 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
       continue;
     }
     const total = g.reduce((n, r) => n + (r.quantity || 0), 0);
+    if (g.length > 1) duplicates++;   // counted so duplicate-only cleanup still applies (Codex review 2026-08-14)
     for (const extra of g.slice(1)) stmts.push(['DELETE FROM deck_entries WHERE id=?;', [extra.id]]);
     if (total !== qty || g.length > 1) stmts.push(['UPDATE deck_entries SET quantity=? WHERE id=?;', [qty, g[0].id]]);
     if (total !== qty) changes++;
@@ -755,15 +784,20 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
   const toAvatar = remoteTarget?.avatar?.cardId || null;
   const avatarChanged = !!(toAvatar && toAvatar !== deck.avatar_card_id);
 
-  // Rename, re-deduped against fresh state so a deck created between plan and
-  // commit can't produce silent twins. A dedup that lands back on the current
-  // name is no change at all.
-  let toName = String(remoteTarget?.name || '').trim() || null;
-  if (toName && toName !== deck.name) toName = await uniqueDeckName(toName, deckId);
-  const nameChanged = !!(toName && toName !== deck.name);
+  // Rename resolves from the RAW upstream name against fresh state (Codex review
+  // 2026-08-14: re-dedupping the plan's suffixed name kept the "(1)" even after
+  // the colliding sibling disappeared, taking two syncs to settle). A dedup that
+  // lands back on the current name is no change at all.
+  const rawName = String(remoteTarget?.rawName ?? remoteTarget?.name ?? '').trim();
+  let toName = null;
+  if (rawName && rawName !== deck.name) {
+    const candidate = await uniqueDeckName(rawName, deckId);
+    if (candidate !== deck.name) toName = candidate;
+  }
+  const nameChanged = !!toName;
 
-  if (!adds && !removes && !changes && !avatarChanged && !nameChanged) {
-    return { applied: false, adds, removes, changes, avatarChanged, renamedTo: null };
+  if (!adds && !removes && !changes && !duplicates && !avatarChanged && !nameChanged) {
+    return { applied: false, adds, removes, changes, duplicates, avatarChanged, renamedTo: null };
   }
 
   const ts = nowIso();
@@ -776,17 +810,27 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
   if (adds) parts.push(`+${adds}`);
   if (removes) parts.push(`-${removes}`);
   if (changes) parts.push(`~${changes}`);
+  if (duplicates) parts.push(`tidied ${duplicates} duplicate${duplicates === 1 ? '' : 's'}`);
   if (avatarChanged) parts.push('avatar');
   if (nameChanged) parts.push(`renamed to ${toName}`);
   stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);', [uuid(), deckId, ts, `Synced from Curiosa (${parts.join(' / ')})`]]);
   stmts.push(trimHistorySql(deckId));
   await tx(stmts);
-  return { applied: true, adds, removes, changes, avatarChanged, renamedTo: nameChanged ? toName : null };
+  return { applied: true, adds, removes, changes, duplicates, avatarChanged, renamedTo: nameChanged ? toName : null };
 }
 
 /** Deck-log breadcrumb for an "already in sync" check, so the log shows when
- *  Curiosa was last polled even when nothing changed. */
-export async function logCuriosaChecked(deckId) { await logHistory(deckId, 'Checked Curiosa - already in sync'); }
+ *  Curiosa was last polled even when nothing changed. Profile-guarded INSERT …
+ *  SELECT in one tx (Codex review 2026-08-14): a deck outside the active profile
+ *  matches no row, so nothing is inserted - the repository boundary refuses the
+ *  cross-profile write instead of trusting the caller's deck id. */
+export async function logCuriosaChecked(deckId) {
+  await tx([
+    ['INSERT INTO deck_history(id,deck_id,ts,text) SELECT ?, id, ?, ? FROM decks WHERE id=? AND profile_id=?;',
+      [uuid(), nowIso(), 'Checked Curiosa - already in sync', deckId, activeProfileId()]],
+    trimHistorySql(deckId),
+  ]);
+}
 
 /** Import parsed text into a NEW deck for the active profile. Unresolved cards
  *  are kept as placeholders (card_id null) so nothing silently disappears. */

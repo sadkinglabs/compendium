@@ -240,8 +240,12 @@ function CuriosaSyncSheet({ plan, busy, onClose, onConfirm }) {
     </div>
   );
   const d = plan?.diff;
+  const canCommit = !!plan && (!d.isEmpty || plan.duplicateGroups > 0);
   return (
-    <Sheet open={!!plan} title="Sync from Curiosa" onClose={onClose}>
+    // Non-dismissible while the commit runs (Codex review 2026-08-14): a scrim
+    // tap / drag / hardware back mid-transaction would LOOK like a cancel while
+    // the write completes anyway.
+    <Sheet open={!!plan} title="Sync from Curiosa" onClose={onClose} dismissible={!busy} ariaBusy={busy}>
       {plan && (
         <div style={{ padding: '0 16px' }}>
           <p style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 14px' }}>
@@ -284,12 +288,22 @@ function CuriosaSyncSheet({ plan, busy, onClose, onConfirm }) {
               <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '8px 0 0' }}>Curiosa allows this - the sync keeps it as written. The editor won't add more.</p>
             </Section>
           )}
+          {plan.duplicateGroups > 0 && (
+            <Section label={`Duplicate rows to tidy · ${plan.duplicateGroups}`} color="#cba75f">
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '0' }}>The same card sits on more than one row - syncing merges each into a single row. Quantities are already counted above.</p>
+            </Section>
+          )}
+          {plan.placeholderCount > 0 && (
+            <Section label={`Unrecognised rows kept · ${plan.placeholderCount}`} color="#8a8175">
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '0' }}>{plan.placeholderCount} row{plan.placeholderCount === 1 ? '' : 's'} from an older import can't be identified and stay{plan.placeholderCount === 1 ? 's' : ''} untouched, so this deck keeps them beyond the Curiosa list.</p>
+            </Section>
+          )}
           {d.isEmpty && (
             <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px' }}>Everything this catalog recognises already matches Curiosa.</div>
           )}
           <div style={{ display: 'flex', gap: 10, margin: '14px 0 4px' }}>
             <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, opacity: busy ? .55 : 1 }}>Cancel</button>
-            {!d.isEmpty && (
+            {canCommit && (
               <button onClick={onConfirm} disabled={busy} style={{ ...BTN_GOLD, flex: 1, opacity: busy ? .55 : 1 }}>{busy ? 'Syncing…' : 'Sync deck'}</button>
             )}
           </div>
@@ -317,9 +331,13 @@ function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
     setSyncing(true);
     try {
       const p = await planCuriosaSync(deckId);
-      if (p.diff.isEmpty && !p.unknown.length) {
+      if (p.diff.isEmpty && !p.unknown.length && !p.duplicateGroups) {
         await logCuriosaChecked(deckId);           // breadcrumb: the log shows when Curiosa was last polled
-        onToast?.('Already in sync with Curiosa');
+        // Qualified when placeholder rows survive: "in sync" would overclaim -
+        // anonymous rows from an older import deliberately stay beyond the list.
+        onToast?.(p.placeholderCount
+          ? `In sync with Curiosa · ${p.placeholderCount} unrecognised row${p.placeholderCount === 1 ? '' : 's'} kept`
+          : 'Already in sync with Curiosa');
         onSynced?.();
       } else {
         setPlan(p);
@@ -336,6 +354,7 @@ function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
       if (r.adds) bits.push(`+${r.adds}`);
       if (r.removes) bits.push(`-${r.removes}`);
       if (r.changes) bits.push(`~${r.changes}`);
+      if (r.duplicates) bits.push(`${r.duplicates} tidied`);
       onToast?.(r.applied ? `Synced from Curiosa${bits.length ? ' · ' + bits.join(' ') : ''}` : 'Already in sync with Curiosa');
       setPlan(null);
       onSynced?.();
