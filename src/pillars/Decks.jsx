@@ -11,14 +11,14 @@ import '../theme/decks.css';
 
 const BASE = import.meta.env.BASE_URL;
 
-// Small icons - no Unicode glyphs. Filled star = favourite; check = buildable.
+// Small icons - no Unicode glyphs. Filled star = favourite.
 const StarSvg = () => <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.06 6.6.62-4.98 4.42 1.46 6.5L12 16.9l-5.98 3.2 1.46-6.5L2.5 9.18l6.6-.62L12 2.5z" /></svg>;
-const CheckSvg = () => <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>;
 
 // The library deck card - a compact echo of the My-Deck gilt hero: avatar art
 // fading in from the right, Cinzel name, rose archetype eyebrow, threshold pips,
-// record, and a buildability badge from the collection.
-export function DeckCard({ deck, build, onClick }) {
+// and record. (The buildability badge retired 2026-08-14, owner call: that data
+// lives in the deck view's Stats, and users disliked it on the card.)
+export function DeckCard({ deck, onClick }) {
   const hero = deck.avatar?.image_slug;                       // avatar card art
   const matches = (deck.wins || 0) + (deck.losses || 0);
   const record = matches ? `${deck.wins}W - ${deck.losses}L · ${matches} played` : 'No games recorded';
@@ -41,14 +41,6 @@ export function DeckCard({ deck, build, onClick }) {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ font: "400 13px/1 var(--f-read)", color: '#8a8175' }}>{record}</span>
-            {/* Incomplete decks show NOTHING here (owner call 2026-08-14: users
-                disliked the "x missing" badge; the detail lives in the deck view). */}
-            {build && build.totalRequired > 0 && build.complete && (
-              <span title="Buildability from your collection" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 9px', borderRadius: 10, font: "600 10.5px/1 var(--f-ui)", letterSpacing: '.04em',
-                color: 'var(--accent-jade)', background: 'rgba(143,211,168,.1)', border: '1px solid rgba(143,211,168,.3)',
-              }}><CheckSvg />Buildable</span>
-            )}
           </div>
         </div>
       </div>
