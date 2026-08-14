@@ -3,11 +3,12 @@
 // L2164-2364). Avatar hero + stat bar, then three collapsible zone cards with
 // grouped, cost/threshold-annotated rows. Random Hand / Notes / Stats to follow.
 import React, { useEffect, useRef, useState } from 'react';
-import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty } from '../store/deckRepository.js';
+import { getDeck, getDeckCards, collectionMax, copyLimit, setDeckNotes, setCuriosaUrl, getHistory, listAvatarCards, setAvatar, changeQty, planCuriosaSync, commitCuriosaSync, logCuriosaChecked } from '../store/deckRepository.js';
 import DeckStats from './DeckStats.jsx';
 import CardSheet from '../components/CardSheet.jsx';
 import { ArtImg } from '../components/ArtImage.jsx';
-import { Loading } from '../components/ui.jsx';
+import { Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import Sheet from '../components/Sheet.jsx';
 import { ChevronIcon, EditIcon, PlusIcon } from '../components/icons.jsx';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
 import { safeHref } from '../util.js';
@@ -221,19 +222,133 @@ function HandCard({ zones, avatar, onCardTap }) {
   );
 }
 
+// Curiosa sync diff - the confirm step of the re-sync flow (docs/proposals/
+// curiosa-resync.md). PRESENTATION-ONLY: the commit re-derives its deltas from
+// plan.remoteTarget against fresh state, never from these rendered rows.
+function CuriosaSyncSheet({ plan, busy, onClose, onConfirm }) {
+  const Z = { spellbook: 'Spellbook', atlas: 'Atlas', collection: 'Collection', avatar: 'Avatar' };
+  const Section = ({ label, color, children }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.18em', color, textTransform: 'uppercase', marginBottom: 8 }}>{label}</div>
+      {children}
+    </div>
+  );
+  const Line = ({ name, note, dim }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
+      <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', font: "400 14.5px/1.3 var(--f-read)", color: dim ? '#8a8175' : '#d8cebb' }}>{name}</span>
+      <span style={{ flex: 'none', font: "600 12.5px/1 var(--f-mono)", color: dim ? '#8a8175' : '#cba75f' }}>{note}</span>
+    </div>
+  );
+  const d = plan?.diff;
+  return (
+    <Sheet open={!!plan} title="Sync from Curiosa" onClose={onClose}>
+      {plan && (
+        <div style={{ padding: '0 16px' }}>
+          <p style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 14px' }}>
+            One-way sync: confirming makes this deck match the Curiosa list{plan.remoteName ? <> for <b style={{ color: 'var(--ink-body)' }}>{plan.remoteName}</b></> : ''}. Your notes stay as they are.
+          </p>
+          {d.name && (
+            <Section label="Name" color="#dcb86f">
+              <Line name={`${d.name.from || 'Untitled'}  →  ${d.name.to}`} note="rename" />
+            </Section>
+          )}
+          {d.avatar && (
+            <Section label="Avatar" color="#c79ad0">
+              <Line name={d.avatar.toName || 'New avatar'} note="becomes avatar" />
+            </Section>
+          )}
+          {d.adds.length > 0 && (
+            <Section label={`Adding · ${d.adds.length}`} color="#8fd3a8">
+              {d.adds.map((a) => <Line key={`${a.zone}|${a.cardId}`} name={`${a.name}  ·  ${Z[a.zone]}`} note={`+${a.qty}×`} />)}
+            </Section>
+          )}
+          {d.removes.length > 0 && (
+            <Section label={`Removing · ${d.removes.length}`} color="#e0623f">
+              {d.removes.map((r) => <Line key={`${r.zone}|${r.cardId}`} name={`${r.name}  ·  ${Z[r.zone]}`} note={`-${r.qty}×`} />)}
+            </Section>
+          )}
+          {d.changes.length > 0 && (
+            <Section label={`Quantity · ${d.changes.length}`} color="#cba75f">
+              {d.changes.map((c) => <Line key={`${c.zone}|${c.cardId}`} name={`${c.name}  ·  ${Z[c.zone]}`} note={`${c.from}× → ${c.to}×`} />)}
+            </Section>
+          )}
+          {plan.unknown.length > 0 && (
+            <Section label={`Not in this catalog · ${plan.unknown.length}`} color="#8a8175">
+              {plan.unknown.map((u, i) => <Line key={`${u.zone}|${u.name}|${i}`} name={`${u.name}  ·  ${Z[u.zone] || u.zone}`} note={`${u.qty}×`} dim />)}
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '8px 0 0' }}>Skipped until a catalog update recognises them.</p>
+            </Section>
+          )}
+          {plan.overLimit?.length > 0 && (
+            <Section label={`Over the copy limit · ${plan.overLimit.length}`} color="#e0623f">
+              {plan.overLimit.map((o) => <Line key={o.cardId} name={o.name} note={`${o.qty}× · max ${o.limit}`} />)}
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '8px 0 0' }}>Curiosa allows this - the sync keeps it as written. The editor won't add more.</p>
+            </Section>
+          )}
+          {d.isEmpty && (
+            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px' }}>Everything this catalog recognises already matches Curiosa.</div>
+          )}
+          <div style={{ display: 'flex', gap: 10, margin: '14px 0 4px' }}>
+            <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, opacity: busy ? .55 : 1 }}>Cancel</button>
+            {!d.isEmpty && (
+              <button onClick={onConfirm} disabled={busy} style={{ ...BTN_GOLD, flex: 1, opacity: busy ? .55 : 1 }}>{busy ? 'Syncing…' : 'Sync deck'}</button>
+            )}
+          </div>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 // Curiosa URL - autopopulated on import, always editable (Deckbuilder curiosaCard).
-function CuriosaUrlCard({ deckId, initial }) {
+// The ↻ Sync pill re-polls the saved URL: plan (read-only fetch + diff) -> diff
+// sheet -> confirm commits in one transaction (docs/proposals/curiosa-resync.md).
+function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
   const [url, setUrl] = useState(initial || '');
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
-  useEffect(() => { setUrl(initial || ''); setEditing(false); }, [deckId, initial]);
+  const [syncing, setSyncing] = useState(false);   // plan fetch in flight
+  const [plan, setPlan] = useState(null);          // non-null = diff sheet open
+  const [applying, setApplying] = useState(false); // commit in flight
+  useEffect(() => { setUrl(initial || ''); setEditing(false); setPlan(null); }, [deckId, initial]);
   const hasUrl = url.trim().length > 0;
   async function save() { const v = draft.trim(); setUrl(v); setEditing(false); await setCuriosaUrl(deckId, v); }
+  async function sync() {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const p = await planCuriosaSync(deckId);
+      if (p.diff.isEmpty && !p.unknown.length) {
+        await logCuriosaChecked(deckId);           // breadcrumb: the log shows when Curiosa was last polled
+        onToast?.('Already in sync with Curiosa');
+        onSynced?.();
+      } else {
+        setPlan(p);
+      }
+    } catch (e) { onToast?.(e?.friendly ? e.message : "Couldn't sync from Curiosa."); }
+    setSyncing(false);
+  }
+  async function confirmSync() {
+    if (applying || !plan) return;
+    setApplying(true);
+    try {
+      const r = await commitCuriosaSync(deckId, plan.remoteTarget);
+      const bits = [];
+      if (r.adds) bits.push(`+${r.adds}`);
+      if (r.removes) bits.push(`-${r.removes}`);
+      if (r.changes) bits.push(`~${r.changes}`);
+      onToast?.(r.applied ? `Synced from Curiosa${bits.length ? ' · ' + bits.join(' ') : ''}` : 'Already in sync with Curiosa');
+      setPlan(null);
+      onSynced?.();
+    } catch (e) { onToast?.(e?.friendly ? e.message : "Couldn't apply the sync."); }
+    setApplying(false);
+  }
   return (
+    <>
     <div className="mx-sec">
       <div className="mx-hdr">
         <span className="mf-sec-name">Curiosa URL</span>
         <span className="mf-sec-rule" />
+        {!editing && hasUrl && <button className="dealt-pill" onClick={sync} style={{ marginRight: 6, opacity: syncing ? .6 : 1 }}>↻ {syncing ? 'Checking…' : 'Sync'}</button>}
         {!editing && <button className="dealt-pill" onClick={() => { setDraft(url); setEditing(true); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{hasUrl ? <EditIcon width={12} height={12} /> : <PlusIcon width={12} height={12} />}{hasUrl ? 'Edit' : 'Add'}</button>}
       </div>
       {editing ? (
@@ -255,6 +370,8 @@ function CuriosaUrlCard({ deckId, initial }) {
         <div className="mx-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
       )}
     </div>
+    <CuriosaSyncSheet plan={plan} busy={applying} onClose={() => setPlan(null)} onConfirm={confirmSync} />
+    </>
   );
 }
 
@@ -484,7 +601,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
           <Zone title="Collection" count={co} need={coMax} needLabel={String(coMax)} groups={coGroups} collapsed={collapsed.has('collection')} onToggle={() => toggle('collection')} rarityOn={rarityOn} onCardTap={setSheetCardId} editMode={editMode} onStep={stepRow('collection')} />
           <HandCard zones={zones} avatar={deck.avatar} onCardTap={setSheetCardId} />
           <NotesCard deckId={deckId} initial={deck.notes} />
-          <CuriosaUrlCard deckId={deckId} initial={deck.curiosa_url} />
+          <CuriosaUrlCard deckId={deckId} initial={deck.curiosa_url} onToast={onToast} onSynced={() => { setLocalRev((r) => r + 1); onChanged?.(); }} />
           <DeckLogCard deckId={deckId} rev={rev + localRev} />
         </div>
       )}
