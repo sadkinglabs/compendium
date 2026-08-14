@@ -47,10 +47,15 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 
 ### Left behind by `art-first-paint` + `deck-badge-settle` (both merged 2026-08-13)
 
-- **The pillar entrance slide** (`cx-pillar-slide`) remains a DORMANT WebView-tearing suspect. The
-  Library streak died with the shimmer fix and content now stays stable during the slide on warm
-  entries, so the tear surface is small - but if a streak is ever seen again, this is the suspect,
-  and its fate is a product decision about the entrance animation.
+- **The Library streak is now CHARACTERIZED, not fixed.** Frame instrumentation across three builds
+  pins it: a 1-2 frame vertical seam at screen x=1009-1012 - which is compositor tile boundary 1024
+  minus the slide offset - appearing only when card content rasterises DURING the pillar entrance
+  translate. The shimmer and hero-mask hypotheses were both disproven by their own fixes' recordings
+  (the mask removal shipped anyway: same look measured, one less WebView hazard class). After the
+  deck-list cache, content populates mid-slide only on the FIRST entry per session, so the flash is
+  once per launch, ~66ms. Next cheap experiment if the owner wants it gone entirely: `will-change:
+  transform` on the sliding pane (pre-rasterise the layer), or hold list population until the
+  entrance ends. Both touch the app-wide entrance - an owner call.
 - **First entry per session still settles once** on Decks (and art fades once) - the module caches
   have nothing to seed from until each subsystem has run once. Accepted as the design's contract; a
   persisted cache would be new machinery for one transition per launch.

@@ -43,12 +43,15 @@
 .cx-decks .dli { position:relative; border-radius:16px; margin:12px 12px 0; overflow:hidden; border:1px solid rgba(74,60,34,.5); background:#0e0b08; min-height:92px; -webkit-tap-highlight-color:transparent; transition:transform .12s ease, border-color .15s; }
 .cx-decks .dli:active { transform:scale(.99); }
 .cx-decks .dli.dragging { z-index:20; transform:scale(1.03); box-shadow:0 12px 32px rgba(0,0,0,.65); border-color:rgba(203,167,95,.5); opacity:.97; }
-.cx-decks .dli-hero { position:absolute; top:0; right:0; height:100%; width:64%; object-fit:cover; object-position:center 25%;
-  -webkit-mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
-  -webkit-mask-composite:source-in;
-  mask-image:linear-gradient(to right, transparent 0%, #000 60%), linear-gradient(to bottom, transparent 0%, #000 24%, #000 76%, transparent 100%);
-  mask-composite:intersect; }
-.cx-decks .dli-hero-grad { position:absolute; inset:0; background:linear-gradient(to right, rgba(14,11,8,.98) 30%, rgba(14,11,8,.55) 58%, transparent 82%); }
+/* NO MASK on the hero, deliberately. It wore a two-gradient mask with mask-composite, and Chromium
+   renders that composite WRONG on the image's first paint frame - a one-frame vertical seam at the
+   horizontal gradient's 60% stop, at the same x on every card, caught frame-by-frame on device
+   (art-first-paint follow-up). The card background is solid #0e0b08, so fading the art with
+   OVERLAY gradients of that colour is visually equivalent and uses no mask machinery at all. */
+.cx-decks .dli-hero { position:absolute; top:0; right:0; height:100%; width:64%; object-fit:cover; object-position:center 25%; }
+.cx-decks .dli-hero-grad { position:absolute; inset:0; background:
+  linear-gradient(to bottom, #0e0b08 0%, transparent 24%, transparent 76%, #0e0b08 100%),
+  linear-gradient(to right, #0e0b08 0%, #0e0b08 37%, rgba(14,11,8,.55) 62%, transparent 84%); }
 .cx-decks .dli-content { position:relative; z-index:1; }
 .cx-decks .dli-name-row { display:flex; align-items:center; padding:14px 14px 9px; gap:8px; cursor:pointer; }
 .cx-decks .dli-name { font:700 18px/1.15 var(--f-display); letter-spacing:.04em; color:#efe7d8; text-shadow:0 1px 6px rgba(0,0,0,.7); flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
