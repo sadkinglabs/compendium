@@ -856,6 +856,33 @@ export async function createList(kind, name, description = '') {
   bump();
   return id;
 }
+/** Generate (or REgenerate) a named wanted list from compare-report missing
+ *  lines [{card_id, missing}] - the "Missing for <deck>" flow (owner call
+ *  2026-08-14: a shareable dedicated list, not the Wishlist). Deterministic by
+ *  name: an existing same-named list is REPLACED in one tx, so regenerating
+ *  after pulls or deck edits refreshes one list instead of spawning "(1)"
+ *  clutter. Returns { id, created, count }. */
+export async function generateMissingList(name, lines) {
+  const pid = activeProfileId();
+  const clean = String(name || '').trim() || 'Missing cards';
+  const items = (lines || []).filter((l) => l?.card_id && (l.missing | 0) > 0);
+  const existing = (await query('SELECT id FROM card_lists WHERE profile_id=? AND lower(name)=? LIMIT 1;', [pid, clean.toLowerCase()]))[0];
+  const now = nowIso();
+  const id = existing?.id || uuid();
+  const stmts = existing
+    ? [['DELETE FROM card_list_entries WHERE list_id=?;', [id]],
+       ['UPDATE card_lists SET updated_at=? WHERE id=? AND profile_id=?;', [now, id, pid]]]
+    : [['INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?);',
+       [id, pid, 'wanted', clean, '', now, now]]];
+  for (const l of items) {
+    stmts.push(['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);',
+      [uuid(), id, l.card_id, l.missing | 0, '', now]]);
+  }
+  await tx(stmts);
+  bump();
+  return { id, created: !existing, count: items.length };
+}
+
 export async function renameList(listId, name, description) {
   const pid = activeProfileId();
   await run('UPDATE card_lists SET name=?, description=?, updated_at=? WHERE id=? AND profile_id=?;',

@@ -4,10 +4,14 @@
 import React, { useState, useEffect } from 'react';
 import { BottomSheet, BTN_GOLD, BTN_GHOST } from './ui.jsx';
 import { missingLines, formatMissingText } from '../store/compareEngine.js';
-import { addMissingToWishlist, cardNames } from '../store/ownedRepository.js';
+import { addMissingToWishlist, cardNames, generateMissingList } from '../store/ownedRepository.js';
 import { toast } from '../feedback.js';
 
-export default function MissingSheet({ open, report, title, onOpenCard, onClose, onChanged }) {
+// `listName` switches the primary action: when given (the deck Buildability flow),
+// the sheet SAVES the missing cards as a dedicated wanted list under that name
+// (owner call 2026-08-14: shareable list, not the Wishlist). Without it (the
+// Collection list-compare flow), the Wishlist action remains.
+export default function MissingSheet({ open, report, title, listName, onOpenCard, onClose, onChanged }) {
   const [names, setNames] = useState(new Map());
   const missing = report ? missingLines(report) : [];
   useEffect(() => {
@@ -37,6 +41,14 @@ export default function MissingSheet({ open, report, title, onOpenCard, onClose,
     onChanged?.();
     onClose();
   };
+  const makeList = async () => {
+    try {
+      const { created, count } = await generateMissingList(listName, missing);
+      toast(`"${listName}" ${created ? 'created' : 'updated'} · ${count} card${count === 1 ? '' : 's'}`);
+      onChanged?.();
+      onClose();
+    } catch { toast("Couldn't save the list.", { tone: 'danger' }); }
+  };
   const totalMissing = missing.reduce((s, l) => s + l.missing, 0);
   return (
     <BottomSheet open={open} title="MISSING CARDS" onClose={onClose}>
@@ -55,7 +67,9 @@ export default function MissingSheet({ open, report, title, onOpenCard, onClose,
       ))}
       {missing.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
-          <button onClick={wish} style={{ ...BTN_GOLD, flex: '1 1 100%', justifyContent: 'center' }}>Add all to Wishlist</button>
+          {listName
+            ? <button onClick={makeList} style={{ ...BTN_GOLD, flex: '1 1 100%', justifyContent: 'center' }}>Save as list</button>
+            : <button onClick={wish} style={{ ...BTN_GOLD, flex: '1 1 100%', justifyContent: 'center' }}>Add all to Wishlist</button>}
           <button onClick={copy} style={{ ...BTN_GHOST, flex: '1 1 100%', justifyContent: 'center' }}>Copy list</button>
         </div>
       )}

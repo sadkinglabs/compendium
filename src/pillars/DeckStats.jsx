@@ -255,6 +255,7 @@ function Buildability({ deckId, deckName, rev, onOpenCodex, onChanged }) {
         </div>
       </div>
       <MissingSheet open={sheet} report={rep} title={deckName ? `Missing for ${deckName}` : 'Missing cards'}
+        listName={deckName ? `Missing for ${deckName}` : 'Missing cards'}
         onOpenCard={onOpenCodex} onClose={() => setSheet(false)} onChanged={onChanged} />
     </section>
   );
