@@ -13,7 +13,16 @@ import { ChevronIcon, EditIcon, PlusIcon } from '../components/icons.jsx';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
 import { safeHref } from '../util.js';
 import { haptic } from '../native.js';
+import { activeProfileId } from '../store/profileRepository.js';
 import '../theme/deckdash.css';
+
+// The last loaded dashboard (deck + zones), kept across mounts - the deckListCache
+// pattern from DecksPager: re-entering My Deck paints the hero and zones complete
+// on the FIRST frame instead of a Loading blank while content rasterises mid
+// view-swap (the Library's first-paint defect, recurring here - owner report
+// 2026-08-14). Stale-while-revalidate: the load effect refreshes it silently.
+// Keyed by profile AND deck, so a switch can never paint another deck's frame.
+let dashCache = { pid: null, deckId: null, deck: null, zones: null };
 
 const BASE = import.meta.env.BASE_URL;
 const RARITY_COLOR = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
@@ -494,17 +503,26 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
 
 
 export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn = false, editMode = false, onToast, onChanged, onOpenCodex, onMissing }) {
-  const [deck, setDeck] = useState(null);
-  const [loaded, setLoaded] = useState(false);   // distinguishes "loading" from "gone"
-  const [zones, setZones] = useState({ spellbook: [], atlas: [], collection: [] });
+  const seed = (() => {
+    try { return dashCache.deck && dashCache.deckId === deckId && dashCache.pid === activeProfileId() ? dashCache : null; }
+    catch { return null; }
+  })();
+  const [deck, setDeck] = useState(seed ? seed.deck : null);
+  const [loaded, setLoaded] = useState(!!seed);  // distinguishes "loading" from "gone"
+  const [zones, setZones] = useState(seed ? seed.zones : { spellbook: [], atlas: [], collection: [] });
   const [collapsed, setCollapsed] = useState(() => new Set());
   const [sheetCardId, setSheetCardId] = useState(null);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [localRev, setLocalRev] = useState(0);   // quick-edit reloads without touching app rev
   useEffect(() => {
     let alive = true;
-    setLoaded(false);
-    Promise.all([getDeck(deckId), getDeckCards(deckId)]).then(([d, z]) => { if (alive) { setDeck(d); setZones(z); setLoaded(true); } });
+    // No setLoaded(false) here: a seeded frame must stay painted while the silent
+    // refresh runs. `loaded` is only consulted when deck is null, and there it is
+    // still exact - false means "still fetching", true means "fetched, gone".
+    Promise.all([getDeck(deckId), getDeckCards(deckId)]).then(([d, z]) => {
+      try { dashCache = { pid: activeProfileId(), deckId, deck: d, zones: z }; } catch { /* pre-init: not cached */ }
+      if (alive) { setDeck(d); setZones(z); setLoaded(true); }
+    });
     return () => { alive = false; };
   }, [deckId, rev, localRev]);
   // Leaving edit mode reloads from the store, which returns only qty>0 rows - this
