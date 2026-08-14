@@ -67,8 +67,11 @@ in the session scratchpad; the scripts are committed and reproducible on any cap
 
 ## Current state
 
-- `main` (through build 234): fade-reveal ArtImg for cold loads; instant reveal for warm
-  keys (the artifact path).
+- `main`: ArtImg at its build-232 state (hide-until-load + paint-once instant reveal).
+  The build-234 fade-reveal code was measured but never committed to main - it exists
+  only in this branch's commit `1c6dad5`, combined with the lifecycle fix. Device builds
+  233/234 were made from then-uncommitted working trees; this branch is the reproducible
+  source of the current best-known state.
 - Branch `decks-swap-artifacts`, commit `1c6dad5` (UNVERIFIED on device): visibility
   strictly follows the element's own load lifecycle - an img that has not fired `load`
   for its current src is never visible (kills the glyph); warm reveals remain instant
