@@ -49,10 +49,23 @@ export function useArtSource(key) {
  */
 export function ArtImg({ artKey, alt = '', ...imgProps }) {
   const { src, gen, onError } = useArtSource(artKey || null);
+  // ATOMIC PAINT (owner report 2026-08-14: the My Deck hero painted progressively -
+  // the "broken image" effect - as large JPEGs decoded on screen). The img stays
+  // invisible until the load event, then appears whole. The paint-once cache keeps
+  // re-entries instant: a key that has painted this session shows immediately, so
+  // this cannot resurrect the warm-entry blink the art-first-paint work removed.
+  const [loadedId, setLoadedId] = useState(null);          // `${gen}|${src}` once fully loaded
   if (!src) return null;
+  const show = (!!artKey && artCache.hasPainted(artKey)) || loadedId === `${gen}|${src}`;
   // imgProps (className/style/loading/aria-hidden/...) pass through; src + onError are the boundary's,
   // placed last so a stray caller prop can never override the candidate-chain error handling.
-  return <img key={gen} alt={alt} {...imgProps} src={src} onError={onError} />;
+  return (
+    <img key={gen} alt={alt} {...imgProps}
+      style={{ ...(imgProps.style || null), ...(show ? null : { opacity: 0 }) }}
+      src={src}
+      onLoad={() => { setLoadedId(`${gen}|${src}`); if (artKey) artCache.markPainted(artKey); }}
+      onError={onError} />
+  );
 }
 
 /**

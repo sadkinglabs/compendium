@@ -47,15 +47,17 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 
 ### Left behind by `art-first-paint` + `deck-badge-settle` (both merged 2026-08-13)
 
-- **The Library streak is now CHARACTERIZED, not fixed.** Frame instrumentation across three builds
-  pins it: a 1-2 frame vertical seam at screen x=1009-1012 - which is compositor tile boundary 1024
-  minus the slide offset - appearing only when card content rasterises DURING the pillar entrance
-  translate. The shimmer and hero-mask hypotheses were both disproven by their own fixes' recordings
-  (the mask removal shipped anyway: same look measured, one less WebView hazard class). After the
-  deck-list cache, content populates mid-slide only on the FIRST entry per session, so the flash is
-  once per launch, ~66ms. Next cheap experiment if the owner wants it gone entirely: `will-change:
-  transform` on the sliding pane (pre-rasterise the layer), or hold list population until the
-  entrance ends. Both touch the app-wide entrance - an owner call.
+- **The Library streak: mechanism REMOVED 2026-08-14** (owner made the call the previous entry was
+  waiting on, after the streak survived the caches). Frame instrumentation across builds 226-231 had
+  pinned it: a 1-2 frame vertical seam at screen x=1009-1012 - compositor tile boundary 1024 minus
+  the slide offset - appearing only when content rasterises DURING the pillar entrance translate.
+  The fix deletes the translate rather than racing it: `cxPillarR/L` and `cxSlideIn` are now
+  FADE-ONLY (tokens.css), so there is no transformed layer for a late tile to seam against; the
+  directional 34px travel is gone app-wide. In the same pass, bare `ArtImg` gained ATOMIC PAINT
+  (invisible until the load event, paint-once cache keeps warm entries instant), closing the
+  progressive-decode "broken image" the owner saw on the My Deck hero. Pending owner device
+  confirmation on build 232; if the seam somehow survives a build with no entrance transform, the
+  characterization itself is wrong and the next stop is a screen recording, not another patch.
 - **First entry per session still settles once** on Decks (and art fades once) - the module caches
   have nothing to seed from until each subsystem has run once. Accepted as the design's contract; a
   persisted cache would be new machinery for one transition per launch.
@@ -67,6 +69,17 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 **Status:** superseded. Its single useful commit was cherry-picked onto `card-recogniser` and is now in
 `main`; the branch itself diverged before later scanner work, so merging it would REGRESS the scanner.
 **Next step:** delete it.
+
+### Product review owed: do WANTED lists earn their keep?
+
+Raised by the owner 2026-08-14 after the "Missing for <deck>" list shipped as kind `wanted` and a
+deck short 1-of-2 copies rendered as "Complete" - wanted tracking matches "want N" against copies
+already owned, which is wrong for any want that EXCLUDES what you own. The missing-list flow now
+generates a plain `custom` list, but the underlying question stands: every wanted-list surface
+carries this ambiguity (is "want 2" a goal-total or a shortfall?), and the owner suspects the
+feature "needs way more engineering than the payoff affords". A deliberate review - keep with
+clarified semantics, or retire - is owed before more work builds on wanted tracking. Good
+candidate for a Codex product/architecture opinion.
 
 ### `catalog-update-pipeline` - catalog drop + one-command update process
 

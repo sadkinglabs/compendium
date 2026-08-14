@@ -341,19 +341,24 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   min-width: 44px; min-height: 44px; width: 100%; height: 100%;
 }
 
-/* Paired-view slide - motion feedback that these views are swipeable siblings
-   (Home Overview⇄Dashboard). Keyed remount replays it on tab/swipe change. */
+/* Paired-view entrance (Home Overview⇄Dashboard). FADE ONLY - no transform. The
+   translate variant re-rasterised compositor tiles mid-animation whenever content
+   (data, decoded art) landed during the entrance, flashing a vertical tile-boundary
+   seam (characterized across builds 226-231: seam x = tile edge 1024 minus the slide
+   offset, only while content rasterises during the translate). Removing the transform
+   deletes the mechanism instead of racing it - owner call 2026-08-14. */
 .cx-swipe-pane { animation: cxSlideIn .26s cubic-bezier(.2,.9,.3,1); }
-@keyframes cxSlideIn { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes cxSlideIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* Cross-pillar slide: the incoming pillar enters from the swipe direction. Keyed on
-   `tab` so it replays on every pillar change (swipe or nav tap). Kept to a modest
-   travel so any position:fixed children (Decks search/pip bars) don't visibly shift
-   while the wrapper briefly holds a transform. Neutralised under reduced-motion. */
+/* Cross-pillar entrance: keyed on `tab` so it replays on every pillar change (swipe
+   or nav tap). FADE ONLY - same tile-seam mechanism as above; the from-left/right
+   classes are kept so App.jsx and any future direction cue stay wired. Also means
+   position:fixed children (Decks search/pip bars) never sit in a transformed
+   ancestor. Neutralised under reduced-motion. */
 .cx-pillar-slide.from-right { animation: cxPillarR .3s cubic-bezier(.22,.9,.32,1); }
 .cx-pillar-slide.from-left  { animation: cxPillarL .3s cubic-bezier(.22,.9,.32,1); }
-@keyframes cxPillarR { from { opacity: 0; transform: translateX(34px); } to { opacity: 1; transform: none; } }
-@keyframes cxPillarL { from { opacity: 0; transform: translateX(-34px); } to { opacity: 1; transform: none; } }
+@keyframes cxPillarR { from { opacity: 0; } to { opacity: 1; } }
+@keyframes cxPillarL { from { opacity: 0; } to { opacity: 1; } }
 
 /* Codex Cards: List / Card (art grid) toggle - parity with the deckbuilder. */
 /* Cards List/Card toggle - gothic segmented pill (matches the deck editor). */
