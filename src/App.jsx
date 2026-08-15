@@ -15,6 +15,7 @@ import { searchAll } from './store/searchRepository.js';
 import { ImportUrlSheet, ImportTextSheet } from './pillars/Decks.jsx';
 import Fab, { FabGlyph } from './components/Fab.jsx';
 import BottomDock from './components/BottomDock.jsx';
+import AppBar from './components/AppBar.jsx';
 import SearchPill from './components/SearchPill.jsx';
 import CardArt from './components/CardArt.jsx';
 import { thresholdRuns } from './store/cardArt.js';
@@ -448,28 +449,18 @@ export default function App() {
           life tracker. The avatar picker keeps its own in-body header, so we only
           show the brand bar + divider above it. */}
       {addActive ? (
-        <div style={S.detailHeader}>
-          <button onClick={exitAdd} className="cx-press" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, minHeight: 44, flexShrink: 0 }}><IcBack size={16} />Done</button>
-          <div style={{ flex: 1, minWidth: 0, textAlign: 'right', overflowWrap: 'normal', wordBreak: 'normal' }}>
-            {/* Chrome carries the Decks CHROME violet (--accent-violet), never the content tone. */}
-            <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.18em', color: 'var(--accent-violet)' }}>EDITING</span>
-            <span style={{ font: "600 13px/1.25 var(--f-display)", color: 'var(--gold-num)' }}> · {addMode.deckName}</span>
-          </div>
-        </div>
+        <AppBar variant="mode" announce
+          leading={<button onClick={exitAdd} className="cx-press" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, minHeight: 44, flexShrink: 0 }}><IcBack size={16} />Done</button>}
+          eyebrow="EDITING" eyebrowColor="var(--accent-violet)" title={addMode.deckName} />
       ) : viewDetail ? (
-        <div style={S.detailHeader}>
-          <button onClick={back} className="cx-press" style={S.back}><IcBack size={16} />Back</button>
-          <div style={{ ...S.detailTitle, fontSize: detail.kind === 'card' ? 15 : 14 }}>{detail.title || ''}</div>
-          <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); /* no bump(): the browse list is unmounted behind the detail and reloads its saved state on remount, so a global rev bump here just re-renders the whole App for nothing */ }}
+        <AppBar variant="sub" announce onBack={back} title={detail.title || ''}
+          trailing={<button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); /* no bump(): the browse list is unmounted behind the detail and reloads its saved state on remount, so a global rev bump here just re-renders the whole App for nothing */ }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
             aria-label={detailSaved ? 'Remove bookmark' : 'Bookmark this entry'} title={detailSaved ? 'Bookmarked' : 'Bookmark'}>
             <IcBookmark filled={detailSaved} />
-          </button>
-        </div>
+          </button>} />
       ) : (
-        <div style={S.contextHeader}>
-          <h1 style={{ ...S.title, margin: 0 }}>{pillar.label}</h1>
-        </div>
+        <AppBar variant="root" title={pillar.label} />
       )}
 
       {/* Shared pill slot, directly under the title on every pillar so the top
@@ -1656,12 +1647,9 @@ const S = {
   diamond: { width: 14, height: 14, transform: 'rotate(45deg)', border: '1.5px solid var(--gold-leaf)', borderRadius: 3, boxShadow: '0 0 8px rgba(220,184,111,.35)' },
   wordmark: { font: "600 20px/1 var(--f-display)", color: 'var(--ink-head)', letterSpacing: '.01em' },
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
-  contextHeader: { padding: '4px 20px 12px' },
-  detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, minHeight: 44, flexShrink: 0 },
-  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: 'var(--f-display)', fontWeight: 600, fontSize: 14, lineHeight: 1.15, letterSpacing: '.1em', color: 'var(--ink-head)', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  // contextHeader/detailHeader/back/detailTitle/title retired - the shared AppBar
+  // primitive (components/AppBar.jsx) is the one header chassis now (Phase 5).
   bmToggle: { width: 44, minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
-  title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
   // lives inside that box, so it only needs nav overlap (62px) + search/FAB clearance
   // (92px) - adding env() again just wastes a strip at the end of every list.
