@@ -33,6 +33,14 @@ Not changing: the selection reducer and its tests, the deck rail, the role hue s
 
 Gates (`test:app`, `check:types`, `check:cycles`, `build`) plus agent-run device captures of the three states this proposal exists for: normal open (density), keyboard open (grid visible under search), zero-image cold start (full named squares). Owner eyeball on device is the acceptance.
 
+## 3b. Verification results (build 243, on-device, 2026-08-15)
+
+All three target states captured and verified:
+- **Normal open:** 3-across grid (measured: 390px track space, 118px minmax after 140/128 both missed the third column), six-plus avatars visible above the fold, search above the grid, matchup compacted, VS self-centred from the declared geometry.
+- **Keyboard open + typing:** matchup compacts to 48px circles (the `:has(:focus)` rule fired cleanly on-device - the risk flagged in §4 did not materialise), filtered deck chip visible, and a full row of live results visible directly under the field. The old state was an invisible sliver.
+- **Zero-image cold start:** full squares on the deterministic jade ground, every avatar name legible, layout identical to the art version. The invariant violation is closed.
+Gates: build OK, types clean, cycles clean, test:app 17/17, test:ui 185/0 (selection reducer untouched). Owner walk pending; merge on owner word.
+
 ## 4. Self-critique
 
 The `:has(:focus)` compaction is the riskiest line: `:has` is supported in this WebView, but focus-driven layout shifts can fight the keyboard's own viewport dance - if it stutters on device, the fallback is compact-on-open-keyboard via the existing `--kb` variable instead of focus. The 3-column grid halves art size; if avatars read too small at 140px the dial is `minmax(150px, 1fr)`. Neither risk touches data or selection logic.
