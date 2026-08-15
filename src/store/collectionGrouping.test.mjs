@@ -96,3 +96,30 @@ test('grouping is case-insensitive when ordering names', () => {
   const g = groupCards([card('zephyr'), card('Ancient Dragon')], 'none');
   assert.deepEqual(g[0].cards.map((c) => c.name), ['Ancient Dragon', 'zephyr']);
 });
+
+// --- 'set' mode (List Arrange, 2026-08-15): caller-supplied vocabulary ---
+
+test('set grouping buckets by the caller accessor and orders by the caller rank', () => {
+  const rows = [
+    { name: 'C', set: 'bet' }, { name: 'A', set: 'alp' }, { name: 'B', set: 'bet' },
+  ];
+  const rank = (k) => ({ alp: 1, bet: 2 }[k] ?? 99);
+  const label = (k) => ({ alp: 'Alpha', bet: 'Beta' }[k] || k);
+  const out = groupCards(rows, 'set', (x) => x, null, { setOf: (r) => r.set, setRank: rank, setLabel: label });
+  assert.deepEqual(out.map((s) => s.label), ['Alpha', 'Beta']);
+  assert.deepEqual(out[1].cards.map((c) => c.name), ['B', 'C'], 'alphabetical inside a set');
+});
+
+test('set grouping: a missing set falls to the Unknown bucket, nothing vanishes', () => {
+  const rows = [{ name: 'X', set: null }, { name: 'Y', set: 'alp' }];
+  const out = groupCards(rows, 'set', (x) => x, null, { setOf: (r) => r.set, setRank: (k) => (k === 'Unknown' ? 99 : 1), setLabel: (k) => k });
+  assert.equal(out.length, 2);
+  assert.equal(out[1].key, 'Unknown');
+  assert.equal(out.reduce((n, s) => n + s.cards.length, 0), rows.length);
+});
+
+test('set grouping respects a custom comparator inside sections', () => {
+  const rows = [{ name: 'A', set: 's', n: 2 }, { name: 'B', set: 's', n: 1 }];
+  const out = groupCards(rows, 'set', (x) => x, (a, b) => a.n - b.n, { setOf: (r) => r.set });
+  assert.deepEqual(out[0].cards.map((c) => c.name), ['B', 'A']);
+});
