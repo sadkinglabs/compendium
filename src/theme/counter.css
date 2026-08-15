@@ -692,8 +692,10 @@ body.roll-active .dd-pill { display: none !important; }
 
 .avatar-grid {
   display: grid;
-  /* 3-across on large phones, 2 on narrow - density is the redesign's point. */
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  /* 3-across on large phones, 2 on narrow - density is the redesign's point.
+     118px: measured on the Pixel, the grid's track space is 390px (clientWidth 414
+     - 24 padding), so three tracks need <=123px each; 118 clears it with margin. */
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
   grid-auto-rows: max-content;
   gap: 10px; padding: 12px;
   overflow-y: auto; flex: 1;
