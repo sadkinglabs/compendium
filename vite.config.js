@@ -29,7 +29,15 @@ export default defineConfig({
   },
   // Capacitor serves the built web assets from a file:// or localhost origin.
   base: './',
-  build: { outDir: 'dist', target: 'es2020' },
+  // cssTarget declares the one real target (the Android WebView). NOTE: this
+  // alone did NOT stop the minifier from collapsing `backdrop-filter` +
+  // `-webkit-backdrop-filter` pairs into the -webkit- alias only - which
+  // Chromium 150 (the System WebView) no longer supports, so every blur
+  // declared in a .css file silently died in the minified build while inline
+  // styles kept theirs (owner report 2026-08-15, "transparency too high").
+  // The actual fix: the theme CSS declares ONLY the standard property - never
+  // hand-write a -webkit-backdrop-filter pair again (device-verified 2026-08-15).
+  build: { outDir: 'dist', target: 'es2020', cssTarget: 'chrome120' },
   server: {
     port: 5000,
     host: true,   // bind 0.0.0.0 so the dev server is reachable over Tailscale/LAN

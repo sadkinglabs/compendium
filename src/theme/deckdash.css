@@ -1,8 +1,8 @@
-/* deckdash.css - Current Deck dashboard (My Deck panel). implements
+﻿/* deckdash.css - Current Deck dashboard (My Deck panel). implements
    Deckbuilder's avatar hero + zone list cards (templates/index.html L137-148,
    258-347). Scoped `.cx-decks`; carries Deckbuilder's amethyst tokens. */
 
-/* ─── Manuscript reskin (My Deck view) ───────────────────────────────────────
+/* â”€â”€â”€ Manuscript reskin (My Deck view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    A framed hero plate, gold section heads, purple type sub-heads, and a dense
    text ledger with an ownership mark. Flat surfaces throughout - the only
    gradients are the gilt hero frame, the art scrim, and the hairline fades.
@@ -62,7 +62,7 @@
 .cx-decks .mf-step-btn { width: 27px; height: 27px; border-radius: 50%; border: 1px solid rgba(203,167,95,.32); background: rgba(20,16,10,.75); color: #cba75f; font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; flex-shrink: 0; transition: background .1s, border-color .1s; }
 .cx-decks .mf-step-btn:active { background: rgba(203,167,95,.28); border-color: #cba75f; }
 
-/* ─── Random Hand ("Dealt") ─────────────────────────────────────────────────
+/* â”€â”€â”€ Random Hand ("Dealt") â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    A held-hand fan that wraps to more rows as the hand grows to the whole deck.
    Flat throughout - the only gradients are the newest card's gilt frame + the
    DRAWN tab. Everything animated is transform/opacity only (60fps). */
@@ -71,7 +71,7 @@
 .cx-decks .dealt-empty { font: italic 400 14px/1.5 var(--f-read); color: #6b6254; padding: 12px 0; }
 
 /* Frosted rose pill - Redraw / Draw spell / Draw site / aux actions. */
-.cx-decks .dealt-pill { font: 500 13px/1 var(--f-display); letter-spacing: .04em; color: #d3a8af; background: rgba(224,169,177,.07); border: 1px solid rgba(224,169,177,.22); border-radius: 18px; padding: 9px 16px; cursor: pointer; flex-shrink: 0; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: background .15s; -webkit-tap-highlight-color: transparent; }
+.cx-decks .dealt-pill { font: 500 13px/1 var(--f-display); letter-spacing: .04em; color: #d3a8af; background: rgba(224,169,177,.07); border: 1px solid rgba(224,169,177,.22); border-radius: 18px; padding: 9px 16px; cursor: pointer; flex-shrink: 0; backdrop-filter: blur(8px); transition: background .15s; -webkit-tap-highlight-color: transparent; }
 .cx-decks .dealt-pill:hover { background: rgba(224,169,177,.14); }
 .cx-decks .dealt-pill.wide { flex: 1; text-align: center; padding: 12px 0; }
 .cx-decks .dealt-pill.empty { opacity: .4; }
@@ -135,8 +135,8 @@
 }
 @keyframes dealtFade { from { opacity: 0; } }
 
-/* ─── Aux sections (Notes / Curiosa URL / Deck Log) - flat, gold-headed to sit
-   with the Manuscript ledger. ── */
+/* â”€â”€â”€ Aux sections (Notes / Curiosa URL / Deck Log) - flat, gold-headed to sit
+   with the Manuscript ledger. â”€â”€ */
 .cx-decks .mx-sec { padding: 0 20px; }
 .cx-decks .mx-hdr { display: flex; align-items: center; gap: 10px; padding: 18px 0 10px; }
 .cx-decks .mx-count { font: 500 11px/1 var(--f-mono); color: #6b6254; flex-shrink: 0; }
@@ -152,8 +152,8 @@
 .cx-decks .mx-log-row:last-child { border-bottom: none; }
 .cx-decks .mx-log-ts { color: #6b6254; white-space: nowrap; flex-shrink: 0; font: 500 11.5px/1.5 var(--f-mono); }
 
-/* ─── Deck Stats ("Manuscript" reskin) - flat gold-headed sections on the page
-   background; chart key colours (elements/rarity/odds-purple/donut) untouched. ── */
+/* â”€â”€â”€ Deck Stats ("Manuscript" reskin) - flat gold-headed sections on the page
+   background; chart key colours (elements/rarity/odds-purple/donut) untouched. â”€â”€ */
 .cx-decks .ds-sec { padding: 0 20px; margin-bottom: 30px; }
 .cx-decks .ds-hdr { display: flex; align-items: center; gap: 10px; padding-bottom: 12px; }
 .cx-decks .ds-hdr-name { font: 600 13px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; text-transform: uppercase; flex-shrink: 0; }

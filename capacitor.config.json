@@ -2,6 +2,9 @@
   "appId": "com.sadkinglabs.compendium",
   "appName": "Compendium",
   "webDir": "dist",
+  "android": {
+    "webContentsDebuggingEnabled": true
+  },
   "plugins": {
     "SystemBars": {
       "insetsHandling": "disable"

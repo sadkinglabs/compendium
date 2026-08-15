@@ -1,11 +1,11 @@
-/* Play life-counter + avatar-picker - VISUAL/MOTION PORT.
+﻿/* Play life-counter + avatar-picker - VISUAL/MOTION PORT.
    CSS rule blocks, @keyframes, sizes, easings, opacities and transforms are copied
    unchanged from Play pillar's index.html. The only adaptations: (a) the counter
    tokens live on a scoped `.cx-life-tracker` wrapper (not global :root) so they don't collide
    with Compendium's palette; (b) `#counter-screen` gets a z-index so it overlays the app;
    (c) body.roll-active / body.grain-off are toggled from React. */
 
-/* ── scoped tokens (values) ── */
+/* â”€â”€ scoped tokens (values) â”€â”€ */
 .cx-life-tracker {
   /* Manuscript black+gold (was Play green). Fonts inherit the global
      var(--f-display/read/ui) - no local overrides. --crimson stays: it is a
@@ -34,7 +34,7 @@
 }
 /* Skins retired: the counter wears the app's gold (--sk above), full stop. */
 
-/* ── COUNTER SCREEN ── */
+/* â”€â”€ COUNTER SCREEN â”€â”€ */
 /* Enter with the app's sheet vocabulary (fade + rise + settle) instead of a bare
    opacity fade, so starting a match reads as a deliberate takeover, not a hard cut.
    #counter-screen itself never scrolls (its inner regions do), so the transform is
@@ -83,7 +83,7 @@
 }
 body.grain-off .half-grain { display: none; }
 
-/* ── Quick Match: no avatars, the app's You=gold / Opponent=violet identity ── */
+/* â”€â”€ Quick Match: no avatars, the app's You=gold / Opponent=violet identity â”€â”€ */
 /* :not(.half-bg-dd) - the ash layer is a .half-bg too, and it is what drains the
    colour out of a Quick Match half at Death's Door. Hiding it here would leave the
    artless halves stubbornly gold and violet while a player lies at zero. */
@@ -224,7 +224,7 @@ body.grain-off .half-grain { display: none; }
   50%       { opacity: 1; }
 }
 
-/* ── Status indicators (top-right of each half; rotates with enemy-half) ── */
+/* â”€â”€ Status indicators (top-right of each half; rotates with enemy-half) â”€â”€ */
 .status-badges {
   position: absolute; top: 14px; right: 14px; z-index: 16;
   display: flex; gap: 8px; align-items: center;
@@ -234,7 +234,7 @@ body.grain-off .half-grain { display: none; }
   display: inline-flex; align-items: center; gap: 5px;
   height: 30px; padding: 0 11px 0 8px; border-radius: 16px;
   background: rgba(9,7,5,.62);
-  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px); 
   box-shadow: 0 2px 10px rgba(0,0,0,.55);
   font-family: var(--f-display); font-size: 15px; font-weight: 800; line-height: 1;
 }
@@ -242,7 +242,7 @@ body.grain-off .half-grain { display: none; }
 .status-badge.maxlife { border: 1px solid rgba(224,120,106,.45); color: #e7b3aa; }
 .status-badge.maxlife svg { color: var(--crimson); }
 
-/* ── Turn-order roll-off ── */
+/* â”€â”€ Turn-order roll-off â”€â”€ */
 .life-number.roll-win {
   color: var(--gold);
   text-shadow: 0 0 34px rgba(220,184,111,.95), 0 0 84px rgba(220,184,111,.55), 0 2px 24px rgba(0,0,0,.85);
@@ -282,7 +282,7 @@ body.roll-active #match-clock { display: none !important; }
   border: 1px solid rgba(255,255,255,.1);
   border-radius: 12px;
   box-shadow: 0 2px 12px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.12);
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px); 
   transform: translateX(-50%) translateY(-50%) rotate(-90deg);
 }
 .cx-life-tracker .fab-menu .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
@@ -300,7 +300,7 @@ body.roll-active #match-clock { display: none !important; }
 }
 #roll-pill.armed #roll-pill-body {
   background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.8), rgba(14,11,8,.92));
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   border: 1px solid rgba(var(--sk),.5);
   padding: 12px 22px; border-radius: 24px;
   box-shadow: 0 10px 26px -8px rgba(0,0,0,.7), 0 0 20px rgba(var(--sk),.28), inset 0 1px 0 rgba(255,255,255,.05);
@@ -327,12 +327,12 @@ body.roll-active #match-clock { display: none !important; }
 .roll-pill-dismiss::before { content: ''; position: absolute; inset: -10px; }
 .roll-pill-dismiss svg { width: 13px; height: 13px; }
 .roll-pill-dismiss:active { transform: scale(.9); }
-/* ONE AXIS, read both ways: monochrome = life has not arrived · colour = life is here
-   · Death's Door takes it away again. Nobody is dying in the opening ash, because
+/* ONE AXIS, read both ways: monochrome = life has not arrived Â· colour = life is here
+   Â· Death's Door takes it away again. Nobody is dying in the opening ash, because
    nobody is alive yet. The layer the Toll RAISES is the one birth LOWERS - same layer,
    opposite direction, no extra texture. That is why this screen is one system rather
    than two vocabularies sharing a surface.
-   --birth: 0 = unborn (ash) · 1 = alive (colour). React owns it - see LifeCounter, and
+   --birth: 0 = unborn (ash) Â· 1 = alive (colour). React owns it - see LifeCounter, and
    the note there on why it must not be an imperative style write. */
 #counter-screen { --birth: 0; --birth-ms: 450ms; --birth-ease: ease; --dd-fall-ms: 900ms; }
 
@@ -357,7 +357,7 @@ img.half-bg-dd { filter: grayscale(1) brightness(.55) contrast(1.06); }
    animations instead of a per-frame repaint.
    Rejected on arithmetic: animated clip-path/mask (paint every frame - the filter trap
    in a new costume), and a scaled vignette (its hole must clear a half-diagonal ~810px,
-   forcing a ~2950px element ≈ 35MB per half, 70MB for two).
+   forcing a ~2950px element â‰ˆ 35MB per half, 70MB for two).
    Duration and delay are fractions of --birth-ms, so every path - the 4s hold, the
    900ms wave-off, 420ms per tap - gets the same centre-out shape for free. */
 .half-birth-rim {
@@ -414,7 +414,7 @@ body.reduce-motion .dd-shock { display: none; }   /* a frozen ring is noise, not
 .life-number.dd-refuse { animation: dd-refuse .26s ease-out; }
 @keyframes dd-refuse { 0%{transform:translateX(0)} 22%{transform:translateX(-6px)} 48%{transform:translateX(5px)} 72%{transform:translateX(-3px)} 100%{transform:translateX(0)} }
 
-/* ── The pill ──────────────────────────────────────────────────────────────
+/* â”€â”€ The pill â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    `.dd-pill.dd-armed` is the ONLY rule in this app that puts pointer-events:
    auto on this control. If that stops being true, the guard is gone: during
    FALLEN and REVEALING every tap must pass THROUGH the pill to the .tap-zone
@@ -484,7 +484,7 @@ body.roll-active .dd-pill { display: none !important; }
   display: flex; align-items: center; gap: 10px;
   border-radius: 999px; padding: 14px 30px; min-height: 48px; box-sizing: border-box;
   border: 1.5px solid transparent;   /* width fixed across states so only style/colour move */
-  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px); 
   font-size: 15px; font-weight: 800;
   text-transform: uppercase; letter-spacing: 1.5px;
   transition: background .8s ease, border-color .8s ease, color .8s ease, box-shadow .8s ease;
@@ -496,8 +496,8 @@ body.roll-active .dd-pill { display: none !important; }
   50%      { box-shadow: 0 0 44px rgba(224,120,106,.65), 0 4px 16px rgba(0,0,0,.6); }
 }
 
-/* ── Player FAB (fixed, bottom-right) ── scoped to .cx-life-tracker so these rules never
-   leak onto the app-wide Compendium FAB (.fab-wrap/.fab-menu live globally). ── */
+/* â”€â”€ Player FAB (fixed, bottom-right) â”€â”€ scoped to .cx-life-tracker so these rules never
+   leak onto the app-wide Compendium FAB (.fab-wrap/.fab-menu live globally). â”€â”€ */
 .cx-life-tracker .fab-wrap { position: fixed; bottom: calc(20px + var(--fab-inset) + var(--fab-lift)); right: calc(16px + var(--safe-right)); z-index: 50; }
 .cx-life-tracker .fab-wrap .fab {
   width: 52px; height: 52px; border-radius: 50%;
@@ -505,7 +505,7 @@ body.roll-active .dd-pill { display: none !important; }
   border: 1px solid rgba(var(--sk),.5); font-size: 22px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(var(--sk),.1);
-  backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px); 
   transition: opacity .18s, transform .25s cubic-bezier(.34,1.3,.64,1);
 }
 .cx-life-tracker .fab-wrap.open .fab { opacity: 0; transform: scale(.5) rotate(90deg); pointer-events: none; }
@@ -513,7 +513,7 @@ body.roll-active .dd-pill { display: none !important; }
   position: absolute; bottom: 0; right: 0; min-width: 210px; overflow: hidden;
   background: rgba(7,15,10,.55); border: 1px solid var(--border);
   box-shadow: 0 4px 24px rgba(0,0,0,.65);
-  backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2); 
   transform-origin: bottom right; opacity: 0;
   transform: scale(.18); border-radius: 26px; pointer-events: none;
   transition: transform .25s cubic-bezier(.34,1.3,.64,1), opacity .18s, border-radius .25s;
@@ -531,7 +531,7 @@ body.roll-active .dd-pill { display: none !important; }
 .cx-life-tracker .fab-menu button svg { width: 17px; height: 17px; flex-shrink: 0; opacity: .8; }
 .cx-life-tracker .fab-state { margin-left: auto; font-size: 12px; opacity: .6; }
 
-/* ── Opponent FAB (inside enemy-half, absolute - rotates with the half) ── */
+/* â”€â”€ Opponent FAB (inside enemy-half, absolute - rotates with the half) â”€â”€ */
 .opponent-fab-wrap {
   position: absolute; bottom: calc(20px + var(--fab-inset) + var(--fab-lift)); right: calc(16px + var(--safe-right)); z-index: 20;
 }
@@ -541,7 +541,7 @@ body.roll-active .dd-pill { display: none !important; }
   border: 1px solid rgba(var(--sk),.5); font-size: 22px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
   box-shadow: 0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(var(--sk),.1);
-  backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px);
+  backdrop-filter: blur(9px); 
   transition: opacity .18s, transform .25s cubic-bezier(.34,1.3,.64,1);
 }
 .opponent-fab-wrap.open .fab { opacity: 0; transform: scale(.5) rotate(90deg); pointer-events: none; }
@@ -549,14 +549,14 @@ body.roll-active .dd-pill { display: none !important; }
   position: absolute; bottom: 0; right: 0; min-width: 200px; overflow: hidden;
   background: rgba(7,15,10,.55); border: 1px solid var(--border);
   box-shadow: 0 4px 24px rgba(0,0,0,.7);
-  backdrop-filter: blur(16px) saturate(1.2); -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  backdrop-filter: blur(16px) saturate(1.2); 
   transform-origin: bottom right; opacity: 0;
   transform: scale(.18); border-radius: 26px; pointer-events: none;
   transition: transform .25s cubic-bezier(.34,1.3,.64,1), opacity .18s, border-radius .25s;
 }
 .opponent-fab-wrap.open .fab-menu { opacity: 1; transform: scale(1); border-radius: 12px; pointer-events: auto; }
 
-/* ── AVATAR PICKER SCREEN ── */
+/* â”€â”€ AVATAR PICKER SCREEN â”€â”€ */
 #picker-screen { background: linear-gradient(180deg,#0e1c14,#070f0a); position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; }
 .picker-header {
   padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px 12px;
@@ -664,7 +664,7 @@ body.roll-active .dd-pill { display: none !important; }
   height: 48px; box-sizing: border-box;
   padding: 6px 8px 6px 16px; border-radius: 999px;
   background: rgba(28,22,14,.82); border: 1px solid var(--gold-line);
-  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px); 
 }
 .picker-search svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
 .picker-search input {
@@ -799,11 +799,11 @@ body.roll-active .dd-pill { display: none !important; }
 .picker-confirm-btn.ready { opacity: 1; pointer-events: auto; }
 .picker-confirm-btn.ready:active { border-color: rgba(220,184,111,.75); }
 
-/* ═══════════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    Play MODALS - centered overlay + modal-box (NOT bottom sheets). Used for
    the End-Match screen and the counter's Dice / Max Life / Match Log popups.
    implements Play pillar's .overlay/.modal-box system, scoped to .cx-life-tracker.
-   ═══════════════════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 .cx-life-tracker { --modal: #0e0b08; --sheet: linear-gradient(180deg,#151109,#0b0806); --well: rgba(42,33,20,.5);
   --gold-dim: rgba(220,184,111,.16); --jade: #4db38a; --win: #4db38a; --win-2: #7fd3ad; }
 
@@ -845,7 +845,7 @@ body.roll-active .dd-pill { display: none !important; }
 .cx-life-tracker .modal-btn.danger { border-color: rgba(224,120,106,.3); color: var(--crimson); }
 .cx-life-tracker .modal-btn.recorded { background: rgba(77,179,138,.15); color: #4db38a; border-color: rgba(77,179,138,.35); font-weight: 700; cursor: default; }
 
-/* ── End-Match screen ── */
+/* â”€â”€ End-Match screen â”€â”€ */
 .cx-life-tracker #end-overlay .modal-top { padding-bottom: 72px; }
 .cx-life-tracker #end-overlay .modal-top::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 32px; pointer-events: none; background: linear-gradient(to bottom, transparent, #0f0b07); }
 .cx-life-tracker .end-result-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; margin-top: 6px; }
@@ -871,7 +871,7 @@ body.roll-active .dd-pill { display: none !important; }
 .cx-life-tracker .end-opp-recent { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .cx-life-tracker .end-opp-chip { padding: 5px 11px; border-radius: 16px; border: 1px solid var(--border); font: 500 12px/1 var(--f-read); color: var(--muted); cursor: pointer; background: none; }
 
-/* ── Dice modal ── */
+/* â”€â”€ Dice modal â”€â”€ */
 .cx-life-tracker .dice-type-row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; padding: 16px 20px 4px; }
 .cx-life-tracker .die-btn { padding: 8px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); font-size: 13px; font-weight: 800; cursor: pointer; transition: all .15s; }
 .cx-life-tracker .die-btn.active { background: var(--gold); color: #1a1410; border-color: transparent; }
@@ -884,14 +884,14 @@ body.roll-active .dd-pill { display: none !important; }
 body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
 .cx-life-tracker .dice-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
-/* ── Max Life modal ── */
+/* â”€â”€ Max Life modal â”€â”€ */
 .cx-life-tracker .maxlife-stepper { display: flex; align-items: center; justify-content: center; gap: 26px; padding: 24px 20px 6px; }
 .cx-life-tracker .maxlife-btn { width: 58px; height: 58px; border-radius: 50%; flex-shrink: 0; border: 1px solid var(--border); background: var(--bg); color: var(--gold); font-size: 30px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .cx-life-tracker .maxlife-btn:active { background: var(--surface2); }
 .cx-life-tracker .maxlife-value { font-family: var(--f-display); font-size: 64px; font-weight: 800; color: var(--text); min-width: 110px; text-align: center; line-height: 1; }
 .cx-life-tracker .maxlife-hint { padding: 6px 26px 4px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 
-/* ── Tweaks modal - the counter's own comforts (keep awake / immersive / grain) ── */
+/* â”€â”€ Tweaks modal - the counter's own comforts (keep awake / immersive / grain) â”€â”€ */
 .cx-life-tracker .tw-list { padding: 14px 22px 6px; display: flex; flex-direction: column; gap: 4px; }
 .cx-life-tracker .tw-row { display: flex; align-items: center; gap: 14px; padding: 11px 2px; cursor: pointer; -webkit-tap-highlight-color: transparent; border-bottom: 1px solid rgba(220,184,111,.1); }
 .cx-life-tracker .tw-row:last-child { border-bottom: none; }
@@ -903,7 +903,7 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
 .cx-life-tracker .tw-switch.on { background: rgba(220,184,111,.28); border-color: rgba(220,184,111,.6); }
 .cx-life-tracker .tw-switch.on .tw-knob { left: 21px; background: var(--gold); }
 
-/* ── Match Log modal ── */
+/* â”€â”€ Match Log modal â”€â”€ */
 .cx-life-tracker .log-divider { display: flex; align-items: center; gap: 12px; margin: 9px 22px 2px; }
 .cx-life-tracker .log-divider::before, .cx-life-tracker .log-divider::after { content: ''; flex: 1; height: 1px; }
 .cx-life-tracker .log-divider::before { background: linear-gradient(90deg, transparent, rgba(220,184,111,.35)); }
@@ -929,14 +929,14 @@ body.reduce-motion .cx-life-tracker .dice-number.rolling { animation: none; }
 .cx-life-tracker .log-life svg { width: 13px; height: 13px; color: var(--win); }
 .cx-life-tracker .log-empty { text-align: center; color: var(--muted); font-family: var(--f-read); font-size: 14px; line-height: 1.6; padding: 30px 10px; }
 
-/* ════════════════════════════════════════════════════════════════════════
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TURN ORDER - "First Light"
    Two channels, deliberately NOT merged: COLOUR says who is alive (both
    players, always - see --birth above). LIGHT says who chooses. A player who
    lost a roll must never look like a player who is dying, so the loser keeps
    every drop of their colour; they are simply not lit.
    Opt-in: nothing below can render unless the player tapped Roll for Turn.
-   ════════════════════════════════════════════════════════════════════════ */
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /* The lights. Neutral - deliberately NOT .half-dd-veil, which carries a crimson rim.
    .5 = house lights down (both sides, wind-up + tumble). 1 = not chosen. */
@@ -1100,7 +1100,7 @@ body.roll-active .counter-divider { animation: none; opacity: 1; }
 #roll-pill.roll-cast { animation: roll-cast .26s cubic-bezier(.4,0,1,.6) forwards; pointer-events: none; }
 @keyframes roll-cast { to { opacity: 0; transform: translate(-50%, -50%) scale(.3); } }
 
-/* ── reduced motion ──────────────────────────────────────────────────────
+/* â”€â”€ reduced motion â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
    Every transition above is dead, so each step CUTS. That is fine, and deliberate:
    unborn-vs-alive, who chooses, and the match having begun are all STATIC properties.
    The lead still jumps (a class, not an animation). The countdown still counts (React

@@ -1,6 +1,6 @@
-/* dashboard.css - the customisable Home Dashboard: data-rich, resizable widgets.
+﻿/* dashboard.css - the customisable Home Dashboard: data-rich, resizable widgets.
    Home rule: pure-black canvas. A widget tied to a pillar earns only a FAINT
-   top-down hue wash + border tint (Codex gold · Decks violet · Play jade);
+   top-down hue wash + border tint (Codex gold Â· Decks violet Â· Play jade);
    everything else stays neutral black. Card/deck art is used where it helps and
    degrades to a gold monogram when an image is missing. */
 
@@ -24,7 +24,7 @@
 .dw-roll { display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 5px 10px; border-radius: 14px; border: 1px solid rgba(220,184,111,.4); background: rgba(0,0,0,.25); color: var(--gold-leaf); font: 600 11px/1 var(--f-ui); cursor: pointer; }
 .dw-roll:active { border-color: var(--gold-leaf); }
 
-/* ── Art hero (Featured Card · Card of the Day · Deck Spotlight) ── */
+/* â”€â”€ Art hero (Featured Card Â· Card of the Day Â· Deck Spotlight) â”€â”€ */
 .dw-hero { position: relative; width: 100%; border-radius: 12px; overflow: hidden; background: #141019; aspect-ratio: 16/9; }
 .dw-hero.tall { aspect-ratio: 5/6; }
 .dw-hero-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
@@ -33,7 +33,7 @@
 .dw-hero-name { font: 700 17px/1.14 var(--f-display); color: #fff; text-shadow: 0 2px 12px rgba(0,0,0,.92); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw-hero-sub { display: flex; align-items: center; gap: 7px; font: 500 11px/1 var(--f-ui); color: rgba(255,255,255,.72); margin-top: 5px; letter-spacing: .03em; }
 .dw-hero-sub img { width: 15px; height: 15px; }
-.dw-hero-badge { position: absolute; top: 10px; left: 11px; font: 700 8.5px/1 var(--f-ui); letter-spacing: .14em; color: rgba(255,255,255,.85); background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.18); padding: 5px 8px; border-radius: 7px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.dw-hero-badge { position: absolute; top: 10px; left: 11px; font: 700 8.5px/1 var(--f-ui); letter-spacing: .14em; color: rgba(255,255,255,.85); background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.18); padding: 5px 8px; border-radius: 7px; backdrop-filter: blur(6px); }
 /* Placeholder card silhouette shown behind the art (and in every preview) - a
    neutral portrait card frame, no glyph. */
 .dw-cardph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 26%, rgba(220,184,111,.07), #17110b); }
@@ -41,7 +41,7 @@
 .dw[data-pillar="decks"] .dw-cardph { background: radial-gradient(120% 120% at 50% 26%, rgba(199,154,208,.08), #150c15); }
 .dw[data-pillar="decks"] .dw-cardph::before { border-color: rgba(199,154,208,.32); background: linear-gradient(155deg, rgba(199,154,208,.08), rgba(0,0,0,.2)); }
 
-/* ── Deck rail (Your Decks) ── */
+/* â”€â”€ Deck rail (Your Decks) â”€â”€ */
 .dw-decks { display: flex; gap: 9px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
 .dw-decks::-webkit-scrollbar { display: none; }
 .dw-deckcard { position: relative; flex: none; width: 98px; aspect-ratio: 3/4; border-radius: 11px; overflow: hidden; background: #141019; border: 1px solid var(--hair-14); cursor: pointer; }
@@ -52,7 +52,7 @@
 .dw-deckph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(120% 120% at 50% 30%, rgba(199,154,208,.08), #150c15); }
 .dw-deckph::before { content: ''; width: 58%; aspect-ratio: 5 / 7; border-radius: 6px; border: 1.5px solid rgba(199,154,208,.32); background: linear-gradient(155deg, rgba(199,154,208,.07), rgba(0,0,0,.2)); }
 
-/* ── Win-rate ring ── */
+/* â”€â”€ Win-rate ring â”€â”€ */
 .dw-ring-wrap { display: flex; align-items: center; gap: 15px; }
 .dw-ring { width: 66px; height: 66px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; }
 .dw-ring-inner { width: 51px; height: 51px; border-radius: 50%; background: #0b0907; display: flex; align-items: center; justify-content: center; font: 700 16px/1 var(--f-display); color: var(--accent-jade); }
@@ -64,14 +64,14 @@
 .dw-pip.w { background: var(--accent-jade); }
 .dw-pip.l { background: #c98f8f; }
 
-/* ── Nemesis rows ── */
+/* â”€â”€ Nemesis rows â”€â”€ */
 .dw-nem { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
 .dw-nem .nm { flex: 1; min-width: 0; font: 500 13.5px/1.2 var(--f-read); color: var(--ink-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dw-nem .bar { width: 52px; height: 6px; border-radius: 3px; overflow: hidden; display: flex; background: rgba(201,143,143,.32); flex: none; }
 .dw-nem .bar i { height: 100%; background: var(--accent-jade); }
 .dw-nem .wl { font: 600 11px/1 var(--f-mono); color: var(--ink-muted); width: 34px; text-align: right; flex: none; }
 
-/* ── Generic rows / quotes / empties ── */
+/* â”€â”€ Generic rows / quotes / empties â”€â”€ */
 .dw-row { display: flex; align-items: center; gap: 9px; padding: 6px 0; }
 .dw-row.tap { cursor: pointer; }
 .dw-row .gl { width: 16px; flex: none; color: var(--gold); display: flex; align-items: center; justify-content: center; }
@@ -85,7 +85,7 @@
 .dw-link svg { flex: none; }
 .dw-link span, .dw-link { min-width: 0; }
 
-/* ── Structural: title + separator ── */
+/* â”€â”€ Structural: title + separator â”€â”€ */
 .dw-titlecard { padding: 8px 2px 2px; }
 .dw-titlecard .t { font: 700 22px/1.15 var(--f-display); color: #f4efe6; letter-spacing: .01em; }
 .dw-sep { display: flex; align-items: center; gap: 12px; padding: 14px 4px; }
@@ -93,7 +93,7 @@
 .dw-sep .dia { width: 6px; height: 6px; background: var(--gold-leaf); transform: rotate(45deg); flex: none; }
 .dw-struct { position: relative; }
 
-/* ── Edit mode: drag-to-reorder, jiggle, bottom control bar ── */
+/* â”€â”€ Edit mode: drag-to-reorder, jiggle, bottom control bar â”€â”€ */
 .dw-slot { position: relative; -webkit-tap-highlight-color: transparent; }
 .dw-slot.editing { touch-action: none; }
 .dw-slot.editing .dw-body { pointer-events: none; }         /* no stray taps while arranging */
@@ -111,10 +111,10 @@ body.reduce-motion .dw-slot.editing .dw, body.reduce-motion .dw-slot.editing .dw
 .dw-editbar { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--hair-14); background: rgba(0,0,0,.34); }
 .dw-struct .dw-editbar { border-top: none; padding-top: 0; }
 
-/* ── Toolbar button (Layouts) ── */
+/* â”€â”€ Toolbar button (Layouts) â”€â”€ */
 .dw-toolbtn { display: inline-flex; align-items: center; gap: 7px; padding: 7px 15px; border-radius: 18px; border: 1px solid var(--hair-30); background: transparent; color: var(--gold-leaf); font: 600 12px/1 var(--f-ui); cursor: pointer; }
 
-/* ── Picker with LIVE previews ── */
+/* â”€â”€ Picker with LIVE previews â”€â”€ */
 .dw-picker { padding: 0 14px 4px; }
 .dw-picker-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .dw-pick { border: 1px solid var(--hair-16); border-radius: 14px; overflow: hidden; background: #0b0907; cursor: pointer; text-align: left; padding: 0; -webkit-tap-highlight-color: transparent; display: flex; flex-direction: column; }

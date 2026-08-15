@@ -1,9 +1,9 @@
-/* Compendium design tokens - the "grimoire" language, extracted from DESIGN_SYSTEM.md.
+﻿/* Compendium design tokens - the "grimoire" language, extracted from DESIGN_SYSTEM.md.
    One palette for the whole app; per-pillar identity is a single accent dot only. */
 :root {
   /* surfaces - pure black canvas; per-pillar identity is a top-down colour wash
-     (see .cx-app::before + --wash), transitioning Codex→Codex, Decks→Deckbuilder,
-     Play→Play. */
+     (see .cx-app::before + --wash), transitioning Codexâ†’Codex, Decksâ†’Deckbuilder,
+     Playâ†’Play. */
   --bg: #000;
   --bg-base: #000;
   --wash: #000;   /* default (Home) - pure black, no wash */
@@ -67,12 +67,12 @@
   --link-violet: #c79ad0;
   --destructive: #a8584a;
 
-  /* ── Collection UX redesign tokens (DESIGN_SYSTEM.md §1.6/§3 + docs/collection-ux/). */
-  /* completion Ring track — [Shipping]: consumed by components/Ring.jsx. The arc FILL is the
+  /* â”€â”€ Collection UX redesign tokens (DESIGN_SYSTEM.md Â§1.6/Â§3 + docs/collection-ux/). */
+  /* completion Ring track â€” [Shipping]: consumed by components/Ring.jsx. The arc FILL is the
      contextual pillar accent (Collection var(--accent-ruby); Play jade; Home gold), so no
      --ring-fill is minted. */
   --ring-track: rgba(74, 60, 34, .9);
-  /* warm-brown chrome (OD-2) — the input / segmented / divider / well hue, a different family
+  /* warm-brown chrome (OD-2) â€” the input / segmented / divider / well hue, a different family
      from the gold hairlines. --hair-warm-50 is [Shipping] (empty sets-home tile edge); the
      rest stay [Target]/unconsumed until a consumer lands. */
   --edge-brown: #4a3c22;
@@ -81,7 +81,7 @@
   --surface-brown-50: rgba(42, 33, 20, .5);
   --surface-brown-70: rgba(42, 33, 20, .7);
 
-  /* sets-home tile treatment — [Shipping] (consumed by SetsHome.jsx). Plain names.
+  /* sets-home tile treatment â€” [Shipping] (consumed by SetsHome.jsx). Plain names.
      Several of these finally mint roles the design system already approved but never built:
      --gilt-rgb / --gold-num (OD-1) and --ink-muted-warm (OD-3). */
   --gilt-rgb: 203, 167, 95;                  /* gilt/chassis gold base (OD-1) */
@@ -169,7 +169,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Accessibility (appearance.js sets --ui-scale + body classes) ── */
+/* â”€â”€ Accessibility (appearance.js sets --ui-scale + body classes) â”€â”€ */
 /* UI scale: zoom the app container so text AND layout enlarge together
    (everything is authored in px). Default 1 = no change. */
 .cx-app { zoom: var(--ui-scale, 1); }
@@ -236,8 +236,8 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   transition: color .55s ease;
 }
 
-/* ── Bottom nav - in the Deckbuilder (#nav/.nav-btn), re-tinted black+gold,
-   bigger icons (26px). Gold active colour + top indicator bar. ── */
+/* â”€â”€ Bottom nav - in the Deckbuilder (#nav/.nav-btn), re-tinted black+gold,
+   bigger icons (26px). Gold active colour + top indicator bar. â”€â”€ */
 .cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(var(--nav-h) + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
 /* No :active wash on the nav (owner ruling, round 2): the active tab already
@@ -246,7 +246,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
 
-/* ── Bottom search - frosted see-through pill, in line with the FAB. ── */
+/* â”€â”€ Bottom search - frosted see-through pill, in line with the FAB. â”€â”€ */
 /* --kb is measured in real viewport px (appearance.js) but consumed inside the
    zoomed .cx-app subtree, so divide by --ui-scale to cancel the zoom (no-op at 1). */
 /* (Retired: .cx-searchbar - every bottom search now portals into the .cx-dock
@@ -275,7 +275,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-dock > * > * { pointer-events: auto; }
 
 /* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
-.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: var(--r-pill); background: rgba(10,10,12,.58); border: 1px solid var(--hair-glass); backdrop-filter: blur(var(--blur-pill)); -webkit-backdrop-filter: blur(var(--blur-pill)); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: var(--r-pill); background: rgba(10,10,12,.58); border: 1px solid var(--hair-glass); backdrop-filter: blur(var(--blur-pill)); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }
@@ -283,7 +283,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-search-pill--inline { height: 48px; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
 .cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; padding: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
 
-/* ── §5 touch-floor + press utilities for inline-styled chrome controls. ──
+/* â”€â”€ Â§5 touch-floor + press utilities for inline-styled chrome controls. â”€â”€
    .cx-hit44 extends the TOUCH box to 44px (the shipping floor) without moving a
    pixel of the visual - the pseudo is invisible and part of the button's hit test.
    .cx-press is the Manuscript press state (D1: brightness lift, no ripple) - filter
@@ -293,7 +293,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-press { -webkit-tap-highlight-color: transparent; }
 .cx-press:active { filter: brightness(1.22); }
 /* Sub-entry disclosure - Material expand_more: a chevron in a circular icon
-   button that rotates 180° (down → up) when the group is expanded. */
+   button that rotates 180Â° (down â†’ up) when the group is expanded. */
 .cx-sub-chevron { background: none; border: none; color: var(--ink-muted); cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; -webkit-tap-highlight-color: transparent; transition: transform .24s cubic-bezier(.4,0,.2,1), color .2s ease, background .2s ease; }
 .cx-sub-chevron:active { background: rgba(220,184,111,.14); }
 .cx-sub-chevron[data-open="true"] { transform: rotate(180deg); color: var(--gold-leaf); }
@@ -301,7 +301,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-marg-head { display: flex; align-items: center; gap: 8px; padding: 3px 0 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-marg-count { font: 500 11px/1 var(--f-mono); color: var(--ink-faint); }
 
-/* ── Codex article - reflowed, semantically formatted reading ── */
+/* â”€â”€ Codex article - reflowed, semantically formatted reading â”€â”€ */
 .cx-article-p { margin: 0 0 16px; font: 400 17.5px/1.65 var(--f-read); color: #d8cebb; }
 .cx-article-p.lead::first-letter { float: left; font: 700 52px/0.78 var(--f-display); color: #cba75f; margin: 6px 12px 0 0; }
 /* Card rule text - short centered prose (no box, no drop cap). The article-body
@@ -370,7 +370,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
   min-width: 44px; min-height: 44px; width: 100%; height: 100%;
 }
 
-/* Paired-view entrance (Home Overview⇄Dashboard). FADE ONLY - no transform. The
+/* Paired-view entrance (Home Overviewâ‡„Dashboard). FADE ONLY - no transform. The
    translate variant re-rasterised compositor tiles mid-animation whenever content
    (data, decoded art) landed during the entrance, flashing a vertical tile-boundary
    seam (characterized across builds 226-231: seam x = tile edge 1024 minus the slide
@@ -396,7 +396,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-card-tile { position: relative; display: block; width: 100%; padding: 0; background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
 .cx-card-tile:active { transform: scale(.985); }
 /* Frosted bookmark seal on a saved card tile. */
-.cx-card-seal { position: absolute; top: 7px; right: 7px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10,9,8,.75); border: 1px solid rgba(203,167,95,.5); color: #e3c589; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.cx-card-seal { position: absolute; top: 7px; right: 7px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10,9,8,.75); border: 1px solid rgba(203,167,95,.5); color: #e3c589; backdrop-filter: blur(6px); }
 
 /* Codex A-Z rows - flat text ledger. Letter rubric = the shared section-header
    rubric; card rows carry a mini thumb + the type . mana meta line. */
@@ -415,7 +415,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-codex-bm { color: #e3c589; flex: none; display: flex; }
 .cx-codex-chev { color: #5c554b; flex: none; }
 
-/* ── Global toast stack - black+gold, app-wide feedback (feedback.js host). ── */
+/* â”€â”€ Global toast stack - black+gold, app-wide feedback (feedback.js host). â”€â”€ */
 .cx-toast-stack { position: fixed; left: 0; right: 0; top: calc(env(safe-area-inset-top,0px) + 14px); z-index: 700; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
 .cx-toast { max-width: min(88vw, 420px); padding: 11px 18px; border-radius: 14px; background: linear-gradient(180deg,#1a1712,#0e0c0a); border: 1px solid rgba(220,184,111,.28); color: var(--ink-body); font: 500 13px/1.4 var(--f-ui); text-align: center; box-shadow: 0 8px 26px rgba(0,0,0,.55); animation: cxToastIn .26s cubic-bezier(.2,.9,.3,1); }
 .cx-toast.danger { border-color: rgba(224,120,106,.5); color: #f0c9c2; }
@@ -427,8 +427,8 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 /* Multi-select checkboxes sliding in from the right when Select mode turns on. */
 @keyframes cxSelIn { from { opacity: 0; transform: translateX(14px) scale(.7); } to { opacity: 1; transform: none; } }
 
-/* ── Home Overview - welcome digest. Everything capped; sections collapse and
-   redirect to the pillar where the items actually live. ── */
+/* â”€â”€ Home Overview - welcome digest. Everything capped; sections collapse and
+   redirect to the pillar where the items actually live. â”€â”€ */
 .cx-ov-greet { margin: 4px 0 18px; }
 .cx-ov-greet-eyebrow { font: 600 11px/1 var(--f-display); letter-spacing: .22em; color: #cba75f; }
 .cx-ov-greet-name { font: 700 27px/1.15 var(--f-display); color: #efe7d8; margin-top: 8px; }
@@ -478,8 +478,8 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-ov-duel-deck span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-ov-duel-score { font: 500 12px/1 var(--f-mono); color: #8a8175; }
 
-/* ── Profile picker - monogram discs, per-profile digests, gold ring on the
-   active one. Classy over busy: black rows, gold only where it means something. ── */
+/* â”€â”€ Profile picker - monogram discs, per-profile digests, gold ring on the
+   active one. Classy over busy: black rows, gold only where it means something. â”€â”€ */
 .pf-row { display: flex; align-items: center; gap: 13px; padding: 13px 2px; border-bottom: 1px solid var(--hair-12); }
 .pf-row:last-of-type { border-bottom: none; }
 .pf-disc { width: 44px; height: 44px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font: 600 18px/1 var(--f-display); color: #1a1410; background: linear-gradient(140deg, #cf9a4a, #8c5a2a); cursor: pointer; border: 2px solid transparent; transition: box-shadow .2s ease, border-color .2s ease; }
@@ -514,7 +514,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-scroll { scrollbar-width: none; -ms-overflow-style: none; overscroll-behavior-y: contain; }
 .cx-scroll::-webkit-scrollbar { width: 0; display: none; }
 .cx-row:active { background: var(--hair-08) !important; }
-/* Codex A–Z list (~1379 rows) - skip render/layout of off-screen rows. The
+/* Codex Aâ€“Z list (~1379 rows) - skip render/layout of off-screen rows. The
    intrinsic size reserves scroll height so the bar stays accurate. */
 /* Virtualise the ~1100-row A-Z browse: the WebView skips layout/paint for
    off-screen rows, remembering each row's real size once rendered (the `auto`
