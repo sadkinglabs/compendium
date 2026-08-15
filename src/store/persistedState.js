@@ -105,6 +105,14 @@ export const PERSISTED_STATE = Object.freeze([
     reason: 'Not in §8. Home widget-collapse UI state keyed by pid; same unreachable-litter argument as cx-ongoing-match:.',
   },
   {
+    namespace: 'cx-advanced-band:', kind: 'prefix', store: 'localStorage', owner: 'profile', disposition: 'preserve',
+    reason: 'Not in §8. The Advanced-counter-band Tweaks toggle keyed by pid (interim home until schema v12 folds it into settings); same unreachable-litter argument as cx-ongoing-match:.',
+  },
+  {
+    namespace: 'cx-band-coached:', kind: 'prefix', store: 'localStorage', owner: 'profile', disposition: 'preserve',
+    reason: 'Not in §8. The counter band\'s one-time coach-line flag keyed by pid; same unreachable-litter argument as cx-ongoing-match:.',
+  },
+  {
     namespace: 'cx-marg-collapse', kind: 'key', store: 'localStorage', owner: 'device', disposition: 'preserve',
     reason: 'Not in §8. Codex marginalia collapse state - a device UI preference with no profile identity in it.',
   },
