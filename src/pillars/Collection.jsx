@@ -50,6 +50,7 @@ import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js
 import { groupCollection } from '../store/collectionGroups.js';
 import { rowComparator } from '../store/collectionFilter.js';
 import { groupCards } from '../store/collectionGrouping.js';
+import { EL_ORDER, elemKey } from '../store/elements.js';
 import { ElementPip } from '../components/ElementPip.jsx';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
 import { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
@@ -1948,7 +1949,16 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   useEffect(() => { collectionSession().listArrange = arrange; }, [arrange]);
   const [arrOpen, setArrOpen] = useState(false);
   const listComparator = useMemo(() => {
+    if (arrange.sort === 'name-desc') return rowComparator('name-desc');
     if (arrange.sort === 'rarity') return rowComparator('rarity-asc');
+    if (arrange.sort === 'element') {
+      // Elements cluster in palette order (Air, Earth, Fire, Water; Multi/Neutral
+      // after) WITHIN whatever grouping is active - e.g. elements together inside
+      // each set group (the owner's ask). Name breaks ties.
+      const name = rowComparator('name-asc');
+      const elRank = (r) => { const i = EL_ORDER.indexOf(elemKey(r)); return i === -1 ? EL_ORDER.length : i; };
+      return (a, b) => (elRank(a) - elRank(b)) || name(a, b);
+    }
     if (arrange.sort === 'added') {
       const name = rowComparator('name-asc');
       // Newest first; rows without a timestamp sort last (custom-list rows may lack one).
@@ -2272,7 +2282,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </ChipRow>
         <SectionLabel label="Sort" />
         <ChipRow style={{ margin: '10px 0 6px' }}>
-          {[['name', 'Name'], ['rarity', 'Rarity'], ['added', 'Recently added']].map(([k, l]) => (
+          {[['name', 'Name A–Z'], ['name-desc', 'Name Z–A'], ['rarity', 'Rarity'], ['element', 'Element'], ['added', 'Recently added']].map(([k, l]) => (
             <Chip key={k} label={l} active={arrange.sort === k} onClick={() => setArrange((a) => ({ ...a, sort: k }))} />
           ))}
         </ChipRow>
