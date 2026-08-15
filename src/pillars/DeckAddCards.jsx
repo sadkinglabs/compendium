@@ -7,6 +7,7 @@ import { ownedMap, subscribeCollection } from '../store/ownedRepository.js';
 import { query } from '../store/db.js';
 import CardArt from '../components/CardArt.jsx';
 import CardSheet from '../components/CardSheet.jsx';
+import { ChangeAvatarSheet } from './DeckDashboard.jsx';
 import RefineSheet from '../components/RefineSheet.jsx';
 import { Frost } from '../components/CollectionCardViews.jsx';
 import { ThresholdPips, Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid } from '../components/ui.jsx';
@@ -43,6 +44,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
   const qtysRef = useRef({});             // live mirror - rapid taps read this, never a stale closure
   const stepChains = useRef({});          // card_id -> promise chain serialising its DB writes
   const [sheetCardId, setSheetCardId] = useState(null);
+  const [avatarOpen, setAvatarOpen] = useState(false);   // Change-avatar from an avatar's card sheet (owner ask)
   const [ignoredScopes, setIgnoredScopes] = useState([]);   // has:/is: are Codex-only - swallowed here, surfaced as a note
 
   // Gate: the Refine sheet must not open before its Set/Artist options resolve, or
@@ -147,7 +149,12 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
         </div>
       )}
 
-      <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange} />
+      <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange}
+        onChangeAvatar={() => setAvatarOpen(true)} />
+      {avatarOpen && (
+        <ChangeAvatarSheet deckId={deckId} onClose={() => setAvatarOpen(false)}
+          onSaved={() => { setAvatarOpen(false); afterChange(); }} />
+      )}
 
       <RefineSheet open={filterOpen && optsLoaded} onClose={() => setFilterOpen(false)} onClear={clearAll}
         eyebrow="REFINE" activeCount={activeCount} ctaLabel={`Show ${pool.length} card${pool.length === 1 ? '' : 's'}`}

@@ -447,7 +447,9 @@ function NotesCard({ deckId, initial }) {
 
 // Change Avatar - reuses the create-wizard's avatar grid (Deckbuilder #onboard step 2)
 // as a modal; on Save it rewrites the deck's avatar so the hero + library art update.
-function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
+// Exported since the avatar-collection tweak: DeckAddCards (Edit Deck) opens this
+// same sheet from an avatar's card sheet, so the swap flow exists in both places.
+export function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   const [avatars, setAvatars] = useState([]);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
