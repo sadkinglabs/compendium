@@ -13,15 +13,17 @@ import GothicSheet from './GothicSheet.jsx';
 export default function Sheet({ open, title, onClose, footer, children, bodyClass, dismissible = true, ariaBusy }) {
   const inner = (
     <>
-      {title != null && (
-        <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', margin: '0 0 16px' }}>{title}</div>
-      )}
       {children}
       {footer && <div style={{ display: 'flex', gap: 8, padding: '12px 0 0', flexShrink: 0 }}>{footer}</div>}
     </>
   );
+  // The title rides GothicSheet's PINNED header (owner ask via Deck Spread): it
+  // stays as the sheet's header while in-body sticky sections anchor below it.
+  const header = title != null ? (
+    <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', padding: '2px 0 12px' }}>{title}</div>
+  ) : null;
   return (
-    <GothicSheet open={open} onClose={onClose} label={title || 'Sheet'} dismissible={dismissible} ariaBusy={ariaBusy}>
+    <GothicSheet open={open} onClose={onClose} label={title || 'Sheet'} dismissible={dismissible} ariaBusy={ariaBusy} header={header}>
       {bodyClass ? <div className={bodyClass}>{inner}</div> : inner}
     </GothicSheet>
   );

@@ -14,7 +14,7 @@ import { registerBackConsumer } from '../back.js';
 // back. A sheet in the middle of a committed transaction (the wishlist import mid-write) sets it
 // false so a gesture cannot appear to cancel a write that is still going. Hardware back is still
 // CONSUMED (returns true) while locked, so it does not fall through and close the app.
-export default function GothicSheet({ open, onClose, label = 'Dialog', dismissible = true, ariaBusy, children }) {
+export default function GothicSheet({ open, onClose, label = 'Dialog', dismissible = true, ariaBusy, header = null, children }) {
   const trapRef = useFocusTrap(open);
   const NOOP = () => {};
   const drag = useSheetDrag(dismissible ? onClose : NOOP);
@@ -58,11 +58,25 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', dismissib
             sheet's lower half went transparent and the page bled through. An opaque,
             self-compositing scroller can't depend on the ancestor's paint, so it's
             always solid. */}
-        <div className="cx-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))', background: '#100c08', transform: 'translateZ(0)', WebkitOverflowScrolling: 'touch' }}>
-          {/* Drag the top chrome (handle) to dismiss; the body still scrolls. */}
-          <div {...handleProps} style={{ ...handleProps.style, padding: '4px 0 10px', margin: '0 -26px', display: 'flex', justifyContent: 'center' }}>
-            <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
+        {/* Optional PINNED header (opt-in; owner ask via Deck Spread): the handle +
+            header stay as fixed chrome above the scroller, so a sheet's title is
+            respected as its header while in-body sticky sections anchor below it.
+            Without `header`, the handle lives in the scroller exactly as before. */}
+        {header != null && (
+          <div {...handleProps} style={{ ...handleProps.style, flex: 'none', padding: '4px 0 0', background: '#100c08', borderBottom: '1px solid var(--hair-12)' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '0 0 10px' }}>
+              <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
+            </div>
+            {header}
           </div>
+        )}
+        <div className="cx-scroll" style={{ flex: '0 1 auto', minHeight: 0, overflowY: 'auto', padding: '14px 26px calc(26px + env(safe-area-inset-bottom,0px))', background: '#100c08', transform: 'translateZ(0)', WebkitOverflowScrolling: 'touch' }}>
+          {header == null && (
+            /* Drag the top chrome (handle) to dismiss; the body still scrolls. */
+            <div {...handleProps} style={{ ...handleProps.style, padding: '4px 0 10px', margin: '0 -26px', display: 'flex', justifyContent: 'center' }}>
+              <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
+            </div>
+          )}
           {children}
         </div>
       </div>
