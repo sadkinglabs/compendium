@@ -894,13 +894,18 @@ body.kb-open #picker-screen .picker-footer { display: none; }
    ENTRANCE animates on the buttons, not the container - the container's inline
    transform (centring + opponent rotation) must never fight an animation. */
 .cx-life-tracker .band-steppers { position: absolute; display: flex; gap: 10px; z-index: 12; pointer-events: auto; }
-.cx-life-tracker .band-steppers.player { top: calc(100% + 8px); }
-.cx-life-tracker .band-steppers.opp { bottom: calc(100% + 8px); }
+/* Positioned from the band-wrap (2px tall, on the divider): the player strip spans
+   8..46px below it, the opponent strip mirrors above - the pair docks 8px past the
+   strip's far edge, toward that player's own numeral. */
+.cx-life-tracker .band-steppers.player { top: 54px; }
+.cx-life-tracker .band-steppers.opp { bottom: 54px; }
 .cx-life-tracker .band-step-btn { position: relative; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(220,184,111,.55); background: rgba(20,15,9,.88); color: #e3c589; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; animation: bandStepIn 200ms cubic-bezier(.2,.9,.3,1.2) backwards; }
 .cx-life-tracker .band-step-btn + .band-step-btn { animation-delay: 40ms; }
 .cx-life-tracker .band-step-btn::after { content: ''; position: absolute; inset: -8px; }
 .cx-life-tracker .band-step-btn:active { background: rgba(220,184,111,.16); transform: scale(.94); }
 @keyframes bandStepIn { from { transform: scale(1.3); opacity: 0; } }
+/* One-time coach line (first band appearance per profile, retired on first use). */
+.cx-life-tracker .band-coach { position: absolute; top: 54px; left: 0; right: 0; text-align: center; font: 500 11px/1 var(--f-ui); letter-spacing: .06em; color: rgba(220,184,111,.65); pointer-events: none; animation: cxfade .6s ease; }
 
 .cx-life-tracker { --modal: #0e0b08; --sheet: linear-gradient(180deg,#151109,#0b0806); --well: rgba(42,33,20,.5);
   --gold-dim: rgba(220,184,111,.16); --jade: #4db38a; --win: #4db38a; --win-2: #7fd3ad; }

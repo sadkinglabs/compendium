@@ -17,6 +17,16 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { dragDir, isTap, repeatDelay } from './bandState.js';
 import { ElementPip } from '../components/ElementPip.jsx';
 import { haptic } from '../native.js';
+import { activeProfileId } from '../store/profileRepository.js';
+
+// One-time coach line (owner ask: make the gestures discoverable): shown under the
+// player strip the FIRST time the band ever appears for this profile, retired
+// forever on the first successful interaction or after 8s. Teach once, never nag -
+// the counter's own philosophy ("the glow is enough"); TalkBack users get the full
+// instruction in every figure's aria-label regardless.
+const coachKey = () => `cx-band-coached:${activeProfileId()}`;
+const needsCoach = () => { try { return localStorage.getItem(coachKey()) !== '1'; } catch { return false; } };
+const markCoached = () => { try { localStorage.setItem(coachKey(), '1'); } catch { /* ignore */ } };
 
 const ELEMENTS = ['air', 'earth', 'fire', 'water'];
 // Owner ruling D-b2: the app-wide element tokens, identical hues in every pillar.
@@ -40,6 +50,13 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
     }
     return undefined;
   }, [ceremonyKey]);
+  const [coach, setCoach] = useState(needsCoach);
+  useEffect(() => {
+    if (!coach) return undefined;
+    const t = setTimeout(() => { setCoach(false); markCoached(); }, 8000);
+    return () => clearTimeout(t);
+  }, [coach]);
+  const coachDone = () => { if (coach) { setCoach(false); markCoached(); } };
   // Ghost per figure while a drag is armed: 'p|mana' -> +1 | -1
   const [ghosts, setGhosts] = useState({});
   // Open stepper target: { side, fig } | null
@@ -52,6 +69,7 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
   const key = (side, fig) => `${side}|${fig}`;
 
   const fire = (side, fig, dir) => {
+    coachDone();
     const changed = onStep(side, fig, dir);
     fxSeq.current += 1;
     setFx((m) => ({ ...m, [key(side, fig)]: { seq: fxSeq.current, kind: changed ? 'pulse' : 'shake', dir } }));
@@ -82,6 +100,7 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
     gestures.current.delete(e.pointerId);
     setGhosts((m) => ({ ...m, [key(side, fig)]: 0 }));
     if (isTap(g.maxTravel)) {
+      coachDone();
       setStepper((s) => (s && s.side === side && s.fig === fig ? null : { side, fig }));
       return;
     }
@@ -124,7 +143,7 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
               <span className={`band-mana${ghost ? (ghost > 0 ? ' ghost-up' : ' ghost-down') : ''}`}>{shown}</span>
             ) : (
               <>
-                <ElementPip el={fig} color={EL_COLOR[fig]} size={11} />
+                <ElementPip el={fig} color={EL_COLOR[fig]} size={14} />
                 <span className={`band-thr${ghost ? (ghost > 0 ? ' ghost-up' : ' ghost-down') : ''}`}>{shown}</span>
               </>
             )}
@@ -142,9 +161,6 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
         {figure(side, 'mana', 0)}
         {ELEMENTS.map((el, i) => figure(side, el, i + 1))}
       </div>
-      {stepper && stepper.side === side && (
-        <Steppers side={side} fig={stepper.fig} onStep={(dir) => fire(side, stepper.fig, dir)} />
-      )}
     </div>
   );
 
@@ -153,6 +169,14 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
       {entering && <div className="band-flash" aria-hidden="true" />}
       {strip('e')}
       {strip('p')}
+      {/* Steppers are SIBLINGS of the strips, positioned from the wrap: the strip's
+          cartouche clip-path would clip anything docked outside its own box. */}
+      {stepper && (
+        <Steppers side={stepper.side} fig={stepper.fig} onStep={(dir) => fire(stepper.side, stepper.fig, dir)} />
+      )}
+      {coach && !stepper && (
+        <div className="band-coach" aria-hidden="true">Drag sideways to adjust · Tap for − +</div>
+      )}
     </div>
   );
 }
@@ -167,13 +191,14 @@ function Steppers({ side, fig, onStep }) {
 
   useLayoutEffect(() => {
     const el = ref.current;
-    const figEl = el?.parentElement?.querySelector(`[data-fig="${side}|${fig}"]`);
+    const wrap = el?.parentElement;   // the band-wrap (the steppers are strip SIBLINGS)
+    const figEl = wrap?.querySelector(`[data-fig="${side}|${fig}"]`);
     if (!el || !figEl) return;
-    const strip = el.parentElement.getBoundingClientRect();
+    const w = wrap.getBoundingClientRect();
     const f = figEl.getBoundingClientRect();
-    const centre = f.left + f.width / 2 - strip.left;
+    const centre = f.left + f.width / 2 - w.left;
     const half = el.offsetWidth / 2;
-    setLeft(Math.max(half + 4, Math.min(strip.width - half - 4, centre)));
+    setLeft(Math.max(half + 4, Math.min(w.width - half - 4, centre)));
   }, [side, fig]);
 
   const stopRepeat = () => { clearTimeout(repeat.current); repeat.current = null; };

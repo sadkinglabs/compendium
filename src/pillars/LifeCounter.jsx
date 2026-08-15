@@ -21,6 +21,16 @@ import { resolveCounterBackFallback } from '../navBack.js';
 import { buildMatchSnapshot, readMatchSnapshot } from '../store/matchSnapshot.js';
 import { initialBand, restoreBand, stepFigure } from './bandState.js';
 import CounterBand from './CounterBand.jsx';
+import { activeProfileId } from '../store/profileRepository.js';
+
+// The Advanced-band toggle persists in profile-scoped localStorage, NOT a settings
+// column: the settings table is a whitelisted schema surface (setSetting throws on
+// unknown keys - by design), and schema-v12 (in flight, docs/proposals/schema-v12.md)
+// is redesigning exactly that surface. Same persistence class as the ongoing-match
+// snapshot; fold into settings when v12 lands.
+const bandPrefKey = () => `cx-advanced-band:${activeProfileId()}`;
+const readBandPref = () => { try { return localStorage.getItem(bandPrefKey()) === '1'; } catch { return false; } };
+const writeBandPref = (on) => { try { localStorage.setItem(bandPrefKey(), on ? '1' : '0'); } catch { /* quota/security */ } };
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
@@ -115,7 +125,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
   const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
   // Tweaks - Play pillar's counter-local comforts (keep awake / hide status bar /
   // film grain). Persisted per profile, applied live to the running match.
-  const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0, advanced_band: !!settings.advanced_band });
+  const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0, advanced_band: readBandPref() });
   // Advanced Counter Band (mana + thresholds). Ref is the source stepFigure reads
   // and the snapshot persists (always current, no stale closure); state drives
   // render. Table state only - never the match log (owner ruling D-b4).
@@ -310,7 +320,8 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
   // Tweaks toggle - persists to the profile's settings AND applies immediately.
   function setTweak(key, on) {
     setTw((t) => ({ ...t, [key]: on }));
-    setSetting(key, on ? 1 : 0).catch(() => {});
+    if (key === 'advanced_band') writeBandPref(on);   // localStorage, not a settings column (see bandPrefKey)
+    else setSetting(key, on ? 1 : 0).catch(() => {});
     if (key === 'keep_awake') setKeepAwake(on);
     if (key === 'immersive') setImmersive(on);
     if (key === 'film_grain') document.body.classList.toggle('grain-off', !on);
@@ -458,6 +469,8 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
     // means it disarms Death's Door and cancels timers for free, with no special case.
     const seed = initSide(start);   // one seed helper for every fresh side - see matchLife.js
     commitLife('player', seed.life, seed.max); commitLife('opponent', seed.life, seed.max);
+    // The band is match table state: a reset clears it with the rest of the table.
+    bandRef.current = initialBand(); setBandV(bandRef.current);
     setLog([]); lastLog.current = null; setEndInfo(null);
     setDeltas([]); activeDelta.current = { player: null, opponent: null };
     clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent);
