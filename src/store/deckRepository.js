@@ -413,12 +413,21 @@ export async function getPool({
 
 const TYPE_GROUPS = ['Avatar', 'Minion', 'Aura', 'Magic', 'Artifact', 'Site'];
 
+// Text-export type order (owner ruling 2026-08-15): Avatar, Aura, Artifact,
+// Minion, Magic - then Atlas (sites) and Collection follow as zones. EXPORT
+// ONLY: zoneGroups' own order also drives the on-screen deck list, which
+// deliberately keeps its shipped arrangement.
+const EXPORT_TYPE_ORDER = ['AVATARS', 'AURAS', 'ARTIFACTS', 'MINIONS', 'MAGICS', 'SITES'];
+const exportOrdered = (groups) => [...groups].sort(
+  (a, b) => EXPORT_TYPE_ORDER.indexOf(a.label) - EXPORT_TYPE_ORDER.indexOf(b.label),
+);
+
 export async function exportMarkdown(deckId) {
   const d = await getDeck(deckId);
   const lines = [`# ${d.name}`];
   if (d.avatar) lines.push('', '## Avatar', `- 1× ${d.avatar.name}`);
   for (const zone of ZONES) {
-    const groups = await zoneGroups(deckId, zone);
+    const groups = exportOrdered(await zoneGroups(deckId, zone));
     if (!groups.length) continue;
     lines.push('', `## ${zone[0].toUpperCase() + zone.slice(1)}`);
     for (const g of groups) {
