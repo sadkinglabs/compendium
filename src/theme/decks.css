@@ -217,9 +217,6 @@
 .cx-decks .ob-preview-type { font-size:11px; color:var(--gold-leaf); font-weight:600; letter-spacing:.3px; }
 .cx-decks .ob-preview-rules { font-size:12px; color:rgba(233,220,192,.62); line-height:1.6; }
 .cx-decks .ob-search-pill-wrap { margin-bottom:10px; flex-shrink:0; }
-.cx-decks .ob-search-pill { display:flex; align-items:center; gap:8px; background:rgba(10,9,8,.85); border:1px solid rgba(220,184,111,.22); border-radius:999px; padding:0 16px; height:50px; backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); box-shadow:0 2px 14px rgba(0,0,0,.4); }
-.cx-decks .ob-search-pill svg { width:15px; height:15px; color:rgba(233,220,192,.45); flex-shrink:0; }
-.cx-decks .ob-search-pill input { flex:1; background:transparent; border:none; color:#efe7d8; font-size:15px; outline:none; }
-.cx-decks .ob-search-pill input::placeholder { color:rgba(233,220,192,.4); }
-.cx-decks .ob-search-pill input[type="search"]::-webkit-search-cancel-button { display:none; }
-.cx-decks .search-clear-btn { flex-shrink:0; width:26px; height:26px; border-radius:50%; border:1px solid #4a3c22; background:rgba(42,33,20,.5); color:#8a8175; font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+/* (Retired: .ob-search-pill / .search-clear-btn - the wizard and Change-Avatar
+   searches now render the canonical <SearchPill inline> chassis, owner ruling D2.
+   Its gold-hairline clone had a 26px clear button and a 3.2:1 placeholder.) */

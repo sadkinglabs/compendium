@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { listAvatarCards, createDeck } from '../store/deckRepository.js';
 import { ArtImg } from './ArtImage.jsx';
+import SearchPill from './SearchPill.jsx';
 import { toast } from '../feedback.js';
 import '../theme/decks.css';
 
@@ -77,11 +78,9 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
         ) : (
           <div className="ob-step2">
             <div className="ob-search-pill-wrap">
-              <div className={`ob-search-pill${q ? ' has-text' : ''}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avatars…" autoComplete="off" />
-                {q && <button className="search-clear-btn" onClick={() => setQ('')} aria-label="Clear">{XSvg}</button>}
-              </div>
+              {/* Folded onto the canonical chassis (owner ruling D2) - the gold-hairline
+                  clone is retired. The 250ms/0ms scheduling stays with this owner. */}
+              <SearchPill inline value={q} onChange={setQ} placeholder="Search avatars…" ariaLabel="Search avatars" />
             </div>
             {sel && (
               <div className="ob-preview">

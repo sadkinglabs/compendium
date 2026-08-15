@@ -18,6 +18,7 @@ import CardArt from '../components/CardArt.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import SearchPill from '../components/SearchPill.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 // Never render an em dash, even from reference data - swap for a spaced hyphen.
@@ -486,8 +487,9 @@ function MarginaliaComposer({ open, onClose, noteText, setNoteText, onSaveNote, 
             </div>
           ) : (
             <>
-              <input value={q} onChange={(e) => setQ(e.target.value)} autoFocus placeholder="Search a card or rule to link…"
-                style={{ width: '100%', height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)", marginBottom: 8 }} />
+              <div style={{ marginBottom: 8 }}>
+                <SearchPill inline autoFocus value={q} onChange={setQ} placeholder="Search a card or rule to link…" ariaLabel="Search a card or rule to link" />
+              </div>
               <div style={{ maxHeight: 180, overflowY: 'auto' }} className="cx-scroll">
                 {results.map((r) => (
                   <div key={r.kind + r.id} onClick={() => { setTarget(r); setQ(''); }} className="cx-row" style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '10px 4px', borderBottom: '1px solid var(--hair-12)', cursor: 'pointer' }}>

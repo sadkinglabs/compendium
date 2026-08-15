@@ -9,6 +9,7 @@ import { IconButton, Chip, ChipRow, Loading, BlankState, BTN_GOLD, BTN_GHOST } f
 import Sheet from '../components/Sheet.jsx';
 import { ArtImg } from '../components/ArtImage.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
+import SearchPill from '../components/SearchPill.jsx';
 import { toast, confirmAction } from '../feedback.js';
 import { haptic } from '../native.js';
 import '../theme/playhistory.css';
@@ -430,10 +431,10 @@ function DeckPicker({ decks, value, onChange }) {
         {selected && <button onClick={() => onChange(null)} style={{ ...ghost, flex: 'none', padding: '7px 13px', font: "600 11px/1 var(--f-ui)" }}>Clear</button>}
       </div>
       {searchable && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 12px', marginBottom: 10 }}>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--ink-faint)" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.3" y2="16.3" /></svg>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your decks…" autoComplete="off"
-            style={{ flex: 1, minWidth: 0, background: 'transparent', border: 'none', outline: 'none', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
+        <div style={{ marginBottom: 10 }}>
+          {/* Shared chassis; filtering stays IMMEDIATE - a bounded in-memory list
+              never earns a debounce (Codex-reviewed scheduling contract). */}
+          <SearchPill inline value={q} onChange={setQ} placeholder="Search your decks…" ariaLabel="Search your decks" />
         </div>
       )}
       {searchable && !needle && <div style={{ font: "600 9px/1 var(--f-ui)", letterSpacing: '.14em', color: 'var(--ink-faint)', margin: '2px 0 8px' }}>RECENT</div>}

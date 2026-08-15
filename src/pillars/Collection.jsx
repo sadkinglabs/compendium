@@ -1496,6 +1496,7 @@ function AddToListSheet({ open, count, onPick, onClose }) {
 // edits (commits live through onStep(card, delta)), or hit Select to enter
 // multi-select - tap rows to check them, then one "Add N" bar commits them all at
 // +1. Shared by every list and the Wishlist.
+const ADD_SHEET_RENDER_CAP = 80;   // render cap only - selection/Select-all always cover the full result
 function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summarise = () => null }) {
   const [q, setQ] = useState('');
   const [pool, setPool] = useState(null);
@@ -1543,8 +1544,8 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
       {hint && !selectMode && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
-      <input value={q} autoFocus onChange={(e) => setQ(e.target.value)}
-        placeholder="Search the library - e:water set:beta…" style={{ ...SHEET_INPUT, height: 46 }} />
+      <SearchPill inline autoFocus value={q} onChange={setQ}
+        placeholder="Search the library - e:water set:beta…" ariaLabel="Search the library" />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '12px 2px 2px' }}>
         {!selectMode ? (
           <>
@@ -1565,7 +1566,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
           </>
         )}
       </div>
-      {pool == null ? <Loading /> : shown.map((c, i) => {
+      {pool == null ? <Loading /> : shown.slice(0, ADD_SHEET_RENDER_CAP).map((c, i) => {
         const inList = membership.get(c.card_id) || 0;
         const setName = listSetName(c);
         const isSel = selected.has(c.card_id);
@@ -1601,6 +1602,13 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
           </div>
         );
       })}
+      {/* Honest cap note: only the RENDER is capped (each row mounts a CardArt, and an
+          empty query is the whole catalogue) - Select all still covers every match. */}
+      {pool != null && shown.length > ADD_SHEET_RENDER_CAP && (
+        <div style={{ font: "italic 400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', padding: '12px 0' }}>
+          Showing the first {ADD_SHEET_RENDER_CAP} of {shown.length} - refine the search to see the rest. Select all covers all {shown.length}.
+        </div>
+      )}
       {/* Running batch bar - sticks to the sheet's scroll floor while you check rows. */}
       {selectMode && selected.size > 0 && (
         <div style={{ position: 'sticky', bottom: 0, marginTop: 8, padding: '12px 0 2px', background: 'linear-gradient(0deg, #0b0806 68%, transparent)' }}>
