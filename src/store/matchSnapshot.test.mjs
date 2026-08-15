@@ -18,6 +18,10 @@ const normalized = {
   oppName: 'Rival',
   recorded: true,
   clockOn: true,
+  band: {
+    p: { mana: 7, air: 1, earth: 0, fire: 2, water: 0 },
+    e: { mana: 3, air: 0, earth: 2, fire: 0, water: 1 },
+  },
 };
 
 test('round-trip: read(build(normalizedState)) deep-equals the normalized state', () => {
@@ -29,8 +33,21 @@ test('round-trip holds for the defaulted edges (empty log, nulls, explicit false
     mode: 'quick', settings: {}, you: null, opp: null, deck: null,
     p: { life: 20, max: 20 }, e: { life: 20, max: 20 },
     log: [], elapsedSec: 0, oppName: '', recorded: false, clockOn: false,
+    band: {
+      p: { mana: 0, air: 0, earth: 0, fire: 0, water: 0 },
+      e: { mana: 0, air: 0, earth: 0, fire: 0, water: 0 },
+    },
   };
   assert.deepEqual(readMatchSnapshot(buildMatchSnapshot(s)), s);
+});
+
+test('FORWARD-ONLY: a legacy snapshot without band fields is still valid and reads a band object (raw undefineds - bandState.restoreBand clamps them to 0)', () => {
+  const legacy = buildMatchSnapshot({ ...normalized, band: undefined });
+  // build() with no band writes zeros - but simulate a genuinely OLD record too:
+  const { pMana, pAir, pEarth, pFire, pWater, eMana, eAir, eEarth, eFire, eWater, ...oldRecord } = legacy;
+  assert.equal(isValidMatchSnapshot(oldRecord), true, 'validity never gates on band fields');
+  const read = readMatchSnapshot(oldRecord);
+  assert.ok(read.band && read.band.p && read.band.e, 'the band shape is always present on read');
 });
 
 test('build serializes normalized sides to the flat on-disk fields + version', () => {

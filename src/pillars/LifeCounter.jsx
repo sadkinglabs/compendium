@@ -19,6 +19,18 @@ import { initSide, restoreSide, applyStep, applyMax, LIFE_CAP, MIN_MAX } from '.
 import { rollOutcome, initialRollPhase, isRollLocked, canStartRoll } from './matchRoll.js';
 import { resolveCounterBackFallback } from '../navBack.js';
 import { buildMatchSnapshot, readMatchSnapshot } from '../store/matchSnapshot.js';
+import { initialBand, restoreBand, stepFigure } from './bandState.js';
+import CounterBand from './CounterBand.jsx';
+import { activeProfileId } from '../store/profileRepository.js';
+
+// The Advanced-band toggle persists in profile-scoped localStorage, NOT a settings
+// column: the settings table is a whitelisted schema surface (setSetting throws on
+// unknown keys - by design), and schema-v12 (in flight, docs/proposals/schema-v12.md)
+// is redesigning exactly that surface. Same persistence class as the ongoing-match
+// snapshot; fold into settings when v12 lands.
+const bandPrefKey = () => `cx-advanced-band:${activeProfileId()}`;
+const readBandPref = () => { try { return localStorage.getItem(bandPrefKey()) === '1'; } catch { return false; } };
+const writeBandPref = (on) => { try { localStorage.setItem(bandPrefKey(), on ? '1' : '0'); } catch { /* quota/security */ } };
 
 const LOG_GAP_MS = 1200;
 const ROLL_DISMISS_TAPS = 5;   // life taps after which the armed roll offer retires itself
@@ -113,7 +125,22 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
   const [sheet, setSheet] = useState(null);              // 'log'|'dice'|'maxP'|'maxE'|'tweaks'
   // Tweaks - Play pillar's counter-local comforts (keep awake / hide status bar /
   // film grain). Persisted per profile, applied live to the running match.
-  const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0 });
+  const [tw, setTw] = useState({ keep_awake: !!settings.keep_awake, immersive: !!settings.immersive, film_grain: settings.film_grain !== 0, advanced_band: readBandPref() });
+  // Advanced Counter Band (mana + thresholds). Ref is the source stepFigure reads
+  // and the snapshot persists (always current, no stale closure); state drives
+  // render. Table state only - never the match log (owner ruling D-b4).
+  const bandRef = useRef(r ? restoreBand(r.band) : initialBand());
+  const [bandV, setBandV] = useState(bandRef.current);
+  const bandStep = (side, fig, dir) => {
+    const res = stepFigure(bandRef.current, side, fig, dir);
+    bandRef.current = res.band;
+    if (res.changed) setBandV(res.band);
+    return res.changed;
+  };
+  // Ceremony: fires when the roll-off RESOLVES (result -> null). A resumed match
+  // skipped the roll, so its band mounts plainly; a no-roll fresh match likewise.
+  const [bandCeremony, setBandCeremony] = useState(0);
+  const prevRollRef = useRef(null);
   const [dice, setDice] = useState({ type: settings.die_type || 6, value: null });
   const [oppName, setOppName] = useState(r?.oppName ?? '');
   const [recent, setRecent] = useState([]);
@@ -148,6 +175,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       mode, settings, you: players.you, opp: players.opp, deck,
       p: pRef.current, e: eRef.current,
       log, elapsedSec: elapsedSec(), oppName, recorded: recordedRef.current, clockOn,
+      band: bandRef.current,
     });
   }
   const snapRef = useRef();
@@ -292,12 +320,20 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
   // Tweaks toggle - persists to the profile's settings AND applies immediately.
   function setTweak(key, on) {
     setTw((t) => ({ ...t, [key]: on }));
-    setSetting(key, on ? 1 : 0).catch(() => {});
+    if (key === 'advanced_band') writeBandPref(on);   // localStorage, not a settings column (see bandPrefKey)
+    else setSetting(key, on ? 1 : 0).catch(() => {});
     if (key === 'keep_awake') setKeepAwake(on);
     if (key === 'immersive') setImmersive(on);
     if (key === 'film_grain') document.body.classList.toggle('grain-off', !on);
     haptic('light');
   }
+
+  // Band ceremony trigger: the transition OUT of a resolved roll ('result' -> null)
+  // is the one moment the spec ties the unroll + stamp-in to.
+  useEffect(() => {
+    if (prevRollRef.current === 'result' && rollPhase === null) setBandCeremony((k) => k + 1);
+    prevRollRef.current = rollPhase;
+  }, [rollPhase]);
 
   // The roll-off is OPTIONAL and never blocks *starting* the match (the armed
   // pill just floats as an offer - armed = fully interactive: tap life, open
@@ -433,6 +469,8 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
     // means it disarms Death's Door and cancels timers for free, with no special case.
     const seed = initSide(start);   // one seed helper for every fresh side - see matchLife.js
     commitLife('player', seed.life, seed.max); commitLife('opponent', seed.life, seed.max);
+    // The band is match table state: a reset clears it with the rest of the table.
+    bandRef.current = initialBand(); setBandV(bandRef.current);
     setLog([]); lastLog.current = null; setEndInfo(null);
     setDeltas([]); activeDelta.current = { player: null, opponent: null };
     clearTimeout(deltaTimers.current.player); clearTimeout(deltaTimers.current.opponent);
@@ -729,6 +767,11 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       </div>
 
       <div className="counter-divider" />
+      {/* Advanced Counter Band - absent during the roll-off, sibling of the divider
+          (an overlay: the life numerals cannot move between Basic and Advanced). */}
+      {tw.advanced_band && !rollLocked && (
+        <CounterBand band={bandV} onStep={bandStep} ceremonyKey={bandCeremony} />
+      )}
 
       {/* Player half */}
       <div className={`counter-half player-half${p.life <= 0 ? ' dd' : ''}${rollCls('player')}`} id="player-half"
@@ -879,6 +922,7 @@ function TweaksModal({ open, tw, onToggle, onClose }) {
     ['keep_awake', 'Keep screen on', 'The screen never sleeps mid-duel'],
     ['immersive', 'Hide status bar', 'Full-bleed match (on device)'],
     ['film_grain', 'Film grain', 'Painterly texture over the portraits'],
+    ['advanced_band', 'Advanced counters', 'Mana + element thresholds on the divider'],
   ];
   return (
     <VModal title="Tweaks" subtitle="Comforts for the table" onClose={onClose}

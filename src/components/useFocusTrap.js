@@ -16,7 +16,7 @@ export function useFocusTrap(active) {
   React.useEffect(() => {
     if (!active || !ref.current) return;
     const panel = ref.current;
-    const opener = document.activeElement;
+    const opener = /** @type {HTMLElement|null} */ (document.activeElement);
     const sel = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),select:not([disabled]),[tabindex]:not([tabindex="-1"])';
     const first = panel.querySelector(sel);
     // preventScroll: focusing must not scroll the panel's scroll body to the first
