@@ -39,14 +39,14 @@ export function BlankState({ hue = '220,184,111', title, body, action, minHeight
 export function Chip({ label, active, onClick, dot }) {
   return (
     <button
-      onClick={onClick} aria-pressed={active}
+      onClick={onClick} aria-pressed={active} className="cx-hit44 cx-press"
       style={{
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '7px 16px', borderRadius: 18, cursor: 'pointer',
         font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
-        background: active ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)',
+        background: active ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'var(--surface-brown-50)',
         color: active ? '#1a1206' : '#c9bda6',
-        border: `1px solid ${active ? '#e3c589' : '#4a3c22'}`,
+        border: `1px solid ${active ? 'var(--gold-num)' : 'var(--edge-brown)'}`,
       }}
     >
       {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />}
@@ -66,16 +66,18 @@ export function ChipRow({ children, style }) {
    option: { key, label?, icon? } - icon is an inline SVG (no Unicode glyphs). */
 export function SegTabs({ options, value, onChange, ariaLabel, style }) {
   return (
-    <div role="group" aria-label={ariaLabel} style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden', ...style }}>
+    <div role="group" aria-label={ariaLabel} style={{ display: 'inline-flex', border: '1px solid var(--edge-brown)', borderRadius: 20, overflow: 'hidden', ...style }}>
       {options.map((o) => {
         const on = value === o.key;
         return (
-          <button key={o.key} onClick={() => onChange(o.key)} aria-pressed={on} aria-label={o.label || o.key}
+          <button key={o.key} onClick={() => onChange(o.key)} aria-pressed={on} aria-label={o.label || o.key} className="cx-press"
             style={{
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
-              padding: o.label ? '8px 17px' : '8px 15px', border: 'none', cursor: 'pointer',
+              // minHeight (not a cx-hit44 pseudo): the container's overflow:hidden would
+              // clip an expander, so the segment itself grows to the 44px floor.
+              minHeight: 44, padding: o.label ? '8px 17px' : '8px 15px', border: 'none', cursor: 'pointer',
               fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: on ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase',
-              color: on ? '#d8c9a4' : '#8a8175', background: on ? 'rgba(42,33,20,.7)' : 'transparent',
+              color: on ? '#d8c9a4' : 'var(--ink-muted-warm)', background: on ? 'var(--surface-brown-70)' : 'transparent',
               transition: 'background .16s, color .16s', WebkitTapHighlightColor: 'transparent',
             }}>
             {o.icon}{o.label}
@@ -251,7 +253,7 @@ export function CenteredModal({ open, label, maxWidth = 360, onClose, closeButto
       <div ref={trapRef} onClick={(e) => e.stopPropagation()}
         style={{ position: 'relative', width: '100%', maxWidth, borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid var(--hair-24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', ...boxStyle }}>
         {closeButton && (
-          <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+          <button onClick={onClose} aria-label="Close" className="cx-hit44 cx-press" style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         )}

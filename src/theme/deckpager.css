@@ -5,7 +5,8 @@
    Deckbuilder (#content L54, .page L89, pill/pip/toggle L122-184), re-tinted where
    needed. Everything sits under `.cx-decks` so it carries Deckbuilder's amethyst tokens. */
 
-.cx-decks.dpager { --nav-h: 62px; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* --nav-h now lives in tokens.css :root (the one copy) - no local redefinition. */
+.cx-decks.dpager { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 /* Top bar: the app-style Library / My Deck toggle (left) + contextual action
    pill like "Add cards to deck" (right). Matches Home/Codex chip conventions. */

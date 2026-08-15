@@ -43,12 +43,20 @@ const CARD_FILTERS = [
   ['errata', 'Errata cards'], ['linked', 'Linked'],
 ];
 
+// The Cards List/Card toggle, kept across pillar mounts (parity with DecksPager's
+// viewMemo / Collection's session). Codex remounts on every pillar switch, detail
+// push AND first-search-keystroke, so plain local state silently reverted the
+// user's choice to List (owner device report 2026-08-15). Presentation-only, so
+// it deliberately does NOT consume hardware Back (Codex review ruling).
+let cardViewMemo = 'list';
+
 export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
   const sc = scope === 'all' ? 'rules' : scope;   // stale persisted scope → Rules
   const [entries, setEntries] = useState(null);
   const [filters, setFilters] = useState({ rules: {}, cards: {} });   // Codex-only toggles (fav/marg/faq/errata/linked), per-scope
   const [filterSheet, setFilterSheet] = useState(false);
-  const [cardView, setCardView] = useState('list');   // Cards scope: list rows vs art grid (parity with the deckbuilder)
+  const [cardView, setCardView] = useState(() => cardViewMemo);   // Cards scope: list rows vs art grid (parity with the deckbuilder)
+  useEffect(() => { cardViewMemo = cardView; }, [cardView]);
 
   // Rich card filters (Cards scope) - the shared Refine engine, same as the
   // deckbuilder (element/type/rarity/set/threshold/mana/artist). Sort is left off

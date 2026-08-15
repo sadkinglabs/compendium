@@ -11,6 +11,7 @@ import { Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
 import { ChevronIcon, EditIcon, PlusIcon } from '../components/icons.jsx';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
+import SearchPill from '../components/SearchPill.jsx';
 import { safeHref } from '../util.js';
 import { haptic } from '../native.js';
 import { activeProfileId } from '../store/profileRepository.js';
@@ -460,11 +461,8 @@ function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
         <div className="ob-header"><h2>Change Avatar</h2><button className="sheet-close" onClick={onClose} aria-label="Close">{XSvg}</button></div>
         <div className="ob-step2">
           <div className="ob-search-pill-wrap">
-            <div className={`ob-search-pill${q ? ' has-text' : ''}`}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search avatars…" autoComplete="off" />
-              {q && <button className="search-clear-btn" onClick={() => setQ('')} aria-label="Clear">{XSvg}</button>}
-            </div>
+            {/* Canonical chassis (D2); scheduling stays with this owner. */}
+            <SearchPill inline value={q} onChange={setQ} placeholder="Search avatars…" ariaLabel="Search avatars" />
           </div>
           {sel && (
             <div className="ob-preview">

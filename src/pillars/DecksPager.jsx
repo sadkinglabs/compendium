@@ -53,6 +53,12 @@ let deckListCache = { pid: null, decks: null };
 // object - jump to My Deck), even when the deck id is unchanged.
 let viewMemo = { view: null, ref: null };
 
+// Library search text, kept across pillar mounts - parity with Collection, whose
+// refine session already survives an unmount (the search-contract rule: pillar-level
+// search state persists; sheet-level search resets). Profile-keyed like the deck
+// list cache so a switch never shows another profile's query.
+let libQMemo = { pid: null, q: '' };
+
 export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards, deckOpen, onOpenDeck, onOpenCodex, onChanged, editMode, onEditMode, rev, pillSlot }) {
   const [view, setView] = useState(() =>
     deckOpen ? ((viewMemo.ref === deckOpen && viewMemo.view) || 'mydeck') : 'library');
@@ -62,7 +68,10 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
     try { return activeProfileId() === deckListCache.pid ? deckListCache.decks : null; }
     catch { return null; }
   });
-  const [libQ, setLibQ] = useState('');
+  const [libQ, setLibQ] = useState(() => {
+    try { return activeProfileId() === libQMemo.pid ? libQMemo.q : ''; } catch { return ''; }
+  });
+  useEffect(() => { try { libQMemo = { pid: activeProfileId(), q: libQ }; } catch { /* pre-boot */ } }, [libQ]);
   // Deck-actions FAB state (Deckbuilder's #deck-fab menu).
   const [meta, setMeta] = useState(null);            // loaded deck (for star state)
   const [rarityOn, setRarityOn] = useState(false);   // Rarity-colours toggle

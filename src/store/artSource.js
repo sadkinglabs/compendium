@@ -96,22 +96,30 @@ export function visibleCandidate(state, propKey) {
 }
 
 /**
- * The first-paint display decision for a framed card image - pure, so the no-refade rule is testable
+ * The first-paint display decision for a framed card image - pure, so the reveal rule is testable
  * without a DOM. `painted` is passed IN (artCache owns that registry, alongside the quarantine/clear
  * lifecycles that evict from it); this module stays stateless.
  *
- * A key that has already painted this session shows at once: no shimmer, no opacity transition. A key
- * that has not - a genuine first load, a re-download after quarantine, anything after a cache clear -
- * keeps today's behaviour exactly: shimmer while decoding, then the .3s fade.
- * @param {{ src: string|null, gen: number, loadedSrc: string|null, loadedGen: number, painted: boolean }} p
+ * REVEAL CONTRACT (owner rulings 2026-08-15, two rounds):
+ *   - NOTHING is visible before THIS {src, gen}'s own decode. The old "painted shows at once" rule
+ *     put a remounted <img> at opacity 1 before its load event - on the WebView that frame can be
+ *     the broken-image glyph (builds 232-234 forensics; owner saw it in Codex Cards).
+ *   - AVAILABLE art carries NO ceremony (owner ruling round 2): `local` (an on-device cached file)
+ *     or `painted` (already shown this session) means no shimmer and NO fade - the image appears
+ *     the frame it rasters, which for a local file is effectively immediate. The shimmer exists to
+ *     cover a DOWNLOAD, nothing else. Seam-safety: the measured raster seam sits at img-left+512px;
+ *     CardArt renders thumbnails/tiles under 512px wide, so a fade is not load-bearing here (ArtImg,
+ *     which paints the big heroes, keeps its own artReveal contract).
+ *   - A genuine remote first-load keeps the full ceremony: shimmer while downloading, .3s fade in.
+ * @param {{ src: string|null, gen: number, loadedSrc: string|null, loadedGen: number, painted: boolean, local?: boolean }} p
  * @returns {{ shown: boolean, shimmer: boolean, transition: string }}
  */
-export function paintState({ src, gen, loadedSrc, loadedGen, painted }) {
+export function paintState({ src, gen, loadedSrc, loadedGen, painted, local = false }) {
   const decoded = !!src && loadedSrc === src && loadedGen === gen;
-  const shown = !!src && (painted || decoded);
+  const available = painted || local;
   return {
-    shown,
-    shimmer: !!src && !shown,
-    transition: painted ? 'none' : 'opacity .3s ease',
+    shown: decoded,
+    shimmer: !!src && !decoded && !available,
+    transition: available ? 'none' : 'opacity .3s ease',
   };
 }

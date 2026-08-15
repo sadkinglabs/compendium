@@ -146,6 +146,11 @@
   --i-xs: 12px; --i-sm: 14px; --i-md: 16px; --i-lg: 20px; --i-xl: 26px;
   --blur-scrim: 6px; --blur-chip: 8px; --blur-pill: 14px;
 
+  /* bottom-nav height - the ONE copy. Consumed by .cx-nav, .cx-dock, the pillar
+     scroller reserve (App.jsx S.body) and deckpager's .dpage-scroll; changing the
+     nav height is a one-line edit here, not a four-file hunt. */
+  --nav-h: 62px;
+
   /* warm-black surface scale (the shipped sheet/well/tile/glass blacks) */
   --sheet-grad: linear-gradient(180deg, #151109, #0b0806);
   --surface-well-warm: rgba(18, 16, 13, .85);
@@ -233,8 +238,10 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 
 /* ── Bottom nav - in the Deckbuilder (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
-.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-.cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
+.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(var(--nav-h) + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+/* No :active wash on the nav (owner ruling, round 2): the active tab already
+   illuminates gold, so a press wash was redundant. Tap-highlight stays suppressed. */
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
@@ -262,17 +269,29 @@ input, textarea { -webkit-user-select: text; user-select: text; }
    keyboard focus ring (gold, :focus-visible only) win. */
 .cx-rail-letter { all: unset; }
 .cx-rail-letter:focus-visible { outline: 2px solid var(--gold-leaf); outline-offset: 2px; border-radius: 3px; }
-.cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(62px + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
+.cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
 .cx-dock-search { flex: 1; min-width: 0; }
 .cx-dock-fab { flex: none; position: relative; }   /* anchor for the stacked add FAB (My Collection edit mode) */
 .cx-dock > * > * { pointer-events: auto; }
 
 /* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
-.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: var(--r-pill); background: rgba(10,10,12,.58); border: 1px solid var(--hair-glass); backdrop-filter: blur(var(--blur-pill)); -webkit-backdrop-filter: blur(var(--blur-pill)); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }
-.cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 0; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; }
+/* In-sheet / in-panel mount of the SAME chassis: 48px, softer shadow, no portal. */
+.cx-search-pill--inline { height: 48px; box-shadow: 0 2px 10px rgba(0,0,0,.35); }
+.cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; padding: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
+
+/* ── §5 touch-floor + press utilities for inline-styled chrome controls. ──
+   .cx-hit44 extends the TOUCH box to 44px (the shipping floor) without moving a
+   pixel of the visual - the pseudo is invisible and part of the button's hit test.
+   .cx-press is the Manuscript press state (D1: brightness lift, no ripple) - filter
+   composes over inline backgrounds, which class background rules cannot override. */
+.cx-hit44 { position: relative; -webkit-tap-highlight-color: transparent; }   /* inline position (e.g. absolute) wins where set - the pseudo anchors either way */
+.cx-hit44::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max(100%, 44px); height: max(100%, 44px); }
+.cx-press { -webkit-tap-highlight-color: transparent; }
+.cx-press:active { filter: brightness(1.22); }
 /* Sub-entry disclosure - Material expand_more: a chevron in a circular icon
    button that rotates 180° (down → up) when the group is expanded. */
 .cx-sub-chevron { background: none; border: none; color: var(--ink-muted); cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; -webkit-tap-highlight-color: transparent; transition: transform .24s cubic-bezier(.4,0,.2,1), color .2s ease, background .2s ease; }

@@ -64,11 +64,23 @@ test('visibleCandidate returns null on a key mismatch (no stale paint on a recyc
 /* ------------------------------------------------------------------ */
 import { paintState } from './artSource.js';
 
-test('a painted key shows at once: no shimmer, no transition', () => {
+test('a painted key stays HIDDEN until its own decode, but carries NO ceremony', () => {
+  // Two owner rulings, 2026-08-15: (1) pre-load visibility painted the WebView's broken-image
+  // glyph (Codex Cards) - visibility gates on THIS identity's load, no exceptions; (2) available
+  // art shows immediately once rastered - the shimmer/fade exist to cover a DOWNLOAD, nothing else.
   const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: true });
-  assert.equal(p.shown, true, 'painted must not wait for a fresh decode');
-  assert.equal(p.shimmer, false);
-  assert.equal(p.transition, 'none', 'a .3s transition would replay the fade the fix removes');
+  assert.equal(p.shown, false, 'no identity is visible before ITS load event');
+  assert.equal(p.shimmer, false, 'warm keys must not replay the loading affordance');
+  assert.equal(p.transition, 'none', 'available art appears the frame it rasters - no fade');
+});
+
+test('a LOCAL candidate (on-device cached file) is available: no shimmer, no fade, still load-gated', () => {
+  const waiting = paintState({ src: 'cap://f/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: false, local: true });
+  assert.equal(waiting.shown, false, 'even a local file waits for its own decode (glyph guard)');
+  assert.equal(waiting.shimmer, false, 'a local file is not downloading - nothing to advertise');
+  assert.equal(waiting.transition, 'none');
+  const done = paintState({ src: 'cap://f/k', gen: 0, loadedSrc: 'cap://f/k', loadedGen: 0, painted: false, local: true });
+  assert.equal(done.shown, true, 'shows the frame it rasters');
 });
 
 test('REVERSE REGRESSION: an unpainted key still shimmers and still fades', () => {

@@ -113,6 +113,19 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set, foil) => { setSheetCard(cardId || null); setSheetSet(set || null); setSheetFoil(foil); }, []);
   const go = (v) => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
+  // Hardware Back mirrors the on-screen back for the HIERARCHICAL layers only:
+  // set drill -> Sets, list detail -> Lists. The view pills and the Sets/All toggle
+  // are presentation state and deliberately do NOT consume Back - inventing history
+  // for a display preference would make Back silently change it (Codex review).
+  // LIFO: children (sheets, select mode) register later, so they still peel first.
+  useEffect(() => {
+    if (!setDrill) return undefined;
+    return registerBackConsumer(() => { closeSet(); return true; });
+  }, [setDrill, closeSet]);
+  useEffect(() => {
+    if (!listOpen) return undefined;
+    return registerBackConsumer(() => { setListOpen(null); return true; });
+  }, [listOpen]);
   const goAdd = () => go('cards');   // adding starts by choosing a set; the steppers are always live
   const pills = (
     <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -327,7 +340,7 @@ function ImportTextSheet({ open, onClose }) {
             )}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>‹ Back</button>
+            <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
             <button onClick={confirm} disabled={busy || nItems === 0} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy || nItems === 0 ? 0.5 : 1 }}>
               {busy ? 'Importing…' : `Import ${totalCopies}`}
             </button>
@@ -594,7 +607,7 @@ function WishlistImportSheet({ open, onClose, onCommitted }) {
             )}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button onClick={() => setDraft(null)} disabled={committing} style={{ ...BTN_GHOST, flex: 1, opacity: committing ? 0.5 : 1 }}>‹ Back</button>
+            <button onClick={() => setDraft(null)} disabled={committing} style={{ ...BTN_GHOST, flex: 1, opacity: committing ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
             <button onClick={confirm} disabled={phase !== 'idle' || !view.ready} style={{ ...BTN_GOLD, flex: 1.4, justifyContent: 'center', opacity: phase === 'idle' && view.ready ? 1 : 0.5 }}>
               {committing ? 'Adding…' : view.ctaLabel}
             </button>
@@ -1483,6 +1496,7 @@ function AddToListSheet({ open, count, onPick, onClose }) {
 // edits (commits live through onStep(card, delta)), or hit Select to enter
 // multi-select - tap rows to check them, then one "Add N" bar commits them all at
 // +1. Shared by every list and the Wishlist.
+const ADD_SHEET_RENDER_CAP = 80;   // render cap only - selection/Select-all always cover the full result
 function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summarise = () => null }) {
   const [q, setQ] = useState('');
   const [pool, setPool] = useState(null);
@@ -1530,8 +1544,8 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
   return (
     <BottomSheet open={open} title={title} onClose={onClose}>
       {hint && !selectMode && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>{hint}</div>}
-      <input value={q} autoFocus onChange={(e) => setQ(e.target.value)}
-        placeholder="Search the library - e:water set:beta…" style={{ ...SHEET_INPUT, height: 46 }} />
+      <SearchPill inline autoFocus value={q} onChange={setQ}
+        placeholder="Search the library - e:water set:beta…" ariaLabel="Search the library" />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, margin: '12px 2px 2px' }}>
         {!selectMode ? (
           <>
@@ -1552,7 +1566,7 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
           </>
         )}
       </div>
-      {pool == null ? <Loading /> : shown.map((c, i) => {
+      {pool == null ? <Loading /> : shown.slice(0, ADD_SHEET_RENDER_CAP).map((c, i) => {
         const inList = membership.get(c.card_id) || 0;
         const setName = listSetName(c);
         const isSel = selected.has(c.card_id);
@@ -1588,6 +1602,13 @@ function AddCardsSheet({ open, onClose, title, hint, membership, onStep, summari
           </div>
         );
       })}
+      {/* Honest cap note: only the RENDER is capped (each row mounts a CardArt, and an
+          empty query is the whole catalogue) - Select all still covers every match. */}
+      {pool != null && shown.length > ADD_SHEET_RENDER_CAP && (
+        <div style={{ font: "italic 400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', padding: '12px 0' }}>
+          Showing the first {ADD_SHEET_RENDER_CAP} of {shown.length} - refine the search to see the rest. Select all covers all {shown.length}.
+        </div>
+      )}
       {/* Running batch bar - sticks to the sheet's scroll floor while you check rows. */}
       {selectMode && selected.size > 0 && (
         <div style={{ position: 'sticky', bottom: 0, marginTop: 8, padding: '12px 0 2px', background: 'linear-gradient(0deg, #0b0806 68%, transparent)' }}>
@@ -2102,12 +2123,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     <div style={{ padding: '0 20px' }}>
       {/* Header: frosted back + name/eyebrow + a live owned/goal tally. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4, marginBottom: 14 }}>
+        {/* Same 44px gold-circle back as the set drill (the app's one circular back family);
+            the old 38px rose version was the only nav control on the stray 224,169,177 palette. */}
         <button onClick={() => { flushRef.current(); onBack(); }} aria-label="Back to lists" style={{
-          width: 38, height: 38, flex: 'none', borderRadius: '50%', cursor: 'pointer',
+          width: 44, height: 44, margin: -3, flex: 'none', borderRadius: '50%', cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          font: "400 22px/1 var(--f-ui)", color: '#d3a8af',
-          background: 'rgba(224,169,177,.07)', border: '1px solid rgba(224,169,177,.22)',
-        }}>‹</button>
+          color: 'var(--gold-leaf)', background: 'transparent', border: '1px solid var(--hair-40)',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
           {/* The Wishlist's name already says "Wishlist" - a WISHLIST eyebrow under it just read twice. */}
