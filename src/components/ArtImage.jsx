@@ -7,6 +7,7 @@
 // every render site (card art is CDN-served + on-device cached). See art-cdn-rev2-architecture.md B4.
 import { useReducer, useEffect, useCallback, useState } from 'react';
 import { reduce, initial, visibleCandidate, paintState } from '../store/artSource.js';
+import { initialReveal, revealReduce, revealPresentation, SETTLE_AFTER_MS } from '../store/artReveal.js';
 import { artCache } from '../store/artCacheInstance.js';
 
 /**
@@ -47,57 +48,42 @@ export function useArtSource(key) {
  * inside .map() (it is a component, so the hook is called once per instance). `artKey` is the
  * content-addressed key (a printing/card `image_slug` after the Phase-2 repoint).
  */
-// SEAM-FREE REVEAL. Frame-by-frame device capture (builds 232-233, rec2/rec3)
-// pinned the Library "streak" and the My Deck "broken image" to the img's OWN
-// compositor layer: a bright 2-3px vertical line at screen x~1010 = img left
-// edge (~495; the card hero is 64% wide = 813px) + 512, Chromium's raster tile
-// width - a texture-edge bleed where a not-yet-uploaded tile meets an uploaded
-// one on the img's first visible frame. It was never the pillar entrance (the
-// seam survived a build with fade-only entrances), and instant reveals cannot
-// fix it: hiding at opacity 0 skips raster entirely, and pre-rastering at 2%
-// opacity was defeated by tile priorities - the flip still outran the upload
-// (rec3 f049: full-brightness seam one frame before the art).
-//
-// The cure stops RACING the tile pipeline and rides it instead: reveal through
-// a short compositor-driven opacity TRANSITION. Tiles that land staggered do so
-// during the low-alpha ramp where a seam is arithmetically invisible (155 * 7%
-// ~ 11/255 on frame one); by the time alpha is high, every tile is up. This is
-// exactly why the framed CardArt path - which has always faded - never seamed.
-// The paint-once cache keeps the contract: a key that has painted this session
-// renders instantly with no fade (warm re-entries stay blink-free).
-const FADE = 'opacity .16s linear';
-// VISIBILITY FOLLOWS THIS ELEMENT'S OWN LIFECYCLE, never the key's history.
-// rec6 f016 caught the My Deck "broken image": the hero's first src transiently
-// ERRORS (the Cap-8 lesson again - the candidate chain recovers one frame
-// later), and the paint-once fast path made the failing img visible from mount,
-// so the browser's broken-image glyph painted for a frame. hasPainted now
-// decides only HOW a loaded img appears (instantly vs the seam-masking fade);
-// an img that has not fired load for its CURRENT src is never visible, so an
-// error state has nothing to paint and the chain swaps src invisibly.
+// REVEAL CONTRACT (Codex-approved Option A, docs/proposals/decks-swap-artifacts.md;
+// decisions live in the pure, tested artReveal.js):
+//   - every new {src, gen} identity mounts HIDDEN, warm cache history included -
+//     that history was granting pre-load visibility, which is how the failing
+//     hero painted the broken-image glyph (rec6 f016) and how warm remounts
+//     revealed their first raster instantly (the measured Library streak on the
+//     within-pillar swap);
+//   - only this element's own load starts the reveal, which is a compositor
+//     opacity transition: 160ms cold, 90ms warm - warm shortens, never skips;
+//   - the transition lives in CSS classes (tokens.css cx-art-reveal*) so the
+//     reduced-motion rendering-integrity exception is plain CSS specificity;
+//   - the settle timer is identity-checked in the reducer, so it can never
+//     settle a replacement {src, gen}.
+// Measurement vs inference: the fixed seam x (img left edge + 512) and the
+// fade's measured effect (detector spike ~77k -> 0 on the cold path, build 234)
+// are observations; "tiles finishing upload after their neighbour" is the
+// consistent inference, not directly observed Chromium state.
 export function ArtImg({ artKey, alt = '', ...imgProps }) {
   const { src, gen, onError } = useArtSource(artKey || null);
-  const [phase, setPhase] = useState({ id: null, at: 'wait' });
+  const [reveal, dispatchReveal] = useReducer(revealReduce, initialReveal);
   const id = `${gen}|${src}`;
   if (!src) return null;
-  const at = phase.id === id ? phase.at : 'wait';
+  const p = revealPresentation(reveal, id);
   const onLoad = () => {
-    if (artKey && artCache.hasPainted(artKey)) { setPhase({ id, at: 'settled' }); return; }   // warm: instant, no fade
-    // Cold: fade on the compositor (masks raster-tile arrival - see above), then
-    // drop the inline styles once it is safely over.
-    setPhase({ id, at: 'show' });
+    dispatchReveal({ type: 'LOADED', id, warm: !!artKey && artCache.hasPainted(artKey) });
     if (artKey) artCache.markPainted(artKey);
-    setTimeout(() => setPhase((p) => (p.id === id && p.at === 'show' ? { id, at: 'settled' } : p)), 300);
+    setTimeout(() => dispatchReveal({ type: 'SETTLED', id }), SETTLE_AFTER_MS);
   };
-  const reveal = at === 'settled' ? null
-    : at === 'show' ? { opacity: 1, transition: FADE }
-    : { opacity: 0, transition: 'none' };
   // imgProps (className/style/loading/aria-hidden/...) pass through; src + onError are the boundary's,
   // placed last so a stray caller prop can never override the candidate-chain error handling.
   return (
     <img key={gen} alt={alt} {...imgProps}
-      style={{ ...(imgProps.style || null), ...reveal }}
+      className={[imgProps.className, p.className].filter(Boolean).join(' ') || undefined}
+      style={{ ...(imgProps.style || null), ...p.style }}
       src={src}
-      onLoad={at === 'settled' ? undefined : onLoad}
+      onLoad={p.revealed ? undefined : onLoad}
       onError={onError} />
   );
 }

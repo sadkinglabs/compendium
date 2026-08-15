@@ -2,10 +2,25 @@
 
 ## Status and classification
 
-Draft, for Codex adversarial review before any further implementation. Risk: Standard
-(rendering boundary only, no data writes) - but the defect has now SURVIVED four shipped
-fixes, so the bar here is "convince us the mechanism is fully understood", not "try the
-next patch". Owner directive: stop iterating, get review.
+RESOLVED 2026-08-15. Codex disposition: Changes required - Option A approved with an
+implementation contract (every new {src, gen} begins hidden; only its own load reveals,
+always through a fade - warm may shorten to 90ms only if measured clean; reduced-motion
+gets a narrow rendering-integrity exception; reveal decision independently tested; diag
+scripts runnable; measurement kept distinct from compositor inference). Implemented on
+this branch: pure `artReveal.js` + tests, ArtImg rewritten over it, `cx-art-reveal*`
+classes with the specificity-based reduced-motion exception (recorded in
+DESIGN_SYSTEM.md), diag scripts ported to sharp (validated by reproducing the rec2
+x=1010 spike). Device-verified on build 235, installed app, frame recordings + detector:
+warm Library ⇄ My Deck swap CLEAN in both default and reduced-motion (animator scale 0)
+configurations - no spike in the img-edge+512 family, no glyph, hero lands whole; the
+90ms warm fade is therefore retained per contract. Owner confirmed on device. Option B
+rejected by review; the transient local-file error remains an owner follow-up if
+retries ever become user-visible.
+
+(Original brief follows.) Risk: Standard (rendering boundary only, no data writes) -
+the defect had SURVIVED four shipped fixes, so the bar was "convince us the mechanism
+is fully understood", not "try the next patch". Owner directive: stop iterating, get
+review.
 
 ## The symptoms (owner-reported, device: Pixel, Android 16, WebView Chromium)
 

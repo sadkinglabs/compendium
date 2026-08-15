@@ -47,17 +47,21 @@ The branch is merged and its row is gone per the rule above. These outlived it a
 
 ### Left behind by `art-first-paint` + `deck-badge-settle` (both merged 2026-08-13)
 
-- **The Library streak: mechanism REMOVED 2026-08-14** (owner made the call the previous entry was
-  waiting on, after the streak survived the caches). Frame instrumentation across builds 226-231 had
-  pinned it: a 1-2 frame vertical seam at screen x=1009-1012 - compositor tile boundary 1024 minus
-  the slide offset - appearing only when content rasterises DURING the pillar entrance translate.
-  The fix deletes the translate rather than racing it: `cxPillarR/L` and `cxSlideIn` are now
-  FADE-ONLY (tokens.css), so there is no transformed layer for a late tile to seam against; the
-  directional 34px travel is gone app-wide. In the same pass, bare `ArtImg` gained ATOMIC PAINT
-  (invisible until the load event, paint-once cache keeps warm entries instant), closing the
-  progressive-decode "broken image" the owner saw on the My Deck hero. Pending owner device
-  confirmation on build 232; if the seam somehow survives a build with no entrance transform, the
-  characterization itself is wrong and the next stop is a screen recording, not another patch.
+- **The Library streak / My Deck broken image: CLOSED 2026-08-15** - and the 226-231
+  characterization was WRONG, exactly as the previous entry's falsifier predicted (the seam survived
+  build 232's transform-free entrances; a screen recording followed, as promised). Frame forensics
+  (builds 232-234, `scripts/diag/seam.mjs`) relocated it: the img's OWN layer, at img-left-edge +
+  512px - "tile boundary 1024 minus slide offset" was numerology summing to the same x. The
+  broken image was the hero's transiently-failing first src painting the browser error glyph
+  because paint-once key history granted pre-load visibility. Fix (Codex-reviewed, Option A
+  contract, `docs/proposals/decks-swap-artifacts.md`): every ArtImg identity mounts hidden and
+  reveals via compositor fade (160ms cold / 90ms warm - measured clean at 90), with a recorded
+  reduced-motion rendering-integrity exception (DESIGN_SYSTEM.md). Device-verified detector-clean
+  in both motion configs on build 235; owner confirmed. OPEN REMAINDERS: (1) the fade-only pillar
+  entrance (232) was collateral of the disproven hypothesis - the 34px directional slide was
+  innocent and could return if the owner wants it; owner call. (2) WHY a just-cached local file
+  transiently errors is unexplained; recovery is safe and invisible, so it is a follow-up only if
+  retries ever become user-visible.
 - **First entry per session still settles once** on Decks (and art fades once) - the module caches
   have nothing to seed from until each subsystem has run once. Accepted as the design's contract; a
   persisted cache would be new machinery for one transition per launch.

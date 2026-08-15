@@ -191,6 +191,16 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 }
+/* RENDERING-INTEGRITY EXCEPTION (recorded in DESIGN_SYSTEM.md - Motion): the ArtImg
+   opacity reveal is not decorative motion. Removing it re-exposes the image layer's
+   first-raster frame, where a transient bright tile-boundary line was measured on
+   device (builds 232-234; docs/proposals/decks-swap-artifacts.md) - so the reveal
+   keeps its duration under reduce-motion. Codex-approved (Option A contract). It is
+   non-spatial (opacity only) and 90-160ms. `body img.cx-art-reveal` (0-1-2) outranks
+   both `body.reduce-motion *` (0-1-1) and the media-query universal (0-0-0) among
+   !important declarations; this is deliberate specificity, do not "simplify" it. */
+body img.cx-art-reveal { transition: opacity .16s linear !important; }
+body img.cx-art-reveal-warm { transition-duration: .09s !important; }
 
 /* Boot splash: the gold diamond glimmers while it fills, matching the static
    #boot-splash in index.html so the pre-React HTML and the React <Splash> read as
