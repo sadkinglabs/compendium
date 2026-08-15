@@ -113,6 +113,19 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set, foil) => { setSheetCard(cardId || null); setSheetSet(set || null); setSheetFoil(foil); }, []);
   const go = (v) => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
+  // Hardware Back mirrors the on-screen back for the HIERARCHICAL layers only:
+  // set drill -> Sets, list detail -> Lists. The view pills and the Sets/All toggle
+  // are presentation state and deliberately do NOT consume Back - inventing history
+  // for a display preference would make Back silently change it (Codex review).
+  // LIFO: children (sheets, select mode) register later, so they still peel first.
+  useEffect(() => {
+    if (!setDrill) return undefined;
+    return registerBackConsumer(() => { closeSet(); return true; });
+  }, [setDrill, closeSet]);
+  useEffect(() => {
+    if (!listOpen) return undefined;
+    return registerBackConsumer(() => { setListOpen(null); return true; });
+  }, [listOpen]);
   const goAdd = () => go('cards');   // adding starts by choosing a set; the steppers are always live
   const pills = (
     <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>

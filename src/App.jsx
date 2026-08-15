@@ -294,7 +294,10 @@ export default function App() {
       return;
     }
     // Remember where we were in the list so Back returns to that scroll position.
-    const scrollTop = document.querySelector('.cx-scroll')?.scrollTop || 0;
+    // #cx-pillar-scroll, not .cx-scroll: several elements carry the class (modal
+    // scrollers, Collection's horizontal chip row portaled ABOVE the body), and a
+    // global class query can grab the wrong one in DOM order.
+    const scrollTop = document.getElementById('cx-pillar-scroll')?.scrollTop || 0;
     setHistory((h) => [...h, { detail, query, scrollTop }]);
     setDetail({ kind, id, title, target }); setQuery('');   // target = optional block id to scroll to
     if (['card', 'rule'].includes(kind) && title) setResume(kind, id, title).catch(() => {});
@@ -307,7 +310,7 @@ export default function App() {
       // Restore the list scroll position once the list (search results or browse) re-renders.
       const y = prev?.scrollTop || 0;
       const restore = (tries) => requestAnimationFrame(() => {
-        const el = document.querySelector('.cx-scroll');
+        const el = document.getElementById('cx-pillar-scroll');
         if (el && (el.scrollHeight > y + el.clientHeight || tries <= 0)) el.scrollTop = y;
         else if (tries > 0) restore(tries - 1);   // wait for async search results to fill height
       });
@@ -497,7 +500,7 @@ export default function App() {
           editMode={deckEditMode} onEditMode={setDeckEditMode}
           onAddCards={() => deckOpen && enterAdd(deckOpen.id, deckOpen.name)} rev={rev} />
       ) : (
-      <div className="cx-scroll" style={S.body}>
+      <div id="cx-pillar-scroll" className="cx-scroll" style={S.body}>
         {addActive ? (
           <DeckAddCards deckId={addMode.deckId} q={addQuery} setQ={setAddQuery}
             filterOpen={addFilterOpen} setFilterOpen={setAddFilterOpen}
