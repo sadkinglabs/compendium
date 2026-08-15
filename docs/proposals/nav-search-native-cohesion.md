@@ -226,6 +226,14 @@ Ordering rationale: 0-2 are pure wins with no visual redesign; 3-4 fix the daily
 
 ---
 
+## 9b. Phase outcomes (2026-08-15, measured on the Pixel, agent-run per owner instruction)
+
+**Phase 4: CLOSED - no change.** The measurement it was gated on ran on-device (CDP + Event Timing API, build 239): 13 live keystrokes in Codex universal search with `searchAll` ticking = ZERO events over 16ms and one 66ms long task (initial results mount); deleting back to empty (the old remount cliff) = zero entries over threshold, because the hidden-mount fix (388d359) removed the cliff structurally. The High-risk profile-scoped caching (G11) is NOT justified by user-perceivable evidence and does not proceed. G13/G14 remain recorded as hygiene, unscheduled.
+
+**D7 OVERTURNED by owner ruling 2026-08-15: frosted glass IS the aesthetic; performance is not a veto on modern devices.** Phase 5's blur-measurement gate is void; its remaining gate is visual approval of the AppBar itself. Related: the glass had been silently dead in .css files since the Vite 8 upgrade (minifier shipped only the `-webkit-` alias, which WebView Chromium 150 dropped) - resurrected in 57f4d79, device-verified.
+
+**Phase 6 precondition satisfied:** scripts/diag/seam.mjs + timeline.mjs already import `sharp` (Codex's `pngjs` finding was against an older tree) and load cleanly. Phase 6 remains High-risk and, per this plan's own gate, gets an in-phase mini-proposal before code.
+
 ## 9. Implementation log + owner device checklist (Phases 0-3)
 
 SHIPPED to branch `nav-search-cohesion` (2026-08-15): Phase 0 `031b9a7`, Phase 1 `f0e9dd6`, Phase 2 `69c7ee2`, Phase 3 `9cae364`. Gates at each commit: `test:codex` 10/10, `test:query` pass, `test:app` 17/17, `check:types` clean, `check:cycles` 158 modules clean, `build` OK, `check:docs` pass. Phases 4-6 remain gated (Phase 4 opens with device measurement + its own mini-proposal; Phase 5 gated on the AppBar blur measurement; Phase 6 needs the forensics scripts converted off `pngjs` first).
