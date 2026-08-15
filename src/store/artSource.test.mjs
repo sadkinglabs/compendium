@@ -64,11 +64,21 @@ test('visibleCandidate returns null on a key mismatch (no stale paint on a recyc
 /* ------------------------------------------------------------------ */
 import { paintState } from './artSource.js';
 
-test('a painted key shows at once: no shimmer, no transition', () => {
+test('a painted key stays HIDDEN until its own decode - warm history only skips the shimmer and shortens the fade', () => {
+  // Supersedes the art-first-paint "painted shows at once" rule: pre-load visibility put the
+  // WebView's broken-image glyph / half-raster seam on screen (owner device report 2026-08-15,
+  // Codex Cards; same defect class the ArtImg reveal contract closed for Decks).
   const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: true });
-  assert.equal(p.shown, true, 'painted must not wait for a fresh decode');
+  assert.equal(p.shown, false, 'no identity is visible before ITS load event');
+  assert.equal(p.shimmer, false, 'warm keys must not replay the loading affordance');
+  assert.equal(p.transition, 'opacity .09s ease', 'warm = short fade, never a skipped one');
+});
+
+test('a painted key reveals through the short fade once THIS src+gen decodes', () => {
+  const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: 'cap://art/k', loadedGen: 0, painted: true });
+  assert.equal(p.shown, true);
   assert.equal(p.shimmer, false);
-  assert.equal(p.transition, 'none', 'a .3s transition would replay the fade the fix removes');
+  assert.equal(p.transition, 'opacity .09s ease');
 });
 
 test('REVERSE REGRESSION: an unpainted key still shimmers and still fades', () => {

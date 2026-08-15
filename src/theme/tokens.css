@@ -242,7 +242,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
 /* Manuscript press state (owner ruling D1: no JS ripple) - a soft gold wash. The
    nav was the ONE surface still showing the WebView's default grey tap highlight. */
-.cx-nav-btn:active { background: rgba(220,184,111,.07); }
+.cx-nav-btn:active { background: rgba(220,184,111,.13); }
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }

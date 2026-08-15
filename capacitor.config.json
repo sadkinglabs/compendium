@@ -3,6 +3,9 @@
   "appName": "Compendium",
   "webDir": "dist",
   "plugins": {
+    "SystemBars": {
+      "insetsHandling": "disable"
+    },
     "Keyboard": {
       "resize": "none",
       "resizeOnFullScreen": true

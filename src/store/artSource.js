@@ -96,22 +96,25 @@ export function visibleCandidate(state, propKey) {
 }
 
 /**
- * The first-paint display decision for a framed card image - pure, so the no-refade rule is testable
+ * The first-paint display decision for a framed card image - pure, so the reveal rule is testable
  * without a DOM. `painted` is passed IN (artCache owns that registry, alongside the quarantine/clear
  * lifecycles that evict from it); this module stays stateless.
  *
- * A key that has already painted this session shows at once: no shimmer, no opacity transition. A key
- * that has not - a genuine first load, a re-download after quarantine, anything after a cache clear -
- * keeps today's behaviour exactly: shimmer while decoding, then the .3s fade.
+ * REVEAL CONTRACT (aligned with artReveal.js, the Decks/ArtImg fix - owner device report 2026-08-15
+ * saw the broken-image artifact in Codex Cards, the last CardArt-only holdout of the old rule):
+ *   - NOTHING is visible before THIS {src, gen}'s own decode. The old "painted shows at once" rule
+ *     put a remounted <img> at opacity 1 before its load event - on the WebView that frame can be
+ *     the broken-image glyph or a half-rastered seam (builds 232-234 forensics).
+ *   - Warm history (painted) still buys what it safely can: NO shimmer replay on a pillar switch,
+ *     and a SHORT fade (90ms, = REVEAL_WARM_MS) instead of the cold .3s.
  * @param {{ src: string|null, gen: number, loadedSrc: string|null, loadedGen: number, painted: boolean }} p
  * @returns {{ shown: boolean, shimmer: boolean, transition: string }}
  */
 export function paintState({ src, gen, loadedSrc, loadedGen, painted }) {
   const decoded = !!src && loadedSrc === src && loadedGen === gen;
-  const shown = !!src && (painted || decoded);
   return {
-    shown,
-    shimmer: !!src && !shown,
-    transition: painted ? 'none' : 'opacity .3s ease',
+    shown: decoded,
+    shimmer: !!src && !decoded && !painted,
+    transition: painted ? 'opacity .09s ease' : 'opacity .3s ease',
   };
 }
