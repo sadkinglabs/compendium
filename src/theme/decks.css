@@ -88,7 +88,11 @@
 .cx-decks .es-copy-btn:active { background:rgba(220,184,111,.14); }
 
 /* Deck Spread sheet (#deckcards-sheet) - full-art grid, Deck/Shuffle toggle */
-.cx-decks .ds-lbl { font:600 10px/1 var(--f-display); letter-spacing:.14em; text-transform:uppercase; color:#cba75f; padding:10px 14px 7px; position:sticky; top:0; z-index:2; background:linear-gradient(180deg,#0e0b08 70%,rgba(14,11,8,0)); }
+/* Anchored zone label (Deck Spread). OPAQUE ground - the old gradient faded to
+   transparent and tiles bled through the stuck label's lower third; z-index 3
+   beats the ×N badges (z2), which used to pierce it. top -14 pins flush against
+   the pinned sheet header, cancelling the scroller's top padding. */
+.cx-decks .ds-lbl { font:600 10px/1 var(--f-display); letter-spacing:.14em; text-transform:uppercase; color:#cba75f; padding:10px 14px 7px; position:sticky; top:-14px; z-index:3; background:#100c08; box-shadow:0 6px 10px -6px rgba(10,8,6,.9); }
 .cx-decks .ds-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; padding:0 12px 12px; }
 .cx-decks .ds-tile { position:relative; border-radius:10px; overflow:hidden; border:1px solid rgba(255,255,255,.12); background:rgba(14,11,8,.7); }
 .cx-decks .ds-tile img { width:100%; height:100%; object-fit:cover; display:block; }
