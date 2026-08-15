@@ -14,7 +14,7 @@ import { paintState } from '../store/artSource.js';
 // 90° (stored portrait, displayed landscape). Default (undefined) = plain cover.
 export default function CardArt({ card, radius = 8, aspect = '5/7', children, imgStyle }) {
   const key = card?.image_slug || null;
-  const { src, gen, onError } = useArtSource(key);
+  const { src, gen, isRemote, onError } = useArtSource(key);
   // Loaded identity is {src, gen}: a quarantine re-resolve remounts the same uri under a new gen,
   // and matching on src alone would count the fresh <img> as already decoded (stale frame, no
   // shimmer). Both must match to fade in.
@@ -27,6 +27,7 @@ export default function CardArt({ card, radius = 8, aspect = '5/7', children, im
   const { shown, shimmer, transition } = paintState({
     src, gen, loadedSrc: loaded.src, loadedGen: loaded.gen,
     painted: !!key && artCache.hasPainted(key),
+    local: !!src && !isRemote,   // an on-device cached file is AVAILABLE - no shimmer, no fade (owner ruling)
   });
   return (
     <div style={{ position: 'relative', aspectRatio: aspect, borderRadius: radius, overflow: 'hidden', background: cardFallbackArt(card), border: '1px solid var(--hair-18, rgba(220,184,111,.18))' }}>

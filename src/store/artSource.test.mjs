@@ -64,21 +64,23 @@ test('visibleCandidate returns null on a key mismatch (no stale paint on a recyc
 /* ------------------------------------------------------------------ */
 import { paintState } from './artSource.js';
 
-test('a painted key stays HIDDEN until its own decode - warm history only skips the shimmer and shortens the fade', () => {
-  // Supersedes the art-first-paint "painted shows at once" rule: pre-load visibility put the
-  // WebView's broken-image glyph / half-raster seam on screen (owner device report 2026-08-15,
-  // Codex Cards; same defect class the ArtImg reveal contract closed for Decks).
+test('a painted key stays HIDDEN until its own decode, but carries NO ceremony', () => {
+  // Two owner rulings, 2026-08-15: (1) pre-load visibility painted the WebView's broken-image
+  // glyph (Codex Cards) - visibility gates on THIS identity's load, no exceptions; (2) available
+  // art shows immediately once rastered - the shimmer/fade exist to cover a DOWNLOAD, nothing else.
   const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: true });
   assert.equal(p.shown, false, 'no identity is visible before ITS load event');
   assert.equal(p.shimmer, false, 'warm keys must not replay the loading affordance');
-  assert.equal(p.transition, 'opacity .09s ease', 'warm = short fade, never a skipped one');
+  assert.equal(p.transition, 'none', 'available art appears the frame it rasters - no fade');
 });
 
-test('a painted key reveals through the short fade once THIS src+gen decodes', () => {
-  const p = paintState({ src: 'cap://art/k', gen: 0, loadedSrc: 'cap://art/k', loadedGen: 0, painted: true });
-  assert.equal(p.shown, true);
-  assert.equal(p.shimmer, false);
-  assert.equal(p.transition, 'opacity .09s ease');
+test('a LOCAL candidate (on-device cached file) is available: no shimmer, no fade, still load-gated', () => {
+  const waiting = paintState({ src: 'cap://f/k', gen: 0, loadedSrc: null, loadedGen: -1, painted: false, local: true });
+  assert.equal(waiting.shown, false, 'even a local file waits for its own decode (glyph guard)');
+  assert.equal(waiting.shimmer, false, 'a local file is not downloading - nothing to advertise');
+  assert.equal(waiting.transition, 'none');
+  const done = paintState({ src: 'cap://f/k', gen: 0, loadedSrc: 'cap://f/k', loadedGen: 0, painted: false, local: true });
+  assert.equal(done.shown, true, 'shows the frame it rasters');
 });
 
 test('REVERSE REGRESSION: an unpainted key still shimmers and still fades', () => {

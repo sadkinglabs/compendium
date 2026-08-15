@@ -506,7 +506,22 @@ export default function App() {
             filterOpen={addFilterOpen} setFilterOpen={setAddFilterOpen}
             onChanged={bump} registerCount={setAddFilterCount} />
         ) : hasQuery ? (
-          <SearchResults query={query} kind={effectiveKind} onOpen={open} onDuel={() => goTab('play')} />
+          <>
+            <SearchResults query={query} kind={effectiveKind} onOpen={open} onDuel={() => goTab('play')} />
+            {/* Codex stays MOUNTED (hidden) while a query is live. The first search
+                keystroke used to unmount the whole pillar, which killed its docked
+                filter FAB (the pill then stretched into the empty slot - owner
+                device report, build 237) and re-ran the pillar's data load on
+                every clear. Its FAB and sheets are portals, so they render
+                normally from inside the hidden subtree. */}
+            {tab === 'codex' && !viewDetail && (
+              <div style={{ display: 'none' }} aria-hidden="true">
+                <Codex scope={scope}
+                       preset={codexPreset} onPresetApplied={() => setCodexPreset(null)}
+                       onOpen={(k, id, t, tgt) => open(k, id, t, tgt)} rev={rev} />
+              </div>
+            )}
+          </>
         ) : viewDetail ? (
           <CodexDetail kind={detail.kind} id={detail.id} target={detail.target} onOpen={(kk, iid, t, tgt) => open(kk, iid, t, tgt)} onOpenName={openName}
             onOpenDeck={(id, name) => open('deck', id, name)} onChanged={bump} />
