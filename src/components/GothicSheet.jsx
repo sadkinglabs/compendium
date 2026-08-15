@@ -63,7 +63,7 @@ export default function GothicSheet({ open, onClose, label = 'Dialog', dismissib
             respected as its header while in-body sticky sections anchor below it.
             Without `header`, the handle lives in the scroller exactly as before. */}
         {header != null && (
-          <div {...handleProps} style={{ ...handleProps.style, flex: 'none', padding: '4px 0 0', background: '#100c08', borderBottom: '1px solid var(--hair-12)' }}>
+          <div {...handleProps} style={{ ...handleProps.style, flex: 'none', padding: '4px 0 0', background: '#100c08' }}>
             <div style={{ display: 'flex', justifyContent: 'center', padding: '0 0 10px' }}>
               <div style={{ width: 46, height: 5, borderRadius: 3, background: '#5a4a28' }} />
             </div>
