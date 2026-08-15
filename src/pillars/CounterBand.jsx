@@ -112,11 +112,23 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
     setGhosts((m) => ({ ...m, [key(side, fig)]: 0 }));
   };
 
-  // Steppers dismiss on any pointer-down outside them (capture phase beats the
-  // target's own handlers; the strip's figures also dismiss via onDown -> onUp).
+  // Steppers dismiss on any pointer-down outside the band - and that dismissing
+  // tap is SWALLOWED (owner report: it fell through to the life tap-zones, so
+  // closing the steppers cost a life point). Capture-phase preventDefault kills
+  // the compatibility click; a one-shot click swallower is the belt to those
+  // braces. Band interactions (figures, the steppers themselves) pass through
+  // untouched so tapping another figure still switches the steppers to it.
   useEffect(() => {
     if (!stepper) return undefined;
-    const onDoc = (e) => { if (!e.target.closest?.('.band-steppers')) setStepper(null); };
+    const onDoc = (e) => {
+      if (e.target.closest?.('.band-wrap')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const swallow = (ev) => { ev.preventDefault(); ev.stopPropagation(); };
+      document.addEventListener('click', swallow, { capture: true, once: true });
+      setTimeout(() => document.removeEventListener('click', swallow, true), 400);
+      setStepper(null);
+    };
     document.addEventListener('pointerdown', onDoc, true);
     return () => document.removeEventListener('pointerdown', onDoc, true);
   }, [stepper]);
@@ -143,7 +155,7 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
               <span className={`band-mana${ghost ? (ghost > 0 ? ' ghost-up' : ' ghost-down') : ''}`}>{shown}</span>
             ) : (
               <>
-                <ElementPip el={fig} color={EL_COLOR[fig]} size={14} />
+                <ElementPip el={fig} color={EL_COLOR[fig]} size={18} />
                 <span className={`band-thr${ghost ? (ghost > 0 ? ' ghost-up' : ' ghost-down') : ''}`}>{shown}</span>
               </>
             )}
