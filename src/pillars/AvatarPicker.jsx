@@ -8,6 +8,7 @@ import { listAvatars } from '../store/playRepository.js';
 import { listDecks } from '../store/deckRepository.js';
 import { selectionReducer, initialSelection, rolesOf, isReady, armedRole } from './avatarPickerState.js';
 import { ArtImg } from '../components/ArtImage.jsx';
+import { haptic } from '../native.js';
 
 // The reducer's role keys are the state keys ('you' | 'opponent'); the CSS uses the
 // short forms that match the hue system's naming (.role-opp, .targeting-opp).
@@ -38,7 +39,7 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
 
   useEffect(() => { listAvatars().then(setAvatars); listDecks().then(setDecks); }, []);
 
-  const pick = (a) => dispatch({ type: 'tapAvatar', card: a });
+  const pick = (a) => { haptic('light'); dispatch({ type: 'tapAvatar', card: a }); };
   const tapSlot = (role) => dispatch({ type: 'tapSlot', role });
   const pickDeck = (d) => dispatch({ type: 'pickDeck', deck: d });
 
@@ -125,6 +126,19 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         </div>
       )}
 
+      {/* Search ABOVE the grid: keyboard-open shrinks the panel from the bottom only,
+          so the results stay visible under the field (the old footer placement left a
+          sliver). The matchup also compacts while the field is focused (CSS :has). */}
+      <div className="picker-search-wrap">
+        <div className={`picker-search${q ? ' has-text' : ''}`}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={decks.length ? 'Search avatars or decks…' : 'Search avatars…'} autoComplete="off" autoCapitalize="off" spellCheck="false" enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
+          <button className="picker-search-clear" onClick={() => setQ('')} aria-label="Clear search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ width: 12, height: 12 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+      </div>
+
       <div className="picker-grid-wrap">
         <div className="avatar-grid">
           {list.map((a) => (
@@ -142,13 +156,6 @@ export default function AvatarPicker({ onConfirm, onCancel }) {
         </div>
       </div>
       <div className="picker-footer">
-        <div className={`picker-search${q ? ' has-text' : ''}`}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={decks.length ? 'Search avatars or decks…' : 'Search avatars…'} autoComplete="off" autoCapitalize="off" spellCheck="false" enterKeyHint="search" onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
-          <button className="picker-search-clear" onClick={() => setQ('')} aria-label="Clear search">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ width: 12, height: 12 }}><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
         <button className={`picker-confirm-btn${ready ? ' ready' : ''}`} onClick={() => ready && onConfirm(you, opp, deck)}>
           Continue
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: 16, height: 16 }}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>

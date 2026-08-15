@@ -559,22 +559,28 @@ body.roll-active .dd-pill { display: none !important; }
 /* â”€â”€ AVATAR PICKER SCREEN â”€â”€ */
 #picker-screen { background: linear-gradient(180deg,#0e1c14,#070f0a); position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; }
 .picker-header {
-  padding: calc(env(safe-area-inset-top, 0px) + 20px) 18px 12px;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 18px 8px;
   background: linear-gradient(180deg,rgba(24,44,30,.6),transparent); border-bottom: none;
   flex-shrink: 0; position: relative;
 }
-.picker-header h2 { font-family: var(--f-display); font-size: 23px; font-weight: 600; color: var(--gold-head); }
+.picker-header h2 { font-family: var(--f-display); font-size: 21px; font-weight: 600; color: var(--gold-head); }
 
 /* Match preview - You (pick) VS Opponent (pick), under the title. */
 /* The matchup row's geometry is declared once here and every child derives from it,
    so resizing the frames cannot drift VS off-centre or starve the pulse of room. */
 .picker-matchup {
-  display: flex; align-items: flex-start; gap: 12px; padding: 12px 20px 6px;
-  --thumb: 104px;      /* the avatar frame */
-  --halo: 12px;        /* reserved around it: the armed pulse's ring + blur live here */
+  display: flex; align-items: flex-start; gap: 12px; padding: 8px 20px 4px;
+  --thumb: 84px;       /* the avatar frame (compacted from 104 - redesign 2026-08-15: the grid is the content) */
+  --halo: 8px;         /* reserved around it: the armed pulse's ring + blur live here */
   --role-h: 10px;      /* the YOU / OPPONENT title heading each frame */
   --stack-gap: 6px;
 }
+/* Focus compaction: while the search field is focused the matchup shrinks further,
+   handing its height to the results exactly when they matter; it grows back on blur.
+   Layout state, not decoration - reduced-motion only drops the transition (globally). */
+#picker-screen:has(.picker-search input:focus) .picker-matchup { --thumb: 48px; --halo: 5px; }
+#picker-screen:has(.picker-search input:focus) .pm-hint { display: none; }
+.pm-thumb { transition: width .2s ease, height .2s ease; }
 /* A real <button>: the slot is an action (clear this role / target this role), so
    it needs button semantics and keyboard reach, not a click handler on a div. The
    reset keeps the UA's chrome out of the grimoire skin. */
@@ -686,7 +692,8 @@ body.roll-active .dd-pill { display: none !important; }
 
 .avatar-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  /* 3-across on large phones, 2 on narrow - density is the redesign's point. */
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   grid-auto-rows: max-content;
   gap: 10px; padding: 12px;
   overflow-y: auto; flex: 1;
@@ -695,7 +702,12 @@ body.roll-active .dd-pill { display: none !important; }
 }
 .avatar-card {
   border-radius: 14px; overflow: hidden;
-  background: var(--surface); border: 2px solid transparent;
+  /* THE BOX IS THE CONTRACT (constitution: graceful zero-image degradation): the
+     card reserves its square and paints a deterministic dark-jade ground itself.
+     The <img> layers on top when art lands; without it the name plate still sits
+     on a full, legible card - the old image-derived height collapsed to a husk. */
+  aspect-ratio: 1;
+  background: linear-gradient(160deg, #14261b, #0a1510); border: 2px solid transparent;
   cursor: pointer; position: relative;
   transition: border-color 0.15s, box-shadow 0.2s, transform 0.1s;
   /* <button> reset - the card is an action with real state, so it carries button
@@ -771,7 +783,9 @@ body.roll-active .dd-pill { display: none !important; }
    already render on a card holding both roles, each over the half of the ring it
    owns. Anything parented to .avatar-split would be invisible anyway - its mask
    passes only the 2px ring band, and a mask clips pseudo-element children too. */
-.avatar-card img { width: 100%; display: block; aspect-ratio: 1; object-fit: cover; object-position: center 30%; transform: scale(1.5); transform-origin: center 35%; }
+/* Absolute: the CARD owns the square (aspect-ratio above); the art is a layer on
+   it, not the source of its height - so a missing image cannot collapse the box. */
+.avatar-card img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; transform: scale(1.5); transform-origin: center 35%; }
 .avatar-card-name {
   position: absolute; bottom: 0; left: 0; right: 0;
   padding: 22px 10px 8px;
@@ -780,7 +794,13 @@ body.roll-active .dd-pill { display: none !important; }
   color: rgba(255,255,255,.9); text-align: left; letter-spacing: .2px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* Footer - search sits above Continue, both flush to the bottom edge. */
+/* Search sits ABOVE the grid (redesign 2026-08-15): with the field on top, the
+   keyboard shrinks the panel from the BOTTOM only and the results stay visible
+   under the search - the old footer placement squeezed the grid to a sliver
+   between the matchup and the keyboard. */
+.picker-search-wrap { flex-shrink: 0; padding: 6px 14px 2px; }
+/* Footer - Continue alone, flush to the bottom edge (behind the keyboard while
+   typing, which is the native pattern: blur to reach it). */
 .picker-footer {
   flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;
   padding: 10px 14px calc(env(safe-area-inset-bottom, 0px) + 18px);
