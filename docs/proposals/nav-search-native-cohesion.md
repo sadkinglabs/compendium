@@ -223,3 +223,20 @@ Ordering rationale: 0-2 are pure wins with no visual redesign; 3-4 fix the daily
 - The [I]-tagged keyboard-occlusion claims (G15) failing to reproduce on device - in which case that work item is deleted, not reshaped.
 
 **Known blind spots:** no screenshot-diff harness exists, so Phase 5's visual verification is owner-eyeball; the audit did not measure TalkBack behaviour, only the ARIA surface; tablet behaviour was scoped out by D6 rather than audited.
+
+---
+
+## 9. Implementation log + owner device checklist (Phases 0-3)
+
+SHIPPED to branch `nav-search-cohesion` (2026-08-15): Phase 0 `031b9a7`, Phase 1 `f0e9dd6`, Phase 2 `69c7ee2`, Phase 3 `9cae364`. Gates at each commit: `test:codex` 10/10, `test:query` pass, `test:app` 17/17, `check:types` clean, `check:cycles` 158 modules clean, `build` OK, `check:docs` pass. Phases 4-6 remain gated (Phase 4 opens with device measurement + its own mini-proposal; Phase 5 gated on the AppBar blur measurement; Phase 6 needs the forensics scripts converted off `pngjs` first).
+
+Audit corrections found during implementation (recorded so the audit is not over-trusted): the `✦` foil marker and `›` CTA affix are deliberate content typography at ~20 sites, not glyph stragglers - G20 was scoped to interactive control icons only. `160,140,192` IS `#a08cc0` (the deck content violet), so the "fourth violet" claim was wrong - BlankState hues were left alone. `.ob-inner` already carries the `--kb` inset, so the wizard-occlusion flag was wrong; the AvatarPicker footer rides `.cx-picker-modal`'s inset.
+
+**Owner device script** (Pixel, installed build - `npm run android` first, per the cap-sync rule):
+1. Back parity: drill into a set in Collection -> hardware Back lands on Sets (not Home). Open a list detail -> Back lands on Lists. In Codex, switch Cards to Grid -> Back leaves Codex WITHOUT changing the view back to List.
+2. Search chassis, per surface (Codex dock, Collection dock x2, Decks library, Collection add-cards sheet, marginalia Link, Play deck picker, deck wizard step 2, Change Avatar): keyboard shows a SEARCH action key; typing filters; the x clear appears with text, clears, and the keyboard STAYS up; the field is never hidden behind the keyboard.
+3. Add-cards sheet with an empty query shows at most 80 rows + the count note; Select all still reports the full count.
+4. Touch: the detail-header Back, sheet x, modal x, profile chip all take a fingertip tap on the first try.
+5. Press feedback: bottom-nav taps show a soft gold wash, not the grey system highlight; chips/segments/backs brighten while pressed.
+6. TalkBack: the bottom nav announces "Pillars", the active pillar reads as current; both the FAB menu and header overflow read as menus and reach every item.
+7. Reduced motion ON: FAB menu still opens/closes cleanly (fade only).
