@@ -159,7 +159,7 @@ export default function CounterBand({ band, onStep, ceremonyKey }) {
                 <span className={`band-thr${ghost ? (ghost > 0 ? ' ghost-up' : ' ghost-down') : ''}`}>{shown}</span>
               </>
             )}
-            {eff?.kind === 'pulse' && <span className="band-trail" aria-hidden="true">{eff.dir > 0 ? '+1' : '−1'}</span>}
+            {eff?.kind === 'pulse' && <span className={`band-trail${eff.dir < 0 ? ' down' : ''}`} aria-hidden="true">{eff.dir > 0 ? '+1' : '−1'}</span>}
           </span>
         </span>
       </button>

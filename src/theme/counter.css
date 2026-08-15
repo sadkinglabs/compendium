@@ -886,8 +886,10 @@ body.kb-open #picker-screen .picker-footer { display: none; }
 @keyframes bandPulse { 0% { transform: scale(1); } 50% { transform: scale(1.13); } 100% { transform: scale(1); } }
 .cx-life-tracker .band-fig-stamp.shake { animation: bandShake 90ms ease; }
 @keyframes bandShake { 0% { transform: translateX(0); } 30% { transform: translateX(-3px); } 60% { transform: translateX(3px); } 100% { transform: translateX(0); } }
-.cx-life-tracker .band-trail { position: absolute; left: 50%; top: -6px; font: 600 13px/1 var(--f-ui); color: #a8f5c8; animation: bandTrail 620ms cubic-bezier(.2,.7,.2,1) forwards; pointer-events: none; }
-.cx-life-tracker .band-trail.down { color: #ff9d8b; }
+/* Same voice as the life deltas (.life-delta.plus/.minus, same inks + glow): the
+   trail may drift into the other half - blessed, it reads as the table breathing. */
+.cx-life-tracker .band-trail { position: absolute; left: 50%; top: -6px; font: 600 13px/1 var(--f-ui); color: #a8f5c8; text-shadow: 0 0 12px rgba(120,235,170,.7), 0 1px 7px rgba(0,0,0,.7); animation: bandTrail 620ms cubic-bezier(.2,.7,.2,1) forwards; pointer-events: none; }
+.cx-life-tracker .band-trail.down { color: #ff9d8b; text-shadow: 0 0 12px rgba(224,120,106,.75), 0 1px 7px rgba(0,0,0,.7); }
 @keyframes bandTrail { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -19px); } }
 /* Inline steppers: docked OUTSIDE the strip toward the tapped player's own side
    (owner ruling D-b3), centred on the figure, edge-clamped by the component. The
