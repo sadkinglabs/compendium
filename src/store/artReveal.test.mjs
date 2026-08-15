@@ -35,6 +35,14 @@ test('only the element\'s own load reveals it, and warm shortens - never skips -
   assert.match(pw.className, /cx-art-reveal(\s|$)/);      // still a fade
 });
 
+test('the reveal never forces opacity - a dimmed consumer fades to ITS design value, not 1', () => {
+  // Owner report 2026-08-15: Play's hero wash (CSS opacity .13) flashed to full
+  // strength during the reveal, then faded back down at settle. The show state
+  // must release inline opacity control, not override the consumer's style.
+  const shown = revealReduce(initialReveal, { type: 'LOADED', id: ID1, warm: false });
+  assert.equal(revealPresentation(shown, ID1).style, null);
+});
+
 test('an error retry (gen bump) is a new identity and starts hidden again', () => {
   const shown = revealReduce(initialReveal, { type: 'LOADED', id: ID1, warm: true });
   assert.equal(revealPresentation(shown, ID2).revealed, false);   // replacement hidden until ITS load

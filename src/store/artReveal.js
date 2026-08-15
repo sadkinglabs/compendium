@@ -46,10 +46,16 @@ export function revealPresentation(state, id) {
   const at = state.id === id ? state.at : 'wait';
   if (at === 'settled') return { revealed: true, className: '', style: null };
   if (at === 'show') {
+    // No inline opacity: releasing the wait-state's inline 0 while the reveal
+    // class carries the transition animates the element to its NATURAL opacity -
+    // which for a deliberately dimmed consumer (Play's .13 hero wash) is its
+    // design value, not 1. The old inline `opacity: 1` overrode the consumer's
+    // style, so dimmed art flashed to full strength and faded back down when the
+    // settle dropped the inline style (owner report 2026-08-15).
     return {
       revealed: true,
       className: state.warm ? 'cx-art-reveal cx-art-reveal-warm' : 'cx-art-reveal',
-      style: { opacity: 1 },
+      style: null,
     };
   }
   return { revealed: false, className: '', style: { opacity: 0, transition: 'none' } };
