@@ -138,6 +138,7 @@
 @media (prefers-reduced-motion: reduce) { .cx-decks.fab-wrap.fab-stacked { animation:none; } }
 .cx-decks.fab-wrap .fab { position:static; width:52px; height:52px; border-radius:50%; background:rgba(12,12,15,.55); border:1px solid rgba(220,184,111,.5); backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px); color:var(--gold-leaf); font-size:22px; font-weight:800; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 8px 20px -6px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 14px rgba(220,184,111,.1); transition:transform .25s cubic-bezier(.34,1.3,.64,1), background .2s ease, border-color .2s ease; padding:0; }
 .cx-decks.fab-wrap.open .fab { background:rgba(24,20,12,.7); border-color:rgba(220,184,111,.85); }
+.cx-decks.fab-wrap .fab:active { filter:brightness(1.25); }
 /* Active-count badge (Deckbuilder #search-fab-badge) */
 .cx-decks .fab-badge { position:absolute; top:-5px; right:-5px; background:linear-gradient(90deg,var(--gold-leaf) 0%,#f0d480 50%,var(--gold-leaf) 100%); background-size:200% 100%; animation:badgeShimmer 1.6s linear infinite; color:#1a1206; border-radius:999px; font:800 10px/1.4 var(--f-ui); padding:1px 6px; z-index:52; box-shadow:0 0 8px rgba(220,184,111,.55); pointer-events:none; }
 @keyframes badgeShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
@@ -147,8 +148,12 @@
 .cx-decks.fab-scrim.show { opacity:1; pointer-events:auto; }
 /* FAB menu - BLACK glassy (app rule): near-black frosted panel, gold only in
    text and hairlines, matching the counter's Play menus. */
-.cx-decks .fab-menu { position:absolute; bottom:calc(100% + 10px); right:0; min-width:170px; background:rgba(10,9,8,.72); border:1px solid rgba(220,184,111,.25); backdrop-filter:blur(16px) saturate(1.15); -webkit-backdrop-filter:blur(16px) saturate(1.15); box-shadow:0 8px 32px rgba(0,0,0,.6); overflow:hidden; transform-origin:bottom right; opacity:0; transform:scale(.18); border-radius:26px; pointer-events:none; transition:transform .25s cubic-bezier(.34,1.3,.64,1), opacity .18s ease, border-radius .25s ease; }
-.cx-decks.fab-wrap.open .fab-menu { opacity:1; transform:scale(1); border-radius:18px; pointer-events:auto; }
+/* Entrance is opacity + a small translate, NEVER scale - DESIGN_SYSTEM §4 HARD
+   RULE: the WebView a11y tree reports a scale-morphing menu at its pre-transition
+   geometry (~36px for a 170px menu; measured in OverflowMenu.jsx). border-radius
+   is static too - animating it repainted the blurred panel every frame. */
+.cx-decks .fab-menu { position:absolute; bottom:calc(100% + 10px); right:0; min-width:170px; background:rgba(10,9,8,.72); border:1px solid rgba(220,184,111,.25); backdrop-filter:blur(16px) saturate(1.15); -webkit-backdrop-filter:blur(16px) saturate(1.15); box-shadow:0 8px 32px rgba(0,0,0,.6); overflow:hidden; opacity:0; transform:translateY(8px); border-radius:18px; pointer-events:none; transition:transform .22s cubic-bezier(.2,0,0,1), opacity .18s ease; }
+.cx-decks.fab-wrap.open .fab-menu { opacity:1; transform:none; pointer-events:auto; }
 .cx-decks .fab-menu button { display:flex; align-items:center; gap:10px; width:100%; padding:12px 16px; text-align:left; font-size:14px; font-weight:600; color:#e9dcc0; background:none; border:none; cursor:pointer; border-bottom:1px solid rgba(220,184,111,.14); white-space:nowrap; font-family:var(--f-ui); }
 .cx-decks .fab-menu button.prominent { color:#f4e6bf; font-weight:700; background:rgba(220,184,111,.08); }
 .cx-decks .fab-menu button:last-child { border-bottom:none; }
@@ -170,7 +175,9 @@
 .cx-decks .sheet-handle { width:36px; height:4px; border-radius:2px; background:rgba(220,184,111,.28); margin:2px auto 16px; flex-shrink:0; }
 .cx-decks .ob-header { padding:0 22px; display:flex; align-items:center; gap:10px; }
 .cx-decks .ob-header h2 { flex:1; font-size:24px; font-weight:700; font-family:var(--f-display); color:var(--gold-leaf); margin:0; }
-.cx-decks .sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; }
+.cx-decks .sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; position:relative; -webkit-tap-highlight-color:transparent; }
+/* 44px touch floor: the visual circle stays 30px; the hit box does not. */
+.cx-decks .sheet-close::after { content:''; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:44px; height:44px; }
 .cx-decks .ob-steps { display:flex; gap:0; padding:14px 16px 16px; align-items:center; justify-content:center; }
 .cx-decks .ob-step { width:28px; height:28px; border-radius:50%; border:1px solid rgba(255,255,255,.14); background:rgba(18,16,13,.6); display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:rgba(233,220,192,.4); transition:all .2s; flex-shrink:0; font-family:var(--f-display); }
 .cx-decks .ob-step.done, .cx-decks .ob-step.active { background:rgba(18,16,13,.85); border-color:rgba(220,184,111,.75); color:var(--gold-leaf); box-shadow:0 0 14px rgba(220,184,111,.28); }

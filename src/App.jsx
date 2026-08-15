@@ -430,11 +430,11 @@ export default function App() {
         <button onClick={() => {
           const atHome = tab === 'home' && !viewDetail && !hasQuery && !addActive && !preMatch;
           if (atHome) setCreditsOpen(true); else goTab('home');
-        }} style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Home / Credits">
+        }} className="cx-hit44 cx-press" style={{ display: 'flex', alignItems: 'center', gap: 9, background: 'none', border: 'none', padding: 0, cursor: 'pointer' }} aria-label="Home / Credits">
           <span style={S.diamond} />
           <span style={S.wordmark}>Compendium</span>
         </button>
-        <button onClick={() => setProfileSheet(true)} style={S.profileChip} title={profile?.name}>{initial}</button>
+        <button onClick={() => setProfileSheet(true)} className="cx-hit44 cx-press" style={S.profileChip} aria-label={`Profiles - ${profile?.name || 'current profile'}`} title={profile?.name}>{initial}</button>
       </div>
 
       {storageFull && (
@@ -449,7 +449,7 @@ export default function App() {
           show the brand bar + divider above it. */}
       {addActive ? (
         <div style={S.detailHeader}>
-          <button onClick={exitAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, flexShrink: 0 }}><IcBack size={16} />Done</button>
+          <button onClick={exitAdd} className="cx-press" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, minHeight: 44, flexShrink: 0 }}><IcBack size={16} />Done</button>
           <div style={{ flex: 1, minWidth: 0, textAlign: 'right', overflowWrap: 'normal', wordBreak: 'normal' }}>
             {/* Chrome carries the Decks CHROME violet (--accent-violet), never the content tone. */}
             <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.18em', color: 'var(--accent-violet)' }}>EDITING</span>
@@ -458,7 +458,7 @@ export default function App() {
         </div>
       ) : viewDetail ? (
         <div style={S.detailHeader}>
-          <button onClick={back} style={S.back}><IcBack size={16} />Back</button>
+          <button onClick={back} className="cx-press" style={S.back}><IcBack size={16} />Back</button>
           <div style={{ ...S.detailTitle, fontSize: detail.kind === 'card' ? 15 : 14 }}>{detail.title || ''}</div>
           <button onClick={async () => { await toggleSaved(detail.kind, detail.id); setDetailSaved((s) => !s); /* no bump(): the browse list is unmounted behind the detail and reloads its saved state on remount, so a global rev bump here just re-renders the whole App for nothing */ }}
             style={{ ...S.bmToggle, color: detailSaved ? 'var(--gold-leaf)' : 'var(--ink-muted)' }}
@@ -468,7 +468,7 @@ export default function App() {
         </div>
       ) : (
         <div style={S.contextHeader}>
-          <div style={S.title}>{pillar.label}</div>
+          <h1 style={{ ...S.title, margin: 0 }}>{pillar.label}</h1>
         </div>
       )}
 
@@ -557,11 +557,11 @@ export default function App() {
           Dashboard renders its own "+" FAB. Play owns its Add-Match FAB. */}
 
       {/* Bottom navigation: Home, Codex, Collection, Decks, and Play. */}
-      <nav className="cx-nav">
+      <nav className="cx-nav" aria-label="Pillars">
         {PILLARS.map((p) => {
           const active = !viewDetail && !hasQuery && !addActive && !preMatch && p.key === tab;
           return (
-            <button key={p.key} className={`cx-nav-btn${active ? ' active' : ''}`} onClick={() => goTab(p.key)}>
+            <button key={p.key} className={`cx-nav-btn${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined} onClick={() => goTab(p.key)}>
               <NavIcon icon={p.key} />
               {p.label}
             </button>
@@ -1643,9 +1643,9 @@ const S = {
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, flexShrink: 0 },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, minHeight: 44, flexShrink: 0 },
   detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: 'var(--f-display)', fontWeight: 600, fontSize: 14, lineHeight: 1.15, letterSpacing: '.1em', color: 'var(--ink-head)', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
-  bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
+  bmToggle: { width: 44, minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
   // lives inside that box, so it only needs nav overlap (62px) + search/FAB clearance

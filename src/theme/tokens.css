@@ -239,7 +239,10 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 /* ── Bottom nav - in the Deckbuilder (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
 .cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(var(--nav-h) + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
-.cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
+.cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+/* Manuscript press state (owner ruling D1: no JS ripple) - a soft gold wash. The
+   nav was the ONE surface still showing the WebView's default grey tap highlight. */
+.cx-nav-btn:active { background: rgba(220,184,111,.07); }
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
 .cx-nav-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 2px; border-radius: 0 0 3px 3px; background: var(--gold-leaf); box-shadow: 0 0 8px rgba(220,184,111,.5); }
@@ -277,7 +280,17 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }
-.cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; font-size: 15px; padding: 0; width: 40px; height: 44px; display: flex; align-items: center; justify-content: center; }
+.cx-search-clear { flex-shrink: 0; background: none; border: none; color: var(--ink-faint); cursor: pointer; padding: 0; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; -webkit-tap-highlight-color: transparent; }
+
+/* ── §5 touch-floor + press utilities for inline-styled chrome controls. ──
+   .cx-hit44 extends the TOUCH box to 44px (the shipping floor) without moving a
+   pixel of the visual - the pseudo is invisible and part of the button's hit test.
+   .cx-press is the Manuscript press state (D1: brightness lift, no ripple) - filter
+   composes over inline backgrounds, which class background rules cannot override. */
+.cx-hit44 { position: relative; -webkit-tap-highlight-color: transparent; }   /* inline position (e.g. absolute) wins where set - the pseudo anchors either way */
+.cx-hit44::after { content: ''; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: max(100%, 44px); height: max(100%, 44px); }
+.cx-press { -webkit-tap-highlight-color: transparent; }
+.cx-press:active { filter: brightness(1.22); }
 /* Sub-entry disclosure - Material expand_more: a chevron in a circular icon
    button that rotates 180° (down → up) when the group is expanded. */
 .cx-sub-chevron { background: none; border: none; color: var(--ink-muted); cursor: pointer; width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; -webkit-tap-highlight-color: transparent; transition: transform .24s cubic-bezier(.4,0,.2,1), color .2s ease, background .2s ease; }

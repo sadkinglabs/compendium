@@ -24,7 +24,7 @@ export default function SearchPill({ value, onChange, onClear, placeholder = 'Se
         </button>
       ) : null}
       {onHelp ? (
-        <button onClick={onHelp} aria-label="Search syntax help"
+        <button onClick={onHelp} aria-label="Search syntax help" className="cx-hit44 cx-press"
           style={{ flex: 'none', width: 24, height: 24, borderRadius: '50%', border: '1px solid var(--hair-30)', background: 'transparent', color: 'rgba(220,184,111,.55)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M9.2 9a3 3 0 1 1 4.3 2.7c-.9.5-1.5 1.2-1.5 2.3" /><line x1="12" y1="17.5" x2="12" y2="17.51" /></svg>
         </button>

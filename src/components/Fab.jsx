@@ -9,7 +9,7 @@
 //   label   : aria-label
 //   items   : [{ label, onClick, danger?, state?, icon? }]  - menu entries
 //   onClick : if given (and no items), the FAB is a plain action button
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import '../theme/decks.css';   // the FAB's own shell - see the note on `cx-decks` below
 import { haptic } from '../native.js';
@@ -72,16 +72,36 @@ export function FabGlyph({ kind }) {
 
 export default function Fab({ variant = 'lib', icon = <FabGlyph kind="add" />, label = 'Actions', items = null, onClick = null, active = false, badge = 0, className = '' }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef(null);
+  const itemRefs = useRef([]);
 
   // Back/Escape closes an open menu first (matches Deckbuilder's closeFabs routing).
+  // Escape hands focus back to the FAB (the menu-button contract, same as
+  // OverflowMenu); hardware BACK is a navigation gesture and does not grab focus.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') { setOpen(false); triggerRef.current?.focus?.({ preventScroll: true }); } };
     window.addEventListener('keydown', onKey);
     // Hardware BACK closes the open menu FIRST (it's the topmost layer).
     const unreg = registerBackConsumer(() => { setOpen(false); return true; });
     return () => { window.removeEventListener('keydown', onKey); unreg(); };
   }, [open]);
+
+  // Focus lands on the first item when the menu opens - the same keyboard model
+  // OverflowMenu carries, so the app's two menus share one a11y contract. The menu
+  // stays mounted for its CSS transition, so it is aria-hidden while closed.
+  useEffect(() => {
+    if (!open) return undefined;
+    const id = setTimeout(() => itemRefs.current[0]?.focus?.({ preventScroll: true }), 0);
+    return () => clearTimeout(id);
+  }, [open]);
+  const onItemKey = (e, i, n) => {
+    const to = (j) => { e.preventDefault(); itemRefs.current[(j + n) % n]?.focus?.({ preventScroll: true }); };
+    if (e.key === 'ArrowDown') to(i + 1);
+    else if (e.key === 'ArrowUp') to(i - 1);
+    else if (e.key === 'Home') to(0);
+    else if (e.key === 'End') to(n - 1);
+  };
 
   // Rendered through a portal into the unified BottomDock's FAB slot (#cx-dock-fab),
   // so the FAB shares ONE keyboard-aware container with the search pill and the two
@@ -113,9 +133,11 @@ export default function Fab({ variant = 'lib', icon = <FabGlyph kind="add" />, l
     <>
       <div className={`${SCOPE} fab-scrim${open ? ' show' : ''}`} onClick={() => setOpen(false)} aria-hidden="true" />
       <div className={`${SCOPE} fab-wrap fab-enter fab-${variant}${open ? ' open' : ''}${className ? ' ' + className : ''}`}>
-        <div className="fab-menu" role="menu">
+        <div className="fab-menu" role="menu" aria-hidden={!open}>
           {items.map((it, i) => (
             <button key={i} role="menuitem" className={it.prominent ? 'prominent' : undefined}
+              ref={(el) => { itemRefs.current[i] = el; }} tabIndex={open ? 0 : -1}
+              onKeyDown={(e) => onItemKey(e, i, items.length)}
               onClick={() => run(it)} style={it.danger ? { color: 'var(--destructive)' } : undefined}>
               {it.icon}
               <span>{it.label}</span>
@@ -123,7 +145,7 @@ export default function Fab({ variant = 'lib', icon = <FabGlyph kind="add" />, l
             </button>
           ))}
         </div>
-        <button className="fab" onClick={() => { haptic('light'); setOpen((o) => !o); }} aria-haspopup="menu" aria-expanded={open} aria-label={label}>{icon}</button>
+        <button ref={triggerRef} className="fab" onClick={() => { haptic('light'); setOpen((o) => !o); }} aria-haspopup="menu" aria-expanded={open} aria-label={label}>{icon}</button>
       </div>
     </>
   );

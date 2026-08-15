@@ -124,7 +124,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
           body={<>Start a match to track life<br />and record the result.</>} />
       ) : oppFilter ? (
         <>
-          <button onClick={() => setOppFilter(null)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#cba75f', font: "600 12px/1 var(--f-ui)", letterSpacing: '.06em', cursor: 'pointer', marginBottom: 6 }}><IcChevLeft />All matches</button>
+          <button onClick={() => setOppFilter(null)} className="cx-press" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#cba75f', font: "600 12px/1 var(--f-ui)", letterSpacing: '.06em', cursor: 'pointer', minHeight: 44, padding: 0, marginBottom: 2 }}><IcChevLeft />All matches</button>
           <div className="rec-section">vs {oppFilter}<span className="rec-hair" /><span className="rec-count">{shown.length}</span></div>
           {visible.map((m) => <MatchCard key={m.id} m={m} {...cardActions} />)}
           {moreBtn}
