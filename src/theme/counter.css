@@ -575,11 +575,19 @@ body.roll-active .dd-pill { display: none !important; }
   --role-h: 10px;      /* the YOU / OPPONENT title heading each frame */
   --stack-gap: 6px;
 }
-/* Focus compaction: while the search field is focused the matchup shrinks further,
-   handing its height to the results exactly when they matter; it grows back on blur.
-   Layout state, not decoration - reduced-motion only drops the transition (globally). */
-#picker-screen:has(.picker-search input:focus) .picker-matchup { --thumb: 48px; --halo: 5px; }
-#picker-screen:has(.picker-search input:focus) .pm-hint { display: none; }
+/* Keyboard compaction (owner ruling, round 2): the KEYBOARD is what shrinks the
+   usable UI, so the keyboard - not focus, not search text - is the trigger.
+   body.kb-open comes from the same visualViewport measurement as --kb
+   (appearance.js): on Android, Back closes the keyboard but leaves the field
+   focused, so a :focus trigger held the compact state exactly when the user had
+   reclaimed the screen. While the keyboard is up: the matchup compacts to 48px,
+   the hint rows drop, and the Continue footer - unreachable behind the keyboard
+   anyway - stops spending ~80px of the visible panel. Everything returns the
+   moment the keyboard closes, typed text or not.
+   Layout state, not decoration - reduced-motion only drops the transition. */
+body.kb-open #picker-screen .picker-matchup { --thumb: 48px; --halo: 5px; }
+body.kb-open #picker-screen .pm-hint { display: none; }
+body.kb-open #picker-screen .picker-footer { display: none; }
 .pm-thumb { transition: width .2s ease, height .2s ease; }
 /* A real <button>: the slot is an action (clear this role / target this role), so
    it needs button semantics and keyboard reach, not a click handler on a div. The
