@@ -49,6 +49,9 @@ import {
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { rowComparator } from '../store/collectionFilter.js';
+import { groupCards } from '../store/collectionGrouping.js';
+import { EL_ORDER, elemKey } from '../store/elements.js';
+import { ElementPip } from '../components/ElementPip.jsx';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
 import { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
 import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
@@ -1704,6 +1707,14 @@ const listSetPill = {
 // The set pill shows a set only when the card has exactly ONE printing - never an array
 // index. See soleSetName in store/printings.js for the bug this replaced.
 const listSetName = (card) => soleSetName(card?.sets);
+// Set-name -> rank, for ordering List Arrange's set groups when the group key is a
+// display name (card-grain rows group under what their set pill shows).
+const LABEL_RANK = new Map(Object.entries(SET_LABEL).map(([code, label]) => [label, SET_RANK[code] ?? 50]));
+// List Arrange group vocabulary (docs/proposals/list-arrange.md): wishlist rows carry
+// their exact printing; card-grain rows group under their sole set - a card with
+// several printings is honestly bucketed rather than guessed.
+const LIST_MULTI = '~multi', LIST_UNCAT = '~uncat';
+const ARRANGE_ELEMENTS = new Set(['Air', 'Earth', 'Fire', 'Water']);
 
 // One card on a list detail. A full-width hairline row (never a rounded card): a
 // gilt-framed 5:7 thumb that lights up as you own copies toward the goal, the
@@ -1930,6 +1941,49 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qty]);
+
+  // ── List Arrange (docs/proposals/list-arrange.md): group + sort, remembered in
+  // the Collection nav session like the drill's search. Presentation only - row
+  // identity, steppers, hearts and writes are untouched; only order and headers change.
+  const [arrange, setArrange] = useState(() => collectionSession().listArrange || { group: 'none', sort: 'name' });
+  useEffect(() => { collectionSession().listArrange = arrange; }, [arrange]);
+  const [arrOpen, setArrOpen] = useState(false);
+  const listComparator = useMemo(() => {
+    if (arrange.sort === 'name-desc') return rowComparator('name-desc');
+    if (arrange.sort === 'rarity') return rowComparator('rarity-asc');
+    if (arrange.sort === 'element') {
+      // Elements cluster in palette order (Air, Earth, Fire, Water; Multi/Neutral
+      // after) WITHIN whatever grouping is active - e.g. elements together inside
+      // each set group (the owner's ask). Name breaks ties.
+      const name = rowComparator('name-asc');
+      const elRank = (r) => { const i = EL_ORDER.indexOf(elemKey(r)); return i === -1 ? EL_ORDER.length : i; };
+      return (a, b) => (elRank(a) - elRank(b)) || name(a, b);
+    }
+    if (arrange.sort === 'added') {
+      const name = rowComparator('name-asc');
+      // Newest first; rows without a timestamp sort last (custom-list rows may lack one).
+      return (a, b) => {
+        const av = a?.created_at || '', bv = b?.created_at || '';
+        if (av === bv) return name(a, b);
+        if (!av) return 1;
+        if (!bv) return -1;
+        return bv < av ? -1 : 1;
+      };
+    }
+    return rowComparator('name-asc');
+  }, [arrange.sort]);
+  const setKeyOf = (r) => {
+    if (isWishlist) return r.set || LIST_UNCAT;
+    const sole = listSetName(r);
+    if (sole) return sole;
+    try { return JSON.parse(r.sets || '[]').length > 1 ? LIST_MULTI : LIST_UNCAT; } catch { return LIST_UNCAT; }
+  };
+  const listSections = useMemo(() => groupCards(listRows, arrange.group, (x) => x, listComparator, {
+    setOf: setKeyOf,
+    setRank: (k) => (k === LIST_MULTI ? 98 : k === LIST_UNCAT ? 99 : (isWishlist ? setRank(k) : (LABEL_RANK.get(k) ?? 50))),
+    setLabel: (k) => (k === LIST_MULTI ? 'Several printings' : k === LIST_UNCAT ? UNCATEGORISED_LABEL : (isWishlist ? (SET_LABEL[k] || k) : k)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [listRows, arrange.group, listComparator, isWishlist]);
 
   const targetOf = (id) => qty.get(id) || 0;
   // What a wishlist row is FOR - the set and finish it wants. Without this the surface stores
@@ -2171,14 +2225,32 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
               </button>
             )}
           </div>
-          {listRows.map((c) => (
-            // Keyed and stepped by ROW identity, not card_id: two wishlist rows can share a
-            // card, and a card_id key would collapse them in React and send both edits to one.
-            <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
-              printing={isWishlist ? printingLabel(c) : null} wishlistDate={isWishlist ? c.created_at : null}
-              isWanted={isWanted || isWishlist} wishlist={isWishlist} editable={editing} onStep={(d) => step(rowKey(c), d)}
-              hearted={!pendingUnwish.has(rowKey(c))} onRemove={() => toggleUnwish(rowKey(c))}
-              onPeek={() => (isWishlist ? onPeek(c.card_id, c.set, !!c.foil) : onPeek(c.card_id))} />
+          {listSections.map((sec) => (
+            <React.Fragment key={sec.key}>
+              {sec.label !== '' && (
+                // Anchored group header: the drill's section rubric made STICKY, pinning
+                // just under the list's AppBar band (top 68 = its 8+48+12 box - measured,
+                // device-verified) so the current group stays named mid-scroll. Opaque
+                // frost, glass per the owner ruling; bleeds to the screen edges.
+                <div style={{ position: 'sticky', top: 68, zIndex: 4, display: 'flex', alignItems: 'center', gap: 10, margin: '14px -20px 8px', padding: '8px 20px', background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(12px)' }}>
+                  {arrange.group === 'element' && ARRANGE_ELEMENTS.has(sec.key) && (
+                    <ElementPip el={String(sec.key).toLowerCase()} color={`var(--el-${String(sec.key).toLowerCase()})`} size={14} />
+                  )}
+                  <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{sec.label}</span>
+                  <span style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, rgba(74,60,34,.6), transparent)' }} />
+                  <span style={{ font: "400 11px/1 var(--f-mono)", color: 'var(--ink-faint)' }}>{sec.cards.length}</span>
+                </div>
+              )}
+              {sec.cards.map((c) => (
+                // Keyed and stepped by ROW identity, not card_id: two wishlist rows can share a
+                // card, and a card_id key would collapse them in React and send both edits to one.
+                <ListCardRow key={rowKey(c)} card={c} owned={ownQty.get(rowKey(c)) || 0} target={targetOf(rowKey(c))}
+                  printing={isWishlist ? printingLabel(c) : null} wishlistDate={isWishlist ? c.created_at : null}
+                  isWanted={isWanted || isWishlist} wishlist={isWishlist} editable={editing} onStep={(d) => step(rowKey(c), d)}
+                  hearted={!pendingUnwish.has(rowKey(c))} onRemove={() => toggleUnwish(rowKey(c))}
+                  onPeek={() => (isWishlist ? onPeek(c.card_id, c.set, !!c.foil) : onPeek(c.card_id))} />
+              ))}
+            </React.Fragment>
           ))}
         </>
       )}
@@ -2191,6 +2263,30 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         { label: 'Add cards', icon: <MenuGlyph kind="add" />, onClick: () => setAddOpen(true) },
         { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setBulkOpen(true) },
       ]} />
+      {/* Arrange opener (owner ruling): the stacked filter FAB above the + FAB - the same
+          pair My Collection's edit mode ships, the same filter glyph as every Collection
+          refine entry. Badge counts active arrangement choices. */}
+      {loaded && listRows.length > 0 && (
+        <Fab className="fab-stacked" variant="deck" label="Arrange list" icon={<FabGlyph kind="filters" />}
+          onClick={() => setArrOpen(true)} active={arrOpen}
+          badge={(arrange.group !== 'none' ? 1 : 0) + (arrange.sort !== 'name' ? 1 : 0)} />
+      )}
+
+      {/* The Arrange sheet - the Refine language's Arrange page, alone (docs/proposals/list-arrange.md). */}
+      <BottomSheet open={arrOpen} title="ARRANGE" onClose={() => setArrOpen(false)}>
+        <SectionLabel label="Group by" />
+        <ChipRow style={{ margin: '10px 0 18px' }}>
+          {[['none', 'None'], ['set', 'Set'], ['rarity', 'Rarity'], ['element', 'Element']].map(([k, l]) => (
+            <Chip key={k} label={l} active={arrange.group === k} onClick={() => setArrange((a) => ({ ...a, group: k }))} />
+          ))}
+        </ChipRow>
+        <SectionLabel label="Sort" />
+        <ChipRow style={{ margin: '10px 0 6px' }}>
+          {[['name', 'Name A–Z'], ['name-desc', 'Name Z–A'], ['rarity', 'Rarity'], ['element', 'Element'], ['added', 'Recently added']].map(([k, l]) => (
+            <Chip key={k} label={l} active={arrange.sort === k} onClick={() => setArrange((a) => ({ ...a, sort: k }))} />
+          ))}
+        </ChipRow>
+      </BottomSheet>
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>
         <div style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body)', textAlign: 'center', marginBottom: 16 }}>

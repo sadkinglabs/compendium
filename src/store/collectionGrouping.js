@@ -14,7 +14,7 @@
 import { EL_ORDER, elemKey } from './elements.js';   // leaf module - NOT deckStats (see elements.js)
 import { RARITY_ORDER } from './rarity.js';
 
-export const GROUP_MODES = ['none', 'element', 'rarity'];
+export const GROUP_MODES = ['none', 'element', 'rarity', 'set'];
 
 // Callers hold different shapes: the sets home has bare catalog cards, the set drill has
 // {card, set, owned, foil} ownership rows. An accessor keeps this module working on both
@@ -38,9 +38,28 @@ const byNameWith = (cardOf) => (a, b) =>
  *          omitted; a mode that yields one section still returns an array so the caller renders one
  *          code path rather than branching on mode.
  */
-export function groupCards(cards, mode = 'none', cardOf = identity, comparator = null) {
+export function groupCards(cards, mode = 'none', cardOf = identity, comparator = null, opts = {}) {
   const order2 = comparator || byNameWith(cardOf);
   const list = [...(cards || [])].sort(order2);
+  // 'set' grouping (List Arrange): the SET vocabulary stays with the CALLER - which
+  // set a row belongs to is a surface decision (wishlist rows carry their exact
+  // printing; card-grain rows use what their set pill shows), and the set
+  // rank/label tables live in sets.js, which this leaf module must not import.
+  // opts: setOf(row) -> bucket key; setRank(key) -> sort number; setLabel(key) -> heading.
+  if (mode === 'set') {
+    const setOf = opts.setOf || ((r) => cardOf(r)?.set);
+    const rank = opts.setRank || (() => 0);
+    const label = opts.setLabel || ((k) => String(k));
+    const buckets = new Map();
+    for (const c of list) {
+      const k = setOf(c) || 'Unknown';
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(c);
+    }
+    return [...buckets.keys()]
+      .sort((a, b) => (rank(a) - rank(b)) || String(label(a)).localeCompare(String(label(b))))
+      .map((k) => ({ key: k, label: label(k), cards: buckets.get(k) }));
+  }
   if (mode !== 'element' && mode !== 'rarity') {
     return [{ key: 'all', label: '', cards: list }];
   }
