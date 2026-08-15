@@ -18,7 +18,7 @@
 // `announce` moves focus to its heading on mount, so TalkBack hears the new
 // screen. Back-restore of the initiating control is deferred until it can be
 // TalkBack-verified on device.
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 const NOWRAP = { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
 const BAND = {
@@ -26,6 +26,33 @@ const BAND = {
   background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(12px)',
   borderBottom: '1px solid var(--hair-12)',
 };
+
+/** Fit-to-width sub title (owner ruling: long names shrink, they do not truncate).
+ *  Renders at the full 22px ramp and, when the text overflows its slot, scales
+ *  the font down proportionally to fit - floored at 15px (the old drill size),
+ *  below which the ellipsis takes over. Measured in a layout effect, so the
+ *  shrink lands BEFORE first paint (no flash of clipped text). The size resets
+ *  whenever the title changes; it deliberately never grows back mid-mount when
+ *  trailing actions free up space (a title that resizes while you watch reads
+ *  as a glitch). Not used on scroll/keystroke paths - one measure per title. */
+const TITLE_MAX = 22, TITLE_MIN = 15;
+function FitTitle({ children, headingRef, announce }) {
+  const [size, setSize] = useState(TITLE_MAX);
+  useLayoutEffect(() => { setSize(TITLE_MAX); }, [children]);
+  useLayoutEffect(() => {
+    const el = headingRef.current;
+    if (!el) return;
+    const over = el.scrollWidth / (el.clientWidth || 1);
+    if (over > 1.02) {
+      const next = Math.max(TITLE_MIN, Math.floor(size / over));
+      if (next < size) setSize(next);
+    }
+  });
+  return (
+    <h2 ref={headingRef} tabIndex={announce ? -1 : undefined}
+      style={{ font: `700 ${size}px/1.1 var(--f-display)`, letterSpacing: '.06em', color: 'var(--ink-head)', margin: 0, outline: 'none', ...NOWRAP }}>{children}</h2>
+  );
+}
 
 /** The one back affordance: a 44px gold circle + house chevron (family B2,
  *  promoted). Negative margin keeps existing header layouts optically tight
@@ -85,8 +112,7 @@ export default function AppBar({
         {eyebrow && (
           <div style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.22em', textTransform: 'uppercase', color: eyebrowColor, marginBottom: 6, ...NOWRAP }}>{eyebrow}</div>
         )}
-        <h2 ref={headingRef} tabIndex={announce ? -1 : undefined}
-          style={{ font: "700 22px/1.1 var(--f-display)", letterSpacing: '.06em', color: 'var(--ink-head)', margin: 0, outline: 'none', ...NOWRAP }}>{title}</h2>
+        <FitTitle headingRef={headingRef} announce={announce}>{title}</FitTitle>
         {meta != null && (
           <div aria-live={metaLive ? 'polite' : undefined}
             style={{ font: `${metaEmphasis ? 600 : 400} 11.5px/1 var(--f-mono)`, letterSpacing: '.04em', color: metaEmphasis ? 'var(--gold-leaf)' : 'var(--ink-muted)', marginTop: 5, ...NOWRAP }}>
