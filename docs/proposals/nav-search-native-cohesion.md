@@ -232,7 +232,11 @@ Ordering rationale: 0-2 are pure wins with no visual redesign; 3-4 fix the daily
 
 **D7 OVERTURNED by owner ruling 2026-08-15: frosted glass IS the aesthetic; performance is not a veto on modern devices.** Phase 5's blur-measurement gate is void; its remaining gate is visual approval of the AppBar itself. Related: the glass had been silently dead in .css files since the Vite 8 upgrade (minifier shipped only the `-webkit-` alias, which WebView Chromium 150 dropped) - resurrected in 57f4d79, device-verified.
 
-**Phase 6 precondition satisfied:** scripts/diag/seam.mjs + timeline.mjs already import `sharp` (Codex's `pngjs` finding was against an older tree) and load cleanly. Phase 6 remains High-risk and, per this plan's own gate, gets an in-phase mini-proposal before code.
+**Phase 6: CLOSED - not reproducing; no code shipped.** Precondition was satisfied (diag scripts already on `sharp`; Codex's `pngjs` finding was against an older tree). Owner authorized the phase ("let's go with 6"); repro evidence was gathered FIRST, agent-run on the Pixel (build 239, WebView Chromium 150), before any restructuring:
+- G8 (CreateDeckWizard `.ob-inner` + nested `.ob-step2` scroller): fresh-open screencap fully painted; scroll-nudge pixel diff = noise-level. NOT reproducing.
+- G6 (LifeCounter `.modal-box` - tested the WORST variant, the persistently `rotate(180deg)`-transformed opponent max-life modal, via the live match's designed-safe resume path): fully painted on fresh open. NOT reproducing. (Modal content fits without scrolling, which also removes the nested-scroll surface on these modals.)
+- G7 (AvatarPicker): NOT directly tested - opening it requires "New Match", and the owner has a live match the confirm sheet would discard. Same trap shape as G8, which painted clean. **Open remainder: re-run the picker A/B capture after the live match concludes.**
+Verdict: the transform+overflow-scroll hazard remains REAL as a rule for new surfaces (GothicSheet's own history proves it) and stays in DESIGN_SYSTEM §6, but restructuring three shipping surfaces against a symptom that does not reproduce on the current WebView would be churn with regression risk in the app's most delicate pillar. If a future System WebView update resurfaces blank-until-scroll, this section is the repro playbook (CDP click-drive + screencap A/B with a scroll nudge).
 
 ## 9. Implementation log + owner device checklist (Phases 0-3)
 
