@@ -34,6 +34,7 @@ import { arrangeSections, visibleSections, renderSignature } from '../store/coll
 import { railModel } from '../store/alphabetIndex.js';
 import AlphabetRail from '../components/AlphabetRail.jsx';
 import CollectionSubHeader from '../components/CollectionSubHeader.jsx';
+import AppBar from '../components/AppBar.jsx';
 import { printingFinishes } from '../store/printingRows.js';
 import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
@@ -949,56 +950,34 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
 
   return (
     <div style={{ padding: '0 20px 150px' }}>
-      {/* Sticky drill header: back + set-completion Ring + owned/total. It needs an OPAQUE
-          backing - the card grid scrolls underneath it, and over a transparent header the
-          title and ring became unreadable. Bled to the screen edges (negative margin against
-          the container's 20px padding) so nothing shows through at the sides. */}
-      <div data-rail-sticky style={{
-        // marginTop cancels the pillar root's 4px top padding: without it the header sat 4px
-        // below the scrollport and visibly slid those 4px before pinning.
-        // data-rail-sticky: the A-Z rail measures this header's bottom edge as its top floor.
-        position: 'sticky', top: 0, zIndex: 6, margin: '-4px -20px 0', padding: '8px 20px 12px',
-        background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
-        borderBottom: '1px solid var(--hair-12)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10, minHeight: 48 }}>
-          <button onClick={onBack} aria-label="Back to sets" style={{
-            width: 44, height: 44, margin: -5, flex: 'none', borderRadius: '50%', cursor: 'pointer',   // >=44px touch floor; negative margin keeps the header layout
-            border: '1px solid var(--hair-40)', background: 'transparent', color: 'var(--gold-leaf)',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
-          </button>
-          <Ring value={drillPct} size={34} stroke={4} color="var(--accent-ruby)" showPct={false} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ font: "700 15px/1.1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--ink-head)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillName}</div>
-            {selectMode ? (
-              <div aria-live="polite" style={{ font: "600 11.5px/1 var(--f-mono)", color: 'var(--gold-leaf)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {sel.count} selected{sel.hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {sel.hidden} hidden</span> : ''}
-              </div>
-            ) : (
-              <div style={{ font: "400 11.5px/1 var(--f-mono)", color: 'var(--ink-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drillOwned} / {drillTotal}</div>
-            )}
-          </div>
-          {/* Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
-              overflow. "Select" enters multi-select (empty) over the CURRENT (scoped) grid; once in,
-              the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
-              the running count). A single card is one tap on its tile. */}
-          {totalRows > 0 && (() => {
-            const allSel = sel.allSelected;   // membership, not a count match
-            const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
-            return (
-              <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
-                flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
-                borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
-                color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
-              }}>
-                <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
-              </button>
-            );
-          })()}
-        </div>
-      </div>
+      {/* Sticky drill header on the shared AppBar band (Phase 5): back + set-completion
+          Ring + owned/total, Select as the trailing action. bandMargin's -4px top cancels
+          the pillar root's 4px padding so the band pins flush. */}
+      <AppBar variant="sub" sticky announce bandMargin="-4px -20px 10px"
+        onBack={onBack} backLabel="Back to sets"
+        lead={<Ring value={drillPct} size={34} stroke={4} color="var(--accent-ruby)" showPct={false} />}
+        title={drillName}
+        meta={selectMode
+          ? <>{sel.count} selected{sel.hidden > 0 ? <span style={{ color: 'var(--ink-muted)', fontWeight: 400 }}> · {sel.hidden} hidden</span> : ''}</>
+          : <>{drillOwned} / {drillTotal}</>}
+        metaLive metaEmphasis={selectMode}
+        trailing={totalRows > 0 ? (() => {
+          // Selection is the set's ONLY manage action, so it is a direct pill, not a one-item
+          // overflow. "Select" enters multi-select (empty) over the CURRENT (scoped) grid; once in,
+          // the SAME pill morphs in place into Select-all / Deselect-all (the bottom bar just shows
+          // the running count). A single card is one tap on its tile.
+          const allSel = sel.allSelected;   // membership, not a count match
+          const onClick = !selectMode ? enterSelectMode : (allSel ? deselectAll : selectAll);
+          return (
+            <button onClick={onClick} aria-label={!selectMode ? 'Select cards' : (allSel ? 'Deselect all' : 'Select all')} style={{
+              flex: 'none', minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '0 15px',
+              borderRadius: 16, cursor: 'pointer', whiteSpace: 'nowrap', font: "600 12.5px/1 var(--f-ui)",
+              color: 'var(--gold-num)', background: 'rgba(42,33,20,.5)', border: '1px solid rgba(203,167,95,.45)',
+            }}>
+              <MenuGlyph kind="select" />{!selectMode ? 'Select' : (allSel ? 'Deselect all' : 'Select all')}
+            </button>
+          );
+        })() : null} />
 
       {pool == null ? <Loading /> : (
         <>
@@ -2121,40 +2100,32 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
 
   return (
     <div style={{ padding: '0 20px' }}>
-      {/* Header: frosted back + name/eyebrow + a live owned/goal tally. */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4, marginBottom: 14 }}>
-        {/* Same 44px gold-circle back as the set drill (the app's one circular back family);
-            the old 38px rose version was the only nav control on the stray 224,169,177 palette. */}
-        <button onClick={() => { flushRef.current(); onBack(); }} aria-label="Back to lists" style={{
-          width: 44, height: 44, margin: -3, flex: 'none', borderRadius: '50%', cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--gold-leaf)', background: 'transparent', border: '1px solid var(--hair-40)',
-        }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
-        </button>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
-          {/* The Wishlist's name already says "Wishlist" - a WISHLIST eyebrow under it just read twice. */}
-          {!isWishlist && <div style={{ font: "600 10.5px/1 var(--f-display)", letterSpacing: '.2em', color: 'var(--accent-ruby)', marginTop: 5 }}>{isWanted ? 'WANTED LIST' : 'CARD LIST'}</div>}
-        </div>
-        {isWanted && totals.req > 0 && (
-          <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
-            <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{totals.have}</span>
-            <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{totals.req}</span>
-          </div>
-        )}
-        {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
-            it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
-            delete, and OverflowMenu drops the null entries. */}
-        {/* Overflow = manage the list itself: rename, duplicate, EXPORT, delete. Adding lives on the +
-            FAB. The Wishlist is virtual (no rename/duplicate/delete), so only Export survives for it. */}
-        <OverflowMenu label="List actions" items={[
-          isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
-          isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
-          { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
-          isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
-        ]} />
-      </div>
+      {/* List header on the shared AppBar band (Phase 5): sticky frost like every other
+          Collection band, eyebrow above the name (the sub-bar type ramp), tally + overflow
+          trailing. The Wishlist's name already says "Wishlist" - no eyebrow for it. */}
+      <AppBar variant="sub" sticky announce
+        onBack={() => { flushRef.current(); onBack(); }} backLabel="Back to lists"
+        eyebrow={isWishlist ? null : (isWanted ? 'Wanted list' : 'Card list')} eyebrowColor="var(--accent-ruby)"
+        title={meta.name}
+        trailing={<>
+          {isWanted && totals.req > 0 && (
+            <div style={{ flex: 'none', textAlign: 'right', lineHeight: 1 }}>
+              <span style={{ font: "600 26px/1 var(--f-display)", color: totals.complete ? 'var(--gold-num)' : 'var(--accent-ruby)' }}>{totals.have}</span>
+              <span style={{ font: "400 15px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>/{totals.req}</span>
+            </div>
+          )}
+          {/* Delete routes through its OWN confirm sheet - destructive and never undoable, so
+              it is never one tap. The Wishlist is virtual and fixed: no rename, duplicate or
+              delete, and OverflowMenu drops the null entries. */}
+          {/* Overflow = manage the list itself: rename, duplicate, EXPORT, delete. Adding lives on the +
+              FAB. The Wishlist is virtual (no rename/duplicate/delete), so only Export survives for it. */}
+          <OverflowMenu label="List actions" items={[
+            isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
+            isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
+            { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
+            isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
+          ]} />
+        </>} />
 
       {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '0 2px 14px' }}>{meta.description}</div>}
 
