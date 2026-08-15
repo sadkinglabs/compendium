@@ -97,7 +97,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
   });
   useEffect(() => { let a = true; overview().then((x) => a && setD(x)).catch(() => a && setD({ error: true })); return () => { a = false; }; }, [rev]);
   if (!d) return <Loading />;
-  if (d.error) return <BlankState hue="220,184,111" title="Couldn't load" body={<>Something went wrong loading your overview.<br />Pull down or reopen to retry.</>} />;
+  if (d.error) return <BlankState hue="220,184,111" title="Couldn't load" body={<>Something went wrong loading your overview.<br />Reopen the app to retry.</>} />;
 
   const g = d.glance, s = d.duels.stats;
   const pct = s.winPct;

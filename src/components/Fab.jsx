@@ -70,7 +70,7 @@ export function FabGlyph({ kind }) {
   );
 }
 
-export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', items = null, onClick = null, active = false, badge = 0, className = '' }) {
+export default function Fab({ variant = 'lib', icon = <FabGlyph kind="add" />, label = 'Actions', items = null, onClick = null, active = false, badge = 0, className = '' }) {
   const [open, setOpen] = useState(false);
 
   // Back/Escape closes an open menu first (matches Deckbuilder's closeFabs routing).
@@ -116,7 +116,7 @@ export default function Fab({ variant = 'lib', icon = '+', label = 'Actions', it
         <div className="fab-menu" role="menu">
           {items.map((it, i) => (
             <button key={i} role="menuitem" className={it.prominent ? 'prominent' : undefined}
-              onClick={() => run(it)} style={it.danger ? { color: 'var(--danger)' } : undefined}>
+              onClick={() => run(it)} style={it.danger ? { color: 'var(--destructive)' } : undefined}>
               {it.icon}
               <span>{it.label}</span>
               {it.state != null && <span className="fab-state">{GLYPH_ICON[it.state] ? React.createElement(GLYPH_ICON[it.state]) : it.state}</span>}

@@ -44,9 +44,9 @@ export function Chip({ label, active, onClick, dot }) {
         display: 'inline-flex', alignItems: 'center', gap: 6,
         padding: '7px 16px', borderRadius: 18, cursor: 'pointer',
         font: "600 13px/1 var(--f-ui)", whiteSpace: 'nowrap',
-        background: active ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'rgba(42,33,20,.5)',
+        background: active ? 'linear-gradient(180deg, #d8b872, #b8954f)' : 'var(--surface-brown-50)',
         color: active ? '#1a1206' : '#c9bda6',
-        border: `1px solid ${active ? '#e3c589' : '#4a3c22'}`,
+        border: `1px solid ${active ? 'var(--gold-num)' : 'var(--edge-brown)'}`,
       }}
     >
       {dot && <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />}
@@ -66,7 +66,7 @@ export function ChipRow({ children, style }) {
    option: { key, label?, icon? } - icon is an inline SVG (no Unicode glyphs). */
 export function SegTabs({ options, value, onChange, ariaLabel, style }) {
   return (
-    <div role="group" aria-label={ariaLabel} style={{ display: 'inline-flex', border: '1px solid #4a3c22', borderRadius: 20, overflow: 'hidden', ...style }}>
+    <div role="group" aria-label={ariaLabel} style={{ display: 'inline-flex', border: '1px solid var(--edge-brown)', borderRadius: 20, overflow: 'hidden', ...style }}>
       {options.map((o) => {
         const on = value === o.key;
         return (
@@ -75,7 +75,7 @@ export function SegTabs({ options, value, onChange, ariaLabel, style }) {
               display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
               padding: o.label ? '8px 17px' : '8px 15px', border: 'none', cursor: 'pointer',
               fontFamily: 'var(--f-display)', fontSize: 12.5, fontWeight: on ? 600 : 500, letterSpacing: '.08em', textTransform: 'uppercase',
-              color: on ? '#d8c9a4' : '#8a8175', background: on ? 'rgba(42,33,20,.7)' : 'transparent',
+              color: on ? '#d8c9a4' : 'var(--ink-muted-warm)', background: on ? 'var(--surface-brown-70)' : 'transparent',
               transition: 'background .16s, color .16s', WebkitTapHighlightColor: 'transparent',
             }}>
             {o.icon}{o.label}

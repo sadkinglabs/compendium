@@ -327,7 +327,7 @@ function ImportTextSheet({ open, onClose }) {
             )}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1 }}>‹ Back</button>
+            <button onClick={() => setStep('paste')} disabled={busy} style={{ ...BTN_GHOST, flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
             <button onClick={confirm} disabled={busy || nItems === 0} style={{ ...BTN_GOLD, flex: 1.2, justifyContent: 'center', opacity: busy || nItems === 0 ? 0.5 : 1 }}>
               {busy ? 'Importing…' : `Import ${totalCopies}`}
             </button>
@@ -594,7 +594,7 @@ function WishlistImportSheet({ open, onClose, onCommitted }) {
             )}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-            <button onClick={() => setDraft(null)} disabled={committing} style={{ ...BTN_GHOST, flex: 1, opacity: committing ? 0.5 : 1 }}>‹ Back</button>
+            <button onClick={() => setDraft(null)} disabled={committing} style={{ ...BTN_GHOST, flex: 1, opacity: committing ? 0.5 : 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6" /></svg>Back</button>
             <button onClick={confirm} disabled={phase !== 'idle' || !view.ready} style={{ ...BTN_GOLD, flex: 1.4, justifyContent: 'center', opacity: phase === 'idle' && view.ready ? 1 : 0.5 }}>
               {committing ? 'Adding…' : view.ctaLabel}
             </button>
@@ -2102,12 +2102,15 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     <div style={{ padding: '0 20px' }}>
       {/* Header: frosted back + name/eyebrow + a live owned/goal tally. */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4, marginBottom: 14 }}>
+        {/* Same 44px gold-circle back as the set drill (the app's one circular back family);
+            the old 38px rose version was the only nav control on the stray 224,169,177 palette. */}
         <button onClick={() => { flushRef.current(); onBack(); }} aria-label="Back to lists" style={{
-          width: 38, height: 38, flex: 'none', borderRadius: '50%', cursor: 'pointer',
+          width: 44, height: 44, margin: -3, flex: 'none', borderRadius: '50%', cursor: 'pointer',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          font: "400 22px/1 var(--f-ui)", color: '#d3a8af',
-          background: 'rgba(224,169,177,.07)', border: '1px solid rgba(224,169,177,.22)',
-        }}>‹</button>
+          color: 'var(--gold-leaf)', background: 'transparent', border: '1px solid var(--hair-40)',
+        }}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ font: "700 22px/1.1 var(--f-display)", color: 'var(--ink-head)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{meta.name}</div>
           {/* The Wishlist's name already says "Wishlist" - a WISHLIST eyebrow under it just read twice. */}

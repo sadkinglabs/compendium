@@ -146,6 +146,11 @@
   --i-xs: 12px; --i-sm: 14px; --i-md: 16px; --i-lg: 20px; --i-xl: 26px;
   --blur-scrim: 6px; --blur-chip: 8px; --blur-pill: 14px;
 
+  /* bottom-nav height - the ONE copy. Consumed by .cx-nav, .cx-dock, the pillar
+     scroller reserve (App.jsx S.body) and deckpager's .dpage-scroll; changing the
+     nav height is a one-line edit here, not a four-file hunt. */
+  --nav-h: 62px;
+
   /* warm-black surface scale (the shipped sheet/well/tile/glass blacks) */
   --sheet-grad: linear-gradient(180deg, #151109, #0b0806);
   --surface-well-warm: rgba(18, 16, 13, .85);
@@ -233,7 +238,7 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 
 /* ── Bottom nav - in the Deckbuilder (#nav/.nav-btn), re-tinted black+gold,
    bigger icons (26px). Gold active colour + top indicator bar. ── */
-.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(62px + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+.cx-nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; height: calc(var(--nav-h) + env(safe-area-inset-bottom)); background: #000; border-top: 1px solid rgba(220,184,111,.18); display: flex; padding-bottom: env(safe-area-inset-bottom); padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 .cx-nav-btn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 10px; font-weight: 600; letter-spacing: .04em; color: var(--ink-faint); font-family: var(--f-ui); border: none; background: none; cursor: pointer; transition: color .15s; padding: 0 2px; position: relative; white-space: nowrap; overflow: hidden; }
 .cx-nav-btn svg { width: 26px; height: 26px; }
 .cx-nav-btn.active { color: var(--gold-leaf); }
@@ -262,13 +267,13 @@ input, textarea { -webkit-user-select: text; user-select: text; }
    keyboard focus ring (gold, :focus-visible only) win. */
 .cx-rail-letter { all: unset; }
 .cx-rail-letter:focus-visible { outline: 2px solid var(--gold-leaf); outline-offset: 2px; border-radius: 3px; }
-.cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(62px + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
+.cx-dock { position: fixed; left: 16px; right: 16px; bottom: max(calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px), calc(var(--kb, 0px) / var(--ui-scale, 1) + 12px)); z-index: 50; display: flex; align-items: flex-end; gap: 12px; pointer-events: none; transition: bottom .2s ease; }
 .cx-dock-search { flex: 1; min-width: 0; }
 .cx-dock-fab { flex: none; position: relative; }   /* anchor for the stacked add FAB (My Collection edit mode) */
 .cx-dock > * > * { pointer-events: auto; }
 
 /* Uniform black frosted glass - no per-pillar tint (keeps the palette subtle). */
-.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: 999px; background: rgba(10,10,12,.58); border: 1px solid rgba(255,255,255,.09); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
+.cx-search-pill { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 16px; border-radius: var(--r-pill); background: rgba(10,10,12,.58); border: 1px solid var(--hair-glass); backdrop-filter: blur(var(--blur-pill)); -webkit-backdrop-filter: blur(var(--blur-pill)); box-shadow: 0 6px 20px rgba(0,0,0,.5); }
 .cx-search-pill svg { width: 16px; height: 16px; color: var(--ink-muted); flex-shrink: 0; }
 .cx-search-pill input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--ink-body); font: 400 15px/1 var(--f-read); }
 .cx-search-pill input::placeholder { color: var(--ink-faint); }

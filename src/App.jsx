@@ -446,10 +446,11 @@ export default function App() {
           show the brand bar + divider above it. */}
       {addActive ? (
         <div style={S.detailHeader}>
-          <button onClick={exitAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, flexShrink: 0 }}><IcBack size={16} />Done</button>
+          <button onClick={exitAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', padding: 0, flexShrink: 0 }}><IcBack size={16} />Done</button>
           <div style={{ flex: 1, minWidth: 0, textAlign: 'right', overflowWrap: 'normal', wordBreak: 'normal' }}>
-            <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.18em', color: '#a08cc0' }}>EDITING</span>
-            <span style={{ font: "600 13px/1.25 var(--f-display)", color: '#e3c589' }}> · {addMode.deckName}</span>
+            {/* Chrome carries the Decks CHROME violet (--accent-violet), never the content tone. */}
+            <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.18em', color: 'var(--accent-violet)' }}>EDITING</span>
+            <span style={{ font: "600 13px/1.25 var(--f-display)", color: 'var(--gold-num)' }}> · {addMode.deckName}</span>
           </div>
         </div>
       ) : viewDetail ? (
@@ -1639,14 +1640,14 @@ const S = {
   profileChip: { width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(140deg,#cf9a4a,#8c5a2a)', display: 'flex', alignItems: 'center', justifyContent: 'center', font: "600 12px/1 var(--f-display)", color: '#1a1410', border: 'none', cursor: 'pointer' },
   contextHeader: { padding: '4px 20px 12px' },
   detailHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 16px 12px', minHeight: 43 },
-  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: '#e3c589', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, flexShrink: 0 },
-  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: 'var(--f-display)', fontWeight: 600, fontSize: 14, lineHeight: 1.15, letterSpacing: '.1em', color: '#efe7d8', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
+  back: { display: 'inline-flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', color: 'var(--gold-num)', font: "500 16px/1 var(--f-ui)", cursor: 'pointer', width: 60, padding: 0, flexShrink: 0 },
+  detailTitle: { flex: 1, minWidth: 0, textAlign: 'center', fontFamily: 'var(--f-display)', fontWeight: 600, fontSize: 14, lineHeight: 1.15, letterSpacing: '.1em', color: 'var(--ink-head)', textTransform: 'uppercase', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 6px' },
   bmToggle: { width: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', background: 'none', border: 'none', cursor: 'pointer', padding: 0, WebkitTapHighlightColor: 'transparent', transition: 'color .15s' },
   title: { font: "600 27px/1 var(--f-display)", color: 'var(--ink-head)' },
   // S.app already insets the whole shell by env(safe-area-inset-bottom); the scroller
   // lives inside that box, so it only needs nav overlap (62px) + search/FAB clearance
   // (92px) - adding env() again just wastes a strip at the end of every list.
-  body: { flex: 1, overflowY: 'auto', overscrollBehaviorY: 'contain', paddingBottom: 'calc(154px + var(--kb,0px) / var(--ui-scale,1))' },
+  body: { flex: 1, overflowY: 'auto', overscrollBehaviorY: 'contain', paddingBottom: 'calc(var(--nav-h, 62px) + 92px + var(--kb,0px) / var(--ui-scale,1))' },
   input: { flex: 1, height: 44, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 12, padding: '0 14px', color: 'var(--ink-body)', font: "400 15px/1 var(--f-read)" },
   // Sheet primary - black glass, gold only in text/border (app rule: sheets stay black).
   btnGold: BTN_GOLD,
