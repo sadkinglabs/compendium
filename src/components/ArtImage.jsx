@@ -7,6 +7,7 @@
 // every render site (card art is CDN-served + on-device cached). See art-cdn-rev2-architecture.md B4.
 import { useReducer, useEffect, useCallback, useState } from 'react';
 import { reduce, initial, visibleCandidate, paintState } from '../store/artSource.js';
+import { initialReveal, revealReduce, revealPresentation, SETTLE_AFTER_MS } from '../store/artReveal.js';
 import { artCache } from '../store/artCacheInstance.js';
 
 /**
@@ -47,23 +48,42 @@ export function useArtSource(key) {
  * inside .map() (it is a component, so the hook is called once per instance). `artKey` is the
  * content-addressed key (a printing/card `image_slug` after the Phase-2 repoint).
  */
+// REVEAL CONTRACT (Codex-approved Option A, docs/proposals/decks-swap-artifacts.md;
+// decisions live in the pure, tested artReveal.js):
+//   - every new {src, gen} identity mounts HIDDEN, warm cache history included -
+//     that history was granting pre-load visibility, which is how the failing
+//     hero painted the broken-image glyph (rec6 f016) and how warm remounts
+//     revealed their first raster instantly (the measured Library streak on the
+//     within-pillar swap);
+//   - only this element's own load starts the reveal, which is a compositor
+//     opacity transition: 160ms cold, 90ms warm - warm shortens, never skips;
+//   - the transition lives in CSS classes (tokens.css cx-art-reveal*) so the
+//     reduced-motion rendering-integrity exception is plain CSS specificity;
+//   - the settle timer is identity-checked in the reducer, so it can never
+//     settle a replacement {src, gen}.
+// Measurement vs inference: the fixed seam x (img left edge + 512) and the
+// fade's measured effect (detector spike ~77k -> 0 on the cold path, build 234)
+// are observations; "tiles finishing upload after their neighbour" is the
+// consistent inference, not directly observed Chromium state.
 export function ArtImg({ artKey, alt = '', ...imgProps }) {
   const { src, gen, onError } = useArtSource(artKey || null);
-  // ATOMIC PAINT (owner report 2026-08-14: the My Deck hero painted progressively -
-  // the "broken image" effect - as large JPEGs decoded on screen). The img stays
-  // invisible until the load event, then appears whole. The paint-once cache keeps
-  // re-entries instant: a key that has painted this session shows immediately, so
-  // this cannot resurrect the warm-entry blink the art-first-paint work removed.
-  const [loadedId, setLoadedId] = useState(null);          // `${gen}|${src}` once fully loaded
+  const [reveal, dispatchReveal] = useReducer(revealReduce, initialReveal);
+  const id = `${gen}|${src}`;
   if (!src) return null;
-  const show = (!!artKey && artCache.hasPainted(artKey)) || loadedId === `${gen}|${src}`;
+  const p = revealPresentation(reveal, id);
+  const onLoad = () => {
+    dispatchReveal({ type: 'LOADED', id, warm: !!artKey && artCache.hasPainted(artKey) });
+    if (artKey) artCache.markPainted(artKey);
+    setTimeout(() => dispatchReveal({ type: 'SETTLED', id }), SETTLE_AFTER_MS);
+  };
   // imgProps (className/style/loading/aria-hidden/...) pass through; src + onError are the boundary's,
   // placed last so a stray caller prop can never override the candidate-chain error handling.
   return (
     <img key={gen} alt={alt} {...imgProps}
-      style={{ ...(imgProps.style || null), ...(show ? null : { opacity: 0 }) }}
+      className={[imgProps.className, p.className].filter(Boolean).join(' ') || undefined}
+      style={{ ...(imgProps.style || null), ...p.style }}
       src={src}
-      onLoad={() => { setLoadedId(`${gen}|${src}`); if (artKey) artCache.markPainted(artKey); }}
+      onLoad={p.revealed ? undefined : onLoad}
       onError={onError} />
   );
 }
