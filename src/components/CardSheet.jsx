@@ -154,8 +154,24 @@ export default function CardSheet({ cardId, deckId, onChange, onClose, onOpenCod
                 </>
               )}
 
-              {/* An avatar isn't added like a card (no steppers): its action is to
-                  swap it, opening the same avatar wizard the hero used to. */}
+              {/* An avatar joins the deck's COLLECTION only (spares ride the deck's
+                  sideboard section - owner ask 2026-08-15); never the Spellbook. The
+                  repository's copy and collection limits apply unchanged. */}
+              {deckId && !!c.is_avatar && (
+                <>
+                  <div style={DIVIDER} />
+                  <div style={{ textAlign: 'center', marginBottom: 16 }}>
+                    <FitText max={13} text={`Add to ${deckName || 'this deck'}`}
+                      style={{ fontFamily: 'var(--f-display)', fontWeight: 600, lineHeight: 1, letterSpacing: '.24em', textTransform: 'uppercase', color: '#cba75f' }} />
+                  </div>
+                  <div style={{ maxWidth: 150, margin: '0 auto' }}>
+                    <CountCol label="Collection" field="collection" qty={counts} step={step} />
+                  </div>
+                </>
+              )}
+
+              {/* The avatar's OTHER action: swap the deck's avatar, opening the same
+                  wizard the hero uses. */}
               {!!c.is_avatar && onChangeAvatar && (
                 <>
                   <div style={DIVIDER} />
