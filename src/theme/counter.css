@@ -834,6 +834,74 @@ body.kb-open #picker-screen .picker-footer { display: none; }
    the End-Match screen and the counter's Dice / Max Life / Match Log popups.
    implements Play pillar's .overlay/.modal-box system, scoped to .cx-life-tracker.
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ── ADVANCED COUNTER BAND — "Cartouche" (docs/proposals/advanced-counter-band.md).
+   An OVERLAY anchored like the divider (absolute, top 50%) - a SIBLING of it, not
+   a child, because the divider's own pulse animates opacity and the band must not
+   breathe with it. Nothing here scrolls; every animation is transform/opacity;
+   no blur, hairlines only (§6). Opponent FIGURES rotate 180, the strip does not. */
+.cx-life-tracker .band-wrap { position: absolute; left: 10%; right: 10%; top: 50%; transform: translateY(-50%); height: 2px; z-index: 11; pointer-events: none; }
+.cx-life-tracker .band-flash { position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--gold); box-shadow: 0 0 12px rgba(220,184,111,.8); animation: bandFlash 520ms ease forwards; pointer-events: none; }
+@keyframes bandFlash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+/* The strip IS the outer gilt keyline: its fill shows only through the 1px ring
+   the inset .band-fill leaves uncovered. Pointed-hexagon cartouche via clip-path. */
+.cx-life-tracker .band-strip {
+  position: absolute; left: 0; right: 0; height: 38px; pointer-events: auto;
+  background: rgba(220,184,111,.35);
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
+}
+.cx-life-tracker .band-strip.player { top: calc(100% + 6px); }
+.cx-life-tracker .band-strip.opp { bottom: calc(100% + 6px); }
+.cx-life-tracker .band-fill { position: absolute; inset: 1px; background: rgba(20,15,9,.72); clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%); }
+.cx-life-tracker .band-grid { position: absolute; inset: 0; display: grid; grid-template-columns: 56px repeat(4, 1fr); padding: 0 12px; }
+/* A figure is a real <button>; its hit box extends 14px past the 38px strip (66px
+   effective, over the 44px floor) without moving a pixel of the visual. touch-action
+   none: the horizontal step-drag must never negotiate with the browser. */
+.cx-life-tracker .band-fig { position: relative; display: flex; align-items: center; justify-content: center; gap: 4px; background: none; border: 0; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; -webkit-appearance: none; appearance: none; }
+.cx-life-tracker .band-fig::after { content: ''; position: absolute; left: 0; right: 0; top: -14px; bottom: -14px; }
+.cx-life-tracker .band-fig-rot { display: flex; align-items: center; }
+.cx-life-tracker .band-fig-rot.rot { transform: rotate(180deg); }
+.cx-life-tracker .band-fig-stamp { position: relative; display: flex; align-items: center; gap: 4px; }
+.cx-life-tracker .band-mana { min-width: 26px; height: 26px; padding: 0 6px; box-sizing: border-box; border: 1px solid rgba(220,184,111,.55); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font: 600 16px/1 var(--f-display); color: #e3c589; font-variant-numeric: tabular-nums; }
+.cx-life-tracker .band-thr { font: 600 20px/1 var(--f-display); color: #f1e8d0; font-variant-numeric: tabular-nums; }
+/* Ghost = the prospective value riding an armed drag: 62%, mint up / warm red down. */
+.cx-life-tracker .band-mana.ghost-up, .cx-life-tracker .band-thr.ghost-up { color: #a8f5c8; opacity: .62; }
+.cx-life-tracker .band-mana.ghost-down, .cx-life-tracker .band-thr.ghost-down { color: #ff9d8b; opacity: .62; }
+/* Drag rail: the affordance IS the ruler - a gilt hairline under the pressed
+   figure with a tick dot at each trigger distance (±22px). The figure never moves. */
+.cx-life-tracker .band-rail { position: absolute; left: 50%; bottom: 3px; width: 76px; height: 1px; transform: translateX(-50%); background: rgba(220,184,111,.35); pointer-events: none; }
+.cx-life-tracker .band-rail::before, .cx-life-tracker .band-rail::after { content: ''; position: absolute; top: -1px; width: 3px; height: 3px; border-radius: 50%; background: rgba(220,184,111,.55); }
+.cx-life-tracker .band-rail::before { left: calc(50% - 22px); }
+.cx-life-tracker .band-rail::after { right: calc(50% - 22px); }
+/* Ceremony: unroll after the divider flash, then the figures stamp in. `backwards`
+   fill keeps them hidden through their inline delay; reduced-motion (the global
+   neutraliser) drops every animation and the band is simply, fully there. */
+.cx-life-tracker .band-wrap.band-enter .band-strip { animation: bandUnroll 620ms cubic-bezier(.22,1.2,.36,1) backwards; }
+.cx-life-tracker .band-wrap.band-enter .band-strip.opp { animation-delay: 80ms; }
+@keyframes bandUnroll { 0% { transform: scaleX(0); } 80% { transform: scaleX(1.02); } 100% { transform: scaleX(1); } }
+.cx-life-tracker .band-wrap.band-enter .band-fig-stamp { animation: bandStamp 340ms cubic-bezier(.2,.9,.3,1.2) backwards; }
+@keyframes bandStamp { from { transform: scale(1.6); opacity: 0; } }
+/* Commit pulse + floor shake + delta trail - AFTER the ceremony rules so a live
+   pulse wins the animation shorthand on the same element. */
+.cx-life-tracker .band-fig-stamp.pulse { animation: bandPulse 420ms cubic-bezier(.2,.7,.2,1); }
+@keyframes bandPulse { 0% { transform: scale(1); } 50% { transform: scale(1.13); } 100% { transform: scale(1); } }
+.cx-life-tracker .band-fig-stamp.shake { animation: bandShake 90ms ease; }
+@keyframes bandShake { 0% { transform: translateX(0); } 30% { transform: translateX(-3px); } 60% { transform: translateX(3px); } 100% { transform: translateX(0); } }
+.cx-life-tracker .band-trail { position: absolute; left: 50%; top: -6px; font: 600 13px/1 var(--f-ui); color: #a8f5c8; animation: bandTrail 620ms cubic-bezier(.2,.7,.2,1) forwards; pointer-events: none; }
+.cx-life-tracker .band-trail.down { color: #ff9d8b; }
+@keyframes bandTrail { from { opacity: 1; transform: translate(-50%, 0); } to { opacity: 0; transform: translate(-50%, -19px); } }
+/* Inline steppers: docked OUTSIDE the strip toward the tapped player's own side
+   (owner ruling D-b3), centred on the figure, edge-clamped by the component. The
+   ENTRANCE animates on the buttons, not the container - the container's inline
+   transform (centring + opponent rotation) must never fight an animation. */
+.cx-life-tracker .band-steppers { position: absolute; display: flex; gap: 10px; z-index: 12; pointer-events: auto; }
+.cx-life-tracker .band-steppers.player { top: calc(100% + 8px); }
+.cx-life-tracker .band-steppers.opp { bottom: calc(100% + 8px); }
+.cx-life-tracker .band-step-btn { position: relative; width: 30px; height: 30px; border-radius: 50%; border: 1px solid rgba(220,184,111,.55); background: rgba(20,15,9,.88); color: #e3c589; display: flex; align-items: center; justify-content: center; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: none; animation: bandStepIn 200ms cubic-bezier(.2,.9,.3,1.2) backwards; }
+.cx-life-tracker .band-step-btn + .band-step-btn { animation-delay: 40ms; }
+.cx-life-tracker .band-step-btn::after { content: ''; position: absolute; inset: -8px; }
+.cx-life-tracker .band-step-btn:active { background: rgba(220,184,111,.16); transform: scale(.94); }
+@keyframes bandStepIn { from { transform: scale(1.3); opacity: 0; } }
+
 .cx-life-tracker { --modal: #0e0b08; --sheet: linear-gradient(180deg,#151109,#0b0806); --well: rgba(42,33,20,.5);
   --gold-dim: rgba(220,184,111,.16); --jade: #4db38a; --win: #4db38a; --win-2: #7fd3ad; }
 

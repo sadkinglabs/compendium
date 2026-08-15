@@ -19,6 +19,9 @@ export const OWNED = [
   'src/pillars/LifeCounter.jsx',
   'src/pillars/matchLife.js', 'src/pillars/matchRoll.js', 'src/navBack.js',
   'src/store/matchSnapshot.js', 'src/store/importPlan.js', 'src/store/listGoalModel.js',
+  // Counter Band (2026-08-15): pure band rules + the band component are match-view
+  // typed boundaries, same standing as matchLife/matchRoll.
+  'src/pillars/bandState.js', 'src/pillars/CounterBand.jsx',
   'src/types/ambient.d.ts',
 ];
 export const TRANSITIVE = [
@@ -29,6 +32,9 @@ export const TRANSITIVE = [
   'src/store/playRepository.js', 'src/store/profileRepository.js', 'src/store/schema.js',
   'src/store/artSource.js', 'src/store/artCache.js', 'src/store/artCacheInstance.js',
   'src/store/artCacheAdapter.js', 'src/components/ArtImage.jsx',
+  // Entered via CounterBand (2026-08-15): the element-pip leaf (kept a LEAF precisely
+  // so the closure did not swallow ui.jsx; presentation shim over cardArt, so TRANSITIVE).
+  'src/components/ElementPip.jsx',
 ];
 
 const norm = (root, p) => path.relative(root, p).split(path.sep).join('/');

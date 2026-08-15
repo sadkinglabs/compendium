@@ -1,6 +1,7 @@
 // Shared UI vocabulary - one definition each, reused across pillars (architecture §3/§6).
 import React from 'react';
 import { elementIconUrl } from '../store/cardArt.js';
+import { ElementPip } from './ElementPip.jsx';
 import { linkRuns } from '../store/inlineRuns.js';
 import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
@@ -205,17 +206,9 @@ export function ThresholdPips({ runs, size = 12 }) {
   );
 }
 
-// Real element/threshold icon (from public/icons), falling back to the ▲ glyph
-// in the element colour when the asset is missing or images are suppressed (§5).
-function ElementPip({ el, color, size }) {
-  const [broken, setBroken] = React.useState(false);
-  const url = el ? elementIconUrl(el) : null;
-  if (url && !broken) {
-    return <img src={url} width={size} height={size} alt={el} onError={() => setBroken(true)}
-      style={{ display: 'inline-block', verticalAlign: 'middle', objectFit: 'contain' }} />;
-  }
-  return <span style={{ fontSize: size - 1, lineHeight: 1, color: color || '#9aa6b2' }}>▲</span>;
-}
+// ElementPip moved to its own leaf module (components/ElementPip.jsx) so the
+// Counter Band can import the pip without pulling all of ui.jsx into
+// LifeCounter's type-gate closure. Re-imported here for ThresholdPips.
 
 /* Focus trap for modal surfaces - moves focus into the panel on open, keeps Tab
    cycling inside it, and restores focus to the opener on close. Accessibility

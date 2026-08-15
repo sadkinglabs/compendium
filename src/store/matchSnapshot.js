@@ -16,14 +16,19 @@ export const SNAP_VERSION = 1;   // bump only on a real shape change (and add a 
 /**
  * Assemble the resumable snapshot from live match values. The one definition of the shape:
  * normalized `p`/`e` sides become flat pLife/pMax/eLife/eMax on disk; optional fields default.
- * @param {{ mode, settings, you, opp, deck, p: Side, e: Side, log?, elapsedSec?, oppName?, recorded?, clockOn? }} state
+ * @param {{ mode, settings, you, opp, deck, p: Side, e: Side, log?, elapsedSec?, oppName?, recorded?, clockOn?, band? }} state
  */
-export function buildMatchSnapshot({ mode, settings, you, opp, deck, p, e, log, elapsedSec, oppName, recorded, clockOn }) {
+export function buildMatchSnapshot({ mode, settings, you, opp, deck, p, e, log, elapsedSec, oppName, recorded, clockOn, band }) {
   return {
     v: SNAP_VERSION,
     mode, settings, you: you || null, opp: opp || null, deck: deck || null,
     pLife: p.life, pMax: p.max, eLife: e.life, eMax: e.max,
     log: log || [], elapsedSec: elapsedSec || 0, oppName: oppName || '', recorded: !!recorded, clockOn: !!clockOn,
+    // Advanced Counter Band (optional, defaults 0 - NO version bump: an old
+    // snapshot without these resumes as zeros, and validity does not gate on
+    // them). Flat on disk like life/max; bandState.restoreBand clamps on read.
+    pMana: band?.p?.mana ?? 0, pAir: band?.p?.air ?? 0, pEarth: band?.p?.earth ?? 0, pFire: band?.p?.fire ?? 0, pWater: band?.p?.water ?? 0,
+    eMana: band?.e?.mana ?? 0, eAir: band?.e?.air ?? 0, eEarth: band?.e?.earth ?? 0, eFire: band?.e?.fire ?? 0, eWater: band?.e?.water ?? 0,
   };
 }
 
@@ -38,6 +43,12 @@ export function readMatchSnapshot(s) {
     mode: s.mode, settings: s.settings, you: s.you || null, opp: s.opp || null, deck: s.deck || null,
     p: { life: s.pLife, max: s.pMax }, e: { life: s.eLife, max: s.eMax },
     log: s.log || [], elapsedSec: s.elapsedSec || 0, oppName: s.oppName || '', recorded: !!s.recorded, clockOn: s.clockOn ?? false,
+    // Raw band values - the caller clamps via bandState.restoreBand (range rules
+    // live there, not here; the same split as life/max -> restoreSide).
+    band: {
+      p: { mana: s.pMana, air: s.pAir, earth: s.pEarth, fire: s.pFire, water: s.pWater },
+      e: { mana: s.eMana, air: s.eAir, earth: s.eEarth, fire: s.eFire, water: s.eWater },
+    },
   };
 }
 
