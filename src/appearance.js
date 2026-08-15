@@ -18,6 +18,12 @@ export function initViewportInsets() {
   const update = () => {
     const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
     document.documentElement.style.setProperty('--kb', `${Math.round(kb)}px`);
+    // Boolean form of the same fact, for CSS that needs a STATE, not a length
+    // (e.g. the avatar picker compacts while the keyboard is UP - focus is the
+    // wrong trigger on Android, where Back closes the keyboard but leaves the
+    // field focused). 60px threshold: real keyboards are hundreds of px; small
+    // viewport jitter must not flap the class.
+    document.body.classList.toggle('kb-open', kb > 60);
   };
   vv.addEventListener('resize', update);
   vv.addEventListener('scroll', update);
