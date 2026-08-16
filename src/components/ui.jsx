@@ -7,6 +7,7 @@ import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
 import { useFocusTrap } from './useFocusTrap.js';
 import Sheet from './Sheet.jsx';   // the one titled adapter over the GothicSheet chassis (BottomSheet aliases it)
+import * as Dialog from '@radix-ui/react-dialog';   // the SAME layer manager vaul builds the sheet on - see CenteredModal
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -228,32 +229,59 @@ export function BottomSheet(props) {
 
 // Centered modal chassis (scrim + black-gold box + optional close X). Was inlined
 // byte-for-byte in 4 places; this is the single source. `boxStyle` overrides the
-// box for per-modal needs (maxWidth, padding, overflow, a violet chassis). Adds a
-// focus trap + hardware-back close for free.
+// box for per-modal needs (maxWidth, padding, overflow, a violet chassis).
+//
+// BUILT ON RADIX DIALOG, deliberately - the same primitive vaul builds the sheet
+// chassis on. This is not decoration: Radix manages a LAYER STACK, and its modal
+// behaviour (`pointer-events:none` on <body>, react-remove-scroll's scroll lock)
+// exempts only surfaces inside that stack. While this modal was hand-rolled it was
+// invisible to that manager, so opening it over a sheet left it completely dead and
+// unscrollable while the sheet beneath stayed live - the Settings bug. Two competing
+// modal systems is the actual defect; one system is the fix, and it also hands us
+// the focus trap, Escape, scroll locking and correct stacking for free rather than
+// re-implemented here.
+//
+// Hardware back stays ours: Android's back button is not Escape, so it routes
+// through the app's LIFO consumer stack exactly as every other surface does.
 export function CenteredModal({ open, label, maxWidth = 360, onClose, closeButton = true, boxStyle, children }) {
-  const trapRef = useFocusTrap(open);
   const closeRef = React.useRef(onClose); closeRef.current = onClose;
   React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
-  if (!open) return null;
+  // Same portal target as the sheet chassis: position:fixed must escape the pillar's
+  // transformed slide-pane.
+  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
   return (
-    <div onClick={onClose} role="dialog" aria-modal="true" aria-label={label}
-      // pointerEvents MUST be re-enabled explicitly. While a sheet is open, the drawer
-      // engine (Radix, under vaul) sets `pointer-events: none` on <body> and exempts
-      // only its OWN portal subtree. This modal renders in the app tree, not in that
-      // portal, so it inherited `none` and was completely dead - while the sheet
-      // beneath it stayed live, so taps "through" it reached that sheet's input and
-      // raised the keyboard. Both halves of the owner-reported Settings bug.
-      style={{ pointerEvents: 'auto', position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 24px calc(24px + var(--kb,0px) / var(--ui-scale,1))', background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
-      <div ref={trapRef} onClick={(e) => e.stopPropagation()}
-        style={{ position: 'relative', width: '100%', maxWidth, borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid var(--hair-24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', ...boxStyle }}>
-        {closeButton && (
-          <button onClick={onClose} aria-label="Close" className="cx-hit44 cx-press" style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        )}
-        {children}
-      </div>
-    </div>
+    <Dialog.Root open={!!open} onOpenChange={(o) => { if (!o) closeRef.current?.(); }}>
+      <Dialog.Portal container={root}>
+        <Dialog.Overlay
+          style={{ position: 'fixed', inset: 0, zIndex: 700, background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}
+        />
+        <Dialog.Content
+          aria-label={label}
+          onOpenAutoFocus={(e) => e.preventDefault()}   /* keep the WebView from scrolling to the first control */
+          style={{
+            position: 'fixed', zIndex: 701, left: '50%',
+            /* centred, then lifted by half the keyboard inset so the box clears the
+               IME the way the previous flex+padding layout did. */
+            top: 'calc(50% - var(--kb,0px) / var(--ui-scale,1) / 2)',
+            transform: 'translate(-50%, -50%)',
+            width: 'calc(100% - 48px)', maxWidth,
+            borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)',
+            border: '1px solid var(--hair-24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)',
+            outline: 'none', ...boxStyle,
+          }}
+        >
+          {/* Radix wants a title for the accessible name; ours is visually hidden
+              because each modal draws its own heading in the Manuscript treatment. */}
+          <Dialog.Title style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>{label || 'Dialog'}</Dialog.Title>
+          {closeButton && (
+            <button onClick={() => closeRef.current?.()} aria-label="Close" className="cx-hit44 cx-press" style={{ position: 'absolute', top: 12, right: 12, width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--hair-22)', background: 'rgba(0,0,0,.3)', color: 'var(--ink-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1 }}>
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          )}
+          {children}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

@@ -308,11 +308,16 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
       onPointerDown={onStageDown} onPointerMove={onStageMove}
       onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
       style={{
-        // pointerEvents: the viewer is opened FROM a card sheet, and the drawer engine
-        // (Radix, under vaul) sets `pointer-events: none` on <body> while that sheet is
-        // open, exempting only its own portal subtree. This viewer portals to the body
-        // instead, so without this it inherits `none` and the whole stage - including
-        // its tilt drag and close button - goes dead.
+        // THE ONE SURFACE OUTSIDE THE RADIX LAYER STACK, and the only place this
+        // exemption remains. Sheets (vaul) and centred modals (Radix Dialog) now share
+        // one layer manager, which handles `pointer-events:none` on <body> and the
+        // scroll lock for everything inside it. This viewer is deliberately NOT a
+        // Radix dialog: it is a bespoke stage with its own phase machine, FLIP
+        // entrance, pointer-captured tilt, and its own focus/inert/Escape handling
+        // (the audit called it the app's reference implementation), and wrapping it
+        // would fight all of that. Opened FROM a card sheet it would otherwise inherit
+        // `none` and the whole stage - tilt drag and close button included - goes dead,
+        // so it opts itself back in. Flagged for review rather than left implicit.
         pointerEvents: 'auto',
         position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 26, padding: 20,

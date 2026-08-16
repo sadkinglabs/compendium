@@ -34,6 +34,23 @@ vaul owns **motion and gestures only**. Everything below is ours, and each item 
 
 ---
 
+## 2a. ONE layer system, not two (2026-08-17)
+
+The sheet chassis runs **stock vaul** - no `modal` override, vaul's own overlay, vaul's focus trap. Anything that must appear *over* a sheet is built on **Radix Dialog**, the same primitive vaul itself is built on, so both live in one layer stack.
+
+This is a correctness requirement, not tidiness. Radix's modal mode applies two document-wide side effects and exempts only surfaces **inside its own layer stack**:
+
+1. `pointer-events: none` on `<body>`
+2. react-remove-scroll (`data-scroll-locked` on `<body>`), whose only allowlist is a `shards` prop that vaul does not expose
+
+While `CenteredModal` was hand-rolled it was invisible to that manager, so opening Settings over the profile sheet produced a dialog that was **completely dead and unscrollable** while the sheet beneath it stayed live enough to take taps and raise its keyboard. The same defect silently applied to every `confirmAction` dialog raised from a sheet.
+
+The tempting fix - switching the sheet to `modal={false}` and re-implementing the scrim, focus trap and dismissal ourselves - was built, measured, and **rejected by the owner**: it meant accreting custom scaffolding onto a library chosen precisely because it works out of the box, and it silently removed the scrim entirely (vaul renders no overlay when non-modal), taking dimming, tap-to-dismiss and background blocking with it. Two competing modal systems was the defect; one system is the fix.
+
+**Rule for any new surface that must paint over a sheet: build it on Radix Dialog.** Do not hand-roll a fixed overlay, and do not reach for `pointer-events: auto` to force your way past the layer manager.
+
+**The one documented exception** is `CardArtViewer`: a bespoke full-screen stage with its own phase machine, FLIP entrance, pointer-captured tilt and its own focus/inert/Escape handling. It sets `pointer-events: auto` on its root to opt back in, and that exemption is commented at the call site.
+
 ## 3. The API (unchanged by the engine swap)
 
 ```jsx
