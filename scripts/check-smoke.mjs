@@ -107,7 +107,15 @@ export const ROUTES = [
   { name: 'Home (launch)', tap: [], expect: ['welcome back'] },
   { name: 'Codex', tap: ['Codex'], expect: ['marginalia'] },
   { name: 'Decks', tap: ['Decks'], expect: ['library'] },
-  { name: 'Play', tap: ['Play'], expect: ['quick match'] },
+  // 'quick match' was unreachable as a marker: it is a FAB MENU ITEM, and the menu
+  // renders aria-hidden while closed, so its subtree is not in the a11y tree - and
+  // the FAB trigger's own aria-label does not reach this WebView's tree either (the
+  // same measured defect OverflowMenu.jsx:171-181 works around). The Play route was
+  // therefore red while Play itself rendered perfectly. 'win rate' is the hero
+  // donut's label: verified on-device as present on Play and ABSENT from Home, which
+  // is what the doctrine above requires. (It marks the POPULATED hub; a profile with
+  // no matches shows the "No Matches Yet" blank state instead.)
+  { name: 'Play', tap: ['Play'], expect: ['win rate'] },
   { name: 'Collection > Overview', tap: ['Collection'], expect: ['cards owned', 'decks buildable'] },
   { name: 'Collection > My Collection', tap: ['Collection', 'My Collection'], expect: ['non-foil owned'] },
   { name: 'Collection > set drill', tap: ['Collection', 'My Collection', 'BETA'], expect: ['back to sets', 'select cards'] },

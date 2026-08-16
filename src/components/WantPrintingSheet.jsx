@@ -1,8 +1,7 @@
 // "Which one do you need?" - the picker a want opens when the set is genuinely unknowable.
 //
-// DORMANT. Nothing renders this yet; the activation commit routes the heart through it. It is
-// built now so the canonical write path has a finished surface behind it before anything
-// depends on either.
+// LIVE: rendered from CollectionCardSheet (stacks over the card sheet) and from the
+// Collection wishlist flow. (An earlier DORMANT note here outlived its truth - audit fix.)
 //
 // It only ever appears for a REPRINT with no set context. A card printed once, or a heart
 // tapped inside a set-scoped surface, writes immediately - see wantIntent.js. Asking when the

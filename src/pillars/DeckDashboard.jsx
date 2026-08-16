@@ -9,6 +9,7 @@ import CardSheet from '../components/CardSheet.jsx';
 import { ArtImg } from '../components/ArtImage.jsx';
 import { Loading, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import Sheet from '../components/Sheet.jsx';
+import GothicSheet from '../components/GothicSheet.jsx';
 import { ChevronIcon, EditIcon, PlusIcon } from '../components/icons.jsx';
 import { XSvg } from '../components/CreateDeckWizard.jsx';
 import SearchPill from '../components/SearchPill.jsx';
@@ -453,14 +454,32 @@ export function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
   const [avatars, setAvatars] = useState([]);
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);
+  const [closing, setClosing] = useState(false);   // plays the chassis exit motion before onClose unmounts us
   useEffect(() => { const t = setTimeout(() => listAvatarCards(q).then(setAvatars), q ? 250 : 0); return () => clearTimeout(t); }, [q]);
   const meta = (c) => { const p = []; if (c.life != null) p.push(`${c.life} HP`); if (c.attack != null) p.push(`${c.attack} ATK`); const s = (c.subTypes || []).join(' · ') || c.rarity || ''; if (s) p.push(s); return p.join(' · '); };
-  async function save() { if (!sel) return; await setAvatar(deckId, sel.card_id); onSaved?.(); onClose(); }
+  async function save() { if (!sel) return; await setAvatar(deckId, sel.card_id); onSaved?.(); setClosing(true); }
+  // On the canonical chassis (spec section 6, phase 5): this also closes the audited
+  // hardware-back hole - the chassis registers a back consumer, so back now closes
+  // THIS sheet instead of unmounting the deck screen underneath it.
   return (
-    <div className="cx-decks ob-overlay" role="dialog" aria-modal="true" onClick={onClose}>
-      <div className="ob-inner" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-handle" />
-        <div className="ob-header"><h2>Change Avatar</h2><button className="sheet-close" onClick={onClose} aria-label="Close">{XSvg}</button></div>
+    <GothicSheet
+      open={!closing} onClose={onClose} label="Change Avatar"
+      onExited={() => { if (closing) onClose(); }}
+      header={(
+        <div className="cx-decks">
+          <div className="ob-header"><h2>Change Avatar</h2><button className="sheet-close" onClick={() => setClosing(true)} aria-label="Close">{XSvg}</button></div>
+        </div>
+      )}
+      footer={(
+        <div className="cx-decks">
+          <div className="ob-footer">
+            <button className="btn" onClick={() => setClosing(true)}>Cancel</button>
+            <button className={`btn primary${!sel ? ' disabled' : ''}`} disabled={!sel} onClick={save} style={{ flex: 1 }}>Save Avatar</button>
+          </div>
+        </div>
+      )}
+    >
+      <div className="cx-decks">
         <div className="ob-step2">
           <div className="ob-search-pill-wrap">
             {/* Canonical chassis (D2); scheduling stays with this owner. */}
@@ -492,12 +511,8 @@ export function ChangeAvatarSheet({ deckId, current, onClose, onSaved }) {
             </div>
           </div>
         </div>
-        <div className="ob-footer">
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button className={`btn primary${!sel ? ' disabled' : ''}`} disabled={!sel} onClick={save} style={{ flex: 1 }}>Save Avatar</button>
-        </div>
       </div>
-    </div>
+    </GothicSheet>
   );
 }
 

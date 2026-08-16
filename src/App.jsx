@@ -38,6 +38,8 @@ import { TELEMETRY_SETTING } from './content/telemetry.js';
 import { ListRow, IconButton, Loading, Chip, ChipRow, SectionLabel, ThresholdPips, BTN_GOLD, BTN_GHOST, BTN_DANGER, CenteredModal } from './components/ui.jsx';
 import { parseQuery } from './store/cardQuery.js';
 import Sheet from './components/Sheet.jsx';
+import PillarLoading from './components/PillarLoading.jsx';
+import { DIAMOND_PATH } from './components/brandMark.js';
 import { ToastHost, ConfirmHost } from './components/FeedbackHosts.jsx';
 import { toast, confirmAction } from './feedback.js';
 
@@ -111,6 +113,16 @@ export default function App() {
   useEffect(() => onBackButton(() => backRef.current?.()), []);
   // Dev aid: exercise the hardware-back chain from a desktop browser (no Capacitor).
   useEffect(() => { if (import.meta.env.DEV) window.__back = () => backRef.current?.(); }, []);
+  // Escape is the keyboard twin of hardware back: ONE global listener routes it
+  // through the same LIFO consumer stack, so the topmost sheet/modal/menu closes
+  // (a11y gap from the bottom-sheet audit - GothicSheet had no Escape path at all).
+  // Handlers that use Escape for something narrower (clearing a rename input) call
+  // preventDefault, which this listener respects.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !e.defaultPrevented && runBackConsumers()) e.preventDefault(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   // A shared QR / link opens compendium://match?d=... (review sheet) or
   // compendium://deck?d=... (import + open), whatever tab we're on.
   useEffect(() => onAppUrlOpen(async (url) => {
@@ -338,10 +350,11 @@ export default function App() {
     setTab('home'); bump();
   }
 
-  // The update gate's ONE dismissal path. CenteredModal owns scrim, close button,
-  // Escape and hardware back, and routes them all to onClose - so there is no
-  // second route to keep in sync, and no backStack row (runBackConsumers() runs
-  // before the declarative stack, so a row here would be unreachable anyway).
+  // The update gate's ONE dismissal path. CenteredModal owns scrim, close button
+  // and hardware back (Escape rides the same back-consumer via App's global
+  // listener), and routes them all to onClose - so there is no second route to
+  // keep in sync, and no backStack row (runBackConsumers() runs before the
+  // declarative stack, so a row here would be unreachable anyway).
   // Stamping on dismiss rather than on display means a kill mid-read re-shows the
   // notes: the benign failure. Stamping on display would swallow them for good.
   const dismissChangelog = async () => {
@@ -481,7 +494,10 @@ export default function App() {
           in the swipe direction. Decks is the full-height pager; the rest scroll in
           the standard body. */}
       <div key={tab} className={`cx-pillar-slide from-${slideDirRef.current}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <Suspense fallback={<Loading />}>
+      {/* A whole pillar is arriving, so the wait wears the app's mark rather than a
+          stray ellipsis at the top of an empty frame. It self-suppresses on fast
+          (warm-chunk) loads - see PillarLoading. */}
+      <Suspense fallback={<PillarLoading />}>
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
           onImportMatch={(url) => { const p = parseMatchShare(url); if (p) setMatchImport(p); }}
@@ -615,7 +631,9 @@ export default function App() {
         </div>
       )}
       {match && (
-        <Suspense fallback={<Loading />}>
+        /* The counter is a full-screen takeover, so its wait is the same case as a
+           pillar's: the app's mark, not an ellipsis at the top of a blank frame. */
+        <Suspense fallback={<PillarLoading />}>
           <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
             deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
             onMinimize={minimizeMatch} onPersist={saveOngoing} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
@@ -920,7 +938,7 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
             {editing?.id === p.id ? (
               <>
                 <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditing(null); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') { e.preventDefault(); setEditing(null); } }}
                   style={{ ...S.input, height: 38 }} />
                 <IconButton glyph="✓" size={28} onClick={saveRename} title="Save name" />
               </>
@@ -1586,7 +1604,7 @@ function shuffled(arr) {
 // SVG so the rising fill can be clipped cleanly to the diamond outline.
 function BootDiamond({ pct, dim }) {
   const p = Math.max(0, Math.min(100, pct));
-  const D = 'M50 5 L95 50 L50 95 L5 50 Z';
+  const D = DIAMOND_PATH;   // shared with PillarLoading so the mark has one geometry
   return (
     <div className={`boot-diamond${dim ? ' dim' : ''}`} aria-hidden="true" style={{ lineHeight: 0 }}>
       <svg viewBox="0 0 100 100" width="60" height="60">
