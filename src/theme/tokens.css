@@ -236,9 +236,18 @@ body img.cx-art-reveal-warm { transition-duration: .09s !important; }
    ONLY: unlike the boot splash's one-off drop-shadow glow, this runs on every
    pillar change, and a paint-phase animation there would raster the region every
    frame (§6). */
-/* flex:1 fills a pillar's flex column; min-height keeps it centred when a caller
-   renders it inside an ordinary (non-flex) screen container. */
-.cx-pillar-load { flex: 1; min-height: 52vh; display: flex; align-items: center; justify-content: center; padding-bottom: 8vh; }
+/* VIEWPORT-CENTRED, deliberately, because a pillar wait has TWO phases and they do
+   not share a box: first the chunk loads (the mark sits in the empty pillar column,
+   measured 813px tall), then the pillar mounts its own header and reports its own
+   loading state (measured 519px, since min-height governs once the parent is no
+   longer a stretching flex column). Centring in each box moved the mark 105px UP
+   between the two - the "snaps upwards" the owner saw. Anchoring to the viewport
+   instead makes the position identical in both phases and on every screen.
+   Safe here: the pillar slide animates OPACITY only, so no ancestor creates a
+   containing block (verified on device - transform/filter/perspective all none).
+   pointer-events:none because a transient full-viewport layer must never eat a tap,
+   and no z-index, so nav (40), dock (50) and sheets (200) still paint above it. */
+.cx-pillar-load { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding-bottom: 8vh; pointer-events: none; }
 .cx-pillar-load-mark { animation: cxMarkBreath 1.9s ease-in-out infinite; will-change: opacity, transform; }
 @keyframes cxMarkBreath { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .62; transform: scale(.955); } }
 /* Still fallback - the mark stays fully legible, it just stops breathing. */
