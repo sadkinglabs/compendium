@@ -79,11 +79,20 @@ export default function GothicSheet({ open, onClose, label = 'Sheet', dismissibl
               hidden because the Manuscript chassis shows its own header treatment. */}
           <Drawer.Title style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>{label}</Drawer.Title>
 
-          {/* Handle: vaul's own grab affordance, restyled to the M3 32x4 in Manuscript
-              gold. It is also the drag surface vaul listens on. */}
+          {/* The handle is OUR button, not vaul's <Drawer.Handle>: vaul's renders no
+              accessible name, which would silently drop the owner ruling that the
+              handle doubles as a screen-reader "Close" (it is the only in-sheet exit
+              on the card sheets - there is no X). Nothing is lost by replacing it,
+              because vaul drags from the whole sheet, not from the handle. */}
           {dismissible && (
             <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 8px', flex: 'none' }}>
-              <Drawer.Handle style={{ width: 32, height: 4, borderRadius: 2, background: 'var(--gold-handle, #5a4a28)' }} />
+              <button
+                type="button" aria-label="Close" className="cx-hit44"
+                onClick={() => closeRef.current?.()}
+                style={{ width: 32, height: 8, padding: 0, border: 'none', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'grab' }}
+              >
+                <span aria-hidden="true" style={{ width: 32, height: 4, borderRadius: 2, background: 'var(--gold-handle, #5a4a28)', display: 'block' }} />
+              </button>
             </div>
           )}
           {!dismissible && <div style={{ height: 14, flex: 'none' }} />}
