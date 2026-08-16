@@ -121,9 +121,33 @@ Measurement build: `imagesDisabled()` forced true (a temporary source edit, reve
 
 Against Codex's interpretation table this reads: **"Large remains bad in zero-image mode" is FALSE**, so grid/root reconciliation is exonerated as the primary cause - which also retroactively explains why my `useMemo` attempt changed nothing except adding noise. The remaining branch is warm-vs-cold, which discriminates a **resolution/download stampede** (cold-only) from **local load/decode/reveal cost** (present even warm).
 
-### What this does not yet establish
+## 5c. RESULT - condition 2 (warm) run 2026-08-16: all three conditions now agree
 
-Warm vs cold is untested, so the specific art mechanism is still open, and per Codex the counters needed to prove warmth do not exist yet: resolution starts/completions, **max inflight**, download latency, `<img>` load/error, and unresolved-at-end. Building that instrumentation is the next step, not a fix.
+The warm condition arrived naturally: after browsing the set on build 264 the cache held **235 art files** and **206 of 222 on-screen images were local** (`_capacitor_file_`), verified by CDP rather than inferred from "images appeared". Same device, same script, same cadence.
+
+| Condition | Set | Janky | 50th | 99th | Slow UI | Total frames |
+|---|---|---|---|---|---|---|
+| **Cold + art** | Arthurian ~400 | **20.17%** | 26ms | 81ms | **43** | 947 |
+| Zero-image | Arthurian ~400 | 2.47% / 2.08% | 12ms | 34-38ms | 2 | 607 / 624 |
+| **Warm cache** | **Arthurian ~400** | **1.92%** | **12ms** | **24ms** | **0** | 624 |
+| Cold + art | Dragonlord 13 | 2.12% | 14ms | 36ms | 2 | 614 |
+
+Against Codex's interpretation table this is the unambiguous row: **zero-image clean, warm clean, cold bad -> art resolution/download stampede confirmed.** Warm is not merely acceptable, it is the best run recorded (zero slow UI-thread frames, 24ms at the 99th percentile), which also rules out local load/decode/reveal as a material cost.
+
+### What this narrows the fix to
+
+- **Cold resolution only.** The expensive path is stat -> download -> validate -> promote, run unbounded for every mounted tile. Warm presentation needs nothing.
+- **The shimmer should not be touched** - it only appears on unpainted/cold art, and warm (where it is absent) and zero-image (where it is also absent) both measure clean, so it has no independent case against it. This matches Codex's instruction not to start there.
+- **The grid, vaul/sheet lifecycle and blur are all exonerated by measurement**, not by argument.
+- User-visible framing: this is a **first-visit cost**. "The more elements, the worse" is really "the more *cold art*, the worse" - a big set is simply the largest batch of first-visit art the app can be asked for at once.
+
+### Correction to one assumed symptom
+
+Codex's design brief anticipated that the stampede might also *fail* downloads. Tested directly on device via CDP: 40 real manifest objects downloaded **all at once** vs **capped at 4** - **40/40 succeeded in both cases**, and unbounded was actually faster (681ms vs 835ms). So unbounded concurrency does not cause download failures at this scale; the case for the admission layer rests on frame cost, not on failure rate. (An earlier probe that showed 40/40 failures was my harness writing into a directory that did not exist - `downloadFile` does not create parents.)
+
+### Still not built
+
+The bounded diagnostics Codex specified (resolution starts/completions, **max inflight**, download latency, `<img>` load/error, unresolved-at-end) do not exist yet, and the cold-condition acceptance numbers need them.
 
 ## 6. Questions for Codex
 
