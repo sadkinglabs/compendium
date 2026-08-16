@@ -22,6 +22,7 @@ import { haptic } from '../native.js';
 import { launchScanner } from '../cardScanner.js';
 import { subscribeCollection } from '../store/ownedRepository.js';
 import '../theme/dashboard.css';
+import PillarLoading from '../components/PillarLoading.jsx';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -96,7 +97,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
     return n;
   });
   useEffect(() => { let a = true; overview().then((x) => a && setD(x)).catch(() => a && setD({ error: true })); return () => { a = false; }; }, [rev]);
-  if (!d) return <Loading />;
+  if (!d) return <PillarLoading />;
   if (d.error) return <BlankState hue="220,184,111" title="Couldn't load" body={<>Something went wrong loading your overview.<br />Reopen the app to retry.</>} />;
 
   const g = d.glance, s = d.duels.stats;
@@ -351,7 +352,7 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
     if (wasActive) { reorderBlocks(blocksRef.current.map((b) => b.id)); haptic('light'); }
   }
 
-  if (!blocks) return <Loading />;
+  if (!blocks) return <PillarLoading />;
 
   return (
     <div>

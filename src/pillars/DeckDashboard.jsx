@@ -17,6 +17,7 @@ import { safeHref } from '../util.js';
 import { haptic } from '../native.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import '../theme/deckdash.css';
+import PillarLoading from '../components/PillarLoading.jsx';
 
 // The last loaded dashboard (deck + zones), kept across mounts - the deckListCache
 // pattern from DecksPager: re-entering My Deck paints the hero and zones complete
@@ -554,7 +555,7 @@ export default function DeckDashboard({ deckId, rev, statTab = 'list', rarityOn 
       <div style={{ font: "400 14px/1.5 var(--f-read)", color: '#8a8175' }}>It may have been deleted or belongs to another profile.</div>
       {onMissing && <button onClick={onMissing} style={{ padding: '11px 22px', borderRadius: 14, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: '#dcb86f', font: "600 13px/1 var(--f-ui)", cursor: 'pointer' }}>Open Library</button>}
     </div>
-  ) : <Loading />;
+  ) : <PillarLoading />;
 
   const sb = sum(zones.spellbook), at = sum(zones.atlas), co = sum(zones.collection);
   const coMax = collectionMax(deck);

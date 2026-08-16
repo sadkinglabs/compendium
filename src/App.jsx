@@ -796,7 +796,7 @@ function SearchResults({ query, kind = 'all', onOpen, onDuel }) {
     const t = setTimeout(() => searchAll(query.trim()).then((r) => alive && setRes(r)), 130);
     return () => { alive = false; clearTimeout(t); };
   }, [query]);
-  if (!res) return <Loading />;
+  if (!res) return <PillarLoading />;
   const showRules = kind !== 'card', showCards = kind !== 'rule';
   const total = (showRules ? res.articles.length + res.articleText.length : 0)
     + (showCards ? res.cards.length + res.cardText.length : 0)

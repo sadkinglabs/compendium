@@ -236,7 +236,9 @@ body img.cx-art-reveal-warm { transition-duration: .09s !important; }
    ONLY: unlike the boot splash's one-off drop-shadow glow, this runs on every
    pillar change, and a paint-phase animation there would raster the region every
    frame (§6). */
-.cx-pillar-load { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding-bottom: 8vh; }
+/* flex:1 fills a pillar's flex column; min-height keeps it centred when a caller
+   renders it inside an ordinary (non-flex) screen container. */
+.cx-pillar-load { flex: 1; min-height: 52vh; display: flex; align-items: center; justify-content: center; padding-bottom: 8vh; }
 .cx-pillar-load-mark { animation: cxMarkBreath 1.9s ease-in-out infinite; will-change: opacity, transform; }
 @keyframes cxMarkBreath { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .62; transform: scale(.955); } }
 /* Still fallback - the mark stays fully legible, it just stops breathing. */

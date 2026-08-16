@@ -8,6 +8,7 @@ import { registerBackConsumer } from '../back.js';
 import { useFocusTrap } from './useFocusTrap.js';
 import Sheet from './Sheet.jsx';   // the one titled adapter over the GothicSheet chassis (BottomSheet aliases it)
 import * as Dialog from '@radix-ui/react-dialog';   // the SAME layer manager vaul builds the sheet on - see CenteredModal
+import { DIAMOND_PATH, DIAMOND_GOLD } from './brandMark.js';   // one mark for every wait - see Loading
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -193,9 +194,24 @@ export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   return { onTouchStart, onTouchEnd };
 }
 
-/* Quiet shared loading beat - one treatment for every pillar's "fetching" gap. */
-export function Loading({ pad = 24 }) {
-  return <div style={{ padding: pad, textAlign: 'center', color: 'var(--ink-faint)', font: "400 14px/1 var(--f-read)", fontStyle: 'italic', letterSpacing: '.2em' }} aria-label="Loading">· · ·</div>;
+/* The shared loading beat: the app's mark, breathing. ONE treatment for every wait
+   in the app - screens, sheets and in-place sections alike - so a pause always looks
+   deliberate and always looks like Compendium. It replaced a "· · ·" ellipsis that
+   read as an unfinished frame rather than an intentional state (owner report).
+   `PillarLoading` is the same mark at full-area size for a whole pillar arriving;
+   this is the in-place size for everything else. Both share the geometry in
+   brandMark.js and the compositor-only breath in tokens.css, and both fall back to a
+   still mark under reduced motion. */
+export function Loading({ pad = 24, size = 44 }) {
+  return (
+    <div style={{ padding: pad, display: 'flex', justifyContent: 'center' }} role="status" aria-label="Loading">
+      <div className="cx-pillar-load-mark" style={{ lineHeight: 0 }}>
+        <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true">
+          <path d={DIAMOND_PATH} fill="none" stroke={DIAMOND_GOLD} strokeWidth="4" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </div>
+  );
 }
 
 export function ThresholdPips({ runs, size = 12 }) {

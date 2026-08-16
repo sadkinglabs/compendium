@@ -19,6 +19,7 @@ import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
+import PillarLoading from '../components/PillarLoading.jsx';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 // Never render an em dash, even from reference data - swap for a spaced hyphen.
@@ -123,7 +124,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
     return () => clearTimeout(t);
   }, [kind, id, target, data]);
 
-  if (!data) return <Loading />;
+  if (!data) return <PillarLoading />;
   if (data.missing) return <div style={{ padding: 24, color: 'var(--ink-faint)', fontStyle: 'italic' }}>This entry isn’t in the catalog.</div>;
 
   // Render + all writes key off the LOADED entry (data), never the raw props -

@@ -10,6 +10,7 @@ import { deckBuildability, subscribeCollection } from '../store/ownedRepository.
 import * as St from '../store/deckStats.js';
 import { ThresholdPips, SegTabs, Loading } from '../components/ui.jsx';
 import MissingSheet from '../components/MissingSheet.jsx';
+import PillarLoading from '../components/PillarLoading.jsx';
 
 const GOLD = '#cba75f', ROSE = '#c76d85', ROSE_VAL = '#e0899e', TEAL = '#63c9a3', GOLD_MET = '#e3c589';
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -43,7 +44,7 @@ export default function DeckStats({ deck, rev, onReload, onOpenCodex, onChanged 
   const odds = useMemo(() => atlasMode === 'odds' ? St.atlasOdds(sb, at, atlasTurn, 10000, base) : null,
     [zones, atlasMode, atlasTurn, base]); // 10k sims only when on the Odds tab / turn changes
 
-  if (!zones) return <Loading />;
+  if (!zones) return <PillarLoading />;
 
   return (
     <div style={{ padding: '4px 0 12px' }}>
