@@ -7,7 +7,6 @@ import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
 import { useFocusTrap } from './useFocusTrap.js';
 import Sheet from './Sheet.jsx';   // the one titled adapter over the GothicSheet chassis (BottomSheet aliases it)
-import { pushOverlay } from './overlayStack.js';
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -235,13 +234,16 @@ export function CenteredModal({ open, label, maxWidth = 360, onClose, closeButto
   const trapRef = useFocusTrap(open);
   const closeRef = React.useRef(onClose); closeRef.current = onClose;
   React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
-  // Registered as an in-tree modal so a sheet below drops its background-inert
-  // regime while the modal is above it (Settings over the profile sheet).
-  React.useEffect(() => { if (open) return pushOverlay({ kind: 'modal', el: null }).release; }, [open]);
   if (!open) return null;
   return (
     <div onClick={onClose} role="dialog" aria-modal="true" aria-label={label}
-      style={{ position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 24px calc(24px + var(--kb,0px) / var(--ui-scale,1))', background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
+      // pointerEvents MUST be re-enabled explicitly. While a sheet is open, the drawer
+      // engine (Radix, under vaul) sets `pointer-events: none` on <body> and exempts
+      // only its OWN portal subtree. This modal renders in the app tree, not in that
+      // portal, so it inherited `none` and was completely dead - while the sheet
+      // beneath it stayed live, so taps "through" it reached that sheet's input and
+      // raised the keyboard. Both halves of the owner-reported Settings bug.
+      style={{ pointerEvents: 'auto', position: 'fixed', inset: 0, zIndex: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 24px calc(24px + var(--kb,0px) / var(--ui-scale,1))', background: 'rgba(4,3,2,.72)', backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)', animation: 'cxfade .18s ease' }}>
       <div ref={trapRef} onClick={(e) => e.stopPropagation()}
         style={{ position: 'relative', width: '100%', maxWidth, borderRadius: 20, background: 'linear-gradient(180deg,#151109,#0b0806)', border: '1px solid var(--hair-24)', boxShadow: '0 24px 64px rgba(0,0,0,.7)', ...boxStyle }}>
         {closeButton && (

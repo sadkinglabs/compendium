@@ -308,6 +308,12 @@ export default function CardArtViewer({ card, foil = false, origin, onClose }) {
       onPointerDown={onStageDown} onPointerMove={onStageMove}
       onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={finishDrag}
       style={{
+        // pointerEvents: the viewer is opened FROM a card sheet, and the drawer engine
+        // (Radix, under vaul) sets `pointer-events: none` on <body> while that sheet is
+        // open, exempting only its own portal subtree. This viewer portals to the body
+        // instead, so without this it inherits `none` and the whole stage - including
+        // its tilt drag and close button - goes dead.
+        pointerEvents: 'auto',
         position: 'fixed', inset: 0, zIndex: 900, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', gap: 26, padding: 20,
         background: 'rgba(6,4,3,.94)', opacity: rootOpacity, transition: fade,
