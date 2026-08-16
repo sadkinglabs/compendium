@@ -21,7 +21,11 @@ Android frame stats (`dumpsys gfxinfo`), 5 sheet open+close cycles per run, same
 | 99th percentile | 81ms | 36ms |
 | **Slow UI thread frames** | **43** | **2** |
 
-The effect is real and large, and "slow UI thread" says it is **main-thread work**, not GPU compositing. That is the only claim in this document I would defend without further evidence.
+The effect is real, large, and correlated with set size.
+
+> **CORRECTED 2026-08-16 (Codex).** I wrote that "slow UI thread" proves main-thread work and excludes the GPU. It does not. `gfxinfo` proves severe frame-deadline misses correlated with set size; it does **not** attribute them to JavaScript, native bridge calls, decode, layout or raster, and does not fully exclude concurrent GPU pressure. Raw framestats are trend evidence, not causal evidence - attribution requires a trace.
+
+So the defensible claim is narrower than I stated: **something scales badly with element count, and it is severe.** Nothing more.
 
 ## 2. Why my subsequent numbers cannot be trusted
 
@@ -45,7 +49,13 @@ The third one still seems mechanically sound to me and may simply have been drow
 
 ## 4. Candidate causes, ranked, with the evidence I have
 
-**(a) The art pipeline, and it may explain BOTH symptoms.** A 400-card set mounts hundreds of `<img>` against one host. Browsers cap parallel connections per host (~6), so several hundred images queue; each decode lands on the main thread; and every not-yet-painted tile runs a `.cx-art-shimmer` animation, which animates `background-position` - a **paint-phase** animation, repainting every frame per visible element (`tokens.css:552-558`, and the original audit's P7 confirmed the mechanism while correcting my element counts downward via `content-visibility`). This predicts: jank proportional to element count; images that look "stuck" because they are queued behind hundreds of others; and worse jank on the sheet that sits over the most pending art. All three match the owner's reports. **This is my leading hypothesis and I have not tested it.**
+**(a) The art pipeline - leading hypothesis, but NOT for the reason I first gave.**
+
+> **CORRECTED 2026-08-16 (Codex).** My original explanation - browser connection limits (~6 per host) queueing hundreds of `<img>` requests, with decode on the main thread - is **wrong for this app** and is struck. On native the art path never reaches browser image loading first: every mounted `CardArt` calls `useArtSource()`, and for a cold key that immediately enters `artCache.resolve()` (`src/store/artCache.js:116`), which does a filesystem stat and potentially `Filesystem.downloadFile` **before any `<img loading="lazy">` exists**. `loading="lazy"` therefore gates nothing here, and `content-visibility` does not stop React effects either. The connection-count claim is also unsafe generally under HTTP/2/3, and Chromium normally decodes and rasters off the main thread, so decode cannot be assigned to the UI thread without evidence.
+
+The corrected mechanism: **unbounded, render-driven native resolution.** Arthurian Legends mounts ~400 `BinderTile`s, so hundreds of native stat/download/bridge operations can start concurrently. `resolve()` dedupes by key via its `inflight` map but has **no global concurrency cap** - only the separate offline-pack API limits concurrency. Each completion then lands a React resolution commit plus a local image load. That predicts jank proportional to element count and images that look "stuck" because a stampede is in flight, which matches both owner reports.
+
+The `.cx-art-shimmer` animation (`tokens.css:552-558`) is a genuine paint-phase animation and remains a *possible* contributor, but per Codex it must **not** be the first thing changed - it is a diagnostic, not a suspected cause, until the measurements below say otherwise.
 
 **(b) Two findings from the original audit that were confirmed and never fixed.**
 - **P6 - `backdrop-filter` inside the animating panel.** `StepBtn` sets `backdropFilter: blur(10px)` (`CollectionCardSheet.jsx:76`). The verification pass confirmed the Chromium mechanism (a backdrop-filter element forces its own render surface, and its invalidation is positional, so it re-runs the readback and blur every frame while an ancestor transform animates) while correcting the counts: 2-14 elements, GPU-side, "real but modest". Note the audit found these in the card sheet and RefineSheet's comparator rows - the owner reports the filter sheet is the worst, which is consistent, though the current grep shows only 1 remaining `backdropFilter` in `CollectionCardSheet` and 0 in `RefineSheet`, so **the count needs re-establishing before acting**.
@@ -65,6 +75,55 @@ The third one still seems mechanically sound to me and may simply have been drow
 4. Non-const static widgets causing redundant work - the Flutter analogue of our stable-element-reference problem in (c).
 
 Points 2 and 3 map directly onto us. Our chassis already exposes `onSettled` (now wired to vaul's `onAnimationEnd`) precisely so heavy consumers can defer data swaps past the opening motion - **and no call site uses it.** The audit recorded that `CollectionCardSheet` does `getCard` + `ownedSetsForCard` + `wantedItemsForCard` + two store subscriptions on open, with a `Loading` -> full-body swap landing mid-animation.
+
+## 5a. Codex disposition (2026-08-16): investigation accepted, no production fix approved
+
+The experiment contract below is Codex's, and supersedes my ad-hoc method. **Three conditions**, each run for both Arthurian Legends and Dragonlord:
+
+1. **Zero-image** (`cx-no-images=1`). Keeps all ~400 React tiles but removes art resolution, native I/O, `<img>` and shimmer entirely - `resolve()` short-circuits at `artCache.js:117`. This is the decisive fork.
+2. **Proven warm.** Every art key for the set locally present and boot-seeded. *"Images eventually appeared"* is not proof: instrument zero resolve-misses and zero download-starts inside the measured window.
+3. **Cold.** Empty relevant cache, with counters for resolution starts/completions, **max inflight**, download latency, `<img>` load/error, and unresolved operations at end.
+
+Method rules: fixed navigation and open/close cadence; reset framestats immediately before the measured journey; **alternate condition order across multiple independent runs** (not repeated cycles inside one uncontrolled run); **do not force-stop between sheet cycles** (force-stop only when deliberately testing boot seeding); stock release `gfxinfo` for acceptance numbers; a temporary minified, release-like **WebView-debuggable** build for a Chrome Performance trace to attribute scripting vs style/layout vs paint vs native callbacks - **never shipped**.
+
+Interpretation table:
+
+| Result | Conclusion |
+|---|---|
+| Large still bad in zero-image | Grid/root reconciliation - trace, then fix structurally |
+| Zero-image clean, warm clean, cold bad | Art resolution/download stampede confirmed |
+| Zero-image clean but warm still bad | Local load / decode / reveal work implicated |
+| Static-shimmer diagnostic improves warm | Shimmer is material; otherwise leave it alone |
+
+Standing instructions from the same disposition:
+
+- **P1 - do not optimise the grid "on principle".** My failed `useMemo` proves nothing under the confound, but memoising a JSX array is not the preferred structural fix either. If zero-image still scales badly: trace first, then isolate the grid behind a memoised **component** boundary, or move overlay-open state below/outside the grid owner, preserving stable data and callback identities.
+- **`onSettled` - narrow use, and never delay fetching.** No blanket adoption. RefineSheet, the worst-reported surface, has no async content swap to defer at all. For `CollectionCardSheet` / `CardSheet`, only if tracing shows the `Loading` -> full-body commit overlaps the entrance: begin fetching immediately on user intent, keep stable/reserved sheet geometry, gate only the heavy subtree *replacement* until settle, and show late-arriving data normally. Waiting until settle to *start* queries would trade jank for visible latency.
+- **P6 - my grep was wrong; the audit's count stands.** There is one `backdropFilter` *source declaration* because every `StepBtn` shares it; RefineSheet can instantiate **fourteen** across seven comparator rows, so the runtime count is 2-14 as the audit said. The effect is real but principally compositor/GPU-side and modest, and does not explain 43 slow UI-thread frames. Combined with the owner's standing ruling that blur is not stripped speculatively: **leave P6 alone unless a trace indicts it.**
+- **Do not** touch the shimmer or add a decode limiter as a first move.
+
+## 5b. RESULT - condition 1 (zero-image) run 2026-08-16: the grid is exonerated, art is indicted
+
+Measurement build: `imagesDisabled()` forced true (a temporary source edit, reverted immediately after; shipping build restored as 264). Same device, same fixed navigation and 5-cycle cadence, framestats reset after navigation.
+
+| Condition | Set | Janky | 50th | 99th | Slow UI | Total frames |
+|---|---|---|---|---|---|---|
+| With art (262) | Arthurian ~400 | **191 (20.17%)** | 26ms | 81ms | **43** | 947 |
+| With art (262) | Dragonlord 13 | 13 (2.12%) | 14ms | 36ms | 2 | 614 |
+| **Zero-image** | **Arthurian ~400** | **15 (2.47%)** | **12ms** | 38ms | **2** | 607 |
+| **Zero-image** | Arthurian ~400 (repeat) | 13 (2.08%) | 12ms | 34ms | 2 | 624 |
+| **Zero-image** | Dragonlord 13 | 13 (2.09%) | 12ms | 34ms | 5 | 622 |
+
+**With art suppressed, a ~400-tile page is indistinguishable from a 13-tile page.** Element count is not the driver; art *per element* is. Two supporting observations:
+
+- The three zero-image runs are tightly clustered (2.1-2.5% jank, 607-624 total frames), where the with-art runs swung 947/1386/1022 total frames. The instability I mistook for measurement noise **was the art pipeline itself**, which is consistent with sustained, variable background work.
+- Zero-image renders *fewer total frames* for the same journey, as expected once continuous shimmer animation and per-resolution React commits stop.
+
+Against Codex's interpretation table this reads: **"Large remains bad in zero-image mode" is FALSE**, so grid/root reconciliation is exonerated as the primary cause - which also retroactively explains why my `useMemo` attempt changed nothing except adding noise. The remaining branch is warm-vs-cold, which discriminates a **resolution/download stampede** (cold-only) from **local load/decode/reveal cost** (present even warm).
+
+### What this does not yet establish
+
+Warm vs cold is untested, so the specific art mechanism is still open, and per Codex the counters needed to prove warmth do not exist yet: resolution starts/completions, **max inflight**, download latency, `<img>` load/error, and unresolved-at-end. Building that instrumentation is the next step, not a fix.
 
 ## 6. Questions for Codex
 
