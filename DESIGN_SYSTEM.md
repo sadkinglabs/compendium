@@ -146,6 +146,7 @@ These are **`[Shipping]` constraints** — codify, do not change.
 The pattern for an action that destroys user data. Used by Restore backup; any future destructive
 action should follow it rather than invent its own.
 
+- **A confirmation is a CENTERED DIALOG, never a second bottom sheet.** Confirms are raised *from* sheets (delete profile from the profile sheet, delete match from the match sheet), and a second surface rising from the same edge with the same chrome reads as "the sheet changed" rather than "stop, this is irreversible". A centered dialog breaks the plane, and it cannot be flicked away — a destructive answer must cost a deliberate button press, never a careless downward swipe. Two stacked sheets also double-dim the screen and make drag-to-dismiss ambiguous. This matches both platforms: M3 puts destructive confirmation in a basic dialog, Apple in an alert; neither stacks a sheet on a sheet to ask a question. Implemented once in `ConfirmHost` (`CenteredModal`, z-700), so every `confirmAction()` caller inherits it and no future confirm can reintroduce the stack. *(A sheet over a sheet is still right when the second surface continues the same task rather than interrupting it — e.g. "Which printing?" over the collection card sheet.)*
 - **The button names the consequence, not the intention.** "Replace all data", not "Restore".
 - **`BTN_DANGER`, never `BTN_GOLD`.** Gold is the affirmative everywhere in this app; an
   irreversible replacement must not wear the same clothes as "Add".

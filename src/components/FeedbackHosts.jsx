@@ -3,7 +3,7 @@
 // so every mutation gets consistent feedback and every destructive action gets
 // a real in-app confirm (no OS "localhost says…" dialogs).
 import React, { useEffect, useRef, useState } from 'react';
-import Sheet from './Sheet.jsx';
+import { CenteredModal, BTN_DANGER, BTN_GOLD, BTN_GHOST } from './ui.jsx';
 
 let seq = 0;
 
@@ -58,20 +58,29 @@ export function ConfirmHost() {
   if (!req) return null;
   const { opts, resolve } = req;
   const answer = (v) => { setReq(null); resolve(v); };
+  // A CENTERED DIALOG, deliberately not a sheet. Confirms are raised FROM sheets
+  // (delete profile from the profile sheet, delete match from the match sheet), and
+  // a second surface rising from the same edge with the same chrome reads as "the
+  // sheet changed" rather than "stop, this is irreversible". A centered dialog
+  // breaks the plane, and it cannot be flicked away - a destructive answer should
+  // cost a deliberate button press, never a careless downward swipe. It is also
+  // what both platforms specify: M3 puts destructive confirmation in a basic
+  // dialog, Apple in an alert; neither stacks a sheet on a sheet to ask a question.
+  // CenteredModal's z-700 already paints over the sheet chassis (the same route
+  // Settings takes over the profile sheet).
   return (
-    <Sheet open title={opts.title || 'Confirm'} onClose={() => answer(false)}>
-      <div style={{ padding: '0 16px' }}>
-        {opts.body && <p style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2,#c9bfae)', margin: '0 0 18px' }}>{opts.body}</p>}
+    <CenteredModal open label={opts.title || 'Confirm'} maxWidth={340} closeButton={false} onClose={() => answer(false)}>
+      <div style={{ padding: '22px 20px 18px' }}>
+        <h2 style={{ font: "600 17px/1.3 var(--f-display)", color: 'var(--gold-leaf)', margin: '0 0 10px' }}>{opts.title || 'Confirm'}</h2>
+        {opts.body && <p style={{ font: "400 14px/1.5 var(--f-read)", color: 'var(--ink-body-2,#c9bfae)', margin: '0 0 20px' }}>{opts.body}</p>}
+        {/* Destructive confirmation pattern (DESIGN_SYSTEM §4): the affirmative wears
+            BTN_DANGER, never BTN_GOLD - gold is the affirmative everywhere else, and
+            an irreversible action must not wear the same clothes as "Add". */}
         <div style={{ display: 'flex', gap: 10 }}>
-          <button onClick={() => answer(false)} style={btnGhost}>{opts.cancelLabel || 'Cancel'}</button>
-          <button onClick={() => answer(true)} style={opts.danger ? btnDanger : btnGold}>{opts.confirmLabel || 'Confirm'}</button>
+          <button onClick={() => answer(false)} style={{ ...BTN_GHOST, flex: 1 }}>{opts.cancelLabel || 'Cancel'}</button>
+          <button onClick={() => answer(true)} style={{ ...(opts.danger ? BTN_DANGER : BTN_GOLD), flex: 1, padding: '12px 0' }}>{opts.confirmLabel || 'Confirm'}</button>
         </div>
       </div>
-    </Sheet>
+    </CenteredModal>
   );
 }
-
-const btnBase = { flex: 1, padding: '12px 0', borderRadius: 12, font: "700 13px/1 var(--f-ui)", cursor: 'pointer' };
-const btnGhost = { ...btnBase, background: 'transparent', color: 'var(--ink-status)', border: '1px solid var(--hair-22)' };
-const btnGold = { ...btnBase, background: 'rgba(18,16,13,.85)', color: 'var(--gold-leaf)', border: '1px solid rgba(220,184,111,.45)' };
-const btnDanger = { ...btnBase, background: 'rgba(60,20,16,.85)', color: '#e8a99e', border: '1px solid rgba(224,120,106,.5)' };
