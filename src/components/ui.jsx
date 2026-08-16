@@ -6,7 +6,8 @@ import { linkRuns } from '../store/inlineRuns.js';
 import { GLYPH_ICON } from './icons.jsx';
 import { registerBackConsumer } from '../back.js';
 import { useFocusTrap } from './useFocusTrap.js';
-import GothicSheet from './GothicSheet.jsx';   // the one bottom-sheet chassis (BottomSheet is a thin titled adapter over it)
+import Sheet from './Sheet.jsx';   // the one titled adapter over the GothicSheet chassis (BottomSheet aliases it)
+import { pushOverlay } from './overlayStack.js';
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -172,7 +173,7 @@ export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
 export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   const start = React.useRef(null);
   const onTouchStart = (e) => {
-    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .cx-picker-modal, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
+    if (e.target.closest('input, textarea, .cx-deck-carousel, .picker-decks-row, .cx-picker-modal, .cx-sheet-layer, #counter-screen, .vc-modal-overlay, .fab-menu, .ds-grid')) { start.current = null; return; }
     const t = e.touches[0];
     start.current = { x: t.clientX, y: t.clientY };
   };
@@ -219,16 +220,11 @@ export function ThresholdPips({ runs, size = 12 }) {
 // the hook itself.
 export { useFocusTrap };
 
-/* Titled bottom sheet - a thin adapter over the canonical GothicSheet chassis
-   (portal, drag-to-dismiss, gold hairline, grab handle), with an optional
-   centered Cinzel title. One chassis app-wide; Sheet.jsx is the same adapter. */
-export function BottomSheet({ open, title, onClose, dismissible = true, ariaBusy, children }) {
-  return (
-    <GothicSheet open={open} onClose={onClose} label={title || 'Dialog'} dismissible={dismissible} ariaBusy={ariaBusy}>
-      {title && <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', margin: '0 0 16px' }}>{title}</div>}
-      {children}
-    </GothicSheet>
-  );
+/* Titled bottom sheet - now a straight alias of Sheet.jsx (the DESIGN_SYSTEM's
+   pending BottomSheet -> Sheet merge). Titles are PINNED headers everywhere;
+   the in-scroll title variant is gone (spec section 5, owner-approved change). */
+export function BottomSheet(props) {
+  return <Sheet {...props} />;
 }
 
 // Centered modal chassis (scrim + black-gold box + optional close X). Was inlined
@@ -239,6 +235,9 @@ export function CenteredModal({ open, label, maxWidth = 360, onClose, closeButto
   const trapRef = useFocusTrap(open);
   const closeRef = React.useRef(onClose); closeRef.current = onClose;
   React.useEffect(() => { if (open) return registerBackConsumer(() => { closeRef.current?.(); return true; }); }, [open]);
+  // Registered as an in-tree modal so a sheet below drops its background-inert
+  // regime while the modal is above it (Settings over the profile sheet).
+  React.useEffect(() => { if (open) return pushOverlay({ kind: 'modal', el: null }).release; }, [open]);
   if (!open) return null;
   return (
     <div onClick={onClose} role="dialog" aria-modal="true" aria-label={label}

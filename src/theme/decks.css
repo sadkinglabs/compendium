@@ -174,9 +174,9 @@
 /* Create-deck wizard + Change Avatar sheet - re-homed onto the app-standard
    black+gold sheet chassis (.a-sheet family): black grimoire ground, gold
    hairlines, no amethyst. */
-.cx-decks.ob-overlay { position:fixed; inset:0; background:rgba(5,4,3,.7); z-index:400; display:flex; flex-direction:column; animation:cxfade .2s ease; }
-.cx-decks .ob-inner { background:linear-gradient(180deg,#151310,#0a0908); margin-top:auto; margin-bottom:calc(var(--kb,0px) / var(--ui-scale,1)); border-top:1px solid rgba(220,184,111,.16); border-radius:26px 26px 0 0; box-shadow:0 -20px 50px -10px rgba(0,0,0,.6); max-height:92vh; max-height:min(92dvh, calc(100dvh - env(safe-area-inset-top,0px) - 10px - var(--kb,0px) / var(--ui-scale,1))); display:flex; flex-direction:column; position:relative; padding-top:10px; padding-bottom:env(safe-area-inset-bottom,0px); animation:cxsheet .32s cubic-bezier(.34,1.2,.64,1); }
-.cx-decks .sheet-handle { width:36px; height:4px; border-radius:2px; background:rgba(220,184,111,.28); margin:2px auto 16px; flex-shrink:0; }
+/* .ob-overlay / .ob-inner / .sheet-handle retired: the wizard + Change Avatar now
+   ride the canonical GothicSheet chassis (docs/bottom-sheet-spec.md phase 5); the
+   .ob-* content styles below are still live inside that chassis. */
 .cx-decks .ob-header { padding:0 22px; display:flex; align-items:center; gap:10px; }
 .cx-decks .ob-header h2 { flex:1; font-size:24px; font-weight:700; font-family:var(--f-display); color:var(--gold-leaf); margin:0; }
 .cx-decks .sheet-close { flex-shrink:0; width:30px; height:30px; border-radius:50%; border:1px solid rgba(220,184,111,.4); background:transparent; color:var(--gold-leaf); font-size:14px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; line-height:1; position:relative; -webkit-tap-highlight-color:transparent; }

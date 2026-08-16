@@ -8,6 +8,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { listAvatarCards, createDeck } from '../store/deckRepository.js';
 import { ArtImg } from './ArtImage.jsx';
 import SearchPill from './SearchPill.jsx';
+import GothicSheet from './GothicSheet.jsx';
 import { toast } from '../feedback.js';
 import '../theme/decks.css';
 
@@ -19,6 +20,7 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
   const [q, setQ] = useState('');
   const [sel, setSel] = useState(null);        // selected avatar card
   const [busy, setBusy] = useState(false);     // in-flight create guard (no double deck)
+  const [closing, setClosing] = useState(false);   // plays the chassis exit motion before onClose unmounts us
   const nameRef = useRef(null);
 
   useEffect(() => { const t = setTimeout(() => nameRef.current?.focus(), 100); return () => clearTimeout(t); }, []);
@@ -54,20 +56,42 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
     return parts.join(' · ');
   };
 
+  // On the canonical chassis (spec section 6, phase 5). LOCKED by owner ruling
+  // (spec Open Question 5): no scrim tap, no drag - the X (and Android back, which
+  // the chassis consumes) are the only exits, so a stray swipe cannot abandon the
+  // mandatory 2-step flow. `closing` plays the exit motion before the caller
+  // unmounts us (conditional-render caller + onExited handshake).
   return (
-    <div className="cx-decks ob-overlay" role="dialog" aria-modal="true">
-      <div className="ob-inner">
-        <div className="sheet-handle" />
-        <div className="ob-header">
-          <h2>{step === 1 ? 'New Deck' : 'Choose Avatar'}</h2>
-          <button className="sheet-close" onClick={onClose} aria-label="Close">{XSvg}</button>
+    <GothicSheet
+      open={!closing} dismissible={false}
+      label={step === 1 ? 'New Deck' : 'Choose Avatar'}
+      onClose={onClose} onExited={() => { if (closing) onClose(); }}
+      header={(
+        <div className="cx-decks">
+          <div className="ob-header">
+            <h2>{step === 1 ? 'New Deck' : 'Choose Avatar'}</h2>
+            <button className="sheet-close" onClick={() => setClosing(true)} aria-label="Close">{XSvg}</button>
+          </div>
+          <div className="ob-steps">
+            <div className={`ob-step done`}>1</div>
+            <div className={`ob-step-line${step === 2 ? ' done' : ''}`} />
+            <div className={`ob-step${step === 2 ? ' active' : ''}`}>2</div>
+          </div>
         </div>
-        <div className="ob-steps">
-          <div className={`ob-step done`}>1</div>
-          <div className={`ob-step-line${step === 2 ? ' done' : ''}`} />
-          <div className={`ob-step${step === 2 ? ' active' : ''}`}>2</div>
+      )}
+      footer={(
+        <div className="cx-decks">
+          <div className="ob-footer">
+            {step === 2 && <button className="btn" onClick={() => setStep(1)}>{BackSvg}Back</button>}
+            <button className={`btn primary${nextDisabled ? ' disabled' : ''}`} disabled={nextDisabled}
+              onClick={next} style={{ flex: 1 }}>
+              {step === 1 ? <>Next{NextSvg}</> : busy ? 'Creating…' : <>{CheckSvg}Create Deck</>}
+            </button>
+          </div>
         </div>
-
+      )}
+    >
+      <div className="cx-decks">
         {step === 1 ? (
           <div className="ob-step1">
             <input ref={nameRef} type="text" value={name} maxLength={40} placeholder="Name your deck…"
@@ -109,16 +133,8 @@ export default function CreateDeckWizard({ onClose, onCreated }) {
             </div>
           </div>
         )}
-
-        <div className="ob-footer">
-          {step === 2 && <button className="btn" onClick={() => setStep(1)}>{BackSvg}Back</button>}
-          <button className={`btn primary${nextDisabled ? ' disabled' : ''}`} disabled={nextDisabled}
-            onClick={next} style={{ flex: 1 }}>
-            {step === 1 ? <>Next{NextSvg}</> : busy ? 'Creating…' : <>{CheckSvg}Create Deck</>}
-          </button>
-        </div>
       </div>
-    </div>
+    </GothicSheet>
   );
 }
 

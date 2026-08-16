@@ -17,9 +17,15 @@
   --surface-card: rgba(34, 26, 20, .4);
   --surface-card-2: rgba(34, 26, 20, .55);
   --surface-well: rgba(18, 13, 9, .6);
-  --surface-sheet: linear-gradient(180deg, #151310, #0a0908); /* black - all sheets share the black+gold chassis */
+  --surface-sheet: #100c08; /* the ONE sheet ground - owner-ruled flat (GothicSheet look), spec section 2 */
   --surface-nav: rgba(14, 10, 7, .7);
   --scrim: rgba(8, 5, 3, .6);
+
+  /* sheet chassis tokens (docs/bottom-sheet-spec.md section 2) - minted so the
+     chassis stops hardcoding its chrome and the wizard variants converge. */
+  --radius-sheet: 30px;
+  --shadow-sheet: 0 -20px 50px -10px rgba(0, 0, 0, .5);
+  --gold-handle: #5a4a28;
 
   /* gold family (brand + chrome). ONE rgb base for every gold tint/hairline so the
      whole scale tunes from one place and matches the shipped hairlines (was split
@@ -217,6 +223,26 @@ body img.cx-art-reveal-warm { transition-duration: .09s !important; }
 .boot-line { animation: bootLineIn .45s ease; }
 @media (prefers-reduced-motion: reduce) { .boot-diamond { animation: none; } .boot-line { animation: none; } }
 
+/* Pillar-change loading screen (PillarLoading.jsx): the brand diamond breathing on
+   the dark ground while a pillar chunk resolves.
+   INSTANT AND SOLID ON FRAME ONE - no entrance delay, no fade-in. The first cut
+   waited 140ms then faded, on the theory that a warm chunk would resolve unseen and
+   an instant loader would strobe. Frame forensics killed that theory: a cold pillar
+   sat with an EMPTY body at 135ms and only filled by ~690ms, so the delay bought
+   nothing and simply moved the blank frame around - the wait is always real enough
+   to show (owner report + scratchpad filmstrip, build 257).
+   The breath therefore starts AT full strength and dips, rather than starting dim,
+   so nothing about the first frame reads as a fade. It animates opacity + transform
+   ONLY: unlike the boot splash's one-off drop-shadow glow, this runs on every
+   pillar change, and a paint-phase animation there would raster the region every
+   frame (§6). */
+.cx-pillar-load { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding-bottom: 8vh; }
+.cx-pillar-load-mark { animation: cxMarkBreath 1.9s ease-in-out infinite; will-change: opacity, transform; }
+@keyframes cxMarkBreath { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .62; transform: scale(.955); } }
+/* Still fallback - the mark stays fully legible, it just stops breathing. */
+body.reduce-motion .cx-pillar-load-mark, body.reduce-motion .cx-pillar-load { animation: none; opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .cx-pillar-load-mark, .cx-pillar-load { animation: none; opacity: 1; transform: none; } }
+
 /* Per-pillar section wash: a top-down radial glow of --wash over pure black.
    The gradient uses currentColor so a plain `color` transition animates the hue
    smoothly when --wash changes between pillars (gradients can't transition, but
@@ -393,7 +419,11 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 /* Cards List/Card toggle - gothic segmented pill (matches the deck editor). */
 /* View toggle retired - now the shared SegTabs component (ui.jsx). */
 .cx-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-.cx-card-tile { position: relative; display: block; width: 100%; padding: 0; background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+/* content-visibility: off-screen tiles skip layout/paint (the grid is ~1,100 tiles
+   unfiltered; the A-Z list has had this via .cx-az-list for a while - audit P2).
+   Intrinsic height estimate = 2-col tile at 5/7 aspect on a phone; `auto` keeps the
+   real size once rendered so scroll anchoring stays honest. */
+.cx-card-tile { position: relative; display: block; width: 100%; padding: 0; background: none; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; overflow: hidden; cursor: pointer; -webkit-tap-highlight-color: transparent; content-visibility: auto; contain-intrinsic-size: auto 240px; }
 .cx-card-tile:active { transform: scale(.985); }
 /* Frosted bookmark seal on a saved card tile. */
 .cx-card-seal { position: absolute; top: 7px; right: 7px; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(10,9,8,.75); border: 1px solid rgba(203,167,95,.5); color: #e3c589; backdrop-filter: blur(6px); }

@@ -15,6 +15,32 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
+    build: 259,
+    version: '1.0.4-alpha',
+    date: '2026-08-15',
+    notes: 'Sheets you can actually throw away, advanced match counters, and a deck that syncs itself.',
+    changes: [
+      { kind: 'added', text: 'Advanced counters in a match: an opt-in band on the divider tracks mana and elemental thresholds for both players, so a game needing more than life totals no longer needs a second app.' },
+      { kind: 'added', text: 'Lists can be arranged: group by set, rarity or element with anchored headers, and sort within each group by name, rarity, element or how recently you touched it.' },
+      { kind: 'added', text: 'A deck saved from a Curiosa link can pull its changes again. It shows you the difference first and only writes once you confirm.' },
+      { kind: 'added', text: 'Whole-app backup and restore: one file covering every profile, restorable on any device. Restoring returns the app to that snapshot, and a recovery point is taken first so you can step back out of it.' },
+      { kind: 'added', text: 'Avatars can be added to a deck’s Collection straight from their card sheet, and Change avatar is reachable from Edit Deck.' },
+      { kind: 'changed', text: 'Every bottom sheet has been rebuilt. Drag one down from anywhere to dismiss it, flick it away with a flick, or catch one mid-animation and change your mind. Closing is a real animation now instead of the sheet vanishing.' },
+      { kind: 'changed', text: 'Waiting for a section to open shows the app’s mark rather than a stray ellipsis on an empty screen.' },
+      { kind: 'changed', text: 'One header across every screen, with titles that shrink to fit instead of being cut off, and one search bar with the same behaviour everywhere.' },
+      { kind: 'changed', text: 'Buttons and controls meet a 44px touch floor throughout, with a consistent press response.' },
+      { kind: 'changed', text: 'The avatar picker was redesigned around a three-column grid that makes room for the keyboard as you type.' },
+      { kind: 'changed', text: 'Deck text exports order the Spellbook as Avatar, Aura, Artifact, Minion then Magic. The on-screen deck keeps its own order.' },
+      { kind: 'changed', text: 'The deck library and My Deck paint complete on the first frame, and art you have already seen appears instantly instead of fading in again.' },
+      { kind: 'changed', text: 'Runs on the current Android toolchain, staying portrait on phones while tablets rotate freely.' },
+      { kind: 'fixed', text: 'The frosted glass throughout the app is back. A build-tool bug had been silently stripping it.' },
+      { kind: 'fixed', text: 'Hardware Back now closes Collection layers in order, and returning to Decks puts you back on the view you left.' },
+      { kind: 'fixed', text: 'A “Missing for” list is an ordinary list again, so wanted tracking no longer calls a deck complete when it is a card short.' },
+      { kind: 'fixed', text: 'In a match, a lost life point is shown in red, and dismissing a stepper can no longer cost you a life point by accident.' },
+      { kind: 'fixed', text: 'Codex stays responsive while you type, and importing the same profile twice no longer leaves duplicate names behind.' },
+    ],
+  },
+  {
     build: 199,
     version: '1.0.3-alpha',
     date: '2026-07-25',

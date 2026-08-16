@@ -81,6 +81,19 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
     // eslint-disable-next-line
   }, [preset]);
 
+  // Grid tiles are built ONCE per (entries, onOpen) - the same bail-out AzList has
+  // always had. Without this, every root state change (filter sheet toggle, every
+  // chip tap inside it) re-rendered ~1,100 unmemoized tiles in one commit, in the
+  // same frame a sheet's entrance starts (bottom-sheet audit P2).
+  const gridTiles = useMemo(() => entries == null ? null : entries.map((it) => (
+    <button key={it.id} className="cx-card-tile" onClick={() => onOpen('card', it.id, it.name)} aria-label={it.name}>
+      <CardArt card={{ ...it, card_id: it.id }} radius={14} aspect="5/7" />
+      {it.saved && (
+        <span className="cx-card-seal" aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span>
+      )}
+    </button>
+  )), [entries, onOpen]);
+
   const marginalia = sc === 'marginalia';
   const cur = filters[sc] || {};
   const setCur = (updater) => setFilters((f) => ({ ...f, [sc]: typeof updater === 'function' ? updater(f[sc] || {}) : updater }));
@@ -167,16 +180,7 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
       ) : entries.length === 0 ? (
         <div style={{ padding: '50px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>Nothing matches these filters.</div>
       ) : (sc === 'cards' && cardView === 'grid') ? (
-        <div className="cx-card-grid">
-          {entries.map((it) => (
-            <button key={it.id} className="cx-card-tile" onClick={() => onOpen('card', it.id, it.name)} aria-label={it.name}>
-              <CardArt card={{ ...it, card_id: it.id }} radius={14} aspect="5/7" />
-              {it.saved && (
-                <span className="cx-card-seal" aria-label="Bookmarked"><svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z" /></svg></span>
-              )}
-            </button>
-          ))}
-        </div>
+        <div className="cx-card-grid">{gridTiles}</div>
       ) : (
         <AzList entries={entries} onOpen={onOpen} />
       )}
@@ -353,7 +357,7 @@ function MarginaliaView({ onOpen, rev }) {
                 {edit && editing?.id === c.id ? (
                   <>
                     <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') setEditing(null); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') { e.preventDefault(); setEditing(null); } }}
                       style={{ flex: 1, height: 36, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 12px', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
                     <IconButton glyph="✓" size={26} onClick={saveRename} title="Save name" />
                   </>

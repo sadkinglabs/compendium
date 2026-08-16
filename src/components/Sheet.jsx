@@ -10,7 +10,7 @@ import GothicSheet from './GothicSheet.jsx';
 // for sheets whose styles are Deckbuilder-scoped: GothicSheet portals into `.cx-app`,
 // which has no `.cx-decks` ancestor, so `.cx-decks .es-*`/`.ds-*` rules would otherwise
 // not match and the content paints unstyled).
-export default function Sheet({ open, title, onClose, footer, children, bodyClass, dismissible = true, ariaBusy }) {
+export default function Sheet({ open, title, onClose, footer, children, bodyClass, dismissible = true, ariaBusy, onSettled }) {
   const inner = (
     <>
       {children}
@@ -23,7 +23,7 @@ export default function Sheet({ open, title, onClose, footer, children, bodyClas
     <div style={{ font: "600 13px/1 var(--f-display)", letterSpacing: '.14em', color: 'var(--gold-leaf)', textAlign: 'center', padding: '2px 0 12px' }}>{title}</div>
   ) : null;
   return (
-    <GothicSheet open={open} onClose={onClose} label={title || 'Sheet'} dismissible={dismissible} ariaBusy={ariaBusy} header={header}>
+    <GothicSheet open={open} onClose={onClose} label={title || 'Sheet'} dismissible={dismissible} ariaBusy={ariaBusy} header={header} onSettled={onSettled}>
       {bodyClass ? <div className={bodyClass}>{inner}</div> : inner}
     </GothicSheet>
   );

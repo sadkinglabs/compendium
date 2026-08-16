@@ -916,7 +916,12 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   // ---- Multi-select over the scoped grid (via the shared controller; snapshot captures owned/foil at
   // pick time so the Adjust sheet can cap a Remove at what's actually on hand). ----
   const selectAll = () => selectAllHook(drillRows);
-  const toggleSel = (id, set) => toggleSelHook(id, set, drillRows);
+  // toggleSel is a prop of EVERY BinderTile; a per-render arrow here defeated React.memo
+  // on the whole grid, so a sheet open/close re-rendered every tile in the same commit
+  // the animation starts (bottom-sheet audit P1). Refs keep it identity-stable forever.
+  const toggleSelHookRef = useRef(toggleSelHook); toggleSelHookRef.current = toggleSelHook;
+  const drillRowsRef = useRef(drillRows); drillRowsRef.current = drillRows;
+  const toggleSel = useCallback((id, set) => toggleSelHookRef.current(id, set, drillRowsRef.current), []);
   const sel = selectionSummary(selected, drillRows);   // one contract: count / allSelected / hidden
 
   // ONE canonical arranged result drives the grid AND the A-Z rail (so rail indexes match DOM order).
@@ -1117,7 +1122,11 @@ function AllCards({ onPeek, onOpenCodex }) {
   const total = arranged.flat.length;
   const sel = selectionSummary(selected, ordered);   // same contract as the set drill: count / allSelected / hidden
   const { hidden, allSelected: allSel } = sel;
-  const toggleSel = (id, set) => toggleSelHook(id, set, ordered);   // toggle captures from the FULL rows
+  // Identity-stable for the same reason as the set drill's toggleSel: it feeds every
+  // BinderTile's memo compare (bottom-sheet audit P1).
+  const toggleSelHookRef = useRef(toggleSelHook); toggleSelHookRef.current = toggleSelHook;
+  const orderedRef = useRef(ordered); orderedRef.current = ordered;   // toggle captures from the FULL rows
+  const toggleSel = useCallback((id, set) => toggleSelHookRef.current(id, set, orderedRef.current), []);
   useEffect(() => {
     if (!selectMode) return undefined;
     return registerBackConsumer(() => { cancelSelect(); return true; });   // Back exits selection first
