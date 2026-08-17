@@ -14,7 +14,6 @@ import { setHeroUrl } from '../store/cardArt.js';
 import { SET_LABEL } from '../store/sets.js';
 import { Loading } from '../components/ui.jsx';
 import CollectionSubHeader from '../components/CollectionSubHeader.jsx';
-import PillarLoading from '../components/PillarLoading.jsx';
 
 const fmt = (n) => (n || 0).toLocaleString('en-US');
 
@@ -116,7 +115,7 @@ export default function SetsHome({ onOpenSet, rev }) {
     return { owned, total, pct: total ? owned / total : 0 };
   }, [completion]);
 
-  if (completion == null) return <PillarLoading />;
+  if (completion == null) return <Loading />;
 
   // No docked FAB or search pill on this landing, so it needs no deep bottom reserve - the
   // 150px it used to carry made the page scroll even when the tiles already fitted.

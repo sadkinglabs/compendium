@@ -223,6 +223,24 @@ body img.cx-art-reveal-warm { transition-duration: .09s !important; }
 .boot-line { animation: bootLineIn .45s ease; }
 @media (prefers-reduced-motion: reduce) { .boot-diamond { animation: none; } .boot-line { animation: none; } }
 
+/* The gilding: one gold sweep across a card the moment a quick-add is CONFIRMED by
+   the store, so "it's yours now" is felt on the card itself rather than only in the
+   button and the toast. Same family as the art shimmer, but gold, one-shot, and
+   TRANSFORM-driven rather than background-position - this can fire on several tiles
+   in a burst, and a paint-phase animation there would raster each tile every frame
+   (§6). The overlay unmounts itself on animationend. */
+.cx-gilt-glimmer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; border-radius: 12px; }
+.cx-gilt-glimmer::after {
+  content: ''; position: absolute; top: -25%; bottom: -25%; left: -70%; width: 60%;
+  background: linear-gradient(100deg, transparent, rgba(var(--gold-rgb), .10) 35%, rgba(var(--gold-rgb), .5) 50%, rgba(var(--gold-rgb), .10) 65%, transparent);
+  animation: cxGiltSweep .8s cubic-bezier(.25,.6,.3,1) 1;
+}
+@keyframes cxGiltSweep { from { transform: translateX(0); } to { transform: translateX(330%); } }
+/* Still fallback: the confirmation is already carried by the button's tick and the
+   toast, so reduced motion simply shows no sweep. */
+body.reduce-motion .cx-gilt-glimmer { display: none; }
+@media (prefers-reduced-motion: reduce) { .cx-gilt-glimmer { display: none; } }
+
 /* Pillar-change loading screen (PillarLoading.jsx): the brand diamond breathing on
    the dark ground while a pillar chunk resolves.
    INSTANT AND SOLID ON FRAME ONE - no entrance delay, no fade-in. The first cut

@@ -8,7 +8,6 @@ import { registerBackConsumer } from '../back.js';
 import { useFocusTrap } from './useFocusTrap.js';
 import Sheet from './Sheet.jsx';   // the one titled adapter over the GothicSheet chassis (BottomSheet aliases it)
 import * as Dialog from '@radix-ui/react-dialog';   // the SAME layer manager vaul builds the sheet on - see CenteredModal
-import { DIAMOND_PATH, DIAMOND_GOLD } from './brandMark.js';   // one mark for every wait - see Loading
 
 /* Sheet button recipes - one source of truth for the black-glass primary and
    the ghost secondary used across every sheet (was copy-pasted in 6 files). */
@@ -194,24 +193,18 @@ export function useSwipe(onLeft, onRight, { threshold = 56 } = {}) {
   return { onTouchStart, onTouchEnd };
 }
 
-/* The shared loading beat: the app's mark, breathing. ONE treatment for every wait
-   in the app - screens, sheets and in-place sections alike - so a pause always looks
-   deliberate and always looks like Compendium. It replaced a "· · ·" ellipsis that
-   read as an unfinished frame rather than an intentional state (owner report).
-   `PillarLoading` is the same mark at full-area size for a whole pillar arriving;
-   this is the in-place size for everything else. Both share the geometry in
-   brandMark.js and the compositor-only breath in tokens.css, and both fall back to a
-   still mark under reduced motion. */
-export function Loading({ pad = 24, size = 44 }) {
-  return (
-    <div style={{ padding: pad, display: 'flex', justifyContent: 'center' }} role="status" aria-label="Loading">
-      <div className="cx-pillar-load-mark" style={{ lineHeight: 0 }}>
-        <svg viewBox="0 0 100 100" width={size} height={size} aria-hidden="true">
-          <path d={DIAMOND_PATH} fill="none" stroke={DIAMOND_GOLD} strokeWidth="4" strokeLinejoin="round" />
-        </svg>
-      </div>
-    </div>
-  );
+/* DELIBERATELY NOTHING. Every wait that is not a pillar arriving renders no
+   indicator at all - no mark, no ellipsis, no spinner.
+   These waits are a few frames of data or a sheet's own fetch, and anything drawn
+   for them is on screen too briefly to read: the ellipsis looked like an unfinished
+   frame, and the brand mark that briefly replaced it read as a flash of a square
+   (owner ruling, 2026-08-17). Only `PillarLoading` survives, on the pillar chunk
+   boundary, where the wait is long enough and rare enough to earn a mark.
+   Kept as a component rather than deleted from ~25 call sites so the intent stays
+   legible at each one - `{x == null ? <Loading /> : ...}` still says "not yet" -
+   and so one edit here can reinstate an indicator if that ever changes. */
+export function Loading() {
+  return null;
 }
 
 export function ThresholdPips({ runs, size = 12 }) {

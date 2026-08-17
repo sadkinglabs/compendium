@@ -14,7 +14,6 @@ import RefineSheet from '../components/RefineSheet.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import CardArt from '../components/CardArt.jsx';
 import { toast, confirmAction } from '../feedback.js';
-import PillarLoading from '../components/PillarLoading.jsx';
 
 // Codex row glyphs - card = rectangle (a card), article = three lines of text.
 // The one entity-icon set for the whole app: card = rounded rectangle,
@@ -240,7 +239,7 @@ function MarginaliaView({ onOpen, rev }) {
     await deleteCollection(c.id); load(); toast('Collection deleted');
   }
 
-  if (!d || !cols) return <PillarLoading />;
+  if (!d || !cols) return <Loading />;
   const empty = d.saved.length + d.notes.length + d.links.length + cols.length === 0;
   const on = (t) => <span style={{ display: 'block', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {t}</span>;
   const openS = (id) => !closed.has(id);

@@ -494,9 +494,12 @@ export default function App() {
           in the swipe direction. Decks is the full-height pager; the rest scroll in
           the standard body. */}
       <div key={tab} className={`cx-pillar-slide from-${slideDirRef.current}`} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      {/* A whole pillar is arriving, so the wait wears the app's mark rather than a
-          stray ellipsis at the top of an empty frame. It self-suppresses on fast
-          (warm-chunk) loads - see PillarLoading. */}
+      {/* THE ONLY loading indicator in the app. A whole pillar arriving is a real,
+          once-per-session wait, so it earns the mark; every other wait in the app is
+          a few frames of data and deliberately shows nothing at all, because anything
+          drawn for those reads as a flash rather than a state (owner ruling). React
+          .lazy caches the chunk, so this appears on the first visit to a pillar and
+          never again that session. */}
       <Suspense fallback={<PillarLoading />}>
       {deckPagerActive ? (
         <DecksPager onNew={() => setDeckWizard(true)} onImport={(mode) => setImportMode(mode)}
@@ -633,7 +636,7 @@ export default function App() {
       {match && (
         /* The counter is a full-screen takeover, so its wait is the same case as a
            pillar's: the app's mark, not an ellipsis at the top of a blank frame. */
-        <Suspense fallback={<PillarLoading />}>
+        <Suspense fallback={<Loading />}>
           <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
             deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}
             onMinimize={minimizeMatch} onPersist={saveOngoing} onRecord={recordMatchResult} onExit={exitMatch} onNewMatch={newMatchFromEnd} />
@@ -796,7 +799,7 @@ function SearchResults({ query, kind = 'all', onOpen, onDuel }) {
     const t = setTimeout(() => searchAll(query.trim()).then((r) => alive && setRes(r)), 130);
     return () => { alive = false; clearTimeout(t); };
   }, [query]);
-  if (!res) return <PillarLoading />;
+  if (!res) return <Loading />;
   const showRules = kind !== 'card', showCards = kind !== 'rule';
   const total = (showRules ? res.articles.length + res.articleText.length : 0)
     + (showCards ? res.cards.length + res.cardText.length : 0)

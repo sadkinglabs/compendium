@@ -53,7 +53,7 @@ const setPillStyle = {
 //               increments only when the row's write chain drains successfully.
 // Firing the tick and toast on tap presented a provisional write as a durable one; a later
 // failure toast could not un-say it.
-export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
+export function QuickAdd({ label, onAdd, status, cardName, size = 30, onConfirmed }) {
   const [tick, setTick] = useState(false);
   const timer = useRef(null);
   const run = useRef(0);        // copies confirmed in the current burst
@@ -72,6 +72,7 @@ export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
     // and a failed chain never produces a confirmation at all.
     run.current += c.appliedDelta;
     if (cardName) toast(`${run.current} × ${cardName} added`);
+    onConfirmed?.();          // the tile gilds itself - see the glimmer in BinderTile
     setTick(true);
     clearTimeout(timer.current);
     timer.current = setTimeout(() => setTick(false), 620);
@@ -80,10 +81,16 @@ export function QuickAdd({ label, onAdd, status, cardName, size = 30 }) {
   }, [status?.confirmation?.version, cardName]);
   const tone = tick ? 'ok' : status?.pending ? 'pending' : undefined;
   return (
-    <Frost label={label} size={size} onClick={onAdd} tone={tone} variant="gold">
+    // haptic on the TAP, not on the confirmation: the tap is the thing the finger did,
+    // and the write may land a beat later (or coalesce into a burst, which must not
+    // buzz once per coalesced copy).
+    <Frost label={label} size={size} onClick={() => { haptic('light'); onAdd?.(); }} tone={tone} variant="gold">
       {tick
         ? <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
-        : '+'}
+        /* SVG, not a '+' glyph: a text plus is centred on its font metrics rather than
+           its ink, which left it visibly high in the disc (owner report). The app
+           speaks SVG for icons anyway. */
+        : <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>}
     </Frost>
   );
 }
@@ -227,6 +234,7 @@ const chipDark = {
 };
 
 export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus, selectMode = false, checked = false, onToggle, anchorLetter }) {
+  const [glimmer, setGlimmer] = useState(0);   // bumped by a CONFIRMED quick-add; keys the gilding sweep
   const total = owned + foil;
   const artCard = artForSet(card, set);
   const { complete } = playsetOf(card, total);
@@ -255,6 +263,14 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
         <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden' }}>
           <CardArt card={artCard} radius={12} aspect="5/7" />
           {missing && <span aria-hidden="true" style={{ position: 'absolute', inset: 0, background: 'rgba(6,5,5,.68)' }} />}
+          {/* The gilding: a single gold sweep across the card the moment a quick-add is
+              CONFIRMED by the store (never on the tap alone - the glimmer means "this
+              is yours now", so it must not fire for a write that failed). Keyed on the
+              confirmation count so consecutive adds each restart it. Transform-only,
+              and it removes itself when the run ends. */}
+          {glimmer > 0 && (
+            <span key={glimmer} className="cx-gilt-glimmer" aria-hidden="true" onAnimationEnd={() => setGlimmer(0)} />
+          )}
           {/* Bottom caption on a scrim: name + set. */}
           <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '18px 9px 8px', background: 'linear-gradient(transparent, rgba(6,5,5,.92))' }}>
             <div style={{ font: "600 12px/1.2 var(--f-read)", color: missing ? '#a99a80' : '#efe7d8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{card.name}</div>
@@ -295,6 +311,7 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
       {onStep && !selectMode && (
         <span onClick={(e) => e.stopPropagation()} style={{ position: 'absolute', bottom: 7, right: 7 }}>
           <QuickAdd label={`Add ${card.name}`} cardName={card.name} status={addStatus}
+            onConfirmed={() => setGlimmer((n) => n + 1)}
             onAdd={() => onStep(card.card_id, set, 1)} />
         </span>
       )}

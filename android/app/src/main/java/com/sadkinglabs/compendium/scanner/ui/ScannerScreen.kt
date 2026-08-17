@@ -79,6 +79,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -186,20 +187,41 @@ fun ScannerScreen(
         }
 
         // Status line, top-centre.
+        //
+        // The READY line is an invitation, not an instruction, so it is set as a
+        // Manuscript rubric - Cinzel caps, wide tracking, gilt - the same eyebrow
+        // treatment the recognition sheet uses, rather than a sentence dropped on the
+        // viewfinder. It also names the QR case, which the old copy never did even
+        // though a `compendium://` code is read passively the whole time the shutter
+        // is armed.
+        //
+        // And it is a FIRST-RUN hint: once this session has taken a frame the user has
+        // demonstrably worked out what the button does, so the viewfinder stays clear
+        // from then on. Transient states (reading / shortlist / unavailable) are status
+        // rather than teaching, so they keep the plain reading face and always show.
+        var snapped by remember { mutableStateOf(false) }
+        LaunchedEffect(snap) { if (snap == SnapState.Capturing) snapped = true }
+
         val status = when (val s = snap) {
-            SnapState.Ready -> "Fill the frame with one card, portrait or landscape, then tap"
+            SnapState.Ready -> if (snapped) "" else "SNAP A CARD OR QR CODE"
             SnapState.Capturing, SnapState.Identifying -> "Reading the card…"
             is SnapState.Shortlist -> "Couldn't be certain - pick the match"
             is SnapState.Empty -> if (s.unavailable) "Visual match unavailable" else ""
         }
+        val isHint = snap == SnapState.Ready
         if (granted && sheet == null && notice == null && status.isNotEmpty()) {
             Text(
-                status, color = Color(0xFFEFE7D8), fontSize = 14.5.sp,
+                status,
+                color = if (isHint) PillarGold else Color(0xFFEFE7D8),
+                fontFamily = if (isHint) FontDisplay else null,
+                fontSize = if (isHint) 11.sp else 14.5.sp,
+                fontWeight = if (isHint) FontWeight.SemiBold else FontWeight.Normal,
+                letterSpacing = if (isHint) 2.5.sp else 0.sp,
                 modifier = Modifier
                     .semantics { liveRegion = LiveRegionMode.Polite }
                     .align(Alignment.TopCenter)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .padding(top = 12.dp, start = 56.dp, end = 56.dp),
+                    .padding(top = 14.dp, start = 56.dp, end = 56.dp),
             )
         }
 

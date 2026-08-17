@@ -26,7 +26,6 @@ import { launchScanner } from '../cardScanner.js';
 import { toast, confirmAction } from '../feedback.js';
 import DeckDashboard from './DeckDashboard.jsx';
 import '../theme/deckpager.css';
-import PillarLoading from '../components/PillarLoading.jsx';
 
 
 // Library FAB menu iconography: build a deck (the app's stacked-cards glyph),
@@ -216,7 +215,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
       {view === 'library' ? (
         <div className="dp-view">
           <div className="dpage-scroll">
-            {decks == null ? <PillarLoading />
+            {decks == null ? <Loading />
               : libList.length === 0 ? (
                 <BlankState hue="160,140,192" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />

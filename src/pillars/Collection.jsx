@@ -58,7 +58,6 @@ import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
 import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
-import PillarLoading from '../components/PillarLoading.jsx';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
@@ -659,7 +658,7 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
     const off = subscribeCollection(load);
     return () => { alive = false; off(); };
   }, [rev]);
-  if (!stats) return <PillarLoading />;
+  if (!stats) return <Loading />;
   return (
     <div style={{ padding: '2px 20px' }}>
       {/* Every ADD lives on a FAB now: a docked camera + a stacked "Import from text" (below). Text

@@ -241,6 +241,15 @@ body.grain-off .half-grain { display: none; }
 .status-badge svg { width: 17px; height: 17px; flex-shrink: 0; }
 .status-badge.maxlife { border: 1px solid rgba(224,120,106,.45); color: #e7b3aa; }
 .status-badge.maxlife svg { color: var(--crimson); }
+/* The Advanced band's cartouche strips sit immediately either side of the divider
+   (6px gap + 38px strip), which is exactly where a half's status badges land - the
+   Max Life badge collided with the band the moment mana/thresholds were enabled.
+   So when the band is present the badges step down past it. ONE rule covers both
+   players: the enemy half is rotated 180°, so `top` moves its badge away from the
+   divider in its own coordinate space too. Keyed on the band actually being
+   rendered (`.band-wrap` only exists when Advanced is on and the roll-off is over),
+   so a Basic match keeps the badge tight to the divider as before. */
+.cx-life-tracker:has(.band-wrap) .status-badges { top: 56px; }
 
 /* â”€â”€ Turn-order roll-off â”€â”€ */
 .life-number.roll-win {
