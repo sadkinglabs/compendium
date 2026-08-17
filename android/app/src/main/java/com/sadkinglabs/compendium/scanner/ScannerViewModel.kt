@@ -326,15 +326,19 @@ class ScannerViewModel : ViewModel() {
         )
     }
 
-    /** "Try another photo": capture again without leaving the flow. */
+    /**
+     * "Try another photo": back to the LIVE viewfinder, shutter armed, so the user can
+     * re-aim and take the shot themselves.
+     *
+     * It used to fire a new capture immediately (straight to [SnapState.Capturing] +
+     * armCapture), which took the photo out of the user's hands: the phone had not moved,
+     * so it re-shot the same framing and mostly reproduced the same miss. The whole point
+     * of "try another" is to frame it differently - a better angle, less glare, closer.
+     * Same destination as [onCancelSnap]; the two differ only in which control got you here.
+     */
     fun onRetake() {
         if (locked) return
-        token++
-        startMs = System.currentTimeMillis()
-        job?.cancel()
-        clearStill()
-        _snap.value = SnapState.Capturing
-        analyzer.armCapture()
+        onCancelSnap()
     }
 
     /**

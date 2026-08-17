@@ -1381,7 +1381,7 @@ function RestorePreviewModal({ preview, onClose, onToast, onRestored }) {
               {p.name}{p.isDefault ? ' · default' : ''}
             </span>
             <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)', flex: 'none' }}>
-              {p.decks} decks · {p.ownedCards.toLocaleString()} cards · {p.matches} matches
+              {p.decks} deck{p.decks === 1 ? '' : 's'} · {p.ownedCards.toLocaleString()} card{p.ownedCards === 1 ? '' : 's'} · {p.matches} match{p.matches === 1 ? '' : 'es'}
             </span>
           </div>
         ))}
