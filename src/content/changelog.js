@@ -15,7 +15,7 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
-    build: 271,
+    build: 272,
     version: '1.0.4-alpha',
     date: '2026-08-17',
     notes: 'Sheets you can actually throw away, advanced match counters, and a deck that syncs itself.',
@@ -25,6 +25,8 @@ export const CHANGELOG = [
       { kind: 'added', text: 'A deck saved from a Curiosa link can pull its changes again. It shows you the difference first and only writes once you confirm.' },
       { kind: 'added', text: 'Whole-app backup and restore: one file covering every profile, restorable on any device. Restoring returns the app to that snapshot, and a recovery point is taken first so you can step back out of it.' },
       { kind: 'added', text: 'Avatars can be added to a deck’s Collection straight from their card sheet, and Change avatar is reachable from Edit Deck. Imposters, rejoice!' },
+      { kind: 'added', text: 'The card scanner now recognises cards by sight. A neural vision model runs entirely on your device, matching the photo you take against every card in the catalogue, with on-device text reading and QR detection backing it up. No internet, and nothing leaves the phone.' },
+      { kind: 'added', text: 'When the scanner gets a card wrong and you correct it, it remembers. Your corrections harden recognition for that card from then on.' },
       { kind: 'added', text: 'Adding a card from the collection grid now answers you: the button taps back, and the card takes a single gold sweep once the copy is actually saved.' },
       { kind: 'changed', text: 'Bottom sheets have been reworked and should now behave as expected.' },
       { kind: 'changed', text: 'Load status is now shown consistently across the app.' },
