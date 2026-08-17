@@ -634,8 +634,10 @@ export default function App() {
         </div>
       )}
       {match && (
-        /* The counter is a full-screen takeover, so its wait is the same case as a
-           pillar's: the app's mark, not an ellipsis at the top of a blank frame. */
+        /* Renders NOTHING while the counter's chunk arrives - `Loading` is a null
+           render. Only the pillar boundary above shows the mark (owner ruling: a mark
+           on every wait read as a flash). The takeover is the one place that might
+           argue for an exception; it does not have one today, deliberately. */
         <Suspense fallback={<Loading />}>
           <LifeCounter settings={match.settings} mode={match.mode} players={{ you: match.you, opp: match.opp }}
             deck={match.deck || null} resume={match.resume || null} registerApi={(api) => { counterApi.current = api; }}

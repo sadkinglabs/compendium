@@ -83,6 +83,20 @@ test('missingFrom reports only what is absent', () => {
   assert.deepEqual(missingFrom(nodes, ['overview', 'my collection']), ['my collection']);
 });
 
+// An ARRAY entry means "any one of these" - for a destination whose marker differs by
+// data state (Play shows a win-rate donut when populated, "No Matches Yet" when empty).
+test('missingFrom accepts an alternatives array when ANY one is present', () => {
+  const populated = parseUi(doc(node('WIN RATE'), node('6-3')));
+  const empty = parseUi(doc(node('No Matches Yet')));
+  assert.deepEqual(missingFrom(populated, [['win rate', 'no matches yet']]), []);
+  assert.deepEqual(missingFrom(empty, [['win rate', 'no matches yet']]), []);
+});
+
+test('an alternatives array still FAILS when none of them is present', () => {
+  const home = parseUi(doc(node('Welcome back'), node('Start Match')));
+  assert.deepEqual(missingFrom(home, [['win rate', 'no matches yet']]), [['win rate', 'no matches yet']]);
+});
+
 test('parseDevices returns only ready devices', () => {
   const out = 'List of devices attached\nABC123\tdevice\nDEF456\toffline\nGHI\tunauthorized\n';
   assert.deepEqual(parseDevices(out), ['ABC123']);

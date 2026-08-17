@@ -15,8 +15,8 @@
 // `kind` is one of: added | changed | fixed.
 export const CHANGELOG = [
   {
-    build: 273,
-    version: '1.0.4-alpha',
+    build: 274,
+    version: '1.1.0-alpha',
     date: '2026-08-17',
     notes: 'Sheets you can actually throw away, advanced match counters, and a deck that syncs itself.',
     changes: [

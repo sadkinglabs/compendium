@@ -87,10 +87,19 @@ export function findNode(nodes, label) {
       || null;
 }
 
-/** Which of `expect` are missing from the rendered text. */
+/**
+ * Which of `expect` are missing from the rendered text.
+ *
+ * An entry may be an ARRAY, meaning "any one of these" - for a destination whose
+ * marker legitimately differs by data state. It is deliberately narrow: every
+ * alternative must still be unique to the destination, so a route cannot pass on
+ * text the previous screen also shows. Without it a route has to pick one state's
+ * marker and then fails on a fixture that is merely different, not broken.
+ */
 export function missingFrom(nodes, expect) {
   const hay = screenText(nodes);
-  return expect.filter((e) => !hay.includes(String(e).toLowerCase()));
+  const has = (e) => hay.includes(String(e).toLowerCase());
+  return expect.filter((e) => (Array.isArray(e) ? !e.some(has) : !has(e)));
 }
 
 /**
@@ -113,9 +122,14 @@ export const ROUTES = [
   // same measured defect OverflowMenu.jsx:171-181 works around). The Play route was
   // therefore red while Play itself rendered perfectly. 'win rate' is the hero
   // donut's label: verified on-device as present on Play and ABSENT from Home, which
-  // is what the doctrine above requires. (It marks the POPULATED hub; a profile with
-  // no matches shows the "No Matches Yet" blank state instead.)
-  { name: 'Play', tap: ['Play'], expect: ['win rate'] },
+  // is what the doctrine above requires.
+  //
+  // Two markers, because Play has two legitimate destinations: the populated hub
+  // shows the win-rate donut, an empty profile shows the "No Matches Yet" blank
+  // state (Play.jsx:124). Requiring only the first made the gate fixture-dependent -
+  // a fresh profile failed a route that had rendered perfectly. BOTH alternatives
+  // are absent from Home, so this still cannot pass on a tap that went nowhere.
+  { name: 'Play', tap: ['Play'], expect: [['win rate', 'no matches yet']] },
   { name: 'Collection > Overview', tap: ['Collection'], expect: ['cards owned', 'decks buildable'] },
   { name: 'Collection > My Collection', tap: ['Collection', 'My Collection'], expect: ['non-foil owned'] },
   { name: 'Collection > set drill', tap: ['Collection', 'My Collection', 'BETA'], expect: ['back to sets', 'select cards'] },

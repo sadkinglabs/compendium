@@ -266,7 +266,15 @@ export function CenteredModal({ open, label, maxWidth = 360, onClose, closeButto
         />
         <Dialog.Content
           aria-label={label}
-          onOpenAutoFocus={(e) => e.preventDefault()}   /* keep the WebView from scrolling to the first control */
+          /* NO onOpenAutoFocus override. An earlier version cancelled Radix's autofocus
+             to stop the WebView scrolling to the first control - but it focused nothing
+             in its place, so focus stayed on the now-background sheet: the visible modal
+             and the accessibility context disagreed, the first keyboard/switch activation
+             could hit the obscured opener, and a destructive confirmation did not start on
+             its safe Cancel. The guard was also unnecessary: Radix's focus scope already
+             focuses with `preventScroll: true`, which is the same protection the chassis'
+             old useFocusTrap applied. Radix owns focus entry, the trap, and restoring the
+             opener on close. */
           style={{
             position: 'fixed', zIndex: 701, left: '50%',
             /* centred, then lifted by half the keyboard inset so the box clears the
