@@ -1,6 +1,6 @@
 # Compendium
 
-An **offline-first** companion app for **Sorcery: Contested Realm** - your codex, collection, decks, and a duelling life tracker in one place. Everything works with no network: the full card catalogue, rules, and rulings are bundled and stored on-device.
+An **offline-first** companion app for **Sorcery: Contested Realm** - your codex, collection, decks, and a duelling life tracker in one place. The full card catalogue, rules, and rulings are bundled and stored on-device, so every feature works with no network. The one exception is **card art**, which streams from a CDN on first view and is cached on the device from then on; a miss falls back to a deterministic placeholder, so the app stays legible and usable offline (including a fresh install with no connection).
 
 Compendium is one application organised into five pillars:
 
@@ -8,15 +8,17 @@ Compendium is one application organised into five pillars:
 |---|---|
 | **Home** | A customisable dashboard - your decks, collection stats, and a quick resume of the last thing you were doing. |
 | **Codex** | The searchable card and rules reference: per-printing art, artist credits, official FAQs, and your own notes, links, and bookmarks. |
-| **Collection** | Owned and wanted tracking per set, custom and wanted lists, bulk and camera-assisted entry, and deck buildability. |
+| **Collection** | Owned and wanted tracking per printing (card + set + finish), custom and wanted lists, bulk text entry, camera scanning, and deck buildability. |
 | **Decks** | Build and manage decks (avatar, spellbook, atlas) with the game's rarity and zone limits enforced. |
 | **Play** | A duelling life tracker - First Light, mirror matches, Death's Door, and record-by-hand matches that feed your stats. |
 
 ## Tech
 
-- **UI:** React 18 + Vite. No CDN dependencies - fully self-contained (fonts, assets, and the catalogue are all bundled) for the offline-first constraint.
-- **Native:** Capacitor (Android; iOS scaffolding present).
-- **Storage:** SQLite behind one API - `@capacitor-community/sqlite` on device, `sql.js` (wasm) + IndexedDB in the browser.
+- **UI:** React 19 + Vite. Fonts, icons, textures and the catalogue are all bundled - the only sanctioned network call in the app is card art (see above), and a build gate (`check:source`) fails if anything else reaches for the network or re-bundles art.
+- **Native:** Capacitor 8 (Android, min SDK 29, arm64; iOS scaffolding present).
+- **Storage:** SQLite behind one API - `@capacitor-community/sqlite` on device, `sql.js` (wasm) + IndexedDB in the browser. Schema evolution is forward-only.
+- **Sheets and modals:** one bottom-sheet chassis on [`vaul`](https://github.com/emilkowalski/vaul), with every surface that paints *over* a sheet built on `@radix-ui/react-dialog` - the same layer manager vaul itself uses, so modality, focus and scroll-locking are handled by one system rather than two. See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) and [docs/bottom-sheet-spec.md](./docs/bottom-sheet-spec.md).
+- **Card recognition (Android, fully on-device):** a DINOv2-small int8 embedding via ONNX Runtime matches a captured still against a precomputed prototype index, with ML Kit text recognition and barcode/QR as supporting signals. Models ship as app assets; nothing is uploaded. Your corrections are stored as extra prototypes, so recognition hardens with use.
 
 ## Quickstart
 
@@ -39,15 +41,27 @@ A release build is signed from `android/keystore.properties` (never committed - 
 ```bash
 npm run test:query     # store / data layer
 npm run test:ui        # pillar UI logic
+npm run test:app       # app shell: hardware-back contract, hook imports
 npm run test:catalog   # the catalogue pipeline
 npm run test:codex     # codex compiler
+npm run check:types    # type surface owned by this repo
+npm run check:cycles   # fails on ANY circular import in src/
+npm run check:source   # offline-first + art-boundary guards
 npm run check:docs     # documentation consistency (mechanical)
 npm run build          # production build
 ```
 
+Two gates deserve a note. **`check:cycles`** exists because a latent circular import blanked the app on launch in the *minified release build* while every other gate was green - passing tests did not prove the app started. **`check:smoke`** drives the installed release APK on a connected device and asserts every route actually rendered:
+
+```bash
+npm run check:smoke    # needs a connected, unlocked device + the current release APK installed
+```
+
+It is a pre-merge/pre-release gate rather than one to run on every edit. UI work is also expected to be exercised in zero-image mode (`localStorage['cx-no-images'] = '1'`), and native or plugin behaviour needs Capacitor/Android evidence - a browser-only success is not proof of native correctness.
+
 ## The catalogue
 
-Cards, rules, FAQs, and card art are bundled reference data, regenerated from a drop folder by a single command that fetches, builds, validates, and promotes under a journal (safe to interrupt):
+Cards, rules and FAQs are bundled reference data, regenerated from a drop folder by a single command that fetches, builds, validates, and promotes under a journal (safe to interrupt). Card art is **not** bundled: the same command renders it, publishes it to the CDN, and audits the whole manifest there before promoting, so the app can never ship a catalogue referencing art that is not being served.
 
 ```bash
 npm run update:catalog             # real run, from CATALOG_DROP/
@@ -64,6 +78,7 @@ See **[BUILD.md](./BUILD.md)** and **[COMPENDIUM_DATA_MODEL.md](./COMPENDIUM_DAT
 | Pillars, boundaries, runtime posture | [COMPENDIUM_ARCHITECTURE.md](./COMPENDIUM_ARCHITECTURE.md) |
 | Tables, persistence, schema evolution | [COMPENDIUM_DATA_MODEL.md](./COMPENDIUM_DATA_MODEL.md) |
 | Features and implementation status | [COMPENDIUM_FEATURE_MATRIX.md](./COMPENDIUM_FEATURE_MATRIX.md) |
+| Visual language, primitives, platform rules | [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) |
 | Engineering process (governing policy) | [ENGINEERING_CONSTITUTION.md](./ENGINEERING_CONSTITUTION.md) |
 | AI-agent operating manual | [AGENTS.md](./AGENTS.md), [CLAUDE.md](./CLAUDE.md) |
 
