@@ -166,11 +166,22 @@ async function lostUpdateScenario(exclusive) {
   return qtyOf('P', 'a', '001');
 }
 
-test('COUNTERFACTUAL: without the barrier the scenario loses an increment', async () => {
-  // If this ever passes at 3, the scenario has stopped exercising the race and every
-  // barrier test in this file is worthless. It is the sensitivity check for all of them.
-  const final = await lostUpdateScenario((fn) => fn());
-  assert.equal(final, 2, 'expected the pass-through barrier to lose the quick-add increment');
+test('COUNTERFACTUAL: without the barrier the quick-add is REFUSED, not silently lost', async () => {
+  // If this ever resolves cleanly, the scenario has stopped exercising the race and every barrier
+  // test in this file is worthless. It is the sensitivity check for all of them.
+  //
+  // WHAT THIS ARM USED TO ASSERT: that an unserialised quick-add silently loses its increment,
+  // final 2 instead of 3. Under v12 the loss is no longer silent. The stepper reads the row, then
+  // reads the Unfiled container, and the bulk write can commit between those two reads; the
+  // stepper's transaction then writes a count from before and a place from after, and its own
+  // in-transaction equality refuses the whole write. The corruption became a rejection.
+  //
+  // That is a better failure and it does not make the barrier less necessary - the barrier is what
+  // makes the write SUCCEED. It is worth being explicit that the equality assertion is a backstop
+  // against unserialised writes, not a substitute for serialising them.
+  await assert.rejects(() => lostUpdateScenario((fn) => fn()),
+    'an unserialised read-modify-write must not be allowed to commit a count its places contradict');
+  assert.equal(await qtyOf('P', 'a', '001'), 2, 'and the refused write left the ledger consistent');
 });
 
 test('COUNTERFACTUAL: with the real barrier both increments survive', async () => {

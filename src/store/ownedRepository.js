@@ -89,6 +89,12 @@ export async function qtyFor(cardId, pid = activeProfileId()) {
 
 /* ---------------- ownership writes (upsert the '' row, delete at 0/0) ---------------- */
 
+// EVERY interactive write carries the equality into the transaction with it. The upsert writers
+// needed this because a SELECT-sourced insert can match nothing and report success; these compute
+// their reconciliation in JS instead, so the failure mode is different - an arithmetic mistake
+// rather than a silent no-match - but the CONSEQUENCE is identical and worse for being unwitnessed.
+// A stepper is the most-used writer in the app and the one furthest from a test on a real device.
+// One indexed statement is the price of these paths failing loudly instead of drifting.
 // Card-level owned edits land on the UNCATEGORISED row - copies whose set is not established.
 // That is a legitimate v11 state (unlike an uncategorised WANT, which only migration may make).
 // Looks across both schemas and rewrites to canonical, so a legacy row is converted rather than
@@ -111,12 +117,14 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
     // leaves a durable ledger that contradicts itself, and the equality is not a nicety - it is
     // what makes qty_owned a materialised SUM rather than a second number that drifts.
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: o, action: 'setOwned', now });
-    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]], ...places]);
+    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]], ...places,
+      ...assertEqualityStatements(pid, [{ cardId, variantSlug: UNCATEGORISED }], 'setOwned')]);
   } else {
     const id = uuid();
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: o, action: 'setOwned', now });
     await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
-      [id, pid, cardId, UNCATEGORISED, o, w, '', now, now]], ...places]);
+      [id, pid, cardId, UNCATEGORISED, o, w, '', now, now]], ...places,
+      ...assertEqualityStatements(pid, [{ cardId, variantSlug: UNCATEGORISED }], 'setOwned')]);
   }
   bump();
 }
@@ -276,12 +284,14 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
     if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action: 'setFoil', now });
-    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]], ...places]);
+    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]], ...places,
+      ...assertEqualityStatements(pid, [{ cardId, variantSlug: UNCATEGORISED_FOIL }], 'setFoil')]);
   } else {
     const id = uuid();
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: q, action: 'setFoil', now });
     await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
-      [id, pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]], ...places]);
+      [id, pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]], ...places,
+      ...assertEqualityStatements(pid, [{ cardId, variantSlug: UNCATEGORISED_FOIL }], 'setFoil')]);
   }
   bump();
 }
@@ -441,11 +451,13 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
   if (q === 0) { if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]); }
   else if (cur) {
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action, now });
-    await tx([['UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]], ...places]);
+    await tx([['UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]], ...places,
+      ...assertEqualityStatements(pid, [{ cardId, variantSlug: slug }], action)]);
   } else {
     const id = uuid();
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: q, action, now });
-    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [id, pid, cardId, slug, q, '', now, now]], ...places]);
+    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [id, pid, cardId, slug, q, '', now, now]], ...places,
+      ...assertEqualityStatements(pid, [{ cardId, variantSlug: slug }], action)]);
   }
   bump();
 }

@@ -172,6 +172,14 @@ export async function readPlacements(query, ownedCardId) {
  *
  * ASYNC because a decrease has to read the places first, and only a decrease does. The increase
  * path needs the Unfiled id alone, so the common interactive + tap costs one small indexed read.
+ *
+ * THOSE READS HAPPEN OUTSIDE THE TRANSACTION, which makes the caller's coordination load-bearing
+ * rather than merely tidy. Between the read and the commit, another write admitted to the SAME row
+ * would leave this one composing a count from before and a place from after. Production cannot
+ * reach that - the per-row chain serialises same-row writes and bulk holds the exclusive barrier -
+ * and the counterfactual in bulkOwnedRepository.test.mjs demonstrates it by removing the barrier
+ * on purpose, where the equality assertion now refuses the write. The assertion is the BACKSTOP
+ * for that window, never a licence to skip the coordination that closes it.
  */
 export async function reconcileOwnedStatements({ query, profileId, ownedCardId, before, after, action = 'storage', now = nowIso() }) {
   if (after === before) return [];
