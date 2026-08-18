@@ -676,4 +676,14 @@ being hit repeatedly means removal-at-a-place is not discoverable.
   main: *"implement on branch, let's go homie!"*. Implementation proceeds on branch
   `collection-storage`. The resulting migration and diff remain subject to the mandatory checkpoint
   and a final Codex review before merge.
-- Implementation has not started.
+- **Increment 1 COMPLETE**, on branch `collection-storage`. Device evidence, 2026-08-18: an
+  **in-place upgrade from the shipped predecessor** (build 276, schema v11, a real collection) to
+  build 277 (v12), followed by `check:smoke` reporting **8/8 routes rendered**. Because every new
+  guard fails closed, a successful boot IS the assertion: the v12 migration applied through the
+  native execSQL path; foreign keys were enabled and verified, or the database would have refused
+  to open; the backfill's in-transaction assertions held (`qty_owned = SUM(allocations)` for every
+  row, exactly one Unfiled per profile) or boot would have rolled back; and canonicalisation found
+  no allocation on a row holding no copies. Repo gates: `test:query` 1116/1116, `test:ui`,
+  `test:app`, `check:types/cycles/source/docs`, `build`.
+- Increments 2-6 (UI, bulk, docs) not started. The diff still requires the mandatory checkpoint and
+  a final Codex review before merge.
