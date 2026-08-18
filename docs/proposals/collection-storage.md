@@ -703,3 +703,97 @@ being hit repeatedly means removal-at-a-place is not discoverable.
   `test:app`, `check:types/cycles/source/docs`, `build`.
 - Increments 2-6 (UI, bulk, docs) not started. The diff still requires the mandatory checkpoint and
   a final Codex review before merge.
+
+
+---
+
+## Appendix A: the thirty design answers, recovered
+
+**Why this exists.** The body of this proposal cites `(Q1)`, `(Q7)`, `(Q13)`, `(Q30)` and a dozen
+more as settled authority. Until 2026-08-18 **their content was written down nowhere in the
+repository** - it lived only in the design conversation. Anyone implementing from this document,
+including the author, was reading citations that could not be resolved, and building against
+numbers instead of decisions. Six of the nine divergences in the first UI increment trace directly
+to that. Recovered verbatim and recorded here so a citation resolves.
+
+**Owner's answer (2026-08-17): "Yo, we agree on everything"**, with four amendments - Q14, Q17, Q18,
+Q28 - noted inline below. Several answers were later **SUPERSEDED** by the r3 model reversal and by
+subsequent owner rulings; those are marked, and the supersession is what governs.
+
+### A. Grain and arithmetic
+
+| # | Answer |
+|---|---|
+| 1 | Allocations attach to a **collector item** (card + set + finish), matching the v11 grain. |
+| 2 | 2 standard + 1 foil is **two separate ledgers**, not a pooled 3. |
+| 3 | Sum of allocations may **never exceed** copies owned. |
+| 4 | ~~On a decrease, drain Unassigned first, then the largest container down, and toast what moved.~~ **SUPERSEDED by the r3 reversal.** Under the final model a copy is only ever *moved*, so a global decrease takes from Unfiled **only** and REFUSES rather than reaching into a named container. This is the "drain and guess" policy the whole model exists to remove; it reappeared in code once and was deleted (`6d63d67`). |
+| 5 | Wishlisted copies **cannot** be allocated - you cannot file a card you do not own. |
+| 6 | A container places **no constraint** on what may go in it. |
+
+### B. Containers
+
+| # | Answer |
+|---|---|
+| 7 | Kinds are a **fixed list**: Binder / Box / Deck / Other. |
+| 8 | A kind **can change after creation** - "cards move from a deck into a box constantly". |
+| 9 | Names need **not** be unique; **warn** on an exact duplicate rather than refusing. |
+| 10 | Ordering is **manual**, via `sort_order`, matching `card_lists`. |
+| 11 | ~~Kind picks the icon; no per-container colour in v1.~~ **SUPERSEDED** by the owner, 2026-08-17: *"fold colour in now"*. Colour is a named token from a closed allow-list, and the picker is a general primitive. |
+| 12 | A container has **one short optional description line** - "top shelf, spare room". |
+
+### C. Unfiled
+
+| # | Answer |
+|---|---|
+| 13 | **Always visible**, so it is a stable destination rather than something that appears and vanishes. |
+| 14 | **Openable and bulk-allocatable** ("select all, put in Beta binder"). *Owner amendment: reuse the existing select and bulk-edit implementation wherever possible.* |
+| 15 | **Pinned FIRST in Storage**, visually distinct, not draggable. |
+| — | **Naming.** Q18 agreed "Unassigned"; the owner later rejected "Loose" outright and the settled name is **"Unfiled"**. "Loose" must not appear in UI copy. |
+| — | ~~Unfiled is derived, never stored.~~ **SUPERSEDED by the r3 reversal**: it is a real row, because allocations ARE the ownership and a derived container cannot hold one. |
+
+### D. Interaction
+
+| # | Answer |
+|---|---|
+| 16 | The primary allocation gesture is **steppers in a per-card ledger** on the card sheet, with a live remainder. **Not** a "move to folder" action: a card legitimately sits in three containers at once, and a move gesture teaches the opposite. |
+| 17 | Bulk allocate from multi-select in My Collection: **yes**, reusing the existing bulk-action pattern. *Owner amendment: the bottom bar has no room for another action - resolve the affordance rather than cramming it.* |
+| 18 | New copies from the scanner or `+` land in Unfiled and **never prompt**. *Owner: "Unassigned, agree."* |
+| 19 | **Direct move** between containers as a secondary action - stepping down then up to move one card is how a feature stops being used. |
+| 20 | You **can** unallocate inline from inside a container view, sending copies back to Unfiled, never deleting the card. |
+| 21 | Search and arrange inside a container: **yes, the same chassis as list detail**, inheriting the stacked sort for free. |
+
+### E. Reach into the rest of the app
+
+| # | Answer |
+|---|---|
+| 22 | The Codex card detail shows where copies live, **read-only**. |
+| 23 | The Decks pillar shows **no** storage hints - deck coupling through the back door. |
+| 24 | The scanner gets **no** container target. Follows from 18. |
+| 25 | Text exports include **no** locations - they are for sharing with people; this is private inventory. |
+
+### F. Lifecycle and data
+
+| # | Answer |
+|---|---|
+| 26 | Deleting a container **returns copies to Unfiled**, with a confirmation stating the count. Never deletes cards. |
+| 27 | Export/import wiring ships in the **same increment**, non-negotiable. |
+| 28 | ~~Schema v13, queued behind the settings v12 proposal.~~ **SUPERSEDED**: the settings work did not land first, so Storage took **v12**. *Owner note: a website sync may come, and the schema should not be shaped so as to preclude it - no action yet.* |
+| 29 | The delete-profile confirmation **enumerates storage**. |
+| 30 | Zero state ships **empty with a create prompt**, not with starter containers. |
+
+### The placement ruling, which is not a numbered question
+
+Owner, 2026-08-17, in their own words:
+
+> "I would add Storage then **INSIDE My Collection** - top section would be sets, and **below
+> you'd have Storage**, with the ability to create your locations as you see fit - pretty much
+> behaving like folders, right?"
+
+Agreed in the same exchange, explicitly in preference to a fourth chip: *"it's better than my
+fourth chip … Sets on top, Storage below. Same owned cards, two organisations, one screen. And it
+keeps the chip row at three."* The chip row stays at **three**.
+
+"Folder-like" governs the interaction (create, name, rename, delete, tap in) and **not** the
+semantics: a folder holds an item once, whereas four copies legitimately sit in three containers at
+the same time. Hence Q16.
