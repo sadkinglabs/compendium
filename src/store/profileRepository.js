@@ -68,7 +68,11 @@ export async function listProfiles() {
 export async function profileStats(id) {
   const decks = (await query('SELECT COUNT(*) c FROM decks WHERE profile_id=?;', [id]))[0].c;
   const matches = (await query('SELECT COUNT(*) c FROM matches WHERE profile_id=?;', [id]))[0].c;
-  return { decks, matches };
+  // Collected copies, counted the same way the dashboard counts them (homeRepository).
+  // Deleting a profile cascades its collection too, so the delete confirmation must be
+  // able to say how much collection is at stake - not just decks and matches.
+  const cards = (await query('SELECT COALESCE(SUM(qty_owned),0) n FROM owned_cards WHERE profile_id=?;', [id]))[0].n;
+  return { decks, matches, cards };
 }
 
 export async function getActiveProfile() {
