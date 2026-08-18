@@ -58,31 +58,52 @@ export function placeStatements({ profileId, containerId, ownedCardId, qty, now 
 }
 
 /**
- * Statements removing `qty` copies of an owned row, taking from Unfiled first and then from the
- * fullest container, and deleting any allocation that reaches zero (CHECK forbids a zero row, and
- * a copy that is nowhere is the state this model exists to prevent).
+ * Plan a GLOBAL removal - the count stepper, bulk Adjust, bulk Set. It takes from **Unfiled only**.
  *
- * `placements` is [{ id, container_id, qty, is_system }] for that owned row, already read by the
- * caller inside its transaction - this function is pure so the ordering is testable without a
- * database.
+ * There is deliberately no fallback to another container, and this is the single most important
+ * rule in the module. An earlier version of this function took from Unfiled and then from the
+ * fullest container, which is the "drain and guess" behaviour the whole model exists to remove: a
+ * quantity model cannot know which physical copy left, so a global minus that reaches into a binder
+ * is the app inventing a fact about the user's shelf. Filed copies are removed where they live.
+ *
+ * Returns either a plan or a CONFLICT. A conflict produces no statements at all - the caller shows
+ * the user where the copies actually are, and the write does not happen.
  */
-export function planRemoval(placements, qty) {
-  let remaining = qty;
-  const taken = [];
-  // Unfiled first because it is unambiguous - those copies are in no stated place. Then the
-  // fullest container, deterministically, so the same input always produces the same plan.
-  const order = [...placements].sort((a, b) => (b.is_system ? 1 : 0) - (a.is_system ? 1 : 0) || b.qty - a.qty || String(a.id).localeCompare(String(b.id)));
-  for (const p of order) {
-    if (remaining <= 0) break;
-    const take = Math.min(p.qty, remaining);
-    if (take > 0) { taken.push({ id: p.id, take, left: p.qty - take }); remaining -= take; }
+export function planGlobalRemoval(placements, qty) {
+  const unfiled = placements.find((p) => p.is_system);
+  const available = unfiled?.qty || 0;
+  if (qty > available) {
+    return {
+      conflict: {
+        requested: qty,
+        unfiled: available,
+        // What the caller needs to name the places rather than say "cannot".
+        filed: placements.filter((p) => !p.is_system).map((p) => ({ container_id: p.container_id, qty: p.qty })),
+      },
+      taken: [],
+    };
   }
-  return { taken, shortfall: remaining };
+  return { conflict: null, taken: qty > 0 ? [{ id: unfiled.id, take: qty, left: available - qty }] : [] };
 }
 
-/** Statements for a plan produced by planRemoval. */
+/**
+ * Plan a removal from ONE NAMED container - removing a copy from inside the place it lives, which
+ * is unambiguous and needs no attribution. Over-removal is a conflict, never a silent clamp.
+ */
+export function planPlaceRemoval(placement, qty) {
+  const have = placement?.qty || 0;
+  if (!placement || qty > have) return { conflict: { requested: qty, available: have }, taken: [] };
+  return { conflict: null, taken: qty > 0 ? [{ id: placement.id, take: qty, left: have - qty }] : [] };
+}
+
+/**
+ * Statements for a plan from either planner. A conflict yields NOTHING - a rejected removal must
+ * not half-apply. An allocation reaching zero is DELETED rather than left at 0: CHECK (qty > 0)
+ * forbids the row, and a zero-quantity place is a copy that is nowhere.
+ */
 export function removalStatements(plan, now = nowIso()) {
-  return plan.taken.map(({ id, left }) => (left > 0
+  if (!plan || plan.conflict) return [];
+  return (plan.taken || []).map(({ id, left }) => (left > 0
     ? ['UPDATE storage_allocations SET qty=?, updated_at=? WHERE id=?;', [left, now, id]]
     : ['DELETE FROM storage_allocations WHERE id=?;', [id]]));
 }
