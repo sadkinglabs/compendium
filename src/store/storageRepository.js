@@ -267,3 +267,56 @@ export function assertEqualityStatements(profileId, keys, action = 'storage') {
     [uuid(), profileId, ...keys.flatMap((k) => [k.cardId, k.variantSlug])],
   ]];
 }
+
+/**
+ * THE allocation half of any absolute ownership plan - the one implementation every module that
+ * moves qty_owned composes, rather than each growing its own.
+ *
+ * `changes` is `[{ rowId, cardId, variantSlug, before, after }]`, with `rowId` null for a row the
+ * caller is about to create. The result is split because ORDER is a correctness property, not a
+ * preference:
+ *
+ *   `pre`  runs BEFORE the owned statements. Removals and clears belong here, and a clear MUST
+ *          precede the row DELETE it enables - allocations reference owned rows under RESTRICT,
+ *          so deleting a row that still has places fails outright rather than silently.
+ *   `post` runs AFTER them. A place has to resolve a row that exists.
+ *
+ * Conflicts are collected across every change and RETURNED, never thrown: whether an
+ * unsatisfiable item fails one row or the whole command is the caller's policy, not this
+ * function's. Bulk fails whole; undo drops the row.
+ *
+ * Reaching zero is not a conflict. See planGlobalRemoval for why a partial decrease into filed
+ * copies is ambiguous while total removal is not.
+ */
+export async function planAllocationChanges({ query, profileId, changes, now = nowIso(), chunk = 400 }) {
+  const decreasing = changes.filter((c) => c.after < c.before && c.after > 0 && c.rowId);
+  const byRow = new Map();
+  const ids = decreasing.map((c) => c.rowId);
+  for (let i = 0; i < ids.length; i += chunk) {
+    const slice = ids.slice(i, i + chunk);
+    const rows = await query(
+      `SELECT a.id, a.owned_card_id, a.container_id, a.qty, c.is_system
+         FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
+        WHERE a.owned_card_id IN (${slice.map(() => '?').join(',')});`, slice);
+    for (const r of rows) byRow.set(r.owned_card_id, [...(byRow.get(r.owned_card_id) || []), r]);
+  }
+
+  const pre = [];
+  const post = [];
+  const conflicts = [];
+  for (const c of changes) {
+    if (c.after === c.before) continue;
+    if (c.after > c.before) {
+      // Key-resolved rather than id-resolved: the row may not exist yet, and the statement that
+      // creates it is in the same transaction.
+      post.push(...placeUnfiledByKeyStatements({ profileId, cardId: c.cardId, variantSlug: c.variantSlug, qty: c.after - c.before, now }));
+    } else if (c.after === 0) {
+      if (c.rowId) pre.push(...clearAllocationsStatements(c.rowId));
+    } else {
+      const plan = planGlobalRemoval(byRow.get(c.rowId) || [], c.before - c.after);
+      if (plan.conflict) conflicts.push({ cardId: c.cardId, variantSlug: c.variantSlug, target: c.after, ...plan.conflict });
+      else pre.push(...removalStatements(plan, now));
+    }
+  }
+  return { pre, post, conflicts };
+}

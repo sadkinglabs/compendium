@@ -32,6 +32,7 @@ import { canonicalPrinting } from './printings.js';
 import { printingFinishes } from './printingRows.js';
 import { uuid as newId, nowIso as newNow } from './ids.js';
 import { bulkWriteError, MAX_ITEM_QTY, MAX_BATCH_ITEMS } from './bulkWriteContract.js';
+import { planAllocationChanges, placeUnfiledByKeyStatements, assertEqualityStatements, StorageConflict } from './storageRepository.js';
 
 // The largest total the ledger can safely STORE. MAX_ITEM_QTY (999) is only an input/delta limit;
 // the ledger itself has no 999 cap (two 999 imports legitimately total 1998 - see the data model), so
@@ -173,30 +174,41 @@ export function planOwnedSetBatch(items, catalogById, currentByKey, { pid, uuid,
   // (copiesAdded/copiesRemoved) is accumulated from the authoritative cur->target pair per row, so the
   // confirmation reports what actually changed on the ledger rather than what was requested.
   const statements = [];
+  // Every row whose count actually moves, in the shape the shared allocation planner takes. The
+  // planner stays PURE - it cannot read the places itself - so it names the movement and the
+  // command layer, which has a query, turns it into allocation statements. Without this the whole
+  // absolute-import path moved copies while their places stood still, and its clear-to-zero would
+  // have failed outright on real data: an owned row with allocations cannot be deleted under
+  // RESTRICT, which is the point of RESTRICT.
+  const changes = [];
   const cards = new Set();
   let set = 0, removed = 0, cleared = 0, unchanged = 0, copiesAdded = 0, copiesRemoved = 0;
   for (const { card_id, slug, qty } of targets.values()) {
     cards.add(card_id);
     const existing = currentByKey.get(`${card_id}|${slug}`);
     const curOwned = existing ? (existing.qty_owned || 0) : 0;
+    const moved = (rowId) => changes.push({ rowId, cardId: card_id, variantSlug: slug, before: curOwned, after: qty });
     if (qty === 0) {
       if (!existing || curOwned === 0) { unchanged += 1; continue; }   // already empty - true no-op
       copiesRemoved += curOwned;
+      moved(existing.id);
       if ((existing.qty_wanted || 0) > 0) { statements.push({ sql: 'UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE id=?;', params: [now, existing.id] }); cleared += 1; }
       else { statements.push({ sql: 'DELETE FROM owned_cards WHERE id=?;', params: [existing.id] }); removed += 1; }
     } else if (existing && curOwned === qty) {
       unchanged += 1;   // already at the requested value - true no-op
     } else if (existing) {
       if (qty > curOwned) copiesAdded += qty - curOwned; else copiesRemoved += curOwned - qty;
+      moved(existing.id);
       statements.push({ sql: 'UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', params: [qty, now, existing.id] });
       set += 1;
     } else {
       copiesAdded += qty;
+      moved(null);
       statements.push({ sql: 'INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', params: [uuid(), pid, card_id, slug, qty, '', now, now] });
       set += 1;
     }
   }
-  return { statements, set, removed, cleared, unchanged, cards: cards.size, copiesAdded, copiesRemoved };
+  return { statements, changes, set, removed, cleared, unchanged, cards: cards.size, copiesAdded, copiesRemoved };
 }
 
 /** Build the command over injected primitives so the barrier tests run PRODUCTION code. */
@@ -234,13 +246,19 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
         if (!plan.length) return { items: 0, cards: 0, copies: 0, noop: true };
 
         const now = nowIso();
-        const stmts = plan.map((p) => ([
-          `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
-           VALUES(?,?,?,?,?,0,'',?,?)
-           ON CONFLICT(profile_id,card_id,variant_slug)
-           DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-          [uuid(), pid, p.card_id, p.slug, p.qty, now, now],
-        ]));
+        // Read-free, like the scanner's adder and for the same reason, so the places are resolved
+        // in SQL too rather than by a lookup that would reintroduce the read.
+        const stmts = [
+          ...plan.map((p) => ([
+            `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+             VALUES(?,?,?,?,?,0,'',?,?)
+             ON CONFLICT(profile_id,card_id,variant_slug)
+             DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+            [uuid(), pid, p.card_id, p.slug, p.qty, now, now],
+          ])),
+          ...plan.flatMap((p) => placeUnfiledByKeyStatements({ profileId: pid, cardId: p.card_id, variantSlug: p.slug, qty: p.qty, now })),
+          ...assertEqualityStatements(pid, plan.map((p) => ({ cardId: p.card_id, variantSlug: p.slug })), 'importCollectionResolved'),
+        ];
 
         ranTransaction = true;   // from here the database may differ, confirmed or not
         await tx(stmts);         // resolving means committed AND persisted; rejecting is indeterminate
@@ -275,15 +293,31 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
   // broadcast exactly ONCE, or no-op silently when the plan is empty. Both setOwnedItemsBulk and
   // adjustOwnedItemsBulk funnel through here, so they share the single-broadcast + write-outcome
   // contract (prewrite/none before the tx, transaction/unknown once statements have been dispatched).
-  async function runPlannedWrite(plan) {
+  async function runPlannedWrite(plan, pid) {
     let ranTransaction = false;
     try {
       const result = await exclusive(async () => {
         const p = await plan();   // throws (prewrite) on an impossible positive OR a conflicting target
         const summary = { set: p.set, removed: p.removed, cleared: p.cleared, unchanged: p.unchanged, cards: p.cards, copiesAdded: p.copiesAdded, copiesRemoved: p.copiesRemoved };
         if (!p.statements.length) return { ...summary, noop: true };
+        const { pre, post, conflicts } = await planAllocationChanges({ query, profileId: pid, changes: p.changes || [], now: nowIso() });
+        if (conflicts.length) {
+          // Same policy as bulk: an absolute import is one atomic command, so a selection it
+          // cannot satisfy fails whole rather than filing part of someone's collection.
+          const e = new StorageConflict(conflicts[0], 'ownedImport');
+          e.detail = { items: conflicts };
+          e.message = `ownedImport: ${conflicts.length} items hold copies outside Unfiled`;
+          throw e;
+        }
         ranTransaction = true;
-        await tx(p.statements.map((s) => [s.sql, s.params]));
+        await tx([
+          // Clears and removals first - a row with places cannot be deleted under RESTRICT - then
+          // the counts, then the places, then the equality for every row the command touched.
+          ...pre,
+          ...p.statements.map((s) => [s.sql, s.params]),
+          ...post,
+          ...assertEqualityStatements(pid, (p.changes || []).map((c) => ({ cardId: c.cardId, variantSlug: c.variantSlug })), 'ownedImport'),
+        ]);
         return { ...summary, noop: false };
       });
       if (ranTransaction && !result.noop) notify();
@@ -315,7 +349,7 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
       const cardIds = [...new Set(list.map((i) => i?.card_id).filter(Boolean))];
       const currentByKey = await readCurrentOwned(cardIds, pid);
       return planOwnedSetBatch(list, catalog, currentByKey, { pid, uuid, now: nowIso() });
-    });
+    }, pid);
   }
 
   /**
@@ -368,7 +402,7 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
       });
       const catalog = await readCatalog(absoluteList.filter((i) => i.qty > 0).map((i) => i.card_id));
       return planOwnedSetBatch(absoluteList, catalog, currentByKey, { pid, uuid, now: nowIso(), ceiling: LEDGER_MAX });
-    });
+    }, pid);
   }
 
   /**

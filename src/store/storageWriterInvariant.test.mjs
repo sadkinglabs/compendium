@@ -27,6 +27,7 @@ import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import * as repo from './ownedRepository.js';
 import { createBulkOwnedCommands } from './bulkOwnedRepository.js';
+import { createOwnedImportCommand } from './ownedImportRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'p1';
@@ -245,4 +246,69 @@ test('undo REFUSED by its guard moves the places no more than it moves the count
   assert.equal(u.conflicts, 1);
   assert.deepEqual(brokenRows(), [], 'the declined undo left the ledger consistent');
   assert.equal(at(UNFILED, 'o1'), 5, "the user's edit survived intact");
+});
+
+/* ---------------- the IMPORT writers ---------------- */
+//
+// Third module, same assertion. The absolute path had a second defect the equality alone would not
+// have named: its clear-to-zero DELETEs the owned row, and an owned row with places cannot be
+// deleted under RESTRICT. On any real v12 profile a bulk delete through import would have failed
+// outright - not a drift, a hard error - and no fixture held a place to reveal it.
+
+const importCmd = createOwnedImportCommand({
+  exclusive: (fn) => fn(),
+  query: (s, p = []) => Promise.resolve(rows(s, p)),
+  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+  notify: () => {},
+  activeProfileId: () => PID,
+});
+
+test('a resolved import places every copy it files', async () => {
+  await importCmd.importCollectionResolved([{ card_id: 'multi1', setCode: '001', foil: false, qty: 3 }], PID);
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('a resolved import onto an existing row places only the copies it adds', async () => {
+  seedOwned('o2', 'multi1', '001', 2, { binder: 2 });
+  await importCmd.importCollectionResolved([{ card_id: 'multi1', setCode: '001', foil: false, qty: 3 }], PID);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at(UNFILED, 'o2'), 3, 'the three new copies are loose');
+  assert.equal(at('b1', 'o2'), 2, 'the existing filing is untouched');
+});
+
+test('setOwnedItemsBulk to zero DELETES a row that still has places, rather than failing on RESTRICT', async () => {
+  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });
+  const r = await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID);
+  assert.equal(r.removed, 1);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0, 'no place outlived its row');
+});
+
+test('setOwnedItemsBulk to zero on a WANTED row clears the places but keeps the row', async () => {
+  seedOwned('o1', 'sole1', '001', 2, { binder: 1 });
+  sdb.run("UPDATE owned_cards SET qty_wanted=1 WHERE id='o1';");
+  const r = await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID);
+  assert.equal(r.cleared, 1);
+  assert.deepEqual(brokenRows(), [], 'a row at zero copies holds zero places');
+  assert.equal(rows("SELECT qty_wanted FROM owned_cards WHERE id='o1';")[0].qty_wanted, 1, 'the want survives');
+});
+
+test('setOwnedItemsBulk raising a count places the difference in Unfiled', async () => {
+  seedOwned('o1', 'sole1', '001', 2, { binder: 2 });
+  await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 5 }], PID);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at(UNFILED, 'o1'), 3);
+  assert.equal(at('b1', 'o1'), 2);
+});
+
+test('adjustOwnedItemsBulk lowering takes from Unfiled and refuses to reach into a binder', async () => {
+  seedOwned('o1', 'sole1', '001', 4, { binder: 3 });   // 1 loose
+  await importCmd.adjustOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, delta: -1 }], PID);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at('b1', 'o1'), 3);
+
+  // A second step of the same size cannot come from anywhere legitimate.
+  await assert.rejects(() => importCmd.adjustOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, delta: -1 }], PID),
+    (e) => /hold copies outside Unfiled/.test(e.message));
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3, 'the refused adjust wrote nothing');
 });

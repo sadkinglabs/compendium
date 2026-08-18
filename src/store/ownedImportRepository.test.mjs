@@ -40,9 +40,19 @@ const runTx = (stmts) => {
 };
 const ownOf = (slug, cardId = 'c1', pid = PID) =>
   rows('SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug])[0]?.qty_owned ?? 0;
-const seedOwn = (slug, owned, cardId = 'c1', pid = PID) =>
+// Seeds a row AS THE BACKFILL LEAVES IT - copies placed in Unfiled. A seeded row with copies and
+// no allocation is a state v12 cannot produce, and it makes every decrease in this file look like
+// copies filed in a binder the fixture never created.
+const place = (rowId, owned, pid = PID) => {
+  if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+    [`a-${rowId}`, pid, 'u-' + pid, rowId, owned, 'x', 'x']);
+};
+const seedOwn = (slug, owned, cardId = 'c1', pid = PID) => {
+  const id = `s-${pid}-${cardId}-${slug}`;
   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
-    [`s-${pid}-${cardId}-${slug}`, pid, cardId, slug, owned, '', 'x', 'x']);
+    [id, pid, cardId, slug, owned, '', 'x', 'x']);
+  place(id, owned, pid);
+};
 
 let n = 0;
 const deps = (exclusive, over = {}) => ({
@@ -75,6 +85,10 @@ before(async () => {
   for (const m of MIGRATIONS) sdb.run(m.sql);
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',11,'x');");
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p2','B',11,'x');");
+  // v12: every profile has an Unfiled container, and the import writers now place the copies they
+  // file. Without one the equality guard inside the transaction rolls the whole import back - which
+  // is the guard doing its job, on a profile the boot backfill could never have produced.
+  for (const id of ['p1', 'p2']) sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'x','x');", ['u-' + id, id]);
   sdb.run(`INSERT INTO cards(card_id,name,sets,variants) VALUES('c1','C',
     '[{"code":"001","name":"Alpha"},{"code":"002","name":"Beta"}]',
     '${JSON.stringify(CV)}');`);
@@ -329,6 +343,7 @@ test('adjustOwnedItemsBulk: removing MORE than present floors at 0 - row deleted
 test('adjustOwnedItemsBulk: falling to 0 KEEPS a wishlist want (owned zeroed, row survives)', async () => {
   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
     [`s-want`, PID, 'c1', '001', 2, 1, '', 'x', 'x']);
+  place('s-want', 2);
   const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: -9 }]);
   assert.equal(ownOf('001'), 0, 'owned cleared');
   assert.equal(wantedOf('001'), 1, 'the want is preserved');
@@ -788,7 +803,11 @@ function raceScenario(exclusive) {
     const cur = ownOf('001');
     absReadDone.resolve();
     await absWriteGo.promise;
+    // The competing write PLACES its copy, as every real writer now does. A stand-in that raises
+    // the count without a place models an interleaving v12 cannot produce, and the import's
+    // equality assertion - correctly - refuses to commit on top of it.
     sdb.run('UPDATE owned_cards SET qty_owned=? WHERE profile_id=? AND card_id=? AND variant_slug=?;', [cur + 1, PID, 'c1', '001']);
+    sdb.run("UPDATE storage_allocations SET qty=qty+1 WHERE container_id=? AND owned_card_id=(SELECT id FROM owned_cards WHERE profile_id=? AND card_id='c1' AND variant_slug='001');", ['u-' + PID, PID]);
   });
   const bulkAtTx = deferred();
   const bulkTxGo = deferred();

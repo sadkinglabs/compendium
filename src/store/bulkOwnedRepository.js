@@ -47,7 +47,7 @@ import { canonicalPrinting, parsePrinting } from './printings.js';
 import { notifyOwnedChanged } from './ownedRepository.js';
 import {
   clearAllocationsStatements, placeUnfiledByKeyStatements, takeUnfiledByKeyStatements,
-  assertEqualityStatements, planGlobalRemoval, removalStatements, StorageConflict,
+  assertEqualityStatements, planGlobalRemoval, planAllocationChanges, StorageConflict,
 } from './storageRepository.js';
 
 // SQLite has a bound-parameter ceiling and a selection can be arbitrarily large.
@@ -95,8 +95,7 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
   }
 
   /** Every place held by a set of owned rows, chunked, as `Map<owned_card_id, placements[]>`.
-   *  One query per chunk rather than one per row: a selection can be hundreds of cards, and the
-   *  per-row read that reads well in a unit test is a few hundred round trips on a device. */
+   *  Undo needs this directly; the shared allocation planner does its own equivalent read. */
   async function readPlacementsFor(ids) {
     const map = new Map();
     for (let i = 0; i < ids.length; i += CHUNK) {
@@ -113,44 +112,32 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
   /**
    * The allocation half of a bulk plan, and the place sec 5's whole-command rejection lives.
    *
-   * A mixed selection where some items are satisfiable and some are not FAILS WHOLE. A bulk
-   * command that half-applies is worse than one that explains itself, so the conflicts are
-   * collected across every change and thrown together - the caller gets the full list of items
-   * and the containers holding their copies, not the first one that failed.
-   *
-   * Reaching ZERO is not a conflict, and that asymmetry is the model rather than an exception.
-   * The wall exists because a quantity model cannot know WHICH physical copy left; when every
-   * copy leaves, there is nothing to attribute and no guess to make. A partial decrease into
-   * filed copies is ambiguous; total removal is not.
+   * The arithmetic is the shared planner's; the POLICY is this function's. A mixed selection where
+   * some items are satisfiable and some are not FAILS WHOLE - a bulk command that half-applies is
+   * worse than one that explains itself - so every conflict is collected and thrown together, and
+   * the caller gets the full list of items and the containers holding their copies rather than the
+   * first failure.
    */
   async function planPlaces(pid, changes, before, now) {
-    const decreasing = changes.filter((c) => c.after < c.before && c.after > 0);
-    const placements = await readPlacementsFor(decreasing.map((c) => before.get(`${c.cardId}|${c.set}`)?.id).filter(Boolean));
-
-    const statements = [];
-    const conflicts = [];
-    for (const c of changes) {
-      const row = before.get(`${c.cardId}|${c.set}`);
-      const slug = canonicalPrinting(c.set, false);
-      if (c.after > c.before) {
-        // Key-resolved, not id-resolved: the row may not exist yet, and the upsert that creates
-        // it is the statement immediately before this one in the same transaction.
-        statements.push(...placeUnfiledByKeyStatements({ profileId: pid, cardId: c.cardId, variantSlug: slug, qty: c.after - c.before, now }));
-      } else if (c.after === 0) {
-        if (row) statements.push(...clearAllocationsStatements(row.id));
-      } else {
-        const plan = planGlobalRemoval(placements.get(row?.id) || [], c.before - c.after);
-        if (plan.conflict) conflicts.push({ cardId: c.cardId, set: c.set, target: c.after, ...plan.conflict });
-        else statements.push(...removalStatements(plan, now));
-      }
-    }
+    const { pre, post, conflicts } = await planAllocationChanges({
+      query,
+      profileId: pid,
+      now,
+      changes: changes.map((c) => ({
+        rowId: before.get(`${c.cardId}|${c.set}`)?.id || null,
+        cardId: c.cardId,
+        variantSlug: canonicalPrinting(c.set, false),
+        before: c.before,
+        after: c.after,
+      })),
+    });
     if (conflicts.length) {
       const e = new StorageConflict(conflicts[0], 'bulkOwned');
-      e.detail = { items: conflicts };
+      e.detail = { items: conflicts.map((c) => ({ ...c, set: parsePrinting(c.variantSlug).set })) };
       e.message = `bulkOwned: ${conflicts.length} of ${changes.length} items hold copies outside Unfiled`;
       throw e;
     }
-    return statements;
+    return { pre, post };
   }
 
   /**
@@ -173,8 +160,11 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
       const now = nowIso();
       const places = await planPlaces(pid, plan.changes, before, now);
       await tx([
+        // Removals and clears first, then the counts, then the places. A clear has to precede the
+        // row it frees under RESTRICT, and a place has to follow the row it resolves.
+        ...places.pre,
         ...plan.changes.map((c) => upsertStatement(pid, c, now)),
-        ...places,
+        ...places.post,
         // The whole command's equality, checked inside the transaction. Every statement above can
         // fail to match silently - a place that resolved no row, a removal Unfiled could not
         // cover - and a bulk write that half-holds the invariant is exactly what the transaction
