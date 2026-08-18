@@ -339,7 +339,15 @@ Responsibilities:
    **structured conflicts** - item, requested target, non-Unfiled total, and the containers holding
    them - so the UI can name the places rather than saying "cannot". A mixed selection where some
    items are satisfiable and some are not fails whole; a bulk command that half-applies is worse
-   than one that explains itself. Set-to-zero is the same rule with a target of 0.
+   than one that explains itself.
+
+   **Set-to-zero is the exception, by owner ruling (2026-08-18), amending revision 4.** This
+   clause originally read "Set-to-zero is the same rule with a target of 0" - reject if any copy
+   is filed. It is not. The wall exists because a quantity model cannot know WHICH physical copy
+   left; when EVERY copy leaves there is nothing to attribute and no guess to make. A partial
+   decrease into filed copies is ambiguous; total removal is not. So a target of 0 succeeds and
+   takes the filing with it, which is also what the increment-1 delete paths already do on device.
+   Implemented in `planAllocationChanges` and asserted by `storageWriterInvariant.test.mjs`.
 6. **Undo** reverses both the total and the exact Unfiled allocation it changed, under the same
    expected-state guards `undoBulkOwned` already applies
    ([`bulkOwnedRepository.js:145`](../../src/store/bulkOwnedRepository.js#L145)) - a row is restored

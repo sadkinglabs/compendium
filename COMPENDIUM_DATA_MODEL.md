@@ -6,10 +6,11 @@
 
 ## 1. Current schema baseline
 
-- **Schema version:** 11
+- **Schema version:** 12
 - **Database:** `compendium.db` on Capacitor/SQLite; an exported SQLite image persisted in IndexedDB for the browser sql.js runtime
 - **Schema version record:** `_meta.schema_version`
 - **Ledger canonicalisation record:** `_meta.owned_cards_canonical_version` (see below)
+- **Storage backfill record:** `_meta.storage_unfiled_backfill_version` (see below)
 - **Active profile singleton:** Capacitor Preferences key `activeProfileId`
 - **Schema evolution:** ordered entries in `MIGRATIONS` within `src/store/schema.js`
 - **Repository gate:** `activeProfileId()` in `src/store/profileRepository.js`
@@ -323,6 +324,166 @@ boot fails rather than exposing a half-converted ledger. `backfillSingleSetOwned
 single-set boot promotion, was removed: canonicalisation converts the `''` rows it looked for,
 and moving previously recorded copies without the user present contradicts the triage model.
 
+### Storage: where the copies are (schema v12)
+
+v11 answered *what* a copy is. v12 answers *where it is*, and does it without adding a second
+number that can disagree with the first.
+
+```sql
+storage_containers(
+  id TEXT PRIMARY KEY,
+  profile_id REFERENCES profiles(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,                   -- unfiled | binder | box | deckbox | other
+  name TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  colour TEXT NOT NULL DEFAULT 'gold',
+  sort_order INTEGER DEFAULT 0,
+  is_system INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT, updated_at TEXT
+)
+-- at most ONE system container per profile
+CREATE UNIQUE INDEX idx_containers_one_system ON storage_containers(profile_id) WHERE is_system = 1;
+
+storage_allocations(
+  id TEXT PRIMARY KEY,
+  profile_id TEXT NOT NULL,
+  container_id TEXT NOT NULL,
+  owned_card_id TEXT NOT NULL,
+  qty INTEGER NOT NULL CHECK (qty > 0),
+  created_at TEXT, updated_at TEXT,
+  FOREIGN KEY (container_id, profile_id) REFERENCES storage_containers(id, profile_id) ON DELETE CASCADE,
+  FOREIGN KEY (owned_card_id, profile_id) REFERENCES owned_cards(id, profile_id) ON DELETE RESTRICT
+)
+CREATE UNIQUE INDEX idx_alloc_key ON storage_allocations(container_id, owned_card_id);
+```
+
+**The defining equality.** After every operation, for every owned row:
+
+    qty_owned = SUM(storage_allocations.qty for that row)
+
+`qty_owned` remains a real materialised column and every existing reader keeps reading it - but it
+is the SUM this model maintains, not a parallel total that can drift from it. **Allocations ARE the
+ownership.** A copy is never claimed against a separate count; it is MOVED between places, and
+"Unfiled" is a place like any other.
+
+Two structural consequences follow from the DDL rather than from discipline. `CHECK (qty > 0)`
+means a place holding no copies is DELETED, never stored as a zero - a copy that is nowhere is
+unrepresentable. `ON DELETE RESTRICT` on the owned row means a user's filing can never be
+discarded as a side effect of a count reaching zero: every legitimate delete must clear its
+allocations first and say so.
+
+**Unfiled.** Every profile has exactly one system container. The partial unique index guarantees
+*at most* one; calling `createUnfiledStatements` at every profile-creation path guarantees *at
+least* one. `sort_order -1` pins it above user containers. For a profile with no containers -
+which is every profile until someone makes one - everything is Unfiled, so every stepper, bulk
+edit and import behaves exactly as it did in v11.
+
+#### How a decrease chooses its place
+
+This is the single most important rule in the model, and it exists to remove a question rather
+than answer it.
+
+| Operation | Where the copies come from or go |
+|---|---|
+| any increase | **Unfiled.** Acquiring a copy never files it into a binder on the user's behalf |
+| decrease from the global stepper or bulk Adjust/Set | **Unfiled only.** No fallback to any other container |
+| decrease from inside a container view | that container, which is unambiguous and needs no attribution |
+| a key move (triage, canonicalisation) | allocations are **re-parented**; copies do not move shelves |
+| container deletion | its allocations move to Unfiled first - copies cannot be nowhere |
+
+A global decrease larger than Unfiled holds is a **conflict**, not a clamp and not a drain. The
+write does not happen, and `StorageConflict` carries the item, the requested target, what Unfiled
+actually holds, and the containers holding the rest, so a surface can name the places rather than
+say "cannot". An earlier design took from Unfiled and then from the fullest container; that is the
+app inventing a fact about the user's shelf, because a quantity model cannot know which physical
+copy left.
+
+**Total removal is the exception, and deliberately so** (owner ruling, amending the proposal's
+section 5). Setting a count to zero succeeds even when copies are filed, and takes the filing with
+it. When every copy leaves there is nothing to attribute and no guess to make; only a *partial*
+decrease is ambiguous.
+
+**Bulk commands fail whole.** A mixed selection in which some items are satisfiable and some are
+not writes nothing at all. A bulk command that half-applies is worse than one that explains
+itself.
+
+#### Coordination, which the core does not acquire
+
+The transactional core (`src/store/storageRepository.js`) returns STATEMENTS and **acquires no
+coordination at all**. That is a hard rule, not a style choice: interactive steppers already run
+*inside* the per-row write queue, so a core that requested the exclusive barrier there would wait
+for admitted work to drain - including itself - and every ownership tap would hang until timeout.
+
+| Tier | Coordination |
+|---|---|
+| the core | none; it composes into whatever transaction the caller already has |
+| interactive, one collector item | the caller's existing `enqueueWrite` chain on the collector-item key |
+| multi-item (bulk, undo, import, triage) | `withExclusiveCollectionWrites` around the core |
+| profile switch | `withProfileSwitchWriteBarrier`, the tolerant barrier |
+| boot (canonicalisation, backfill) | its own transaction, no interactive barrier |
+
+#### Every writer that moves `qty_owned`
+
+Ownership and its places change in ONE transaction, always. Separately, a crash between them
+leaves a durable ledger that contradicts itself.
+
+| Module | Paths |
+|---|---|
+| `ownedRepository.js` | `writeQty`, `setFoil`, `writeSetRow`, `addCopies`, `addOwnedCopiesInSet` - nine exported writers |
+| `bulkOwnedRepository.js` | the absolute upsert, and `undoBulkOwned`'s guarded restore |
+| `ownedImportRepository.js` | the absolute row batch, and the read-free resolved import |
+| `triageRepository.js` | the key move, which re-parents rather than re-places |
+| `wantedBulkRepository.js` | none - a want holds no copies, so it holds no places |
+
+Statement ORDER inside the transaction is a correctness property: **clears and removals, then the
+counts, then the places.** A clear must precede the row DELETE it enables under `RESTRICT`, and a
+place must follow the row it resolves.
+
+The read-free writers - the scanner's adder, the resolved import - stay read-free. Their places
+are resolved in SQL (`placeUnfiledByKeyStatements`) rather than by looking up the new row's id,
+because that lookup would reintroduce exactly the read-modify-write those writers exist to avoid.
+A SELECT-sourced insert that matches nothing inserts nothing and reports success, so every such
+path carries an in-transaction equality assertion that converts that silence into a rollback.
+
+Undo is conditional on both halves. A bulk restore may touch a row only while it still holds what
+the bulk write left there, and the allocation statements carry the SAME guard in the same
+transaction, running BEFORE the owned UPDATE while the row still holds the value the guard names.
+
+#### The boot backfill
+
+Canonicalisation runs first, the Unfiled backfill second. On a first upgrade there are no
+allocations, so canonicalisation reduces the ledger to its final row identities before the
+backfill attaches places; the re-parent path is still required because canonicalisation is
+shape-first and may re-run later, after Storage exists.
+
+The backfill gives every owned row with copies an Unfiled allocation for exactly those copies, and
+is **fail-closed on any sum it cannot infer** - it refuses to invent the difference rather than
+guessing. The marker `_meta.storage_unfiled_backfill_version` is written inside the same
+transaction, so a marker can never survive a backfill that did not happen. Two assertions ride
+along in that transaction (the equality, and one-Unfiled-per-profile), each provoking a constraint
+violation if violated, so a successful boot is itself the assertion.
+
+Native foreign keys are enabled and **read back** at open; the database fails to open if the
+runtime will not provide them.
+
+#### Import, export, and rollback
+
+Profile bundles carry `storage_containers` and `storage_allocations`. A bundle that predates
+Storage has neither, and its owned rows are filed to Unfiled on import. Copies are conserved on
+every path; only the filing can be lost, never the count.
+
+**Rollback is unsafe on any device that has run v12**: an older build omits Storage from every
+export it takes.
+
+Storage invariants:
+
+- `qty_owned = SUM(allocations)` for every owned row, after every operation.
+- Exactly one Unfiled container per profile - no more by index, no fewer by construction.
+- No allocation of zero copies, and no allocation without a container and an owned row.
+- A global decrease takes from Unfiled or refuses; it never reaches into a named container.
+- A key move re-parents places; it never removes copies from one place and invents them in another.
+- Wants hold no copies, so they hold no places.
+
 Collection invariants:
 
 - Ownership is a ledger, not an allocator; decks never reserve cards.
@@ -332,6 +493,7 @@ Collection invariants:
 - Token cards do not count toward collectible ownership totals.
 - `owned_cards` is unrelated to the deck zone named `collection`.
 - `card_lists` is unrelated to Codex `collections`.
+- Ownership and its places change in one transaction; the equality above holds at every commit.
 
 ## 7. Deck data
 
