@@ -363,6 +363,26 @@ export function cardPower(c) {
   return d != null ? Math.floor((a + d) / 2) : a;
 }
 
+/**
+ * The deck pool's sort comparator registry, keyed the same way DECK_SORT_OPTIONS is
+ * (docs/proposals/arrange-stacked-sort.md). Extractors read fields precomputed on the cached row,
+ * so the comparator does no parsing or allocation.
+ *
+ * Kept next to the pool it orders rather than beside the List's registry: the two surfaces sort
+ * different row shapes, so one parameterised registry would add indirection without adding
+ * safety. What they DO share is the option vocabulary and the tap reducer.
+ *
+ * DECK_SORT_COMPARATOR_KEYS is exported for the exhaustiveness gate, which fails if an option
+ * ever ships without a comparator or a comparator without an option.
+ */
+const DECK_SORT_KEY = {
+  name: (c) => c._nameLc,
+  cost: (c) => c.cost ?? 0,
+  element: (c) => c._el0,
+  th: (c) => c._totalTh,
+};
+export const DECK_SORT_COMPARATOR_KEYS = Object.freeze(Object.keys(DECK_SORT_KEY));
+
 export async function getPool({
   q = '', els = [], types = [], rarities = [], sets = [], multi = false,
   thByEl = {}, totalTh = null, costCmp = null, powerCmp = null, artist = '', sort = [],
@@ -394,12 +414,7 @@ export async function getPool({
 
   // Multi-key sort in priority order (tap to add, ↑/↓ per key). Keys are
   // precomputed on the cached row, so the comparator does no parsing/allocation.
-  const KEY = {
-    name: (c) => c._nameLc,
-    cost: (c) => c.cost ?? 0,
-    element: (c) => c._el0,
-    th: (c) => c._totalTh,
-  };
+  const KEY = DECK_SORT_KEY;
   const cmp = (k, a, b) => { const x = KEY[k](a), y = KEY[k](b); return typeof x === 'number' ? x - y : String(x).localeCompare(String(y)); };
   const list = sort.length ? sort : [{ key: 'name', dir: 'asc' }];
   rows.sort((a, b) => {

@@ -8,19 +8,23 @@
 // the sheet renders only the groups whose setters are supplied.
 import React, { useState, useEffect } from 'react';
 import GothicSheet from './GothicSheet.jsx';
-import { SectionLabel, Chip, ChipRow, BTN_GHOST, SegTabs } from './ui.jsx';
+import { SectionLabel, Chip, ChipRow, BTN_GHOST, SegTabs, SortRow } from './ui.jsx';
 import { StepBtn, EYEBROW } from './CollectionCardSheet.jsx';
 import { elementIconUrl } from '../store/cardArt.js';
+import { toggleSort, flipSort, sortIndex } from './sortStack.js';
+import { DECK_SORT_OPTIONS } from '../store/sortOptions.js';
 
 const EL = [['air', 'Air'], ['earth', 'Earth'], ['fire', 'Fire'], ['water', 'Water']];
 const EL_LABEL = { air: 'Air', earth: 'Earth', fire: 'Fire', water: 'Water' };
 const TYPES = [['Minion', 'Minions'], ['Aura', 'Auras'], ['Magic', 'Magic'], ['Artifact', 'Artifacts'], ['Site', 'Sites']];
 const RAR = [['Ordinary', 'Ordinary'], ['Exceptional', 'Exceptional'], ['Elite', 'Elite'], ['Unique', 'Unique']];
 export const RARITY_DOT = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptional)', Elite: 'var(--elite)', Unique: 'var(--unique)' };
-// Default sort vocabulary, for callers that do not supply their own (Codex, the deckbuilder).
-// Collection deliberately supplies none: it is always alphabetical within a group, so it has
-// a grouping control instead. See the `groupBy` note below.
-export const DEFAULT_SORT_KEYS = [['name', 'Name'], ['cost', 'Mana Cost'], ['element', 'Element'], ['th', 'Threshold Amount']];
+// Default sort vocabulary, for callers that do not supply their own. Deck Add Cards is the only
+// surface that actually stacks here; Codex renders this sheet but passes no sort at all, so it
+// sees no Arrange toggle. Collection refine deliberately supplies none either: it is always
+// alphabetical within a group, so it has a grouping control instead. See the `groupBy` note below.
+// The vocabulary itself lives in the leaf sortOptions.js - see the note there on why.
+export { DECK_SORT_OPTIONS };
 const OP_SYM = { '>=': '≥', '<=': '≤', '=': '=' };   // math symbols, not decorative glyphs
 const OP_NEXT = { '>=': '<=', '<=': '=', '=': '>=' };
 const GILT = 'linear-gradient(180deg, #d8b872, #b8954f)';
@@ -65,31 +69,13 @@ export function CmpRow({ label, icon, state, set, max, valueTint }) {
   );
 }
 
-// Sort ledger row - a gilt priority seal (numbered when active) + label + an
-// SVG direction flip. Tap row toggles; tap the flip reverses.
-export function SortRow({ label, index, dir, onToggle, onFlip }) {
-  const on = index >= 0;
-  return (
-    <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', cursor: 'pointer', ...HAIR_ROW }}>
-      <span style={{ width: 24, height: 24, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-        ...(on ? { background: GILT, border: '1px solid rgba(16,10,3,.4)', color: '#1a1206', font: "700 12px/1 var(--f-display)" } : { border: '1px solid #4a3c22' }) }}>{on ? index + 1 : ''}</span>
-      <span style={{ flex: 1, minWidth: 0, font: "600 15px/1.2 var(--f-read)", color: on ? '#efe7d8' : '#d8cebb' }}>{label}</span>
-      {on && (
-        <button onClick={(e) => { e.stopPropagation(); onFlip(); }} aria-label="Flip direction" style={{ width: 30, height: 30, flex: 'none', borderRadius: 10, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', color: '#d8c9a4', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{dir === 'asc' ? <polyline points="18 15 12 9 6 15" /> : <polyline points="6 9 12 15 18 9" />}</svg>
-        </button>
-      )}
-    </div>
-  );
-}
-
 export default function RefineSheet({
   open, onClose, onClear, eyebrow = 'REFINE', emptyLabel = 'All cards', activeCount = 0, ctaLabel = 'Show results',
   summaryLead = [], leadSections, trailSections,
   els, setEls, multi, setMulti,
   types, setTypes, rarities, setRarities, sets, setSets, setOpts = [],
   thByEl, setThByEl, totalTh, setTotalTh, costCmp, setCostCmp, powerCmp, setPowerCmp,
-  artist, setArtist, artistOpts = [], sort, setSort, sortKeys = DEFAULT_SORT_KEYS,
+  artist, setArtist, artistOpts = [], sort, setSort, sortOptions = DECK_SORT_OPTIONS,
   // GROUPING IS NOT SORTING. "Group by element" produces sections with headers; it does not
   // reorder a flat list, and within every group the order is alphabetical. Modelling it as a
   // fourth sort key would leak the wrong abstraction into query state and tests, so it is its
@@ -97,8 +83,9 @@ export default function RefineSheet({
   groupBy, setGroupBy, groupOpts = [],
 }) {
   const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
-  const toggleSort = (key) => { const i = sort.findIndex((s) => s.key === key); setSort(i >= 0 ? sort.filter((s) => s.key !== key) : [...sort, { key, dir: 'asc' }]); };
-  const flipSort = (key) => setSort(sort.map((s) => (s.key === key ? { ...s, dir: s.dir === 'asc' ? 'desc' : 'asc' } : s)));
+  // Tap semantics live in the shared reducer so this sheet and List Arrange cannot drift.
+  const onToggleSort = (option) => setSort(toggleSort(sort, option));
+  const onFlipSort = (key) => setSort(flipSort(sort, key));
 
   // Filters / Arrange live behind a top toggle so arrangement isn't buried below a long filter
   // scroll. The toggle appears when the surface arranges at all - by sort (the deckbuilder),
@@ -235,9 +222,10 @@ export default function RefineSheet({
         <div style={{ marginBottom: 22 }}>
           <SectionLabel label="SORT" count={cnt(sort.length)} />
           <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '-4px 0 4px' }}>Tap to add - order sets priority.</div>
-          {sortKeys.map(([key, label]) => {
-            const i = sort.findIndex((s) => s.key === key);
-            return <SortRow key={key} label={label} index={i} dir={i >= 0 ? sort[i].dir : 'asc'} onToggle={() => toggleSort(key)} onFlip={() => flipSort(key)} />;
+          {sortOptions.map((option) => {
+            const i = sortIndex(sort, option.key);
+            return <SortRow key={option.key} label={option.label} index={i} total={sort.length} dir={i >= 0 ? sort[i].dir : option.defaultDir}
+              onToggle={() => onToggleSort(option)} onFlip={() => onFlipSort(option.key)} />;
           })}
         </div>
       )}
