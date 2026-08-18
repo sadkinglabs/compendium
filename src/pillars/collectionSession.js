@@ -17,6 +17,10 @@ export const FRESH_SESSION = {
   profileId: null,
   view: 'overview',
   listOpen: null,
+  // A whole container row, and therefore profile-owned for exactly the reason listOpen is: restoring
+  // profile A's binder under profile B would render its name and contents. The wholesale reset above
+  // is what makes adding this safe rather than one more field somebody has to remember to clear.
+  placeOpen: null,
   sheetCard: null,
   sheetSet: null,
   setDrill: null,

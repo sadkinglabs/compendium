@@ -62,6 +62,7 @@ import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, B
 import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
 import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
+import { StorageIndex, StorageDetail } from './CollectionStorage.jsx';
 import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -96,6 +97,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const [boundSession] = useState(() => resetCollectionSessionFor(activeProfileId()));
   const [view, setView] = useState(boundSession.view);       // overview | cards | lists
   const [listOpen, setListOpen] = useState(boundSession.listOpen);  // a list row when its detail is open
+  const [placeOpen, setPlaceOpen] = useState(boundSession.placeOpen);  // a container row when its detail is open
   const [allMode, setAllMode] = useState(false);   // My Collection: SETS (sets-home) vs ALL (flat all-cards grid)
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
@@ -113,11 +115,11 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const [drillInfo, setDrillInfo] = useState(null);
   const openSet = useCallback((code, info) => { setSetDrill(code); setDrillInfo(info || null); }, []);
   const closeSet = useCallback(() => { setSetDrill(null); setDrillInfo(null); }, []);
-  useEffect(() => { collectionSession().view = view; collectionSession().listOpen = listOpen; collectionSession().sheetCard = sheetCard; collectionSession().sheetSet = sheetSet; collectionSession().setDrill = setDrill; }, [view, listOpen, sheetCard, sheetSet, setDrill]);
+  useEffect(() => { collectionSession().view = view; collectionSession().listOpen = listOpen; collectionSession().placeOpen = placeOpen; collectionSession().sheetCard = sheetCard; collectionSession().sheetSet = sheetSet; collectionSession().setDrill = setDrill; }, [view, listOpen, placeOpen, sheetCard, sheetSet, setDrill]);
   // Open the card sheet, optionally scoped to a printing (a set code). '' / undefined
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set, foil) => { setSheetCard(cardId || null); setSheetSet(set || null); setSheetFoil(foil); }, []);
-  const go = (v) => { setListOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
+  const go = (v) => { setListOpen(null); setPlaceOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
   // Hardware Back mirrors the on-screen back for the HIERARCHICAL layers only:
   // set drill -> Sets, list detail -> Lists. The view pills and the Sets/All toggle
   // are presentation state and deliberately do NOT consume Back - inventing history
@@ -131,6 +133,12 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
     if (!listOpen) return undefined;
     return registerBackConsumer(() => { setListOpen(null); return true; });
   }, [listOpen]);
+  // The third hierarchical layer: inside a place, Back returns to the list of places rather than
+  // leaving Collection. Same shape as the two above, deliberately.
+  useEffect(() => {
+    if (!placeOpen) return undefined;
+    return registerBackConsumer(() => { setPlaceOpen(null); return true; });
+  }, [placeOpen]);
   const goAdd = () => go('cards');   // adding starts by choosing a set; the steppers are always live
   const pills = (
     <div style={{ padding: '0 20px 10px', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -138,10 +146,11 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Chip label="Overview" active={view === 'overview'} onClick={() => go('overview')} />
         <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
+        <Chip label="Storage" active={view === 'storage'} onClick={() => go('storage')} />
       </div>
     </div>
   );
-  const surface = collectionSurface({ view, setDrill, listOpen });
+  const surface = collectionSurface({ view, setDrill, listOpen, placeOpen });
 
   return (
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
@@ -180,6 +189,10 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       )}
       {surface === 'listsIndex' && <ListsIndex onOpenList={setListOpen} rev={rev} />}
+      {surface === 'storageIndex' && <StorageIndex onOpenPlace={setPlaceOpen} rev={rev} />}
+      {surface === 'storageDetail' && (
+        <StorageDetail place={placeOpen} onBack={() => setPlaceOpen(null)} onChanged={onChanged} onPeek={peek} />
+      )}
       {/* The sheet's open card is KEPT in state across a pillar unmount (a Codex hand-off
           from the scanner), so Back lands right back on this sheet - where the user left. */}
       <CollectionCardSheet cardId={sheetCard} set={sheetSet} foil={sheetFoil} onClose={() => { setSheetCard(null); setSheetSet(null); setSheetFoil(undefined); }} editable />

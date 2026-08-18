@@ -58,3 +58,23 @@ test('every returned surface is a declared one', () => {
   ];
   for (const c of cases) assert.ok(COLLECTION_SURFACES.includes(collectionSurface(c)), JSON.stringify(c));
 });
+
+/* ---------------- storage (increment 3) ---------------- */
+
+test('storage picks its index or its detail, the same way lists does', () => {
+  assert.equal(collectionSurface({ view: 'storage' }), 'storageIndex');
+  assert.equal(collectionSurface({ view: 'storage', placeOpen: { id: 'c1' } }), 'storageDetail');
+});
+
+test('a stale placeOpen cannot resurrect the place drill from another view', () => {
+  // The third instance of the rule this module exists for: the nav cache survives an unmount, so
+  // every drill state can genuinely be sitting there while the user looks at something else.
+  const stale = { placeOpen: { id: 'c1' } };
+  assert.equal(collectionSurface({ view: 'lists', ...stale }), 'listsIndex');
+  assert.equal(collectionSurface({ view: 'cards', ...stale }), 'setsHome');
+  assert.equal(collectionSurface({ view: 'overview', ...stale }), 'overview');
+});
+
+test('the other views ignore each other`s drill state, storage included', () => {
+  assert.equal(collectionSurface({ view: 'storage', setDrill: '001', listOpen: { id: 'l1' } }), 'storageIndex');
+});
