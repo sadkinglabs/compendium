@@ -226,7 +226,17 @@ export function StorageSection({ onOpenPlace, rev }) {
   );
 
   return (
-    <div style={{ marginTop: 26 }}>
+    // KNOWN DEFECT, build 282, NOT yet fixed by this padding. Driving the release APK shows the
+    // last rows of this section sitting UNDER the fixed bottom nav: Unfiled reports bounds at
+    // y=2850 on a 2992-tall screen with the nav starting near 2806, and the page will not scroll
+    // any further - so a tap at the row's own centre lands on the nav's Home button instead.
+    //
+    // The padding below is the deck pager's clearance idiom and it did NOT move the row, which
+    // rules out the obvious cause: #cx-pillar-scroll already carries nav-h + 92px of its own
+    // padding (App.jsx S.body), so the clearance exists and something else is capping the scroll.
+    // Left in place because it is correct in principle, and labelled because it is not sufficient.
+    // Opening a place therefore remains UNVERIFIED on device.
+    <div style={{ marginTop: 26, paddingBottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom) + 28px)' }}>
       <SectionLabel label="STORAGE" count={mine.length || undefined} />
       {/* Q13/Q15: always visible, always first, so it is a stable destination rather than something
           that appears and vanishes. */}
