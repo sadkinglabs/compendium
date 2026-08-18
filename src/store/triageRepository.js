@@ -36,6 +36,7 @@ import {
   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL,
 } from './printings.js';
 import { UNCATEGORISED_KEYS } from './triage.js';
+import { assertEqualityStatements } from './storageRepository.js';
 import { uuid, nowIso } from './ids.js';
 
 const FIELDS = { owned: 'qty_owned', wanted: 'qty_wanted' };
@@ -122,7 +123,7 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
       }
 
       const before = await query(
-        `SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards
+        `SELECT id, variant_slug, qty_owned, qty_wanted FROM owned_cards
           WHERE profile_id=? AND card_id=? AND variant_slug IN (${[...sources, dest].map(() => '?').join(',')});`,
         [pid, plan.card_id, ...sources, dest],
       );
@@ -135,6 +136,20 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
 
       const now = nowIso();
       const statements = [];
+
+      // FILING IS A KEY MOVE, so the allocations FOLLOW THE COPIES - they are not removed from
+      // one place and invented in another. Triage does not change what the user owns or where it
+      // physically sits; it establishes which printing those copies are. A copy that was in a
+      // binder before triage is in that same binder after it.
+      //
+      // Only the SOURCE places are read here. The DESTINATION row is resolved in SQL at execution
+      // time, never guessed: an id invented for a row that does not exist yet is wrong the moment
+      // anything else creates that row first, and the re-parent would then reference a row that
+      // was never inserted.
+      const srcIds = sources.map((slug) => at(slug)?.id).filter(Boolean);
+      const srcAllocs = field === 'qty_owned' && srcIds.length
+        ? await query(`SELECT id, profile_id, container_id, qty FROM storage_allocations WHERE owned_card_id IN (${srcIds.map(() => '?').join(',')});`, srcIds)
+        : [];
 
       // DRAW DOWN one column only. The other field on the same row is untouched, because owned
       // and wanted resolve independently - filing copies must not silently discard a want that
@@ -161,6 +176,24 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
           now, now],
       ]);
 
+      // RE-PARENT, after the destination row exists and before the sources are deleted - the
+      // window in which both ends of the move are present. Merging where two source places share
+      // a container with each other or with the destination is the ON CONFLICT clause; one
+      // statement per source allocation rather than an INSERT ... SELECT because each needs its
+      // own primary key, and a SELECT yielding two rows would collide on one generated id.
+      for (const a of srcAllocs) {
+        statements.push([
+          `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
+           SELECT ?, a.profile_id, a.container_id, d.id, a.qty, ?, ?
+             FROM storage_allocations a
+             JOIN owned_cards d ON d.profile_id=? AND d.card_id=? AND d.variant_slug=?
+            WHERE a.id=?
+           ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
+          [uuid(), now, now, pid, plan.card_id, dest, a.id],
+        ]);
+        statements.push(['DELETE FROM storage_allocations WHERE id=?;', [a.id]]);
+      }
+
       // ACCEPTED ALPHA DEBT, owner ruling: a note on a fully drained source row is LOST.
       //
       // The v11 proposal's merge policy says distinct non-empty notes should be carried to the
@@ -180,6 +213,10 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
           [pid, plan.card_id, slug],
         ]);
       }
+
+      // The equality for both ends of the move, inside the transaction. Filing conserves copies,
+      // so if either side comes out disagreeing with its places, nothing commits.
+      statements.push(...assertEqualityStatements(pid, [...sources, dest].map((slug) => ({ cardId: plan.card_id, variantSlug: slug })), 'fileTriageLine'));
 
       await tx(statements);
 

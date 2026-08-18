@@ -27,15 +27,43 @@ const ledger = (cardId = 'c1', pid = PID) =>
   rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [pid, cardId]);
 const totals = (pid = PID) =>
   rows('SELECT SUM(qty_owned) o, SUM(qty_wanted) w FROM owned_cards WHERE profile_id=?;', [pid])[0];
-const seed = (slug, owned = 0, wanted = 0, { cardId = 'c1', pid = PID } = {}) =>
+// Seeds a row AS THE BACKFILL LEAVES IT. Filing is a KEY move - the allocations follow the copies -
+// so a source row with copies and no places has nothing to follow, and the equality assertion
+// inside the transaction refuses to commit a move that would strand them.
+const seed = (slug, owned = 0, wanted = 0, { cardId = 'c1', pid = PID, container = null } = {}) => {
+  const id = `s-${pid}-${cardId}-${slug}`;
   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
-    [`s-${pid}-${cardId}-${slug}`, pid, cardId, slug, owned, wanted, '', '2026-01-01', '2026-01-01']);
+    [id, pid, cardId, slug, owned, wanted, '', '2026-01-01', '2026-01-01']);
+  if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+    [`a-${id}`, pid, container || ('u-' + pid), id, owned, '2026-01-01', '2026-01-01']);
+};
+
+// Raises a count the way a real writer does: the copies move WITH it. A hand-written count change
+// that leaves the places behind models a state v12 cannot reach, and the equality assertion inside
+// the transaction - correctly - refuses to commit on top of it.
+const setOwnedWithPlaces = (slug, qty, pid = PID, cardId = 'c1') => {
+  sdb.run('UPDATE owned_cards SET qty_owned=? WHERE profile_id=? AND card_id=? AND variant_slug=?;', [qty, pid, cardId, slug]);
+  const id = `s-${pid}-${cardId}-${slug}`;
+  sdb.run('DELETE FROM storage_allocations WHERE owned_card_id=?;', [id]);
+  if (qty > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+    [`a-${id}`, pid, 'u-' + pid, id, qty, 'x', 'x']);
+};
+
+/** Every owned row whose copies are not exactly accounted for by its places. */
+const brokenTriageRows = (pid = PID) => rows(`
+  SELECT o.id, o.qty_owned,
+         COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
+    FROM owned_cards o WHERE o.profile_id = ?;`, [pid])
+  .filter((r) => Number(r.qty_owned) !== Number(r.placed))
+  .map((r) => `${r.id}: owns ${r.qty_owned}, placed ${r.placed}`);
+
+const runTx = (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } };
 
 // Dependencies injected so the barrier can be swapped for a pass-through counterfactual.
 const deps = (over = {}) => ({
   exclusive: (fn) => fn(),
   query: (s, p = []) => Promise.resolve(rows(s, p)),
-  tx: (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+  tx: (st) => { runTx(st); return Promise.resolve(); },
   notify: () => {},
   activeProfileId: () => PID,
   ...over,
@@ -59,6 +87,11 @@ before(async () => {
   for (const m of MIGRATIONS) sdb.run(m.sql);
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',10,'x');");
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p2','B',10,'x');");
+  // v12: every profile has an Unfiled container, plus a binder to prove filing SURVIVES triage.
+  for (const id of ['p1', 'p2']) {
+    sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'x','x');", ['u-' + id, id]);
+    sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'binder','Binder','ruby',0,'x','x');", ['b-' + id, id]);
+  }
   // c1 is printed in Alpha and Beta. 999 is a real set code but not one of ITS sets.
   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c9','Unknown to catalog','[]');");
@@ -231,10 +264,14 @@ test('a failed READ-BACK yields confirmed:false with a NULL count, not a guess',
   // The transaction resolved, so state may well have changed - but we cannot describe it.
   // Reporting the planned amount here would be inventing a result.
   seed(UNCATEGORISED, 3);
-  let reads = 0;
+  // Targets the READ-BACK by POSITION IN THE SEQUENCE, not by call number. Counting reads encoded
+  // an assumption about how many the command happens to make, and it now reads the source places
+  // before it writes - so `reads > 2` silently became a pre-write read, and the test was asserting
+  // the unconfirmed contract for a failure that happens before the transaction instead of after.
+  let written = false;
   const c = cmd({
-    // Reads in order: catalog membership, authoritative before, read-back. Only the LAST fails.
-    query: (s, p = []) => { reads++; return reads <= 2 ? Promise.resolve(rows(s, p)) : Promise.reject(new Error('read failed')); },
+    query: (s, p = []) => (written ? Promise.reject(new Error('read failed')) : Promise.resolve(rows(s, p))),
+    tx: (st) => { runTx(st); written = true; return Promise.resolve(); },
   });
   const res = await c(planFor(asRows(), ['001', '002'], '002'));
   assert.equal(res.confirmed, false);
@@ -246,9 +283,10 @@ test('a failed READ-BACK yields confirmed:false with a NULL count, not a guess',
 
 test('an unconfirmed result STILL broadcasts, because persisted state may have changed', async () => {
   seed(UNCATEGORISED, 3);
-  let fired = 0, reads = 0;
+  let fired = 0, written = false;
   const c = cmd({
-    query: (s, p = []) => { reads++; return reads <= 2 ? Promise.resolve(rows(s, p)) : Promise.reject(new Error('x')); },
+    query: (s, p = []) => (written ? Promise.reject(new Error('x')) : Promise.resolve(rows(s, p))),
+    tx: (st) => { runTx(st); written = true; return Promise.resolve(); },
     notify: () => { fired++; },
   });
   await c(planFor(asRows(), ['001', '002'], '002'));
@@ -278,7 +316,7 @@ test('a concurrent addition between render and write is not lost', async () => {
   // there is what the authoritative read is for.
   seed(UNCATEGORISED, 2);
   const stalePlan = planFor(asRows(), ['001', '002'], '002');
-  sdb.run("UPDATE owned_cards SET qty_owned=3 WHERE variant_slug=?;", [UNCATEGORISED]);
+  setOwnedWithPlaces(UNCATEGORISED, 3);
 
   const res = await cmd()(stalePlan);
   assert.equal(res.moved, 3, 'it moved what was there, not what the plan remembered');
@@ -294,11 +332,12 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
   // proving nothing.
   seed(UNCATEGORISED, 2);
   const stalePlan = planFor(asRows(), ['001', '002'], '002');
-  sdb.run("UPDATE owned_cards SET qty_owned=5 WHERE variant_slug=?;", [UNCATEGORISED]);
+  setOwnedWithPlaces(UNCATEGORISED, 5);
 
   // Emulate the broken behaviour: move the plan's remembered quantity, zero the source.
   sdb.run('BEGIN;');
   sdb.run('UPDATE owned_cards SET qty_owned=0 WHERE profile_id=? AND card_id=? AND variant_slug=?;', [PID, 'c1', UNCATEGORISED]);
+  sdb.run('DELETE FROM storage_allocations;');   // the broken version strands them; that is the point
   sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('x',?,?,?,?,0,'','x','x');",
     [PID, 'c1', '002', stalePlan.qty]);
   sdb.run('COMMIT;');
@@ -308,19 +347,25 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
   sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
   seed(UNCATEGORISED, 2);
   const plan2 = planFor(asRows(), ['001', '002'], '002');
-  sdb.run("UPDATE owned_cards SET qty_owned=5 WHERE variant_slug=?;", [UNCATEGORISED]);
+  setOwnedWithPlaces(UNCATEGORISED, 5);
   await cmd()(plan2);
   assert.equal(totals().o, 5, 'the real command conserves all five');
 });
 
-test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real barrier holds at 6', async () => {
+test('COUNTERFACTUAL: a pass-through barrier makes one file FAIL; the real barrier makes it a no-op', async () => {
   // A RENDEZVOUS, not a timeout. The previous version slept 5ms and then asserted
   // `unguarded >= 6` - which the CORRECT answer also satisfies, so it could pass without the
   // race ever occurring. A sensitivity test that passes when the thing it tests has vanished
   // is worse than no test: it reports safety it never measured.
   //
-  // Here both readers are held until BOTH have read, so the dangerous interleaving is
-  // guaranteed rather than hoped for, and the corrupted total is asserted exactly.
+  // WHAT THIS ARM USED TO ASSERT, and why it changed. It asserted that an unbarriered race
+  // corrupts six copies into twelve. Under v12 it no longer can: the second file re-parents
+  // source places that the first one already moved, finds none, and its own equality assertion
+  // - inside its transaction - refuses the commit. The copies cannot double because the ledger
+  // will not let them. So the corruption became a LOUD FAILURE, and this test now asserts that
+  // instead. It is a stronger outcome, but it is a different one, and rewriting the assertion
+  // to match reality is only honest if the test still distinguishes the two arms - which it
+  // does: unguarded, exactly one of the two files is refused; guarded, NEITHER is.
   const rendezvous = (n) => {
     let arrived = 0, release;
     const all = new Promise((r) => { release = r; });
@@ -342,10 +387,11 @@ test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real ba
       return out;
     },
   });
-  await Promise.all([racing(plan), racing(plan)]);
-  const unguarded = totals().o;
-  assert.equal(unguarded, 12,
-    'both readers saw 6 and both moved 6 - six copies became twelve, which is the corruption the barrier prevents');
+  const outcomes = await Promise.allSettled([racing(plan), racing(plan)]);
+  assert.equal(outcomes.filter((o) => o.status === 'rejected').length, 1,
+    'both readers saw 6 and both tried to move 6; the ledger refused the second rather than doubling the copies');
+  assert.equal(totals().o, 6, 'six copies stayed six - the refusal is what kept them');
+  assert.deepEqual(brokenTriageRows(), [], 'and the refused write left nothing half-applied');
 
   /* ---- the real barrier: the second read happens after the first commit ---- */
   const { withExclusiveCollectionWrites, __resetCollectionWritesForTests } = await import('./collectionWrites.js');
@@ -353,9 +399,12 @@ test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real ba
   seedSix();
   const plan2 = planFor(asRows(), ['001', '002'], '002');
   const guarded = cmd({ exclusive: withExclusiveCollectionWrites });
-  await Promise.all([guarded(plan2), guarded(plan2)]);
+  const guardedOutcomes = await Promise.allSettled([guarded(plan2), guarded(plan2)]);
+  assert.equal(guardedOutcomes.filter((o) => o.status === 'rejected').length, 0,
+    'with the barrier neither file fails - serialising them is what turns the second into a no-op');
 
   assert.equal(totals().o, 6, 'exactly six - the second file found the pile already drained and was a no-op');
+  assert.deepEqual(brokenTriageRows(), []);
   assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 6, qty_wanted: 0 }]);
 });
 

@@ -28,6 +28,8 @@ import { __setActiveIdForTests } from './profileRepository.js';
 import * as repo from './ownedRepository.js';
 import { createBulkOwnedCommands } from './bulkOwnedRepository.js';
 import { createOwnedImportCommand } from './ownedImportRepository.js';
+import { createTriageCommands } from './triageRepository.js';
+import { triagePile, fileLinePlan } from './triage.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'p1';
@@ -311,4 +313,55 @@ test('adjustOwnedItemsBulk lowering takes from Unfiled and refuses to reach into
   await assert.rejects(() => importCmd.adjustOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, delta: -1 }], PID),
     (e) => /hold copies outside Unfiled/.test(e.message));
   assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3, 'the refused adjust wrote nothing');
+});
+
+/* ---------------- TRIAGE: a key move, so the places FOLLOW the copies ---------------- */
+//
+// Fourth module, and the only one where the right answer is not "place it in Unfiled". Filing
+// establishes which printing some copies are; it does not move them off the shelf. A copy in a
+// binder before triage is in that same binder after it - so the allocations are RE-PARENTED, not
+// removed and re-created.
+
+const triage = createTriageCommands({
+  exclusive: (fn) => fn(),
+  query: (s, p = []) => Promise.resolve(rows(s, p)),
+  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+  notify: () => {},
+  activeProfileId: () => PID,
+}).fileTriageLine;
+// Built the way the UI builds one, so the test exercises the plan shape production sees.
+const filePlan = (cardId, set) => {
+  const ledgerRows = rows('SELECT card_id, variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=?;', [PID, cardId]);
+  const pile = triagePile(ledgerRows, (id) => (id === 'multi1' ? ['001', '002'] : ['001']));
+  return fileLinePlan(pile[0], pile[0].lines[0], set);
+};
+
+test('filing keeps the copies in the containers they were already in', async () => {
+  // The whole point of re-parenting rather than re-placing: triage must not quietly unfile a
+  // collection on the way to establishing its printings.
+  seedOwned('o1', 'multi1', 'uncategorised', 3, { binder: 2 });   // 2 in the binder, 1 loose
+  const r = await triage(filePlan('multi1', '002'));
+  assert.equal(r.confirmed, true);
+  assert.deepEqual(brokenRows(), []);
+  const dest = rows("SELECT id FROM owned_cards WHERE card_id='multi1' AND variant_slug='002';")[0].id;
+  assert.equal(at('b1', dest), 2, 'the binder copies are still in the binder, now under the right printing');
+  assert.equal(at(UNFILED, dest), 1, 'and the loose one is still loose');
+  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0, 'nothing left behind');
+});
+
+test('filing onto a destination that already has places MERGES per container', async () => {
+  seedOwned('o1', 'multi1', 'uncategorised', 2, { binder: 1 });
+  seedOwned('o2', 'multi1', '002', 3, { binder: 3 });
+  await triage(filePlan('multi1', '002'));
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at('b1', 'o2'), 4, 'one binder row, not two - the unique index would not permit two');
+  assert.equal(at(UNFILED, 'o2'), 1);
+});
+
+test('a triage move conserves every copy and every place', async () => {
+  seedOwned('o1', 'multi1', 'uncategorised', 4, { binder: 4 });   // entirely filed
+  await triage(filePlan('multi1', '001'));
+  assert.deepEqual(brokenRows(), []);
+  const total = rows('SELECT SUM(qty) t FROM storage_allocations WHERE profile_id=?;', [PID])[0].t;
+  assert.equal(total, 4, 'no copy was invented and none was dropped');
 });
