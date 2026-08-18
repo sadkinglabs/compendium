@@ -437,3 +437,96 @@ test('STORAGE: every restored owned copy is in exactly one place, and the profil
   const bad = rows('SELECT id FROM storage_allocations WHERE profile_id=? AND qty <= 0;', [pid]);
   assert.deepEqual(bad, [], 'no zero or negative allocations');
 });
+
+/* ---------------- Storage: a bundle is a FILE, so its graph is validated ---------------- */
+//
+// Everything above round-trips a bundle this app wrote. These do not. A bundle can be hand-edited,
+// truncated, merged by hand, or written by a build with a bug, and the import used to write its
+// allocation graph verbatim - so a claim the ledger cannot represent became a profile born
+// violating the equality, with every later decrease misbehaving on it.
+//
+// The rule these encode: an import may LOSE FILING. It may never invent a copy, and it may never
+// produce a profile whose copies are not each in exactly one place.
+
+/** The equality, for one imported profile. */
+const misplaced = (pid) => rows(`
+  SELECT o.id, o.card_id, o.qty_owned, COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
+    FROM owned_cards o WHERE o.profile_id = ?;`, [pid])
+  .filter((r) => Number(r.qty_owned) !== Number(r.placed))
+  .map((r) => `${r.card_id}: owns ${r.qty_owned}, placed ${r.placed}`);
+
+/** A minimal storage-aware bundle, so each test can bend exactly one thing. */
+const forgedBundle = (allocations, { owned = [{ id: 'o1', card_id: 'c1', variant_slug: '001', qty_owned: 3, qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' }] } = {}) => ({
+  app: 'compendium',
+  schemaVersion: 12,
+  profile: { name: 'Forged', accent: 'gold' },
+  owned_cards: owned,
+  storage_containers: [
+    { id: 'u', kind: 'unfiled', name: 'Unfiled', colour: 'gold', is_system: 1, sort_order: -1 },
+    { id: 'b', kind: 'binder', name: 'Binder', colour: 'ruby', is_system: 0, sort_order: 0 },
+  ],
+  storage_allocations: allocations,
+});
+
+const placesIn = (pid, name) => rows(`
+  SELECT a.qty FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
+   WHERE a.profile_id=? AND c.name=?;`, [pid, name]).reduce((n, r) => n + r.qty, 0);
+
+test('OVER-PLACEMENT: a bundle placing more copies than it owns loses filing, never gains copies', async () => {
+  // Owns 3, claims 5 placed. The count wins; the surplus is dropped.
+  const pid = await importProfile(forgedBundle([
+    { id: 'a1', container_id: 'b', owned_card_id: 'o1', qty: 4 },
+    { id: 'a2', container_id: 'u', owned_card_id: 'o1', qty: 1 },
+  ]), { name: 'Over' });
+  assert.deepEqual(misplaced(pid), []);
+  assert.equal(rows('SELECT SUM(qty_owned) t FROM owned_cards WHERE profile_id=?;', [pid])[0].t, 3, 'no copy was invented');
+  assert.equal(placesIn(pid, 'Binder'), 3, 'the first place took what there was room for');
+  assert.equal(placesIn(pid, 'Unfiled'), 0, 'and there was nothing left for the second');
+});
+
+test('DUPLICATE PLACES: two rows for one container merge instead of failing the whole import', async () => {
+  // idx_alloc_key forbids the pair twice. This used to abort the entire restore on a raw index
+  // error - a corrupt line in one table losing the user their decks, matches and Codex notes.
+  const pid = await importProfile(forgedBundle([
+    { id: 'a1', container_id: 'b', owned_card_id: 'o1', qty: 1 },
+    { id: 'a2', container_id: 'b', owned_card_id: 'o1', qty: 2 },
+  ]), { name: 'Dupe' });
+  assert.deepEqual(misplaced(pid), []);
+  assert.equal(placesIn(pid, 'Binder'), 3, 'merged, exactly as the upsert everywhere else would');
+});
+
+test('MALFORMED QUANTITIES: negative, fractional and non-numeric places are dropped, copies conserved', async () => {
+  const pid = await importProfile(forgedBundle([
+    { id: 'a1', container_id: 'b', owned_card_id: 'o1', qty: -2 },
+    { id: 'a2', container_id: 'b', owned_card_id: 'o1', qty: 'two' },
+    { id: 'a3', container_id: 'b', owned_card_id: 'o1', qty: 1.7 },
+  ]), { name: 'Malformed' });
+  assert.deepEqual(misplaced(pid), []);
+  assert.equal(placesIn(pid, 'Binder'), 1, 'only the truncated 1 survived');
+  assert.equal(placesIn(pid, 'Unfiled'), 2, 'and the rest of the owned copies are loose');
+});
+
+test('A MALFORMED COUNT cannot produce a row its places can never match', async () => {
+  // The count and the placement arithmetic used to read the same field through DIFFERENT
+  // sanitisers, so a bundle carrying -5 stored -5 and placed nothing.
+  const pid = await importProfile(forgedBundle([], {
+    owned: [
+      { id: 'o1', card_id: 'c1', variant_slug: '001', qty_owned: -5, qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' },
+      { id: 'o2', card_id: 'c2', variant_slug: '001', qty_owned: '2', qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' },
+    ],
+  }), { name: 'BadCounts' });
+  assert.deepEqual(misplaced(pid), []);
+  const got = rows('SELECT card_id, qty_owned FROM owned_cards WHERE profile_id=? ORDER BY card_id;', [pid]);
+  assert.deepEqual(got, [{ card_id: 'c1', qty_owned: 0 }, { card_id: 'c2', qty_owned: 2 }],
+    'a negative count is zero copies; a numeric string is the number it spells');
+});
+
+test('AN ORPHANED PLACE keeps its copies rather than deleting them', async () => {
+  // The container did not survive the bundle. The copies are still owned, so they land in Unfiled -
+  // filing lost, count intact, which is the trade this module makes everywhere.
+  const pid = await importProfile(forgedBundle([
+    { id: 'a1', container_id: 'ghost', owned_card_id: 'o1', qty: 3 },
+  ]), { name: 'Orphan' });
+  assert.deepEqual(misplaced(pid), []);
+  assert.equal(placesIn(pid, 'Unfiled'), 3, 'not one copy was lost with the container');
+});

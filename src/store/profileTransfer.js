@@ -227,12 +227,19 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
   // synthesises allocations below instead of trying to remap ones it does not have.
   const ownedMap = new Map();
   const ownedRows = [];
+  // The count is sanitised ONCE and the SAME number is both stored and used to place the copies.
+  // They used to diverge: the allocation arithmetic read `Number(o.qty_owned) || 0` while the row
+  // stored `o.qty_owned` verbatim. A hand-edited bundle carrying -5, "3" or null therefore wrote a
+  // count the places could never match, and the equality was broken before the profile existed.
+  // A count is a number of physical cards; it cannot be negative and it cannot be a string.
+  const safeQty = (v) => { const n = Math.trunc(Number(v)); return Number.isSafeInteger(n) && n > 0 ? n : 0; };
   for (const o of bundle.owned_cards || []) {
     const newId = uuid();
     if (o.id != null) ownedMap.set(o.id, newId);
-    ownedRows.push({ id: newId, qty_owned: Number(o.qty_owned) || 0, created_at: o.created_at, updated_at: o.updated_at });
+    const owned = safeQty(o.qty_owned);
+    ownedRows.push({ id: newId, qty_owned: owned, created_at: o.created_at, updated_at: o.updated_at });
     ins('owned_cards', ['id', 'profile_id', 'card_id', 'variant_slug', 'qty_owned', 'qty_wanted', 'notes', 'created_at', 'updated_at'],
-      [newId, pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
+      [newId, pid, o.card_id, o.variant_slug ?? '', owned, safeQty(o.qty_wanted), o.notes, o.created_at, o.updated_at]);
   }
 
   /* ---------------- Storage: every owned copy lands in exactly one place ----------------
@@ -281,20 +288,50 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
 
   const carried = srcAllocs.length > 0 && ownedMap.size > 0;
   if (carried) {
-    // Sum per owned row so a shortfall can go to Unfiled: an allocation whose container or owned
-    // row did not survive must not silently delete the copies it held.
-    const placed = new Map();
+    // THE INCOMING GRAPH IS VALIDATED, NOT TRUSTED. A bundle is a file: it can be hand-edited,
+    // truncated, merged by hand, or written by a build with a bug. Three things it can claim that
+    // the ledger cannot represent, each of which used to get written verbatim:
+    //
+    //   OVER-PLACEMENT - more copies placed than the row owns. The surplus was inserted anyway and
+    //     the shortfall arithmetic went negative, so the profile was born violating the equality
+    //     and every later decrease misbehaved on it. Copies are conserved and the count wins:
+    //     each allocation is taken up to the row's remaining capacity and the rest is DROPPED. The
+    //     filing is partly lost, which is the same trade this module already makes for a legacy
+    //     bundle - and strictly better than refusing someone's backup.
+    //   DUPLICATE PLACES - two rows for one (container, owned) pair. `idx_alloc_key` forbids it, so
+    //     this failed the entire import on a raw index error. They are MERGED, which is what the
+    //     upsert everywhere else in the app would have done.
+    //   MALFORMED QUANTITIES - a negative, fractional or non-numeric qty. Dropped, as before, but
+    //     now via the same sanitiser the counts use rather than a looser one.
+    //
+    // What is NOT tolerated: nothing here can raise a count. An import may lose filing; it may
+    // never invent a copy the bundle did not claim to own.
+    const capacity = new Map(ownedRows.map((r) => [r.id, r.qty_owned]));
+    const merged = new Map();   // `${contId}|${ownedId}` -> { contId, ownedId, qty, created_at, updated_at }
     for (const a of srcAllocs) {
       const ownedId = ownedMap.get(a.owned_card_id);
       const contId = containerMap.get(a.container_id);
-      const qty = Number(a.qty) || 0;
-      if (!ownedId || !contId || qty <= 0) continue;
-      placed.set(ownedId, (placed.get(ownedId) || 0) + qty);
-      ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
-        [uuid(), pid, contId, ownedId, qty, a.created_at || nowIso(), a.updated_at || nowIso()]);
+      const want = safeQty(a.qty);
+      // An allocation whose container or owned row did not survive is not silently discarded: the
+      // copies it held are still owned, so they fall through to the Unfiled shortfall below.
+      if (!ownedId || !contId || !want) continue;
+      const room = capacity.get(ownedId) || 0;
+      const qty = Math.min(want, room);
+      if (!qty) continue;
+      capacity.set(ownedId, room - qty);
+      const key = `${contId}|${ownedId}`;
+      const prev = merged.get(key);
+      if (prev) { prev.qty += qty; prev.updated_at = a.updated_at || prev.updated_at; }
+      else merged.set(key, { contId, ownedId, qty, created_at: a.created_at || nowIso(), updated_at: a.updated_at || nowIso() });
     }
+    for (const m of merged.values()) {
+      ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
+        [uuid(), pid, m.contId, m.ownedId, m.qty, m.created_at, m.updated_at]);
+    }
+    // Whatever the bundle did not account for is loose. `capacity` is what is left after every
+    // accepted place, so this closes the equality by construction rather than by hope.
     for (const r of ownedRows) {
-      const short = r.qty_owned - (placed.get(r.id) || 0);
+      const short = capacity.get(r.id) || 0;
       if (short > 0) {
         ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
           [uuid(), pid, unfiledId, r.id, short, r.created_at || nowIso(), r.updated_at || nowIso()]);
