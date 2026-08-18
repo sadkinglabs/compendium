@@ -1,0 +1,2396 @@
+diff --git a/docs/proposals/collection-storage.md b/docs/proposals/collection-storage.md
+new file mode 100644
+index 0000000..8dea416
+--- /dev/null
++++ b/docs/proposals/collection-storage.md
+@@ -0,0 +1,689 @@
++# Proposal: Storage - every copy is in exactly one place
++
++## Status and classification
++
++**APPROVED - revision 4.** Codex disposition: Approved, no revision 5 required. Six binding
++implementation clarifications recorded inline below (coordination for the scanner and profile
++switch, the deterministic missing-marker reconciliation, the canonicalisation map's positive-owned
++scope, the shared colour registry, and Storage-aware import validating the Unfiled container
++specifically). Human architecture approval still to be recorded before implementation begins; the
++resulting migration and diff remain subject to the mandatory checkpoint and a final Codex review.
++
++**Originally in review as revision 4.** Addresses Codex disposition "Changes required" on r3 (three blockers,
++two majors, one minor), all accepted. The **model reversal was accepted by review** - "Unfiled is a
++place; `qty_owned` is the materialised sum of places" stands, and r2's `needs_check` fallback is
++formally retired. r4 fixes implementation-boundary and lifecycle defects, not the model.
++
++The system container is named **Unfiled** (owner ruling; r3 called it "Loose").
++Risk: **High.** Two new tables, a new unique index on `owned_cards`, a boot-time data backfill, a
++change to the profile export/import format and its validation contract, and a new mutation boundary
++in front of every ownership writer.
++Owner: Claude Code (lead engineer) · Reviewer: Codex (principal engineer) · Approver: project owner
++
++Design settled with the owner over a 30-question pass; decisions cite their number as **(Qn)**.
++
++### What changed in revision 4
++
++- **Coordination is tiered.** r3 put every ownership change under the exclusive barrier, which
++  self-deadlocks the steppers. The transactional core now acquires nothing; the calling tier does.
++- **Canonicalisation emits an ownership identity map**, so allocations can be re-parented before
++  released rows are deleted. Boot ordering (canonicalise, then backfill) confirmed by review.
++- **Exactly one Unfiled is established at every point a profile can appear**, and allocations are
++  created only for `qty_owned > 0` - a wishlist-only row has none, and would otherwise have broken
++  `CHECK (qty > 0)` at boot.
++- **Bulk Set/Adjust and undo are specified**: operate against Unfiled, reject the whole atomic
++  command with structured conflicts, and undo reverses total and allocation together.
++- **Native foreign keys are enabled and verified at open, failing closed** - not merely observed.
++- **"Unrepresentable" is corrected** to unreachable-through-sanctioned-paths.
++
++### What changed in revision 3, and why it mooted a finding rather than answering it
++
++Revision 2 accepted the review's drain finding and countered its remedy with a persistent
++`needs_check` flag. **That entire exchange is withdrawn as unnecessary.** The owner's observation:
++
++> Our problem is that the cards exist in two places, the collection AND the binders.
++
++That is the root cause. `qty_owned` said one thing and the allocations said another, and every
++difficult mechanism in revision 2 was scaffolding around the gap between them: an inequality
++invariant policed across seven writers, a drain rule for when the gap opened, a flag for when the
++drain had to guess, and a reconciliation sheet for when the flag was not enough.
++
++**Revision 3 removes the gap instead of managing it.** "Unfiled" becomes a real place - a system
++container, one per profile - so every owned copy is in exactly one place at all times and the
++collection is the sum of the places. There is no second number, therefore nothing to reconcile.
++
++Dissolved outright: the `<=` invariant (now an `=` derivation), drain-largest-first, `needs_check`
++and its badge, the reconciliation sheet, and the ⚑ question revision 2 put to the reviewer.
++
++**This reversed a point the review had blessed as sound** - "Unassigned should remain derived" - on
++the claim that derived-Unassigned is precisely what manufactures the second number. **Review
++accepted the reversal**, ruling location authoritative, the drain guess eliminated, read
++performance and rollback visibility preserved, and the finite migration cost preferable to a
++permanent uncertainty seam. Revision 2's `needs_check` design is therefore **retired, not held as a
++fallback**.
++
++**Everything else from the review survives intact and was not wasted** - the mutation boundary,
++`owned_card_id` with composite profile-consistent foreign keys, triage and `canonicaliseBoot`
++re-parenting, full import graph validation, the semantic round-trip, and the migration rebase. That
++was the expensive part and it is all still required.
++
++## Problem and success criteria
++
++From an alpha tester, unprompted, twice:
++
++> if I have 4 copies of a card from Beta, I would like to allocate 1 copy to my Beta binder, 2 to
++> my whatever deck, and 1 in my storage box. With lists you are not really allocating your card
++> inventory to certain spots that can be traced, but just making a list that has no reference to
++> your actual collection quantities.
++
++He was offered tagging and rejected it, then lists and rejected those, both for the same reason: a
++label or list entry carries no quantity, so neither can say *one of my four*.
++
++**The model.** Every owned copy is in exactly one place. "Unfiled" is a place. Your collection is what
++the places add up to. Filing a card **moves** it between places; it never claims it against a
++separate total.
++
++**Success criteria**
++
++1. Containers of the user's naming, of kind Binder / Box / Deck / Other **(Q7)**.
++2. From a card owned 4 times, move 1 / 2 / 1 into three containers, with the remainder in Unfiled
++   **(Q1, Q16)**.
++3. A container shows its cards **with quantities**, searchable and arrangeable.
++4. **`qty_owned` equals the sum of that item's allocations, always, for every writer in the app**
++   - maintained by construction in one transaction, not policed after the fact **(Q3)**.
++5. Unfiled is always visible, openable and **bulk-fillable** **(Q13, Q14)**.
++6. Deleting a container moves its copies to Unfiled and never deletes a card **(Q26)**.
++7. Export/import round-trips the complete container graph, not merely its row counts **(Q27)**.
++8. No join to any deck record **(Q23)**.
++9. **A copy is never nowhere, and never in two places.** Over-allocation is **unreachable through
++   every sanctioned production mutation path** - not literally unrepresentable, since `qty_owned`
++   stays materialised and direct SQL could still move one side alone. Backed by a source guard and
++   in-transaction assertions rather than by the schema alone.
++10. **A collector-item key move carries its allocations with it** - triage filing, boot
++    canonicalisation, or any future re-keying.
++11. **A profile that never opens Storage behaves exactly as it does today**, including every
++    stepper, bulk edit and import path.
++12. **Ordinary ownership taps never block on themselves.** The transactional core acquires no
++    coordination; the calling tier chooses it.
++13. **Exactly one Unfiled exists per profile at every moment of a profile's life** - boot, creation,
++    duplication, legacy import, Storage-aware import.
++14. **Native foreign-key enforcement is established and verified at connection open**, or the app
++    fails closed rather than shipping structural guarantees that hold only on web.
++
++**Non-goals**
++
++Tags (a yes/no property of a card, unconstrained by quantity - the separating test is *does the
++answer need a number?*); nesting; capacity; deck coupling in any form; instance identity; allocating
++wishlisted copies **(Q5)**; scanner container targets **(Q18, Q24)**; locations in shareable text
++exports **(Q25)**; dropping the legacy `settings` table (the v12 line of work).
++
++## Evidence and current architecture
++
++**The grain already exists.** `owned_cards` is collector-item grain, `UNIQUE(profile_id, card_id,
++variant_slug)` with `qty_owned` ([`schema.js:292-303`](../../src/store/schema.js#L292-L303)).
++
++**`qty_owned` is read everywhere** - the ALL grid, set drills, playset maths, deck buildability,
++dashboard stats, exports. It stays exactly where it is and every reader is untouched. It stops being
++the value the user *edits* and becomes the **materialised total** the mutation boundary keeps equal
++to the sum of the places, in the same transaction that moves them. Nothing computes a sum at read
++time: no new joins, no N+1, no change to grid performance.
++
++### Every writer that can change owned quantity
++
++Revision 1 said "the repository enforces the invariant" without establishing which repository. There
++are **seven** mutation sites across six modules, and Storage's own is none of them:
++
++| Module | What it does |
++|---|---|
++| [`ownedRepository.js`](../../src/store/ownedRepository.js) | the interactive steppers - update, and delete when a row empties |
++| [`bulkOwnedRepository.js`](../../src/store/bulkOwnedRepository.js) | bulk Adjust / Set, including Set-to-0 as bulk delete |
++| [`ownedImportRepository.js`](../../src/store/ownedImportRepository.js) | typed/bulk import reconciliation |
++| [`triageRepository.js:124-150`](../../src/store/triageRepository.js#L124-L150) | **key move**: draws a slug's count to 0, re-files under a set-coded slug, deletes the emptied source row |
++| [`canonicaliseBoot.js:60-100`](../../src/store/canonicaliseBoot.js#L60-L100) | **key move at boot, across EVERY profile, before a profile is resolved**: rewrites `variant_slug`, *merges* duplicate rows by releasing some ids and retaining others, deletes the released ones |
++| `profileTransfer.js` | import inserts |
++
++Scanner writes only increase quantities. No Curiosa writer touches ownership.
++
++`canonicaliseBoot` is the one neither the review nor revision 1 named, and it is the most dangerous:
++it runs at boot, it **merges** rows, and a naive `ON DELETE RESTRICT` would make it throw before the
++app starts.
++
++### Coordination
++
++[`collectionWrites.js`](../../src/store/collectionWrites.js) states the rule this proposal must
++respect: `enqueueWrite` **orders** writes per row, while `withExclusiveCollectionWrites` **excludes**
++all row writes for a command - "anything that reads-then-writes needs the barrier, not a drain".
++
++### Import validation
++
++[`importBoundary.js:27-31`](../../src/store/importBoundary.js#L27-L31) defines
++`ITERATED_COLLECTIONS` as the contract, asserted by a test to cover every
++`for (const ... of bundle.X || [])` in `profileTransfer`. The loop at
++[line 80](../../src/store/importBoundary.js#L80) validates only that each named collection is an
++*array*; row-level validation exists for `owned_cards` alone. Backup bounds, digests and recovery
++counts inherit from the same contract.
++
++### Foreign-key enforcement is not uniform
++
++`PRAGMA foreign_keys = ON` is set for the web backend at [`db.js:261`](../../src/store/db.js#L261),
++and appears in migration SQL at [`schema.js:12`](../../src/store/schema.js#L12) - but a PRAGMA binds
++a *connection*, and the native path (`createConnection` then `db.open()`,
++[`db.js:389-395`](../../src/store/db.js#L389-L395)) sets nothing. Structural constraints are
++**confirmed on web, unverified on native**. Structure is adopted, but the boundary enforces
++unconditionally and the native FK state is an explicit device gate.
++
++### Precedent for a boot-time data backfill
++
++Revision 3 needs one Unfiled allocation per existing owned row - **data, not DDL**, so it cannot ride
++in migration SQL, because the native `execute()` splitter is quote-unaware.
++[`canonicaliseBoot.js`](../../src/store/canonicaliseBoot.js) is exactly this shape already: it plans
++in JS, issues parameterised statements, runs across every profile before one is resolved, and is
++idempotent on re-run. The backfill follows that pattern rather than inventing one.
++
++## Assumptions and confidence
++
++1. Partitioning a quantity satisfies the request; per-copy identity is unnecessary. **High.**
++2. Keeping `qty_owned` as a maintained total leaves every reader untouched. **High** - it is the
++   same column with the same meaning; only the writer changes.
++3. Every ownership change can route through one boundary without deadlocking. **Medium** -
++   `canonicaliseBoot` runs before a profile is resolved and cannot take the interactive barrier.
++4. The backfill is safe and idempotent across every profile at boot. **Medium** - it is the
++   riskiest single step in the proposal, and it runs before the app is usable.
++5. Sync-readiness needs timestamps now and tombstones later **(Q28)**. **Medium.**
++
++## Affected systems and invariants
++
++- **Schema:** two new tables, `UNIQUE(id, profile_id)` on `owned_cards`, plus a boot backfill.
++- **Repositories:** new `storageRepository.js`; a new ownership-mutation boundary six modules route
++  through; `profileTransfer.js` and `importBoundary.js` extended.
++- **UI:** Storage section in My Collection; container detail; card-sheet ledger; Codex read-only
++  line; bulk Put Away inside Storage's own selection context.
++- **Native/web:** DDL-only migration plus a JS backfill; native FK enforcement verified on device.
++
++**Invariants engaged** (§3): profile isolation (composite profile-consistent FKs *and* repository
++scoping); forward-only evolution (additive DDL; the backfill is idempotent and additive);
++transactional user-data operations (allocation moves and the `qty_owned` total commit together);
++durable offline-first writes; cross-runtime integrity (the FK divergence and the splitter
++constraint); catalog/profile boundary (no catalog write); zero-image degradation (text and
++quantities, reusing `CardArt`); content-is-data (untouched).
++
++**Documentation classification** (all source-of-truth documents):
++
++| Document | Disposition | Reason |
++|---|---|---|
++| `COMPENDIUM_DATA_MODEL.md` | **Updated** | Two tables, a new index, the backfill, export/import format, and `qty_owned` restated as a maintained total |
++| `COMPENDIUM_ARCHITECTURE.md` | **Updated** | A mutation boundary six modules must route through is a boundary statement |
++| `COMPENDIUM_FEATURE_MATRIX.md` | **Updated** | New Storage capability rows |
++| `DESIGN_SYSTEM.md` | **Updated** | Container rows, the move affordance, the Unfiled place |
++| `BUILD.md` | **Reviewed, no change** | No new command, dependency, env var or gate; native checks ride the existing device pass |
++| `ENGINEERING_CONSTITUTION.md` / `AGENTS.md` | **Reviewed, no change** | No process or agent-behaviour change |
++
++## Options considered
++
++**A. Status quo (lists)** and **B. tags** - rejected by the tester himself; neither references owned
++quantity.
++
++**C. Instance model** - one row per physical copy. Delivers per-copy provenance and costs a rewrite
++of every stepper, playset and import path for a distinction never requested.
++
++**D. Surface the dead `owned_cards.notes` field** - nearly free, unstructured, unsearchable,
++uncountable, cannot be browsed by container.
++
++**E. Allocations as a claim against a separate total** (revisions 1-2). Unassigned derived. Rejected
++in revision 3: it creates two numbers that can disagree, and every mechanism needed to manage that
++disagreement - inequality invariant, drain, flag, reconciliation - is scaffolding around a seam of
++our own making.
++
++**F. Recommended: allocations ARE the ownership, Unfiled is a place.** One number per place, the total
++materialised. The reference implementation of this idea in the wild (Cursedrealm's vault) is
++disliked by the owner on execution, not on model; the model is right.
++
++## Proposed design
++
++### Schema (additive DDL, plus a JS backfill)
++
++```sql
++CREATE UNIQUE INDEX IF NOT EXISTS idx_owned_id_profile ON owned_cards(id, profile_id);
++
++CREATE TABLE IF NOT EXISTS storage_containers (
++  id TEXT PRIMARY KEY,
++  profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
++  kind TEXT NOT NULL DEFAULT 'binder',        -- binder | box | deck | other | unfiled   (Q7)
++  name TEXT NOT NULL,                         -- not unique (Q9); duplicates warn, never block
++  description TEXT DEFAULT '',                -- "top shelf, spare room"                (Q12)
++  -- A TOKEN NAME from the shared allow-list registry, never a hex string and never anything
++  -- CSS-like, so a theme can retint every container and the value stays content rather than
++  -- presentation. ONE registry is used by creation, rendering, import validation and the picker;
++  -- an imported unknown value is REJECTED, never interpolated into a CSS variable. Q11 reversed by
++  -- the owner: colour is not decoration on a container, it is how you identify the physical binder
++  -- on a shelf, and it is the attribute a user reaches for first in a list of eight.
++  colour TEXT NOT NULL DEFAULT 'gold',
++  sort_order INTEGER DEFAULT 0,               -- manual, like card_lists                (Q10)
++  -- The system Unfiled place: exactly one per profile, undeletable, unrenameable. Modelled as a row
++  -- rather than a derived remainder BECAUSE a remainder is a second number, and a second number is
++  -- the thing every difficult mechanism in revisions 1-2 existed to police.
++  is_system INTEGER NOT NULL DEFAULT 0,
++  created_at TEXT, updated_at TEXT
++);
++CREATE UNIQUE INDEX IF NOT EXISTS idx_containers_id_profile ON storage_containers(id, profile_id);
++CREATE UNIQUE INDEX IF NOT EXISTS idx_containers_one_unfiled
++  ON storage_containers(profile_id) WHERE is_system = 1;    -- one Unfiled per profile, structurally
++CREATE INDEX IF NOT EXISTS idx_containers_profile ON storage_containers(profile_id, sort_order);
++
++CREATE TABLE IF NOT EXISTS storage_allocations (
++  id TEXT PRIMARY KEY,
++  profile_id TEXT NOT NULL,
++  container_id TEXT NOT NULL,
++  owned_card_id TEXT NOT NULL,                -- HARD ref: survives a variant_slug rewrite
++  qty INTEGER NOT NULL CHECK (qty > 0),       -- zero and negative are structurally impossible
++  created_at TEXT, updated_at TEXT,
++  FOREIGN KEY (container_id, profile_id)
++    REFERENCES storage_containers(id, profile_id) ON DELETE CASCADE,
++  FOREIGN KEY (owned_card_id, profile_id)
++    REFERENCES owned_cards(id, profile_id) ON DELETE RESTRICT
++);
++CREATE UNIQUE INDEX IF NOT EXISTS idx_alloc_key ON storage_allocations(container_id, owned_card_id);
++CREATE INDEX IF NOT EXISTS idx_alloc_owned ON storage_allocations(profile_id, owned_card_id);
++```
++
++Composite foreign keys make a cross-profile allocation structurally impossible: a row cannot name a
++container from one profile and an owned row from another, because both relationships must agree on
++the same `profile_id`. `owned_card_id` is a hard reference because `canonicaliseBoot` rewrites
++`variant_slug` in place **by id** - a soft `(card_id, variant_slug)` key would strand every
++allocation on every boot canonicalisation. `RESTRICT` plus reconcile-before-delete is the correct
++shape; revision 1's objection to `CASCADE` did not justify having no referential protection.
++
++**Sync readiness (Q28):** timestamps on both tables from birth; tombstones noted, not built;
++migration sequenced separately from v12.
++
++### The ownership-mutation boundary, and who coordinates it
++
++Revision 3 put **every** ownership change under `withExclusiveCollectionWrites`. That
++**self-deadlocks**, and the review is right. Interactive steppers already run *inside* the queue -
++`OwnedControl` enqueues on the collector-item key and calls the repository from within that callback
++([`OwnedControl.jsx:40-46`](../../src/components/OwnedControl.jsx#L40-L46)). By the time that
++callback executes, its write is **admitted**. A boundary that then requests exclusivity waits for
++admitted work to drain ([`collectionWrites.js:125`](../../src/store/collectionWrites.js#L125)) -
++which includes itself. Every ownership tap would hang until the timeout.
++
++The fix is to **separate the transactional core from the coordination that wraps it**:
++
++| Tier | Coordination | Why |
++|---|---|---|
++| **The core** - plan and execute one atomic ownership/allocation change | **None. It acquires nothing.** | A core that coordinates cannot be composed by a caller that already has |
++| **Interactive, one collector item** (steppers, quick add, a single move) | the caller's existing `enqueueWrite` on the **collector-item key** | The change is confined to one row and its allocations, which the per-row chain already serialises. Keeping the same key preserves the wishlist/ownership commutation on the shared `''` row that `OwnedControl` depends on |
++| **Multi-item** (bulk Set/Adjust, undo, import, triage) | `withExclusiveCollectionWrites` around the core | These read-then-write across many rows, which is exactly what the barrier exists for. `undoBulkOwned` already takes it |
++| **Scanner** (one collector item per capture) | the **same** `enqueueWrite` chain and `ownedRowKey(profile, card, set, foil)` `OwnedControl` uses, with `profile_id` captured **before** enqueueing | Scanner writes only increase quantities, but two overlapping captures of the same printing on different chains would lose an increment |
++| **Profile switch** | `withProfileSwitchWriteBarrier` - the **tolerant** barrier, NOT the fail-closed bulk one | The two semantics are deliberately separate exported functions so a caller has to name the tolerant path; a profile switch must not fail closed on a slow in-flight write |
++| **Boot** (canonicalisation, backfill) | its own boot transaction, no interactive barrier | Runs before a profile is resolved; nothing interactive exists yet |
++
++The rule stated once: **coordination is chosen by the calling tier; the core never acquires it.**
++That is also what makes the core node-testable without a queue.
++
++Its contract is a **derivation**, not a validation:
++
++> After any operation, for every owned row: `qty_owned = SUM(allocations for that row)`.
++
++Responsibilities:
++
++1. **Increase** adds to Unfiled (or the container the user is standing in), and raises `qty_owned` in
++   the same statement set.
++2. **Decrease** subtracts from a **named place**. From a container view, that place is the container.
++   From the global stepper, that place is Unfiled.
++3. **Move** shifts qty between two containers; `qty_owned` does not change, and cannot, because no
++   statement touches it.
++4. **Key move** re-parents allocations by `owned_card_id`. Triage: allocations follow the copies.
++   Canonicalisation: see the identity-mapping section immediately below.
++5. **Global Set / Adjust** operate against Unfiled, and **reject the entire atomic command** if any
++   selected item's requested target would fall below its non-Unfiled total. The rejection returns
++   **structured conflicts** - item, requested target, non-Unfiled total, and the containers holding
++   them - so the UI can name the places rather than saying "cannot". A mixed selection where some
++   items are satisfiable and some are not fails whole; a bulk command that half-applies is worse
++   than one that explains itself. Set-to-zero is the same rule with a target of 0.
++6. **Undo** reverses both the total and the exact Unfiled allocation it changed, under the same
++   expected-state guards `undoBulkOwned` already applies
++   ([`bulkOwnedRepository.js:145`](../../src/store/bulkOwnedRepository.js#L145)) - a row is restored
++   only while it still holds what the bulk write left, and the guard now covers the allocation too.
++
++### Canonicalisation needs an explicit identity mapping
++
++`planLedger` returns `{ rows, releasedIds, touched }`
++([`canonicalise.js:155`](../../src/store/canonicalise.js#L155)) - **final rows and the ids to
++delete, with no mapping from a released id to the destination that absorbed its quantity**. Revision
++3 required re-parenting before deletion without providing the information re-parenting needs. A
++released row can also split into an owned destination and a wanted destination, and only the owned
++one can carry allocations.
++
++The pure planner is extended to emit an **ownership identity map**, `releasedId -> destinationRowId`,
++generating destination ids in the planner before any SQL is composed. **The map covers only released
++rows contributing positive owned quantity.** A released wishlist-only row may legitimately have no
++destination mapping - but it must be *proven* to hold zero allocations, and any allocation attached
++to such a row is corruption that **aborts the transaction** rather than being re-homed by guesswork. The adapter then executes, in
++one transaction, in this order:
++
++1. insert / update destination owned rows;
++2. re-parent allocations through the map, **summing** where two allocations for one container land
++   on one destination row;
++3. delete the released owned rows (now unreferenced, so `RESTRICT` is satisfied);
++4. assert no legacy keys remain **and** `qty_owned = SUM(allocations)` for every touched row;
++5. write the canonicalisation marker.
++
++**Boot ordering, confirmed by review:** canonicalisation runs **first**, the Unfiled backfill
++**second**. On a first upgrade there are no allocations, so canonicalisation reduces the ledger to
++its final row identities before the backfill attaches places. The re-parent path is still required,
++because canonicalisation is shape-first and may re-run later, after Storage exists.
++5. **Container deletion** moves its allocations to Unfiled, then deletes the container **(Q26)**.
++   Under this model that is arithmetic rather than a policy: copies cannot be nowhere.
++
++`canonicaliseBoot` is the exception that proves the rule - it runs before a profile is resolved and
++cannot take the interactive barrier, so its re-parenting rides inside its own boot transaction. That
++asymmetry is the sharpest implementation risk in the proposal.
++
++### What the user sees
++
++**Nothing changes in My Collection.** Same grid, same counts, same playsets, same buildability. The
++total is the same column it always was.
++
++**The global stepper takes from Unfiled.** For a profile with no containers - which is every profile
++until someone makes one - everything is Unfiled, so every stepper, bulk edit and import behaves
++**exactly as it does today** (criterion 11). Once a card is filed, the global minus reaches only the
++unfiled copies; when Unfiled is empty it says where the copies actually are, with a one-tap route to the
++container. That is a wall, but an informative one, and it appears only for cards the user
++deliberately filed.
++
++**Removal at a place is unambiguous and silent** - it is the natural path for anyone who files, and
++it mirrors the physical act.
++
++There is no drain, no flag, no reconciliation sheet, and no moment where the app guesses which copy
++left. The question cannot arise, because a decrease always names its place.
++
++**Other interaction, unchanged from revision 2:** ledger with steppers in the card sheet **(Q16)**;
++direct move between containers **(Q19)**; new copies land in Unfiled, never prompting **(Q18)**;
++container view on the list-detail chassis **(Q20, Q21)**; read-only ownership line in the Codex card
++detail **(Q22)**; empty zero state with a create prompt **(Q30)**.
++
++**The wishlist is untouched.** `qty_wanted` is not owned, so it is in no place **(Q5)**.
++
++### Reuse inventory
++
++Owner instruction: reuse before writing; anything new must itself be reusable.
++
++| Need | Reused |
++|---|---|
++| Selection, counts, hidden-by-filter | `SelectionBar`, `useCollectionBulkActions`, `selectionSummary` |
++| Create / rename a container | `ListNameSheet` - already takes `chooseKind` |
++| Container detail screen | the list-detail chassis, headers, overflow menu |
++| Ordering inside a container | `stackComparator`, `SortRow`, `LIST_SORT_OPTIONS` |
++| Steppers | `StepBtn` |
++| Sheets, chips, labels, FABs | `GothicSheet`/`BottomSheet`, `Chip`, `SectionLabel`, `Fab`, `OverflowMenu` |
++| Destructive confirmation with counts | `confirmAction` + the DESIGN_SYSTEM pattern |
++| Write coordination | `withExclusiveCollectionWrites`, `enqueueWrite`, `persist()` |
++| Boot-time idempotent backfill | the `canonicaliseBoot` pattern |
++| Card rows and tiles | `LedgerRow` / `BinderTile` / `CardArt` |
++| Container colour palette | the shipped `--accent-*` tokens (gold, violet, jade, ruby), by NAME |
++
++**New, and deliberately reusable:** the ownership-mutation boundary; `storageRepository.js` (pure,
++node-testable, DOM-free); and a **swatch picker** over the shared colour registry, written as a
++general primitive rather than a Storage-local control so the next surface that needs one does not
++build a second. It exposes **named radio options with keyboard navigation, `aria-checked`, and touch
++targets meeting the §5 floor** - a colour control that can only be operated by sighted tapping is
++not a control. It does not reach into any other feature's colour state - `profiles.accent` belongs
++to profiles and is out of scope here. **Withdrawn:** `PickerSheet`, "group by container", `needs_check`
++and its badge, and the reconciliation sheet.
++
++## Implementation plan
++
++**Rebase first.** Land after v12, take the next free schema version, and test the in-place upgrade
++from the actually shipped predecessor - not from a version that exists only in a draft.
++
++1. **Boundary + schema + backfill + repository.** Tables, indexes, the boundary maintaining the
++   equality, the Unfiled place per profile, the idempotent boot backfill, re-parenting for triage and
++   `canonicaliseBoot`. No UI. *Checkpoint: production-path tests for steppers, bulk Set and Adjust,
++   typed import, triage filing and boot canonicalisation, each asserting `qty_owned = SUM(allocations)`
++   afterwards. Concurrency test for the read/check/write race. Backfill idempotency across a
++   multi-profile database. Device check that native FK enforcement is on.*
++2. **Export/import + validation.** Both tables through `profileTransfer`, `ITERATED_COLLECTIONS`
++   extended, full graph validation before planning the transaction: positive safe-integer
++   quantities, unique source ids, known container mappings, same-profile relationships, resolvable
++   collector items, **and the totals reconciling to `qty_owned` exactly**. Backup bounds, digests,
++   recovery counts and fixtures updated. *Checkpoint: the semantic round-trip below.*
++3. **Storage section + container detail.**
++4. **Card-sheet ledger + Codex line.**
++5. **Bulk Put Away, inside Storage's own selection context** - no change to `AddToListSheet`, no
++   dock reshuffle in existing surfaces.
++6. **Docs**, including adding storage to the delete-profile confirmation **(Q29)**.
++
++Increments 1 and 2 ship together or not at all: a UI over an unexported table produces data a
++restore destroys silently.
++
++## Data migration and compatibility
++
++DDL is additive and free of data statements, because the native `execute()` splitter is
++quote-unaware. The Unfiled backfill is a **separate, idempotent, parameterised JS step** on the
++`canonicaliseBoot` pattern, running immediately after canonicalisation.
++
++**Exactly one Unfiled per profile, established at every point a profile can come into existence.**
++The partial unique index guarantees *at most* one; these guarantee *at least* one:
++
++| Moment | Rule |
++|---|---|
++| Boot backfill | one Unfiled for **every existing profile, including empty ones** |
++| `createProfile` | Unfiled created **in the same transaction** as the profile row - never a follow-up write |
++| `duplicateProfile` | same, for the copy |
++| Import of a **Storage-aware** bundle | validate that the sole system container **is specifically the immutable Unfiled container** - not merely that some row carries `is_system = 1` - and reject the bundle otherwise |
++| Import or restore of a **legacy** bundle | synthesise Unfiled and allocate every positive owned quantity to it |
++
++**Allocations are created only for `qty_owned > 0`.** Revision 3 said "every owned row", which was
++wrong: a wishlist-only row legitimately has `qty_owned = 0` and `qty_wanted > 0`, and inserting a
++zero allocation violates `CHECK (qty > 0)` - boot would fail on any profile holding a want for a
++card it does not own. Such a row simply has no allocations, and `0 = SUM(∅)` satisfies the equality
++exactly.
++
++**The backfill closes its own transaction with assertions**: exactly one Unfiled per profile, and
++`qty_owned = SUM(allocations)` for every owned row. **The marker is written in the same
++transaction**, so "runs once" is a fact rather than a hope - an interrupted pass leaves no marker
++and no partial state, and re-running is a no-op.
++
++**A missing marker uses a deterministic reconciliation, per owner ruling** - it never assumes a
++clean slate and never guesses:
++
++| Owned quantity | Allocation sum | Action |
++|---|---|---|
++| 0 | 0 | leave empty - a wishlist-only row correctly has no allocations |
++| > 0 | 0 | create the full quantity in Unfiled |
++| any | equal to `qty_owned` | preserve the existing locations untouched |
++| any | **anything else** | **fail closed** - the missing or excess location cannot be inferred, and guessing is what this whole model exists to avoid |
++
++Before recording the marker, the pass asserts exactly one valid Unfiled container per profile and
++exact equality for every owned row.
++
++A profile that has never opened Storage remains indistinguishable from today in every reader: all
++its copies are in Unfiled, and every stepper, bulk edit and import behaves exactly as before
++(criterion 11).
++
++Older builds reject a newer export via the existing `importBoundary` future-version rule.
++
++## Rollback and recovery
++
++**Before any user has filed cards:** reverting leaves unused tables and a harmless Unfiled row per
++item.
++
++**After users have filed cards, ordinary code rollback is UNSAFE.** An older build does not know the
++tables, so it omits Storage from every export it takes - and a backup made by that build silently
++lacks the user's filing. Recovery is **forward-fix, or restore from a Storage-aware backup**. The
++point of no return is increment 3 reaching a device.
++
++A rolled-back build still reads `qty_owned` correctly, because it remains a real materialised column
++- the collection survives a rollback intact even though the filing does not. That is a deliberate
++consequence of not making the total derived at read time.
++
++## Verification plan
++
++- **Automated:** boundary tests on production paths (steppers, bulk Set/Adjust, import, triage, boot
++  canonicalisation) each asserting the equality afterwards; a concurrency test for the
++  read/check/write race; re-parenting tests including a canonicalisation **merge** that sums two
++  allocations onto one row; backfill idempotency on a multi-profile database, including a profile
++  mid-backfill; container deletion; and the import-validation matrix (negative and non-integer
++  quantities, duplicate source ids, dangling containers, cross-profile references, totals that do
++  not reconcile).
++- **The round-trip compares a canonical semantic graph, not counts.** Container names are not unique
++  **(Q9)**, so name-to-card is insufficient: compare a multiset of
++  `(kind, name, description, sort_order)` each mapped to sorted `(card_id, variant_slug, qty)`, ids
++  stripped. A count-based test passes while `container_id` remaps to the wrong container - cards
++  silently changing binders on restore is the failure this feature would otherwise ship.
++- **Coordination tests, called out because r3 got this wrong:** an explicit "does not self-deadlock"
++  test driving the core from inside `enqueueWrite`; rapid-tap on one item; a stepper racing a bulk
++  command; a profile switch mid-write; **two overlapping scanner captures of the same printing, and
++  a scanner capture racing a bulk command** (both must land on the same chain, so no increment is
++  lost); and wishlist/ownership ordering preserved on the shared `''` row.
++- **Lifecycle tests:** fresh install, empty profile, profile created after boot, duplicated profile,
++  legacy import, Storage-aware import, wishlist-only rows, several profiles, and an interrupted
++  backfill resuming correctly.
++- **Bulk tests:** Set-to-zero, a mixed selection where some items are blocked, and an undo whose
++  expected-state guard fails on either the total or the allocation.
++- **Gates:** `test:codex/query/ui/app`, `check:types/cycles/source/docs`, `build`; `check:smoke`
++  pre-merge.
++- **Manual, on device:** the tester's case, 4 Beta copies moved 1/2/1. Remove one from inside a
++  container and confirm the total drops with no prompt. Empty Unfiled, then confirm the global stepper
++  says where the copies are instead of guessing. File an uncategorised card through triage that
++  already has allocations and confirm they follow. **Upgrade in place from the shipped predecessor
++  with a real collection and confirm the backfill produces exactly one Unfiled allocation per item.**
++  Delete a container. Export, wipe, import, verify the semantic graph. Zero-image mode on both new
++  views. **On the installed app specifically:** composite-mismatch rejection, `RESTRICT`, profile
++  cascade and container cascade, to prove foreign keys are actually live on Android.
++
++## Security, privacy, performance, and operations
++
++No network, telemetry, or new permissions. Storage is private inventory, excluded from shareable
++text exports **(Q25)**. Performance: reads are unchanged because `qty_owned` is still materialised;
++the card ledger is one indexed lookup; the Storage section computes per-container totals in a single
++grouped query (the `listDecks` N+1 lesson). Writes touch two tables instead of one, transactionally.
++The backfill is one pass at boot, bounded by collection size, and runs once.
++
++## Risks and unanswered questions
++
++| Risk | Likelihood | Impact | Mitigation | Owner |
++|---|---|---|---|---|
++| The boot backfill is wrong, partial, or non-idempotent | Medium | **Critical - it runs before the app is usable, on every existing collection** | Marker written in the same transaction; closing assertions; shape-first fallback; multi-profile, empty-profile, wishlist-only and interrupted-pass tests; in-place upgrade is a release gate | Claude |
++| A caller wraps the core in the barrier from inside the queue and deadlocks | Medium | High - ordinary taps hang | The core acquires no coordination; an explicit self-deadlock test; tiering documented in ARCHITECTURE | Claude |
++| A profile appears without an Unfiled container | Medium | High - increases have no destination | Created in the same transaction as the profile row at every creation path; import validates or synthesises; backfill assertion | Claude |
++| Native FK enforcement unavailable at runtime | Low-medium | High | Enabled and verified at open, fail closed; boundary enforces regardless | Claude |
++| Container colour becomes a third dead column | Medium | Low | Chosen at creation rather than buried in an edit sheet, and rendered on every container row - `profiles.accent` and `owned_cards.notes` both died by being storable but never surfaced | Claude |
++| `canonicaliseBoot` re-parenting is wrong, or `RESTRICT` throws at boot | Medium | **Critical - the app fails to start** | Re-parent inside the existing boot transaction before deletes; merge test | Claude |
++| The global minus wall confuses a user who filed everything | Medium | Medium | It names the places and offers a one-tap route; only reachable for deliberately filed cards | Owner |
++| A writer added later bypasses the boundary and breaks the equality | Medium | High | The boundary is the only path that may write `qty_owned`; a source guard can assert no other module does | Claude |
++| Import accepts a schema-valid graph whose totals do not reconcile | Medium | High | Totals reconciliation is part of graph validation, not just row shape | Claude |
++
++**Unanswered, for the reviewer:** whether the reversal of derived-Unassigned is accepted - see the
++Self-Critique.
++
++## Self-Critique
++
++**The strongest case that this is wrong.** The model survived review, so the remaining doubt is not
++about the model. It is that r3 shipped a coordination design that would have hung every ownership
++tap the first time anyone touched a stepper - and I wrote "under `withExclusiveCollectionWrites`"
++having already read and quoted the module comment explaining that a queued write is admitted before
++its callback runs. I had the fact and did not apply it. The same is true of `CHECK (qty > 0)` versus
++wishlist-only rows: I wrote both constraints, in the same document, and did not cross them.
++
++**The historical version of this criticism**, kept because it is still the pattern: I reversed a
++design point the reviewer had blessed, one revision after he blessed it, on an argument I did not
++make myself - the owner did. That is exactly the pattern that produces churn: each revision looks locally
++better while the design oscillates. The honest defence is that the two revisions differ in kind
++rather than degree - revision 2 managed a gap, revision 3 removes it - but a reviewer would be
++right to ask why I designed the gap in the first place when the tester's own sentence ("allocate 1
++copy to my Beta binder") describes movement, not claiming. I had the evidence for this model in
++revision 1 and read it as a partition problem instead of a location problem.
++
++**What three review rounds have exposed.** Every finding has been the same species: I reason about a
++system from the parts I have read, and describe the rest. `renderSignature` on the sort work,
++`triageRepository` and `canonicaliseBoot` here. The one encouraging sign is that verifying findings
++at source keeps surfacing things the reviewer did not raise, which suggests the method works even
++where my initial coverage does not.
++
++**Hidden coupling, and the thing that scares me most.** The boot backfill runs on every existing
++collection, before the app is usable, before a profile is resolved, on data shapes produced by old
++builds. It shares that window with `canonicaliseBoot`, which is itself rewriting and merging the
++rows the backfill needs to read. The ordering between those two steps is load-bearing. It is now
++**settled**: canonicalisation first, backfill second, because on a first upgrade there are no
++allocations, so canonicalisation reduces the ledger to its final row identities before the backfill
++attaches places. Review confirmed the reasoning rather than my having to guess at it. What remains
++uncomfortable is not the order but the window: both run before the app is usable, on data shapes
++produced by builds I cannot inspect.
++
++**Simpler alternative I am no longer taking.** Revision 2's `needs_check` model was the stated
++fallback until review ruled the backfill risk finite and the r2 seam permanent. It is retired. The
++remaining simpler option is the one that has been available since revision 1 - surfacing the dead
++`owned_cards.notes` field - which fails the browse-by-container half of the request and which I
++would still rather name than pretend the choice is obvious.
++
++**Failure most likely to escape tests.** The **canonicalisation merge under the new model**: two
++owned rows for one card collapsing into one, each carrying a Unfiled allocation, whose quantities must
++sum rather than collide under the unique index - and whose summed total must still equal the merged
++`qty_owned`. That path runs at boot, on real data shapes produced by old builds, and no fixture in
++the repo naturally contains it.
++
++**On the colour column, against my own earlier argument.** I cut colour at Q11 as scope creep and
++used `owned_cards.notes` - stored since v11, written as `''`, read by nothing - as evidence that
++unrequested fields die. That evidence still stands and I am reversing anyway on the owner's ruling,
++so the argument has to be that colour is different in kind: it is the attribute by which a person
++identifies the physical object the container stands for. What makes that safe is not that the risk
++is absent but that the mitigation is structural - colour is chosen at creation and rendered on every
++container row, so it cannot quietly become storable-but-invisible, which is exactly how `notes`
++died. If it ships buried in an edit sheet, I was wrong.
++
++**Evidence that would change the decision.** If the tester files a collection once and never opens
++Storage again, this is a feature that demos better than it lives. Under this model the tell is
++different from revision 2's: Unfiled staying full means filing was too tedious; the global minus wall
++being hit repeatedly means removal-at-a-place is not discoverable.
++
++## Approval record
++
++- **Owner:** design agreed over a 30-question pass, decisions cited inline. Root-cause observation
++  that produced revision 3: *"our problem is that the cards exist in two places, the collection AND
++  the binders"*. Standing instruction: reuse before writing; anything new must be reusable. Formal
++  approval of revision 3 pending.
++- **Reviewer (Codex), r1:** Changes required - two blockers, four majors, one minor. All accepted;
++  six adopted as prescribed and carried into revision 3 unchanged (mutation boundary, structural
++  references, import graph validation, semantic round-trip, migration rebase, increment 5 split,
++  documentation classification).
++- **Reviewer (Codex), r2:** not issued - revision 3 superseded the ⚑ counterproposal by removing the
++  condition that made the question necessary.
++- **Reviewer (Codex), r3:** Changes required, **model reversal accepted** and r2 formally ruled out
++  as a fallback. All six findings accepted:
++  1. *Coordination deadlocks interactive writes* - the core now acquires no coordination; the
++     calling tier chooses it; self-deadlock, rapid-tap, stepper-versus-bulk and profile-switch tests
++     specified.
++  2. *Canonicalisation needs an identity-transfer plan* - the pure planner emits
++     `releasedId -> destinationRowId` with destination ids generated before SQL; transaction order
++     and closing assertions specified; the reviewer's boot-ordering ruling adopted.
++  3. *Exactly-one Unfiled across lifecycles* - established at boot, creation, duplication and both
++     import paths; allocations only for `qty_owned > 0`; marker written in the same transaction with
++     a shape-first fallback.
++  4. *Bulk and undo underspecified* - global Set/Adjust operate against Unfiled and reject the whole
++     atomic command with structured conflicts; undo reverses total and allocation under one guard.
++  5. *Native foreign keys must be established* - enabled and verified at open, failing closed;
++     exercised in the installed app.
++  6. *"Unrepresentable" overstated* - corrected to unreachable through sanctioned mutation paths,
++     backed by a source guard and in-transaction assertions.
++- **Reviewer (Codex), r4: APPROVED.** "The location-authoritative model is coherent, the coordination
++  split removes the self-deadlock, canonicalisation precedes backfill for the right reason, and
++  wishlist-only rows now satisfy the equality without fabricated allocations." Six binding
++  implementation clarifications issued and recorded in the design above; editorial residue cleaned
++  (duplicate native-FK risk, the obsolete reversal question, the settled boot-ordering claim, the
++  coordination table's profile-switch entry).
++- **Human architecture approval: GRANTED**, 2026-08-18, after the reviewer-feedback merge landed on
++  main: *"implement on branch, let's go homie!"*. Implementation proceeds on branch
++  `collection-storage`. The resulting migration and diff remain subject to the mandatory checkpoint
++  and a final Codex review before merge.
++- **Increment 1 COMPLETE**, on branch `collection-storage`. Device evidence, 2026-08-18: an
++  **in-place upgrade from the shipped predecessor** (build 276, schema v11, a real collection) to
++  build 277 (v12), followed by `check:smoke` reporting **8/8 routes rendered**. Because every new
++  guard fails closed, a successful boot IS the assertion: the v12 migration applied through the
++  native execSQL path; foreign keys were enabled and verified, or the database would have refused
++  to open; the backfill's in-transaction assertions held (`qty_owned = SUM(allocations)` for every
++  row, exactly one Unfiled per profile) or boot would have rolled back; and canonicalisation found
++  no allocation on a row holding no copies. Repo gates: `test:query` 1116/1116, `test:ui`,
++  `test:app`, `check:types/cycles/source/docs`, `build`.
++- Increments 2-6 (UI, bulk, docs) not started. The diff still requires the mandatory checkpoint and
++  a final Codex review before merge.
+diff --git a/package.json b/package.json
+index eb53b0c..1604614 100644
+--- a/package.json
++++ b/package.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "compendium",
+   "version": "1.1.0-alpha",
+-  "build": 276,
++  "build": 277,
+   "private": true,
+   "type": "module",
+   "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
+diff --git a/src/App.jsx b/src/App.jsx
+index b98e782..9456c87 100644
+--- a/src/App.jsx
++++ b/src/App.jsx
+@@ -8,6 +8,7 @@ import {
+ } from './store/profileRepository.js';
+ import { seedCatalogIfNeeded } from './store/catalog.js';
+ import { initArtCache } from './store/artCacheInstance.js';
++import { backfillStorage } from './store/storageBackfill.js';
+ import { canonicaliseLedger } from './store/canonicaliseBoot.js';
+ import { reconcileRestore } from './store/restoreReconcile.js';
+ import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
+@@ -174,6 +175,13 @@ export default function App() {
+         // must never render against a half-converted ledger. The transaction has already rolled
+         // back, so the user's v10 data is intact for the next attempt.
+         await canonicaliseLedger();
++        // AFTER canonicalisation, deliberately: it reshapes and merges the very rows this reads,
++        // so running first would allocate against rows about to be merged. Before initProfiles,
++        // because a profile created there gets its Unfiled container from createProfile, and a
++        // profile that already exists gets it from here. Same failure posture as the line above -
++        // a throw puts the app in its error state rather than letting Collection render against a
++        // ledger whose copies are not all in a place.
++        await backfillStorage();
+         const p = await initProfiles();
+         setProfile(p);
+         // Reconcile a live match that survived a process death. The former initializer
+diff --git a/src/store/bulkOwnedRepository.test.mjs b/src/store/bulkOwnedRepository.test.mjs
+index 76e52ba..62513ac 100644
+--- a/src/store/bulkOwnedRepository.test.mjs
++++ b/src/store/bulkOwnedRepository.test.mjs
+@@ -66,7 +66,7 @@ before(async () => {
+ });
+ 
+ beforeEach(async () => {
+-  sdb.run('DELETE FROM owned_cards;');
++  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+   sdb.run('DELETE FROM profiles;');
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at,updated_at) VALUES('P','p',10,'t','t');");
+   __setActiveIdForTests('P');
+diff --git a/src/store/canonicalise.js b/src/store/canonicalise.js
+index 81d25a3..2ae57dd 100644
+--- a/src/store/canonicalise.js
++++ b/src/store/canonicalise.js
+@@ -105,18 +105,29 @@ export function planCard(rows, setCodes) {
+   // Query order is not a semantic input.
+   const ordered = source.slice().sort((a, b) => String(a.id ?? '').localeCompare(String(b.id ?? '')));
+ 
++  // Where each source row's OWNED copies ended up. Storage allocations hang off owned rows, so
++  // when a row is released its allocations must follow its COPIES - and only its copies. A want
++  // carries no allocations, which is why the wanted destination is deliberately not recorded.
++  const ownedDest = new Map();   // source row id -> destination variant_slug
++
+   for (const row of ordered) {
+     const slug = row.variant_slug ?? '';
+     const owned = row.qty_owned || 0;
+     const wanted = row.qty_wanted || 0;
+ 
+-    if (!isLegacyKey(slug)) { put(slug, row); continue; }   // already categorised - untouched
++    if (!isLegacyKey(slug)) {
++      if (owned > 0 && row.id != null) ownedDest.set(row.id, slug);
++      put(slug, row); continue;                             // already categorised - untouched
++    }
+ 
+     // ONE v10 row can become TWO v11 rows. An '' row holding both a want and owned copies
+     // splits: the copies keep an unknown set, while the want may be resolvable to a real one.
+     // Splitting is why quantities are carried across explicitly instead of copying the row.
+     const ownedKey = slug === LEGACY_FOIL ? UNCATEGORISED_FOIL : UNCATEGORISED;
+-    if (owned > 0) put(ownedKey, { ...row, qty_owned: owned, qty_wanted: 0 });
++    if (owned > 0) {
++      if (row.id != null) ownedDest.set(row.id, ownedKey);
++      put(ownedKey, { ...row, qty_owned: owned, qty_wanted: 0 });
++    }
+ 
+     // EVERY positive legacy want is preserved, whichever legacy row carried it.
+     //
+@@ -152,7 +163,16 @@ export function planCard(rows, setCodes) {
+     .map((r) => r.id)
+     .filter((id) => id != null && !retained.has(id));
+ 
+-  return { rows: planned, releasedIds };
++  // The ownership identity map: for every RELEASED row that carried copies, the destination key
++  // that absorbed them. Only positive-owned rows appear - a released wishlist-only row has no
++  // destination here and legitimately needs none, because a want holds no allocations. An
++  // allocation found on such a row is corruption, and the caller must abort rather than re-home it
++  // by guesswork.
++  const ownedIdentity = releasedIds
++    .filter((id) => ownedDest.has(id))
++    .map((id) => ({ releasedId: id, variant_slug: ownedDest.get(id) }));
++
++  return { rows: planned, releasedIds, ownedIdentity };
+ }
+ 
+ /**
+@@ -187,14 +207,20 @@ export function planLedger(rows, setsOf) {
+ 
+   const out = [];
+   const released = [];
++  const ownedIdentity = [];
+   let touched = 0;
+   for (const group of groups) {
+     const plan = planCard(group, setsOf ? setsOf(group[0].card_id) : []);
+     if (changed(group, plan.rows)) touched++;
+     out.push(...plan.rows);
+     released.push(...plan.releasedIds);
++    // Carried up with the card and profile, because a destination is only identified by the whole
++    // key - the adapter has to find one row among every card in every profile.
++    for (const e of plan.ownedIdentity) {
++      ownedIdentity.push({ ...e, card_id: group[0].card_id, profile_id: group[0].profile_id });
++    }
+   }
+-  return { rows: out, releasedIds: released, touched };
++  return { rows: out, releasedIds: released, ownedIdentity, touched };
+ }
+ 
+ // Did this group actually change?
+diff --git a/src/store/canonicaliseBoot.js b/src/store/canonicaliseBoot.js
+index 828ac4f..ae3d3de 100644
+--- a/src/store/canonicaliseBoot.js
++++ b/src/store/canonicaliseBoot.js
+@@ -82,11 +82,65 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
+     const stamp = now();
+     const statements = [];
+ 
++    // IDS FIRST, before a single statement is composed. Storage allocations hang off owned-row
++    // ids, so re-parenting them across a merge needs the destination id to already exist as a
++    // value - not as something the INSERT will decide later.
++    for (const r of plan.rows) if (r.needsId && !r.id) r.id = uuid();
++
+     // ORDER MATTERS. Deletes run before inserts so a new row can take a key a released row is
+     // vacating without tripping the unique index. Retained rows are updated in place: their id
+     // is the one that already sat at that key, so an UPDATE is correct and an INSERT would
+     // collide.
++    // STORAGE: allocations must follow the COPIES across a merge, or a user's filing is destroyed
++    // by a boot-time reshape they never asked for.
++    //
++    // The prescribed order was insert destinations, re-parent, then delete. It cannot be used here:
++    // deletes must precede inserts so a new row can take a key a released row is vacating without
++    // tripping the unique index, and allocations cannot outlive their owned row under RESTRICT. So
++    // the allocations are READ into JS first and re-inserted against their destinations afterwards,
++    // which reaches the same end state - nothing is stranded, and nothing is inferred.
++    const reparented = [];
+     if (plan.releasedIds.length) {
++      const destOf = new Map();
++      for (const e of plan.ownedIdentity || []) {
++        const dest = plan.rows.find((r) => r.profile_id === e.profile_id && r.card_id === e.card_id && r.variant_slug === e.variant_slug);
++        if (dest?.id) destOf.set(e.releasedId, dest.id);
++      }
++      const held = [];
++      for (let i = 0; i < plan.releasedIds.length; i += 400) {
++        const chunk = plan.releasedIds.slice(i, i + 400);
++        held.push(...await query(
++          `SELECT id, profile_id, container_id, owned_card_id, qty, created_at FROM storage_allocations WHERE owned_card_id IN (${chunk.map(() => '?').join(',')});`,
++          chunk,
++        ));
++      }
++      // A released row with allocations but no owned destination is corruption, not a case to
++      // improvise around: it means copies were filed against a row that recorded no copies. Abort
++      // rather than re-home them by guesswork - the transaction rolls back and no marker is written.
++      const merged = new Map();
++      for (const a of held) {
++        const destId = destOf.get(a.owned_card_id);
++        if (!destId) {
++          throw new Error(`canonicaliseBoot: allocation ${a.id} sits on released row ${a.owned_card_id}, which holds no copies - refusing to guess where it belongs.`);
++        }
++        const key = `${a.container_id}|${destId}`;
++        const prev = merged.get(key);
++        // A merge can bring two allocations for ONE container onto one destination row. They sum
++        // under the unique index rather than colliding, and the earliest created_at is kept.
++        merged.set(key, prev
++          ? { ...prev, qty: prev.qty + (a.qty || 0), created_at: prev.created_at < a.created_at ? prev.created_at : a.created_at }
++          : { profile_id: a.profile_id, container_id: a.container_id, owned_card_id: destId, qty: a.qty || 0, created_at: a.created_at });
++      }
++      for (const m of merged.values()) reparented.push(m);
++
++      // Allocations go first, then the rows they referenced - RESTRICT requires that order.
++      for (let i = 0; i < plan.releasedIds.length; i += 400) {
++        const chunk = plan.releasedIds.slice(i, i + 400);
++        statements.push([
++          `DELETE FROM storage_allocations WHERE owned_card_id IN (${chunk.map(() => '?').join(',')});`,
++          chunk,
++        ]);
++      }
+       // Chunked: SQLite has a host-parameter limit (999 by default) and a large collection can
+       // release more rows than that in one statement.
+       for (let i = 0; i < plan.releasedIds.length; i += 400) {
+@@ -105,7 +159,7 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
+         inserted++;
+         statements.push([
+           `INSERT INTO owned_cards(${OWNED_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?);`,
+-          [uuid(), r.profile_id, r.card_id, r.variant_slug, r.qty_owned || 0, r.qty_wanted || 0,
++          [r.id, r.profile_id, r.card_id, r.variant_slug, r.qty_owned || 0, r.qty_wanted || 0,
+             r.notes || '', r.created_at || stamp, r.updated_at || stamp],
+         ]);
+       } else {
+@@ -126,6 +180,17 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
+       [CANONICAL_MARKER_KEY, String(CANONICAL_VERSION)],
+     ]);
+ 
++    // The re-homed allocations, after their destination rows exist. Copies that were filed before
++    // the reshape are filed after it, in the same containers.
++    for (const m of reparented) {
++      statements.push([
++        `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
++         VALUES(?,?,?,?,?,?,?)
++         ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
++        [uuid(), m.profile_id, m.container_id, m.owned_card_id, m.qty, m.created_at || stamp, stamp],
++      ]);
++    }
++
+     // THE ASSERTION, inside the transaction so a violation rolls the whole thing back.
+     //
+     // SQLite has no bare "fail if" statement outside a trigger, so this deliberately provokes a
+diff --git a/src/store/canonicaliseBoot.test.mjs b/src/store/canonicaliseBoot.test.mjs
+index 5f788d7..1d9e75f 100644
+--- a/src/store/canonicaliseBoot.test.mjs
++++ b/src/store/canonicaliseBoot.test.mjs
+@@ -10,7 +10,7 @@ import { createCanonicaliser, CANONICAL_MARKER_KEY, CANONICAL_VERSION } from './
+ 
+ // A fake database that records what it was asked to do. `tx` is all-or-nothing by definition
+ // here: it either records every statement or, on a forced failure, records none.
+-function fakeDb({ owned = [], cards = [], marker = null, failTx = false } = {}) {
++function fakeDb({ owned = [], cards = [], allocations = [], marker = null, failTx = false } = {}) {
+   const committed = [];
+   let txCalls = 0;
+   return {
+@@ -22,6 +22,7 @@ function fakeDb({ owned = [], cards = [], marker = null, failTx = false } = {})
+       if (sql.includes('COUNT(*)')) {
+         return [{ n: owned.filter((r) => r.variant_slug === '' || r.variant_slug === 'foil').length }];
+       }
++      if (sql.includes('FROM storage_allocations')) return allocations;
+       if (sql.includes('FROM owned_cards')) return owned;
+       if (sql.includes('FROM cards')) return cards;
+       return [];
+@@ -233,6 +234,8 @@ test('a surviving legacy key aborts the real transaction and leaves no marker',
+           CREATE TABLE owned_cards(id TEXT PRIMARY KEY, variant_slug TEXT NOT NULL DEFAULT '');`);
+ 
+   const attempt = (slugs) => {
++    // This fixture builds a two-table schema by hand, deliberately - it is testing the guard
++    // itself, not the app's schema. No storage tables exist here, so none to clear.
+     db.run('DELETE FROM _meta; DELETE FROM owned_cards;');
+     slugs.forEach((s, i) => db.run('INSERT INTO owned_cards(id,variant_slug) VALUES(?,?);', [`r${i}`, s]));
+     try {
+@@ -263,3 +266,55 @@ test('a surviving legacy key aborts the real transaction and leaves no marker',
+ 
+   db.close();
+ });
++
++/* ---------------- Storage: filing survives a boot-time merge ---------------- */
++
++// The failure this feature was most likely to ship, named in the proposal's Self-Critique: two
++// owned rows for one card collapsing into one, each carrying an allocation to the SAME container,
++// whose quantities must SUM under the unique index rather than collide - and whose sum must still
++// equal the merged qty_owned. It runs at boot, on data shapes produced by old builds, and no
++// fixture in the repo naturally contains it.
++test('STORAGE: a merge carries allocations to the destination row, summing per container', async () => {
++  const db = fakeDb({
++    cards: [card('c1', ['001'])],
++    // Two legacy rows for one card: both hold copies, so both land on the same uncategorised key
++    // and one of them is released.
++    owned: [
++      { id: 'r1', profile_id: 'p1', card_id: 'c1', variant_slug: '', qty_owned: 2, qty_wanted: 0, notes: '', created_at: 'a', updated_at: 'a' },
++      { id: 'r2', profile_id: 'p1', card_id: 'c1', variant_slug: 'foil', qty_owned: 0, qty_wanted: 0, notes: '', created_at: 'a', updated_at: 'a' },
++    ],
++    allocations: [
++      { id: 'a1', profile_id: 'p1', container_id: 'binder', owned_card_id: 'r1', qty: 1, created_at: 'a' },
++      { id: 'a2', profile_id: 'p1', container_id: 'unfiled', owned_card_id: 'r1', qty: 1, created_at: 'a' },
++    ],
++  });
++  await run(db);
++
++  const sql = db.committed.map(([q]) => q).join(' ');
++  const allocDeleteAt = db.committed.findIndex(([q]) => q.includes('DELETE FROM storage_allocations'));
++  const ownedDeleteAt = db.committed.findIndex(([q]) => q.includes('DELETE FROM owned_cards'));
++  assert.ok(allocDeleteAt >= 0, 'allocations on released rows are cleared');
++  assert.ok(allocDeleteAt < ownedDeleteAt, 'and cleared BEFORE the rows they reference - RESTRICT requires it');
++
++  const reinserts = db.committed.filter(([q]) => q.includes('INSERT INTO storage_allocations'));
++  assert.equal(reinserts.length, 2, 'both places are re-homed, not just the first');
++  assert.ok(sql.includes('ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty'),
++    'two allocations landing on one container SUM rather than collide');
++  // Every re-homed allocation names a real destination, never a released row.
++  for (const [, params] of reinserts) assert.notEqual(params[3], 'r1');
++  const totalQty = reinserts.reduce((n, [, p]) => n + p[4], 0);
++  assert.equal(totalQty, 2, 'the copies are conserved: qty_owned still equals the sum of its places');
++});
++
++test('STORAGE: an allocation on a released row that held no copies ABORTS rather than guessing', async () => {
++  const db = fakeDb({
++    cards: [card('c1', ['001'])],
++    // A wishlist-only legacy row: it holds a want and no copies, so it has no owned destination.
++    owned: [{ id: 'r1', profile_id: 'p1', card_id: 'c1', variant_slug: '', qty_owned: 0, qty_wanted: 3, notes: '', created_at: 'a', updated_at: 'a' }],
++    // ...yet something filed copies against it. That is corruption, and re-homing it would be an
++    // invention. Fail closed: the transaction never runs and no marker is written.
++    allocations: [{ id: 'a1', profile_id: 'p1', container_id: 'binder', owned_card_id: 'r1', qty: 1, created_at: 'a' }],
++  });
++  await assert.rejects(run(db), /refusing to guess/);
++  assert.equal(db.txCalls, 0, 'nothing was committed');
++});
+diff --git a/src/store/collectionWritesProfile.test.mjs b/src/store/collectionWritesProfile.test.mjs
+index 80b2d79..729e740 100644
+--- a/src/store/collectionWritesProfile.test.mjs
++++ b/src/store/collectionWritesProfile.test.mjs
+@@ -62,7 +62,7 @@ before(async () => {
+ 
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
+ 
+ test('a write bound to A commits under A even if the active profile flips to B mid-flight', async () => {
+   __setActiveIdForTests('A');
+diff --git a/src/store/db.js b/src/store/db.js
+index 3e22f36..929a070 100644
+--- a/src/store/db.js
++++ b/src/store/db.js
+@@ -393,6 +393,25 @@ async function nativeBackend() {
+   const db = isConn ? await sqlite.retrieveConnection(DB, false)
+                     : await sqlite.createConnection(DB, false, 'no-encryption', SCHEMA_VERSION, false);
+   await db.open();
++
++  // FOREIGN KEYS, ESTABLISHED AND VERIFIED - not observed and hoped for.
++  //
++  // A PRAGMA binds a CONNECTION, not a database file. The web backend sets this explicitly when it
++  // opens sql.js; the native connection previously set nothing and inherited whatever the plugin
++  // defaulted to. That matters now: Storage's composite profile-consistent references and its
++  // ON DELETE RESTRICT are structural guarantees, and with foreign keys off they are decoration -
++  // present in the schema, enforced only on the web, silently absent in the shipping app. That is
++  // precisely the class of native/web divergence this codebase has been bitten by before.
++  //
++  // So: turn it on, read it back, and FAIL CLOSED if the runtime will not provide it. A database
++  // that cannot enforce its own integrity is not one to write a user's collection into.
++  await db.execute('PRAGMA foreign_keys = ON;', false);
++  const fkRows = (await db.query('PRAGMA foreign_keys;')).values || [];
++  const fkOn = Number(fkRows[0]?.foreign_keys ?? 0) === 1;
++  if (!fkOn) {
++    throw new Error('SQLite refused to enable foreign keys on this device; refusing to open the database without referential integrity.');
++  }
++
+   return {
+     async query(sql, params) { return (await db.query(sql, params)).values || []; },
+     async run(sql, params) { return db.run(sql, params, false); },
+diff --git a/src/store/importBoundary.js b/src/store/importBoundary.js
+index 69aaef2..4ed20dc 100644
+--- a/src/store/importBoundary.js
++++ b/src/store/importBoundary.js
+@@ -15,8 +15,18 @@
+ import { planLedger } from './canonicalise.js';
+ import { isLegacyPrinting } from './printings.js';
+ 
+-/** The newest bundle this build understands. */
+-export const MAX_SUPPORTED_SCHEMA = 11;
++/**
++ * The newest bundle this build understands.
++ *
++ * MUST move in lockstep with SCHEMA_VERSION, and it is hand-maintained, so it is asserted by a test
++ * rather than trusted. Bumping the schema without bumping this makes the build refuse its OWN
++ * exports as `future` - which surfaces as several dozen unrelated-looking backup and restore
++ * failures, not as anything that names this line.
++ *
++ * The lockstep carries an obligation, not just a number: raising it CLAIMS that profileTransfer
++ * exports and imports everything the new version added. Raise it only together with that wiring.
++ */
++export const MAX_SUPPORTED_SCHEMA = 12;
+ /** Bundles predate the stamp, so a missing version means the oldest shape we ever wrote. */
+ export const ASSUMED_SCHEMA = 10;
+ 
+@@ -28,6 +38,10 @@ export const ITERATED_COLLECTIONS = [
+   'decks', 'deck_entries', 'deck_history', 'saved', 'notes', 'collections', 'collection_items',
+   'owned_cards', 'card_lists', 'card_list_entries', 'links', 'matches', 'match_log_entries',
+   'dashboard_blocks', 'dashboard_layouts',
++  // Storage (v12). Listed here because this is the contract a test asserts against every
++  // `for (... of bundle.X || [])` in profileTransfer - an omission here is not a missing check,
++  // it is an import that throws partway through, after the profile already exists.
++  'storage_containers', 'storage_allocations',
+ ];
+ 
+ /** Thrown for every rejection, with a `code` so callers can tell the cases apart. */
+diff --git a/src/store/importBoundary.test.mjs b/src/store/importBoundary.test.mjs
+index 0d38cfd..d0027de 100644
+--- a/src/store/importBoundary.test.mjs
++++ b/src/store/importBoundary.test.mjs
+@@ -71,7 +71,10 @@ test('3. a bundle with NO schemaVersion is treated as v10, not rejected', () =>
+ /* ---------------- 4. a future bundle is refused ---------------- */
+ 
+ test('4. a bundle from a NEWER build is rejected, and nothing is created', () => {
+-  const b = bundleOf({ schemaVersion: 12, owned_cards: [owned({ qty_owned: 1 })] });
++  // Derived, not hardcoded: the intent is "newer than THIS build", and a literal goes stale the
++  // moment the schema advances - at which point the test starts asserting that a bundle we DO
++  // support is rejected.
++  const b = bundleOf({ schemaVersion: MAX_SUPPORTED_SCHEMA + 1, owned_cards: [owned({ qty_owned: 1 })] });
+   assert.throws(() => prepareBundle(b, sets({})), (e) => {
+     assert.ok(e instanceof ImportRejected);
+     assert.equal(e.code, 'future');
+@@ -210,3 +213,17 @@ test('schemaVersion must be an INTEGER, not merely a positive number', () => {
+     );
+   }
+ });
++
++/* ---------------- the lockstep that 54 failures once announced ---------------- */
++
++test('MAX_SUPPORTED_SCHEMA tracks SCHEMA_VERSION exactly', async () => {
++  const { SCHEMA_VERSION } = await import('./schema.js');
++  // A build cannot understand a bundle newer than its own schema, and it must not refuse its own
++  // exports either - so these are one number in two files. Bumping the schema alone makes the app
++  // reject every backup it writes, surfacing as dozens of unrelated-looking backup/restore
++  // failures that name neither constant.
++  //
++  // Raising this asserts that profileTransfer round-trips everything the new version added. If
++  // this test fails, the fix is to finish the transfer wiring, not to edit the number.
++  assert.equal(MAX_SUPPORTED_SCHEMA, SCHEMA_VERSION);
++});
+diff --git a/src/store/importProfileBoundary.test.mjs b/src/store/importProfileBoundary.test.mjs
+index 830d868..f8be603 100644
+--- a/src/store/importProfileBoundary.test.mjs
++++ b/src/store/importProfileBoundary.test.mjs
+@@ -50,7 +50,7 @@ before(async () => {
+ });
+ 
+ beforeEach(() => {
+-  sdb.run('DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
++  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
+   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Home', 10, '2026-01-01']);
+   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Single','[{\"code\":\"004\"}]');");
+ });
+diff --git a/src/store/ownedImportRepository.test.mjs b/src/store/ownedImportRepository.test.mjs
+index f1b5b0f..0088a9c 100644
+--- a/src/store/ownedImportRepository.test.mjs
++++ b/src/store/ownedImportRepository.test.mjs
+@@ -94,7 +94,7 @@ before(async () => {
+   __setActiveIdForTests(PID);
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); notifyCount = 0; });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); notifyCount = 0; });
+ 
+ /* ---------------- planOwnedItemBatch (pure) ---------------- */
+ 
+diff --git a/src/store/ownedRepository.js b/src/store/ownedRepository.js
+index c122a69..6e3ce36 100644
+--- a/src/store/ownedRepository.js
++++ b/src/store/ownedRepository.js
+@@ -20,6 +20,7 @@ import {
+   parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL, SQL_IS_UNCATEGORISED,
+ } from './printings.js';
+ import { activeProfileId } from './profileRepository.js';
++import { clearAllocationsStatements } from './storageRepository.js';
+ import { uuid, nowIso } from './ids.js';
+ import { compareRequirements } from './compareEngine.js';
+ import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
+@@ -101,7 +102,7 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
+   const o = Math.max(0, owned != null ? owned : (cur?.qty_owned || 0));
+   const w = Math.max(0, wanted != null ? wanted : (cur?.qty_wanted || 0));
+   if (o === 0 && w === 0) {
+-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
++    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+   } else if (cur) {
+     await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]);
+   } else {
+@@ -192,7 +193,7 @@ async function writeQtyAt(cardId, slug, wanted, pid) {
+   const w = Math.max(0, wanted | 0);
+   const o = cur?.qty_owned || 0;
+   if (w === 0 && o === 0) {
+-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
++    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+   } else if (cur) {
+     // Rewrites the key too, so editing a legacy row converts it rather than leaving a twin.
+     await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, w, now, cur.id]);
+@@ -263,7 +264,7 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
+   );
+   const cur = found.find((r) => r.variant_slug === UNCATEGORISED_FOIL) || found[0];
+   if (q === 0) {
+-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
++    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+   } else if (cur) {
+     await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]);
+   } else {
+@@ -424,7 +425,7 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
+   const now = nowIso();
+   const q = Math.max(0, qty | 0);
+   const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
+-  if (q === 0) { if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]); }
++  if (q === 0) { if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]); }
+   else if (cur) await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
+   else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
+   bump();
+@@ -530,7 +531,7 @@ async function writeWantedRow(cardId, set, foil, qty, pid) {
+   const cur = await resolveItemRow(cardId, set, foil, pid);
+   const o = cur?.qty_owned || 0;
+   if (qty === 0 && o === 0) {
+-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
++    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+   } else if (cur) {
+     await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, qty, now, cur.id]);
+   } else {
+diff --git a/src/store/ownedRepository.test.mjs b/src/store/ownedRepository.test.mjs
+index b5cff45..13f8619 100644
+--- a/src/store/ownedRepository.test.mjs
++++ b/src/store/ownedRepository.test.mjs
+@@ -33,7 +33,7 @@ before(async () => {
+   __setActiveIdForTests(PID);
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM cards;'); });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); sdb.run('DELETE FROM cards;'); });
+ 
+ let uid = 0;
+ const own = (cardId, slug, owned, wanted = 0) => sdb.run(
+diff --git a/src/store/persistedState.js b/src/store/persistedState.js
+index 2641152..90bdc3d 100644
+--- a/src/store/persistedState.js
++++ b/src/store/persistedState.js
+@@ -58,6 +58,10 @@ export const PERSISTED_STATE = Object.freeze([
+     namespace: 'owned_cards_canonical_version', kind: 'key', store: '_meta', owner: 'device', disposition: 'preserve',
+     reason: 'Ledger canonicalisation marker; restored rows arrive canonical and the boot check is shape-first, so preserving cannot strand legacy rows.',
+   },
++  {
++    namespace: 'storage_backfill_version', kind: 'key', store: '_meta', owner: 'device', disposition: 'preserve',
++    reason: 'Storage backfill marker; a restore writes allocations for every owned row, and the boot check is shape-first (it re-runs whenever any owned copy has no place), so preserving cannot strand copies outside a container.',
++  },
+ 
+   /* -------- catalog_meta - device/catalog key-value -------- */
+   {
+diff --git a/src/store/profileRepository.js b/src/store/profileRepository.js
+index 7c68e0a..3a8bdf9 100644
+--- a/src/store/profileRepository.js
++++ b/src/store/profileRepository.js
+@@ -7,6 +7,7 @@ import { query, run, tx, persist } from './db.js';
+ import { SCHEMA_VERSION } from './schema.js';
+ import { uuid, nowIso } from './ids.js';
+ import { withProfileSwitchWriteBarrier } from './collectionWrites.js';
++import { createUnfiledStatements } from './storageRepository.js';
+ 
+ const ACTIVE_KEY = 'activeProfileId';
+ 
+@@ -83,13 +84,19 @@ export async function getActiveProfile() {
+ export async function createProfile(name, { accent = 'gold', avatar = null, isDefault = false } = {}) {
+   const id = uuid();
+   const ts = nowIso();
+-  await run(
+-    `INSERT INTO profiles(id,name,avatar,accent,system,schema_version,is_default,created_at,updated_at)
+-     VALUES(?,?,?,?,?,?,?,?,?);`,
+-    [id, name, avatar ? JSON.stringify(avatar) : null, accent, 'sorcery', SCHEMA_VERSION, isDefault ? 1 : 0, ts, ts]
+-  );
+-  // Seed this profile's settings row with defaults.
+-  await run('INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [id]);
++  // ONE transaction, because the Unfiled container is not optional furniture: every owned copy
++  // must be in exactly one place, so a profile without it has nowhere to put its first card. The
++  // partial unique index guarantees AT MOST one; creating it here - and at every other path a
++  // profile can come into existence - is what guarantees AT LEAST one. A follow-up write could
++  // fail and leave a profile that cannot accept a card.
++  await tx([
++    [`INSERT INTO profiles(id,name,avatar,accent,system,schema_version,is_default,created_at,updated_at)
++      VALUES(?,?,?,?,?,?,?,?,?);`,
++      [id, name, avatar ? JSON.stringify(avatar) : null, accent, 'sorcery', SCHEMA_VERSION, isDefault ? 1 : 0, ts, ts]],
++    // Seed this profile's settings row with defaults.
++    ['INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [id]],
++    ...createUnfiledStatements(id, uuid(), ts),
++  ]);
+   return { id, name, accent, created_at: ts };
+ }
+ 
+@@ -155,6 +162,7 @@ export async function deleteProfileTransferringPrimary(id, newPrimaryId) {
+   await tx([
+     ['UPDATE profiles SET is_default=0;'],
+     ['UPDATE profiles SET is_default=1 WHERE id=?;', [newPrimaryId]],
++    ['DELETE FROM storage_allocations WHERE profile_id=?;', [id]],
+     ['DELETE FROM profiles WHERE id=?;', [id]],   // ON DELETE CASCADE clears data
+   ]);
+   await persist();
+@@ -170,7 +178,16 @@ export async function deleteProfile(id) {
+   const profiles = await listProfiles();
+   if (profiles.length <= 1) throw new Error('Cannot delete the only profile.');
+   if (profiles.find((p) => p.id === id)?.is_default) throw new Error('The default profile cannot be deleted.');
+-  await run('DELETE FROM profiles WHERE id=?;', [id]); // ON DELETE CASCADE clears data
++  // Allocations first, THEN the profile. Deleting the profile cascades to owned_cards and to
++  // storage_containers independently, and allocations hold a RESTRICT reference to owned rows - so
++  // whether the delete succeeds depends on which cascade SQLite happens to process first. It works
++  // today on both backends, and "works because of an ordering nobody promised" is exactly the shape
++  // of the native/web divergences this repo has been bitten by. Making it explicit costs one
++  // statement and removes the dependency entirely.
++  await tx([
++    ['DELETE FROM storage_allocations WHERE profile_id=?;', [id]],
++    ['DELETE FROM profiles WHERE id=?;', [id]],   // ON DELETE CASCADE clears the rest
++  ]);
+   await persist();
+   if (activeId === id) {
+     const next = (await listProfiles())[0];
+diff --git a/src/store/profileRoundTrip.test.mjs b/src/store/profileRoundTrip.test.mjs
+index 2c34803..478fcb4 100644
+--- a/src/store/profileRoundTrip.test.mjs
++++ b/src/store/profileRoundTrip.test.mjs
+@@ -90,6 +90,15 @@ const SEEDERS = {
+     ['cl-1', pid, 'wanted', 'Sentinel List', 'list description sentinel', 5, TS, TS]],
+   card_list_entries: () => ['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);',
+     ['cle-1', 'cl-1', 'sentinel_card', 6, 'sentinel_slug', TS]],
++  // Storage (v12). Two containers deliberately: the system Unfiled place every profile has, and a
++  // user binder holding part of the sentinel's 4 copies - so the round trip has to preserve WHICH
++  // container held what, not merely that some allocation existed.
++  storage_containers: (pid) => ['INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?),(?,?,?,?,?,?,?,?,?,?);',
++    ['sc-unfiled', pid, 'unfiled', 'Unfiled', '', 'gold', -1, 1, TS, TS,
++     'sc-1', pid, 'binder', 'Sentinel Binder', 'binder description sentinel', 'ruby', 3, 0, TS, TS]],
++  storage_allocations: (pid) => ['INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?),(?,?,?,?,?,?,?);',
++    ['sa-1', pid, 'sc-1', 'oc-1', 1, TS, TS,
++     'sa-2', pid, 'sc-unfiled', 'oc-1', 3, TS, TS]],
+   links: (pid) => ['INSERT INTO links(id,profile_id,kind,a_type,a_id,b_type,b_id,description,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
+     ['lk-1', pid, 'card_card', 'card', 'sentinel_card', 'card', 'sentinel_card_2', 'link description sentinel', TS, TS]],
+   matches: (pid) => ['INSERT INTO matches(id,profile_id,played_at,mode,player_avatar,opponent_name,opponent_avatar,player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);',
+@@ -127,6 +136,14 @@ const TRANSFORMED = {
+   decks: ['wins', 'losses'],
+   // accent_metal is the retired counter-skin picker: deliberately not restored (profileTransfer.js:177-180).
+   settings: ['accent_metal'],
++  // Storage: an allocation's two parents are both re-keyed, so it follows them. `qty` is here for a
++  // subtler reason worth stating: this sentinel's owned row is LEGACY (variant_slug ''), so
++  // normaliseBundle canonicalises the ledger and strips owned-row ids - which leaves the bundle's
++  // allocations unmappable, and they collapse into Unfiled. That is the intended fallback: the
++  // COPIES are conserved and the equality holds, only the filing is lost, and losing filing beats
++  // refusing someone's backup. It cannot arise in production, because a v12 build canonicalises at
++  // boot before it can export. The conservation itself is asserted by its own test below.
++  storage_allocations: ['container_id', 'owned_card_id', 'qty'],
+ };
+ 
+ /**
+@@ -180,7 +197,13 @@ beforeEach(() => {
+   // Parents (profile-scoped) before children (FK to a parent): sqlite_master returns tables
+   // alphabetically, which would insert deck_entries before decks and trip the FK constraint.
+   const owned = profileOwnedTables();
+-  const isDirect = (t) => columnsOf(t).includes('profile_id');
++  // A table carrying profile_id is normally a parent. storage_allocations carries one AND has a
++  // foreign key to two other profile-owned tables (its container and its owned row), so the
++  // heuristic alone would seed it first - alphabetically it precedes storage_containers - and trip
++  // the constraint. Named explicitly rather than silently reordered, because the next such table
++  // will need the same declaration.
++  const CHILD_OF_PROFILE_OWNED = new Set(['storage_allocations']);
++  const isDirect = (t) => columnsOf(t).includes('profile_id') && !CHILD_OF_PROFILE_OWNED.has(t);
+   for (const t of [...owned.filter(isDirect), ...owned.filter((t2) => !isDirect(t2))]) {
+     const seed = SEEDERS[t];
+     if (!seed) continue;             // reported by the first test, not thrown here
+@@ -391,3 +414,26 @@ test('duplicateProfile twice does not produce two profiles called "X (copy)"', a
+   assert.equal(names.length, 2);
+   assert.equal(new Set(names).size, 2, `duplicate copy names: ${names.join(' | ')}`);
+ });
++
++/* ---------------- Storage: the equality survives a restore ---------------- */
++
++test('STORAGE: every restored owned copy is in exactly one place, and the profile has one Unfiled', async () => {
++  const bundle = await exportProfile(SRC);
++  const pid = await importProfile(bundle, { name: 'Restored' });
++  // The equality this whole feature rests on: qty_owned IS the sum of that row's allocations.
++  const mismatched = rows(`
++    SELECT o.id, o.qty_owned, COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
++      FROM owned_cards o WHERE o.profile_id = ?;`, [pid])
++    .filter((r) => Number(r.qty_owned) !== Number(r.placed));
++  assert.deepEqual(mismatched, [], 'a copy is never nowhere, and never in two places');
++
++  const systemRows = rows('SELECT id, kind, name FROM storage_containers WHERE profile_id=? AND is_system=1;', [pid]);
++  assert.equal(systemRows.length, 1, 'exactly one system container');
++  assert.equal(systemRows[0].kind, 'unfiled');
++  assert.equal(systemRows[0].name, 'Unfiled');
++
++  // No allocation may be zero or negative - CHECK enforces it, but a wishlist-only row must simply
++  // have NO allocation rather than a zero one, which is the distinction that would fail boot.
++  const bad = rows('SELECT id FROM storage_allocations WHERE profile_id=? AND qty <= 0;', [pid]);
++  assert.deepEqual(bad, [], 'no zero or negative allocations');
++});
+diff --git a/src/store/profileTransfer.js b/src/store/profileTransfer.js
+index 8fe9dcc..6aec78c 100644
+--- a/src/store/profileTransfer.js
++++ b/src/store/profileTransfer.js
+@@ -10,6 +10,7 @@ import { uuid, nowIso } from './ids.js';
+ import { normalizeDurationSec } from './matchStats.js';
+ import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
+ import { safeHref } from '../util.js';
++import { SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR, isContainerColour, isUserContainerKind } from './storageVocabulary.js';
+ 
+ const inClause = (ids) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
+ 
+@@ -61,6 +62,7 @@ export async function buildProfileUnit(profileId) {
+   const collections = await query('SELECT * FROM collections WHERE profile_id=?;', [profileId]);
+   const matches = await query('SELECT * FROM matches WHERE profile_id=?;', [profileId]);
+   const cardLists = await query('SELECT * FROM card_lists WHERE profile_id=?;', [profileId]);
++  const containers = await query('SELECT * FROM storage_containers WHERE profile_id=?;', [profileId]);
+   const deckIds = decks.map((d) => d.id);
+   const colIds = collections.map((c) => c.id);
+   const matchIds = matches.map((m) => m.id);
+@@ -87,6 +89,11 @@ export async function buildProfileUnit(profileId) {
+     owned_cards: await query('SELECT * FROM owned_cards WHERE profile_id=?;', [profileId]),
+     card_lists: cardLists,
+     card_list_entries: await query(`SELECT * FROM card_list_entries WHERE list_id IN ${inClause(listIds)};`, listIds),
++    // Storage (v12): where each owned copy physically lives. Allocations ARE the ownership, so an
++    // export that carried owned_cards without these would restore a collection whose every copy had
++    // silently moved to Unfiled - the filing lost with no error anywhere.
++    storage_containers: containers,
++    storage_allocations: await query('SELECT * FROM storage_allocations WHERE profile_id=?;', [profileId]),
+     links: await query('SELECT * FROM links WHERE profile_id=?;', [profileId]),
+     matches,
+     match_log_entries: await query(`SELECT * FROM match_log_entries WHERE match_id IN ${inClause(matchIds)};`, matchIds),
+@@ -214,9 +221,93 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
+     ins('collections', ['id', 'profile_id', 'name', 'created_at'], [colMap.get(c.id), pid, c.name, c.created_at]);
+   for (const ci of bundle.collection_items || [])
+     ins('collection_items', ['id', 'collection_id', 'target_type', 'target_id', 'added_at'], [uuid(), colMap.get(ci.collection_id), ci.target_type, ci.target_id, ci.added_at]);
+-  for (const o of bundle.owned_cards || [])
++  // Owned rows get fresh ids, and Storage allocations point AT those ids - so the new id is
++  // captured per source row rather than generated inline. A legacy bundle loses its source ids in
++  // normaliseBundle (canonicalisation reshapes the ledger), which is exactly why a legacy import
++  // synthesises allocations below instead of trying to remap ones it does not have.
++  const ownedMap = new Map();
++  const ownedRows = [];
++  for (const o of bundle.owned_cards || []) {
++    const newId = uuid();
++    if (o.id != null) ownedMap.set(o.id, newId);
++    ownedRows.push({ id: newId, qty_owned: Number(o.qty_owned) || 0, created_at: o.created_at, updated_at: o.updated_at });
+     ins('owned_cards', ['id', 'profile_id', 'card_id', 'variant_slug', 'qty_owned', 'qty_wanted', 'notes', 'created_at', 'updated_at'],
+-      [uuid(), pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
++      [newId, pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
++  }
++
++  /* ---------------- Storage: every owned copy lands in exactly one place ----------------
++   *
++   * Two paths, because a bundle either knows about places or predates them:
++   *
++   *  - STORAGE-AWARE (v12+): carry the containers and remap the allocations. Ids are remapped, so
++   *    the round trip is verified against the semantic graph - container name and contents - never
++   *    against row counts, which match even when container_id has been remapped to the WRONG
++   *    container and every card has quietly changed binder.
++   *  - LEGACY: synthesise Unfiled and put every positive owned quantity in it. The equality holds
++   *    from the first moment the profile exists rather than being repaired later.
++   *
++   * Either way the profile ends with exactly one system container, and qty_owned equals the sum of
++   * that row's allocations. A wishlist-only row (qty_owned 0) gets NO allocation - `0 = SUM(none)`
++   * satisfies the equality, while a zero-quantity row would violate CHECK (qty > 0).
++   */
++  const srcContainers = bundle.storage_containers || [];
++  const srcAllocs = bundle.storage_allocations || [];
++  const containerMap = new Map();
++  let unfiledId = null;
++
++  for (const c of srcContainers) {
++    const newId = uuid();
++    containerMap.set(c.id, newId);
++    const system = c.is_system ? 1 : 0;
++    if (system) unfiledId = newId;
++    ins('storage_containers', ['id', 'profile_id', 'kind', 'name', 'description', 'colour', 'sort_order', 'is_system', 'created_at', 'updated_at'],
++      [newId, pid,
++        system ? SYSTEM_KIND : (isUserContainerKind(c.kind) ? c.kind : 'other'),
++        system ? UNFILED_NAME : String(c.name ?? '').slice(0, 120),
++        String(c.description ?? '').slice(0, 240),
++        // Allow-listed, never passed through: this value ends up inside a CSS custom property.
++        isContainerColour(c.colour) ? c.colour : DEFAULT_COLOUR,
++        Number(c.sort_order) || 0, system, c.created_at || nowIso(), c.updated_at || nowIso()]);
++  }
++
++  // Every profile has an Unfiled container, always - a bundle that lacked one (legacy, or one whose
++  // system row did not survive) gets it synthesised rather than the profile being left with nowhere
++  // for a copy to live.
++  if (!unfiledId) {
++    unfiledId = uuid();
++    ins('storage_containers', ['id', 'profile_id', 'kind', 'name', 'description', 'colour', 'sort_order', 'is_system', 'created_at', 'updated_at'],
++      [unfiledId, pid, SYSTEM_KIND, UNFILED_NAME, '', DEFAULT_COLOUR, -1, 1, nowIso(), nowIso()]);
++  }
++
++  const carried = srcAllocs.length > 0 && ownedMap.size > 0;
++  if (carried) {
++    // Sum per owned row so a shortfall can go to Unfiled: an allocation whose container or owned
++    // row did not survive must not silently delete the copies it held.
++    const placed = new Map();
++    for (const a of srcAllocs) {
++      const ownedId = ownedMap.get(a.owned_card_id);
++      const contId = containerMap.get(a.container_id);
++      const qty = Number(a.qty) || 0;
++      if (!ownedId || !contId || qty <= 0) continue;
++      placed.set(ownedId, (placed.get(ownedId) || 0) + qty);
++      ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
++        [uuid(), pid, contId, ownedId, qty, a.created_at || nowIso(), a.updated_at || nowIso()]);
++    }
++    for (const r of ownedRows) {
++      const short = r.qty_owned - (placed.get(r.id) || 0);
++      if (short > 0) {
++        ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
++          [uuid(), pid, unfiledId, r.id, short, r.created_at || nowIso(), r.updated_at || nowIso()]);
++      }
++    }
++  } else {
++    for (const r of ownedRows) {
++      if (r.qty_owned > 0) {
++        ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
++          [uuid(), pid, unfiledId, r.id, r.qty_owned, r.created_at || nowIso(), r.updated_at || nowIso()]);
++      }
++    }
++  }
+   for (const l of bundle.card_lists || [])
+     ins('card_lists', ['id', 'profile_id', 'kind', 'name', 'description', 'sort_order', 'created_at', 'updated_at'],
+       [listMap.get(l.id), pid, l.kind, l.name, l.description, l.sort_order, l.created_at, l.updated_at]);
+diff --git a/src/store/replaceAll.test.mjs b/src/store/replaceAll.test.mjs
+index 4cda0ff..1a46581 100644
+--- a/src/store/replaceAll.test.mjs
++++ b/src/store/replaceAll.test.mjs
+@@ -96,6 +96,17 @@ function seedProfile(pid, name, isDefault, createdAt) {
+     [`${pid}-oc1`, pid, 'sentinel_card', '004', 3, 0, '', ts, ts]);
+   sdb.run('INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?);',
+     [`${pid}-l1`, pid, 'custom', 'Wants', '', 0, ts, ts]);
++  // Storage (v12): the system Unfiled place plus a user binder, and the owned row's 3 copies split
++  // across them - so the cascade assertion below proves the places die with the profile, and the
++  // restore comparisons have a container graph to be equivalent about.
++  sdb.run('INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
++    [`${pid}-u1`, pid, 'unfiled', 'Unfiled', '', 'gold', -1, 1, ts, ts]);
++  sdb.run('INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
++    [`${pid}-b1`, pid, 'binder', 'Sentinel Binder', '', 'ruby', 0, 0, ts, ts]);
++  sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++    [`${pid}-a1`, pid, `${pid}-b1`, `${pid}-oc1`, 1, ts, ts]);
++  sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++    [`${pid}-a2`, pid, `${pid}-u1`, `${pid}-oc1`, 2, ts, ts]);
+   sdb.run('INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);',
+     [`${pid}-le1`, `${pid}-l1`, 'sentinel_card', 1, '004', ts]);
+   sdb.run('INSERT INTO links(id,profile_id,kind,a_type,a_id,b_type,b_id,description,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
+@@ -205,6 +216,13 @@ function normalisedUnit(unit) {
+   const deckMap = mapOf(u.decks, ({ id, profile_id, ...r }) => r);
+   const colMap = mapOf(u.collections, ({ id, profile_id, ...r }) => r);
+   const listMap = mapOf(u.card_lists, ({ id, profile_id, ...r }) => r);
++  // Storage compares as a SEMANTIC GRAPH, never by row identity. Restore re-keys every id, so a
++  // digest that included them would always differ - and, worse, a digest that merely counted rows
++  // would MATCH while container_id had been remapped to the wrong container and every card had
++  // quietly changed binder. Containers are keyed by their content, allocations by which container
++  // and which owned row they name.
++  const contMap = mapOf(u.storage_containers, ({ id, profile_id, ...r }) => r);
++  const ownedMap = mapOf(u.owned_cards, ({ id, profile_id, ...r }) => r);
+   // Matches reference decks, so their deck_id is remapped BEFORE their own keys are derived.
+   u.matches = (u.matches || []).map((m) => ({ ...m, deck_id: m.deck_id ? (deckMap.get(m.deck_id) ?? null) : null }));
+   const matchMap = mapOf(u.matches, ({ id, profile_id, ...r }) => r);
+@@ -218,6 +236,10 @@ function normalisedUnit(unit) {
+   u.collections = scrub(u.collections, ({ id, profile_id, ...r }) => ({ ...r, id: colMap.get(id) }));
+   u.collection_items = scrub(u.collection_items, ({ id, ...r }) => ({ ...r, collection_id: colMap.get(r.collection_id) }));
+   u.owned_cards = scrub(u.owned_cards, ({ id, profile_id, ...r }) => r);
++  u.storage_containers = scrub(u.storage_containers, ({ id, profile_id, ...r }) => ({ ...r, id: contMap.get(id) }));
++  u.storage_allocations = scrub(u.storage_allocations, ({ id, profile_id, ...r }) => ({
++    ...r, container_id: contMap.get(r.container_id), owned_card_id: ownedMap.get(r.owned_card_id),
++  }));
+   u.card_lists = scrub(u.card_lists, ({ id, profile_id, ...r }) => ({ ...r, id: listMap.get(id) }));
+   u.card_list_entries = scrub(u.card_list_entries, ({ id, ...r }) => ({ ...r, list_id: listMap.get(r.list_id) }));
+   u.links = scrub(u.links, ({ id, profile_id, ...r }) => r);
+diff --git a/src/store/schema.js b/src/store/schema.js
+index 7b36277..1afb245 100644
+--- a/src/store/schema.js
++++ b/src/store/schema.js
+@@ -3,7 +3,7 @@
+ // profile_id and is reachable only through the active-profile gate.
+ // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
+ 
+-export const SCHEMA_VERSION = 11;
++export const SCHEMA_VERSION = 12;
+ 
+ export const MIGRATIONS = [
+   {
+@@ -374,4 +374,57 @@ export const MIGRATIONS = [
+     // straggler probe (does any legacy row remain?) and the To Be Categorised pile.
+     sql: `CREATE INDEX IF NOT EXISTS idx_owned_profile_slug ON owned_cards(profile_id, variant_slug);`,
+   },
++  {
++    version: 12,
++    // STORAGE - every owned copy is in exactly one place (docs/proposals/collection-storage.md).
++    //
++    // The model, because the schema only makes sense with it: allocations ARE the ownership.
++    // A copy is never claimed against a separate total, it is MOVED between places, and "Unfiled"
++    // is a place like any other. qty_owned stays a real materialised column - every reader keeps
++    // reading it - but it becomes the sum the mutation boundary maintains, not the value the user
++    // edits. That is what removes the second number, and with it the whole class of "the app says
++    // 4 and the binders say 3".
++    //
++    // DDL ONLY, no data statements. exec() maps to Android execSQL(), which refuses queries, and
++    // the native splitter is quote-unaware - so no semicolons inside strings or comments. The
++    // Unfiled containers and their allocations are created by an idempotent JS backfill at boot,
++    // on the canonicaliseBoot pattern, AFTER canonicalisation has settled row identities.
++    //
++    // idx_owned_id_profile exists to be the PARENT of the composite foreign key below. SQLite
++    // requires a unique index on the referenced columns; the pair is already unique, so this is
++    // free. It is what makes a cross-profile allocation structurally impossible rather than merely
++    // discouraged - an allocation cannot name a container in one profile and an owned row in
++    // another, because both references must agree on the same profile_id.
++    sql: `
++    CREATE UNIQUE INDEX IF NOT EXISTS idx_owned_id_profile ON owned_cards(id, profile_id);
++
++    CREATE TABLE IF NOT EXISTS storage_containers (
++      id TEXT PRIMARY KEY,
++      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
++      kind TEXT NOT NULL DEFAULT 'binder',
++      name TEXT NOT NULL,
++      description TEXT DEFAULT '',
++      colour TEXT NOT NULL DEFAULT 'gold',
++      sort_order INTEGER DEFAULT 0,
++      is_system INTEGER NOT NULL DEFAULT 0,
++      created_at TEXT, updated_at TEXT
++    );
++    CREATE UNIQUE INDEX IF NOT EXISTS idx_containers_id_profile ON storage_containers(id, profile_id);
++    CREATE UNIQUE INDEX IF NOT EXISTS idx_containers_one_system ON storage_containers(profile_id) WHERE is_system = 1;
++    CREATE INDEX IF NOT EXISTS idx_containers_profile ON storage_containers(profile_id, sort_order);
++
++    CREATE TABLE IF NOT EXISTS storage_allocations (
++      id TEXT PRIMARY KEY,
++      profile_id TEXT NOT NULL,
++      container_id TEXT NOT NULL,
++      owned_card_id TEXT NOT NULL,
++      qty INTEGER NOT NULL CHECK (qty > 0),
++      created_at TEXT, updated_at TEXT,
++      FOREIGN KEY (container_id, profile_id) REFERENCES storage_containers(id, profile_id) ON DELETE CASCADE,
++      FOREIGN KEY (owned_card_id, profile_id) REFERENCES owned_cards(id, profile_id) ON DELETE RESTRICT
++    );
++    CREATE UNIQUE INDEX IF NOT EXISTS idx_alloc_key ON storage_allocations(container_id, owned_card_id);
++    CREATE INDEX IF NOT EXISTS idx_alloc_owned ON storage_allocations(profile_id, owned_card_id);
++    `,
++  },
+ ];
+diff --git a/src/store/storageBackfill.js b/src/store/storageBackfill.js
+new file mode 100644
+index 0000000..463a823
+--- /dev/null
++++ b/src/store/storageBackfill.js
+@@ -0,0 +1,153 @@
++// Storage's boot backfill - the one pass that gives every existing collection its places.
++//
++// Every owned copy must be in exactly one place, and "Unfiled" is a place. A database written
++// before v12 has neither, so this creates an Unfiled container for every profile and puts each
++// row's copies in it. After it runs, for every owned row:
++//
++//     qty_owned = SUM(storage_allocations.qty for that row)
++//
++// WHY IT IS NOT IN THE MIGRATION. This is DATA, not DDL. exec() maps to Android's execSQL(), which
++// refuses queries outright, and the native statement splitter is quote-unaware - so migrations
++// carry schema only. It follows the canonicaliseBoot pattern instead: plan in JS, parameterised
++// statements, one transaction, idempotent on re-run.
++//
++// WHY IT RUNS AFTER CANONICALISATION. Canonicalisation reshapes and MERGES the very rows this
++// reads. Running first would allocate against rows about to be merged; running second means the
++// ledger has already settled into its final row identities, and on a first upgrade there are no
++// allocations for the merge to have to carry. (Canonicalisation still re-parents allocations,
++// because it is shape-first and may re-run later, after Storage exists.)
++//
++// It takes NO interactive write barrier: it runs before a profile is resolved, so there is no
++// interactive work to exclude.
++import { query as dbQuery, tx as dbTx } from './db.js';
++import { uuid as newId, nowIso } from './ids.js';
++import { SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR } from './storageVocabulary.js';
++
++export const BACKFILL_MARKER_KEY = 'storage_backfill_version';
++export const BACKFILL_VERSION = 1;
++
++/**
++ * Decide what one owned row needs, given what is already allocated to it.
++ *
++ * PURE, and deliberately total: every case is named, and the unnameable one fails closed. An
++ * interrupted pass leaves rows in mixed states, so "no marker" cannot be read as "nothing done".
++ *
++ *   0 owned,  0 placed -> nothing. A wishlist-only row holds no copies, and a zero-quantity
++ *                         allocation would violate CHECK (qty > 0). `0 = SUM(none)` already holds.
++ *   n owned,  0 placed -> place all n in Unfiled. The upgrade case.
++ *   n owned,  n placed -> already done. Preserve the existing places exactly.
++ *   anything else      -> FAIL CLOSED. A partial or excess sum means copies were placed somewhere
++ *                         this pass cannot see, and inventing the difference would put the app in
++ *                         the exact state the model exists to prevent.
++ */
++export function planRowBackfill({ qty_owned = 0, placed = 0 }) {
++  const owned = Number(qty_owned) || 0;
++  const sum = Number(placed) || 0;
++  if (owned === sum) return { action: owned === 0 ? 'empty' : 'keep', qty: 0 };
++  if (sum === 0 && owned > 0) return { action: 'place', qty: owned };
++  return { action: 'fail', qty: 0 };
++}
++
++/** Injectable for tests; production wiring is the default export below. */
++export function createStorageBackfill({ query, tx, uuid = newId, now = nowIso }) {
++  return async function backfillStorage() {
++    const marker = await query('SELECT value FROM _meta WHERE key=?;', [BACKFILL_MARKER_KEY]);
++    const stamped = marker.length ? Number(marker[0].value) : null;
++    if (stamped != null && stamped >= BACKFILL_VERSION) {
++      // SHAPE-FIRST, like the canonicalisation marker: a stamp is an optimisation, never a promise.
++      // If any owned row still has no place, the marker is wrong and the work runs anyway.
++      const gaps = await query(`
++        SELECT COUNT(*) n FROM owned_cards o
++         WHERE o.qty_owned > 0
++           AND NOT EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id);`);
++      if (!Number(gaps[0]?.n || 0)) return { skipped: true, reason: 'done' };
++    }
++
++    const profiles = await query('SELECT id FROM profiles;');
++    if (!profiles.length) return { skipped: true, reason: 'no-profiles' };
++
++    const stamp = now();
++    const statements = [];
++    const unfiledOf = new Map();
++
++    // EVERY profile gets an Unfiled container, including an empty one. A profile with no cards
++    // still needs somewhere for its first card to go, and creating it lazily on first use is one
++    // more path that can fail.
++    const existing = await query('SELECT id, profile_id FROM storage_containers WHERE is_system=1;');
++    for (const c of existing) unfiledOf.set(c.profile_id, c.id);
++    for (const p of profiles) {
++      if (unfiledOf.has(p.id)) continue;
++      const id = uuid();
++      unfiledOf.set(p.id, id);
++      statements.push([
++        `INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at)
++         VALUES(?,?,?,?,'',?,-1,1,?,?);`,
++        [id, p.id, SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR, stamp, stamp],
++      ]);
++    }
++
++    // One grouped read, not one per row - the listDecks N+1 lesson applies to boot most of all.
++    const rows = await query(`
++      SELECT o.id, o.profile_id, o.qty_owned, o.created_at,
++             COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
++        FROM owned_cards o;`);
++
++    let placed = 0;
++    let kept = 0;
++    for (const r of rows) {
++      const plan = planRowBackfill(r);
++      if (plan.action === 'fail') {
++        throw new Error(
++          `storageBackfill: owned row ${r.id} has ${r.qty_owned} copies but ${r.placed} placed - `
++          + 'refusing to invent the difference.',
++        );
++      }
++      if (plan.action === 'keep') { kept++; continue; }
++      if (plan.action === 'empty') continue;
++      const container = unfiledOf.get(r.profile_id);
++      if (!container) throw new Error(`storageBackfill: profile ${r.profile_id} has no Unfiled container.`);
++      placed++;
++      statements.push([
++        `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
++         VALUES(?,?,?,?,?,?,?);`,
++        [uuid(), r.profile_id, container, r.id, plan.qty, r.created_at || stamp, stamp],
++      ]);
++    }
++
++    // THE MARKER, in the SAME transaction as the work. Written separately it could survive a failed
++    // backfill and permanently skip a pass that never happened - which is how "runs once" becomes a
++    // hope rather than a fact.
++    statements.push([
++      `INSERT INTO _meta(key,value) VALUES(?,?)
++       ON CONFLICT(key) DO UPDATE SET value=excluded.value;`,
++      [BACKFILL_MARKER_KEY, String(BACKFILL_VERSION)],
++    ]);
++
++    // THE ASSERTIONS, inside the transaction so a violation rolls the whole thing back. SQLite has
++    // no bare "fail if" outside a trigger, so each provokes a PRIMARY KEY collision on the marker
++    // row written immediately above: the SELECT yields nothing - and cannot collide - unless the
++    // condition it guards is true.
++    statements.push([
++      `INSERT INTO _meta(key,value)
++         SELECT ?, 'storage-backfill-equality-violated'
++         WHERE EXISTS (
++           SELECT 1 FROM owned_cards o
++            WHERE o.qty_owned <> COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0));`,
++      [BACKFILL_MARKER_KEY],
++    ]);
++    statements.push([
++      `INSERT INTO _meta(key,value)
++         SELECT ?, 'storage-backfill-unfiled-count-violated'
++         WHERE EXISTS (
++           SELECT p.id FROM profiles p
++            LEFT JOIN storage_containers c ON c.profile_id = p.id AND c.is_system = 1
++            GROUP BY p.id HAVING COUNT(c.id) <> 1);`,
++      [BACKFILL_MARKER_KEY],
++    ]);
++
++    await tx(statements);
++    return { placed, kept, containers: statements.length ? unfiledOf.size : 0 };
++  };
++}
++
++export const backfillStorage = createStorageBackfill({ query: dbQuery, tx: dbTx });
+diff --git a/src/store/storageBackfill.test.mjs b/src/store/storageBackfill.test.mjs
+new file mode 100644
+index 0000000..f7e0613
+--- /dev/null
++++ b/src/store/storageBackfill.test.mjs
+@@ -0,0 +1,196 @@
++// The Storage boot backfill (docs/proposals/collection-storage.md).
++//
++// This pass runs on EVERY existing collection, before the app is usable, before a profile is
++// resolved, on data shapes produced by builds we cannot inspect. So the cases below are not a
++// sample - they are the enumeration the proposal committed to: fresh install, empty profile,
++// wishlist-only rows, several profiles, an interrupted pass, and the states that must fail closed
++// rather than be guessed at.
++// Run: npm run test:query
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  createStorageBackfill, planRowBackfill, BACKFILL_MARKER_KEY, BACKFILL_VERSION,
++} from './storageBackfill.js';
++
++// A fake database recording what it was asked to do. tx is all-or-nothing by definition here.
++function fakeDb({ profiles = [], owned = [], containers = [], marker = null, failTx = false } = {}) {
++  const committed = [];
++  let txCalls = 0;
++  return {
++    committed,
++    get txCalls() { return txCalls; },
++    async query(sql) {
++      if (sql.includes('FROM _meta')) return marker == null ? [] : [{ value: String(marker) }];
++      if (sql.includes('NOT EXISTS')) {
++        return [{ n: owned.filter((o) => o.qty_owned > 0 && !(o.placed > 0)).length }];
++      }
++      if (sql.includes('FROM profiles')) return profiles;
++      if (sql.includes('FROM storage_containers')) return containers;
++      if (sql.includes('FROM owned_cards')) return owned;
++      return [];
++    },
++    async tx(statements) {
++      txCalls++;
++      if (failTx) throw new Error('transaction failed');
++      committed.push(...statements);
++      return true;
++    },
++  };
++}
++const run = (db) => createStorageBackfill({
++  query: db.query, tx: db.tx, uuid: (() => { let n = 0; return () => `new-${++n}`; })(), now: () => 'T',
++})();
++const sqlOf = (db) => db.committed.map(([s]) => s.replace(/\s+/g, ' ').trim());
++
++/* ---------------- the pure decision, every case named ---------------- */
++
++test('planRowBackfill names every case, and the unnameable one fails closed', () => {
++  // A wishlist-only row: no copies, so no allocation. A zero-quantity row would violate
++  // CHECK (qty > 0) and fail boot - this distinction is the one that would have done it.
++  assert.deepEqual(planRowBackfill({ qty_owned: 0, placed: 0 }), { action: 'empty', qty: 0 });
++  assert.deepEqual(planRowBackfill({ qty_owned: 4, placed: 0 }), { action: 'place', qty: 4 });
++  assert.deepEqual(planRowBackfill({ qty_owned: 4, placed: 4 }), { action: 'keep', qty: 0 });
++  // Partial and excess are NOT repairable: copies sit somewhere this pass cannot see, and
++  // inventing the difference produces exactly the drift the model exists to prevent.
++  assert.equal(planRowBackfill({ qty_owned: 4, placed: 1 }).action, 'fail');
++  assert.equal(planRowBackfill({ qty_owned: 4, placed: 9 }).action, 'fail');
++  assert.equal(planRowBackfill({ qty_owned: 0, placed: 2 }).action, 'fail');
++});
++
++/* ---------------- the upgrade ---------------- */
++
++test('an upgrading profile gets an Unfiled container and all its copies in it', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 4, placed: 0, created_at: 'a' }],
++  });
++  const res = await run(db);
++  assert.equal(res.placed, 1);
++  const sql = sqlOf(db);
++  assert.ok(sql.some((s) => s.includes('INSERT INTO storage_containers')), 'the place is created');
++  const alloc = db.committed.find(([s]) => s.includes('INSERT INTO storage_allocations'));
++  assert.equal(alloc[1][4], 4, 'every copy is placed, not one row per copy');
++});
++
++test('a wishlist-only row gets NO allocation - a zero-quantity one would fail the CHECK', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'w1', profile_id: 'p1', qty_owned: 0, placed: 0, created_at: 'a' }],
++  });
++  const res = await run(db);
++  assert.equal(res.placed, 0);
++  assert.equal(sqlOf(db).filter((s) => s.includes('INSERT INTO storage_allocations')).length, 0);
++});
++
++test('an EMPTY profile still gets its Unfiled container', async () => {
++  // It has nowhere to put a first card otherwise, and creating it lazily on first use is one more
++  // path that can fail.
++  const db = fakeDb({ profiles: [{ id: 'p1' }], owned: [] });
++  await run(db);
++  assert.equal(sqlOf(db).filter((s) => s.includes('INSERT INTO storage_containers')).length, 1);
++});
++
++test('several profiles each get exactly one container, and rows land in their OWN', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }, { id: 'p2' }],
++    owned: [
++      { id: 'o1', profile_id: 'p1', qty_owned: 1, placed: 0, created_at: 'a' },
++      { id: 'o2', profile_id: 'p2', qty_owned: 2, placed: 0, created_at: 'a' },
++    ],
++  });
++  await run(db);
++  const containers = db.committed.filter(([s]) => s.includes('INSERT INTO storage_containers'));
++  assert.equal(containers.length, 2);
++  const byProfile = new Map(containers.map(([, p]) => [p[1], p[0]]));
++  for (const [, p] of db.committed.filter(([s]) => s.includes('INSERT INTO storage_allocations'))) {
++    assert.equal(p[2], byProfile.get(p[1]), 'an allocation never crosses into another profile');
++  }
++});
++
++test('a fresh install with no profiles does nothing at all', async () => {
++  const db = fakeDb({ profiles: [], owned: [] });
++  const res = await run(db);
++  assert.equal(res.skipped, true);
++  assert.equal(db.txCalls, 0);
++});
++
++/* ---------------- idempotence and interruption ---------------- */
++
++test('a marked, complete database is skipped without a transaction', async () => {
++  const db = fakeDb({
++    marker: BACKFILL_VERSION,
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
++  });
++  const res = await run(db);
++  assert.equal(res.skipped, true);
++  assert.equal(db.txCalls, 0);
++});
++
++test('SHAPE-FIRST: a marker is an optimisation, never a promise', async () => {
++  // The failure this prevents: a marker written by an interrupted or buggy pass permanently skips
++  // work that never happened, leaving copies in no place at all - invisible forever.
++  const db = fakeDb({
++    marker: BACKFILL_VERSION,
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 0, created_at: 'a' }],
++  });
++  const res = await run(db);
++  assert.notEqual(res.skipped, true, 'it must NOT skip');
++  assert.equal(res.placed, 1);
++});
++
++test('re-running over an already-placed row preserves its existing places', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }],
++    containers: [{ id: 'u1', profile_id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 3, placed: 3, created_at: 'a' }],
++  });
++  const res = await run(db);
++  assert.equal(res.kept, 1);
++  assert.equal(res.placed, 0, 'nothing is re-placed, so a second run cannot double a collection');
++  assert.equal(sqlOf(db).filter((s) => s.includes('INSERT INTO storage_containers')).length, 0,
++    'and the existing container is reused, never duplicated');
++});
++
++test('an interrupted pass leaves no marker, so the next boot completes it', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 1, placed: 0, created_at: 'a' }],
++    failTx: true,
++  });
++  await assert.rejects(run(db), /transaction failed/);
++  assert.equal(db.committed.length, 0, 'no statement survived - marker included');
++});
++
++/* ---------------- failing closed ---------------- */
++
++test('a partially-placed row ABORTS rather than inventing the difference', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 4, placed: 1, created_at: 'a' }],
++  });
++  await assert.rejects(run(db), /refusing to invent/);
++  assert.equal(db.txCalls, 0, 'nothing was committed');
++});
++
++/* ---------------- the marker and the assertions travel together ---------------- */
++
++test('the marker is written in the SAME transaction, after guarded assertions', async () => {
++  const db = fakeDb({
++    profiles: [{ id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 1, placed: 0, created_at: 'a' }],
++  });
++  await run(db);
++  assert.equal(db.txCalls, 1, 'exactly one transaction');
++  const sql = sqlOf(db);
++  const markerAt = sql.findIndex((s) => s.includes('ON CONFLICT(key) DO UPDATE'));
++  assert.ok(markerAt >= 0, 'the marker is part of the committed statements');
++  // Each assertion provokes a PRIMARY KEY collision on the marker row written above it, so a
++  // violation rolls the whole transaction back rather than reporting success.
++  assert.ok(sql.some((s) => s.includes('storage-backfill-equality-violated')));
++  assert.ok(sql.some((s) => s.includes('storage-backfill-unfiled-count-violated')));
++  for (const [s, p] of db.committed) {
++    assert.ok(Array.isArray(p), `params missing for: ${s}`);
++  }
++});
+diff --git a/src/store/storageCoordination.test.mjs b/src/store/storageCoordination.test.mjs
+new file mode 100644
+index 0000000..41df5be
+--- /dev/null
++++ b/src/store/storageCoordination.test.mjs
+@@ -0,0 +1,155 @@
++// Coordination around the Storage mutation core (docs/proposals/collection-storage.md).
++//
++// WHY THIS FILE EXISTS. Revision 3 of the proposal put EVERY ownership mutation under
++// `withExclusiveCollectionWrites`. That self-deadlocks, and it would have hung the first ownership
++// tap anyone made: the interactive steppers already run INSIDE the queue - OwnedControl enqueues on
++// the collector-item key and calls the repository from within that callback - so the write is
++// ADMITTED by the time the callback runs, and a barrier requested there waits for admitted work to
++// drain, including itself.
++//
++// The rule that replaced it is one sentence: COORDINATION IS CHOSEN BY THE CALLING TIER; THE CORE
++// NEVER ACQUIRES IT. These tests hold that rule to account, because it is invisible in a diff and
++// catastrophic in the hand.
++// Run: npm run test:query
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import {
++  enqueueWrite, withExclusiveCollectionWrites, withProfileSwitchWriteBarrier, settleCollectionWrites,
++} from './collectionWrites.js';
++import {
++  planRemoval, removalStatements, clearAllocationsStatements, clearAllocationsForManyStatements,
++  createUnfiledStatements,
++} from './storageRepository.js';
++
++const tick = () => new Promise((r) => setTimeout(r, 0));
++
++/* ---------------- the core acquires nothing ---------------- */
++
++test('the core is coordination-free: every export is callable with no queue at all', () => {
++  // If any of these reached for a barrier or a queue, this test would hang rather than fail - which
++  // is exactly how the deadlock would have shipped. Calling them bare is the assertion.
++  assert.deepEqual(planRemoval([{ id: 'a', container_id: 'c', qty: 2, is_system: 0 }], 1),
++    { taken: [{ id: 'a', take: 1, left: 1 }], shortfall: 0 });
++  assert.equal(removalStatements({ taken: [{ id: 'a', take: 1, left: 1 }] }).length, 1);
++  assert.equal(clearAllocationsStatements('o1').length, 1);
++  assert.equal(clearAllocationsForManyStatements(['o1', 'o2', 'o1']).length, 1);
++  assert.equal(createUnfiledStatements('p1', 'u1', 'T').length, 1);
++});
++
++test('DOES NOT SELF-DEADLOCK: the core runs inside an enqueued write, as the steppers call it', async () => {
++  // The exact production shape: OwnedControl enqueues on the collector-item key and calls the
++  // repository from within that callback. If the core ever takes the exclusive barrier, this never
++  // resolves.
++  let ran = false;
++  const p = enqueueWrite('profile|card|set|std', async () => {
++    // Whatever the core does here must not need exclusivity.
++    const plan = planRemoval([{ id: 'a1', container_id: 'u', qty: 3, is_system: 1 }], 2);
++    assert.equal(plan.shortfall, 0);
++    ran = true;
++    return 'ok';
++  });
++  const settled = await Promise.race([p, new Promise((r) => setTimeout(() => r('TIMEOUT'), 1500))]);
++  assert.equal(settled, 'ok', 'the write completed rather than waiting on itself');
++  assert.equal(ran, true);
++});
++
++/* ---------------- ordering the tiers actually rely on ---------------- */
++
++test('RAPID TAP: writes on one collector item run in order, never concurrently', async () => {
++  // The stepper's whole correctness argument is that each write re-reads in its turn. Two taps
++  // overlapping on one row would read the same "before" value and lose an increment.
++  const order = [];
++  let inFlight = 0;
++  const tap = (n) => enqueueWrite('p|c|s|std', async () => {
++    inFlight++;
++    assert.equal(inFlight, 1, 'two writes on one row overlapped');
++    await tick();
++    order.push(n);
++    inFlight--;
++  });
++  await Promise.all([tap(1), tap(2), tap(3)]);
++  assert.deepEqual(order, [1, 2, 3], 'tap order is preserved');
++});
++
++test('SCANNER: a capture shares the stepper chain, so overlapping scans cannot lose an increment', async () => {
++  // Scanner writes only ever INCREASE quantities, so they cannot strand an allocation - but two
++  // captures of the same printing must still serialise, and they only do if the scanner builds the
++  // SAME key the stepper does.
++  const key = 'p1|card-x|001|std';
++  let total = 0;
++  const capture = () => enqueueWrite(key, async () => { const before = total; await tick(); total = before + 1; });
++  await Promise.all([capture(), capture(), capture()]);
++  assert.equal(total, 3, 'three captures, three copies - a read-modify-write that raced would lose one');
++});
++
++test('a DIFFERENT collector item is not blocked by a slow write on another', async () => {
++  // Per-row chains, not a global lock: filing one card must not stall a stepper on a different one.
++  const seen = [];
++  const slow = enqueueWrite('p|c1|s|std', async () => { await new Promise((r) => setTimeout(r, 40)); seen.push('slow'); });
++  const fast = enqueueWrite('p|c2|s|std', async () => { seen.push('fast'); });
++  await Promise.all([slow, fast]);
++  assert.deepEqual(seen, ['fast', 'slow'], 'the second row did not wait behind the first');
++});
++
++/* ---------------- the tier that DOES take the barrier ---------------- */
++
++test('STEPPER vs BULK: a bulk command waits for an in-flight stepper, then excludes new ones', async () => {
++  const events = [];
++  let releaseStepper;
++  const stepper = enqueueWrite('p|c|s|std', async () => {
++    events.push('stepper:start');
++    await new Promise((r) => { releaseStepper = r; });
++    events.push('stepper:end');
++  });
++  await tick();                                   // let the stepper be admitted
++
++  const bulk = withExclusiveCollectionWrites(async () => { events.push('bulk:run'); });
++  await tick();
++  assert.ok(!events.includes('bulk:run'), 'the bulk command must not start over an admitted write');
++
++  // A write arriving AFTER the gate closed is parked - the holder must not wait for it, or it
++  // would be waiting on something waiting on the holder.
++  const parked = enqueueWrite('p|c|s|std', async () => { events.push('parked:run'); });
++
++  releaseStepper();
++  await bulk;
++  assert.deepEqual(events.slice(0, 3), ['stepper:start', 'stepper:end', 'bulk:run'],
++    'admitted work drains, THEN the holder runs');
++  assert.ok(!events.includes('parked:run'), 'and work that arrived after the gate stayed parked');
++  await parked;
++  assert.ok(events.includes('parked:run'), 'released once the holder finished');
++  await settleCollectionWrites();
++});
++
++test('PROFILE SWITCH uses the tolerant barrier, not the fail-closed bulk one', async () => {
++  // Two semantics, two exported functions, deliberately - a caller has to NAME the tolerant path.
++  // A profile switch must not fail closed behind a slow in-flight write; a bulk command must.
++  assert.notEqual(withProfileSwitchWriteBarrier, withExclusiveCollectionWrites);
++  const out = await withProfileSwitchWriteBarrier(async () => 'switched');
++  assert.equal(out, 'switched');
++  await settleCollectionWrites();
++});
++
++/* ---------------- the removal order the model depends on ---------------- */
++
++test('removal takes from Unfiled first, then the fullest container, deterministically', async () => {
++  const places = [
++    { id: 'binder', container_id: 'b', qty: 3, is_system: 0 },
++    { id: 'unfiled', container_id: 'u', qty: 2, is_system: 1 },
++    { id: 'box', container_id: 'x', qty: 5, is_system: 0 },
++  ];
++  // Unfiled is unambiguous - those copies are in no stated place - so it goes first. Then the
++  // fullest, so the same input always produces the same plan.
++  const plan = planRemoval(places, 4);
++  assert.deepEqual(plan.taken.map((t) => t.id), ['unfiled', 'box']);
++  assert.equal(plan.taken[0].left, 0, 'Unfiled is emptied');
++  assert.equal(plan.taken[1].left, 3, 'the remainder comes off the fullest');
++  assert.equal(plan.shortfall, 0);
++
++  // A removal larger than everything held reports a shortfall rather than inventing a negative.
++  assert.equal(planRemoval(places, 99).shortfall, 89);
++  // An emptied allocation is DELETED, never left at zero - CHECK (qty > 0) forbids the row, and a
++  // zero-quantity place is a copy that is nowhere.
++  const stmts = removalStatements(planRemoval(places, 2));
++  assert.ok(stmts[0][0].startsWith('DELETE FROM storage_allocations'));
++});
+diff --git a/src/store/storageRepository.js b/src/store/storageRepository.js
+new file mode 100644
+index 0000000..9703c48
+--- /dev/null
++++ b/src/store/storageRepository.js
+@@ -0,0 +1,108 @@
++// Storage - the transactional core (docs/proposals/collection-storage.md).
++//
++// THE MODEL. Allocations ARE the ownership. A copy is never claimed against a separate total, it is
++// MOVED between places, and "Unfiled" is a place like any other. `owned_cards.qty_owned` stays a
++// real materialised column - every reader keeps reading it - but it is the SUM this module
++// maintains, not a second number that can drift from it. After any operation:
++//
++//     qty_owned = SUM(storage_allocations.qty for that owned row)
++//
++// THIS MODULE ACQUIRES NO COORDINATION, and that is a hard rule rather than a style choice. The
++// interactive steppers already run INSIDE the per-row write queue: OwnedControl enqueues on the
++// collector-item key and calls the repository from within that callback, so the write is ADMITTED
++// by the time the callback runs. A core that asked for the exclusive barrier there would wait for
++// admitted work to drain - including itself - and every ownership tap would hang until the timeout.
++//
++// So the tiers are:
++//   - interactive, one collector item -> the caller's existing enqueueWrite chain
++//   - multi-item or profile-wide      -> withExclusiveCollectionWrites around the core
++//   - boot                            -> its own transaction, no interactive barrier
++//
++// Everything here returns STATEMENTS rather than executing them, so a caller can compose them into
++// the transaction it already has. That is what lets seven existing ownership writers route through
++// one place without any of them giving up their own atomicity.
++import { uuid, nowIso } from './ids.js';
++import { SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR } from './storageVocabulary.js';
++
++/** The Unfiled container for a profile, or null. Read-only; callers decide what to do about it. */
++export async function unfiledContainerId(query, profileId) {
++  const rows = await query('SELECT id FROM storage_containers WHERE profile_id=? AND is_system=1;', [profileId]);
++  return rows[0]?.id || null;
++}
++
++/**
++ * Statements creating a profile's Unfiled container. Every profile has exactly one, always - the
++ * partial unique index guarantees AT MOST one, and calling this at every creation path is what
++ * guarantees AT LEAST one. sort_order -1 keeps it pinned above user containers.
++ */
++export function createUnfiledStatements(profileId, id = uuid(), now = nowIso()) {
++  return [[
++    `INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at)
++     VALUES(?,?,?,?,'',?,-1,1,?,?);`,
++    [id, profileId, SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR, now, now],
++  ]];
++}
++
++/**
++ * Statements placing `qty` copies of an owned row into a container, merging with whatever is
++ * already there. Paired with a matching change to qty_owned by the caller - never on its own.
++ */
++export function placeStatements({ profileId, containerId, ownedCardId, qty, now = nowIso() }) {
++  if (!(qty > 0)) return [];
++  return [[
++    `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
++     VALUES(?,?,?,?,?,?,?)
++     ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
++    [uuid(), profileId, containerId, ownedCardId, qty, now, now],
++  ]];
++}
++
++/**
++ * Statements removing `qty` copies of an owned row, taking from Unfiled first and then from the
++ * fullest container, and deleting any allocation that reaches zero (CHECK forbids a zero row, and
++ * a copy that is nowhere is the state this model exists to prevent).
++ *
++ * `placements` is [{ id, container_id, qty, is_system }] for that owned row, already read by the
++ * caller inside its transaction - this function is pure so the ordering is testable without a
++ * database.
++ */
++export function planRemoval(placements, qty) {
++  let remaining = qty;
++  const taken = [];
++  // Unfiled first because it is unambiguous - those copies are in no stated place. Then the
++  // fullest container, deterministically, so the same input always produces the same plan.
++  const order = [...placements].sort((a, b) => (b.is_system ? 1 : 0) - (a.is_system ? 1 : 0) || b.qty - a.qty || String(a.id).localeCompare(String(b.id)));
++  for (const p of order) {
++    if (remaining <= 0) break;
++    const take = Math.min(p.qty, remaining);
++    if (take > 0) { taken.push({ id: p.id, take, left: p.qty - take }); remaining -= take; }
++  }
++  return { taken, shortfall: remaining };
++}
++
++/** Statements for a plan produced by planRemoval. */
++export function removalStatements(plan, now = nowIso()) {
++  return plan.taken.map(({ id, left }) => (left > 0
++    ? ['UPDATE storage_allocations SET qty=?, updated_at=? WHERE id=?;', [left, now, id]]
++    : ['DELETE FROM storage_allocations WHERE id=?;', [id]]));
++}
++
++/**
++ * Statements clearing every allocation for an owned row, for the paths that DELETE the row itself
++ * (a stepper reaching zero, bulk Set-to-0, an import reconciling a row away).
++ *
++ * Without this the delete fails outright: allocations reference owned rows with ON DELETE RESTRICT,
++ * deliberately, so a user's filing can never be silently discarded as a side effect of a count
++ * reaching zero. RESTRICT turns that from a silent loss into a loud one - which is only an
++ * improvement if every legitimate delete clears its allocations first. This is that.
++ */
++export function clearAllocationsStatements(ownedCardId) {
++  return [['DELETE FROM storage_allocations WHERE owned_card_id=?;', [ownedCardId]]];
++}
++
++/** As above, for many owned rows at once (bulk Set-to-0). */
++export function clearAllocationsForManyStatements(ownedCardIds) {
++  const ids = [...new Set(ownedCardIds.filter(Boolean))];
++  if (!ids.length) return [];
++  return [[`DELETE FROM storage_allocations WHERE owned_card_id IN (${ids.map(() => '?').join(',')});`, ids]];
++}
+diff --git a/src/store/storageVocabulary.js b/src/store/storageVocabulary.js
+new file mode 100644
+index 0000000..7902945
+--- /dev/null
++++ b/src/store/storageVocabulary.js
+@@ -0,0 +1,39 @@
++// Storage's closed vocabularies - container kinds and colours (docs/proposals/collection-storage.md).
++//
++// A LEAF module: imports nothing, so the schema layer, the repository, the import boundary and the
++// picker can all reach it without reaching each other.
++//
++// ONE allow-list, used by creation, rendering, import validation and the swatch picker. That is a
++// review requirement rather than tidiness: colour is written to the database and later interpolated
++// into a CSS custom property, so an imported value that is neither validated nor allow-listed is a
++// stylesheet injection with extra steps. Unknown values are REJECTED, never coerced and never
++// passed through.
++
++/** Container kinds. `unfiled` is the system place and cannot be chosen by a user. */
++export const CONTAINER_KINDS = Object.freeze(['binder', 'box', 'deck', 'other']);
++export const SYSTEM_KIND = 'unfiled';
++
++/** The name the system container is created with. Users cannot rename or delete it. */
++export const UNFILED_NAME = 'Unfiled';
++
++/**
++ * Colours, by TOKEN NAME. Never a hex string: the theme owns the actual value, so a retint changes
++ * every container at once and the stored data stays content rather than presentation.
++ * Each maps to an existing `--accent-*` custom property (theme/tokens.css).
++ */
++export const CONTAINER_COLOURS = Object.freeze(['gold', 'violet', 'jade', 'ruby']);
++export const DEFAULT_COLOUR = 'gold';
++
++/** True only for a colour this build knows. Anything else is rejected at the boundary. */
++export const isContainerColour = (c) => CONTAINER_COLOURS.includes(c);
++
++/** True for a kind a USER may pick - the system kind is deliberately excluded. */
++export const isUserContainerKind = (k) => CONTAINER_KINDS.includes(k);
++
++/** True for any kind that may legally sit in the table, system included. */
++export const isContainerKind = (k) => k === SYSTEM_KIND || CONTAINER_KINDS.includes(k);
++
++/** The CSS custom property a colour name resolves to. The ONLY place a name becomes a variable. */
++export function containerColourVar(name) {
++  return `var(--accent-${isContainerColour(name) ? name : DEFAULT_COLOUR})`;
++}
+diff --git a/src/store/triageRepository.test.mjs b/src/store/triageRepository.test.mjs
+index 507eee5..294036f 100644
+--- a/src/store/triageRepository.test.mjs
++++ b/src/store/triageRepository.test.mjs
+@@ -64,7 +64,7 @@ before(async () => {
+   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c9','Unknown to catalog','[]');");
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); });
+ 
+ /* ---------------- the move itself ---------------- */
+ 
+@@ -89,7 +89,7 @@ test('a want that survived on ANY of the four keys is drained from that key', as
+   // The defect this command must not reproduce: draining an assumed pair would leave the
+   // original in place and mint a second at the destination.
+   for (const src of UNCATEGORISED_KEYS) {
+-    sdb.run('DELETE FROM owned_cards;');
++    sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+     seed(src, 0, 4);
+     const res = await cmd()(planFor(asRows(), ['001', '002'], '002', WANTED));
+     assert.equal(res.confirmed, true, `source ${src}`);
+@@ -262,7 +262,7 @@ test('filing an already-empty line is a confirmed no-op that broadcasts nothing'
+   seed(UNCATEGORISED, 0, 1);
+   let fired = 0;
+   const plan = planFor(asRows(), ['001', '002'], '002', WANTED);
+-  sdb.run('DELETE FROM owned_cards;');       // it vanished between render and tap
++  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');       // it vanished between render and tap
+   const res = await cmd({ notify: () => { fired++; } })(plan);
+   assert.equal(res.confirmed, true);
+   assert.equal(res.moved, 0);
+@@ -305,7 +305,7 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
+   assert.equal(totals().o, 2, 'the broken version LOSES three copies - 5 became 2');
+ 
+   // And the real command, on the same starting state.
+-  sdb.run('DELETE FROM owned_cards;');
++  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+   seed(UNCATEGORISED, 2);
+   const plan2 = planFor(asRows(), ['001', '002'], '002');
+   sdb.run("UPDATE owned_cards SET qty_owned=5 WHERE variant_slug=?;", [UNCATEGORISED]);
+@@ -327,7 +327,7 @@ test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real ba
+     return async () => { if (++arrived >= n) release(); await all; };
+   };
+ 
+-  const seedSix = () => { sdb.run('DELETE FROM owned_cards;'); seed(UNCATEGORISED, 6); };
++  const seedSix = () => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); seed(UNCATEGORISED, 6); };
+ 
+   /* ---- pass-through barrier: both read 6 before either writes ---- */
+   seedSix();
+diff --git a/src/store/wantedBulkRepository.test.mjs b/src/store/wantedBulkRepository.test.mjs
+index 3df299b..ab35650 100644
+--- a/src/store/wantedBulkRepository.test.mjs
++++ b/src/store/wantedBulkRepository.test.mjs
+@@ -71,7 +71,7 @@ before(async () => {
+   __setActiveIdForTests(PID);
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); notifyCount = 0; });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); notifyCount = 0; });
+ 
+ /* ---------------- planWantedItemBatch (pure) ---------------- */
+ 
+diff --git a/src/store/wantedItems.test.mjs b/src/store/wantedItems.test.mjs
+index 3ce17a6..f3df922 100644
+--- a/src/store/wantedItems.test.mjs
++++ b/src/store/wantedItems.test.mjs
+@@ -58,7 +58,7 @@ before(async () => {
+   __setActiveIdForTests(PID);
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); });
+ 
+ /* ---------------- the point of the whole exercise ---------------- */
+ 
+@@ -435,7 +435,7 @@ test('COUNTERFACTUAL: bypassing the shared chain loses one of them', async () =>
+   // UNQUEUED must corrupt, or the chain is decoration.
+   const { __resetCollectionWritesForTests } = await import('./collectionWrites.js');
+   __resetCollectionWritesForTests();
+-  sdb.run('DELETE FROM owned_cards;');
++  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+   seed('004', 0, 1, 'cRace');
+ 
+   // stepWantedForItem reads, then writes an absolute. Interleaving an atomic add between its
+diff --git a/src/store/writerInvariant.test.mjs b/src/store/writerInvariant.test.mjs
+index d18d8e0..e765c97 100644
+--- a/src/store/writerInvariant.test.mjs
++++ b/src/store/writerInvariant.test.mjs
+@@ -54,7 +54,7 @@ before(async () => {
+   __setActiveIdForTests(PID);
+ });
+ 
+-beforeEach(() => { sdb.run('DELETE FROM owned_cards; DELETE FROM card_lists; DELETE FROM card_list_entries;'); });
++beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards; DELETE FROM card_lists; DELETE FROM card_list_entries;'); });
+ 
+ /* ---------------- the invariant, per writer ---------------- */
+ 

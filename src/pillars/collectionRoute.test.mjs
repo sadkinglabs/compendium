@@ -61,21 +61,27 @@ test('every returned surface is a declared one', () => {
 
 /* ---------------- storage (increment 3) ---------------- */
 
-test('storage is a SECTION of My Collection - there is no storage index surface', () => {
-  // Owner ruling: "INSIDE My Collection - top section would be sets, and below you'd have Storage",
-  // agreed in preference to a fourth chip, and "it keeps the chip row at three". So the list of
-  // places renders on setsHome; only opening one is a surface.
-  assert.equal(collectionSurface({ view: 'cards' }), 'setsHome');
-  assert.equal(collectionSurface({ view: 'cards', placeOpen: { id: 'c1' } }), 'storageDetail');
-  assert.equal(collectionSurface({ view: 'storage' }), 'overview', 'no such view; unknown lands somewhere real');
+test('storage is the THIRD SEGMENT of My Collection, not a chip and not an appendage', () => {
+  // Owner, amended 2026-08-18: "put Storage under its own section in the pill nav and rearrange so
+  // we have ALL - SETS - STORAGE". It stays inside My Collection; the chip row stays at three.
+  assert.equal(collectionSurface({ view: 'cards', cardsMode: 'storage' }), 'storageIndex');
+  assert.equal(collectionSurface({ view: 'cards', cardsMode: 'storage', placeOpen: { id: 'c1' } }), 'storageDetail');
+  assert.equal(collectionSurface({ view: 'storage' }), 'overview', 'there is no such view');
 });
 
-test('a set drill outranks an open place', () => {
-  assert.equal(collectionSurface({ view: 'cards', placeOpen: { id: 'c1' }, setDrill: '001' }), 'setDrill');
+test('all and sets are the same surface - setsHome owns that toggle itself', () => {
+  assert.equal(collectionSurface({ view: 'cards', cardsMode: 'all' }), 'setsHome');
+  assert.equal(collectionSurface({ view: 'cards', cardsMode: 'sets' }), 'setsHome');
+  assert.equal(collectionSurface({ view: 'cards' }), 'setsHome', 'no mode means the default one');
 });
 
-test('a stale placeOpen cannot resurrect the place drill from another view', () => {
+test('a set drill outranks the storage mode', () => {
+  assert.equal(collectionSurface({ view: 'cards', cardsMode: 'storage', setDrill: '001' }), 'setDrill');
+});
+
+test('a stale placeOpen cannot resurrect the place drill from another view or mode', () => {
   const stale = { placeOpen: { id: 'c1' } };
   assert.equal(collectionSurface({ view: 'lists', ...stale }), 'listsIndex');
+  assert.equal(collectionSurface({ view: 'cards', cardsMode: 'sets', ...stale }), 'setsHome');
   assert.equal(collectionSurface({ view: 'overview', ...stale }), 'overview');
 });

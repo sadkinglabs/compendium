@@ -794,6 +794,14 @@ Agreed in the same exchange, explicitly in preference to a fourth chip: *"it's b
 fourth chip … Sets on top, Storage below. Same owned cards, two organisations, one screen. And it
 keeps the chip row at three."* The chip row stays at **three**.
 
+**AMENDED by the owner, 2026-08-18:** *"Let's put Storage under its own section in the pill nav and
+rearrange so we have ALL - SETS - STORAGE."* Storage is no longer a strip below the sets grid; it is
+the **third segment of My Collection's segmented control**, and that control is reordered to **All ·
+Sets · Storage**. What survives from the original ruling is the part that mattered: Storage lives
+INSIDE My Collection and the chip row stays at three. What changes is that it is a peer surface of
+Sets rather than an appendage to it - which also removes a real defect, since a section trailing the
+sets grid put its last rows underneath the fixed bottom nav where they could not be tapped.
+
 "Folder-like" governs the interaction (create, name, rename, delete, tap in) and **not** the
 semantics: a folder holds an item once, whereas four copies legitimately sit in three containers at
 the same time. Hence Q16.

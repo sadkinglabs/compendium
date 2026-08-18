@@ -62,7 +62,7 @@ import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, B
 import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
 import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
-import { StorageSection, StorageDetail } from './CollectionStorage.jsx';
+import { StorageIndex, StorageDetail } from './CollectionStorage.jsx';
 import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -98,7 +98,10 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const [view, setView] = useState(boundSession.view);       // overview | cards | lists
   const [listOpen, setListOpen] = useState(boundSession.listOpen);  // a list row when its detail is open
   const [placeOpen, setPlaceOpen] = useState(boundSession.placeOpen);  // a container row when its detail is open
-  const [allMode, setAllMode] = useState(false);   // My Collection: SETS (sets-home) vs ALL (flat all-cards grid)
+  // My Collection has THREE peer surfaces, in the owner's order: ALL (flat all-cards grid),
+  // SETS (the completion home) and STORAGE (the places you made). A boolean could not carry a
+  // third, and the mode belongs to the view rather than to the nav - the chip row stays at three.
+  const [cardsMode, setCardsMode] = useState('sets');
   // Card-tap detail sheet, lifted to the pillar root so Overview, Cards and
   // ListDetail all share one instance (its ledger writes broadcast via
   // subscribeCollection, so each view refreshes itself).
@@ -120,6 +123,9 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   // = name-level. Stable so the memoized rows don't re-render.
   const peek = useCallback((cardId, set, foil) => { setSheetCard(cardId || null); setSheetSet(set || null); setSheetFoil(foil); }, []);
   const go = (v) => { setListOpen(null); setPlaceOpen(null); setSetDrill(null); setDrillInfo(null); setView(v); };
+  // Leaving Storage closes the place you were in, so returning to the mode lands on the list of
+  // places rather than back inside one you had mentally left.
+  const goMode = (m) => { if (m !== 'storage') setPlaceOpen(null); setCardsMode(m); };
   // Hardware Back mirrors the on-screen back for the HIERARCHICAL layers only:
   // set drill -> Sets, list detail -> Lists. The view pills and the Sets/All toggle
   // are presentation state and deliberately do NOT consume Back - inventing history
@@ -149,7 +155,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       </div>
     </div>
   );
-  const surface = collectionSurface({ view, setDrill, listOpen, placeOpen });
+  const surface = collectionSurface({ view, setDrill, listOpen, placeOpen, cardsMode });
 
   return (
     <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
@@ -170,24 +176,17 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <>
           {/* My Collection: SETS (the sets-completion home) or ALL (every card, flat, on the search
               engine). Switching modes unmounts the other, which clears any ALL selection - as spec'd. */}
+          {/* ALL - SETS - STORAGE, in the owner's order. Three lenses on the same owned cards:
+              every card flat, the sets the game defines, and the places you keep them in. */}
           <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
-            <SegTabs ariaLabel="Show sets or all cards" value={allMode ? 'all' : 'sets'} onChange={(k) => setAllMode(k === 'all')}
-              options={[{ key: 'sets', label: 'Sets' }, { key: 'all', label: 'All' }]} />
+            <SegTabs ariaLabel="Show all cards, sets, or storage" value={cardsMode} onChange={goMode}
+              options={[{ key: 'all', label: 'All' }, { key: 'sets', label: 'Sets' }, { key: 'storage', label: 'Storage' }]} />
           </div>
-          {allMode
+          {cardsMode === 'all'
             ? <AllCards onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)} />
-            : (
-              <>
-                <SetsHome onOpenSet={openSet} rev={rev} />
-                {/* Sets are the containers the game gave you; STORAGE is the ones you made. Same
-                    cards, two organisations, one screen - the owner's placement ruling, and the
-                    reason there is no Storage chip. It sits under the grid on the SETS side only:
-                    the All view is a flat search surface with its own filter and add FABs. */}
-                <StorageSection onOpenPlace={setPlaceOpen} rev={rev} />
-              </>
-            )}
+            : <SetsHome onOpenSet={openSet} rev={rev} />}
           {/* Scan FAB only on the SETS home; the ALL view has its own filter + add FABs. */}
-          {!allMode && (
+          {cardsMode === 'sets' && (
             <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
               onClick={() => launchScanner({ onOpenCard: (id, name) => onOpen('card', id, name), mode: 'collection' })} />
           )}
@@ -197,6 +196,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       )}
       {surface === 'listsIndex' && <ListsIndex onOpenList={setListOpen} rev={rev} />}
+      {surface === 'storageIndex' && <StorageIndex onOpenPlace={setPlaceOpen} rev={rev} />}
       {surface === 'storageDetail' && (
         <StorageDetail place={placeOpen} onBack={() => setPlaceOpen(null)} onChanged={onChanged} onPeek={peek} />
       )}

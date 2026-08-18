@@ -1,10 +1,13 @@
 // STORAGE - where the cards physically are (docs/proposals/collection-storage.md, increment 3).
 //
-// PLACEMENT, because I got it wrong twice. Storage is a SECTION INSIDE My Collection, rendered below
-// the sets grid - the owner's ruling, agreed explicitly in preference to a fourth chip: "top section
-// would be sets, and below you'd have Storage", and "it keeps the chip row at three". Sets are the
-// containers the game gave you; places are the ones you made. Same cards, two organisations, one
-// screen. There is no Storage tab and no Storage index surface.
+// PLACEMENT. Storage is the THIRD SEGMENT of My Collection - "put Storage under its own section in
+// the pill nav and rearrange so we have ALL - SETS - STORAGE" (owner, 2026-08-18, amending the
+// original "below the sets grid" ruling). It stays INSIDE My Collection and the chip row stays at
+// three. All, Sets and Storage are three lenses on the same owned cards: every card flat, the sets
+// the game defines, and the places you keep them in.
+//
+// Being a peer surface rather than a strip under the grid also removed a real defect: trailing the
+// sets grid put these rows beneath the fixed bottom nav, where they could not be tapped at all.
 //
 // WHAT IT IS FOR. My Collection answers "what do I own". Storage answers "where is it". So a place
 // never headlines an owned total - it headlines what is in it.
@@ -182,7 +185,7 @@ function DeletePlaceSheet({ open, place, onClose, onConfirm }) {
 
 /* ---------------- the section, below the sets grid ---------------- */
 
-export function StorageSection({ onOpenPlace, rev }) {
+export function StorageIndex({ onOpenPlace, rev }) {
   const [places, setPlaces] = useState(null);
   const [create, setCreate] = useState(false);
 
@@ -194,7 +197,7 @@ export function StorageSection({ onOpenPlace, rev }) {
     return () => { alive = false; off(); };
   }, [rev]);
 
-  if (places == null) return null;   // the sets grid above is already rendered; do not flash a spinner
+  if (places == null) return <Loading />;
 
   // Q15: Unfiled is pinned FIRST and visually distinct. `listContainers` already orders it first;
   // this only separates it for rendering.
@@ -226,18 +229,8 @@ export function StorageSection({ onOpenPlace, rev }) {
   );
 
   return (
-    // KNOWN DEFECT, build 282, NOT yet fixed by this padding. Driving the release APK shows the
-    // last rows of this section sitting UNDER the fixed bottom nav: Unfiled reports bounds at
-    // y=2850 on a 2992-tall screen with the nav starting near 2806, and the page will not scroll
-    // any further - so a tap at the row's own centre lands on the nav's Home button instead.
-    //
-    // The padding below is the deck pager's clearance idiom and it did NOT move the row, which
-    // rules out the obvious cause: #cx-pillar-scroll already carries nav-h + 92px of its own
-    // padding (App.jsx S.body), so the clearance exists and something else is capping the scroll.
-    // Left in place because it is correct in principle, and labelled because it is not sufficient.
-    // Opening a place therefore remains UNVERIFIED on device.
-    <div style={{ marginTop: 26, paddingBottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom) + 28px)' }}>
-      <SectionLabel label="STORAGE" count={mine.length || undefined} />
+    <div style={{ padding: '2px 20px' }}>
+      <SectionLabel label="PLACES" count={mine.length || undefined} />
       {/* Q13/Q15: always visible, always first, so it is a stable destination rather than something
           that appears and vanishes. */}
       {unfiled && row(unfiled, -1)}

@@ -1,0 +1,2042 @@
+diff --git a/COMPENDIUM_DATA_MODEL.md b/COMPENDIUM_DATA_MODEL.md
+index 483eb68..bbba5d2 100644
+--- a/COMPENDIUM_DATA_MODEL.md
++++ b/COMPENDIUM_DATA_MODEL.md
+@@ -6,10 +6,11 @@
+ 
+ ## 1. Current schema baseline
+ 
+-- **Schema version:** 11
++- **Schema version:** 12
+ - **Database:** `compendium.db` on Capacitor/SQLite; an exported SQLite image persisted in IndexedDB for the browser sql.js runtime
+ - **Schema version record:** `_meta.schema_version`
+ - **Ledger canonicalisation record:** `_meta.owned_cards_canonical_version` (see below)
++- **Storage backfill record:** `_meta.storage_unfiled_backfill_version` (see below)
+ - **Active profile singleton:** Capacitor Preferences key `activeProfileId`
+ - **Schema evolution:** ordered entries in `MIGRATIONS` within `src/store/schema.js`
+ - **Repository gate:** `activeProfileId()` in `src/store/profileRepository.js`
+@@ -323,6 +324,166 @@ boot fails rather than exposing a half-converted ledger. `backfillSingleSetOwned
+ single-set boot promotion, was removed: canonicalisation converts the `''` rows it looked for,
+ and moving previously recorded copies without the user present contradicts the triage model.
+ 
++### Storage: where the copies are (schema v12)
++
++v11 answered *what* a copy is. v12 answers *where it is*, and does it without adding a second
++number that can disagree with the first.
++
++```sql
++storage_containers(
++  id TEXT PRIMARY KEY,
++  profile_id REFERENCES profiles(id) ON DELETE CASCADE,
++  kind TEXT NOT NULL,                   -- unfiled | binder | box | deckbox | other
++  name TEXT NOT NULL,
++  description TEXT DEFAULT '',
++  colour TEXT NOT NULL DEFAULT 'gold',
++  sort_order INTEGER DEFAULT 0,
++  is_system INTEGER NOT NULL DEFAULT 0,
++  created_at TEXT, updated_at TEXT
++)
++-- at most ONE system container per profile
++CREATE UNIQUE INDEX idx_containers_one_system ON storage_containers(profile_id) WHERE is_system = 1;
++
++storage_allocations(
++  id TEXT PRIMARY KEY,
++  profile_id TEXT NOT NULL,
++  container_id TEXT NOT NULL,
++  owned_card_id TEXT NOT NULL,
++  qty INTEGER NOT NULL CHECK (qty > 0),
++  created_at TEXT, updated_at TEXT,
++  FOREIGN KEY (container_id, profile_id) REFERENCES storage_containers(id, profile_id) ON DELETE CASCADE,
++  FOREIGN KEY (owned_card_id, profile_id) REFERENCES owned_cards(id, profile_id) ON DELETE RESTRICT
++)
++CREATE UNIQUE INDEX idx_alloc_key ON storage_allocations(container_id, owned_card_id);
++```
++
++**The defining equality.** After every operation, for every owned row:
++
++    qty_owned = SUM(storage_allocations.qty for that row)
++
++`qty_owned` remains a real materialised column and every existing reader keeps reading it - but it
++is the SUM this model maintains, not a parallel total that can drift from it. **Allocations ARE the
++ownership.** A copy is never claimed against a separate count; it is MOVED between places, and
++"Unfiled" is a place like any other.
++
++Two structural consequences follow from the DDL rather than from discipline. `CHECK (qty > 0)`
++means a place holding no copies is DELETED, never stored as a zero - a copy that is nowhere is
++unrepresentable. `ON DELETE RESTRICT` on the owned row means a user's filing can never be
++discarded as a side effect of a count reaching zero: every legitimate delete must clear its
++allocations first and say so.
++
++**Unfiled.** Every profile has exactly one system container. The partial unique index guarantees
++*at most* one; calling `createUnfiledStatements` at every profile-creation path guarantees *at
++least* one. `sort_order -1` pins it above user containers. For a profile with no containers -
++which is every profile until someone makes one - everything is Unfiled, so every stepper, bulk
++edit and import behaves exactly as it did in v11.
++
++#### How a decrease chooses its place
++
++This is the single most important rule in the model, and it exists to remove a question rather
++than answer it.
++
++| Operation | Where the copies come from or go |
++|---|---|
++| any increase | **Unfiled.** Acquiring a copy never files it into a binder on the user's behalf |
++| decrease from the global stepper or bulk Adjust/Set | **Unfiled only.** No fallback to any other container |
++| decrease from inside a container view | that container, which is unambiguous and needs no attribution |
++| a key move (triage, canonicalisation) | allocations are **re-parented**; copies do not move shelves |
++| container deletion | its allocations move to Unfiled first - copies cannot be nowhere |
++
++A global decrease larger than Unfiled holds is a **conflict**, not a clamp and not a drain. The
++write does not happen, and `StorageConflict` carries the item, the requested target, what Unfiled
++actually holds, and the containers holding the rest, so a surface can name the places rather than
++say "cannot". An earlier design took from Unfiled and then from the fullest container; that is the
++app inventing a fact about the user's shelf, because a quantity model cannot know which physical
++copy left.
++
++**Total removal is the exception, and deliberately so** (owner ruling, amending the proposal's
++section 5). Setting a count to zero succeeds even when copies are filed, and takes the filing with
++it. When every copy leaves there is nothing to attribute and no guess to make; only a *partial*
++decrease is ambiguous.
++
++**Bulk commands fail whole.** A mixed selection in which some items are satisfiable and some are
++not writes nothing at all. A bulk command that half-applies is worse than one that explains
++itself.
++
++#### Coordination, which the core does not acquire
++
++The transactional core (`src/store/storageRepository.js`) returns STATEMENTS and **acquires no
++coordination at all**. That is a hard rule, not a style choice: interactive steppers already run
++*inside* the per-row write queue, so a core that requested the exclusive barrier there would wait
++for admitted work to drain - including itself - and every ownership tap would hang until timeout.
++
++| Tier | Coordination |
++|---|---|
++| the core | none; it composes into whatever transaction the caller already has |
++| interactive, one collector item | the caller's existing `enqueueWrite` chain on the collector-item key |
++| multi-item (bulk, undo, import, triage) | `withExclusiveCollectionWrites` around the core |
++| profile switch | `withProfileSwitchWriteBarrier`, the tolerant barrier |
++| boot (canonicalisation, backfill) | its own transaction, no interactive barrier |
++
++#### Every writer that moves `qty_owned`
++
++Ownership and its places change in ONE transaction, always. Separately, a crash between them
++leaves a durable ledger that contradicts itself.
++
++| Module | Paths |
++|---|---|
++| `ownedRepository.js` | `writeQty`, `setFoil`, `writeSetRow`, `addCopies`, `addOwnedCopiesInSet` - nine exported writers |
++| `bulkOwnedRepository.js` | the absolute upsert, and `undoBulkOwned`'s guarded restore |
++| `ownedImportRepository.js` | the absolute row batch, and the read-free resolved import |
++| `triageRepository.js` | the key move, which re-parents rather than re-places |
++| `wantedBulkRepository.js` | none - a want holds no copies, so it holds no places |
++
++Statement ORDER inside the transaction is a correctness property: **clears and removals, then the
++counts, then the places.** A clear must precede the row DELETE it enables under `RESTRICT`, and a
++place must follow the row it resolves.
++
++The read-free writers - the scanner's adder, the resolved import - stay read-free. Their places
++are resolved in SQL (`placeUnfiledByKeyStatements`) rather than by looking up the new row's id,
++because that lookup would reintroduce exactly the read-modify-write those writers exist to avoid.
++A SELECT-sourced insert that matches nothing inserts nothing and reports success, so every such
++path carries an in-transaction equality assertion that converts that silence into a rollback.
++
++Undo is conditional on both halves. A bulk restore may touch a row only while it still holds what
++the bulk write left there, and the allocation statements carry the SAME guard in the same
++transaction, running BEFORE the owned UPDATE while the row still holds the value the guard names.
++
++#### The boot backfill
++
++Canonicalisation runs first, the Unfiled backfill second. On a first upgrade there are no
++allocations, so canonicalisation reduces the ledger to its final row identities before the
++backfill attaches places; the re-parent path is still required because canonicalisation is
++shape-first and may re-run later, after Storage exists.
++
++The backfill gives every owned row with copies an Unfiled allocation for exactly those copies, and
++is **fail-closed on any sum it cannot infer** - it refuses to invent the difference rather than
++guessing. The marker `_meta.storage_unfiled_backfill_version` is written inside the same
++transaction, so a marker can never survive a backfill that did not happen. Two assertions ride
++along in that transaction (the equality, and one-Unfiled-per-profile), each provoking a constraint
++violation if violated, so a successful boot is itself the assertion.
++
++Native foreign keys are enabled and **read back** at open; the database fails to open if the
++runtime will not provide them.
++
++#### Import, export, and rollback
++
++Profile bundles carry `storage_containers` and `storage_allocations`. A bundle that predates
++Storage has neither, and its owned rows are filed to Unfiled on import. Copies are conserved on
++every path; only the filing can be lost, never the count.
++
++**Rollback is unsafe on any device that has run v12**: an older build omits Storage from every
++export it takes.
++
++Storage invariants:
++
++- `qty_owned = SUM(allocations)` for every owned row, after every operation.
++- Exactly one Unfiled container per profile - no more by index, no fewer by construction.
++- No allocation of zero copies, and no allocation without a container and an owned row.
++- A global decrease takes from Unfiled or refuses; it never reaches into a named container.
++- A key move re-parents places; it never removes copies from one place and invents them in another.
++- Wants hold no copies, so they hold no places.
++
+ Collection invariants:
+ 
+ - Ownership is a ledger, not an allocator; decks never reserve cards.
+@@ -332,6 +493,7 @@ Collection invariants:
+ - Token cards do not count toward collectible ownership totals.
+ - `owned_cards` is unrelated to the deck zone named `collection`.
+ - `card_lists` is unrelated to Codex `collections`.
++- Ownership and its places change in one transaction; the equality above holds at every commit.
+ 
+ ## 7. Deck data
+ 
+diff --git a/docs/proposals/collection-storage.md b/docs/proposals/collection-storage.md
+index 8dea416..92dc97b 100644
+--- a/docs/proposals/collection-storage.md
++++ b/docs/proposals/collection-storage.md
+@@ -339,7 +339,15 @@ Responsibilities:
+    **structured conflicts** - item, requested target, non-Unfiled total, and the containers holding
+    them - so the UI can name the places rather than saying "cannot". A mixed selection where some
+    items are satisfiable and some are not fails whole; a bulk command that half-applies is worse
+-   than one that explains itself. Set-to-zero is the same rule with a target of 0.
++   than one that explains itself.
++
++   **Set-to-zero is the exception, by owner ruling (2026-08-18), amending revision 4.** This
++   clause originally read "Set-to-zero is the same rule with a target of 0" - reject if any copy
++   is filed. It is not. The wall exists because a quantity model cannot know WHICH physical copy
++   left; when EVERY copy leaves there is nothing to attribute and no guess to make. A partial
++   decrease into filed copies is ambiguous; total removal is not. So a target of 0 succeeds and
++   takes the filing with it, which is also what the increment-1 delete paths already do on device.
++   Implemented in `planAllocationChanges` and asserted by `storageWriterInvariant.test.mjs`.
+ 6. **Undo** reverses both the total and the exact Unfiled allocation it changed, under the same
+    expected-state guards `undoBulkOwned` already applies
+    ([`bulkOwnedRepository.js:145`](../../src/store/bulkOwnedRepository.js#L145)) - a row is restored
+diff --git a/src/store/bulkOwnedRepository.js b/src/store/bulkOwnedRepository.js
+index 3bfd9f2..dfbc73d 100644
+--- a/src/store/bulkOwnedRepository.js
++++ b/src/store/bulkOwnedRepository.js
+@@ -45,18 +45,23 @@ import { planBulk, planUndo, classifyUndoOutcome } from './bulkPlan.js';
+ import { uuid, nowIso } from './ids.js';
+ import { canonicalPrinting, parsePrinting } from './printings.js';
+ import { notifyOwnedChanged } from './ownedRepository.js';
++import {
++  clearAllocationsStatements, placeUnfiledByKeyStatements, takeUnfiledByKeyStatements,
++  assertEqualityStatements, planGlobalRemoval, planAllocationChanges, StorageConflict,
++} from './storageRepository.js';
+ 
+ // SQLite has a bound-parameter ceiling and a selection can be arbitrarily large.
+ const CHUNK = 400;
+ 
+ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activeProfileId }) {
+-  /** Current quantities for exactly the rows we are about to touch. */
+-  async function readQuantities(pid, targets) {
++  /** Current rows for exactly the ones we are about to touch: `{ id, qty }` by UI bucket key.
++   *  The id is not decoration - a decrease has to find the row's PLACES, and they are keyed by it. */
++  async function readRows(pid, targets) {
+     const map = new Map();
+     for (let i = 0; i < targets.length; i += CHUNK) {
+       const slice = targets.slice(i, i + CHUNK);
+       const rows = await query(
+-        `SELECT card_id, variant_slug, qty_owned FROM owned_cards
++        `SELECT id, card_id, variant_slug, qty_owned FROM owned_cards
+          WHERE profile_id=? AND (${slice.map(() => '(card_id=? AND variant_slug=?)').join(' OR ')});`,
+         // TRANSLATED at the boundary. `t.set` is a UI bucket code ('' for uncategorised, or a
+         // real set); storage keys are canonical. Reading with the raw bucket looked for a row
+@@ -65,11 +70,16 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
+         [pid, ...slice.flatMap((t) => [t.cardId, canonicalPrinting(t.set, false)])]
+       );
+       // Keyed by the UI bucket the caller asked about, so the plan can look its own targets up.
+-      for (const r of rows) map.set(`${r.card_id}|${parsePrinting(r.variant_slug).set}`, r.qty_owned);
++      for (const r of rows) map.set(`${r.card_id}|${parsePrinting(r.variant_slug).set}`, { id: r.id, qty: r.qty_owned });
+     }
+     return map;
+   }
+ 
++  /** Quantities alone, for the two callers that only ever needed the number. */
++  async function readQuantities(pid, targets) {
++    return new Map([...(await readRows(pid, targets))].map(([k, v]) => [k, v.qty]));
++  }
++
+   /** Upsert one row to an ABSOLUTE quantity. Absolute (not a delta) because the plan was
+    *  computed from an authoritative read under the barrier, and because undo needs a
+    *  before/after pair that a delta cannot supply for ensure1. */
+@@ -84,6 +94,52 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
+     ];
+   }
+ 
++  /** Every place held by a set of owned rows, chunked, as `Map<owned_card_id, placements[]>`.
++   *  Undo needs this directly; the shared allocation planner does its own equivalent read. */
++  async function readPlacementsFor(ids) {
++    const map = new Map();
++    for (let i = 0; i < ids.length; i += CHUNK) {
++      const chunk = ids.slice(i, i + CHUNK);
++      const rows = await query(
++        `SELECT a.id, a.owned_card_id, a.container_id, a.qty, c.is_system
++           FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
++          WHERE a.owned_card_id IN (${chunk.map(() => '?').join(',')});`, chunk);
++      for (const r of rows) map.set(r.owned_card_id, [...(map.get(r.owned_card_id) || []), r]);
++    }
++    return map;
++  }
++
++  /**
++   * The allocation half of a bulk plan, and the place sec 5's whole-command rejection lives.
++   *
++   * The arithmetic is the shared planner's; the POLICY is this function's. A mixed selection where
++   * some items are satisfiable and some are not FAILS WHOLE - a bulk command that half-applies is
++   * worse than one that explains itself - so every conflict is collected and thrown together, and
++   * the caller gets the full list of items and the containers holding their copies rather than the
++   * first failure.
++   */
++  async function planPlaces(pid, changes, before, now) {
++    const { pre, post, conflicts } = await planAllocationChanges({
++      query,
++      profileId: pid,
++      now,
++      changes: changes.map((c) => ({
++        rowId: before.get(`${c.cardId}|${c.set}`)?.id || null,
++        cardId: c.cardId,
++        variantSlug: canonicalPrinting(c.set, false),
++        before: c.before,
++        after: c.after,
++      })),
++    });
++    if (conflicts.length) {
++      const e = new StorageConflict(conflicts[0], 'bulkOwned');
++      e.detail = { items: conflicts.map((c) => ({ ...c, set: parsePrinting(c.variantSlug).set })) };
++      e.message = `bulkOwned: ${conflicts.length} of ${changes.length} items hold copies outside Unfiled`;
++      throw e;
++    }
++    return { pre, post };
++  }
++
+   /**
+    * Apply a bulk ownership operation.
+    * @param op       'add1' | 'ensure1' | 'remove1'
+@@ -95,14 +151,26 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
+     const pid = activeProfileId();
+     let ranTransaction = false;
+     const result = await exclusive(async () => {
+-      const before = await readQuantities(pid, targets);
+-      const plan = planBulk(op, targets, (cardId, set) => before.get(`${cardId}|${set}`) || 0);
++      const before = await readRows(pid, targets);
++      const plan = planBulk(op, targets, (cardId, set) => before.get(`${cardId}|${set}`)?.qty || 0);
+       if (!plan.changes.length) {
+         return { confirmed: true, attempted: 0, changed: 0, unchanged: plan.unchanged, undo: null };
+       }
+ 
+       const now = nowIso();
+-      await tx(plan.changes.map((c) => upsertStatement(pid, c, now)));
++      const places = await planPlaces(pid, plan.changes, before, now);
++      await tx([
++        // Removals and clears first, then the counts, then the places. A clear has to precede the
++        // row it frees under RESTRICT, and a place has to follow the row it resolves.
++        ...places.pre,
++        ...plan.changes.map((c) => upsertStatement(pid, c, now)),
++        ...places.post,
++        // The whole command's equality, checked inside the transaction. Every statement above can
++        // fail to match silently - a place that resolved no row, a removal Unfiled could not
++        // cover - and a bulk write that half-holds the invariant is exactly what the transaction
++        // boundary exists to prevent. This turns any such silence into a rollback.
++        ...assertEqualityStatements(pid, plan.changes.map((c) => ({ cardId: c.cardId, variantSlug: canonicalPrinting(c.set, false) })), 'bulkOwned'),
++      ]);
+       ranTransaction = true;   // from here the database may differ, confirmed or not
+ 
+       const unconfirmed = {
+@@ -149,13 +217,37 @@ export function createBulkOwnedCommands({ exclusive, query, tx, notify, activePr
+     let ranTransaction = false;
+     const result = await exclusive(async () => {
+       const now = nowIso();
++      // A restore that would have to take copies Unfiled does not hold is DROPPED here rather than
++      // allowed to fail the transaction. The equality assertion below would otherwise turn one
++      // unsatisfiable row into a total undo failure, and a per-row conflict already has a channel:
++      // the row is left alone and the read-back classifies it exactly as it classifies a row the
++      // user edited. The read is advisory - the SQL guard on qty_owned remains the authority.
++      const rows = await readRows(pid, restores);
++      const placements = await readPlacementsFor(restores.map((r) => rows.get(`${r.cardId}|${r.set}`)?.id).filter(Boolean));
++      const applied = restores.filter((r) => {
++        if (r.to >= r.expect) return true;
++        const id = rows.get(`${r.cardId}|${r.set}`)?.id;
++        return !planGlobalRemoval(placements.get(id) || [], r.expect - r.to).conflict;
++      });
++      if (!applied.length) {
++        return { confirmed: true, attempted: restores.length, applied: 0, conflicts: restores.length };
++      }
++
+       // Conditional: the WHERE clause carries the guard, so the check and the write are one
+-      // statement and nothing can slip between them.
+-      await tx(restores.map((r) => ([
+-        `UPDATE owned_cards SET qty_owned=?, updated_at=?
+-         WHERE profile_id=? AND card_id=? AND variant_slug=? AND qty_owned=?;`,
+-        [r.to, now, pid, r.cardId, r.set, r.expect],
+-      ])));
++      // statement and nothing can slip between them. The PLACES carry the same guard and run
++      // FIRST, while the row still holds the value the guard names - after the owned UPDATE it
++      // no longer would, and the two halves would disagree about whether the undo happened.
++      await tx([
++        ...applied.flatMap((r) => (r.to > r.expect
++          ? placeUnfiledByKeyStatements({ profileId: pid, cardId: r.cardId, variantSlug: r.set, qty: r.to - r.expect, expectOwned: r.expect, now })
++          : takeUnfiledByKeyStatements({ profileId: pid, cardId: r.cardId, variantSlug: r.set, qty: r.expect - r.to, expectOwned: r.expect, now }))),
++        ...applied.map((r) => ([
++          `UPDATE owned_cards SET qty_owned=?, updated_at=?
++           WHERE profile_id=? AND card_id=? AND variant_slug=? AND qty_owned=?;`,
++          [r.to, now, pid, r.cardId, r.set, r.expect],
++        ])),
++        ...assertEqualityStatements(pid, applied.map((r) => ({ cardId: r.cardId, variantSlug: r.set })), 'undoBulkOwned'),
++      ]);
+       ranTransaction = true;
+ 
+       let after;
+diff --git a/src/store/bulkOwnedRepository.test.mjs b/src/store/bulkOwnedRepository.test.mjs
+index 62513ac..b02a6ae 100644
+--- a/src/store/bulkOwnedRepository.test.mjs
++++ b/src/store/bulkOwnedRepository.test.mjs
+@@ -69,6 +69,10 @@ beforeEach(async () => {
+   sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+   sdb.run('DELETE FROM profiles;');
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at,updated_at) VALUES('P','p',10,'t','t');");
++  // v12: every profile has an Unfiled container, and the ownership writers now place the
++  // copies they create. A fixture without one is not a lighter fixture - it is a profile
++  // the boot backfill could never have produced, and the writers fail closed on it.
++  sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-P', 'P']);
+   __setActiveIdForTests('P');
+   __resetCollectionWritesForTests();
+ });
+@@ -244,11 +248,16 @@ test('an unconfirmed apply still broadcasts once, because persisted state may ha
+ test('undo transaction succeeds but read-back THROWS: unconfirmed, no counts', async () => {
+   const c0 = commands();
+   const r = await c0.applyBulkOwned('add1', [T('a'), T('b')]);
+-  let calls = 0;
+   let bumps = 0;
++  // Targets the READ-BACK by position in the sequence, not by call number. Counting calls
++  // encoded an assumption about how many reads undo happens to make, and undo now reads the
++  // places before it writes - so `calls === 1` silently became the pre-read, and the test was
++  // asserting the contract for a failure that happens BEFORE the transaction instead of after.
++  let written = false;
+   const c = commands({
+     notify: () => { bumps += 1; },
+-    query: async (sql, params) => { calls += 1; if (calls === 1) throw new Error('read-back failed'); return dbQuery(sql, params); },
++    tx: async (statements) => { const r = await dbTx(statements); written = true; return r; },
++    query: async (sql, params) => { if (written) throw new Error('read-back failed'); return dbQuery(sql, params); },
+   });
+   const u = await c.undoBulkOwned(r.undo);
+   assert.equal(u.confirmed, false);
+diff --git a/src/store/canonicaliseBoot.js b/src/store/canonicaliseBoot.js
+index ae3d3de..9446250 100644
+--- a/src/store/canonicaliseBoot.js
++++ b/src/store/canonicaliseBoot.js
+@@ -205,6 +205,30 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
+       [CANONICAL_MARKER_KEY],
+     ]);
+ 
++    // THE SECOND ASSERTION, which the proposal's step 4 always required and this pass was missing.
++    // Same mechanism, and this is the pass that needs it most: canonicalisation MERGES rows. Two
++    // released rows collapsing onto one destination means the destination's count comes from the
++    // planner while its places come from re-parenting, and those are two different pieces of
++    // arithmetic that have to agree. A planner that summed a merge wrongly, or an allocation the
++    // identity map did not cover, would break the equality on exactly the rows that just changed
++    // shape - and the marker above would be written over the top of it, saying the conversion
++    // succeeded.
++    //
++    // SCOPED TO ROWS THAT HAVE PLACES, and that scope is not a weakening. Canonicalisation runs
++    // BEFORE the backfill, so on a first upgrade every row legitimately owns copies and has no
++    // allocation at all; asserting the equality globally here would fail every genuine v11 upgrade.
++    // A row with no places is the backfill's business. A row WITH places is this pass's business,
++    // and it must be exactly right.
++    statements.push([
++      `INSERT INTO _meta(key,value)
++         SELECT ?, 'canonicalisation-broke-the-equality'
++         WHERE EXISTS (
++           SELECT 1 FROM owned_cards o
++            WHERE EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id)
++              AND o.qty_owned <> (SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id));`,
++      [CANONICAL_MARKER_KEY],
++    ]);
++
+     await tx(statements);
+     return { planned: plan.touched, inserted, updated, deleted: plan.releasedIds.length };
+   };
+diff --git a/src/store/canonicaliseBoot.test.mjs b/src/store/canonicaliseBoot.test.mjs
+index 1d9e75f..2b9bffe 100644
+--- a/src/store/canonicaliseBoot.test.mjs
++++ b/src/store/canonicaliseBoot.test.mjs
+@@ -164,13 +164,25 @@ test('a failed transaction commits nothing and propagates so boot fails closed',
+   assert.equal(db.committed.length, 0, 'no statement survived the failure');
+ });
+ 
+-test('the assertion statement is present, guarded, and last', async () => {
++test('BOTH assertions are present, guarded, and last', async () => {
++  // Step 4 of the proposal always required two: no legacy key survived, AND the equality holds for
++  // every row that has places. This pass shipped with only the first, which is the one that
++  // matters least here - canonicalisation MERGES rows, so it is precisely the arithmetic the
++  // second assertion covers that this pass can get wrong.
+   const db = fakeDb({ owned: [owned({ qty_owned: 1 })], cards: [card('c1', ['004'])] });
+   await run(db);
+-  const last = db.committed[db.committed.length - 1];
+-  assert.ok(last[0].includes('legacy-keys-survived-canonicalisation'), 'the assertion runs last');
+-  assert.ok(last[0].includes('WHERE EXISTS'), 'it is guarded, so a clean run inserts nothing');
+-  assert.ok(!last[0].includes('ON CONFLICT'), 'no conflict clause - the collision IS the assertion');
++  const tail = db.committed.slice(-2).map(([sql]) => sql);
++  assert.ok(tail[0].includes('legacy-keys-survived-canonicalisation'));
++  assert.ok(tail[1].includes('canonicalisation-broke-the-equality'), 'the equality is asserted too');
++  for (const sql of tail) {
++    assert.ok(sql.includes('WHERE EXISTS'), 'guarded, so a clean run inserts nothing');
++    assert.ok(!sql.includes('ON CONFLICT'), 'no conflict clause - the collision IS the assertion');
++  }
++  // Scoped to rows that HAVE places. Canonicalisation runs BEFORE the backfill, so on a first
++  // upgrade every row owns copies and has no allocation at all; a global form would fail every
++  // genuine v11 upgrade.
++  assert.ok(tail[1].includes('EXISTS (SELECT 1 FROM storage_allocations'),
++    'a row with no places belongs to the backfill, not to this pass');
+ });
+ 
+ /* ---------------- every profile, not the active one ---------------- */
+diff --git a/src/store/collectionWritesProfile.test.mjs b/src/store/collectionWritesProfile.test.mjs
+index 729e740..82c04ab 100644
+--- a/src/store/collectionWritesProfile.test.mjs
++++ b/src/store/collectionWritesProfile.test.mjs
+@@ -49,7 +49,13 @@ before(async () => {
+     persist() { return Promise.resolve(); },
+   });
+   for (const m of MIGRATIONS) sdb.run(m.sql);
+-  for (const id of ['A', 'B']) sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
++  // v12: every profile has an Unfiled container, and the ownership writers now place the
++  // copies they create. A fixture without one is not a lighter fixture - it is a profile
++  // the boot backfill could never have produced, and the writers fail closed on it.
++  for (const id of ['A', 'B']) {
++    sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
++    sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-' + id, id]);
++  }
+   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LA','A','custom','ListA','2026-01-01');");
+   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LB','B','custom','ListB','2026-01-01');");
+   // listCards joins the catalog, so the boundary tests need a real card row.
+diff --git a/src/store/ownedImportRepository.js b/src/store/ownedImportRepository.js
+index 2a01d35..9e1e1ad 100644
+--- a/src/store/ownedImportRepository.js
++++ b/src/store/ownedImportRepository.js
+@@ -32,6 +32,7 @@ import { canonicalPrinting } from './printings.js';
+ import { printingFinishes } from './printingRows.js';
+ import { uuid as newId, nowIso as newNow } from './ids.js';
+ import { bulkWriteError, MAX_ITEM_QTY, MAX_BATCH_ITEMS } from './bulkWriteContract.js';
++import { planAllocationChanges, placeUnfiledByKeyStatements, assertEqualityStatements, StorageConflict } from './storageRepository.js';
+ 
+ // The largest total the ledger can safely STORE. MAX_ITEM_QTY (999) is only an input/delta limit;
+ // the ledger itself has no 999 cap (two 999 imports legitimately total 1998 - see the data model), so
+@@ -173,30 +174,41 @@ export function planOwnedSetBatch(items, catalogById, currentByKey, { pid, uuid,
+   // (copiesAdded/copiesRemoved) is accumulated from the authoritative cur->target pair per row, so the
+   // confirmation reports what actually changed on the ledger rather than what was requested.
+   const statements = [];
++  // Every row whose count actually moves, in the shape the shared allocation planner takes. The
++  // planner stays PURE - it cannot read the places itself - so it names the movement and the
++  // command layer, which has a query, turns it into allocation statements. Without this the whole
++  // absolute-import path moved copies while their places stood still, and its clear-to-zero would
++  // have failed outright on real data: an owned row with allocations cannot be deleted under
++  // RESTRICT, which is the point of RESTRICT.
++  const changes = [];
+   const cards = new Set();
+   let set = 0, removed = 0, cleared = 0, unchanged = 0, copiesAdded = 0, copiesRemoved = 0;
+   for (const { card_id, slug, qty } of targets.values()) {
+     cards.add(card_id);
+     const existing = currentByKey.get(`${card_id}|${slug}`);
+     const curOwned = existing ? (existing.qty_owned || 0) : 0;
++    const moved = (rowId) => changes.push({ rowId, cardId: card_id, variantSlug: slug, before: curOwned, after: qty });
+     if (qty === 0) {
+       if (!existing || curOwned === 0) { unchanged += 1; continue; }   // already empty - true no-op
+       copiesRemoved += curOwned;
++      moved(existing.id);
+       if ((existing.qty_wanted || 0) > 0) { statements.push({ sql: 'UPDATE owned_cards SET qty_owned=0, updated_at=? WHERE id=?;', params: [now, existing.id] }); cleared += 1; }
+       else { statements.push({ sql: 'DELETE FROM owned_cards WHERE id=?;', params: [existing.id] }); removed += 1; }
+     } else if (existing && curOwned === qty) {
+       unchanged += 1;   // already at the requested value - true no-op
+     } else if (existing) {
+       if (qty > curOwned) copiesAdded += qty - curOwned; else copiesRemoved += curOwned - qty;
++      moved(existing.id);
+       statements.push({ sql: 'UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', params: [qty, now, existing.id] });
+       set += 1;
+     } else {
+       copiesAdded += qty;
++      moved(null);
+       statements.push({ sql: 'INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', params: [uuid(), pid, card_id, slug, qty, '', now, now] });
+       set += 1;
+     }
+   }
+-  return { statements, set, removed, cleared, unchanged, cards: cards.size, copiesAdded, copiesRemoved };
++  return { statements, changes, set, removed, cleared, unchanged, cards: cards.size, copiesAdded, copiesRemoved };
+ }
+ 
+ /** Build the command over injected primitives so the barrier tests run PRODUCTION code. */
+@@ -234,13 +246,19 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid =
+         if (!plan.length) return { items: 0, cards: 0, copies: 0, noop: true };
+ 
+         const now = nowIso();
+-        const stmts = plan.map((p) => ([
+-          `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+-           VALUES(?,?,?,?,?,0,'',?,?)
+-           ON CONFLICT(profile_id,card_id,variant_slug)
+-           DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+-          [uuid(), pid, p.card_id, p.slug, p.qty, now, now],
+-        ]));
++        // Read-free, like the scanner's adder and for the same reason, so the places are resolved
++        // in SQL too rather than by a lookup that would reintroduce the read.
++        const stmts = [
++          ...plan.map((p) => ([
++            `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
++             VALUES(?,?,?,?,?,0,'',?,?)
++             ON CONFLICT(profile_id,card_id,variant_slug)
++             DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
++            [uuid(), pid, p.card_id, p.slug, p.qty, now, now],
++          ])),
++          ...plan.flatMap((p) => placeUnfiledByKeyStatements({ profileId: pid, cardId: p.card_id, variantSlug: p.slug, qty: p.qty, now })),
++          ...assertEqualityStatements(pid, plan.map((p) => ({ cardId: p.card_id, variantSlug: p.slug })), 'importCollectionResolved'),
++        ];
+ 
+         ranTransaction = true;   // from here the database may differ, confirmed or not
+         await tx(stmts);         // resolving means committed AND persisted; rejecting is indeterminate
+@@ -275,15 +293,31 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid =
+   // broadcast exactly ONCE, or no-op silently when the plan is empty. Both setOwnedItemsBulk and
+   // adjustOwnedItemsBulk funnel through here, so they share the single-broadcast + write-outcome
+   // contract (prewrite/none before the tx, transaction/unknown once statements have been dispatched).
+-  async function runPlannedWrite(plan) {
++  async function runPlannedWrite(plan, pid) {
+     let ranTransaction = false;
+     try {
+       const result = await exclusive(async () => {
+         const p = await plan();   // throws (prewrite) on an impossible positive OR a conflicting target
+         const summary = { set: p.set, removed: p.removed, cleared: p.cleared, unchanged: p.unchanged, cards: p.cards, copiesAdded: p.copiesAdded, copiesRemoved: p.copiesRemoved };
+         if (!p.statements.length) return { ...summary, noop: true };
++        const { pre, post, conflicts } = await planAllocationChanges({ query, profileId: pid, changes: p.changes || [], now: nowIso() });
++        if (conflicts.length) {
++          // Same policy as bulk: an absolute import is one atomic command, so a selection it
++          // cannot satisfy fails whole rather than filing part of someone's collection.
++          const e = new StorageConflict(conflicts[0], 'ownedImport');
++          e.detail = { items: conflicts };
++          e.message = `ownedImport: ${conflicts.length} items hold copies outside Unfiled`;
++          throw e;
++        }
+         ranTransaction = true;
+-        await tx(p.statements.map((s) => [s.sql, s.params]));
++        await tx([
++          // Clears and removals first - a row with places cannot be deleted under RESTRICT - then
++          // the counts, then the places, then the equality for every row the command touched.
++          ...pre,
++          ...p.statements.map((s) => [s.sql, s.params]),
++          ...post,
++          ...assertEqualityStatements(pid, (p.changes || []).map((c) => ({ cardId: c.cardId, variantSlug: c.variantSlug })), 'ownedImport'),
++        ]);
+         return { ...summary, noop: false };
+       });
+       if (ranTransaction && !result.noop) notify();
+@@ -315,7 +349,7 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid =
+       const cardIds = [...new Set(list.map((i) => i?.card_id).filter(Boolean))];
+       const currentByKey = await readCurrentOwned(cardIds, pid);
+       return planOwnedSetBatch(list, catalog, currentByKey, { pid, uuid, now: nowIso() });
+-    });
++    }, pid);
+   }
+ 
+   /**
+@@ -368,7 +402,7 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid =
+       });
+       const catalog = await readCatalog(absoluteList.filter((i) => i.qty > 0).map((i) => i.card_id));
+       return planOwnedSetBatch(absoluteList, catalog, currentByKey, { pid, uuid, now: nowIso(), ceiling: LEDGER_MAX });
+-    });
++    }, pid);
+   }
+ 
+   /**
+diff --git a/src/store/ownedImportRepository.test.mjs b/src/store/ownedImportRepository.test.mjs
+index 0088a9c..abd3a5e 100644
+--- a/src/store/ownedImportRepository.test.mjs
++++ b/src/store/ownedImportRepository.test.mjs
+@@ -40,9 +40,19 @@ const runTx = (stmts) => {
+ };
+ const ownOf = (slug, cardId = 'c1', pid = PID) =>
+   rows('SELECT qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug])[0]?.qty_owned ?? 0;
+-const seedOwn = (slug, owned, cardId = 'c1', pid = PID) =>
++// Seeds a row AS THE BACKFILL LEAVES IT - copies placed in Unfiled. A seeded row with copies and
++// no allocation is a state v12 cannot produce, and it makes every decrease in this file look like
++// copies filed in a binder the fixture never created.
++const place = (rowId, owned, pid = PID) => {
++  if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++    [`a-${rowId}`, pid, 'u-' + pid, rowId, owned, 'x', 'x']);
++};
++const seedOwn = (slug, owned, cardId = 'c1', pid = PID) => {
++  const id = `s-${pid}-${cardId}-${slug}`;
+   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
+-    [`s-${pid}-${cardId}-${slug}`, pid, cardId, slug, owned, '', 'x', 'x']);
++    [id, pid, cardId, slug, owned, '', 'x', 'x']);
++  place(id, owned, pid);
++};
+ 
+ let n = 0;
+ const deps = (exclusive, over = {}) => ({
+@@ -75,6 +85,10 @@ before(async () => {
+   for (const m of MIGRATIONS) sdb.run(m.sql);
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',11,'x');");
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p2','B',11,'x');");
++  // v12: every profile has an Unfiled container, and the import writers now place the copies they
++  // file. Without one the equality guard inside the transaction rolls the whole import back - which
++  // is the guard doing its job, on a profile the boot backfill could never have produced.
++  for (const id of ['p1', 'p2']) sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'x','x');", ['u-' + id, id]);
+   sdb.run(`INSERT INTO cards(card_id,name,sets,variants) VALUES('c1','C',
+     '[{"code":"001","name":"Alpha"},{"code":"002","name":"Beta"}]',
+     '${JSON.stringify(CV)}');`);
+@@ -329,6 +343,7 @@ test('adjustOwnedItemsBulk: removing MORE than present floors at 0 - row deleted
+ test('adjustOwnedItemsBulk: falling to 0 KEEPS a wishlist want (owned zeroed, row survives)', async () => {
+   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
+     [`s-want`, PID, 'c1', '001', 2, 1, '', 'x', 'x']);
++  place('s-want', 2);
+   const r = await cmdAdjust()([{ card_id: 'c1', setCode: '001', foil: false, delta: -9 }]);
+   assert.equal(ownOf('001'), 0, 'owned cleared');
+   assert.equal(wantedOf('001'), 1, 'the want is preserved');
+@@ -788,7 +803,11 @@ function raceScenario(exclusive) {
+     const cur = ownOf('001');
+     absReadDone.resolve();
+     await absWriteGo.promise;
++    // The competing write PLACES its copy, as every real writer now does. A stand-in that raises
++    // the count without a place models an interleaving v12 cannot produce, and the import's
++    // equality assertion - correctly - refuses to commit on top of it.
+     sdb.run('UPDATE owned_cards SET qty_owned=? WHERE profile_id=? AND card_id=? AND variant_slug=?;', [cur + 1, PID, 'c1', '001']);
++    sdb.run("UPDATE storage_allocations SET qty=qty+1 WHERE container_id=? AND owned_card_id=(SELECT id FROM owned_cards WHERE profile_id=? AND card_id='c1' AND variant_slug='001');", ['u-' + PID, PID]);
+   });
+   const bulkAtTx = deferred();
+   const bulkTxGo = deferred();
+diff --git a/src/store/ownedRepository.js b/src/store/ownedRepository.js
+index 6e3ce36..a0b8eb5 100644
+--- a/src/store/ownedRepository.js
++++ b/src/store/ownedRepository.js
+@@ -20,7 +20,10 @@ import {
+   parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL, SQL_IS_UNCATEGORISED,
+ } from './printings.js';
+ import { activeProfileId } from './profileRepository.js';
+-import { clearAllocationsStatements } from './storageRepository.js';
++import {
++  clearAllocationsStatements, reconcileOwnedStatements, placeUnfiledByKeyStatements,
++  assertEqualityStatements,
++} from './storageRepository.js';
+ import { uuid, nowIso } from './ids.js';
+ import { compareRequirements } from './compareEngine.js';
+ import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
+@@ -104,10 +107,16 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
+   if (o === 0 && w === 0) {
+     if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+   } else if (cur) {
+-    await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]);
++    // The places move in the SAME transaction as the count. Separately, a crash between them
++    // leaves a durable ledger that contradicts itself, and the equality is not a nicety - it is
++    // what makes qty_owned a materialised SUM rather than a second number that drifts.
++    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: o, action: 'setOwned', now });
++    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]], ...places]);
+   } else {
+-    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
+-      [uuid(), pid, cardId, UNCATEGORISED, o, w, '', now, now]);
++    const id = uuid();
++    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: o, action: 'setOwned', now });
++    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
++      [id, pid, cardId, UNCATEGORISED, o, w, '', now, now]], ...places]);
+   }
+   bump();
+ }
+@@ -259,17 +268,20 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
+   // schemas and rewritten to canonical, so the legacy 'foil' row is converted rather than twinned.
+   const candidates = printingSlugs(UNCATEGORISED_BUCKET, true);
+   const found = await query(
+-    `SELECT id, variant_slug FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
++    `SELECT id, variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
+     [pid, cardId, ...candidates],
+   );
+   const cur = found.find((r) => r.variant_slug === UNCATEGORISED_FOIL) || found[0];
+   if (q === 0) {
+     if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+   } else if (cur) {
+-    await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]);
++    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action: 'setFoil', now });
++    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]], ...places]);
+   } else {
+-    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
+-      [uuid(), pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]);
++    const id = uuid();
++    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: q, action: 'setFoil', now });
++    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
++      [id, pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]], ...places]);
+   }
+   bump();
+ }
+@@ -424,10 +436,17 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
+   if (slug === UNCATEGORISED) return writeQty(cardId, { owned: qty }, pid);
+   const now = nowIso();
+   const q = Math.max(0, qty | 0);
+-  const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
++  const cur = (await query('SELECT id, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
++  const action = foil ? 'setFoilInSet' : 'setOwnedInSet';
+   if (q === 0) { if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]); }
+-  else if (cur) await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
+-  else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
++  else if (cur) {
++    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action, now });
++    await tx([['UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]], ...places]);
++  } else {
++    const id = uuid();
++    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: q, action, now });
++    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [id, pid, cardId, slug, q, '', now, now]], ...places]);
++  }
+   bump();
+ }
+ export async function setOwnedInSet(cardId, set, qty, pid = activeProfileId()) { return writeSetRow(cardId, set, false, qty, pid); }
+@@ -636,13 +655,21 @@ async function addCopies(cardId, col, n) {
+   // legitimate v11 state for ownership, and the To Be Categorised pile is where it is resolved.
+   // It stays an upsert rather than a read-modify-write because scan events arrive faster than
+   // they can be serialised, and overlapping increments must not lose each other.
+-  await run(
+-    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+-     VALUES(?,?,?,?,?,?,'',?,?)
+-     ON CONFLICT(profile_id,card_id,variant_slug)
+-     DO UPDATE SET ${col}=${col}+excluded.${col}, updated_at=excluded.updated_at;`,
+-    [uuid(), pid, cardId, UNCATEGORISED, col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]
+-  );
++  //
++  // The PLACES ride in the same transaction, and are resolved in SQL rather than in JS for the
++  // same reason: looking the new row's id up here would be the read this function exists to avoid.
++  // Only an owned add places anything - a want holds no copies, so it holds no places.
++  await tx([
++    [`INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
++      VALUES(?,?,?,?,?,?,'',?,?)
++      ON CONFLICT(profile_id,card_id,variant_slug)
++      DO UPDATE SET ${col}=${col}+excluded.${col}, updated_at=excluded.updated_at;`,
++      [uuid(), pid, cardId, UNCATEGORISED, col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]],
++    ...(col === 'qty_owned'
++      ? [...placeUnfiledByKeyStatements({ profileId: pid, cardId, variantSlug: UNCATEGORISED, qty: n, now }),
++         ...assertEqualityStatements(pid, [{ cardId, variantSlug: UNCATEGORISED }], 'addOwnedCopies')]
++      : []),
++  ]);
+   bump();
+ }
+ 
+@@ -657,13 +684,15 @@ export async function addOwnedCopiesInSet(cardId, set, n = 1, foil = false) {
+   // upserts onto '001:f', a standard one onto '001'. The scanner can never read foil off a
+   // photograph, so this only ever reflects a finish the user declared on the sheet.
+   const slug = canonicalPrinting(set, foil);
+-  await run(
+-    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+-     VALUES(?,?,?,?,?,0,'',?,?)
+-     ON CONFLICT(profile_id,card_id,variant_slug)
+-     DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+-    [uuid(), pid, cardId, slug, n, now, now]
+-  );
++  await tx([
++    [`INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
++      VALUES(?,?,?,?,?,0,'',?,?)
++      ON CONFLICT(profile_id,card_id,variant_slug)
++      DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
++      [uuid(), pid, cardId, slug, n, now, now]],
++    ...placeUnfiledByKeyStatements({ profileId: pid, cardId, variantSlug: slug, qty: n, now }),
++    ...assertEqualityStatements(pid, [{ cardId, variantSlug: slug }], 'addOwnedCopiesInSet'),
++  ]);
+   bump();
+ }
+ 
+diff --git a/src/store/ownedRepository.test.mjs b/src/store/ownedRepository.test.mjs
+index 13f8619..e300509 100644
+--- a/src/store/ownedRepository.test.mjs
++++ b/src/store/ownedRepository.test.mjs
+@@ -30,15 +30,26 @@ before(async () => {
+   });
+   for (const m of MIGRATIONS) sdb.run(m.sql);   // the real schema, in order
+   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Test', 10, '2026-01-01']);
++  // v12: every profile has an Unfiled container, and the ownership writers now place the
++  // copies they create. A fixture without one is not a lighter fixture - it is a profile
++  // the boot backfill could never have produced, and the writers fail closed on it.
++  sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-' + PID, PID]);
+   __setActiveIdForTests(PID);
+ });
+ 
+ beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); sdb.run('DELETE FROM cards;'); });
+ 
+ let uid = 0;
+-const own = (cardId, slug, owned, wanted = 0) => sdb.run(
+-  'INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?);',
+-  ['o' + (++uid), PID, cardId, slug, owned, wanted, '2026-01-01', '2026-01-0' + ((uid % 9) + 1)]);
++// Seeds an owned row AS THE BACKFILL LEAVES IT - copies placed in Unfiled, not floating free.
++// A fixture row with copies and no allocation is not a simplification; it is a state v12 cannot
++// produce, and seeding it makes every decrease in this file look like a conflict.
++const own = (cardId, slug, owned, wanted = 0) => {
++  const id = 'o' + (++uid);
++  sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?);',
++    [id, PID, cardId, slug, owned, wanted, '2026-01-01', '2026-01-0' + ((uid % 9) + 1)]);
++  if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++    [id + '-u', PID, 'u-' + PID, id, owned, '2026-01-01', '2026-01-01']);
++};
+ const card = (cardId, sets) => sdb.run(
+   'INSERT INTO cards(card_id,name,sets,system) VALUES(?,?,?,?);', [cardId, cardId, JSON.stringify(sets), 'sorcery']);
+ const one = (sql) => { const r = sdb.exec(sql); return r.length ? r[0].values[0][0] : 0; };
+diff --git a/src/store/profileRoundTrip.test.mjs b/src/store/profileRoundTrip.test.mjs
+index 478fcb4..db67801 100644
+--- a/src/store/profileRoundTrip.test.mjs
++++ b/src/store/profileRoundTrip.test.mjs
+@@ -437,3 +437,96 @@ test('STORAGE: every restored owned copy is in exactly one place, and the profil
+   const bad = rows('SELECT id FROM storage_allocations WHERE profile_id=? AND qty <= 0;', [pid]);
+   assert.deepEqual(bad, [], 'no zero or negative allocations');
+ });
++
++/* ---------------- Storage: a bundle is a FILE, so its graph is validated ---------------- */
++//
++// Everything above round-trips a bundle this app wrote. These do not. A bundle can be hand-edited,
++// truncated, merged by hand, or written by a build with a bug, and the import used to write its
++// allocation graph verbatim - so a claim the ledger cannot represent became a profile born
++// violating the equality, with every later decrease misbehaving on it.
++//
++// The rule these encode: an import may LOSE FILING. It may never invent a copy, and it may never
++// produce a profile whose copies are not each in exactly one place.
++
++/** The equality, for one imported profile. */
++const misplaced = (pid) => rows(`
++  SELECT o.id, o.card_id, o.qty_owned, COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
++    FROM owned_cards o WHERE o.profile_id = ?;`, [pid])
++  .filter((r) => Number(r.qty_owned) !== Number(r.placed))
++  .map((r) => `${r.card_id}: owns ${r.qty_owned}, placed ${r.placed}`);
++
++/** A minimal storage-aware bundle, so each test can bend exactly one thing. */
++const forgedBundle = (allocations, { owned = [{ id: 'o1', card_id: 'c1', variant_slug: '001', qty_owned: 3, qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' }] } = {}) => ({
++  app: 'compendium',
++  schemaVersion: 12,
++  profile: { name: 'Forged', accent: 'gold' },
++  owned_cards: owned,
++  storage_containers: [
++    { id: 'u', kind: 'unfiled', name: 'Unfiled', colour: 'gold', is_system: 1, sort_order: -1 },
++    { id: 'b', kind: 'binder', name: 'Binder', colour: 'ruby', is_system: 0, sort_order: 0 },
++  ],
++  storage_allocations: allocations,
++});
++
++const placesIn = (pid, name) => rows(`
++  SELECT a.qty FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
++   WHERE a.profile_id=? AND c.name=?;`, [pid, name]).reduce((n, r) => n + r.qty, 0);
++
++test('OVER-PLACEMENT: a bundle placing more copies than it owns loses filing, never gains copies', async () => {
++  // Owns 3, claims 5 placed. The count wins; the surplus is dropped.
++  const pid = await importProfile(forgedBundle([
++    { id: 'a1', container_id: 'b', owned_card_id: 'o1', qty: 4 },
++    { id: 'a2', container_id: 'u', owned_card_id: 'o1', qty: 1 },
++  ]), { name: 'Over' });
++  assert.deepEqual(misplaced(pid), []);
++  assert.equal(rows('SELECT SUM(qty_owned) t FROM owned_cards WHERE profile_id=?;', [pid])[0].t, 3, 'no copy was invented');
++  assert.equal(placesIn(pid, 'Binder'), 3, 'the first place took what there was room for');
++  assert.equal(placesIn(pid, 'Unfiled'), 0, 'and there was nothing left for the second');
++});
++
++test('DUPLICATE PLACES: two rows for one container merge instead of failing the whole import', async () => {
++  // idx_alloc_key forbids the pair twice. This used to abort the entire restore on a raw index
++  // error - a corrupt line in one table losing the user their decks, matches and Codex notes.
++  const pid = await importProfile(forgedBundle([
++    { id: 'a1', container_id: 'b', owned_card_id: 'o1', qty: 1 },
++    { id: 'a2', container_id: 'b', owned_card_id: 'o1', qty: 2 },
++  ]), { name: 'Dupe' });
++  assert.deepEqual(misplaced(pid), []);
++  assert.equal(placesIn(pid, 'Binder'), 3, 'merged, exactly as the upsert everywhere else would');
++});
++
++test('MALFORMED QUANTITIES: negative, fractional and non-numeric places are dropped, copies conserved', async () => {
++  const pid = await importProfile(forgedBundle([
++    { id: 'a1', container_id: 'b', owned_card_id: 'o1', qty: -2 },
++    { id: 'a2', container_id: 'b', owned_card_id: 'o1', qty: 'two' },
++    { id: 'a3', container_id: 'b', owned_card_id: 'o1', qty: 1.7 },
++  ]), { name: 'Malformed' });
++  assert.deepEqual(misplaced(pid), []);
++  assert.equal(placesIn(pid, 'Binder'), 1, 'only the truncated 1 survived');
++  assert.equal(placesIn(pid, 'Unfiled'), 2, 'and the rest of the owned copies are loose');
++});
++
++test('A MALFORMED COUNT cannot produce a row its places can never match', async () => {
++  // The count and the placement arithmetic used to read the same field through DIFFERENT
++  // sanitisers, so a bundle carrying -5 stored -5 and placed nothing.
++  const pid = await importProfile(forgedBundle([], {
++    owned: [
++      { id: 'o1', card_id: 'c1', variant_slug: '001', qty_owned: -5, qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' },
++      { id: 'o2', card_id: 'c2', variant_slug: '001', qty_owned: '2', qty_wanted: 0, notes: '', created_at: 'x', updated_at: 'x' },
++    ],
++  }), { name: 'BadCounts' });
++  assert.deepEqual(misplaced(pid), []);
++  const got = rows('SELECT card_id, qty_owned FROM owned_cards WHERE profile_id=? ORDER BY card_id;', [pid]);
++  assert.deepEqual(got, [{ card_id: 'c1', qty_owned: 0 }, { card_id: 'c2', qty_owned: 2 }],
++    'a negative count is zero copies; a numeric string is the number it spells');
++});
++
++test('AN ORPHANED PLACE keeps its copies rather than deleting them', async () => {
++  // The container did not survive the bundle. The copies are still owned, so they land in Unfiled -
++  // filing lost, count intact, which is the trade this module makes everywhere.
++  const pid = await importProfile(forgedBundle([
++    { id: 'a1', container_id: 'ghost', owned_card_id: 'o1', qty: 3 },
++  ]), { name: 'Orphan' });
++  assert.deepEqual(misplaced(pid), []);
++  assert.equal(placesIn(pid, 'Unfiled'), 3, 'not one copy was lost with the container');
++});
+diff --git a/src/store/profileTransfer.js b/src/store/profileTransfer.js
+index 6aec78c..7b0a659 100644
+--- a/src/store/profileTransfer.js
++++ b/src/store/profileTransfer.js
+@@ -227,12 +227,19 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
+   // synthesises allocations below instead of trying to remap ones it does not have.
+   const ownedMap = new Map();
+   const ownedRows = [];
++  // The count is sanitised ONCE and the SAME number is both stored and used to place the copies.
++  // They used to diverge: the allocation arithmetic read `Number(o.qty_owned) || 0` while the row
++  // stored `o.qty_owned` verbatim. A hand-edited bundle carrying -5, "3" or null therefore wrote a
++  // count the places could never match, and the equality was broken before the profile existed.
++  // A count is a number of physical cards; it cannot be negative and it cannot be a string.
++  const safeQty = (v) => { const n = Math.trunc(Number(v)); return Number.isSafeInteger(n) && n > 0 ? n : 0; };
+   for (const o of bundle.owned_cards || []) {
+     const newId = uuid();
+     if (o.id != null) ownedMap.set(o.id, newId);
+-    ownedRows.push({ id: newId, qty_owned: Number(o.qty_owned) || 0, created_at: o.created_at, updated_at: o.updated_at });
++    const owned = safeQty(o.qty_owned);
++    ownedRows.push({ id: newId, qty_owned: owned, created_at: o.created_at, updated_at: o.updated_at });
+     ins('owned_cards', ['id', 'profile_id', 'card_id', 'variant_slug', 'qty_owned', 'qty_wanted', 'notes', 'created_at', 'updated_at'],
+-      [newId, pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
++      [newId, pid, o.card_id, o.variant_slug ?? '', owned, safeQty(o.qty_wanted), o.notes, o.created_at, o.updated_at]);
+   }
+ 
+   /* ---------------- Storage: every owned copy lands in exactly one place ----------------
+@@ -281,20 +288,50 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
+ 
+   const carried = srcAllocs.length > 0 && ownedMap.size > 0;
+   if (carried) {
+-    // Sum per owned row so a shortfall can go to Unfiled: an allocation whose container or owned
+-    // row did not survive must not silently delete the copies it held.
+-    const placed = new Map();
++    // THE INCOMING GRAPH IS VALIDATED, NOT TRUSTED. A bundle is a file: it can be hand-edited,
++    // truncated, merged by hand, or written by a build with a bug. Three things it can claim that
++    // the ledger cannot represent, each of which used to get written verbatim:
++    //
++    //   OVER-PLACEMENT - more copies placed than the row owns. The surplus was inserted anyway and
++    //     the shortfall arithmetic went negative, so the profile was born violating the equality
++    //     and every later decrease misbehaved on it. Copies are conserved and the count wins:
++    //     each allocation is taken up to the row's remaining capacity and the rest is DROPPED. The
++    //     filing is partly lost, which is the same trade this module already makes for a legacy
++    //     bundle - and strictly better than refusing someone's backup.
++    //   DUPLICATE PLACES - two rows for one (container, owned) pair. `idx_alloc_key` forbids it, so
++    //     this failed the entire import on a raw index error. They are MERGED, which is what the
++    //     upsert everywhere else in the app would have done.
++    //   MALFORMED QUANTITIES - a negative, fractional or non-numeric qty. Dropped, as before, but
++    //     now via the same sanitiser the counts use rather than a looser one.
++    //
++    // What is NOT tolerated: nothing here can raise a count. An import may lose filing; it may
++    // never invent a copy the bundle did not claim to own.
++    const capacity = new Map(ownedRows.map((r) => [r.id, r.qty_owned]));
++    const merged = new Map();   // `${contId}|${ownedId}` -> { contId, ownedId, qty, created_at, updated_at }
+     for (const a of srcAllocs) {
+       const ownedId = ownedMap.get(a.owned_card_id);
+       const contId = containerMap.get(a.container_id);
+-      const qty = Number(a.qty) || 0;
+-      if (!ownedId || !contId || qty <= 0) continue;
+-      placed.set(ownedId, (placed.get(ownedId) || 0) + qty);
++      const want = safeQty(a.qty);
++      // An allocation whose container or owned row did not survive is not silently discarded: the
++      // copies it held are still owned, so they fall through to the Unfiled shortfall below.
++      if (!ownedId || !contId || !want) continue;
++      const room = capacity.get(ownedId) || 0;
++      const qty = Math.min(want, room);
++      if (!qty) continue;
++      capacity.set(ownedId, room - qty);
++      const key = `${contId}|${ownedId}`;
++      const prev = merged.get(key);
++      if (prev) { prev.qty += qty; prev.updated_at = a.updated_at || prev.updated_at; }
++      else merged.set(key, { contId, ownedId, qty, created_at: a.created_at || nowIso(), updated_at: a.updated_at || nowIso() });
++    }
++    for (const m of merged.values()) {
+       ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
+-        [uuid(), pid, contId, ownedId, qty, a.created_at || nowIso(), a.updated_at || nowIso()]);
++        [uuid(), pid, m.contId, m.ownedId, m.qty, m.created_at, m.updated_at]);
+     }
++    // Whatever the bundle did not account for is loose. `capacity` is what is left after every
++    // accepted place, so this closes the equality by construction rather than by hope.
+     for (const r of ownedRows) {
+-      const short = r.qty_owned - (placed.get(r.id) || 0);
++      const short = capacity.get(r.id) || 0;
+       if (short > 0) {
+         ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
+           [uuid(), pid, unfiledId, r.id, short, r.created_at || nowIso(), r.updated_at || nowIso()]);
+diff --git a/src/store/storageBackfill.js b/src/store/storageBackfill.js
+index 463a823..516c7fb 100644
+--- a/src/store/storageBackfill.js
++++ b/src/store/storageBackfill.js
+@@ -55,12 +55,40 @@ export function createStorageBackfill({ query, tx, uuid = newId, now = nowIso })
+     const stamped = marker.length ? Number(marker[0].value) : null;
+     if (stamped != null && stamped >= BACKFILL_VERSION) {
+       // SHAPE-FIRST, like the canonicalisation marker: a stamp is an optimisation, never a promise.
+-      // If any owned row still has no place, the marker is wrong and the work runs anyway.
+-      const gaps = await query(`
+-        SELECT COUNT(*) n FROM owned_cards o
+-         WHERE o.qty_owned > 0
+-           AND NOT EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id);`);
+-      if (!Number(gaps[0]?.n || 0)) return { skipped: true, reason: 'done' };
++      // The stamp says the pass RAN; the shape says whether the database is actually in the state
++      // the pass exists to produce. Only both together are grounds to skip.
++      //
++      // WHAT THIS PROBE USED TO MISS, and why it is worth naming. It asked one question - "is there
++      // an owned row with copies and NO allocation" - which is only the untouched-upgrade shape. It
++      // was blind to a row that is PARTIALLY placed (owns 3, placed 1: it has an allocation, so the
++      // probe was satisfied) and blind to a profile with NO UNFILED CONTAINER (nothing about
++      // allocations mentions containers). Both are states the writers now fail closed on, so the
++      // probe would have skipped the one pass that could report them, and every ownership tap in
++      // that profile would fail with no explanation at boot.
++      //
++      // ONE query, three questions, and no correlated subquery in the common path - this runs on
++      // every cold start, and the N+1 lesson applies to boot most of all. Two whole-table SUMs and
++      // an anti-join over profiles are three index scans; the per-row correlated form is one
++      // subquery per owned row, which on a large collection is the difference between a scan and a
++      // stall.
++      //
++      // WHAT IT STILL CANNOT SEE: a COMPENSATING imbalance - one row over by two while another is
++      // under by two - nets to zero and passes. That needs two independent faults that happen to
++      // cancel, and the per-row planner below is the authority whenever anything else disagrees.
++      // Stated rather than left implicit, because a probe's blind spot is a property of the system.
++      const probe = (await query(`
++        SELECT (SELECT COALESCE(SUM(qty_owned),0) FROM owned_cards) owned,
++               (SELECT COALESCE(SUM(qty),0) FROM storage_allocations) placed,
++               (SELECT COUNT(*) FROM owned_cards o
++                 WHERE o.qty_owned > 0
++                   AND NOT EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id)) unplaced,
++               (SELECT COUNT(*) FROM profiles p
++                  LEFT JOIN storage_containers c ON c.profile_id = p.id AND c.is_system = 1
++                 WHERE c.id IS NULL) homeless;`))[0] || {};
++      const settled = Number(probe.owned || 0) === Number(probe.placed || 0)
++        && !Number(probe.unplaced || 0)
++        && !Number(probe.homeless || 0);
++      if (settled) return { skipped: true, reason: 'done' };
+     }
+ 
+     const profiles = await query('SELECT id FROM profiles;');
+diff --git a/src/store/storageBackfill.test.mjs b/src/store/storageBackfill.test.mjs
+index f7e0613..504ecb4 100644
+--- a/src/store/storageBackfill.test.mjs
++++ b/src/store/storageBackfill.test.mjs
+@@ -21,8 +21,15 @@ function fakeDb({ profiles = [], owned = [], containers = [], marker = null, fai
+     get txCalls() { return txCalls; },
+     async query(sql) {
+       if (sql.includes('FROM _meta')) return marker == null ? [] : [{ value: String(marker) }];
+-      if (sql.includes('NOT EXISTS')) {
+-        return [{ n: owned.filter((o) => o.qty_owned > 0 && !(o.placed > 0)).length }];
++      // The re-run probe, answered from the same seeded state the rest of the fake serves, so the
++      // fast path and the full pass can never disagree about what this database contains.
++      if (sql.includes('unplaced')) {
++        return [{
++          owned: owned.reduce((n, o) => n + (Number(o.qty_owned) || 0), 0),
++          placed: owned.reduce((n, o) => n + (Number(o.placed) || 0), 0),
++          unplaced: owned.filter((o) => o.qty_owned > 0 && !(o.placed > 0)).length,
++          homeless: profiles.filter((p2) => !containers.some((c) => c.profile_id === p2.id)).length,
++        }];
+       }
+       if (sql.includes('FROM profiles')) return profiles;
+       if (sql.includes('FROM storage_containers')) return containers;
+@@ -120,6 +127,7 @@ test('a marked, complete database is skipped without a transaction', async () =>
+   const db = fakeDb({
+     marker: BACKFILL_VERSION,
+     profiles: [{ id: 'p1' }],
++    containers: [{ id: 'u1', profile_id: 'p1' }],
+     owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
+   });
+   const res = await run(db);
+@@ -194,3 +202,65 @@ test('the marker is written in the SAME transaction, after guarded assertions',
+     assert.ok(Array.isArray(p), `params missing for: ${s}`);
+   }
+ });
++
++/* ---------------- what the re-run probe can and cannot see ---------------- */
++//
++// The probe decides whether a marked database may skip the pass. Its old form asked ONE question -
++// "is there an owned row with copies and no allocation" - which is only the untouched-upgrade
++// shape. These are the states it was blind to, each of which the writers now fail closed on: the
++// probe would have skipped the one pass that could report them, and every ownership tap in that
++// profile would fail at boot with nothing to explain it.
++
++test('PROBE: a PARTIALLY placed row is not "done", even though it has an allocation', async () => {
++  // Owns 3, placed 1. The old probe was satisfied because an allocation exists at all.
++  const db = fakeDb({
++    marker: BACKFILL_VERSION,
++    profiles: [{ id: 'p1' }],
++    containers: [{ id: 'u1', profile_id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 3, placed: 1, created_at: 'a' }],
++  });
++  // It runs, and the per-row planner refuses to invent the missing two rather than guessing.
++  await assert.rejects(() => run(db), /refusing to invent the difference/);
++});
++
++test('PROBE: an OVER-placed row is not "done" either', async () => {
++  const db = fakeDb({
++    marker: BACKFILL_VERSION,
++    profiles: [{ id: 'p1' }],
++    containers: [{ id: 'u1', profile_id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 1, placed: 4, created_at: 'a' }],
++  });
++  await assert.rejects(() => run(db), /refusing to invent the difference/);
++});
++
++test('PROBE: a profile with NO Unfiled container is not "done", however tidy its rows are', async () => {
++  // Nothing about allocations mentions containers, so the old probe could not see this at all.
++  // Every writer fails closed on a profile with no Unfiled, so skipping here is the worst outcome.
++  const db = fakeDb({
++    marker: BACKFILL_VERSION,
++    profiles: [{ id: 'p1' }, { id: 'p2' }],
++    containers: [{ id: 'u1', profile_id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
++  });
++  const res = await run(db);
++  assert.notEqual(res.skipped, true, 'it must not skip a profile that has nowhere to put a card');
++  assert.match(sqlOf(db).join(' '), /INSERT INTO storage_containers/);
++});
++
++test('PROBE: a settled database still skips, and asks ONE question to decide it', async () => {
++  // The fast path runs on every cold start. It must stay two reads - the marker and the probe -
++  // rather than a correlated subquery per owned row.
++  let reads = 0;
++  const base = fakeDb({
++    marker: BACKFILL_VERSION,
++    profiles: [{ id: 'p1' }],
++    containers: [{ id: 'u1', profile_id: 'p1' }],
++    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
++  });
++  const db = { ...base, query: (sql) => { reads++; return base.query(sql); }, get txCalls() { return base.txCalls; } };
++  const res = await run(db);
++  assert.equal(res.skipped, true);
++  assert.equal(res.reason, 'done');
++  assert.equal(reads, 2, 'the marker and the probe, and nothing else');
++  assert.equal(base.txCalls, 0);
++});
+diff --git a/src/store/storageRepository.js b/src/store/storageRepository.js
+index bc32e24..5f07eb8 100644
+--- a/src/store/storageRepository.js
++++ b/src/store/storageRepository.js
+@@ -127,3 +127,196 @@ export function clearAllocationsForManyStatements(ownedCardIds) {
+   if (!ids.length) return [];
+   return [[`DELETE FROM storage_allocations WHERE owned_card_id IN (${ids.map(() => '?').join(',')});`, ids]];
+ }
++
++/* ---------------- routing the ownership writers ---------------- */
++//
++// Everything above is the vocabulary; everything below is what makes the equality hold when an
++// ordinary writer moves qty_owned. Increment 1 shipped the vocabulary and wired only the DELETE
++// paths, so an increase raised the count while its Unfiled allocation stood still - the defining
++// equality broken by the first + tap. These are the pieces the seven ownership writers compose.
++
++/**
++ * A decrease that cannot be satisfied from Unfiled. NOT a failure so much as a question the app
++ * may not answer on the user's behalf: the copies are filed somewhere, and a quantity model cannot
++ * know which physical copy left. Carries the structured detail §5 requires - requested, what
++ * Unfiled actually holds, and the containers holding the rest - so a caller can name the places
++ * rather than say "cannot".
++ *
++ * Nothing renders this yet; the Storage surfaces land in increment 3. Until then it fails the
++ * write closed, which is the correct behaviour with or without a sheet to explain it.
++ */
++export class StorageConflict extends Error {
++  constructor(detail, action = 'storage') {
++    super(`${action}: ${detail?.requested} copies requested but Unfiled holds ${detail?.unfiled}`);
++    this.name = 'StorageConflict';
++    this.detail = detail;
++  }
++}
++
++/** Every place one owned row's copies are, with the flag the global planner sorts Unfiled by. */
++export async function readPlacements(query, ownedCardId) {
++  return query(
++    `SELECT a.id, a.container_id, a.qty, c.is_system
++       FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
++      WHERE a.owned_card_id = ?;`,
++    [ownedCardId],
++  );
++}
++
++/**
++ * Statements taking one owned row from `before` copies to `after`, places included.
++ *
++ * An INCREASE puts the new copies in Unfiled and touches no other container: the user's filing is
++ * a fact about their shelf, and acquiring a copy does not put it in a binder. A DECREASE goes
++ * through planGlobalRemoval, which takes from Unfiled and refuses rather than reaching further.
++ *
++ * ASYNC because a decrease has to read the places first, and only a decrease does. The increase
++ * path needs the Unfiled id alone, so the common interactive + tap costs one small indexed read.
++ */
++export async function reconcileOwnedStatements({ query, profileId, ownedCardId, before, after, action = 'storage', now = nowIso() }) {
++  if (after === before) return [];
++  if (after > before) {
++    const containerId = await unfiledContainerId(query, profileId);
++    // Fail closed. Every profile has an Unfiled container - the creation paths guarantee at least
++    // one and the partial unique index guarantees at most one - so its absence means the backfill
++    // did not run on this profile, and placing copies nowhere would be worse than refusing.
++    if (!containerId) throw new Error(`${action}: profile ${profileId} has no Unfiled container.`);
++    return placeStatements({ profileId, containerId, ownedCardId, qty: after - before, now });
++  }
++  const plan = planGlobalRemoval(await readPlacements(query, ownedCardId), before - after);
++  if (plan.conflict) throw new StorageConflict(plan.conflict, action);
++  return removalStatements(plan, now);
++}
++
++/**
++ * Statements placing `qty` copies into Unfiled, resolving BOTH the owned row and the container in
++ * SQL rather than in JavaScript.
++ *
++ * This exists for the read-free upsert writers - the scanner's addOwnedCopies, the resolved import
++ * - whose whole point is that they never read before they write, so two overlapping increments
++ * cannot lose each other. Resolving the owned row id in JS would reintroduce exactly the
++ * read-modify-write those writers were built to avoid. The row is guaranteed to exist because the
++ * upsert that creates it is the statement immediately before this one in the same transaction.
++ *
++ * The WHERE clause is not optional: SQLite cannot tell an upsert's ON from a join's ON in an
++ * INSERT ... SELECT without one.
++ */
++export function placeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, expectOwned = null, now = nowIso() }) {
++  if (!(qty > 0)) return [];
++  // `expectOwned` carries UNDO's conditional guard down to the places. Undo restores a row only
++  // while it still holds what the bulk write left there, and the allocation must be governed by
++  // the SAME condition in the SAME transaction - otherwise an undo the guard declined would still
++  // move the copies. It runs BEFORE the owned UPDATE, while the row still holds the expected value.
++  const guard = expectOwned == null ? '' : ' AND o.qty_owned=?';
++  return [[
++    `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
++     SELECT ?, o.profile_id, c.id, o.id, ?, ?, ?
++       FROM owned_cards o JOIN storage_containers c ON c.profile_id = o.profile_id AND c.is_system = 1
++      WHERE o.profile_id=? AND o.card_id=? AND o.variant_slug=?${guard}
++     ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
++    [uuid(), qty, now, now, profileId, cardId, variantSlug, ...(expectOwned == null ? [] : [expectOwned])],
++  ]];
++}
++
++/**
++ * The mirror of the above: take `qty` copies out of Unfiled for a row named by its KEY, under the
++ * same optional guard.
++ *
++ * Two statements, and the ORDER is load-bearing. CHECK (qty > 0) forbids an allocation of zero, so
++ * a place emptied by the removal must be DELETED, not updated to 0. Deleting the exact-match case
++ * FIRST and updating the strictly-greater case second is the only order that is correct for both:
++ * update-then-delete would take a place holding 4, reduce it to 2, and then delete it as an exact
++ * match for a removal of 2.
++ *
++ * If Unfiled cannot cover the removal NEITHER statement matches and nothing happens - deliberately
++ * silent here, because this form is only used where an equality assertion rides in the same
++ * transaction to turn that silence into a rollback.
++ */
++export function takeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, expectOwned = null, now = nowIso() }) {
++  if (!(qty > 0)) return [];
++  const guard = expectOwned == null ? '' : ' AND o.qty_owned=?';
++  const owned = [profileId, cardId, variantSlug, ...(expectOwned == null ? [] : [expectOwned])];
++  const selector = `container_id = (SELECT id FROM storage_containers WHERE profile_id=? AND is_system=1)
++        AND owned_card_id = (SELECT o.id FROM owned_cards o WHERE o.profile_id=? AND o.card_id=? AND o.variant_slug=?${guard})`;
++  return [
++    [`DELETE FROM storage_allocations WHERE ${selector} AND qty = ?;`, [profileId, ...owned, qty]],
++    [`UPDATE storage_allocations SET qty = qty - ?, updated_at = ? WHERE ${selector} AND qty > ?;`,
++      [qty, now, profileId, ...owned, qty]],
++  ];
++}
++
++/**
++ * A guard for the statement above, in the same transaction, for the rows it just touched.
++ *
++ * A SELECT-sourced insert that matches nothing inserts nothing and reports success - the precise
++ * shape of the silence this whole exercise is about. SQLite has no bare "fail if" outside a
++ * trigger, so this provokes a constraint violation on a row that cannot legally exist: qty 0 fails
++ * CHECK (qty > 0), and the sentinel container fails the container foreign key. Whichever fires
++ * first rolls the whole transaction back. The SELECT yields nothing at all - and so provokes
++ * nothing - unless the equality is already broken for one of the named rows.
++ */
++export function assertEqualityStatements(profileId, keys, action = 'storage') {
++  if (!keys?.length) return [];
++  const pairs = keys.map(() => '(o.card_id=? AND o.variant_slug=?)').join(' OR ');
++  return [[
++    `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
++     SELECT ?, o.profile_id, '${action}-equality-violated', o.id, 0, '', ''
++       FROM owned_cards o
++      WHERE o.profile_id=? AND (${pairs})
++        AND o.qty_owned <> COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id=o.id), 0);`,
++    [uuid(), profileId, ...keys.flatMap((k) => [k.cardId, k.variantSlug])],
++  ]];
++}
++
++/**
++ * THE allocation half of any absolute ownership plan - the one implementation every module that
++ * moves qty_owned composes, rather than each growing its own.
++ *
++ * `changes` is `[{ rowId, cardId, variantSlug, before, after }]`, with `rowId` null for a row the
++ * caller is about to create. The result is split because ORDER is a correctness property, not a
++ * preference:
++ *
++ *   `pre`  runs BEFORE the owned statements. Removals and clears belong here, and a clear MUST
++ *          precede the row DELETE it enables - allocations reference owned rows under RESTRICT,
++ *          so deleting a row that still has places fails outright rather than silently.
++ *   `post` runs AFTER them. A place has to resolve a row that exists.
++ *
++ * Conflicts are collected across every change and RETURNED, never thrown: whether an
++ * unsatisfiable item fails one row or the whole command is the caller's policy, not this
++ * function's. Bulk fails whole; undo drops the row.
++ *
++ * Reaching zero is not a conflict. See planGlobalRemoval for why a partial decrease into filed
++ * copies is ambiguous while total removal is not.
++ */
++export async function planAllocationChanges({ query, profileId, changes, now = nowIso(), chunk = 400 }) {
++  const decreasing = changes.filter((c) => c.after < c.before && c.after > 0 && c.rowId);
++  const byRow = new Map();
++  const ids = decreasing.map((c) => c.rowId);
++  for (let i = 0; i < ids.length; i += chunk) {
++    const slice = ids.slice(i, i + chunk);
++    const rows = await query(
++      `SELECT a.id, a.owned_card_id, a.container_id, a.qty, c.is_system
++         FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
++        WHERE a.owned_card_id IN (${slice.map(() => '?').join(',')});`, slice);
++    for (const r of rows) byRow.set(r.owned_card_id, [...(byRow.get(r.owned_card_id) || []), r]);
++  }
++
++  const pre = [];
++  const post = [];
++  const conflicts = [];
++  for (const c of changes) {
++    if (c.after === c.before) continue;
++    if (c.after > c.before) {
++      // Key-resolved rather than id-resolved: the row may not exist yet, and the statement that
++      // creates it is in the same transaction.
++      post.push(...placeUnfiledByKeyStatements({ profileId, cardId: c.cardId, variantSlug: c.variantSlug, qty: c.after - c.before, now }));
++    } else if (c.after === 0) {
++      if (c.rowId) pre.push(...clearAllocationsStatements(c.rowId));
++    } else {
++      const plan = planGlobalRemoval(byRow.get(c.rowId) || [], c.before - c.after);
++      if (plan.conflict) conflicts.push({ cardId: c.cardId, variantSlug: c.variantSlug, target: c.after, ...plan.conflict });
++      else pre.push(...removalStatements(plan, now));
++    }
++  }
++  return { pre, post, conflicts };
++}
+diff --git a/src/store/storageWriterInvariant.test.mjs b/src/store/storageWriterInvariant.test.mjs
+index 6b8c5d5..8ba699a 100644
+--- a/src/store/storageWriterInvariant.test.mjs
++++ b/src/store/storageWriterInvariant.test.mjs
+@@ -26,6 +26,12 @@ import { MIGRATIONS } from './schema.js';
+ import { __setBackendForTests } from './db.js';
+ import { __setActiveIdForTests } from './profileRepository.js';
+ import * as repo from './ownedRepository.js';
++import { createBulkOwnedCommands } from './bulkOwnedRepository.js';
++import { createOwnedImportCommand } from './ownedImportRepository.js';
++import { createTriageCommands } from './triageRepository.js';
++import { triagePile, fileLinePlan } from './triage.js';
++import { createWantedBulkCommand } from './wantedBulkRepository.js';
++import { createCanonicaliser } from './canonicaliseBoot.js';
+ 
+ const require = createRequire(import.meta.url);
+ const PID = 'p1';
+@@ -57,18 +63,24 @@ before(async () => {
+     exec: (s) => { sdb.run(s); return Promise.resolve(); },
+     persist: () => Promise.resolve(),
+   });
++  // `_meta` is created by openDatabase, not by a migration, so a suite that applies MIGRATIONS
++  // alone does not have it - and the boot passes write their markers there.
++  sdb.run('CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);');
+   for (const m of MIGRATIONS) sdb.run(m.sql);
+   __setActiveIdForTests(PID);
+ });
+ 
+ beforeEach(() => {
+-  sdb.run('DELETE FROM storage_allocations; DELETE FROM storage_containers; DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
++  sdb.run('DELETE FROM storage_allocations; DELETE FROM storage_containers; DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards; DELETE FROM _meta;');
+   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Home', 12, 'T']);
+   // A REAL allocation graph, which is the whole point: the fixtures that hid this bug deleted it.
+   sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'T','T');", [UNFILED, PID]);
+   sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES('b1',?,'binder','Binder','ruby',0,'T','T');", [PID]);
+-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('sole1','Sole','[{\"code\":\"001\"}]');");
+-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('multi1','Multi','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
++  // `variants` is not optional decoration: the want writers authorise through printingFinishes,
++  // which reads it STRICTLY and rejects a card it cannot describe. A fixture without it fails on
++  // InvalidPrinting before the equality is ever evaluated - the assertion silently never runs.
++  sdb.run("INSERT INTO cards(card_id,name,sets,variants) VALUES('sole1','Sole','[{\"code\":\"001\"}]','[{\"set\":\"001\",\"finish\":\"Standard\"},{\"set\":\"001\",\"finish\":\"Foil\"}]');");
++  sdb.run("INSERT INTO cards(card_id,name,sets,variants) VALUES('multi1','Multi','[{\"code\":\"001\"},{\"code\":\"002\"}]','[{\"set\":\"001\",\"finish\":\"Standard\"},{\"set\":\"001\",\"finish\":\"Foil\"},{\"set\":\"002\",\"finish\":\"Standard\"}]');");
+ });
+ 
+ /** Seed an owned row with its copies already placed, as the backfill leaves them. */
+@@ -154,3 +166,296 @@ test('a wishlist-only row has no places, and that satisfies the equality', async
+   const allocs = rows('SELECT id FROM storage_allocations WHERE profile_id=?;', [PID]);
+   assert.equal(allocs.length, 0, 'a want holds no copies, so it holds no places');
+ });
++
++/* ---------------- the BULK writers ---------------- */
++//
++// Same assertion, second module. Bulk was as unwired as the steppers and just as silent about it,
++// and no per-writer test above can see it: applyBulkOwned composes its own transaction.
++
++const bulk = createBulkOwnedCommands({
++  exclusive: (fn) => fn(),          // the barrier is not what these tests are about
++  query: (s, p = []) => Promise.resolve(rows(s, p)),
++  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
++  notify: () => {},
++  activeProfileId: () => PID,
++});
++const T = (cardId, set = '001') => ({ cardId, set });
++const at = (container, ownedId) => rows('SELECT qty FROM storage_allocations WHERE container_id=? AND owned_card_id=?;', [container, ownedId])[0]?.qty || 0;
++
++test('bulk add1 places the copies it adds', async () => {
++  seedOwned('o1', 'sole1', '001', 2, { binder: 1 });
++  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
++  assert.equal(r.confirmed, true);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at(UNFILED, 'o1'), 2, 'the new copy went to Unfiled');
++  assert.equal(at('b1', 'o1'), 1, 'the binder is untouched by an add');
++});
++
++test('bulk remove1 takes from Unfiled and leaves the binder alone', async () => {
++  seedOwned('o1', 'sole1', '001', 3, { binder: 1 });   // 1 filed, 2 loose
++  await bulk.applyBulkOwned('remove1', [T('sole1')]);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at(UNFILED, 'o1'), 1);
++  assert.equal(at('b1', 'o1'), 1, 'the binder is not raided to satisfy a global minus');
++});
++
++test('bulk remove1 REJECTS when the copies are all filed, and writes nothing', async () => {
++  seedOwned('o1', 'sole1', '001', 2, { binder: 2 });   // nothing loose
++  await assert.rejects(() => bulk.applyBulkOwned('remove1', [T('sole1')]), { name: 'StorageConflict' });
++  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 2, 'the count did not move');
++  assert.equal(at('b1', 'o1'), 2, 'and neither did the filing');
++});
++
++test('a mixed bulk selection fails WHOLE - the satisfiable item is not written either', async () => {
++  // Sec 5: a bulk command that half-applies is worse than one that explains itself.
++  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });   // satisfiable
++  seedOwned('o2', 'multi1', '001', 2, { binder: 2 });  // not
++  await assert.rejects(() => bulk.applyBulkOwned('remove1', [T('sole1'), T('multi1')]),
++    (e) => e.name === 'StorageConflict' && e.detail.items.length === 1 && e.detail.items[0].cardId === 'multi1');
++  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 2, 'the satisfiable item was not written');
++});
++
++test('bulk remove1 reaching ZERO clears the places, filed or not', async () => {
++  // Total removal needs no attribution: the wall exists because the app cannot know WHICH copy
++  // left, and when every copy leaves there is nothing to guess.
++  seedOwned('o1', 'sole1', '001', 1, { binder: 1 });
++  await bulk.applyBulkOwned('remove1', [T('sole1')]);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0);
++});
++
++test('undo of a bulk add takes the placed copy back out', async () => {
++  seedOwned('o1', 'sole1', '001', 1, { binder: 0 });
++  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
++  const u = await bulk.undoBulkOwned(r.undo);
++  assert.equal(u.applied, 1);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at(UNFILED, 'o1'), 1, 'back to where it started');
++});
++
++test('undo of a bulk remove puts the copy back in Unfiled', async () => {
++  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });
++  const r = await bulk.applyBulkOwned('remove1', [T('sole1')]);
++  const u = await bulk.undoBulkOwned(r.undo);
++  assert.equal(u.applied, 1);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at(UNFILED, 'o1'), 2);
++});
++
++test('undo REFUSED by its guard moves the places no more than it moves the count', async () => {
++  // The guard and the allocation must agree about whether the undo happened. If the places moved
++  // while the conditional UPDATE declined, the equality would break on a row nobody wrote to.
++  seedOwned('o1', 'sole1', '001', 1, { binder: 0 });
++  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
++  await repo.setOwnedInSet('sole1', '001', 5);        // the user edits it before undoing
++  const u = await bulk.undoBulkOwned(r.undo);
++  assert.equal(u.applied, 0);
++  assert.equal(u.conflicts, 1);
++  assert.deepEqual(brokenRows(), [], 'the declined undo left the ledger consistent');
++  assert.equal(at(UNFILED, 'o1'), 5, "the user's edit survived intact");
++});
++
++/* ---------------- the IMPORT writers ---------------- */
++//
++// Third module, same assertion. The absolute path had a second defect the equality alone would not
++// have named: its clear-to-zero DELETEs the owned row, and an owned row with places cannot be
++// deleted under RESTRICT. On any real v12 profile a bulk delete through import would have failed
++// outright - not a drift, a hard error - and no fixture held a place to reveal it.
++
++const importCmd = createOwnedImportCommand({
++  exclusive: (fn) => fn(),
++  query: (s, p = []) => Promise.resolve(rows(s, p)),
++  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
++  notify: () => {},
++  activeProfileId: () => PID,
++});
++
++test('a resolved import places every copy it files', async () => {
++  await importCmd.importCollectionResolved([{ card_id: 'multi1', setCode: '001', foil: false, qty: 3 }], PID);
++  assert.deepEqual(brokenRows(), []);
++});
++
++test('a resolved import onto an existing row places only the copies it adds', async () => {
++  seedOwned('o2', 'multi1', '001', 2, { binder: 2 });
++  await importCmd.importCollectionResolved([{ card_id: 'multi1', setCode: '001', foil: false, qty: 3 }], PID);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at(UNFILED, 'o2'), 3, 'the three new copies are loose');
++  assert.equal(at('b1', 'o2'), 2, 'the existing filing is untouched');
++});
++
++test('setOwnedItemsBulk to zero DELETES a row that still has places, rather than failing on RESTRICT', async () => {
++  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });
++  const r = await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID);
++  assert.equal(r.removed, 1);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0, 'no place outlived its row');
++});
++
++test('setOwnedItemsBulk to zero on a WANTED row clears the places but keeps the row', async () => {
++  seedOwned('o1', 'sole1', '001', 2, { binder: 1 });
++  sdb.run("UPDATE owned_cards SET qty_wanted=1 WHERE id='o1';");
++  const r = await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID);
++  assert.equal(r.cleared, 1);
++  assert.deepEqual(brokenRows(), [], 'a row at zero copies holds zero places');
++  assert.equal(rows("SELECT qty_wanted FROM owned_cards WHERE id='o1';")[0].qty_wanted, 1, 'the want survives');
++});
++
++test('setOwnedItemsBulk raising a count places the difference in Unfiled', async () => {
++  seedOwned('o1', 'sole1', '001', 2, { binder: 2 });
++  await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 5 }], PID);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at(UNFILED, 'o1'), 3);
++  assert.equal(at('b1', 'o1'), 2);
++});
++
++test('adjustOwnedItemsBulk lowering takes from Unfiled and refuses to reach into a binder', async () => {
++  seedOwned('o1', 'sole1', '001', 4, { binder: 3 });   // 1 loose
++  await importCmd.adjustOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, delta: -1 }], PID);
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at('b1', 'o1'), 3);
++
++  // A second step of the same size cannot come from anywhere legitimate.
++  await assert.rejects(() => importCmd.adjustOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, delta: -1 }], PID),
++    (e) => /hold copies outside Unfiled/.test(e.message));
++  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3, 'the refused adjust wrote nothing');
++});
++
++/* ---------------- TRIAGE: a key move, so the places FOLLOW the copies ---------------- */
++//
++// Fourth module, and the only one where the right answer is not "place it in Unfiled". Filing
++// establishes which printing some copies are; it does not move them off the shelf. A copy in a
++// binder before triage is in that same binder after it - so the allocations are RE-PARENTED, not
++// removed and re-created.
++
++const triage = createTriageCommands({
++  exclusive: (fn) => fn(),
++  query: (s, p = []) => Promise.resolve(rows(s, p)),
++  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
++  notify: () => {},
++  activeProfileId: () => PID,
++}).fileTriageLine;
++// Built the way the UI builds one, so the test exercises the plan shape production sees.
++const filePlan = (cardId, set) => {
++  const ledgerRows = rows('SELECT card_id, variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=?;', [PID, cardId]);
++  const pile = triagePile(ledgerRows, (id) => (id === 'multi1' ? ['001', '002'] : ['001']));
++  return fileLinePlan(pile[0], pile[0].lines[0], set);
++};
++
++test('filing keeps the copies in the containers they were already in', async () => {
++  // The whole point of re-parenting rather than re-placing: triage must not quietly unfile a
++  // collection on the way to establishing its printings.
++  seedOwned('o1', 'multi1', 'uncategorised', 3, { binder: 2 });   // 2 in the binder, 1 loose
++  const r = await triage(filePlan('multi1', '002'));
++  assert.equal(r.confirmed, true);
++  assert.deepEqual(brokenRows(), []);
++  const dest = rows("SELECT id FROM owned_cards WHERE card_id='multi1' AND variant_slug='002';")[0].id;
++  assert.equal(at('b1', dest), 2, 'the binder copies are still in the binder, now under the right printing');
++  assert.equal(at(UNFILED, dest), 1, 'and the loose one is still loose');
++  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0, 'nothing left behind');
++});
++
++test('filing onto a destination that already has places MERGES per container', async () => {
++  seedOwned('o1', 'multi1', 'uncategorised', 2, { binder: 1 });
++  seedOwned('o2', 'multi1', '002', 3, { binder: 3 });
++  await triage(filePlan('multi1', '002'));
++  assert.deepEqual(brokenRows(), []);
++  assert.equal(at('b1', 'o2'), 4, 'one binder row, not two - the unique index would not permit two');
++  assert.equal(at(UNFILED, 'o2'), 1);
++});
++
++test('a triage move conserves every copy and every place', async () => {
++  seedOwned('o1', 'multi1', 'uncategorised', 4, { binder: 4 });   // entirely filed
++  await triage(filePlan('multi1', '001'));
++  assert.deepEqual(brokenRows(), []);
++  const total = rows('SELECT SUM(qty) t FROM storage_allocations WHERE profile_id=?;', [PID])[0].t;
++  assert.equal(total, 4, 'no copy was invented and none was dropped');
++});
++
++/* ---------------- the WANT writers: proven inert, not assumed inert ---------------- */
++//
++// A want holds no copies, so it holds no places, and every want writer must leave the allocation
++// graph EXACTLY as it found it. That is easy to believe and worth proving: the wishlist shares the
++// uncategorised row with ownership, so a want writer is one careless column away from moving copies.
++
++const wantedBulk = createWantedBulkCommand({
++  exclusive: (fn) => fn(),
++  query: (s, p = []) => Promise.resolve(rows(s, p)),
++  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
++  notify: () => {},
++  activeProfileId: () => PID,
++});
++/** The whole allocation graph, ordered, as a comparable snapshot. */
++const graph = () => rows('SELECT container_id, owned_card_id, qty FROM storage_allocations WHERE profile_id=? ORDER BY container_id, owned_card_id;', [PID]);
++
++test('addWantedItemsBulk leaves the allocation graph byte-identical', async () => {
++  seedOwned('o2', 'multi1', '001', 3, { binder: 2 });   // the row the want will land on
++  const before = graph();
++  const r = await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '001', foil: false, qty: 2 }], PID);
++  assert.equal(r.items, 1);
++  assert.deepEqual(graph(), before, 'a want moved no copy and touched no place');
++  assert.deepEqual(brokenRows(), []);
++});
++
++test('a want on a card owning nothing creates a row with no places at all', async () => {
++  await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '002', foil: false, qty: 1 }], PID);
++  assert.deepEqual(graph(), [], '0 = SUM(none); a zero-quantity allocation would fail CHECK (qty > 0)');
++  assert.deepEqual(brokenRows(), []);
++});
++
++test('every want writer in the module leaves the graph alone, one after another', async () => {
++  seedOwned('o2', 'multi1', '001', 3, { binder: 2 });
++  const before = graph();
++  await repo.setWanted('multi1', 2, PID, { set: '001', foil: false });
++  await repo.stepWantedForItem('multi1', { set: '001', foil: false }, 1, PID);
++  await repo.addWantedForItem('multi1', { set: '002', foil: false }, 3, PID);
++  await repo.setWantedForItem('multi1', { set: '001', foil: false }, 0, PID);
++  await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '002', foil: false, qty: 1 }], PID);
++  assert.deepEqual(graph(), before, 'five want writers, zero movement');
++  assert.deepEqual(brokenRows(), []);
++});
++
++/* ---------------- CANONICALISATION: both assertions, against a real database ---------------- */
++//
++// The canonicaliser's own suite drives a fake database, so it can prove an assertion STATEMENT was
++// composed but never that SQLite acts on it. These run the real thing. An assertion nobody has
++// watched fire is a comment.
++
++const canonicalise = createCanonicaliser({
++  query: (s2, p2 = []) => Promise.resolve(rows(s2, p2)),
++  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s2, p2 = []]) => sdb.run(s2, p2)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
++});
++
++test('canonicalisation carries filed copies onto the row that absorbs them', async () => {
++  // A legacy row with copies in a binder, converted to its canonical key. The copies must arrive
++  // at the destination in the SAME container - re-parented, not re-placed.
++  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('L1',?,'sole1','',3,0,'','x','x');", [PID]);
++  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LA',?,'b1','L1',2,'x','x');", [PID]);
++  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LU',?,?,'L1',1,'x','x');", [PID, UNFILED]);
++
++  await canonicalise();
++  assert.deepEqual(brokenRows(), []);
++  // '' becomes 'uncategorised', NOT '001'. Canonicalisation converts the KEY; it does not file
++  // copies to a set on the user's behalf even when the card has only one - that is triage's job,
++  // and backfillSingleSetOwned was removed for exactly this reason.
++  const dest = rows("SELECT id FROM owned_cards WHERE card_id='sole1' AND variant_slug='uncategorised';")[0];
++  assert.ok(dest, 'the legacy row was converted');
++  assert.equal(at('b1', dest.id), 2, 'the binder copies followed the conversion');
++  assert.equal(at(UNFILED, dest.id), 1);
++});
++
++test('THE EQUALITY ASSERTION FIRES: a ledger that already disagrees with its places aborts boot', async () => {
++  // This is the assertion the pass shipped without. Canonicalisation MERGES rows, so the
++  // destination's count comes from the planner while its places come from re-parenting - two
++  // pieces of arithmetic that have to agree. If they ever do not, the marker must NOT be written
++  // over the top saying the conversion succeeded.
++  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('L1',?,'sole1','',3,0,'','x','x');", [PID]);
++  // Two copies placed against a row that records three. A state nothing legitimate produces.
++  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LA',?,'b1','L1',2,'x','x');", [PID]);
++
++  await assert.rejects(() => canonicalise(), 'boot fails closed rather than stamping a lie');
++  // And the rollback is total: the v10 row is untouched and no marker was written.
++  assert.equal(rows("SELECT variant_slug FROM owned_cards WHERE id='L1';")[0].variant_slug, '',
++    "the user's data is exactly as it was");
++  assert.equal(rows("SELECT value FROM _meta WHERE key='owned_cards_canonical_version';").length, 0,
++    'no marker claims a conversion that rolled back');
++});
+diff --git a/src/store/triageRepository.js b/src/store/triageRepository.js
+index 10f3914..ce4dac5 100644
+--- a/src/store/triageRepository.js
++++ b/src/store/triageRepository.js
+@@ -36,6 +36,7 @@ import {
+   LEGACY_UNCATEGORISED, LEGACY_FOIL, UNCATEGORISED, UNCATEGORISED_FOIL,
+ } from './printings.js';
+ import { UNCATEGORISED_KEYS } from './triage.js';
++import { assertEqualityStatements } from './storageRepository.js';
+ import { uuid, nowIso } from './ids.js';
+ 
+ const FIELDS = { owned: 'qty_owned', wanted: 'qty_wanted' };
+@@ -122,7 +123,7 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
+       }
+ 
+       const before = await query(
+-        `SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards
++        `SELECT id, variant_slug, qty_owned, qty_wanted FROM owned_cards
+           WHERE profile_id=? AND card_id=? AND variant_slug IN (${[...sources, dest].map(() => '?').join(',')});`,
+         [pid, plan.card_id, ...sources, dest],
+       );
+@@ -136,6 +137,20 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
+       const now = nowIso();
+       const statements = [];
+ 
++      // FILING IS A KEY MOVE, so the allocations FOLLOW THE COPIES - they are not removed from
++      // one place and invented in another. Triage does not change what the user owns or where it
++      // physically sits; it establishes which printing those copies are. A copy that was in a
++      // binder before triage is in that same binder after it.
++      //
++      // Only the SOURCE places are read here. The DESTINATION row is resolved in SQL at execution
++      // time, never guessed: an id invented for a row that does not exist yet is wrong the moment
++      // anything else creates that row first, and the re-parent would then reference a row that
++      // was never inserted.
++      const srcIds = sources.map((slug) => at(slug)?.id).filter(Boolean);
++      const srcAllocs = field === 'qty_owned' && srcIds.length
++        ? await query(`SELECT id, profile_id, container_id, qty FROM storage_allocations WHERE owned_card_id IN (${srcIds.map(() => '?').join(',')});`, srcIds)
++        : [];
++
+       // DRAW DOWN one column only. The other field on the same row is untouched, because owned
+       // and wanted resolve independently - filing copies must not silently discard a want that
+       // shares the row.
+@@ -161,6 +176,24 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
+           now, now],
+       ]);
+ 
++      // RE-PARENT, after the destination row exists and before the sources are deleted - the
++      // window in which both ends of the move are present. Merging where two source places share
++      // a container with each other or with the destination is the ON CONFLICT clause; one
++      // statement per source allocation rather than an INSERT ... SELECT because each needs its
++      // own primary key, and a SELECT yielding two rows would collide on one generated id.
++      for (const a of srcAllocs) {
++        statements.push([
++          `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
++           SELECT ?, a.profile_id, a.container_id, d.id, a.qty, ?, ?
++             FROM storage_allocations a
++             JOIN owned_cards d ON d.profile_id=? AND d.card_id=? AND d.variant_slug=?
++            WHERE a.id=?
++           ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
++          [uuid(), now, now, pid, plan.card_id, dest, a.id],
++        ]);
++        statements.push(['DELETE FROM storage_allocations WHERE id=?;', [a.id]]);
++      }
++
+       // ACCEPTED ALPHA DEBT, owner ruling: a note on a fully drained source row is LOST.
+       //
+       // The v11 proposal's merge policy says distinct non-empty notes should be carried to the
+@@ -181,6 +214,10 @@ export function createTriageCommands({ exclusive, query, tx, notify, activeProfi
+         ]);
+       }
+ 
++      // The equality for both ends of the move, inside the transaction. Filing conserves copies,
++      // so if either side comes out disagreeing with its places, nothing commits.
++      statements.push(...assertEqualityStatements(pid, [...sources, dest].map((slug) => ({ cardId: plan.card_id, variantSlug: slug })), 'fileTriageLine'));
++
+       await tx(statements);
+ 
+       // AUTHORITATIVE READ-BACK. Conservation is checked against what the database actually
+diff --git a/src/store/triageRepository.test.mjs b/src/store/triageRepository.test.mjs
+index 294036f..c6ed39d 100644
+--- a/src/store/triageRepository.test.mjs
++++ b/src/store/triageRepository.test.mjs
+@@ -27,15 +27,43 @@ const ledger = (cardId = 'c1', pid = PID) =>
+   rows('SELECT variant_slug, qty_owned, qty_wanted FROM owned_cards WHERE profile_id=? AND card_id=? ORDER BY variant_slug;', [pid, cardId]);
+ const totals = (pid = PID) =>
+   rows('SELECT SUM(qty_owned) o, SUM(qty_wanted) w FROM owned_cards WHERE profile_id=?;', [pid])[0];
+-const seed = (slug, owned = 0, wanted = 0, { cardId = 'c1', pid = PID } = {}) =>
++// Seeds a row AS THE BACKFILL LEAVES IT. Filing is a KEY move - the allocations follow the copies -
++// so a source row with copies and no places has nothing to follow, and the equality assertion
++// inside the transaction refuses to commit a move that would strand them.
++const seed = (slug, owned = 0, wanted = 0, { cardId = 'c1', pid = PID, container = null } = {}) => {
++  const id = `s-${pid}-${cardId}-${slug}`;
+   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
+-    [`s-${pid}-${cardId}-${slug}`, pid, cardId, slug, owned, wanted, '', '2026-01-01', '2026-01-01']);
++    [id, pid, cardId, slug, owned, wanted, '', '2026-01-01', '2026-01-01']);
++  if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++    [`a-${id}`, pid, container || ('u-' + pid), id, owned, '2026-01-01', '2026-01-01']);
++};
++
++// Raises a count the way a real writer does: the copies move WITH it. A hand-written count change
++// that leaves the places behind models a state v12 cannot reach, and the equality assertion inside
++// the transaction - correctly - refuses to commit on top of it.
++const setOwnedWithPlaces = (slug, qty, pid = PID, cardId = 'c1') => {
++  sdb.run('UPDATE owned_cards SET qty_owned=? WHERE profile_id=? AND card_id=? AND variant_slug=?;', [qty, pid, cardId, slug]);
++  const id = `s-${pid}-${cardId}-${slug}`;
++  sdb.run('DELETE FROM storage_allocations WHERE owned_card_id=?;', [id]);
++  if (qty > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++    [`a-${id}`, pid, 'u-' + pid, id, qty, 'x', 'x']);
++};
++
++/** Every owned row whose copies are not exactly accounted for by its places. */
++const brokenTriageRows = (pid = PID) => rows(`
++  SELECT o.id, o.qty_owned,
++         COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
++    FROM owned_cards o WHERE o.profile_id = ?;`, [pid])
++  .filter((r) => Number(r.qty_owned) !== Number(r.placed))
++  .map((r) => `${r.id}: owns ${r.qty_owned}, placed ${r.placed}`);
++
++const runTx = (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } };
+ 
+ // Dependencies injected so the barrier can be swapped for a pass-through counterfactual.
+ const deps = (over = {}) => ({
+   exclusive: (fn) => fn(),
+   query: (s, p = []) => Promise.resolve(rows(s, p)),
+-  tx: (st) => { sdb.run('BEGIN;'); try { for (const [s, p = []] of st) sdb.run(s, p); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
++  tx: (st) => { runTx(st); return Promise.resolve(); },
+   notify: () => {},
+   activeProfileId: () => PID,
+   ...over,
+@@ -59,6 +87,11 @@ before(async () => {
+   for (const m of MIGRATIONS) sdb.run(m.sql);
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',10,'x');");
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p2','B',10,'x');");
++  // v12: every profile has an Unfiled container, plus a binder to prove filing SURVIVES triage.
++  for (const id of ['p1', 'p2']) {
++    sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'x','x');", ['u-' + id, id]);
++    sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'binder','Binder','ruby',0,'x','x');", ['b-' + id, id]);
++  }
+   // c1 is printed in Alpha and Beta. 999 is a real set code but not one of ITS sets.
+   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Reprinted','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
+   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c9','Unknown to catalog','[]');");
+@@ -231,10 +264,14 @@ test('a failed READ-BACK yields confirmed:false with a NULL count, not a guess',
+   // The transaction resolved, so state may well have changed - but we cannot describe it.
+   // Reporting the planned amount here would be inventing a result.
+   seed(UNCATEGORISED, 3);
+-  let reads = 0;
++  // Targets the READ-BACK by POSITION IN THE SEQUENCE, not by call number. Counting reads encoded
++  // an assumption about how many the command happens to make, and it now reads the source places
++  // before it writes - so `reads > 2` silently became a pre-write read, and the test was asserting
++  // the unconfirmed contract for a failure that happens before the transaction instead of after.
++  let written = false;
+   const c = cmd({
+-    // Reads in order: catalog membership, authoritative before, read-back. Only the LAST fails.
+-    query: (s, p = []) => { reads++; return reads <= 2 ? Promise.resolve(rows(s, p)) : Promise.reject(new Error('read failed')); },
++    query: (s, p = []) => (written ? Promise.reject(new Error('read failed')) : Promise.resolve(rows(s, p))),
++    tx: (st) => { runTx(st); written = true; return Promise.resolve(); },
+   });
+   const res = await c(planFor(asRows(), ['001', '002'], '002'));
+   assert.equal(res.confirmed, false);
+@@ -246,9 +283,10 @@ test('a failed READ-BACK yields confirmed:false with a NULL count, not a guess',
+ 
+ test('an unconfirmed result STILL broadcasts, because persisted state may have changed', async () => {
+   seed(UNCATEGORISED, 3);
+-  let fired = 0, reads = 0;
++  let fired = 0, written = false;
+   const c = cmd({
+-    query: (s, p = []) => { reads++; return reads <= 2 ? Promise.resolve(rows(s, p)) : Promise.reject(new Error('x')); },
++    query: (s, p = []) => (written ? Promise.reject(new Error('x')) : Promise.resolve(rows(s, p))),
++    tx: (st) => { runTx(st); written = true; return Promise.resolve(); },
+     notify: () => { fired++; },
+   });
+   await c(planFor(asRows(), ['001', '002'], '002'));
+@@ -278,7 +316,7 @@ test('a concurrent addition between render and write is not lost', async () => {
+   // there is what the authoritative read is for.
+   seed(UNCATEGORISED, 2);
+   const stalePlan = planFor(asRows(), ['001', '002'], '002');
+-  sdb.run("UPDATE owned_cards SET qty_owned=3 WHERE variant_slug=?;", [UNCATEGORISED]);
++  setOwnedWithPlaces(UNCATEGORISED, 3);
+ 
+   const res = await cmd()(stalePlan);
+   assert.equal(res.moved, 3, 'it moved what was there, not what the plan remembered');
+@@ -294,11 +332,12 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
+   // proving nothing.
+   seed(UNCATEGORISED, 2);
+   const stalePlan = planFor(asRows(), ['001', '002'], '002');
+-  sdb.run("UPDATE owned_cards SET qty_owned=5 WHERE variant_slug=?;", [UNCATEGORISED]);
++  setOwnedWithPlaces(UNCATEGORISED, 5);
+ 
+   // Emulate the broken behaviour: move the plan's remembered quantity, zero the source.
+   sdb.run('BEGIN;');
+   sdb.run('UPDATE owned_cards SET qty_owned=0 WHERE profile_id=? AND card_id=? AND variant_slug=?;', [PID, 'c1', UNCATEGORISED]);
++  sdb.run('DELETE FROM storage_allocations;');   // the broken version strands them; that is the point
+   sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('x',?,?,?,?,0,'','x','x');",
+     [PID, 'c1', '002', stalePlan.qty]);
+   sdb.run('COMMIT;');
+@@ -308,19 +347,25 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
+   sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+   seed(UNCATEGORISED, 2);
+   const plan2 = planFor(asRows(), ['001', '002'], '002');
+-  sdb.run("UPDATE owned_cards SET qty_owned=5 WHERE variant_slug=?;", [UNCATEGORISED]);
++  setOwnedWithPlaces(UNCATEGORISED, 5);
+   await cmd()(plan2);
+   assert.equal(totals().o, 5, 'the real command conserves all five');
+ });
+ 
+-test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real barrier holds at 6', async () => {
++test('COUNTERFACTUAL: a pass-through barrier makes one file FAIL; the real barrier makes it a no-op', async () => {
+   // A RENDEZVOUS, not a timeout. The previous version slept 5ms and then asserted
+   // `unguarded >= 6` - which the CORRECT answer also satisfies, so it could pass without the
+   // race ever occurring. A sensitivity test that passes when the thing it tests has vanished
+   // is worse than no test: it reports safety it never measured.
+   //
+-  // Here both readers are held until BOTH have read, so the dangerous interleaving is
+-  // guaranteed rather than hoped for, and the corrupted total is asserted exactly.
++  // WHAT THIS ARM USED TO ASSERT, and why it changed. It asserted that an unbarriered race
++  // corrupts six copies into twelve. Under v12 it no longer can: the second file re-parents
++  // source places that the first one already moved, finds none, and its own equality assertion
++  // - inside its transaction - refuses the commit. The copies cannot double because the ledger
++  // will not let them. So the corruption became a LOUD FAILURE, and this test now asserts that
++  // instead. It is a stronger outcome, but it is a different one, and rewriting the assertion
++  // to match reality is only honest if the test still distinguishes the two arms - which it
++  // does: unguarded, exactly one of the two files is refused; guarded, NEITHER is.
+   const rendezvous = (n) => {
+     let arrived = 0, release;
+     const all = new Promise((r) => { release = r; });
+@@ -342,10 +387,11 @@ test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real ba
+       return out;
+     },
+   });
+-  await Promise.all([racing(plan), racing(plan)]);
+-  const unguarded = totals().o;
+-  assert.equal(unguarded, 12,
+-    'both readers saw 6 and both moved 6 - six copies became twelve, which is the corruption the barrier prevents');
++  const outcomes = await Promise.allSettled([racing(plan), racing(plan)]);
++  assert.equal(outcomes.filter((o) => o.status === 'rejected').length, 1,
++    'both readers saw 6 and both tried to move 6; the ledger refused the second rather than doubling the copies');
++  assert.equal(totals().o, 6, 'six copies stayed six - the refusal is what kept them');
++  assert.deepEqual(brokenTriageRows(), [], 'and the refused write left nothing half-applied');
+ 
+   /* ---- the real barrier: the second read happens after the first commit ---- */
+   const { withExclusiveCollectionWrites, __resetCollectionWritesForTests } = await import('./collectionWrites.js');
+@@ -353,9 +399,12 @@ test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real ba
+   seedSix();
+   const plan2 = planFor(asRows(), ['001', '002'], '002');
+   const guarded = cmd({ exclusive: withExclusiveCollectionWrites });
+-  await Promise.all([guarded(plan2), guarded(plan2)]);
++  const guardedOutcomes = await Promise.allSettled([guarded(plan2), guarded(plan2)]);
++  assert.equal(guardedOutcomes.filter((o) => o.status === 'rejected').length, 0,
++    'with the barrier neither file fails - serialising them is what turns the second into a no-op');
+ 
+   assert.equal(totals().o, 6, 'exactly six - the second file found the pile already drained and was a no-op');
++  assert.deepEqual(brokenTriageRows(), []);
+   assert.deepEqual(ledger(), [{ variant_slug: '002', qty_owned: 6, qty_wanted: 0 }]);
+ });
+ 
+diff --git a/src/store/writerInvariant.test.mjs b/src/store/writerInvariant.test.mjs
+index e765c97..0843849 100644
+--- a/src/store/writerInvariant.test.mjs
++++ b/src/store/writerInvariant.test.mjs
+@@ -44,6 +44,10 @@ before(async () => {
+   });
+   for (const m of MIGRATIONS) sdb.run(m.sql);
+   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',11,'x');");
++  // v12: every profile has an Unfiled container, and the ownership writers now place the
++  // copies they create. A fixture without one is not a lighter fixture - it is a profile
++  // the boot backfill could never have produced, and the writers fail closed on it.
++  sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-p1', 'p1']);
+   // sole1 is printed once; multi1 is a reprint. Both shapes matter: a writer that resolves a
+   // collector item behaves differently for each, and only one of them may ever ask.
+   // variants are needed now that positive item-writes validate the (set, finish) against the catalog
+@@ -100,9 +104,15 @@ test('every writer in sequence still leaves zero legacy keys', async () => {
+ test('editing a pre-existing LEGACY row converts it rather than twinning it', async () => {
+   // The realistic post-migration state is not a clean database: an import or an interrupted
+   // conversion can leave a legacy row, and the first edit must absorb it.
+-  const seed = (slug, owned, wanted) =>
++  // Placed, as the backfill leaves them. These writers only INCREASE, so an unplaced seed would
++  // pass here and still be a state v12 cannot produce - the kind of fixture that hides a gap
++  // until the first decrease meets it.
++  const seed = (slug, owned, wanted) => {
+     sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
+       [`s-${slug}`, PID, 'sole1', slug, owned, wanted, '', 'x', 'x']);
++    if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
++      [`a-${slug}`, PID, 'u-p1', `s-${slug}`, owned, 'x', 'x']);
++  };
+ 
+   seed(LEGACY_UNCATEGORISED, 2, 1);
+   seed(LEGACY_FOIL, 3, 0);
+@@ -122,6 +132,7 @@ test('editing a pre-existing LEGACY row converts it rather than twinning it', as
+ test('converting a legacy row preserves BOTH quantities on it', async () => {
+   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
+     ['s1', PID, 'sole1', LEGACY_UNCATEGORISED, 5, 3, '', 'x', 'x']);
++  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('a1',?,'u-p1','s1',5,'x','x');", [PID]);
+   await repo.stepOwnedBucket('sole1', 1);
+   const row = rows("SELECT qty_owned, qty_wanted FROM owned_cards WHERE variant_slug='uncategorised';")[0];
+   assert.equal(row.qty_owned, 6, 'owned stepped');
