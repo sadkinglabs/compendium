@@ -96,6 +96,17 @@ function seedProfile(pid, name, isDefault, createdAt) {
     [`${pid}-oc1`, pid, 'sentinel_card', '004', 3, 0, '', ts, ts]);
   sdb.run('INSERT INTO card_lists(id,profile_id,kind,name,description,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?);',
     [`${pid}-l1`, pid, 'custom', 'Wants', '', 0, ts, ts]);
+  // Storage (v12): the system Unfiled place plus a user binder, and the owned row's 3 copies split
+  // across them - so the cascade assertion below proves the places die with the profile, and the
+  // restore comparisons have a container graph to be equivalent about.
+  sdb.run('INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
+    [`${pid}-u1`, pid, 'unfiled', 'Unfiled', '', 'gold', -1, 1, ts, ts]);
+  sdb.run('INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
+    [`${pid}-b1`, pid, 'binder', 'Sentinel Binder', '', 'ruby', 0, 0, ts, ts]);
+  sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+    [`${pid}-a1`, pid, `${pid}-b1`, `${pid}-oc1`, 1, ts, ts]);
+  sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+    [`${pid}-a2`, pid, `${pid}-u1`, `${pid}-oc1`, 2, ts, ts]);
   sdb.run('INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);',
     [`${pid}-le1`, `${pid}-l1`, 'sentinel_card', 1, '004', ts]);
   sdb.run('INSERT INTO links(id,profile_id,kind,a_type,a_id,b_type,b_id,description,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
@@ -205,6 +216,13 @@ function normalisedUnit(unit) {
   const deckMap = mapOf(u.decks, ({ id, profile_id, ...r }) => r);
   const colMap = mapOf(u.collections, ({ id, profile_id, ...r }) => r);
   const listMap = mapOf(u.card_lists, ({ id, profile_id, ...r }) => r);
+  // Storage compares as a SEMANTIC GRAPH, never by row identity. Restore re-keys every id, so a
+  // digest that included them would always differ - and, worse, a digest that merely counted rows
+  // would MATCH while container_id had been remapped to the wrong container and every card had
+  // quietly changed binder. Containers are keyed by their content, allocations by which container
+  // and which owned row they name.
+  const contMap = mapOf(u.storage_containers, ({ id, profile_id, ...r }) => r);
+  const ownedMap = mapOf(u.owned_cards, ({ id, profile_id, ...r }) => r);
   // Matches reference decks, so their deck_id is remapped BEFORE their own keys are derived.
   u.matches = (u.matches || []).map((m) => ({ ...m, deck_id: m.deck_id ? (deckMap.get(m.deck_id) ?? null) : null }));
   const matchMap = mapOf(u.matches, ({ id, profile_id, ...r }) => r);
@@ -218,6 +236,10 @@ function normalisedUnit(unit) {
   u.collections = scrub(u.collections, ({ id, profile_id, ...r }) => ({ ...r, id: colMap.get(id) }));
   u.collection_items = scrub(u.collection_items, ({ id, ...r }) => ({ ...r, collection_id: colMap.get(r.collection_id) }));
   u.owned_cards = scrub(u.owned_cards, ({ id, profile_id, ...r }) => r);
+  u.storage_containers = scrub(u.storage_containers, ({ id, profile_id, ...r }) => ({ ...r, id: contMap.get(id) }));
+  u.storage_allocations = scrub(u.storage_allocations, ({ id, profile_id, ...r }) => ({
+    ...r, container_id: contMap.get(r.container_id), owned_card_id: ownedMap.get(r.owned_card_id),
+  }));
   u.card_lists = scrub(u.card_lists, ({ id, profile_id, ...r }) => ({ ...r, id: listMap.get(id) }));
   u.card_list_entries = scrub(u.card_list_entries, ({ id, ...r }) => ({ ...r, list_id: listMap.get(r.list_id) }));
   u.links = scrub(u.links, ({ id, profile_id, ...r }) => r);

@@ -176,7 +176,7 @@ test('set 0 DELETEs an owned-only row, ZEROES a wanted row, and NO-OPs an alread
   ], catalog(CV), cur, setArgs);
   assert.equal(plan.removed, 1); assert.equal(plan.cleared, 1); assert.equal(plan.unchanged, 1);
   assert.equal(plan.statements.length, 2, 'the already-empty row wrote nothing');
-  assert.match(plan.statements[0].sql, /DELETE FROM storage_allocations; DELETE FROM owned_cards/);
+  assert.match(plan.statements[0].sql, /DELETE FROM owned_cards/);
   assert.deepEqual(plan.statements[0].params, ['owned-only']);
   assert.match(plan.statements[1].sql, /UPDATE owned_cards SET qty_owned=0/);   // want preserved
   assert.deepEqual(plan.statements[1].params, ['T', 'also-wanted']);

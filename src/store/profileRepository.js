@@ -155,6 +155,7 @@ export async function deleteProfileTransferringPrimary(id, newPrimaryId) {
   await tx([
     ['UPDATE profiles SET is_default=0;'],
     ['UPDATE profiles SET is_default=1 WHERE id=?;', [newPrimaryId]],
+    ['DELETE FROM storage_allocations WHERE profile_id=?;', [id]],
     ['DELETE FROM profiles WHERE id=?;', [id]],   // ON DELETE CASCADE clears data
   ]);
   await persist();
@@ -170,7 +171,16 @@ export async function deleteProfile(id) {
   const profiles = await listProfiles();
   if (profiles.length <= 1) throw new Error('Cannot delete the only profile.');
   if (profiles.find((p) => p.id === id)?.is_default) throw new Error('The default profile cannot be deleted.');
-  await run('DELETE FROM profiles WHERE id=?;', [id]); // ON DELETE CASCADE clears data
+  // Allocations first, THEN the profile. Deleting the profile cascades to owned_cards and to
+  // storage_containers independently, and allocations hold a RESTRICT reference to owned rows - so
+  // whether the delete succeeds depends on which cascade SQLite happens to process first. It works
+  // today on both backends, and "works because of an ordering nobody promised" is exactly the shape
+  // of the native/web divergences this repo has been bitten by. Making it explicit costs one
+  // statement and removes the dependency entirely.
+  await tx([
+    ['DELETE FROM storage_allocations WHERE profile_id=?;', [id]],
+    ['DELETE FROM profiles WHERE id=?;', [id]],   // ON DELETE CASCADE clears the rest
+  ]);
   await persist();
   if (activeId === id) {
     const next = (await listProfiles())[0];

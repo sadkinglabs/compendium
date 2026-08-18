@@ -20,6 +20,7 @@ import {
   parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL, SQL_IS_UNCATEGORISED,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
+import { clearAllocationsStatements } from './storageRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
 import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
@@ -101,7 +102,7 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
   const o = Math.max(0, owned != null ? owned : (cur?.qty_owned || 0));
   const w = Math.max(0, wanted != null ? wanted : (cur?.qty_wanted || 0));
   if (o === 0 && w === 0) {
-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
     await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]);
   } else {
@@ -192,7 +193,7 @@ async function writeQtyAt(cardId, slug, wanted, pid) {
   const w = Math.max(0, wanted | 0);
   const o = cur?.qty_owned || 0;
   if (w === 0 && o === 0) {
-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
     // Rewrites the key too, so editing a legacy row converts it rather than leaving a twin.
     await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, w, now, cur.id]);
@@ -263,7 +264,7 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
   );
   const cur = found.find((r) => r.variant_slug === UNCATEGORISED_FOIL) || found[0];
   if (q === 0) {
-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
     await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]);
   } else {
@@ -424,7 +425,7 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
   const now = nowIso();
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
-  if (q === 0) { if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]); }
+  if (q === 0) { if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]); }
   else if (cur) await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
   else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
   bump();
@@ -530,7 +531,7 @@ async function writeWantedRow(cardId, set, foil, qty, pid) {
   const cur = await resolveItemRow(cardId, set, foil, pid);
   const o = cur?.qty_owned || 0;
   if (qty === 0 && o === 0) {
-    if (cur) await run('DELETE FROM owned_cards WHERE id=?;', [cur.id]);
+    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
     await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, qty, now, cur.id]);
   } else {
