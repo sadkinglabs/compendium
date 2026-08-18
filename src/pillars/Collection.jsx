@@ -172,16 +172,23 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
           setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
       )}
+      {/* ALL - SETS - STORAGE, in the owner's order: three lenses on the same owned cards - every
+          card flat, the sets the game defines, and the places you keep them in.
+
+          THE CONTROL LIVES OUTSIDE THE SURFACES IT SWITCHES. It used to sit inside the setsHome
+          block, which meant choosing Storage unmounted the very control you would use to leave it -
+          a one-way door, found by driving the build. It renders for both index surfaces and NOT for
+          the deeper layers (a set drill, an open place), which carry their own back. */}
+      {(surface === 'setsHome' || surface === 'storageIndex') && (
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
+          <SegTabs ariaLabel="Show all cards, sets, or storage" value={cardsMode} onChange={goMode}
+            options={[{ key: 'all', label: 'All' }, { key: 'sets', label: 'Sets' }, { key: 'storage', label: 'Storage' }]} />
+        </div>
+      )}
       {surface === 'setsHome' && (
         <>
-          {/* My Collection: SETS (the sets-completion home) or ALL (every card, flat, on the search
-              engine). Switching modes unmounts the other, which clears any ALL selection - as spec'd. */}
-          {/* ALL - SETS - STORAGE, in the owner's order. Three lenses on the same owned cards:
-              every card flat, the sets the game defines, and the places you keep them in. */}
-          <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
-            <SegTabs ariaLabel="Show all cards, sets, or storage" value={cardsMode} onChange={goMode}
-              options={[{ key: 'all', label: 'All' }, { key: 'sets', label: 'Sets' }, { key: 'storage', label: 'Storage' }]} />
-          </div>
+          {/* SETS (the sets-completion home) or ALL (every card, flat, on the search engine).
+              Switching modes unmounts the other, which clears any ALL selection - as spec'd. */}
           {cardsMode === 'all'
             ? <AllCards onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)} />
             : <SetsHome onOpenSet={openSet} rev={rev} />}

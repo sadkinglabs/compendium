@@ -204,7 +204,7 @@ export function StorageIndex({ onOpenPlace, rev }) {
   const unfiled = places.find((p) => p.is_system);
   const mine = places.filter((p) => !p.is_system);
 
-  const row = (p, i) => (
+  const row = (p) => (
     <ListRow
       key={p.id}
       icon={<PlaceGlyph colour={p.colour} />}
@@ -212,19 +212,11 @@ export function StorageIndex({ onOpenPlace, rev }) {
       sub={p.is_system
         ? 'Cards you own that you have not filed yet'
         : [KIND_LABEL[p.kind] || 'Place', p.description || null, p.cards ? `${p.cards} ${p.cards === 1 ? 'card' : 'cards'}` : null].filter(Boolean).join(' · ')}
-      trailing={
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ font: "600 15px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{p.copies}</span>
-          {/* Q10: ordering is the user's, so it has to be changeable. Buttons rather than drag: they
-              are reachable by keyboard and by anyone who cannot hold a long press steady. */}
-          {!p.is_system && mine.length > 1 && (
-            <OverflowMenu label={`Move ${p.name}`} items={[
-              i > 0 ? { label: 'Move up', icon: <MenuGlyph kind="up" />, onClick: () => moveContainer(p.id, 'up') } : null,
-              i < mine.length - 1 ? { label: 'Move down', icon: <MenuGlyph kind="down" />, onClick: () => moveContainer(p.id, 'down') } : null,
-            ]} />
-          )}
-        </span>
-      }
+      // NO menu button here. ListRow is a clickable div, so a button nested inside it never gets
+      // the tap - the row's own handler fires first and navigates. It was also the only row in the
+      // app carrying an overflow: everywhere else that control lives in a HEADER. Reorder moved to
+      // the place's own detail menu, which is where this app manages a thing from.
+      trailing={<span style={{ font: "600 15px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>{p.copies}</span>}
       onClick={() => onOpenPlace(p)} />
   );
 
@@ -233,22 +225,15 @@ export function StorageIndex({ onOpenPlace, rev }) {
       <SectionLabel label="PLACES" count={mine.length || undefined} />
       {/* Q13/Q15: always visible, always first, so it is a stable destination rather than something
           that appears and vanishes. */}
-      {unfiled && row(unfiled, -1)}
-      {mine.length > 0 ? mine.map(row) : (
-        // Q30: empty with a prompt, not with starter containers nobody asked for.
-        <div style={{ padding: '18px 14px', textAlign: 'center' }}>
-          <div style={{ font: "400 13.5px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 12 }}>
-            Nothing is filed yet. Make a place - a binder, a box - and Compendium will remember which
-            cards live where.
-          </div>
-          <button onClick={() => setCreate(true)} style={{ ...BTN_GOLD }}>Make a place</button>
-        </div>
-      )}
-      {mine.length > 0 && (
-        <button onClick={() => setCreate(true)} style={{
-          ...BTN_GHOST, width: '100%', marginTop: 12, font: "600 13px/1 var(--f-ui)",
-        }}>+ Make a place</button>
-      )}
+      {unfiled && row(unfiled)}
+      {/* Q30: empty with a prompt, not with starter containers nobody asked for. EmptyCta is the
+          app's empty-state shape; the ACTION is the FAB below, because that is how every create in
+          Collection works - an inline button here matched nothing else in the app. */}
+      {mine.length > 0
+        ? mine.map(row)
+        : <EmptyCta text="Nothing is filed yet. A place is a binder, a box, a deck - somewhere you actually keep cards." />}
+
+      <Fab variant="lib" label="Make a place" icon={<FabGlyph kind="add" />} onClick={() => setCreate(true)} />
       <PlaceSheet open={create} onClose={() => setCreate(false)}
         onSubmit={async (fields) => { await createContainer(fields); setCreate(false); }} />
     </div>
@@ -268,9 +253,13 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
   const [arrange, setArrange] = useState(() => normaliseSort([]));
   const [arrangeOpen, setArrangeOpen] = useState(false);
 
+  // `siblings` is only for the reorder items: whether this place can move, and which way.
+  const [siblings, setSiblings] = useState({ index: 0, total: 1 });
   const load = useCallback(async () => {
     const [all, contents] = await Promise.all([listContainers(), containerContents(place.id)]);
     setMeta(all.find((c) => c.id === place.id) || null);
+    const mine = all.filter((c) => !c.is_system);
+    setSiblings({ index: mine.findIndex((c) => c.id === place.id), total: mine.length });
     setRows(contents);
   }, [place.id]);
 
@@ -320,6 +309,12 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
           {!meta.is_system && (
             <OverflowMenu label="Place actions" items={[
               { label: 'Edit place', icon: <MenuGlyph kind="edit" />, onClick: () => setEdit(true) },
+              // Q10's manual ordering, from inside the place - the same shape as list detail's
+              // own menu, and reachable, which the row button never was.
+              siblings.index > 0
+                ? { label: 'Move earlier', onClick: async () => { await moveContainer(meta.id, 'up'); await load(); } } : null,
+              siblings.index >= 0 && siblings.index < siblings.total - 1
+                ? { label: 'Move later', onClick: async () => { await moveContainer(meta.id, 'down'); await load(); } } : null,
               { label: 'Delete place', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDelete(true) },
             ]} />
           )}
@@ -332,24 +327,17 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
       )}
 
       {rows.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <div style={{ marginBottom: 12 }}>
           <SearchPill value={q} onChange={setQ} placeholder={`Search ${meta.name}…`} />
-          <button onClick={() => setArrangeOpen(true)} style={{ ...BTN_GHOST, flex: 'none', padding: '10px 14px' }}>
-            Arrange
-          </button>
         </div>
       )}
 
       {rows.length === 0 ? (
-        <div style={{ padding: '38px 12px', textAlign: 'center', font: "400 14px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          {meta.is_system
-            ? 'Nothing here - every copy you own is filed somewhere.'
-            : 'Nothing filed here yet.'}
-        </div>
+        <EmptyCta pad="38px 12px" size={14} text={meta.is_system
+          ? 'Nothing here - every copy you own is filed somewhere.'
+          : 'Nothing filed here yet.'} />
       ) : shown.length === 0 ? (
-        <div style={{ padding: '28px 12px', textAlign: 'center', font: "400 14px/1.6 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          Nothing in {meta.name} matches “{q}”.
-        </div>
+        <EmptyCta pad="28px 12px" size={14} text={`Nothing in ${meta.name} matches “${q}”.`} />
       ) : (
         shown.map((r) => {
           const { set, foil } = parsePrinting(r.variant_slug);
@@ -372,6 +360,14 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
               onClick={() => onPeek?.(r.card_id, set, foil)} />
           );
         })
+      )}
+
+      {/* Arrange opens from a FAB with the filter glyph, which is how EVERY refine entry in
+          Collection opens - the set drill, All cards, and list detail all ship this exact control.
+          It was an inline ghost button, invented here and matching nothing. */}
+      {rows.length > 0 && (
+        <Fab className="fab-stacked" variant="deck" label={`Arrange ${meta.name}`} icon={<FabGlyph kind="filters" />}
+          onClick={() => setArrangeOpen(true)} active={arrangeOpen} badge={arrange.length} />
       )}
 
       {/* The shared arrange vocabulary, not a bespoke sort. When "group by location" arrives it is
