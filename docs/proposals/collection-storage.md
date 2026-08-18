@@ -136,7 +136,7 @@ are **seven** mutation sites across six modules, and Storage's own is none of th
 | Module | What it does |
 |---|---|
 | [`ownedRepository.js`](../../src/store/ownedRepository.js) | the interactive steppers - update, and delete when a row empties |
-| [`bulkOwnedRepository.js`](../../src/store/bulkOwnedRepository.js) | bulk Adjust / Set, including Set-to-0 as bulk delete |
+| [`ownedImportRepository.js`](../../src/store/ownedImportRepository.js) | bulk Adjust / Set, including Set-to-0 as bulk delete. (Originally named `bulkOwnedRepository`, which never had a caller and was deleted 2026-08-18 - the live path is and always was this one.) |
 | [`ownedImportRepository.js`](../../src/store/ownedImportRepository.js) | typed/bulk import reconciliation |
 | [`triageRepository.js:124-150`](../../src/store/triageRepository.js#L124-L150) | **key move**: draws a slug's count to 0, re-files under a set-coded slug, deletes the emptied source row |
 | [`canonicaliseBoot.js:60-100`](../../src/store/canonicaliseBoot.js#L60-L100) | **key move at boot, across EVERY profile, before a profile is resolved**: rewrites `variant_slug`, *merges* duplicate rows by releasing some ids and retaining others, deletes the released ones |
@@ -357,9 +357,9 @@ Responsibilities:
    against the live path. The original clause read:
 
    > Undo reverses both the total and the exact Unfiled allocation it changed, under the same
-   expected-state guards `undoBulkOwned` already applies
-   ([`bulkOwnedRepository.js:145`](../../src/store/bulkOwnedRepository.js#L145)) - a row is restored
-   only while it still holds what the bulk write left, and the guard now covers the allocation too.
+   > expected-state guards `undoBulkOwned` already applies (`bulkOwnedRepository.js:145`, deleted) -
+   > a row is restored only while it still holds what the bulk write left, and the guard now covers
+   > the allocation too.
 
 ### Canonicalisation needs an explicit identity mapping
 
