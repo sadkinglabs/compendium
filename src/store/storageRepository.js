@@ -201,16 +201,48 @@ export async function reconcileOwnedStatements({ query, profileId, ownedCardId, 
  * The WHERE clause is not optional: SQLite cannot tell an upsert's ON from a join's ON in an
  * INSERT ... SELECT without one.
  */
-export function placeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, now = nowIso() }) {
+export function placeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, expectOwned = null, now = nowIso() }) {
   if (!(qty > 0)) return [];
+  // `expectOwned` carries UNDO's conditional guard down to the places. Undo restores a row only
+  // while it still holds what the bulk write left there, and the allocation must be governed by
+  // the SAME condition in the SAME transaction - otherwise an undo the guard declined would still
+  // move the copies. It runs BEFORE the owned UPDATE, while the row still holds the expected value.
+  const guard = expectOwned == null ? '' : ' AND o.qty_owned=?';
   return [[
     `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
      SELECT ?, o.profile_id, c.id, o.id, ?, ?, ?
        FROM owned_cards o JOIN storage_containers c ON c.profile_id = o.profile_id AND c.is_system = 1
-      WHERE o.profile_id=? AND o.card_id=? AND o.variant_slug=?
+      WHERE o.profile_id=? AND o.card_id=? AND o.variant_slug=?${guard}
      ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
-    [uuid(), qty, now, now, profileId, cardId, variantSlug],
+    [uuid(), qty, now, now, profileId, cardId, variantSlug, ...(expectOwned == null ? [] : [expectOwned])],
   ]];
+}
+
+/**
+ * The mirror of the above: take `qty` copies out of Unfiled for a row named by its KEY, under the
+ * same optional guard.
+ *
+ * Two statements, and the ORDER is load-bearing. CHECK (qty > 0) forbids an allocation of zero, so
+ * a place emptied by the removal must be DELETED, not updated to 0. Deleting the exact-match case
+ * FIRST and updating the strictly-greater case second is the only order that is correct for both:
+ * update-then-delete would take a place holding 4, reduce it to 2, and then delete it as an exact
+ * match for a removal of 2.
+ *
+ * If Unfiled cannot cover the removal NEITHER statement matches and nothing happens - deliberately
+ * silent here, because this form is only used where an equality assertion rides in the same
+ * transaction to turn that silence into a rollback.
+ */
+export function takeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, expectOwned = null, now = nowIso() }) {
+  if (!(qty > 0)) return [];
+  const guard = expectOwned == null ? '' : ' AND o.qty_owned=?';
+  const owned = [profileId, cardId, variantSlug, ...(expectOwned == null ? [] : [expectOwned])];
+  const selector = `container_id = (SELECT id FROM storage_containers WHERE profile_id=? AND is_system=1)
+        AND owned_card_id = (SELECT o.id FROM owned_cards o WHERE o.profile_id=? AND o.card_id=? AND o.variant_slug=?${guard})`;
+  return [
+    [`DELETE FROM storage_allocations WHERE ${selector} AND qty = ?;`, [profileId, ...owned, qty]],
+    [`UPDATE storage_allocations SET qty = qty - ?, updated_at = ? WHERE ${selector} AND qty > ?;`,
+      [qty, now, profileId, ...owned, qty]],
+  ];
 }
 
 /**

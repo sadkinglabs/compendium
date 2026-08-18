@@ -248,11 +248,16 @@ test('an unconfirmed apply still broadcasts once, because persisted state may ha
 test('undo transaction succeeds but read-back THROWS: unconfirmed, no counts', async () => {
   const c0 = commands();
   const r = await c0.applyBulkOwned('add1', [T('a'), T('b')]);
-  let calls = 0;
   let bumps = 0;
+  // Targets the READ-BACK by position in the sequence, not by call number. Counting calls
+  // encoded an assumption about how many reads undo happens to make, and undo now reads the
+  // places before it writes - so `calls === 1` silently became the pre-read, and the test was
+  // asserting the contract for a failure that happens BEFORE the transaction instead of after.
+  let written = false;
   const c = commands({
     notify: () => { bumps += 1; },
-    query: async (sql, params) => { calls += 1; if (calls === 1) throw new Error('read-back failed'); return dbQuery(sql, params); },
+    tx: async (statements) => { const r = await dbTx(statements); written = true; return r; },
+    query: async (sql, params) => { if (written) throw new Error('read-back failed'); return dbQuery(sql, params); },
   });
   const u = await c.undoBulkOwned(r.undo);
   assert.equal(u.confirmed, false);

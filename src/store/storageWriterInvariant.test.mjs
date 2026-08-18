@@ -26,6 +26,7 @@ import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import * as repo from './ownedRepository.js';
+import { createBulkOwnedCommands } from './bulkOwnedRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'p1';
@@ -156,4 +157,92 @@ test('a wishlist-only row has no places, and that satisfies the equality', async
   assert.deepEqual(brokenRows(), []);
   const allocs = rows('SELECT id FROM storage_allocations WHERE profile_id=?;', [PID]);
   assert.equal(allocs.length, 0, 'a want holds no copies, so it holds no places');
+});
+
+/* ---------------- the BULK writers ---------------- */
+//
+// Same assertion, second module. Bulk was as unwired as the steppers and just as silent about it,
+// and no per-writer test above can see it: applyBulkOwned composes its own transaction.
+
+const bulk = createBulkOwnedCommands({
+  exclusive: (fn) => fn(),          // the barrier is not what these tests are about
+  query: (s, p = []) => Promise.resolve(rows(s, p)),
+  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+  notify: () => {},
+  activeProfileId: () => PID,
+});
+const T = (cardId, set = '001') => ({ cardId, set });
+const at = (container, ownedId) => rows('SELECT qty FROM storage_allocations WHERE container_id=? AND owned_card_id=?;', [container, ownedId])[0]?.qty || 0;
+
+test('bulk add1 places the copies it adds', async () => {
+  seedOwned('o1', 'sole1', '001', 2, { binder: 1 });
+  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
+  assert.equal(r.confirmed, true);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at(UNFILED, 'o1'), 2, 'the new copy went to Unfiled');
+  assert.equal(at('b1', 'o1'), 1, 'the binder is untouched by an add');
+});
+
+test('bulk remove1 takes from Unfiled and leaves the binder alone', async () => {
+  seedOwned('o1', 'sole1', '001', 3, { binder: 1 });   // 1 filed, 2 loose
+  await bulk.applyBulkOwned('remove1', [T('sole1')]);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at(UNFILED, 'o1'), 1);
+  assert.equal(at('b1', 'o1'), 1, 'the binder is not raided to satisfy a global minus');
+});
+
+test('bulk remove1 REJECTS when the copies are all filed, and writes nothing', async () => {
+  seedOwned('o1', 'sole1', '001', 2, { binder: 2 });   // nothing loose
+  await assert.rejects(() => bulk.applyBulkOwned('remove1', [T('sole1')]), { name: 'StorageConflict' });
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 2, 'the count did not move');
+  assert.equal(at('b1', 'o1'), 2, 'and neither did the filing');
+});
+
+test('a mixed bulk selection fails WHOLE - the satisfiable item is not written either', async () => {
+  // Sec 5: a bulk command that half-applies is worse than one that explains itself.
+  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });   // satisfiable
+  seedOwned('o2', 'multi1', '001', 2, { binder: 2 });  // not
+  await assert.rejects(() => bulk.applyBulkOwned('remove1', [T('sole1'), T('multi1')]),
+    (e) => e.name === 'StorageConflict' && e.detail.items.length === 1 && e.detail.items[0].cardId === 'multi1');
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 2, 'the satisfiable item was not written');
+});
+
+test('bulk remove1 reaching ZERO clears the places, filed or not', async () => {
+  // Total removal needs no attribution: the wall exists because the app cannot know WHICH copy
+  // left, and when every copy leaves there is nothing to guess.
+  seedOwned('o1', 'sole1', '001', 1, { binder: 1 });
+  await bulk.applyBulkOwned('remove1', [T('sole1')]);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0);
+});
+
+test('undo of a bulk add takes the placed copy back out', async () => {
+  seedOwned('o1', 'sole1', '001', 1, { binder: 0 });
+  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
+  const u = await bulk.undoBulkOwned(r.undo);
+  assert.equal(u.applied, 1);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at(UNFILED, 'o1'), 1, 'back to where it started');
+});
+
+test('undo of a bulk remove puts the copy back in Unfiled', async () => {
+  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });
+  const r = await bulk.applyBulkOwned('remove1', [T('sole1')]);
+  const u = await bulk.undoBulkOwned(r.undo);
+  assert.equal(u.applied, 1);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(at(UNFILED, 'o1'), 2);
+});
+
+test('undo REFUSED by its guard moves the places no more than it moves the count', async () => {
+  // The guard and the allocation must agree about whether the undo happened. If the places moved
+  // while the conditional UPDATE declined, the equality would break on a row nobody wrote to.
+  seedOwned('o1', 'sole1', '001', 1, { binder: 0 });
+  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
+  await repo.setOwnedInSet('sole1', '001', 5);        // the user edits it before undoing
+  const u = await bulk.undoBulkOwned(r.undo);
+  assert.equal(u.applied, 0);
+  assert.equal(u.conflicts, 1);
+  assert.deepEqual(brokenRows(), [], 'the declined undo left the ledger consistent');
+  assert.equal(at(UNFILED, 'o1'), 5, "the user's edit survived intact");
 });
