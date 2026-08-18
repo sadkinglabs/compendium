@@ -105,18 +105,29 @@ export function planCard(rows, setCodes) {
   // Query order is not a semantic input.
   const ordered = source.slice().sort((a, b) => String(a.id ?? '').localeCompare(String(b.id ?? '')));
 
+  // Where each source row's OWNED copies ended up. Storage allocations hang off owned rows, so
+  // when a row is released its allocations must follow its COPIES - and only its copies. A want
+  // carries no allocations, which is why the wanted destination is deliberately not recorded.
+  const ownedDest = new Map();   // source row id -> destination variant_slug
+
   for (const row of ordered) {
     const slug = row.variant_slug ?? '';
     const owned = row.qty_owned || 0;
     const wanted = row.qty_wanted || 0;
 
-    if (!isLegacyKey(slug)) { put(slug, row); continue; }   // already categorised - untouched
+    if (!isLegacyKey(slug)) {
+      if (owned > 0 && row.id != null) ownedDest.set(row.id, slug);
+      put(slug, row); continue;                             // already categorised - untouched
+    }
 
     // ONE v10 row can become TWO v11 rows. An '' row holding both a want and owned copies
     // splits: the copies keep an unknown set, while the want may be resolvable to a real one.
     // Splitting is why quantities are carried across explicitly instead of copying the row.
     const ownedKey = slug === LEGACY_FOIL ? UNCATEGORISED_FOIL : UNCATEGORISED;
-    if (owned > 0) put(ownedKey, { ...row, qty_owned: owned, qty_wanted: 0 });
+    if (owned > 0) {
+      if (row.id != null) ownedDest.set(row.id, ownedKey);
+      put(ownedKey, { ...row, qty_owned: owned, qty_wanted: 0 });
+    }
 
     // EVERY positive legacy want is preserved, whichever legacy row carried it.
     //
@@ -152,7 +163,16 @@ export function planCard(rows, setCodes) {
     .map((r) => r.id)
     .filter((id) => id != null && !retained.has(id));
 
-  return { rows: planned, releasedIds };
+  // The ownership identity map: for every RELEASED row that carried copies, the destination key
+  // that absorbed them. Only positive-owned rows appear - a released wishlist-only row has no
+  // destination here and legitimately needs none, because a want holds no allocations. An
+  // allocation found on such a row is corruption, and the caller must abort rather than re-home it
+  // by guesswork.
+  const ownedIdentity = releasedIds
+    .filter((id) => ownedDest.has(id))
+    .map((id) => ({ releasedId: id, variant_slug: ownedDest.get(id) }));
+
+  return { rows: planned, releasedIds, ownedIdentity };
 }
 
 /**
@@ -187,14 +207,20 @@ export function planLedger(rows, setsOf) {
 
   const out = [];
   const released = [];
+  const ownedIdentity = [];
   let touched = 0;
   for (const group of groups) {
     const plan = planCard(group, setsOf ? setsOf(group[0].card_id) : []);
     if (changed(group, plan.rows)) touched++;
     out.push(...plan.rows);
     released.push(...plan.releasedIds);
+    // Carried up with the card and profile, because a destination is only identified by the whole
+    // key - the adapter has to find one row among every card in every profile.
+    for (const e of plan.ownedIdentity) {
+      ownedIdentity.push({ ...e, card_id: group[0].card_id, profile_id: group[0].profile_id });
+    }
   }
-  return { rows: out, releasedIds: released, touched };
+  return { rows: out, releasedIds: released, ownedIdentity, touched };
 }
 
 // Did this group actually change?

@@ -10,7 +10,7 @@ import { createCanonicaliser, CANONICAL_MARKER_KEY, CANONICAL_VERSION } from './
 
 // A fake database that records what it was asked to do. `tx` is all-or-nothing by definition
 // here: it either records every statement or, on a forced failure, records none.
-function fakeDb({ owned = [], cards = [], marker = null, failTx = false } = {}) {
+function fakeDb({ owned = [], cards = [], allocations = [], marker = null, failTx = false } = {}) {
   const committed = [];
   let txCalls = 0;
   return {
@@ -22,6 +22,7 @@ function fakeDb({ owned = [], cards = [], marker = null, failTx = false } = {}) 
       if (sql.includes('COUNT(*)')) {
         return [{ n: owned.filter((r) => r.variant_slug === '' || r.variant_slug === 'foil').length }];
       }
+      if (sql.includes('FROM storage_allocations')) return allocations;
       if (sql.includes('FROM owned_cards')) return owned;
       if (sql.includes('FROM cards')) return cards;
       return [];
@@ -233,7 +234,9 @@ test('a surviving legacy key aborts the real transaction and leaves no marker', 
           CREATE TABLE owned_cards(id TEXT PRIMARY KEY, variant_slug TEXT NOT NULL DEFAULT '');`);
 
   const attempt = (slugs) => {
-    db.run('DELETE FROM _meta; DELETE FROM storage_allocations; DELETE FROM owned_cards;');
+    // This fixture builds a two-table schema by hand, deliberately - it is testing the guard
+    // itself, not the app's schema. No storage tables exist here, so none to clear.
+    db.run('DELETE FROM _meta; DELETE FROM owned_cards;');
     slugs.forEach((s, i) => db.run('INSERT INTO owned_cards(id,variant_slug) VALUES(?,?);', [`r${i}`, s]));
     try {
       db.run('BEGIN;');
@@ -262,4 +265,56 @@ test('a surviving legacy key aborts the real transaction and leaves no marker', 
   }
 
   db.close();
+});
+
+/* ---------------- Storage: filing survives a boot-time merge ---------------- */
+
+// The failure this feature was most likely to ship, named in the proposal's Self-Critique: two
+// owned rows for one card collapsing into one, each carrying an allocation to the SAME container,
+// whose quantities must SUM under the unique index rather than collide - and whose sum must still
+// equal the merged qty_owned. It runs at boot, on data shapes produced by old builds, and no
+// fixture in the repo naturally contains it.
+test('STORAGE: a merge carries allocations to the destination row, summing per container', async () => {
+  const db = fakeDb({
+    cards: [card('c1', ['001'])],
+    // Two legacy rows for one card: both hold copies, so both land on the same uncategorised key
+    // and one of them is released.
+    owned: [
+      { id: 'r1', profile_id: 'p1', card_id: 'c1', variant_slug: '', qty_owned: 2, qty_wanted: 0, notes: '', created_at: 'a', updated_at: 'a' },
+      { id: 'r2', profile_id: 'p1', card_id: 'c1', variant_slug: 'foil', qty_owned: 0, qty_wanted: 0, notes: '', created_at: 'a', updated_at: 'a' },
+    ],
+    allocations: [
+      { id: 'a1', profile_id: 'p1', container_id: 'binder', owned_card_id: 'r1', qty: 1, created_at: 'a' },
+      { id: 'a2', profile_id: 'p1', container_id: 'unfiled', owned_card_id: 'r1', qty: 1, created_at: 'a' },
+    ],
+  });
+  await run(db);
+
+  const sql = db.committed.map(([q]) => q).join(' ');
+  const allocDeleteAt = db.committed.findIndex(([q]) => q.includes('DELETE FROM storage_allocations'));
+  const ownedDeleteAt = db.committed.findIndex(([q]) => q.includes('DELETE FROM owned_cards'));
+  assert.ok(allocDeleteAt >= 0, 'allocations on released rows are cleared');
+  assert.ok(allocDeleteAt < ownedDeleteAt, 'and cleared BEFORE the rows they reference - RESTRICT requires it');
+
+  const reinserts = db.committed.filter(([q]) => q.includes('INSERT INTO storage_allocations'));
+  assert.equal(reinserts.length, 2, 'both places are re-homed, not just the first');
+  assert.ok(sql.includes('ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty'),
+    'two allocations landing on one container SUM rather than collide');
+  // Every re-homed allocation names a real destination, never a released row.
+  for (const [, params] of reinserts) assert.notEqual(params[3], 'r1');
+  const totalQty = reinserts.reduce((n, [, p]) => n + p[4], 0);
+  assert.equal(totalQty, 2, 'the copies are conserved: qty_owned still equals the sum of its places');
+});
+
+test('STORAGE: an allocation on a released row that held no copies ABORTS rather than guessing', async () => {
+  const db = fakeDb({
+    cards: [card('c1', ['001'])],
+    // A wishlist-only legacy row: it holds a want and no copies, so it has no owned destination.
+    owned: [{ id: 'r1', profile_id: 'p1', card_id: 'c1', variant_slug: '', qty_owned: 0, qty_wanted: 3, notes: '', created_at: 'a', updated_at: 'a' }],
+    // ...yet something filed copies against it. That is corruption, and re-homing it would be an
+    // invention. Fail closed: the transaction never runs and no marker is written.
+    allocations: [{ id: 'a1', profile_id: 'p1', container_id: 'binder', owned_card_id: 'r1', qty: 1, created_at: 'a' }],
+  });
+  await assert.rejects(run(db), /refusing to guess/);
+  assert.equal(db.txCalls, 0, 'nothing was committed');
 });

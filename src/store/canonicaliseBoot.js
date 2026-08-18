@@ -82,11 +82,65 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
     const stamp = now();
     const statements = [];
 
+    // IDS FIRST, before a single statement is composed. Storage allocations hang off owned-row
+    // ids, so re-parenting them across a merge needs the destination id to already exist as a
+    // value - not as something the INSERT will decide later.
+    for (const r of plan.rows) if (r.needsId && !r.id) r.id = uuid();
+
     // ORDER MATTERS. Deletes run before inserts so a new row can take a key a released row is
     // vacating without tripping the unique index. Retained rows are updated in place: their id
     // is the one that already sat at that key, so an UPDATE is correct and an INSERT would
     // collide.
+    // STORAGE: allocations must follow the COPIES across a merge, or a user's filing is destroyed
+    // by a boot-time reshape they never asked for.
+    //
+    // The prescribed order was insert destinations, re-parent, then delete. It cannot be used here:
+    // deletes must precede inserts so a new row can take a key a released row is vacating without
+    // tripping the unique index, and allocations cannot outlive their owned row under RESTRICT. So
+    // the allocations are READ into JS first and re-inserted against their destinations afterwards,
+    // which reaches the same end state - nothing is stranded, and nothing is inferred.
+    const reparented = [];
     if (plan.releasedIds.length) {
+      const destOf = new Map();
+      for (const e of plan.ownedIdentity || []) {
+        const dest = plan.rows.find((r) => r.profile_id === e.profile_id && r.card_id === e.card_id && r.variant_slug === e.variant_slug);
+        if (dest?.id) destOf.set(e.releasedId, dest.id);
+      }
+      const held = [];
+      for (let i = 0; i < plan.releasedIds.length; i += 400) {
+        const chunk = plan.releasedIds.slice(i, i + 400);
+        held.push(...await query(
+          `SELECT id, profile_id, container_id, owned_card_id, qty, created_at FROM storage_allocations WHERE owned_card_id IN (${chunk.map(() => '?').join(',')});`,
+          chunk,
+        ));
+      }
+      // A released row with allocations but no owned destination is corruption, not a case to
+      // improvise around: it means copies were filed against a row that recorded no copies. Abort
+      // rather than re-home them by guesswork - the transaction rolls back and no marker is written.
+      const merged = new Map();
+      for (const a of held) {
+        const destId = destOf.get(a.owned_card_id);
+        if (!destId) {
+          throw new Error(`canonicaliseBoot: allocation ${a.id} sits on released row ${a.owned_card_id}, which holds no copies - refusing to guess where it belongs.`);
+        }
+        const key = `${a.container_id}|${destId}`;
+        const prev = merged.get(key);
+        // A merge can bring two allocations for ONE container onto one destination row. They sum
+        // under the unique index rather than colliding, and the earliest created_at is kept.
+        merged.set(key, prev
+          ? { ...prev, qty: prev.qty + (a.qty || 0), created_at: prev.created_at < a.created_at ? prev.created_at : a.created_at }
+          : { profile_id: a.profile_id, container_id: a.container_id, owned_card_id: destId, qty: a.qty || 0, created_at: a.created_at });
+      }
+      for (const m of merged.values()) reparented.push(m);
+
+      // Allocations go first, then the rows they referenced - RESTRICT requires that order.
+      for (let i = 0; i < plan.releasedIds.length; i += 400) {
+        const chunk = plan.releasedIds.slice(i, i + 400);
+        statements.push([
+          `DELETE FROM storage_allocations WHERE owned_card_id IN (${chunk.map(() => '?').join(',')});`,
+          chunk,
+        ]);
+      }
       // Chunked: SQLite has a host-parameter limit (999 by default) and a large collection can
       // release more rows than that in one statement.
       for (let i = 0; i < plan.releasedIds.length; i += 400) {
@@ -105,7 +159,7 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
         inserted++;
         statements.push([
           `INSERT INTO owned_cards(${OWNED_COLUMNS}) VALUES(?,?,?,?,?,?,?,?,?);`,
-          [uuid(), r.profile_id, r.card_id, r.variant_slug, r.qty_owned || 0, r.qty_wanted || 0,
+          [r.id, r.profile_id, r.card_id, r.variant_slug, r.qty_owned || 0, r.qty_wanted || 0,
             r.notes || '', r.created_at || stamp, r.updated_at || stamp],
         ]);
       } else {
@@ -125,6 +179,17 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
       `INSERT INTO _meta(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;`,
       [CANONICAL_MARKER_KEY, String(CANONICAL_VERSION)],
     ]);
+
+    // The re-homed allocations, after their destination rows exist. Copies that were filed before
+    // the reshape are filed after it, in the same containers.
+    for (const m of reparented) {
+      statements.push([
+        `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
+         VALUES(?,?,?,?,?,?,?)
+         ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
+        [uuid(), m.profile_id, m.container_id, m.owned_card_id, m.qty, m.created_at || stamp, stamp],
+      ]);
+    }
 
     // THE ASSERTION, inside the transaction so a violation rolls the whole thing back.
     //
