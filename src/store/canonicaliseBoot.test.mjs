@@ -164,13 +164,25 @@ test('a failed transaction commits nothing and propagates so boot fails closed',
   assert.equal(db.committed.length, 0, 'no statement survived the failure');
 });
 
-test('the assertion statement is present, guarded, and last', async () => {
+test('BOTH assertions are present, guarded, and last', async () => {
+  // Step 4 of the proposal always required two: no legacy key survived, AND the equality holds for
+  // every row that has places. This pass shipped with only the first, which is the one that
+  // matters least here - canonicalisation MERGES rows, so it is precisely the arithmetic the
+  // second assertion covers that this pass can get wrong.
   const db = fakeDb({ owned: [owned({ qty_owned: 1 })], cards: [card('c1', ['004'])] });
   await run(db);
-  const last = db.committed[db.committed.length - 1];
-  assert.ok(last[0].includes('legacy-keys-survived-canonicalisation'), 'the assertion runs last');
-  assert.ok(last[0].includes('WHERE EXISTS'), 'it is guarded, so a clean run inserts nothing');
-  assert.ok(!last[0].includes('ON CONFLICT'), 'no conflict clause - the collision IS the assertion');
+  const tail = db.committed.slice(-2).map(([sql]) => sql);
+  assert.ok(tail[0].includes('legacy-keys-survived-canonicalisation'));
+  assert.ok(tail[1].includes('canonicalisation-broke-the-equality'), 'the equality is asserted too');
+  for (const sql of tail) {
+    assert.ok(sql.includes('WHERE EXISTS'), 'guarded, so a clean run inserts nothing');
+    assert.ok(!sql.includes('ON CONFLICT'), 'no conflict clause - the collision IS the assertion');
+  }
+  // Scoped to rows that HAVE places. Canonicalisation runs BEFORE the backfill, so on a first
+  // upgrade every row owns copies and has no allocation at all; a global form would fail every
+  // genuine v11 upgrade.
+  assert.ok(tail[1].includes('EXISTS (SELECT 1 FROM storage_allocations'),
+    'a row with no places belongs to the backfill, not to this pass');
 });
 
 /* ---------------- every profile, not the active one ---------------- */

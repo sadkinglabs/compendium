@@ -31,6 +31,7 @@ import { createOwnedImportCommand } from './ownedImportRepository.js';
 import { createTriageCommands } from './triageRepository.js';
 import { triagePile, fileLinePlan } from './triage.js';
 import { createWantedBulkCommand } from './wantedBulkRepository.js';
+import { createCanonicaliser } from './canonicaliseBoot.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'p1';
@@ -62,12 +63,15 @@ before(async () => {
     exec: (s) => { sdb.run(s); return Promise.resolve(); },
     persist: () => Promise.resolve(),
   });
+  // `_meta` is created by openDatabase, not by a migration, so a suite that applies MIGRATIONS
+  // alone does not have it - and the boot passes write their markers there.
+  sdb.run('CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT);');
   for (const m of MIGRATIONS) sdb.run(m.sql);
   __setActiveIdForTests(PID);
 });
 
 beforeEach(() => {
-  sdb.run('DELETE FROM storage_allocations; DELETE FROM storage_containers; DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
+  sdb.run('DELETE FROM storage_allocations; DELETE FROM storage_containers; DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards; DELETE FROM _meta;');
   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Home', 12, 'T']);
   // A REAL allocation graph, which is the whole point: the fixtures that hid this bug deleted it.
   sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'T','T');", [UNFILED, PID]);
@@ -408,4 +412,50 @@ test('every want writer in the module leaves the graph alone, one after another'
   await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '002', foil: false, qty: 1 }], PID);
   assert.deepEqual(graph(), before, 'five want writers, zero movement');
   assert.deepEqual(brokenRows(), []);
+});
+
+/* ---------------- CANONICALISATION: both assertions, against a real database ---------------- */
+//
+// The canonicaliser's own suite drives a fake database, so it can prove an assertion STATEMENT was
+// composed but never that SQLite acts on it. These run the real thing. An assertion nobody has
+// watched fire is a comment.
+
+const canonicalise = createCanonicaliser({
+  query: (s2, p2 = []) => Promise.resolve(rows(s2, p2)),
+  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s2, p2 = []]) => sdb.run(s2, p2)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+});
+
+test('canonicalisation carries filed copies onto the row that absorbs them', async () => {
+  // A legacy row with copies in a binder, converted to its canonical key. The copies must arrive
+  // at the destination in the SAME container - re-parented, not re-placed.
+  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('L1',?,'sole1','',3,0,'','x','x');", [PID]);
+  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LA',?,'b1','L1',2,'x','x');", [PID]);
+  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LU',?,?,'L1',1,'x','x');", [PID, UNFILED]);
+
+  await canonicalise();
+  assert.deepEqual(brokenRows(), []);
+  // '' becomes 'uncategorised', NOT '001'. Canonicalisation converts the KEY; it does not file
+  // copies to a set on the user's behalf even when the card has only one - that is triage's job,
+  // and backfillSingleSetOwned was removed for exactly this reason.
+  const dest = rows("SELECT id FROM owned_cards WHERE card_id='sole1' AND variant_slug='uncategorised';")[0];
+  assert.ok(dest, 'the legacy row was converted');
+  assert.equal(at('b1', dest.id), 2, 'the binder copies followed the conversion');
+  assert.equal(at(UNFILED, dest.id), 1);
+});
+
+test('THE EQUALITY ASSERTION FIRES: a ledger that already disagrees with its places aborts boot', async () => {
+  // This is the assertion the pass shipped without. Canonicalisation MERGES rows, so the
+  // destination's count comes from the planner while its places come from re-parenting - two
+  // pieces of arithmetic that have to agree. If they ever do not, the marker must NOT be written
+  // over the top saying the conversion succeeded.
+  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('L1',?,'sole1','',3,0,'','x','x');", [PID]);
+  // Two copies placed against a row that records three. A state nothing legitimate produces.
+  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LA',?,'b1','L1',2,'x','x');", [PID]);
+
+  await assert.rejects(() => canonicalise(), 'boot fails closed rather than stamping a lie');
+  // And the rollback is total: the v10 row is untouched and no marker was written.
+  assert.equal(rows("SELECT variant_slug FROM owned_cards WHERE id='L1';")[0].variant_slug, '',
+    "the user's data is exactly as it was");
+  assert.equal(rows("SELECT value FROM _meta WHERE key='owned_cards_canonical_version';").length, 0,
+    'no marker claims a conversion that rolled back');
 });

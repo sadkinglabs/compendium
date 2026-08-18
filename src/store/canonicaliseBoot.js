@@ -205,6 +205,30 @@ export function createCanonicaliser({ query, tx, uuid = newId, now = nowIso }) {
       [CANONICAL_MARKER_KEY],
     ]);
 
+    // THE SECOND ASSERTION, which the proposal's step 4 always required and this pass was missing.
+    // Same mechanism, and this is the pass that needs it most: canonicalisation MERGES rows. Two
+    // released rows collapsing onto one destination means the destination's count comes from the
+    // planner while its places come from re-parenting, and those are two different pieces of
+    // arithmetic that have to agree. A planner that summed a merge wrongly, or an allocation the
+    // identity map did not cover, would break the equality on exactly the rows that just changed
+    // shape - and the marker above would be written over the top of it, saying the conversion
+    // succeeded.
+    //
+    // SCOPED TO ROWS THAT HAVE PLACES, and that scope is not a weakening. Canonicalisation runs
+    // BEFORE the backfill, so on a first upgrade every row legitimately owns copies and has no
+    // allocation at all; asserting the equality globally here would fail every genuine v11 upgrade.
+    // A row with no places is the backfill's business. A row WITH places is this pass's business,
+    // and it must be exactly right.
+    statements.push([
+      `INSERT INTO _meta(key,value)
+         SELECT ?, 'canonicalisation-broke-the-equality'
+         WHERE EXISTS (
+           SELECT 1 FROM owned_cards o
+            WHERE EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id)
+              AND o.qty_owned <> (SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id));`,
+      [CANONICAL_MARKER_KEY],
+    ]);
+
     await tx(statements);
     return { planned: plan.touched, inserted, updated, deleted: plan.releasedIds.length };
   };
