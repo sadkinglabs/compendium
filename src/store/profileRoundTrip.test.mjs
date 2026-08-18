@@ -90,6 +90,15 @@ const SEEDERS = {
     ['cl-1', pid, 'wanted', 'Sentinel List', 'list description sentinel', 5, TS, TS]],
   card_list_entries: () => ['INSERT INTO card_list_entries(id,list_id,card_id,quantity,variant_slug,added_at) VALUES(?,?,?,?,?,?);',
     ['cle-1', 'cl-1', 'sentinel_card', 6, 'sentinel_slug', TS]],
+  // Storage (v12). Two containers deliberately: the system Unfiled place every profile has, and a
+  // user binder holding part of the sentinel's 4 copies - so the round trip has to preserve WHICH
+  // container held what, not merely that some allocation existed.
+  storage_containers: (pid) => ['INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?),(?,?,?,?,?,?,?,?,?,?);',
+    ['sc-unfiled', pid, 'unfiled', 'Unfiled', '', 'gold', -1, 1, TS, TS,
+     'sc-1', pid, 'binder', 'Sentinel Binder', 'binder description sentinel', 'ruby', 3, 0, TS, TS]],
+  storage_allocations: (pid) => ['INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?),(?,?,?,?,?,?,?);',
+    ['sa-1', pid, 'sc-1', 'oc-1', 1, TS, TS,
+     'sa-2', pid, 'sc-unfiled', 'oc-1', 3, TS, TS]],
   links: (pid) => ['INSERT INTO links(id,profile_id,kind,a_type,a_id,b_type,b_id,description,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
     ['lk-1', pid, 'card_card', 'card', 'sentinel_card', 'card', 'sentinel_card_2', 'link description sentinel', TS, TS]],
   matches: (pid) => ['INSERT INTO matches(id,profile_id,played_at,mode,player_avatar,opponent_name,opponent_avatar,player_final_life,opponent_final_life,winner,duration_sec,notes,deck_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);',
@@ -127,6 +136,14 @@ const TRANSFORMED = {
   decks: ['wins', 'losses'],
   // accent_metal is the retired counter-skin picker: deliberately not restored (profileTransfer.js:177-180).
   settings: ['accent_metal'],
+  // Storage: an allocation's two parents are both re-keyed, so it follows them. `qty` is here for a
+  // subtler reason worth stating: this sentinel's owned row is LEGACY (variant_slug ''), so
+  // normaliseBundle canonicalises the ledger and strips owned-row ids - which leaves the bundle's
+  // allocations unmappable, and they collapse into Unfiled. That is the intended fallback: the
+  // COPIES are conserved and the equality holds, only the filing is lost, and losing filing beats
+  // refusing someone's backup. It cannot arise in production, because a v12 build canonicalises at
+  // boot before it can export. The conservation itself is asserted by its own test below.
+  storage_allocations: ['container_id', 'owned_card_id', 'qty'],
 };
 
 /**
@@ -180,7 +197,13 @@ beforeEach(() => {
   // Parents (profile-scoped) before children (FK to a parent): sqlite_master returns tables
   // alphabetically, which would insert deck_entries before decks and trip the FK constraint.
   const owned = profileOwnedTables();
-  const isDirect = (t) => columnsOf(t).includes('profile_id');
+  // A table carrying profile_id is normally a parent. storage_allocations carries one AND has a
+  // foreign key to two other profile-owned tables (its container and its owned row), so the
+  // heuristic alone would seed it first - alphabetically it precedes storage_containers - and trip
+  // the constraint. Named explicitly rather than silently reordered, because the next such table
+  // will need the same declaration.
+  const CHILD_OF_PROFILE_OWNED = new Set(['storage_allocations']);
+  const isDirect = (t) => columnsOf(t).includes('profile_id') && !CHILD_OF_PROFILE_OWNED.has(t);
   for (const t of [...owned.filter(isDirect), ...owned.filter((t2) => !isDirect(t2))]) {
     const seed = SEEDERS[t];
     if (!seed) continue;             // reported by the first test, not thrown here
@@ -390,4 +413,27 @@ test('duplicateProfile twice does not produce two profiles called "X (copy)"', a
   const names = rows("SELECT name FROM profiles WHERE name LIKE '%(copy)%';").map((r) => r.name);
   assert.equal(names.length, 2);
   assert.equal(new Set(names).size, 2, `duplicate copy names: ${names.join(' | ')}`);
+});
+
+/* ---------------- Storage: the equality survives a restore ---------------- */
+
+test('STORAGE: every restored owned copy is in exactly one place, and the profile has one Unfiled', async () => {
+  const bundle = await exportProfile(SRC);
+  const pid = await importProfile(bundle, { name: 'Restored' });
+  // The equality this whole feature rests on: qty_owned IS the sum of that row's allocations.
+  const mismatched = rows(`
+    SELECT o.id, o.qty_owned, COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id = o.id), 0) placed
+      FROM owned_cards o WHERE o.profile_id = ?;`, [pid])
+    .filter((r) => Number(r.qty_owned) !== Number(r.placed));
+  assert.deepEqual(mismatched, [], 'a copy is never nowhere, and never in two places');
+
+  const systemRows = rows('SELECT id, kind, name FROM storage_containers WHERE profile_id=? AND is_system=1;', [pid]);
+  assert.equal(systemRows.length, 1, 'exactly one system container');
+  assert.equal(systemRows[0].kind, 'unfiled');
+  assert.equal(systemRows[0].name, 'Unfiled');
+
+  // No allocation may be zero or negative - CHECK enforces it, but a wishlist-only row must simply
+  // have NO allocation rather than a zero one, which is the distinction that would fail boot.
+  const bad = rows('SELECT id FROM storage_allocations WHERE profile_id=? AND qty <= 0;', [pid]);
+  assert.deepEqual(bad, [], 'no zero or negative allocations');
 });

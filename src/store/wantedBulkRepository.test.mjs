@@ -71,7 +71,7 @@ before(async () => {
   __setActiveIdForTests(PID);
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); notifyCount = 0; });
+beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); __resetCollectionWritesForTests(); notifyCount = 0; });
 
 /* ---------------- planWantedItemBatch (pure) ---------------- */
 

@@ -10,6 +10,7 @@ import { uuid, nowIso } from './ids.js';
 import { normalizeDurationSec } from './matchStats.js';
 import { filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded } from './widgetRegistry.js';
 import { safeHref } from '../util.js';
+import { SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR, isContainerColour, isUserContainerKind } from './storageVocabulary.js';
 
 const inClause = (ids) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
 
@@ -61,6 +62,7 @@ export async function buildProfileUnit(profileId) {
   const collections = await query('SELECT * FROM collections WHERE profile_id=?;', [profileId]);
   const matches = await query('SELECT * FROM matches WHERE profile_id=?;', [profileId]);
   const cardLists = await query('SELECT * FROM card_lists WHERE profile_id=?;', [profileId]);
+  const containers = await query('SELECT * FROM storage_containers WHERE profile_id=?;', [profileId]);
   const deckIds = decks.map((d) => d.id);
   const colIds = collections.map((c) => c.id);
   const matchIds = matches.map((m) => m.id);
@@ -87,6 +89,11 @@ export async function buildProfileUnit(profileId) {
     owned_cards: await query('SELECT * FROM owned_cards WHERE profile_id=?;', [profileId]),
     card_lists: cardLists,
     card_list_entries: await query(`SELECT * FROM card_list_entries WHERE list_id IN ${inClause(listIds)};`, listIds),
+    // Storage (v12): where each owned copy physically lives. Allocations ARE the ownership, so an
+    // export that carried owned_cards without these would restore a collection whose every copy had
+    // silently moved to Unfiled - the filing lost with no error anywhere.
+    storage_containers: containers,
+    storage_allocations: await query('SELECT * FROM storage_allocations WHERE profile_id=?;', [profileId]),
     links: await query('SELECT * FROM links WHERE profile_id=?;', [profileId]),
     matches,
     match_log_entries: await query(`SELECT * FROM match_log_entries WHERE match_id IN ${inClause(matchIds)};`, matchIds),
@@ -214,9 +221,93 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
     ins('collections', ['id', 'profile_id', 'name', 'created_at'], [colMap.get(c.id), pid, c.name, c.created_at]);
   for (const ci of bundle.collection_items || [])
     ins('collection_items', ['id', 'collection_id', 'target_type', 'target_id', 'added_at'], [uuid(), colMap.get(ci.collection_id), ci.target_type, ci.target_id, ci.added_at]);
-  for (const o of bundle.owned_cards || [])
+  // Owned rows get fresh ids, and Storage allocations point AT those ids - so the new id is
+  // captured per source row rather than generated inline. A legacy bundle loses its source ids in
+  // normaliseBundle (canonicalisation reshapes the ledger), which is exactly why a legacy import
+  // synthesises allocations below instead of trying to remap ones it does not have.
+  const ownedMap = new Map();
+  const ownedRows = [];
+  for (const o of bundle.owned_cards || []) {
+    const newId = uuid();
+    if (o.id != null) ownedMap.set(o.id, newId);
+    ownedRows.push({ id: newId, qty_owned: Number(o.qty_owned) || 0, created_at: o.created_at, updated_at: o.updated_at });
     ins('owned_cards', ['id', 'profile_id', 'card_id', 'variant_slug', 'qty_owned', 'qty_wanted', 'notes', 'created_at', 'updated_at'],
-      [uuid(), pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
+      [newId, pid, o.card_id, o.variant_slug ?? '', o.qty_owned, o.qty_wanted, o.notes, o.created_at, o.updated_at]);
+  }
+
+  /* ---------------- Storage: every owned copy lands in exactly one place ----------------
+   *
+   * Two paths, because a bundle either knows about places or predates them:
+   *
+   *  - STORAGE-AWARE (v12+): carry the containers and remap the allocations. Ids are remapped, so
+   *    the round trip is verified against the semantic graph - container name and contents - never
+   *    against row counts, which match even when container_id has been remapped to the WRONG
+   *    container and every card has quietly changed binder.
+   *  - LEGACY: synthesise Unfiled and put every positive owned quantity in it. The equality holds
+   *    from the first moment the profile exists rather than being repaired later.
+   *
+   * Either way the profile ends with exactly one system container, and qty_owned equals the sum of
+   * that row's allocations. A wishlist-only row (qty_owned 0) gets NO allocation - `0 = SUM(none)`
+   * satisfies the equality, while a zero-quantity row would violate CHECK (qty > 0).
+   */
+  const srcContainers = bundle.storage_containers || [];
+  const srcAllocs = bundle.storage_allocations || [];
+  const containerMap = new Map();
+  let unfiledId = null;
+
+  for (const c of srcContainers) {
+    const newId = uuid();
+    containerMap.set(c.id, newId);
+    const system = c.is_system ? 1 : 0;
+    if (system) unfiledId = newId;
+    ins('storage_containers', ['id', 'profile_id', 'kind', 'name', 'description', 'colour', 'sort_order', 'is_system', 'created_at', 'updated_at'],
+      [newId, pid,
+        system ? SYSTEM_KIND : (isUserContainerKind(c.kind) ? c.kind : 'other'),
+        system ? UNFILED_NAME : String(c.name ?? '').slice(0, 120),
+        String(c.description ?? '').slice(0, 240),
+        // Allow-listed, never passed through: this value ends up inside a CSS custom property.
+        isContainerColour(c.colour) ? c.colour : DEFAULT_COLOUR,
+        Number(c.sort_order) || 0, system, c.created_at || nowIso(), c.updated_at || nowIso()]);
+  }
+
+  // Every profile has an Unfiled container, always - a bundle that lacked one (legacy, or one whose
+  // system row did not survive) gets it synthesised rather than the profile being left with nowhere
+  // for a copy to live.
+  if (!unfiledId) {
+    unfiledId = uuid();
+    ins('storage_containers', ['id', 'profile_id', 'kind', 'name', 'description', 'colour', 'sort_order', 'is_system', 'created_at', 'updated_at'],
+      [unfiledId, pid, SYSTEM_KIND, UNFILED_NAME, '', DEFAULT_COLOUR, -1, 1, nowIso(), nowIso()]);
+  }
+
+  const carried = srcAllocs.length > 0 && ownedMap.size > 0;
+  if (carried) {
+    // Sum per owned row so a shortfall can go to Unfiled: an allocation whose container or owned
+    // row did not survive must not silently delete the copies it held.
+    const placed = new Map();
+    for (const a of srcAllocs) {
+      const ownedId = ownedMap.get(a.owned_card_id);
+      const contId = containerMap.get(a.container_id);
+      const qty = Number(a.qty) || 0;
+      if (!ownedId || !contId || qty <= 0) continue;
+      placed.set(ownedId, (placed.get(ownedId) || 0) + qty);
+      ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
+        [uuid(), pid, contId, ownedId, qty, a.created_at || nowIso(), a.updated_at || nowIso()]);
+    }
+    for (const r of ownedRows) {
+      const short = r.qty_owned - (placed.get(r.id) || 0);
+      if (short > 0) {
+        ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
+          [uuid(), pid, unfiledId, r.id, short, r.created_at || nowIso(), r.updated_at || nowIso()]);
+      }
+    }
+  } else {
+    for (const r of ownedRows) {
+      if (r.qty_owned > 0) {
+        ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
+          [uuid(), pid, unfiledId, r.id, r.qty_owned, r.created_at || nowIso(), r.updated_at || nowIso()]);
+      }
+    }
+  }
   for (const l of bundle.card_lists || [])
     ins('card_lists', ['id', 'profile_id', 'kind', 'name', 'description', 'sort_order', 'created_at', 'updated_at'],
       [listMap.get(l.id), pid, l.kind, l.name, l.description, l.sort_order, l.created_at, l.updated_at]);

@@ -15,8 +15,18 @@
 import { planLedger } from './canonicalise.js';
 import { isLegacyPrinting } from './printings.js';
 
-/** The newest bundle this build understands. */
-export const MAX_SUPPORTED_SCHEMA = 11;
+/**
+ * The newest bundle this build understands.
+ *
+ * MUST move in lockstep with SCHEMA_VERSION, and it is hand-maintained, so it is asserted by a test
+ * rather than trusted. Bumping the schema without bumping this makes the build refuse its OWN
+ * exports as `future` - which surfaces as several dozen unrelated-looking backup and restore
+ * failures, not as anything that names this line.
+ *
+ * The lockstep carries an obligation, not just a number: raising it CLAIMS that profileTransfer
+ * exports and imports everything the new version added. Raise it only together with that wiring.
+ */
+export const MAX_SUPPORTED_SCHEMA = 12;
 /** Bundles predate the stamp, so a missing version means the oldest shape we ever wrote. */
 export const ASSUMED_SCHEMA = 10;
 
@@ -28,6 +38,10 @@ export const ITERATED_COLLECTIONS = [
   'decks', 'deck_entries', 'deck_history', 'saved', 'notes', 'collections', 'collection_items',
   'owned_cards', 'card_lists', 'card_list_entries', 'links', 'matches', 'match_log_entries',
   'dashboard_blocks', 'dashboard_layouts',
+  // Storage (v12). Listed here because this is the contract a test asserts against every
+  // `for (... of bundle.X || [])` in profileTransfer - an omission here is not a missing check,
+  // it is an import that throws partway through, after the profile already exists.
+  'storage_containers', 'storage_allocations',
 ];
 
 /** Thrown for every rejection, with a `code` so callers can tell the cases apart. */

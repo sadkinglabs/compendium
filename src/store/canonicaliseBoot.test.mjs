@@ -233,7 +233,7 @@ test('a surviving legacy key aborts the real transaction and leaves no marker', 
           CREATE TABLE owned_cards(id TEXT PRIMARY KEY, variant_slug TEXT NOT NULL DEFAULT '');`);
 
   const attempt = (slugs) => {
-    db.run('DELETE FROM _meta; DELETE FROM owned_cards;');
+    db.run('DELETE FROM _meta; DELETE FROM storage_allocations; DELETE FROM owned_cards;');
     slugs.forEach((s, i) => db.run('INSERT INTO owned_cards(id,variant_slug) VALUES(?,?);', [`r${i}`, s]));
     try {
       db.run('BEGIN;');

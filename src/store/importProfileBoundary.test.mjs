@@ -50,7 +50,7 @@ before(async () => {
 });
 
 beforeEach(() => {
-  sdb.run('DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
+  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards; DELETE FROM profiles; DELETE FROM cards;');
   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Home', 10, '2026-01-01']);
   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c1','Single','[{\"code\":\"004\"}]');");
 });

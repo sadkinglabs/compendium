@@ -64,7 +64,7 @@ before(async () => {
   sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('c9','Unknown to catalog','[]');");
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); });
+beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); });
 
 /* ---------------- the move itself ---------------- */
 
@@ -89,7 +89,7 @@ test('a want that survived on ANY of the four keys is drained from that key', as
   // The defect this command must not reproduce: draining an assumed pair would leave the
   // original in place and mint a second at the destination.
   for (const src of UNCATEGORISED_KEYS) {
-    sdb.run('DELETE FROM owned_cards;');
+    sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
     seed(src, 0, 4);
     const res = await cmd()(planFor(asRows(), ['001', '002'], '002', WANTED));
     assert.equal(res.confirmed, true, `source ${src}`);
@@ -262,7 +262,7 @@ test('filing an already-empty line is a confirmed no-op that broadcasts nothing'
   seed(UNCATEGORISED, 0, 1);
   let fired = 0;
   const plan = planFor(asRows(), ['001', '002'], '002', WANTED);
-  sdb.run('DELETE FROM owned_cards;');       // it vanished between render and tap
+  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');       // it vanished between render and tap
   const res = await cmd({ notify: () => { fired++; } })(plan);
   assert.equal(res.confirmed, true);
   assert.equal(res.moved, 0);
@@ -305,7 +305,7 @@ test('COUNTERFACTUAL: the authoritative read is what makes this safe, not the ba
   assert.equal(totals().o, 2, 'the broken version LOSES three copies - 5 became 2');
 
   // And the real command, on the same starting state.
-  sdb.run('DELETE FROM owned_cards;');
+  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
   seed(UNCATEGORISED, 2);
   const plan2 = planFor(asRows(), ['001', '002'], '002');
   sdb.run("UPDATE owned_cards SET qty_owned=5 WHERE variant_slug=?;", [UNCATEGORISED]);
@@ -327,7 +327,7 @@ test('COUNTERFACTUAL: a pass-through barrier corrupts to exactly 12; the real ba
     return async () => { if (++arrived >= n) release(); await all; };
   };
 
-  const seedSix = () => { sdb.run('DELETE FROM owned_cards;'); seed(UNCATEGORISED, 6); };
+  const seedSix = () => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); seed(UNCATEGORISED, 6); };
 
   /* ---- pass-through barrier: both read 6 before either writes ---- */
   seedSix();

@@ -54,7 +54,7 @@ before(async () => {
   __setActiveIdForTests(PID);
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards; DELETE FROM card_lists; DELETE FROM card_list_entries;'); });
+beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards; DELETE FROM card_lists; DELETE FROM card_list_entries;'); });
 
 /* ---------------- the invariant, per writer ---------------- */
 

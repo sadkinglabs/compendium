@@ -3,7 +3,7 @@
 // profile_id and is reachable only through the active-profile gate.
 // Forward-only migrations keyed by version; bump SCHEMA_VERSION and append.
 
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const MIGRATIONS = [
   {
@@ -373,5 +373,58 @@ export const MIGRATIONS = [
     // idempotent. The index serves the two v11 reads that scan by key: canonicalisation's
     // straggler probe (does any legacy row remain?) and the To Be Categorised pile.
     sql: `CREATE INDEX IF NOT EXISTS idx_owned_profile_slug ON owned_cards(profile_id, variant_slug);`,
+  },
+  {
+    version: 12,
+    // STORAGE - every owned copy is in exactly one place (docs/proposals/collection-storage.md).
+    //
+    // The model, because the schema only makes sense with it: allocations ARE the ownership.
+    // A copy is never claimed against a separate total, it is MOVED between places, and "Unfiled"
+    // is a place like any other. qty_owned stays a real materialised column - every reader keeps
+    // reading it - but it becomes the sum the mutation boundary maintains, not the value the user
+    // edits. That is what removes the second number, and with it the whole class of "the app says
+    // 4 and the binders say 3".
+    //
+    // DDL ONLY, no data statements. exec() maps to Android execSQL(), which refuses queries, and
+    // the native splitter is quote-unaware - so no semicolons inside strings or comments. The
+    // Unfiled containers and their allocations are created by an idempotent JS backfill at boot,
+    // on the canonicaliseBoot pattern, AFTER canonicalisation has settled row identities.
+    //
+    // idx_owned_id_profile exists to be the PARENT of the composite foreign key below. SQLite
+    // requires a unique index on the referenced columns; the pair is already unique, so this is
+    // free. It is what makes a cross-profile allocation structurally impossible rather than merely
+    // discouraged - an allocation cannot name a container in one profile and an owned row in
+    // another, because both references must agree on the same profile_id.
+    sql: `
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_owned_id_profile ON owned_cards(id, profile_id);
+
+    CREATE TABLE IF NOT EXISTS storage_containers (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL DEFAULT 'binder',
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      colour TEXT NOT NULL DEFAULT 'gold',
+      sort_order INTEGER DEFAULT 0,
+      is_system INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT, updated_at TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_containers_id_profile ON storage_containers(id, profile_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_containers_one_system ON storage_containers(profile_id) WHERE is_system = 1;
+    CREATE INDEX IF NOT EXISTS idx_containers_profile ON storage_containers(profile_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS storage_allocations (
+      id TEXT PRIMARY KEY,
+      profile_id TEXT NOT NULL,
+      container_id TEXT NOT NULL,
+      owned_card_id TEXT NOT NULL,
+      qty INTEGER NOT NULL CHECK (qty > 0),
+      created_at TEXT, updated_at TEXT,
+      FOREIGN KEY (container_id, profile_id) REFERENCES storage_containers(id, profile_id) ON DELETE CASCADE,
+      FOREIGN KEY (owned_card_id, profile_id) REFERENCES owned_cards(id, profile_id) ON DELETE RESTRICT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_alloc_key ON storage_allocations(container_id, owned_card_id);
+    CREATE INDEX IF NOT EXISTS idx_alloc_owned ON storage_allocations(profile_id, owned_card_id);
+    `,
   },
 ];

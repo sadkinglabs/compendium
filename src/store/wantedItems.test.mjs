@@ -58,7 +58,7 @@ before(async () => {
   __setActiveIdForTests(PID);
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); });
+beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); });
 
 /* ---------------- the point of the whole exercise ---------------- */
 
@@ -435,7 +435,7 @@ test('COUNTERFACTUAL: bypassing the shared chain loses one of them', async () =>
   // UNQUEUED must corrupt, or the chain is decoration.
   const { __resetCollectionWritesForTests } = await import('./collectionWrites.js');
   __resetCollectionWritesForTests();
-  sdb.run('DELETE FROM owned_cards;');
+  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
   seed('004', 0, 1, 'cRace');
 
   // stepWantedForItem reads, then writes an absolute. Interleaving an atomic add between its

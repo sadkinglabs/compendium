@@ -71,7 +71,10 @@ test('3. a bundle with NO schemaVersion is treated as v10, not rejected', () => 
 /* ---------------- 4. a future bundle is refused ---------------- */
 
 test('4. a bundle from a NEWER build is rejected, and nothing is created', () => {
-  const b = bundleOf({ schemaVersion: 12, owned_cards: [owned({ qty_owned: 1 })] });
+  // Derived, not hardcoded: the intent is "newer than THIS build", and a literal goes stale the
+  // moment the schema advances - at which point the test starts asserting that a bundle we DO
+  // support is rejected.
+  const b = bundleOf({ schemaVersion: MAX_SUPPORTED_SCHEMA + 1, owned_cards: [owned({ qty_owned: 1 })] });
   assert.throws(() => prepareBundle(b, sets({})), (e) => {
     assert.ok(e instanceof ImportRejected);
     assert.equal(e.code, 'future');
@@ -209,4 +212,18 @@ test('schemaVersion must be an INTEGER, not merely a positive number', () => {
       `accepted schemaVersion ${String(v)}`,
     );
   }
+});
+
+/* ---------------- the lockstep that 54 failures once announced ---------------- */
+
+test('MAX_SUPPORTED_SCHEMA tracks SCHEMA_VERSION exactly', async () => {
+  const { SCHEMA_VERSION } = await import('./schema.js');
+  // A build cannot understand a bundle newer than its own schema, and it must not refuse its own
+  // exports either - so these are one number in two files. Bumping the schema alone makes the app
+  // reject every backup it writes, surfacing as dozens of unrelated-looking backup/restore
+  // failures that name neither constant.
+  //
+  // Raising this asserts that profileTransfer round-trips everything the new version added. If
+  // this test fails, the fix is to finish the transfer wiring, not to edit the number.
+  assert.equal(MAX_SUPPORTED_SCHEMA, SCHEMA_VERSION);
 });

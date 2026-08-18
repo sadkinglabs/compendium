@@ -62,7 +62,7 @@ before(async () => {
 
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
+beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); sdb.run('DELETE FROM card_list_entries;'); __resetCollectionWritesForTests(); __setActiveIdForTests('A'); });
 
 test('a write bound to A commits under A even if the active profile flips to B mid-flight', async () => {
   __setActiveIdForTests('A');

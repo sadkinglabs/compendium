@@ -66,7 +66,7 @@ before(async () => {
 });
 
 beforeEach(async () => {
-  sdb.run('DELETE FROM owned_cards;');
+  sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
   sdb.run('DELETE FROM profiles;');
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at,updated_at) VALUES('P','p',10,'t','t');");
   __setActiveIdForTests('P');

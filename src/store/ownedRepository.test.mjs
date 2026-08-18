@@ -33,7 +33,7 @@ before(async () => {
   __setActiveIdForTests(PID);
 });
 
-beforeEach(() => { sdb.run('DELETE FROM owned_cards;'); sdb.run('DELETE FROM cards;'); });
+beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); sdb.run('DELETE FROM cards;'); });
 
 let uid = 0;
 const own = (cardId, slug, owned, wanted = 0) => sdb.run(
