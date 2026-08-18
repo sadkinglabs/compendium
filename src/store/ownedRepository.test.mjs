@@ -30,15 +30,26 @@ before(async () => {
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);   // the real schema, in order
   sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [PID, 'Test', 10, '2026-01-01']);
+  // v12: every profile has an Unfiled container, and the ownership writers now place the
+  // copies they create. A fixture without one is not a lighter fixture - it is a profile
+  // the boot backfill could never have produced, and the writers fail closed on it.
+  sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-' + PID, PID]);
   __setActiveIdForTests(PID);
 });
 
 beforeEach(() => { sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;'); sdb.run('DELETE FROM cards;'); });
 
 let uid = 0;
-const own = (cardId, slug, owned, wanted = 0) => sdb.run(
-  'INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?);',
-  ['o' + (++uid), PID, cardId, slug, owned, wanted, '2026-01-01', '2026-01-0' + ((uid % 9) + 1)]);
+// Seeds an owned row AS THE BACKFILL LEAVES IT - copies placed in Unfiled, not floating free.
+// A fixture row with copies and no allocation is not a simplification; it is a state v12 cannot
+// produce, and seeding it makes every decrease in this file look like a conflict.
+const own = (cardId, slug, owned, wanted = 0) => {
+  const id = 'o' + (++uid);
+  sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?);',
+    [id, PID, cardId, slug, owned, wanted, '2026-01-01', '2026-01-0' + ((uid % 9) + 1)]);
+  if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+    [id + '-u', PID, 'u-' + PID, id, owned, '2026-01-01', '2026-01-01']);
+};
 const card = (cardId, sets) => sdb.run(
   'INSERT INTO cards(card_id,name,sets,system) VALUES(?,?,?,?);', [cardId, cardId, JSON.stringify(sets), 'sorcery']);
 const one = (sql) => { const r = sdb.exec(sql); return r.length ? r[0].values[0][0] : 0; };

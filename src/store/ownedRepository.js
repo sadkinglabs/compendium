@@ -20,7 +20,10 @@ import {
   parsePrinting, printingSlugs, canonicalPrinting, assertRealSetCode, SQL_IS_FOIL, SQL_IS_UNCATEGORISED,
 } from './printings.js';
 import { activeProfileId } from './profileRepository.js';
-import { clearAllocationsStatements } from './storageRepository.js';
+import {
+  clearAllocationsStatements, reconcileOwnedStatements, placeUnfiledByKeyStatements,
+  assertEqualityStatements,
+} from './storageRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
 import { deckRequirements, deckRequirementsBulk } from './deckRepository.js';
@@ -104,10 +107,16 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
   if (o === 0 && w === 0) {
     if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
-    await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]);
+    // The places move in the SAME transaction as the count. Separately, a crash between them
+    // leaves a durable ledger that contradicts itself, and the equality is not a nicety - it is
+    // what makes qty_owned a materialised SUM rather than a second number that drifts.
+    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: o, action: 'setOwned', now });
+    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, qty_wanted=?, updated_at=? WHERE id=?;', [UNCATEGORISED, o, w, now, cur.id]], ...places]);
   } else {
-    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
-      [uuid(), pid, cardId, UNCATEGORISED, o, w, '', now, now]);
+    const id = uuid();
+    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: o, action: 'setOwned', now });
+    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
+      [id, pid, cardId, UNCATEGORISED, o, w, '', now, now]], ...places]);
   }
   bump();
 }
@@ -259,17 +268,20 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
   // schemas and rewritten to canonical, so the legacy 'foil' row is converted rather than twinned.
   const candidates = printingSlugs(UNCATEGORISED_BUCKET, true);
   const found = await query(
-    `SELECT id, variant_slug FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
+    `SELECT id, variant_slug, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug IN (${candidates.map(() => '?').join(',')});`,
     [pid, cardId, ...candidates],
   );
   const cur = found.find((r) => r.variant_slug === UNCATEGORISED_FOIL) || found[0];
   if (q === 0) {
     if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
   } else if (cur) {
-    await run('UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]);
+    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action: 'setFoil', now });
+    await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]], ...places]);
   } else {
-    await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
-      [uuid(), pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]);
+    const id = uuid();
+    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: q, action: 'setFoil', now });
+    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);',
+      [id, pid, cardId, UNCATEGORISED_FOIL, q, '', now, now]], ...places]);
   }
   bump();
 }
@@ -424,10 +436,17 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
   if (slug === UNCATEGORISED) return writeQty(cardId, { owned: qty }, pid);
   const now = nowIso();
   const q = Math.max(0, qty | 0);
-  const cur = (await query('SELECT id FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
+  const cur = (await query('SELECT id, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
+  const action = foil ? 'setFoilInSet' : 'setOwnedInSet';
   if (q === 0) { if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]); }
-  else if (cur) await run('UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]);
-  else await run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [uuid(), pid, cardId, slug, q, '', now, now]);
+  else if (cur) {
+    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action, now });
+    await tx([['UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]], ...places]);
+  } else {
+    const id = uuid();
+    const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: id, before: 0, after: q, action, now });
+    await tx([['INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,0,?,?,?);', [id, pid, cardId, slug, q, '', now, now]], ...places]);
+  }
   bump();
 }
 export async function setOwnedInSet(cardId, set, qty, pid = activeProfileId()) { return writeSetRow(cardId, set, false, qty, pid); }
@@ -636,13 +655,21 @@ async function addCopies(cardId, col, n) {
   // legitimate v11 state for ownership, and the To Be Categorised pile is where it is resolved.
   // It stays an upsert rather than a read-modify-write because scan events arrive faster than
   // they can be serialised, and overlapping increments must not lose each other.
-  await run(
-    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
-     VALUES(?,?,?,?,?,?,'',?,?)
-     ON CONFLICT(profile_id,card_id,variant_slug)
-     DO UPDATE SET ${col}=${col}+excluded.${col}, updated_at=excluded.updated_at;`,
-    [uuid(), pid, cardId, UNCATEGORISED, col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]
-  );
+  //
+  // The PLACES ride in the same transaction, and are resolved in SQL rather than in JS for the
+  // same reason: looking the new row's id up here would be the read this function exists to avoid.
+  // Only an owned add places anything - a want holds no copies, so it holds no places.
+  await tx([
+    [`INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,'',?,?)
+      ON CONFLICT(profile_id,card_id,variant_slug)
+      DO UPDATE SET ${col}=${col}+excluded.${col}, updated_at=excluded.updated_at;`,
+      [uuid(), pid, cardId, UNCATEGORISED, col === 'qty_owned' ? n : 0, col === 'qty_wanted' ? n : 0, now, now]],
+    ...(col === 'qty_owned'
+      ? [...placeUnfiledByKeyStatements({ profileId: pid, cardId, variantSlug: UNCATEGORISED, qty: n, now }),
+         ...assertEqualityStatements(pid, [{ cardId, variantSlug: UNCATEGORISED }], 'addOwnedCopies')]
+      : []),
+  ]);
   bump();
 }
 
@@ -657,13 +684,15 @@ export async function addOwnedCopiesInSet(cardId, set, n = 1, foil = false) {
   // upserts onto '001:f', a standard one onto '001'. The scanner can never read foil off a
   // photograph, so this only ever reflects a finish the user declared on the sheet.
   const slug = canonicalPrinting(set, foil);
-  await run(
-    `INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
-     VALUES(?,?,?,?,?,0,'',?,?)
-     ON CONFLICT(profile_id,card_id,variant_slug)
-     DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
-    [uuid(), pid, cardId, slug, n, now, now]
-  );
+  await tx([
+    [`INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at)
+      VALUES(?,?,?,?,?,0,'',?,?)
+      ON CONFLICT(profile_id,card_id,variant_slug)
+      DO UPDATE SET qty_owned=qty_owned+excluded.qty_owned, updated_at=excluded.updated_at;`,
+      [uuid(), pid, cardId, slug, n, now, now]],
+    ...placeUnfiledByKeyStatements({ profileId: pid, cardId, variantSlug: slug, qty: n, now }),
+    ...assertEqualityStatements(pid, [{ cardId, variantSlug: slug }], 'addOwnedCopiesInSet'),
+  ]);
   bump();
 }
 

@@ -44,6 +44,10 @@ before(async () => {
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at) VALUES('p1','A',11,'x');");
+  // v12: every profile has an Unfiled container, and the ownership writers now place the
+  // copies they create. A fixture without one is not a lighter fixture - it is a profile
+  // the boot backfill could never have produced, and the writers fail closed on it.
+  sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-p1', 'p1']);
   // sole1 is printed once; multi1 is a reprint. Both shapes matter: a writer that resolves a
   // collector item behaves differently for each, and only one of them may ever ask.
   // variants are needed now that positive item-writes validate the (set, finish) against the catalog
@@ -100,9 +104,15 @@ test('every writer in sequence still leaves zero legacy keys', async () => {
 test('editing a pre-existing LEGACY row converts it rather than twinning it', async () => {
   // The realistic post-migration state is not a clean database: an import or an interrupted
   // conversion can leave a legacy row, and the first edit must absorb it.
-  const seed = (slug, owned, wanted) =>
+  // Placed, as the backfill leaves them. These writers only INCREASE, so an unplaced seed would
+  // pass here and still be a state v12 cannot produce - the kind of fixture that hides a gap
+  // until the first decrease meets it.
+  const seed = (slug, owned, wanted) => {
     sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
       [`s-${slug}`, PID, 'sole1', slug, owned, wanted, '', 'x', 'x']);
+    if (owned > 0) sdb.run('INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES(?,?,?,?,?,?,?);',
+      [`a-${slug}`, PID, 'u-p1', `s-${slug}`, owned, 'x', 'x']);
+  };
 
   seed(LEGACY_UNCATEGORISED, 2, 1);
   seed(LEGACY_FOIL, 3, 0);
@@ -122,6 +132,7 @@ test('editing a pre-existing LEGACY row converts it rather than twinning it', as
 test('converting a legacy row preserves BOTH quantities on it', async () => {
   sdb.run('INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?);',
     ['s1', PID, 'sole1', LEGACY_UNCATEGORISED, 5, 3, '', 'x', 'x']);
+  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('a1',?,'u-p1','s1',5,'x','x');", [PID]);
   await repo.stepOwnedBucket('sole1', 1);
   const row = rows("SELECT qty_owned, qty_wanted FROM owned_cards WHERE variant_slug='uncategorised';")[0];
   assert.equal(row.qty_owned, 6, 'owned stepped');

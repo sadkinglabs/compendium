@@ -127,3 +127,111 @@ export function clearAllocationsForManyStatements(ownedCardIds) {
   if (!ids.length) return [];
   return [[`DELETE FROM storage_allocations WHERE owned_card_id IN (${ids.map(() => '?').join(',')});`, ids]];
 }
+
+/* ---------------- routing the ownership writers ---------------- */
+//
+// Everything above is the vocabulary; everything below is what makes the equality hold when an
+// ordinary writer moves qty_owned. Increment 1 shipped the vocabulary and wired only the DELETE
+// paths, so an increase raised the count while its Unfiled allocation stood still - the defining
+// equality broken by the first + tap. These are the pieces the seven ownership writers compose.
+
+/**
+ * A decrease that cannot be satisfied from Unfiled. NOT a failure so much as a question the app
+ * may not answer on the user's behalf: the copies are filed somewhere, and a quantity model cannot
+ * know which physical copy left. Carries the structured detail §5 requires - requested, what
+ * Unfiled actually holds, and the containers holding the rest - so a caller can name the places
+ * rather than say "cannot".
+ *
+ * Nothing renders this yet; the Storage surfaces land in increment 3. Until then it fails the
+ * write closed, which is the correct behaviour with or without a sheet to explain it.
+ */
+export class StorageConflict extends Error {
+  constructor(detail, action = 'storage') {
+    super(`${action}: ${detail?.requested} copies requested but Unfiled holds ${detail?.unfiled}`);
+    this.name = 'StorageConflict';
+    this.detail = detail;
+  }
+}
+
+/** Every place one owned row's copies are, with the flag the global planner sorts Unfiled by. */
+export async function readPlacements(query, ownedCardId) {
+  return query(
+    `SELECT a.id, a.container_id, a.qty, c.is_system
+       FROM storage_allocations a JOIN storage_containers c ON c.id = a.container_id
+      WHERE a.owned_card_id = ?;`,
+    [ownedCardId],
+  );
+}
+
+/**
+ * Statements taking one owned row from `before` copies to `after`, places included.
+ *
+ * An INCREASE puts the new copies in Unfiled and touches no other container: the user's filing is
+ * a fact about their shelf, and acquiring a copy does not put it in a binder. A DECREASE goes
+ * through planGlobalRemoval, which takes from Unfiled and refuses rather than reaching further.
+ *
+ * ASYNC because a decrease has to read the places first, and only a decrease does. The increase
+ * path needs the Unfiled id alone, so the common interactive + tap costs one small indexed read.
+ */
+export async function reconcileOwnedStatements({ query, profileId, ownedCardId, before, after, action = 'storage', now = nowIso() }) {
+  if (after === before) return [];
+  if (after > before) {
+    const containerId = await unfiledContainerId(query, profileId);
+    // Fail closed. Every profile has an Unfiled container - the creation paths guarantee at least
+    // one and the partial unique index guarantees at most one - so its absence means the backfill
+    // did not run on this profile, and placing copies nowhere would be worse than refusing.
+    if (!containerId) throw new Error(`${action}: profile ${profileId} has no Unfiled container.`);
+    return placeStatements({ profileId, containerId, ownedCardId, qty: after - before, now });
+  }
+  const plan = planGlobalRemoval(await readPlacements(query, ownedCardId), before - after);
+  if (plan.conflict) throw new StorageConflict(plan.conflict, action);
+  return removalStatements(plan, now);
+}
+
+/**
+ * Statements placing `qty` copies into Unfiled, resolving BOTH the owned row and the container in
+ * SQL rather than in JavaScript.
+ *
+ * This exists for the read-free upsert writers - the scanner's addOwnedCopies, the resolved import
+ * - whose whole point is that they never read before they write, so two overlapping increments
+ * cannot lose each other. Resolving the owned row id in JS would reintroduce exactly the
+ * read-modify-write those writers were built to avoid. The row is guaranteed to exist because the
+ * upsert that creates it is the statement immediately before this one in the same transaction.
+ *
+ * The WHERE clause is not optional: SQLite cannot tell an upsert's ON from a join's ON in an
+ * INSERT ... SELECT without one.
+ */
+export function placeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, now = nowIso() }) {
+  if (!(qty > 0)) return [];
+  return [[
+    `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
+     SELECT ?, o.profile_id, c.id, o.id, ?, ?, ?
+       FROM owned_cards o JOIN storage_containers c ON c.profile_id = o.profile_id AND c.is_system = 1
+      WHERE o.profile_id=? AND o.card_id=? AND o.variant_slug=?
+     ON CONFLICT(container_id,owned_card_id) DO UPDATE SET qty = qty + excluded.qty, updated_at = excluded.updated_at;`,
+    [uuid(), qty, now, now, profileId, cardId, variantSlug],
+  ]];
+}
+
+/**
+ * A guard for the statement above, in the same transaction, for the rows it just touched.
+ *
+ * A SELECT-sourced insert that matches nothing inserts nothing and reports success - the precise
+ * shape of the silence this whole exercise is about. SQLite has no bare "fail if" outside a
+ * trigger, so this provokes a constraint violation on a row that cannot legally exist: qty 0 fails
+ * CHECK (qty > 0), and the sentinel container fails the container foreign key. Whichever fires
+ * first rolls the whole transaction back. The SELECT yields nothing at all - and so provokes
+ * nothing - unless the equality is already broken for one of the named rows.
+ */
+export function assertEqualityStatements(profileId, keys, action = 'storage') {
+  if (!keys?.length) return [];
+  const pairs = keys.map(() => '(o.card_id=? AND o.variant_slug=?)').join(' OR ');
+  return [[
+    `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)
+     SELECT ?, o.profile_id, '${action}-equality-violated', o.id, 0, '', ''
+       FROM owned_cards o
+      WHERE o.profile_id=? AND (${pairs})
+        AND o.qty_owned <> COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id=o.id), 0);`,
+    [uuid(), profileId, ...keys.flatMap((k) => [k.cardId, k.variantSlug])],
+  ]];
+}

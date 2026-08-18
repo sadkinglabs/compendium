@@ -49,7 +49,13 @@ before(async () => {
     persist() { return Promise.resolve(); },
   });
   for (const m of MIGRATIONS) sdb.run(m.sql);
-  for (const id of ['A', 'B']) sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
+  // v12: every profile has an Unfiled container, and the ownership writers now place the
+  // copies they create. A fixture without one is not a lighter fixture - it is a profile
+  // the boot backfill could never have produced, and the writers fail closed on it.
+  for (const id of ['A', 'B']) {
+    sdb.run('INSERT INTO profiles(id,name,schema_version,created_at) VALUES(?,?,?,?);', [id, id, 10, '2026-01-01']);
+    sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-' + id, id]);
+  }
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LA','A','custom','ListA','2026-01-01');");
   sdb.run("INSERT INTO card_lists(id,profile_id,kind,name,created_at) VALUES('LB','B','custom','ListB','2026-01-01');");
   // listCards joins the catalog, so the boundary tests need a real card row.

@@ -67,8 +67,11 @@ beforeEach(() => {
   // A REAL allocation graph, which is the whole point: the fixtures that hid this bug deleted it.
   sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'T','T');", [UNFILED, PID]);
   sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES('b1',?,'binder','Binder','ruby',0,'T','T');", [PID]);
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('sole1','Sole','[{\"code\":\"001\"}]');");
-  sdb.run("INSERT INTO cards(card_id,name,sets) VALUES('multi1','Multi','[{\"code\":\"001\"},{\"code\":\"002\"}]');");
+  // `variants` is not optional decoration: the want writers authorise through printingFinishes,
+  // which reads it STRICTLY and rejects a card it cannot describe. A fixture without it fails on
+  // InvalidPrinting before the equality is ever evaluated - the assertion silently never runs.
+  sdb.run("INSERT INTO cards(card_id,name,sets,variants) VALUES('sole1','Sole','[{\"code\":\"001\"}]','[{\"set\":\"001\",\"finish\":\"Standard\"},{\"set\":\"001\",\"finish\":\"Foil\"}]');");
+  sdb.run("INSERT INTO cards(card_id,name,sets,variants) VALUES('multi1','Multi','[{\"code\":\"001\"},{\"code\":\"002\"}]','[{\"set\":\"001\",\"finish\":\"Standard\"},{\"set\":\"001\",\"finish\":\"Foil\"},{\"set\":\"002\",\"finish\":\"Standard\"}]');");
 });
 
 /** Seed an owned row with its copies already placed, as the backfill leaves them. */

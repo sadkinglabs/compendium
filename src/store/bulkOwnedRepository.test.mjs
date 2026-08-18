@@ -69,6 +69,10 @@ beforeEach(async () => {
   sdb.run('DELETE FROM storage_allocations; DELETE FROM owned_cards;');
   sdb.run('DELETE FROM profiles;');
   sdb.run("INSERT INTO profiles(id,name,schema_version,created_at,updated_at) VALUES('P','p',10,'t','t');");
+  // v12: every profile has an Unfiled container, and the ownership writers now place the
+  // copies they create. A fixture without one is not a lighter fixture - it is a profile
+  // the boot backfill could never have produced, and the writers fail closed on it.
+  sdb.run("INSERT INTO storage_containers(id,profile_id,kind,name,colour,is_system,created_at,updated_at) VALUES(?,?,'unfiled','Unfiled','gold',1,'t','t');", ['u-P', 'P']);
   __setActiveIdForTests('P');
   __resetCollectionWritesForTests();
 });
