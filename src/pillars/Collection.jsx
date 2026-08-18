@@ -59,7 +59,7 @@ import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST, SortRow } from '../components/ui.jsx';
-import { toggleSort, flipSort, sortIndex } from '../components/sortStack.js';
+import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
 import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
 import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
@@ -1964,13 +1964,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   });
   useEffect(() => { collectionSession().listArrange = arrange; }, [arrange]);
   const [arrOpen, setArrOpen] = useState(false);
+  // Grouping and sorting share a vocabulary, so grouping by rarity makes the rarity SORT key inert -
+  // every row in a section already carries that rarity. The key stays in state (change the grouping
+  // and it comes back) but it is dropped from the comparator, the numbering and the badge, so the
+  // panel stops claiming an effect it does not have.
+  const inertKey = inertSortKey(arrange.group, LIST_SORT_OPTIONS);
+  const liveSort = useMemo(() => effectiveSort(arrange.sort, inertKey), [arrange.sort, inertKey]);
   // One comparator for the whole stack: selected keys in priority order, then implicit Name
   // ascending, then the row's own identity so the order is total. rowKey is that identity -
   // the Wishlist is collector-item grain, so two rows legitimately share a card name.
   const listComparator = useMemo(
-    () => stackComparator(arrange.sort, { identityOf: rowKey }),
+    () => stackComparator(liveSort, { identityOf: rowKey }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [arrange.sort, isWishlist],
+    [liveSort, isWishlist],
   );
   const setKeyOf = (r) => {
     if (isWishlist) return r.set || LIST_UNCAT;
@@ -2269,7 +2275,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       {loaded && listRows.length > 0 && (
         <Fab className="fab-stacked" variant="deck" label="Arrange list" icon={<FabGlyph kind="filters" />}
           onClick={() => setArrOpen(true)} active={arrOpen}
-          badge={(arrange.group !== 'none' ? 1 : 0) + arrange.sort.length} />
+          badge={(arrange.group !== 'none' ? 1 : 0) + liveSort.length} />
       )}
 
       {/* The Arrange sheet - the Refine language's Arrange page, alone (docs/proposals/list-arrange.md). */}
@@ -2286,8 +2292,11 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             second chip, which is why "Name Z-A" is gone. */}
         <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '10px 0 4px' }}>Tap to add - order sets priority.</div>
         {LIST_SORT_OPTIONS.map((option) => {
-          const i = sortIndex(arrange.sort, option.key);
-          return <SortRow key={option.key} label={option.label} index={i} total={arrange.sort.length} dir={i >= 0 ? arrange.sort[i].dir : option.defaultDir}
+          const i = sortIndex(liveSort, option.key);
+          const inert = option.key === inertKey;
+          return <SortRow key={option.key} label={option.label} index={i} total={liveSort.length}
+            dir={i >= 0 ? liveSort[i].dir : option.defaultDir}
+            disabled={inert} hint={inert ? `Grouping already orders by ${option.label.toLowerCase()}.` : undefined}
             onToggle={() => setArrange((a) => ({ ...a, sort: toggleSort(a.sort, option) }))}
             onFlip={() => setArrange((a) => ({ ...a, sort: flipSort(a.sort, option.key) }))} />;
         })}

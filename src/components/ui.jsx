@@ -148,11 +148,25 @@ export function SectionLabel({ label, count }) {
  * The priority number is announced, not just drawn: conveying "this is your second sort key" by
  * glyph alone leaves a screen-reader user with a bare label and no way to hear the order.
  */
-export function SortRow({ label, index, dir, onToggle, onFlip, total }) {
-  const on = index >= 0;
+export function SortRow({ label, index, dir, onToggle, onFlip, total, disabled = false, hint }) {
+  const on = index >= 0 && !disabled;
   const priority = on
     ? `, sort priority ${index + 1}${total ? ` of ${total}` : ''}, ${dir === 'asc' ? 'ascending' : 'descending'}`
     : '';
+  // A disabled row is inert rather than absent: it keeps its place so the panel does not reshuffle
+  // when grouping changes, and it says WHY instead of just refusing the tap.
+  if (disabled) {
+    return (
+      <div aria-disabled="true" aria-label={hint ? `${label}. ${hint}` : label}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', opacity: 0.42, cursor: 'default', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
+        <span aria-hidden="true" style={{ width: 24, height: 24, flex: 'none', borderRadius: '50%', border: '1px solid #4a3c22' }} />
+        <span aria-hidden="true" style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', font: "600 15px/1.2 var(--f-read)", color: '#d8cebb' }}>{label}</span>
+          {hint && <span style={{ display: 'block', marginTop: 3, font: "italic 400 12px/1.3 var(--f-read)", color: '#8a8175' }}>{hint}</span>}
+        </span>
+      </div>
+    );
+  }
   return (
     <div role="button" tabIndex={0} aria-pressed={on} aria-label={`${label}${priority}`}
       onClick={onToggle}

@@ -7,7 +7,7 @@
 // to a surface that hands it something else.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { toggleSort, flipSort, sortIndex, isValidSortOption } from './sortStack.js';
+import { toggleSort, flipSort, sortIndex, isValidSortOption, inertSortKey, effectiveSort } from './sortStack.js';
 import { DECK_SORT_OPTIONS, LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 
 const byKey = (opts, key) => opts.find((o) => o.key === key);
@@ -96,4 +96,32 @@ test('the reducer never mutates the stack it is given', () => {
 test('DECK_SORT_OPTIONS and the deck pool comparator registry cover exactly the same keys', async () => {
   const { DECK_SORT_COMPARATOR_KEYS } = await import('../store/deckRepository.js');
   assert.deepEqual([...DECK_SORT_COMPARATOR_KEYS].sort(), DECK_SORT_OPTIONS.map((o) => o.key).sort());
+});
+
+/* ---------------- grouping neutralises a shared key ---------------- */
+
+test('only a key offered in BOTH controls is made inert by grouping', () => {
+  const GROUPS_OFFERED = ['none', 'set', 'rarity', 'element'];   // List Arrange's group vocabulary
+  assert.equal(inertSortKey('rarity', LIST_SORT_OPTIONS), 'rarity');
+  assert.equal(inertSortKey('element', LIST_SORT_OPTIONS), 'element');
+  // Set groups but is deliberately not a sort key, so it neutralises nothing - this is the
+  // tester's own case (group by Set, sort Element -> Rarity -> Name) and it must keep working.
+  assert.equal(inertSortKey('set', LIST_SORT_OPTIONS), null);
+  assert.equal(inertSortKey('none', LIST_SORT_OPTIONS), null);
+  assert.equal(inertSortKey(undefined, LIST_SORT_OPTIONS), null);
+  for (const g of GROUPS_OFFERED) {
+    const k = inertSortKey(g, LIST_SORT_OPTIONS);
+    assert.ok(k === null || LIST_SORT_OPTIONS.some((o) => o.key === k));
+  }
+});
+
+test('the inert key leaves the comparator, the numbering and the badge - but not the state', () => {
+  const stack = [{ key: 'rarity', dir: 'asc' }, { key: 'name', dir: 'asc' }];
+  const live = effectiveSort(stack, 'rarity');
+  assert.deepEqual(live, [{ key: 'name', dir: 'asc' }], 'the no-op key is dropped from what runs');
+  assert.equal(sortIndex(live, 'name'), 0, 'name is renumbered 1, not left showing 2');
+  assert.deepEqual(stack, [{ key: 'rarity', dir: 'asc' }, { key: 'name', dir: 'asc' }],
+    'the caller\'s state is untouched, so changing the grouping brings the key back');
+  assert.deepEqual(effectiveSort(stack, null), stack, 'no grouping, nothing dropped');
+  assert.deepEqual(effectiveSort(undefined, 'rarity'), []);
 });

@@ -50,3 +50,29 @@ export function sortIndex(stack, key) {
   const list = Array.isArray(stack) ? stack : [];
   return list.findIndex((s) => s.key === key);
 }
+
+/**
+ * Grouping and sorting share a vocabulary, so a surface can offer the same key in both controls -
+ * and "group by rarity, then sort by rarity" does NOTHING, because every row in a section already
+ * carries that rarity. The ordering was never wrong; the panel was, by numbering a key that had no
+ * effect and counting it on the badge.
+ *
+ * Returns the sort key the active grouping makes inert, or null. Only a key the surface actually
+ * offers in BOTH controls can be inert - grouping by Set does not neutralise any sort key, because
+ * Set is deliberately group-only.
+ */
+export function inertSortKey(groupBy, options) {
+  if (!groupBy || groupBy === 'none') return null;
+  return (options || []).some((o) => o.key === groupBy) ? groupBy : null;
+}
+
+/**
+ * The stack with the inert key removed - what the comparator should actually run, what the rows
+ * should be numbered by, and what the badge should count. Dropping it is safe precisely because it
+ * is a no-op: the result is identical either way, so this makes a fact structural rather than
+ * incidental. The key stays in the caller's state, so changing the grouping brings it back.
+ */
+export function effectiveSort(stack, inertKey) {
+  const list = Array.isArray(stack) ? stack : [];
+  return inertKey ? list.filter((s) => s.key !== inertKey) : list;
+}
