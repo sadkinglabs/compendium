@@ -7,6 +7,7 @@ import { query, run, tx, persist } from './db.js';
 import { SCHEMA_VERSION } from './schema.js';
 import { uuid, nowIso } from './ids.js';
 import { withProfileSwitchWriteBarrier } from './collectionWrites.js';
+import { createUnfiledStatements } from './storageRepository.js';
 
 const ACTIVE_KEY = 'activeProfileId';
 
@@ -83,13 +84,19 @@ export async function getActiveProfile() {
 export async function createProfile(name, { accent = 'gold', avatar = null, isDefault = false } = {}) {
   const id = uuid();
   const ts = nowIso();
-  await run(
-    `INSERT INTO profiles(id,name,avatar,accent,system,schema_version,is_default,created_at,updated_at)
-     VALUES(?,?,?,?,?,?,?,?,?);`,
-    [id, name, avatar ? JSON.stringify(avatar) : null, accent, 'sorcery', SCHEMA_VERSION, isDefault ? 1 : 0, ts, ts]
-  );
-  // Seed this profile's settings row with defaults.
-  await run('INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [id]);
+  // ONE transaction, because the Unfiled container is not optional furniture: every owned copy
+  // must be in exactly one place, so a profile without it has nowhere to put its first card. The
+  // partial unique index guarantees AT MOST one; creating it here - and at every other path a
+  // profile can come into existence - is what guarantees AT LEAST one. A follow-up write could
+  // fail and leave a profile that cannot accept a card.
+  await tx([
+    [`INSERT INTO profiles(id,name,avatar,accent,system,schema_version,is_default,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?);`,
+      [id, name, avatar ? JSON.stringify(avatar) : null, accent, 'sorcery', SCHEMA_VERSION, isDefault ? 1 : 0, ts, ts]],
+    // Seed this profile's settings row with defaults.
+    ['INSERT OR IGNORE INTO settings(profile_id) VALUES(?);', [id]],
+    ...createUnfiledStatements(id, uuid(), ts),
+  ]);
   return { id, name, accent, created_at: ts };
 }
 

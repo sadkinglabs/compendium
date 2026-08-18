@@ -58,6 +58,10 @@ export const PERSISTED_STATE = Object.freeze([
     namespace: 'owned_cards_canonical_version', kind: 'key', store: '_meta', owner: 'device', disposition: 'preserve',
     reason: 'Ledger canonicalisation marker; restored rows arrive canonical and the boot check is shape-first, so preserving cannot strand legacy rows.',
   },
+  {
+    namespace: 'storage_backfill_version', kind: 'key', store: '_meta', owner: 'device', disposition: 'preserve',
+    reason: 'Storage backfill marker; a restore writes allocations for every owned row, and the boot check is shape-first (it re-runs whenever any owned copy has no place), so preserving cannot strand copies outside a container.',
+  },
 
   /* -------- catalog_meta - device/catalog key-value -------- */
   {

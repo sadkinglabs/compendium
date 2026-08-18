@@ -8,6 +8,7 @@ import {
 } from './store/profileRepository.js';
 import { seedCatalogIfNeeded } from './store/catalog.js';
 import { initArtCache } from './store/artCacheInstance.js';
+import { backfillStorage } from './store/storageBackfill.js';
 import { canonicaliseLedger } from './store/canonicaliseBoot.js';
 import { reconcileRestore } from './store/restoreReconcile.js';
 import { resolveByName, isSaved, toggleSaved } from './store/codexRepository.js';
@@ -174,6 +175,13 @@ export default function App() {
         // must never render against a half-converted ledger. The transaction has already rolled
         // back, so the user's v10 data is intact for the next attempt.
         await canonicaliseLedger();
+        // AFTER canonicalisation, deliberately: it reshapes and merges the very rows this reads,
+        // so running first would allocate against rows about to be merged. Before initProfiles,
+        // because a profile created there gets its Unfiled container from createProfile, and a
+        // profile that already exists gets it from here. Same failure posture as the line above -
+        // a throw puts the app in its error state rather than letting Collection render against a
+        // ledger whose copies are not all in a place.
+        await backfillStorage();
         const p = await initProfiles();
         setProfile(p);
         // Reconcile a live match that survived a process death. The former initializer
