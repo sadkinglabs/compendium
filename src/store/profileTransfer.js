@@ -328,7 +328,7 @@ export function planProfileUnit(bundle, { pid, name, avatar = null, dashSeeded }
       ins('storage_allocations', ['id', 'profile_id', 'container_id', 'owned_card_id', 'qty', 'created_at', 'updated_at'],
         [uuid(), pid, m.contId, m.ownedId, m.qty, m.created_at, m.updated_at]);
     }
-    // Whatever the bundle did not account for is loose. `capacity` is what is left after every
+    // Whatever the bundle did not account for is unfiled. `capacity` is what is left after every
     // accepted place, so this closes the equality by construction rather than by hope.
     for (const r of ownedRows) {
       const short = capacity.get(r.id) || 0;

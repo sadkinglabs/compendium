@@ -80,20 +80,37 @@ export async function getContainer(containerId, pid = activeProfileId()) {
 /**
  * Validate a name the user typed. Returns the trimmed name or throws.
  *
- * A container with a blank name is unnameable in every later surface, and one called "Unfiled"
- * would be indistinguishable from the system place in a list - so both are refused at the boundary
- * rather than being allowed in and worked around forever afterwards.
+ * TWO refusals and ONE tolerance, and the difference is deliberate (Q9).
+ *
+ * A blank name is refused: it is unnameable in every later surface. The reserved name is refused:
+ * a second "Unfiled" is indistinguishable from the system place in a list.
+ *
+ * A DUPLICATE IS ALLOWED. Q9: "must container names be unique? No, but warn on exact duplicate."
+ * Two binders really can both be called "Beta", and the app is not the arbiter of what someone
+ * calls their own shelves - the deck-name paths already work this way. The warning is the caller's
+ * job, which is why duplicateName() below is a separate read: refusing here would put a wall in
+ * front of a legitimate thing.
  */
-function cleanName(raw, existing = [], selfId = null) {
+function cleanName(raw) {
   const name = String(raw ?? '').trim().slice(0, MAX_CONTAINER_NAME);
   if (!name) throw Object.assign(new Error('A place needs a name.'), { name: 'InvalidContainer' });
   if (name.toLowerCase() === UNFILED_NAME.toLowerCase()) {
-    throw Object.assign(new Error(`"${UNFILED_NAME}" is where loose cards already live - pick another name.`), { name: 'InvalidContainer' });
-  }
-  if (existing.some((c) => c.id !== selfId && String(c.name).toLowerCase() === name.toLowerCase())) {
-    throw Object.assign(new Error(`You already have a place called "${name}".`), { name: 'InvalidContainer' });
+    throw Object.assign(new Error(`"${UNFILED_NAME}" is the place for cards you have not filed - pick another name.`), { name: 'InvalidContainer' });
   }
   return name;
+}
+
+/**
+ * Does another place already carry this name? For the WARNING Q9 asks for, not a refusal.
+ *
+ * Read-only and caller-driven, so a surface can say "you already have one called that" and still
+ * let the user proceed. Case-insensitive, because "beta" and "Beta" are the same shelf to a person.
+ */
+export async function duplicateName(name, { selfId = null, pid = activeProfileId() } = {}) {
+  const wanted = String(name ?? '').trim().toLowerCase();
+  if (!wanted) return false;
+  const all = await listContainers(pid);
+  return all.some((c) => c.id !== selfId && !c.is_system && String(c.name).toLowerCase() === wanted);
 }
 
 /** Create a user container. Never the system one - that is the backfill's and profile creation's job. */
@@ -103,7 +120,7 @@ export async function createContainer({ name, kind = 'binder', colour = DEFAULT_
   const id = uuid();
   await withExclusiveCollectionWrites(async () => {
     const existing = await listContainers(pid);
-    const clean = cleanName(name, existing);
+    const clean = cleanName(name);
     // Appended, not inserted: a new place goes at the end of the user's order rather than
     // renumbering everything they have already arranged.
     const order = existing.reduce((n, c) => Math.max(n, Number(c.sort_order) || 0), 0) + 1;
@@ -119,9 +136,14 @@ export async function createContainer({ name, kind = 'binder', colour = DEFAULT_
 }
 
 /** Rename / recolour / re-describe. The system container is immutable: it is not the user's to name. */
-export async function updateContainer(containerId, { name, colour, description } = {}, pid = activeProfileId()) {
+export async function updateContainer(containerId, { name, colour, description, kind } = {}, pid = activeProfileId()) {
   if (colour != null && !isContainerColour(colour)) {
     throw Object.assign(new Error(`Unknown colour ${JSON.stringify(colour)}.`), { name: 'InvalidContainer' });
+  }
+  // Q8: a kind changes after creation, because "cards move from a deck into a box constantly". The
+  // kind describes what the place IS today, not what it was when it was made.
+  if (kind != null && !isUserContainerKind(kind)) {
+    throw Object.assign(new Error(`Unknown kind ${JSON.stringify(kind)}.`), { name: 'InvalidContainer' });
   }
   await withExclusiveCollectionWrites(async () => {
     const all = await listContainers(pid);
@@ -130,9 +152,10 @@ export async function updateContainer(containerId, { name, colour, description }
     if (self.is_system) throw Object.assign(new Error(`${UNFILED_NAME} cannot be renamed.`), { name: 'InvalidContainer' });
     const sets = [];
     const params = [];
-    if (name != null) { sets.push('name=?'); params.push(cleanName(name, all, containerId)); }
+    if (name != null) { sets.push('name=?'); params.push(cleanName(name)); }
     if (colour != null) { sets.push('colour=?'); params.push(colour); }
     if (description != null) { sets.push('description=?'); params.push(String(description).slice(0, MAX_CONTAINER_DESC)); }
+    if (kind != null) { sets.push('kind=?'); params.push(kind); }
     if (!sets.length) return;
     sets.push('updated_at=?'); params.push(nowIso());
     await tx([[`UPDATE storage_containers SET ${sets.join(', ')} WHERE id=? AND profile_id=?;`, [...params, containerId, pid]]]);
@@ -148,7 +171,7 @@ export async function updateContainer(containerId, { name, colour, description }
  * what Unfiled represents. So no quantity changes and `qty_owned` is untouched throughout; only the
  * container_id of some allocations does.
  *
- * The move MERGES rather than inserting, because a card can already be loose as well as filed - the
+ * The move MERGES rather than inserting, because a card can already be unfiled as well as filed - the
  * unique index on (container_id, owned_card_id) is what would otherwise reject the whole delete.
  */
 export async function deleteContainer(containerId, pid = activeProfileId()) {
@@ -162,7 +185,7 @@ export async function deleteContainer(containerId, pid = activeProfileId()) {
 
     const now = nowIso();
     await tx([
-      // MERGE what is already loose. `ON CONFLICT` cannot help here - the conflicting row is the
+      // MERGE with what is already in Unfiled. `ON CONFLICT` cannot help here - the conflicting row is the
       // one we are moving FROM, so the upsert would add a row to itself.
       [`UPDATE storage_allocations
            SET qty = qty + COALESCE((SELECT m.qty FROM storage_allocations m
@@ -185,6 +208,38 @@ export async function deleteContainer(containerId, pid = activeProfileId()) {
            WHERE o.profile_id=?
              AND o.qty_owned <> COALESCE((SELECT SUM(a.qty) FROM storage_allocations a WHERE a.owned_card_id=o.id), 0);`,
         [uuid(), pid]],
+    ]);
+  });
+  notifyOwnedChanged();
+}
+
+/**
+ * Move one place one step earlier or later in the user's own order (Q10: "manual with sort_order").
+ *
+ * Implemented as a SWAP of two sort_order values rather than a renumber, so it is one small write
+ * and any other ordering the user has built is left alone. Unfiled is excluded from both ends: it
+ * is pinned first and not draggable (Q15), so it is neither a mover nor a neighbour.
+ *
+ * A move past either end is a no-op rather than an error - the button is simply at its limit.
+ */
+export async function moveContainer(containerId, direction, pid = activeProfileId()) {
+  const step = direction === 'up' ? -1 : 1;
+  await withExclusiveCollectionWrites(async () => {
+    const mine = (await listContainers(pid)).filter((c) => !c.is_system);
+    const i = mine.findIndex((c) => c.id === containerId);
+    const j = i + step;
+    if (i < 0 || j < 0 || j >= mine.length) return;
+    const a = mine[i];
+    const b = mine[j];
+    const now = nowIso();
+    // Their stored values may be equal (two places created in the same breath), in which case a
+    // straight swap changes nothing. Fall back to index-derived orders, which is also the repair.
+    const [oa, ob] = Number(a.sort_order) === Number(b.sort_order)
+      ? [j + 1, i + 1]
+      : [Number(b.sort_order) || 0, Number(a.sort_order) || 0];
+    await tx([
+      ['UPDATE storage_containers SET sort_order=?, updated_at=? WHERE id=? AND profile_id=?;', [oa, now, a.id, pid]],
+      ['UPDATE storage_containers SET sort_order=?, updated_at=? WHERE id=? AND profile_id=?;', [ob, now, b.id, pid]],
     ]);
   });
   notifyOwnedChanged();

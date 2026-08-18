@@ -61,20 +61,21 @@ test('every returned surface is a declared one', () => {
 
 /* ---------------- storage (increment 3) ---------------- */
 
-test('storage picks its index or its detail, the same way lists does', () => {
-  assert.equal(collectionSurface({ view: 'storage' }), 'storageIndex');
-  assert.equal(collectionSurface({ view: 'storage', placeOpen: { id: 'c1' } }), 'storageDetail');
+test('storage is a SECTION of My Collection - there is no storage index surface', () => {
+  // Owner ruling: "INSIDE My Collection - top section would be sets, and below you'd have Storage",
+  // agreed in preference to a fourth chip, and "it keeps the chip row at three". So the list of
+  // places renders on setsHome; only opening one is a surface.
+  assert.equal(collectionSurface({ view: 'cards' }), 'setsHome');
+  assert.equal(collectionSurface({ view: 'cards', placeOpen: { id: 'c1' } }), 'storageDetail');
+  assert.equal(collectionSurface({ view: 'storage' }), 'overview', 'no such view; unknown lands somewhere real');
+});
+
+test('a set drill outranks an open place', () => {
+  assert.equal(collectionSurface({ view: 'cards', placeOpen: { id: 'c1' }, setDrill: '001' }), 'setDrill');
 });
 
 test('a stale placeOpen cannot resurrect the place drill from another view', () => {
-  // The third instance of the rule this module exists for: the nav cache survives an unmount, so
-  // every drill state can genuinely be sitting there while the user looks at something else.
   const stale = { placeOpen: { id: 'c1' } };
   assert.equal(collectionSurface({ view: 'lists', ...stale }), 'listsIndex');
-  assert.equal(collectionSurface({ view: 'cards', ...stale }), 'setsHome');
   assert.equal(collectionSurface({ view: 'overview', ...stale }), 'overview');
-});
-
-test('the other views ignore each other`s drill state, storage included', () => {
-  assert.equal(collectionSurface({ view: 'storage', setDrill: '001', listOpen: { id: 'l1' } }), 'storageIndex');
 });

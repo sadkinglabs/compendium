@@ -62,7 +62,7 @@ import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, B
 import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
 import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
-import { StorageIndex, StorageDetail } from './CollectionStorage.jsx';
+import { StorageSection, StorageDetail } from './CollectionStorage.jsx';
 import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -146,7 +146,6 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <Chip label="Overview" active={view === 'overview'} onClick={() => go('overview')} />
         <Chip label="My Collection" active={view === 'cards'} onClick={() => go('cards')} />
         <Chip label="Lists" active={view === 'lists'} onClick={() => go('lists')} />
-        <Chip label="Storage" active={view === 'storage'} onClick={() => go('storage')} />
       </div>
     </div>
   );
@@ -177,7 +176,16 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
           </div>
           {allMode
             ? <AllCards onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)} />
-            : <SetsHome onOpenSet={openSet} rev={rev} />}
+            : (
+              <>
+                <SetsHome onOpenSet={openSet} rev={rev} />
+                {/* Sets are the containers the game gave you; STORAGE is the ones you made. Same
+                    cards, two organisations, one screen - the owner's placement ruling, and the
+                    reason there is no Storage chip. It sits under the grid on the SETS side only:
+                    the All view is a flat search surface with its own filter and add FABs. */}
+                <StorageSection onOpenPlace={setPlaceOpen} rev={rev} />
+              </>
+            )}
           {/* Scan FAB only on the SETS home; the ALL view has its own filter + add FABs. */}
           {!allMode && (
             <Fab variant="lib" label="Scan cards" icon={<FabGlyph kind="camera" />}
@@ -189,7 +197,6 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
       )}
       {surface === 'listsIndex' && <ListsIndex onOpenList={setListOpen} rev={rev} />}
-      {surface === 'storageIndex' && <StorageIndex onOpenPlace={setPlaceOpen} rev={rev} />}
       {surface === 'storageDetail' && (
         <StorageDetail place={placeOpen} onBack={() => setPlaceOpen(null)} onChanged={onChanged} onPeek={peek} />
       )}

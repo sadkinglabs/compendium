@@ -19,7 +19,7 @@ import { __setActiveIdForTests } from './profileRepository.js';
 import { __resetCollectionWritesForTests } from './collectionWrites.js';
 import {
   listContainers, containerContents, getContainer, createContainer, updateContainer,
-  deleteContainer, unfiledId, MAX_CONTAINER_NAME,
+  deleteContainer, unfiledId, MAX_CONTAINER_NAME, duplicateName, moveContainer,
 } from './storageDirectory.js';
 
 const require = createRequire(import.meta.url);
@@ -111,11 +111,64 @@ test('a blank name is refused, and so is impersonating Unfiled', async () => {
     'case-insensitively - two places called Unfiled is indistinguishable in every later surface');
 });
 
-test('a duplicate name is refused, but renaming a container to its own name is not', async () => {
+test('Q9: a duplicate name is ALLOWED, and reported so a surface can warn', async () => {
+  // "Must container names be unique? No, but warn on exact duplicate." Two binders really can both
+  // be called Beta, and refusing puts a wall in front of a legitimate thing.
   const a = await createContainer({ name: 'Binder' });
-  await assert.rejects(() => createContainer({ name: 'binder' }), { name: 'InvalidContainer' });
-  await updateContainer(a, { name: 'Binder', colour: 'ruby' });   // must not trip on itself
+  const b = await createContainer({ name: 'binder' });
+  assert.notEqual(a, b, 'both exist');
+  assert.equal(await duplicateName('BINDER'), true, 'case-insensitively, for the warning');
+  assert.equal(await duplicateName('Binder', { selfId: a }), true, 'the OTHER one still collides');
+  assert.equal(await duplicateName('Box'), false);
+  await updateContainer(a, { name: 'Binder', colour: 'ruby' });
   assert.equal((await getContainer(a)).colour, 'ruby');
+});
+
+test('Q8: the kind changes after creation - cards move from a deck into a box', async () => {
+  const a = await createContainer({ name: 'Shelf', kind: 'deck' });
+  await updateContainer(a, { kind: 'box' });
+  assert.equal((await getContainer(a)).kind, 'box');
+  await assert.rejects(() => updateContainer(a, { kind: 'unfiled' }), { name: 'InvalidContainer' },
+    'the system kind is still not a user choice');
+});
+
+test('Q12: the description line round-trips', async () => {
+  const a = await createContainer({ name: 'Shelf', description: 'Top shelf, spare room' });
+  assert.equal((await getContainer(a)).description, 'Top shelf, spare room');
+  await updateContainer(a, { description: '' });
+  assert.equal((await getContainer(a)).description, '');
+});
+
+test('Q10: manual reorder swaps neighbours and leaves Unfiled pinned out of it', async () => {
+  const a = await createContainer({ name: 'A' });
+  const b = await createContainer({ name: 'B' });
+  const c = await createContainer({ name: 'C' });
+  const order = async () => (await listContainers()).filter((x) => !x.is_system).map((x) => x.name);
+  assert.deepEqual(await order(), ['A', 'B', 'C']);
+  await moveContainer(b, 'up');
+  assert.deepEqual(await order(), ['B', 'A', 'C']);
+  await moveContainer(b, 'up');
+  assert.deepEqual(await order(), ['B', 'A', 'C'], 'already first - a no-op, not an error');
+  await moveContainer(b, 'down');
+  assert.deepEqual(await order(), ['A', 'B', 'C']);
+  await moveContainer(c, 'down');
+  assert.deepEqual(await order(), ['A', 'B', 'C'], 'already last');
+  // Unfiled is pinned first throughout and never participates.
+  assert.equal((await listContainers())[0].is_system, 1);
+  const u = await unfiledId();
+  await moveContainer(u, 'down');
+  assert.equal((await listContainers())[0].is_system, 1, 'still first');
+});
+
+test('reorder survives places created with an identical sort_order', async () => {
+  // Two rows can carry the same order (an older build, an import). A straight swap would be a no-op
+  // and the button would look broken, so the swap falls back to index-derived values.
+  const a = await createContainer({ name: 'A' });
+  const b = await createContainer({ name: 'B' });
+  sdb.run('UPDATE storage_containers SET sort_order=5 WHERE is_system=0;');
+  await moveContainer(b, 'up');
+  const names = (await listContainers()).filter((x) => !x.is_system).map((x) => x.name);
+  assert.deepEqual(names, ['B', 'A']);
 });
 
 test('names are trimmed and bounded; unknown kinds and colours are rejected outright', async () => {
