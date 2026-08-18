@@ -23,6 +23,7 @@
 // one place without any of them giving up their own atomicity.
 import { uuid, nowIso } from './ids.js';
 import { SYSTEM_KIND, UNFILED_NAME, DEFAULT_COLOUR } from './storageVocabulary.js';
+import { assertCanonicalSlug } from './printings.js';
 
 /** The Unfiled container for a profile, or null. Read-only; callers decide what to do about it. */
 export async function unfiledContainerId(query, profileId) {
@@ -211,6 +212,9 @@ export async function reconcileOwnedStatements({ query, profileId, ownedCardId, 
  */
 export function placeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, expectOwned = null, now = nowIso() }) {
   if (!(qty > 0)) return [];
+  // A key-resolved statement matches by variant_slug, so a UI bucket here would match nothing and
+  // report success - the exact silence that cost us undoBulkOwned. See assertCanonicalSlug.
+  assertCanonicalSlug(variantSlug, 'placeUnfiledByKeyStatements');
   // `expectOwned` carries UNDO's conditional guard down to the places. Undo restores a row only
   // while it still holds what the bulk write left there, and the allocation must be governed by
   // the SAME condition in the SAME transaction - otherwise an undo the guard declined would still
@@ -242,6 +246,7 @@ export function placeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qt
  */
 export function takeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty, expectOwned = null, now = nowIso() }) {
   if (!(qty > 0)) return [];
+  assertCanonicalSlug(variantSlug, 'takeUnfiledByKeyStatements');
   const guard = expectOwned == null ? '' : ' AND o.qty_owned=?';
   const owned = [profileId, cardId, variantSlug, ...(expectOwned == null ? [] : [expectOwned])];
   const selector = `container_id = (SELECT id FROM storage_containers WHERE profile_id=? AND is_system=1)
@@ -265,6 +270,19 @@ export function takeUnfiledByKeyStatements({ profileId, cardId, variantSlug, qty
  */
 export function assertEqualityStatements(profileId, keys, action = 'storage') {
   if (!keys?.length) return [];
+  // DELIBERATELY NOT assertCanonicalSlug. This names rows to CHECK, not a key to write, and a
+  // legacy row is a perfectly legitimate thing to check - triage drains v10 keys, so it asserts
+  // over them by design.
+  //
+  // And the two cannot be told apart by value anyway: the UI's uncategorised bucket and the v10
+  // legacy key are BOTH the empty string. That collision is the root of the whole defect class -
+  // no guard can distinguish them, so the distinction has to be enforced by INTENT, at the write
+  // boundary where only a canonical key can be correct. Here, any string is a fair target.
+  for (const k of keys) {
+    if (typeof k?.variantSlug !== 'string') {
+      throw Object.assign(new Error(`${action}: equality guard needs a variant_slug string, got ${JSON.stringify(k?.variantSlug)}`), { name: 'InvalidPrinting' });
+    }
+  }
   const pairs = keys.map(() => '(o.card_id=? AND o.variant_slug=?)').join(' OR ');
   return [[
     `INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at)

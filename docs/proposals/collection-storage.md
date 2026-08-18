@@ -348,7 +348,15 @@ Responsibilities:
    decrease into filed copies is ambiguous; total removal is not. So a target of 0 succeeds and
    takes the filing with it, which is also what the increment-1 delete paths already do on device.
    Implemented in `planAllocationChanges` and asserted by `storageWriterInvariant.test.mjs`.
-6. **Undo** reverses both the total and the exact Unfiled allocation it changed, under the same
+6. **Undo** - **STRUCK, 2026-08-18.** There is no bulk-ownership undo in the app and there never
+   was. This clause specified it against `bulkOwnedRepository`, a module built 20 July as the bulk
+   protocol and superseded three days later by the Set-to-N / Adjust-by-N surface in
+   `ownedImportRepository` that actually shipped; its `add1`/`ensure1`/`remove1` vocabulary cannot
+   even express what the UI does. The module was deleted on the owner's instruction rather than
+   left as reachable-looking dead code. If bulk undo is wanted, it is a new increment specified
+   against the live path. The original clause read:
+
+   > Undo reverses both the total and the exact Unfiled allocation it changed, under the same
    expected-state guards `undoBulkOwned` already applies
    ([`bulkOwnedRepository.js:145`](../../src/store/bulkOwnedRepository.js#L145)) - a row is restored
    only while it still holds what the bulk write left, and the guard now covers the allocation too.

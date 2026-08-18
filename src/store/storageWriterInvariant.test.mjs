@@ -26,12 +26,12 @@ import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests } from './db.js';
 import { __setActiveIdForTests } from './profileRepository.js';
 import * as repo from './ownedRepository.js';
-import { createBulkOwnedCommands } from './bulkOwnedRepository.js';
 import { createOwnedImportCommand } from './ownedImportRepository.js';
 import { createTriageCommands } from './triageRepository.js';
 import { triagePile, fileLinePlan } from './triage.js';
 import { createWantedBulkCommand } from './wantedBulkRepository.js';
 import { createCanonicaliser } from './canonicaliseBoot.js';
+import { placeUnfiledByKeyStatements, takeUnfiledByKeyStatements, assertEqualityStatements } from './storageRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'p1';
@@ -169,91 +169,14 @@ test('a wishlist-only row has no places, and that satisfies the equality', async
 
 /* ---------------- the BULK writers ---------------- */
 //
-// Same assertion, second module. Bulk was as unwired as the steppers and just as silent about it,
-// and no per-writer test above can see it: applyBulkOwned composes its own transaction.
+// DELETED WITH THEIR MODULE. bulkOwnedRepository carried the add1/ensure1/remove1 protocol and was
+// superseded three days after it was written by the Set-to-N / Adjust-by-N surface in
+// ownedImportRepository, which is what the app actually ships. Its equality routing and the eight
+// tests that covered it went with it; the live bulk path is exercised under "the IMPORT writers"
+// below. Recorded here rather than silently vanishing, because the coverage count changed.
 
-const bulk = createBulkOwnedCommands({
-  exclusive: (fn) => fn(),          // the barrier is not what these tests are about
-  query: (s, p = []) => Promise.resolve(rows(s, p)),
-  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
-  notify: () => {},
-  activeProfileId: () => PID,
-});
-const T = (cardId, set = '001') => ({ cardId, set });
+/** Copies of one owned row sitting in one container. Lived in the deleted block; still needed. */
 const at = (container, ownedId) => rows('SELECT qty FROM storage_allocations WHERE container_id=? AND owned_card_id=?;', [container, ownedId])[0]?.qty || 0;
-
-test('bulk add1 places the copies it adds', async () => {
-  seedOwned('o1', 'sole1', '001', 2, { binder: 1 });
-  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
-  assert.equal(r.confirmed, true);
-  assert.deepEqual(brokenRows(), []);
-  assert.equal(at(UNFILED, 'o1'), 2, 'the new copy went to Unfiled');
-  assert.equal(at('b1', 'o1'), 1, 'the binder is untouched by an add');
-});
-
-test('bulk remove1 takes from Unfiled and leaves the binder alone', async () => {
-  seedOwned('o1', 'sole1', '001', 3, { binder: 1 });   // 1 filed, 2 loose
-  await bulk.applyBulkOwned('remove1', [T('sole1')]);
-  assert.deepEqual(brokenRows(), []);
-  assert.equal(at(UNFILED, 'o1'), 1);
-  assert.equal(at('b1', 'o1'), 1, 'the binder is not raided to satisfy a global minus');
-});
-
-test('bulk remove1 REJECTS when the copies are all filed, and writes nothing', async () => {
-  seedOwned('o1', 'sole1', '001', 2, { binder: 2 });   // nothing loose
-  await assert.rejects(() => bulk.applyBulkOwned('remove1', [T('sole1')]), { name: 'StorageConflict' });
-  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 2, 'the count did not move');
-  assert.equal(at('b1', 'o1'), 2, 'and neither did the filing');
-});
-
-test('a mixed bulk selection fails WHOLE - the satisfiable item is not written either', async () => {
-  // Sec 5: a bulk command that half-applies is worse than one that explains itself.
-  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });   // satisfiable
-  seedOwned('o2', 'multi1', '001', 2, { binder: 2 });  // not
-  await assert.rejects(() => bulk.applyBulkOwned('remove1', [T('sole1'), T('multi1')]),
-    (e) => e.name === 'StorageConflict' && e.detail.items.length === 1 && e.detail.items[0].cardId === 'multi1');
-  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 2, 'the satisfiable item was not written');
-});
-
-test('bulk remove1 reaching ZERO clears the places, filed or not', async () => {
-  // Total removal needs no attribution: the wall exists because the app cannot know WHICH copy
-  // left, and when every copy leaves there is nothing to guess.
-  seedOwned('o1', 'sole1', '001', 1, { binder: 1 });
-  await bulk.applyBulkOwned('remove1', [T('sole1')]);
-  assert.deepEqual(brokenRows(), []);
-  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0);
-});
-
-test('undo of a bulk add takes the placed copy back out', async () => {
-  seedOwned('o1', 'sole1', '001', 1, { binder: 0 });
-  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
-  const u = await bulk.undoBulkOwned(r.undo);
-  assert.equal(u.applied, 1);
-  assert.deepEqual(brokenRows(), []);
-  assert.equal(at(UNFILED, 'o1'), 1, 'back to where it started');
-});
-
-test('undo of a bulk remove puts the copy back in Unfiled', async () => {
-  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });
-  const r = await bulk.applyBulkOwned('remove1', [T('sole1')]);
-  const u = await bulk.undoBulkOwned(r.undo);
-  assert.equal(u.applied, 1);
-  assert.deepEqual(brokenRows(), []);
-  assert.equal(at(UNFILED, 'o1'), 2);
-});
-
-test('undo REFUSED by its guard moves the places no more than it moves the count', async () => {
-  // The guard and the allocation must agree about whether the undo happened. If the places moved
-  // while the conditional UPDATE declined, the equality would break on a row nobody wrote to.
-  seedOwned('o1', 'sole1', '001', 1, { binder: 0 });
-  const r = await bulk.applyBulkOwned('add1', [T('sole1')]);
-  await repo.setOwnedInSet('sole1', '001', 5);        // the user edits it before undoing
-  const u = await bulk.undoBulkOwned(r.undo);
-  assert.equal(u.applied, 0);
-  assert.equal(u.conflicts, 1);
-  assert.deepEqual(brokenRows(), [], 'the declined undo left the ledger consistent');
-  assert.equal(at(UNFILED, 'o1'), 5, "the user's edit survived intact");
-});
 
 /* ---------------- the IMPORT writers ---------------- */
 //
@@ -508,4 +431,51 @@ test('the conflict says WHERE the copies are, which is the whole point of refusi
     assert.deepEqual(e.detail.filed, [{ container_id: 'b1', qty: 3 }]);
     return true;
   });
+});
+
+/* ---------------- THE BUCKET IS NOT THE KEY ---------------- */
+//
+// The defect class the owner called years before it bit: `''` is BOTH the UI's uncategorised bucket
+// and the v10 legacy key, so a bucket passed where a storage key belongs matches nothing, writes
+// nothing, and reports success. It cost us undoBulkOwned - restoring an Alpha row worked, restoring
+// an Uncategorised row silently did not, and the read-back then blamed the user for an edit they
+// had not made.
+//
+// No guard can tell the two apart by value. So the distinction is enforced by INTENT, at the write
+// boundary, where only a canonical key can ever be correct.
+
+test('a key-resolved PLACE refuses the raw bucket instead of matching nothing', async () => {
+  for (const bucket of ['', null, undefined]) {
+    assert.throws(() => placeUnfiledByKeyStatements({ profileId: PID, cardId: 'sole1', variantSlug: bucket, qty: 1 }),
+      { name: 'InvalidPrinting' }, `the ${JSON.stringify(bucket)} bucket must not reach SQL`);
+  }
+});
+
+test('a key-resolved TAKE refuses it too, and names the fix', () => {
+  assert.throws(() => takeUnfiledByKeyStatements({ profileId: PID, cardId: 'sole1', variantSlug: '', qty: 1 }),
+    (e) => e.name === 'InvalidPrinting' && /canonicalPrinting/.test(e.message));
+});
+
+test('a v10 legacy key is refused at the WRITE boundary - writers emit canonical keys only', () => {
+  for (const legacy of ['', 'foil']) {
+    assert.throws(() => placeUnfiledByKeyStatements({ profileId: PID, cardId: 'sole1', variantSlug: legacy, qty: 1 }),
+      { name: 'InvalidPrinting' });
+  }
+});
+
+test('but the equality guard ACCEPTS legacy keys, because it names rows to check', () => {
+  // Not a weakening. Triage drains v10 rows, so it asserts over them by design - and a row on a
+  // legacy key is a real row. The write boundary is where intent is knowable; this is not.
+  assert.equal(assertEqualityStatements(PID, [{ cardId: 'sole1', variantSlug: '' }], 'x').length, 1);
+  assert.equal(assertEqualityStatements(PID, [{ cardId: 'sole1', variantSlug: 'foil' }], 'x').length, 1);
+  assert.throws(() => assertEqualityStatements(PID, [{ cardId: 'sole1', variantSlug: null }], 'x'),
+    { name: 'InvalidPrinting' }, 'a MISSING slug is still a bug - it can only be an oversight');
+});
+
+test('the canonical key for the uncategorised bucket is what the writers actually store', async () => {
+  // The end-to-end statement of the same thing: ask for the bucket, get the key.
+  await repo.setOwned('sole1', 2);
+  const slugs = rows("SELECT variant_slug FROM owned_cards WHERE card_id='sole1';").map((r) => r.variant_slug);
+  assert.deepEqual(slugs, ['uncategorised'], "never '' - no canonical ownership key is the empty string");
+  assert.deepEqual(brokenRows(), []);
 });

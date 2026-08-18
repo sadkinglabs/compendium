@@ -170,6 +170,39 @@ export function normalizePrinting(slug) {
   return slug == null ? LEGACY_UNCATEGORISED : String(slug);
 }
 
+/**
+ * THE BUCKET IS NOT THE KEY, and confusing the two is a whole class of silent bug.
+ *
+ * A UI BUCKET is what a surface groups by: `'001'` for Alpha, and `''` for "no set established".
+ * A STORAGE KEY is what `owned_cards.variant_slug` actually holds: `'001'`, `'001:f'`,
+ * `'uncategorised'`, `'uncategorised:f'`. For a real set the two spellings COINCIDE, which is
+ * precisely what makes the mistake so hard to see - every test using a real set code passes, and
+ * only the uncategorised bucket diverges.
+ *
+ * WHAT IT COST US. `undoBulkOwned` compared `variant_slug=?` against the raw bucket. Restoring an
+ * Alpha row worked; restoring an Uncategorised row matched NOTHING, so the undo silently did not
+ * happen - and the read-back then classified it as a conflict, reporting "someone edited this
+ * since" about a row nobody had touched. A lie built out of a one-word omission, invisible to
+ * every test, because no test used the bucket that diverges.
+ *
+ * So a slug that reaches the persistence boundary must be canonical, and passing a bucket where a
+ * key belongs FAILS LOUDLY here rather than quietly matching zero rows. The empty string is the
+ * signature of the mistake: no canonical ownership key is `''`, and the legacy keys (`''`,
+ * `'foil'`) are READ everywhere but written nowhere.
+ *
+ * Use `canonicalPrinting(set, foil)` to turn a bucket into a key. This guard is the backstop for
+ * forgetting to.
+ */
+export function assertCanonicalSlug(slug, action = 'write') {
+  if (typeof slug !== 'string' || !slug) {
+    throw Object.assign(new Error(`${action}: variant_slug must be a canonical key, got ${JSON.stringify(slug)}. The '' UI bucket is not a storage key - use canonicalPrinting(set, foil).`), { name: 'InvalidPrinting' });
+  }
+  if (slug === LEGACY_UNCATEGORISED || slug === LEGACY_FOIL) {
+    throw Object.assign(new Error(`${action}: ${JSON.stringify(slug)} is a v10 legacy key; writers emit canonical keys only.`), { name: 'InvalidPrinting' });
+  }
+  return slug;
+}
+
 /** The set code behind a printing, foil or not: '001:f' -> '001'. */
 export function setCodeOf(slug) {
   const s = normalizePrinting(slug);
