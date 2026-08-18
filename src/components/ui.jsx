@@ -138,6 +138,52 @@ export function SectionLabel({ label, count }) {
 // separator, a quiet chevron - the Manuscript row shared with the Codex/deck
 // listings. The 34px entity-icon slot + geometry are kept so it lines up with
 // CardRow in a mixed result list; the per-pillar --list-accent still tints it.
+/**
+ * One row of a stacked sort control: a priority badge, the key's label, and a direction flip.
+ *
+ * Lives here rather than in RefineSheet because two surfaces render it now (Deck Add Cards and
+ * List Arrange), and a shared primitive parked in a feature-flavoured module is a latent chunking
+ * hazard - the same lesson elements.js records.
+ *
+ * The priority number is announced, not just drawn: conveying "this is your second sort key" by
+ * glyph alone leaves a screen-reader user with a bare label and no way to hear the order.
+ */
+export function SortRow({ label, index, dir, onToggle, onFlip, total, disabled = false, hint }) {
+  const on = index >= 0 && !disabled;
+  const priority = on
+    ? `, sort priority ${index + 1}${total ? ` of ${total}` : ''}, ${dir === 'asc' ? 'ascending' : 'descending'}`
+    : '';
+  // A disabled row is inert rather than absent: it keeps its place so the panel does not reshuffle
+  // when grouping changes, and it says WHY instead of just refusing the tap.
+  if (disabled) {
+    return (
+      <div aria-disabled="true" aria-label={hint ? `${label}. ${hint}` : label}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', opacity: 0.42, cursor: 'default', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
+        <span aria-hidden="true" style={{ width: 24, height: 24, flex: 'none', borderRadius: '50%', border: '1px solid #4a3c22' }} />
+        <span aria-hidden="true" style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ display: 'block', font: "600 15px/1.2 var(--f-read)", color: '#d8cebb' }}>{label}</span>
+          {hint && <span style={{ display: 'block', marginTop: 3, font: "italic 400 12px/1.3 var(--f-read)", color: '#8a8175' }}>{hint}</span>}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div role="button" tabIndex={0} aria-pressed={on} aria-label={`${label}${priority}`}
+      onClick={onToggle}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', cursor: 'pointer', borderBottom: '1px solid rgba(74,60,34,.3)' }}>
+      <span aria-hidden="true" style={{ width: 24, height: 24, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        ...(on ? { background: 'linear-gradient(180deg, #d8b872, #b8954f)', border: '1px solid rgba(16,10,3,.4)', color: '#1a1206', font: "700 12px/1 var(--f-display)" } : { border: '1px solid #4a3c22' }) }}>{on ? index + 1 : ''}</span>
+      <span aria-hidden="true" style={{ flex: 1, minWidth: 0, font: "600 15px/1.2 var(--f-read)", color: on ? '#efe7d8' : '#d8cebb' }}>{label}</span>
+      {on && (
+        <button onClick={(e) => { e.stopPropagation(); onFlip(); }} aria-label={`${label}: switch to ${dir === 'asc' ? 'descending' : 'ascending'}`} style={{ width: 30, height: 30, flex: 'none', borderRadius: 10, border: '1px solid #4a3c22', background: 'rgba(42,33,20,.5)', color: '#d8c9a4', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{dir === 'asc' ? <polyline points="18 15 12 9 6 15" /> : <polyline points="6 9 12 15 18 9" />}</svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ListRow({ icon, iconBg, title, sub, trailing, note, onClick }) {
   return (
     <div

@@ -48,9 +48,8 @@ import {
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
-import { rowComparator } from '../store/collectionFilter.js';
+import { rowComparator, stackComparator, normaliseSort } from '../store/collectionFilter.js';
 import { groupCards } from '../store/collectionGrouping.js';
-import { EL_ORDER, elemKey } from '../store/elements.js';
 import { ElementPip } from '../components/ElementPip.jsx';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
 import { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
@@ -59,7 +58,9 @@ import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
 import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
-import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
+import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST, SortRow } from '../components/ui.jsx';
+import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
+import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
 import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
@@ -1954,33 +1955,29 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // ── List Arrange (docs/proposals/list-arrange.md): group + sort, remembered in
   // the Collection nav session like the drill's search. Presentation only - row
   // identity, steppers, hearts and writes are untouched; only order and headers change.
-  const [arrange, setArrange] = useState(() => collectionSession().listArrange || { group: 'none', sort: 'name' });
+  // `sort` is an ORDERED STACK of { key, dir } - tap order is priority order. normaliseSort
+  // accepts the old single-string shape so a session carried across a hot reload keeps its
+  // arrangement (and, crucially, keeps 'added' meaning newest-first).
+  const [arrange, setArrange] = useState(() => {
+    const prev = collectionSession().listArrange;
+    return { group: prev?.group || 'none', sort: normaliseSort(prev?.sort) };
+  });
   useEffect(() => { collectionSession().listArrange = arrange; }, [arrange]);
   const [arrOpen, setArrOpen] = useState(false);
-  const listComparator = useMemo(() => {
-    if (arrange.sort === 'name-desc') return rowComparator('name-desc');
-    if (arrange.sort === 'rarity') return rowComparator('rarity-asc');
-    if (arrange.sort === 'element') {
-      // Elements cluster in palette order (Air, Earth, Fire, Water; Multi/Neutral
-      // after) WITHIN whatever grouping is active - e.g. elements together inside
-      // each set group (the owner's ask). Name breaks ties.
-      const name = rowComparator('name-asc');
-      const elRank = (r) => { const i = EL_ORDER.indexOf(elemKey(r)); return i === -1 ? EL_ORDER.length : i; };
-      return (a, b) => (elRank(a) - elRank(b)) || name(a, b);
-    }
-    if (arrange.sort === 'added') {
-      const name = rowComparator('name-asc');
-      // Newest first; rows without a timestamp sort last (custom-list rows may lack one).
-      return (a, b) => {
-        const av = a?.created_at || '', bv = b?.created_at || '';
-        if (av === bv) return name(a, b);
-        if (!av) return 1;
-        if (!bv) return -1;
-        return bv < av ? -1 : 1;
-      };
-    }
-    return rowComparator('name-asc');
-  }, [arrange.sort]);
+  // Grouping and sorting share a vocabulary, so grouping by rarity makes the rarity SORT key inert -
+  // every row in a section already carries that rarity. The key stays in state (change the grouping
+  // and it comes back) but it is dropped from the comparator, the numbering and the badge, so the
+  // panel stops claiming an effect it does not have.
+  const inertKey = inertSortKey(arrange.group, LIST_SORT_OPTIONS);
+  const liveSort = useMemo(() => effectiveSort(arrange.sort, inertKey), [arrange.sort, inertKey]);
+  // One comparator for the whole stack: selected keys in priority order, then implicit Name
+  // ascending, then the row's own identity so the order is total. rowKey is that identity -
+  // the Wishlist is collector-item grain, so two rows legitimately share a card name.
+  const listComparator = useMemo(
+    () => stackComparator(liveSort, { identityOf: rowKey }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [liveSort, isWishlist],
+  );
   const setKeyOf = (r) => {
     if (isWishlist) return r.set || LIST_UNCAT;
     const sole = listSetName(r);
@@ -2278,7 +2275,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       {loaded && listRows.length > 0 && (
         <Fab className="fab-stacked" variant="deck" label="Arrange list" icon={<FabGlyph kind="filters" />}
           onClick={() => setArrOpen(true)} active={arrOpen}
-          badge={(arrange.group !== 'none' ? 1 : 0) + (arrange.sort !== 'name' ? 1 : 0)} />
+          badge={(arrange.group !== 'none' ? 1 : 0) + liveSort.length} />
       )}
 
       {/* The Arrange sheet - the Refine language's Arrange page, alone (docs/proposals/list-arrange.md). */}
@@ -2290,11 +2287,19 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
           ))}
         </ChipRow>
         <SectionLabel label="Sort" />
-        <ChipRow style={{ margin: '10px 0 6px' }}>
-          {[['name', 'Name A–Z'], ['name-desc', 'Name Z–A'], ['rarity', 'Rarity'], ['element', 'Element'], ['added', 'Recently added']].map(([k, l]) => (
-            <Chip key={k} label={l} active={arrange.sort === k} onClick={() => setArrange((a) => ({ ...a, sort: k }))} />
-          ))}
-        </ChipRow>
+        {/* Stacked, not exclusive: tap order sets priority, so "Group by Set" plus Element ->
+            Rarity -> Name reads like a binder. Direction is a flip on the row rather than a
+            second chip, which is why "Name Z-A" is gone. */}
+        <div style={{ font: "italic 400 12.5px/1.4 var(--f-read)", color: '#8a8175', margin: '10px 0 4px' }}>Tap to add - order sets priority.</div>
+        {LIST_SORT_OPTIONS.map((option) => {
+          const i = sortIndex(liveSort, option.key);
+          const inert = option.key === inertKey;
+          return <SortRow key={option.key} label={option.label} index={i} total={liveSort.length}
+            dir={i >= 0 ? liveSort[i].dir : option.defaultDir}
+            disabled={inert} hint={inert ? `Grouping already orders by ${option.label.toLowerCase()}.` : undefined}
+            onToggle={() => setArrange((a) => ({ ...a, sort: toggleSort(a.sort, option) }))}
+            onFlip={() => setArrange((a) => ({ ...a, sort: flipSort(a.sort, option.key) }))} />;
+        })}
       </BottomSheet>
 
       <BottomSheet open={!!removeCard} title="REMOVE CARD" onClose={() => setRemoveCard(null)}>

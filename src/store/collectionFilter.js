@@ -6,8 +6,9 @@
 // A row is the set-drill shape { card, set, owned, foil, updated, finishAvail } - `owned` is the
 // non-foil count, `foil` the foil count, `updated` the printing's latest updated_at (ISO, for the
 // sort), and `finishAvail` = { nonFoil, foil } the catalog's finish availability for this printing.
-import { rarityRank } from './rarity.js';
+import { rarityRank, RARITY_ORDER } from './rarity.js';
 import { playsetOf, isAvatar } from './playset.js';
+import { EL_ORDER, elemKey } from './elements.js';
 
 // The vocabularies the sheet renders, defined here so the UI and the predicate can never drift.
 export const OWN_STATES = [['owned', 'Owned'], ['missing', 'Missing'], ['wishlist', 'Wishlisted']];
@@ -124,4 +125,131 @@ export function rowComparator(sortKey = 'name-asc', cardOf = (x) => x) {
     };
   }
   return nameAsc;
+}
+
+/* ---------------- stacked sort (docs/proposals/arrange-stacked-sort.md) ----------------
+ *
+ * The option vocabulary itself lives in the leaf module sortOptions.js, so the sheet that renders
+ * it, the comparator that orders by it and the tests that assert against it can all reach it
+ * without reaching each other. Re-exported here for callers already importing from this module.
+ */
+export { LIST_SORT_OPTIONS } from './sortOptions.js';
+
+/**
+ * The comparator registry. Each entry ranks a row into `{ tier, v }`:
+ *   tier 0 - a KNOWN value, ordered by `v`, and the only tier a `desc` flip inverts
+ *   tier 1 - a TAIL value (unrecognised element, unknown rarity, avatar, blank timestamp)
+ *
+ * Tails sort last in BOTH directions, which is why the tier is compared before direction is
+ * applied. Reversing the whole result instead would float blank timestamps and avatars to the
+ * top the moment a key is flipped.
+ *
+ * Private on purpose - descriptive metadata (`order: 'palette'`) was rejected in review as a
+ * drift surface, so the ordering lives in executable code and LIST_SORT_COMPARATOR_KEYS exposes
+ * only the key set, for the exhaustiveness gate.
+ */
+const RARITY_KNOWN_MAX = RARITY_ORDER.length - 1;   // 3: Ordinary, Exceptional, Elite, Unique
+
+const LIST_KEY_RANK = {
+  name: (row, cardOf) => ({ tier: 0, v: String(cardOf(row)?.name || '') }),
+  element: (row, cardOf) => {
+    const k = elemKey(cardOf(row));
+    const i = EL_ORDER.indexOf(k);
+    return i === -1 ? { tier: 1, v: String(k || '') } : { tier: 0, v: i };
+  },
+  // rarityRankFor already encodes both tails: 0-3 known, 4 unknown/no-rarity, 5 avatar. Avatars
+  // carry a real rarity (Templar is Elite) but are not collected as rarity playsets, so they must
+  // not interleave - and they stay behind unknown, in that fixed order, in both directions.
+  rarity: (row, cardOf) => {
+    const r = rarityRankFor(cardOf(row));
+    return r <= RARITY_KNOWN_MAX ? { tier: 0, v: r } : { tier: 1, v: r };
+  },
+  // Row-level, not card-level: a list entry's own creation time. Ascending is oldest-first;
+  // the option's `defaultDir: 'desc'` is what makes the first tap read newest-first.
+  added: (row) => {
+    const v = row?.created_at || '';
+    return v ? { tier: 0, v } : { tier: 1, v: '' };
+  },
+};
+
+/** The comparator keys this module can order. Exported for the exhaustiveness gate only. */
+export const LIST_SORT_COMPARATOR_KEYS = Object.freeze(Object.keys(LIST_KEY_RANK));
+
+const cmpVal = (x, y) => (typeof x === 'number'
+  ? (x < y ? -1 : x > y ? 1 : 0)
+  : String(x).localeCompare(String(y), 'en', { sensitivity: 'base' }));
+
+function keyCompare(rank, a, b, dir, cardOf) {
+  const ra = rank(a, cardOf);
+  const rb = rank(b, cardOf);
+  if (ra.tier !== rb.tier) return ra.tier - rb.tier;   // tails last, never inverted
+  const d = cmpVal(ra.v, rb.v);
+  if (ra.tier !== 0) return d;                         // tail-vs-tail keeps its fixed order
+  return dir === 'desc' ? -d : d;
+}
+
+const validDir = (d) => (d === 'desc' ? 'desc' : 'asc');
+
+/**
+ * Build a comparator for an ordered stack of `{ key, dir }`. The complete chain is:
+ *
+ *   1. the selected keys, in priority order, each with its own direction
+ *   2. implicit Name ascending when those tie
+ *   3. a stable row identity, when the caller supplies one
+ *
+ * Step 2 is not decoration. EVERY comparator this replaces already ended in a name tiebreak, so
+ * without it "sort by Rarity" would order each rarity run by opaque identity instead of A-Z.
+ * When Name is itself selected, step 2 is a no-op: a tie there means the names are equal.
+ *
+ * Step 3 is what makes the order TOTAL. Names collide legitimately - a Wishlist is collector-item
+ * grain, so one card can appear at several printings under one name. Without `identityOf` the
+ * contract is only "stable for a deterministic input order", not total.
+ *
+ * An empty stack is Name ascending, which is exactly the historical default.
+ */
+export function stackComparator(stack = [], { cardOf = (x) => x, identityOf = null } = {}) {
+  const keys = (Array.isArray(stack) ? stack : [])
+    .filter((s) => s && LIST_KEY_RANK[s.key])
+    .map((s) => ({ rank: LIST_KEY_RANK[s.key], dir: validDir(s.dir) }));
+  return (a, b) => {
+    for (const { rank, dir } of keys) {
+      const d = keyCompare(rank, a, b, dir, cardOf);
+      if (d !== 0) return d;
+    }
+    const n = keyCompare(LIST_KEY_RANK.name, a, b, 'asc', cardOf);
+    if (n !== 0) return n;
+    if (identityOf) {
+      const ia = String(identityOf(a) ?? '');
+      const ib = String(identityOf(b) ?? '');
+      if (ia !== ib) return ia < ib ? -1 : 1;
+    }
+    return 0;
+  };
+}
+
+/**
+ * Legacy single-value sorts, mapped to stacks that PRESERVE their present direction. `added`
+ * is the one that matters: it has always meant newest-first, and normalising it to ascending
+ * would silently reverse every existing arrangement.
+ */
+const LEGACY_LIST_SORT = {
+  name: [],
+  'name-asc': [],
+  'name-desc': [{ key: 'name', dir: 'desc' }],
+  element: [{ key: 'element', dir: 'asc' }],
+  rarity: [{ key: 'rarity', dir: 'asc' }],
+  'rarity-asc': [{ key: 'rarity', dir: 'asc' }],
+  added: [{ key: 'added', dir: 'desc' }],
+  updated: [{ key: 'added', dir: 'desc' }],
+};
+
+/** Accept either shape and return a clean stack. Unknown keys are dropped, never guessed at. */
+export function normaliseSort(value) {
+  if (Array.isArray(value)) {
+    return value
+      .filter((s) => s && LIST_KEY_RANK[s.key])
+      .map((s) => ({ key: s.key, dir: validDir(s.dir) }));
+  }
+  const legacy = LEGACY_LIST_SORT[value];
+  return legacy ? legacy.map((s) => ({ ...s })) : [];
 }

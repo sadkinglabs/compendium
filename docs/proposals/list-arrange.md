@@ -1,5 +1,14 @@
 # List Arrange - grouping and sorting inside Collection > Lists
 
+> **SUPERSEDED IN PART (2026-08-18).** The **Sort** half of this proposal - single-select
+> Name / Rarity / Element / Recently added chips - is superseded by
+> [`arrange-stacked-sort.md`](./arrange-stacked-sort.md), which makes sort an ordered STACK
+> (tap order sets priority, each key flips direction independently) after an alpha tester asked
+> to arrange a list by set, then element, then rarity. "Name Z-A" is gone as a separate option:
+> direction is now a flip on the row. The **Grouping** half of this document stands unchanged -
+> grouping remains one level, single-select, and the reasoning below for why grouping is not
+> sorting is exactly why it was not nested.
+
 Status: PROPOSAL - awaiting owner go. Classification: **Standard** (one surface gains an existing capability; no schema, no repositories touched). Owner rulings taken 2026-08-15: stacked filter FAB opener · canonical-printing set rule · sort options included.
 
 ## The ask (owner, verbatim intent)

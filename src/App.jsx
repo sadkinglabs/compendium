@@ -911,9 +911,17 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
     // transfer is offered inside the same confirmation (list order = oldest heir),
     // and the repository commits transfer + delete as one transaction.
     const heir = p.is_default ? list.find((x) => x.id !== p.id) : null;
-    const body = heir
-      ? `This removes the profile and everything it owns - decks, matches, marginalia. “${heir.name}” becomes the default. This can’t be undone.`
-      : 'This removes the profile and everything it owns - decks, matches, marginalia. This can’t be undone.';
+    // Name the collection explicitly, with counts. The cascade takes it either way, and a
+    // consequence the user cannot see is not a consequence they consented to: testers read
+    // "decks, matches, marginalia" as an exhaustive list and lost collections they meant to keep.
+    const s = stats[p.id];
+    const owns = s
+      ? `${s.decks} deck${s.decks === 1 ? '' : 's'}, ${s.cards} collected card${s.cards === 1 ? '' : 's'}, `
+        + `${s.matches} match${s.matches === 1 ? '' : 'es'}, and every list, note and mark of marginalia in it`
+      : 'its decks, its collection, its matches, and its marginalia';
+    const body = `This removes the profile and everything it owns - ${owns}. `
+      + (heir ? `“${heir.name}” becomes the default. ` : '')
+      + 'This can’t be undone.';
     if (!(await confirmAction({ title: `Delete “${p.name}”?`, body, confirmLabel: 'Delete profile', danger: true }))) return;
     try {
       if (heir) await deleteProfileTransferringPrimary(p.id, heir.id);
