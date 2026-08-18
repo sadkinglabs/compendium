@@ -30,6 +30,7 @@ import { createBulkOwnedCommands } from './bulkOwnedRepository.js';
 import { createOwnedImportCommand } from './ownedImportRepository.js';
 import { createTriageCommands } from './triageRepository.js';
 import { triagePile, fileLinePlan } from './triage.js';
+import { createWantedBulkCommand } from './wantedBulkRepository.js';
 
 const require = createRequire(import.meta.url);
 const PID = 'p1';
@@ -364,4 +365,47 @@ test('a triage move conserves every copy and every place', async () => {
   assert.deepEqual(brokenRows(), []);
   const total = rows('SELECT SUM(qty) t FROM storage_allocations WHERE profile_id=?;', [PID])[0].t;
   assert.equal(total, 4, 'no copy was invented and none was dropped');
+});
+
+/* ---------------- the WANT writers: proven inert, not assumed inert ---------------- */
+//
+// A want holds no copies, so it holds no places, and every want writer must leave the allocation
+// graph EXACTLY as it found it. That is easy to believe and worth proving: the wishlist shares the
+// uncategorised row with ownership, so a want writer is one careless column away from moving copies.
+
+const wantedBulk = createWantedBulkCommand({
+  exclusive: (fn) => fn(),
+  query: (s, p = []) => Promise.resolve(rows(s, p)),
+  tx: (st) => { sdb.run('BEGIN;'); try { st.forEach(([s, p = []]) => sdb.run(s, p)); sdb.run('COMMIT;'); } catch (e) { sdb.run('ROLLBACK;'); throw e; } return Promise.resolve(); },
+  notify: () => {},
+  activeProfileId: () => PID,
+});
+/** The whole allocation graph, ordered, as a comparable snapshot. */
+const graph = () => rows('SELECT container_id, owned_card_id, qty FROM storage_allocations WHERE profile_id=? ORDER BY container_id, owned_card_id;', [PID]);
+
+test('addWantedItemsBulk leaves the allocation graph byte-identical', async () => {
+  seedOwned('o2', 'multi1', '001', 3, { binder: 2 });   // the row the want will land on
+  const before = graph();
+  const r = await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '001', foil: false, qty: 2 }], PID);
+  assert.equal(r.items, 1);
+  assert.deepEqual(graph(), before, 'a want moved no copy and touched no place');
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('a want on a card owning nothing creates a row with no places at all', async () => {
+  await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '002', foil: false, qty: 1 }], PID);
+  assert.deepEqual(graph(), [], '0 = SUM(none); a zero-quantity allocation would fail CHECK (qty > 0)');
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('every want writer in the module leaves the graph alone, one after another', async () => {
+  seedOwned('o2', 'multi1', '001', 3, { binder: 2 });
+  const before = graph();
+  await repo.setWanted('multi1', 2, PID, { set: '001', foil: false });
+  await repo.stepWantedForItem('multi1', { set: '001', foil: false }, 1, PID);
+  await repo.addWantedForItem('multi1', { set: '002', foil: false }, 3, PID);
+  await repo.setWantedForItem('multi1', { set: '001', foil: false }, 0, PID);
+  await wantedBulk.addWantedItemsBulk([{ cardId: 'multi1', set: '002', foil: false, qty: 1 }], PID);
+  assert.deepEqual(graph(), before, 'five want writers, zero movement');
+  assert.deepEqual(brokenRows(), []);
 });
