@@ -1,7 +1,7 @@
 {
   "name": "compendium",
   "version": "1.1.0-alpha",
-  "build": 282,
+  "build": 285,
   "private": true,
   "type": "module",
   "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
