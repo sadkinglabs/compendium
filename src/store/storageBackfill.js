@@ -55,12 +55,40 @@ export function createStorageBackfill({ query, tx, uuid = newId, now = nowIso })
     const stamped = marker.length ? Number(marker[0].value) : null;
     if (stamped != null && stamped >= BACKFILL_VERSION) {
       // SHAPE-FIRST, like the canonicalisation marker: a stamp is an optimisation, never a promise.
-      // If any owned row still has no place, the marker is wrong and the work runs anyway.
-      const gaps = await query(`
-        SELECT COUNT(*) n FROM owned_cards o
-         WHERE o.qty_owned > 0
-           AND NOT EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id);`);
-      if (!Number(gaps[0]?.n || 0)) return { skipped: true, reason: 'done' };
+      // The stamp says the pass RAN; the shape says whether the database is actually in the state
+      // the pass exists to produce. Only both together are grounds to skip.
+      //
+      // WHAT THIS PROBE USED TO MISS, and why it is worth naming. It asked one question - "is there
+      // an owned row with copies and NO allocation" - which is only the untouched-upgrade shape. It
+      // was blind to a row that is PARTIALLY placed (owns 3, placed 1: it has an allocation, so the
+      // probe was satisfied) and blind to a profile with NO UNFILED CONTAINER (nothing about
+      // allocations mentions containers). Both are states the writers now fail closed on, so the
+      // probe would have skipped the one pass that could report them, and every ownership tap in
+      // that profile would fail with no explanation at boot.
+      //
+      // ONE query, three questions, and no correlated subquery in the common path - this runs on
+      // every cold start, and the N+1 lesson applies to boot most of all. Two whole-table SUMs and
+      // an anti-join over profiles are three index scans; the per-row correlated form is one
+      // subquery per owned row, which on a large collection is the difference between a scan and a
+      // stall.
+      //
+      // WHAT IT STILL CANNOT SEE: a COMPENSATING imbalance - one row over by two while another is
+      // under by two - nets to zero and passes. That needs two independent faults that happen to
+      // cancel, and the per-row planner below is the authority whenever anything else disagrees.
+      // Stated rather than left implicit, because a probe's blind spot is a property of the system.
+      const probe = (await query(`
+        SELECT (SELECT COALESCE(SUM(qty_owned),0) FROM owned_cards) owned,
+               (SELECT COALESCE(SUM(qty),0) FROM storage_allocations) placed,
+               (SELECT COUNT(*) FROM owned_cards o
+                 WHERE o.qty_owned > 0
+                   AND NOT EXISTS (SELECT 1 FROM storage_allocations a WHERE a.owned_card_id = o.id)) unplaced,
+               (SELECT COUNT(*) FROM profiles p
+                  LEFT JOIN storage_containers c ON c.profile_id = p.id AND c.is_system = 1
+                 WHERE c.id IS NULL) homeless;`))[0] || {};
+      const settled = Number(probe.owned || 0) === Number(probe.placed || 0)
+        && !Number(probe.unplaced || 0)
+        && !Number(probe.homeless || 0);
+      if (settled) return { skipped: true, reason: 'done' };
     }
 
     const profiles = await query('SELECT id FROM profiles;');

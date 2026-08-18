@@ -21,8 +21,15 @@ function fakeDb({ profiles = [], owned = [], containers = [], marker = null, fai
     get txCalls() { return txCalls; },
     async query(sql) {
       if (sql.includes('FROM _meta')) return marker == null ? [] : [{ value: String(marker) }];
-      if (sql.includes('NOT EXISTS')) {
-        return [{ n: owned.filter((o) => o.qty_owned > 0 && !(o.placed > 0)).length }];
+      // The re-run probe, answered from the same seeded state the rest of the fake serves, so the
+      // fast path and the full pass can never disagree about what this database contains.
+      if (sql.includes('unplaced')) {
+        return [{
+          owned: owned.reduce((n, o) => n + (Number(o.qty_owned) || 0), 0),
+          placed: owned.reduce((n, o) => n + (Number(o.placed) || 0), 0),
+          unplaced: owned.filter((o) => o.qty_owned > 0 && !(o.placed > 0)).length,
+          homeless: profiles.filter((p2) => !containers.some((c) => c.profile_id === p2.id)).length,
+        }];
       }
       if (sql.includes('FROM profiles')) return profiles;
       if (sql.includes('FROM storage_containers')) return containers;
@@ -120,6 +127,7 @@ test('a marked, complete database is skipped without a transaction', async () =>
   const db = fakeDb({
     marker: BACKFILL_VERSION,
     profiles: [{ id: 'p1' }],
+    containers: [{ id: 'u1', profile_id: 'p1' }],
     owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
   });
   const res = await run(db);
@@ -193,4 +201,66 @@ test('the marker is written in the SAME transaction, after guarded assertions', 
   for (const [s, p] of db.committed) {
     assert.ok(Array.isArray(p), `params missing for: ${s}`);
   }
+});
+
+/* ---------------- what the re-run probe can and cannot see ---------------- */
+//
+// The probe decides whether a marked database may skip the pass. Its old form asked ONE question -
+// "is there an owned row with copies and no allocation" - which is only the untouched-upgrade
+// shape. These are the states it was blind to, each of which the writers now fail closed on: the
+// probe would have skipped the one pass that could report them, and every ownership tap in that
+// profile would fail at boot with nothing to explain it.
+
+test('PROBE: a PARTIALLY placed row is not "done", even though it has an allocation', async () => {
+  // Owns 3, placed 1. The old probe was satisfied because an allocation exists at all.
+  const db = fakeDb({
+    marker: BACKFILL_VERSION,
+    profiles: [{ id: 'p1' }],
+    containers: [{ id: 'u1', profile_id: 'p1' }],
+    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 3, placed: 1, created_at: 'a' }],
+  });
+  // It runs, and the per-row planner refuses to invent the missing two rather than guessing.
+  await assert.rejects(() => run(db), /refusing to invent the difference/);
+});
+
+test('PROBE: an OVER-placed row is not "done" either', async () => {
+  const db = fakeDb({
+    marker: BACKFILL_VERSION,
+    profiles: [{ id: 'p1' }],
+    containers: [{ id: 'u1', profile_id: 'p1' }],
+    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 1, placed: 4, created_at: 'a' }],
+  });
+  await assert.rejects(() => run(db), /refusing to invent the difference/);
+});
+
+test('PROBE: a profile with NO Unfiled container is not "done", however tidy its rows are', async () => {
+  // Nothing about allocations mentions containers, so the old probe could not see this at all.
+  // Every writer fails closed on a profile with no Unfiled, so skipping here is the worst outcome.
+  const db = fakeDb({
+    marker: BACKFILL_VERSION,
+    profiles: [{ id: 'p1' }, { id: 'p2' }],
+    containers: [{ id: 'u1', profile_id: 'p1' }],
+    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
+  });
+  const res = await run(db);
+  assert.notEqual(res.skipped, true, 'it must not skip a profile that has nowhere to put a card');
+  assert.match(sqlOf(db).join(' '), /INSERT INTO storage_containers/);
+});
+
+test('PROBE: a settled database still skips, and asks ONE question to decide it', async () => {
+  // The fast path runs on every cold start. It must stay two reads - the marker and the probe -
+  // rather than a correlated subquery per owned row.
+  let reads = 0;
+  const base = fakeDb({
+    marker: BACKFILL_VERSION,
+    profiles: [{ id: 'p1' }],
+    containers: [{ id: 'u1', profile_id: 'p1' }],
+    owned: [{ id: 'o1', profile_id: 'p1', qty_owned: 2, placed: 2, created_at: 'a' }],
+  });
+  const db = { ...base, query: (sql) => { reads++; return base.query(sql); }, get txCalls() { return base.txCalls; } };
+  const res = await run(db);
+  assert.equal(res.skipped, true);
+  assert.equal(res.reason, 'done');
+  assert.equal(reads, 2, 'the marker and the probe, and nothing else');
+  assert.equal(base.txCalls, 0);
 });
