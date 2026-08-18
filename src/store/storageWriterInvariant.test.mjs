@@ -459,3 +459,53 @@ test('THE EQUALITY ASSERTION FIRES: a ledger that already disagrees with its pla
   assert.equal(rows("SELECT value FROM _meta WHERE key='owned_cards_canonical_version';").length, 0,
     'no marker claims a conversion that rolled back');
 });
+
+/* ---------------- WHERE THE WALL ACTUALLY IS, walked one tap at a time ---------------- */
+//
+// Written after a device pass, because I predicted this wrong and the app was right. Reasoning
+// about a stepper in the abstract is not the same as counting the taps.
+//
+// A single-step decrease conflicts only when it would leave a POSITIVE count that Unfiled cannot
+// fund. The last tap of all never can: its target is zero, which is total removal, which needs no
+// attribution. So a stepper can ALWAYS walk a card down to nothing, however it is filed - and the
+// wall it hits on the way is strictly mid-range. Both halves of that are the ruling working as
+// intended, and neither is obvious from the code.
+
+test('a stepper can always walk a filed card all the way to zero', async () => {
+  seedOwned('o1', 'sole1', '001', 4, { binder: 1 });     // 1 filed, 3 loose
+  for (const target of [3, 2, 1]) {
+    await repo.setOwnedInSet('sole1', '001', target);    // funded by Unfiled
+    assert.deepEqual(brokenRows(), [], `step to ${target} broke the equality`);
+  }
+  assert.equal(at(UNFILED, 'o1'), 0, 'Unfiled is exhausted');
+  assert.equal(at('b1', 'o1'), 1, 'and the filed copy is still filed');
+
+  // The last tap targets ZERO, so it is total removal rather than an unfunded decrease.
+  await repo.setOwnedInSet('sole1', '001', 0);
+  assert.deepEqual(brokenRows(), []);
+  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0,
+    'the binder copy left with the row, because nothing had to be attributed');
+});
+
+test('the wall is mid-range: the same card refuses a step that would LEAVE filed copies', async () => {
+  seedOwned('o1', 'sole1', '001', 3, { binder: 3 });     // nothing loose
+  await assert.rejects(() => repo.setOwnedInSet('sole1', '001', 2), { name: 'StorageConflict' });
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3, 'nothing moved');
+
+  // ...and yet zero is still reachable, which is the asymmetry the model intends.
+  await repo.setOwnedInSet('sole1', '001', 0);
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('the conflict says WHERE the copies are, which is the whole point of refusing', async () => {
+  // The UI does not use this yet - it reports a generic failure - but the data has to be here for
+  // the Storage surfaces to name a container instead of saying "cannot".
+  seedOwned('o1', 'sole1', '001', 3, { binder: 3 });
+  await assert.rejects(() => repo.setOwnedInSet('sole1', '001', 2), (e) => {
+    assert.equal(e.name, 'StorageConflict');
+    assert.equal(e.detail.requested, 1);
+    assert.equal(e.detail.unfiled, 0);
+    assert.deepEqual(e.detail.filed, [{ container_id: 'b1', qty: 3 }]);
+    return true;
+  });
+});
