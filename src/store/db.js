@@ -393,6 +393,25 @@ async function nativeBackend() {
   const db = isConn ? await sqlite.retrieveConnection(DB, false)
                     : await sqlite.createConnection(DB, false, 'no-encryption', SCHEMA_VERSION, false);
   await db.open();
+
+  // FOREIGN KEYS, ESTABLISHED AND VERIFIED - not observed and hoped for.
+  //
+  // A PRAGMA binds a CONNECTION, not a database file. The web backend sets this explicitly when it
+  // opens sql.js; the native connection previously set nothing and inherited whatever the plugin
+  // defaulted to. That matters now: Storage's composite profile-consistent references and its
+  // ON DELETE RESTRICT are structural guarantees, and with foreign keys off they are decoration -
+  // present in the schema, enforced only on the web, silently absent in the shipping app. That is
+  // precisely the class of native/web divergence this codebase has been bitten by before.
+  //
+  // So: turn it on, read it back, and FAIL CLOSED if the runtime will not provide it. A database
+  // that cannot enforce its own integrity is not one to write a user's collection into.
+  await db.execute('PRAGMA foreign_keys = ON;', false);
+  const fkRows = (await db.query('PRAGMA foreign_keys;')).values || [];
+  const fkOn = Number(fkRows[0]?.foreign_keys ?? 0) === 1;
+  if (!fkOn) {
+    throw new Error('SQLite refused to enable foreign keys on this device; refusing to open the database without referential integrity.');
+  }
+
   return {
     async query(sql, params) { return (await db.query(sql, params)).values || []; },
     async run(sql, params) { return db.run(sql, params, false); },
