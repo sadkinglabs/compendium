@@ -1,6 +1,6 @@
 // The optimistic write controller for a single owned quantity (one card/set/field), behind
 // useOwnedLedger. Pure and injectable so the durability contract is deterministically
-// testable. Run: npm run test:ui
+// testable. Run: npm run test:query   (src/store/** is the query suite, not the ui one)
 //
 // Contract (Collection UX proposal §4.1 / Codex): counts are PROVISIONAL while a write is
 // pending and CONFIRMED only when the durable write resolves. Displayed = confirmedQty +
@@ -12,10 +12,16 @@
 //
 //   read():   Promise<number>   authoritative quantity from the store
 //   write(delta): Promise       enqueue the durable, profile-bound write for this tap
-//   notify(reason): void         surface a failure. Three honest outcomes:
+//   notify(reason, cause): void  surface a failure. Three honest outcomes:
 //       'save-failed'            the write failed and the read succeeded - the count WAS restored
 //       'unconfirmed'            the write succeeded but the read never did - value is provisional
 //       'save-failed-unresolved' both failed - we cannot say what the stored value is
+//     `cause` is the REJECTION ITSELF for the two write-failure reasons, and this is the whole
+//     point of passing it: a refusal is not always a malfunction. A storage conflict is the app
+//     declining to guess which physical copy left, and a caller that only knows "it failed" can
+//     only say "couldn't save" - which reads as a bug for behaviour that is working exactly as
+//     designed. The controller stays DOM-free and renders nothing; it just stops discarding the
+//     one piece of information the message needs.
 //   isAlive(): boolean           false after unmount / card change, to drop a late reconcile
 //   onChange(state): void        re-render hook - called after every state mutation
 //   schedule(fn, ms):            timer seam, so the retry ladder is deterministic in tests
@@ -34,6 +40,7 @@ export function createOwnedStepController({
   let pendingCount = 0;
   let error = false;
   let failedInChain = false;
+  let chainCause = null;   // the first rejection in this chain, surfaced with the notify
   let version = 0;   // bumped per tap; a reconcile bound to an older version is stale
   // Increments ONLY on a reconciled success: the authoritative read came back AND no write in
   // the chain failed. Consumers must key "confirmed" off this, never off pendingCount hitting
@@ -74,8 +81,9 @@ export function createOwnedStepController({
         // distinct outcomes, because "count restored" is only true when we could actually read
         // the store: the write failed AND we could not read it back is a different, worse
         // state than either alone, and the provisional delta is still on screen unresolved.
-        notify(failedInChain ? 'save-failed-unresolved' : 'unconfirmed');
+        notify(failedInChain ? 'save-failed-unresolved' : 'unconfirmed', chainCause);
         failedInChain = false;
+        chainCause = null;
       }
       return;
     }
@@ -83,7 +91,7 @@ export function createOwnedStepController({
     const applied = pendingDelta;   // what this chain actually put into storage
     confirmedQty = snap;
     pendingDelta = 0;
-    if (failedInChain) { error = true; failedInChain = false; notify('save-failed'); }
+    if (failedInChain) { error = true; failedInChain = false; const cause = chainCause; chainCause = null; notify('save-failed', cause); }
     else {
       // The ONLY place success is declared - and it carries the chain's result, so no consumer
       // has to keep its own tally alongside.
@@ -115,7 +123,9 @@ export function createOwnedStepController({
       // sync throw and an async rejection both funnel to the same failure path.
       let p;
       try { p = Promise.resolve(write(delta)); } catch (e) { p = Promise.reject(e); }
-      p.catch(() => { failedInChain = true; })
+      // FIRST rejection wins. Later taps in a drained chain are usually the same refusal repeated,
+      // and the first one is the one the user actually caused.
+      p.catch((e) => { if (!failedInChain) chainCause = e; failedInChain = true; })
         .finally(() => {
           pendingCount--;
           emit();

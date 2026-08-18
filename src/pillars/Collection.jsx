@@ -672,6 +672,43 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         <Tile label="DECKS BUILDABLE" value={deckStat ? `${deckStat.buildable}/${deckStat.total}` : '-'} sub="from your collection" onClick={onGoDecks} />
       </div>
 
+      {/* TO BE CATEGORISED sits directly above Recently Added, and only when it has something in
+          it. It used to live at the foot of the screen below the fold, which made a PILE OF WORK
+          look like a footnote: the whole point of the pile is that those copies are not yet filed
+          under a real printing, so every day it stays unread is a day the collection is less true.
+          Putting it in the path to the thing people scroll here for is the fix.
+
+          STILL HONEST BUT QUIET, per the ruling that placed it originally: the count rides on the
+          entry itself rather than becoming a standing badge, and an empty pile renders NOTHING at
+          all. Prominence when there is work; silence when there is not. Those are compatible - the
+          original ruling was against a permanent 300 on the home screen, not against being findable.
+
+          It sits OUTSIDE the recent/empty branch below, so a collection with no recent additions
+          still surfaces its pile instead of hiding it behind the empty state. */}
+      {pendingCount(pile) > 0 && (
+        <button
+          onClick={() => setTriageOpen(true)}
+          className="cx-row"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+            width: '100%', marginBottom: 18, padding: '13px 14px', borderRadius: 10,
+            background: 'rgba(18,16,13,.85)', border: '1px solid rgba(210,88,115,.45)',
+            cursor: 'pointer', textAlign: 'left',
+          }}>
+          <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--accent-ruby)' }}>
+              TO BE CATEGORISED
+            </span>
+            <span style={{ font: "400 12.5px/1.3 var(--f-read)", color: 'var(--ink-faint)' }}>
+              {pendingCount(pile) === 1 ? 'one card needs a set' : 'cards needing a set'}
+            </span>
+          </span>
+          <span style={{ font: "600 15px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>
+            {pendingCount(pile)}
+          </span>
+        </button>
+      )}
+
       {recent.length > 0 ? (
         <>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '4px 0 8px' }}>
@@ -706,28 +743,6 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
         { label: 'Add from camera', icon: <MenuGlyph kind="camera" />, onClick: () => launchScanner({ onOpenCard: onOpenCodex, mode: 'collection' }) },
         { label: 'Add from text', icon: <MenuGlyph kind="import" />, onClick: () => setImportOpen(true) },
       ]} />
-      {/* HONEST BUT QUIET, per the ruling: the count sits on the entry itself rather than as a
-          standing badge. A user with 300 uncategorised imports does not want a permanent 300 on
-          their home screen. An empty pile shows no row at all. */}
-      {pendingCount(pile) > 0 && (
-        <button
-          onClick={() => setTriageOpen(true)}
-          className="cx-row"
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
-            width: '100%', marginTop: 14, padding: '13px 14px', borderRadius: 10,
-            background: 'rgba(18,16,13,.85)', border: '1px solid var(--hair-16)',
-            cursor: 'pointer', textAlign: 'left',
-          }}>
-          <span style={{ font: "500 14px/1.25 var(--f-read)", color: 'var(--ink-body)' }}>
-            To Be Categorised
-          </span>
-          <span style={{ font: "600 12px/1 var(--f-mono)", color: 'var(--gold-leaf)' }}>
-            {pendingCount(pile)}
-          </span>
-        </button>
-      )}
-
       <TriageSheet
         open={triageOpen}
         pile={pile}

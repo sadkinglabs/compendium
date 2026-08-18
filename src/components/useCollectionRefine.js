@@ -18,6 +18,7 @@ import { createOwnedStepGrid } from '../store/ownedStepGrid.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import { ownedBySet, wishlistCards, qtyForInSet, setOwnedInSet, ownedRowKey, subscribeCollection } from '../store/ownedRepository.js';
 import { toast } from '../feedback.js';
+import { stepFailureMessage } from '../store/ownedStepMessage.js';
 
 const EMPTY_CMP = () => ({ op: '>=', val: null });
 
@@ -104,10 +105,10 @@ export function useCollectionRefine(scope) {
           return setOwnedInSet(cardId, set, Math.max(0, cur.owned + delta), pid);
         });
       },
-      notify: (reason) => toast(
-        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
-          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
-            : "Couldn't save; count restored", { tone: 'danger' }),
+      // A refusal is not a malfunction: stepFailureMessage tells a storage conflict apart from a
+      // failed write, because reporting the wall as a bug teaches distrust of a wall that is
+      // protecting the user's filing.
+      notify: (reason, cause) => { const m = stepFailureMessage(reason, cause); toast(m.text, { tone: m.tone }); },
       isAlive: () => aliveRef.current,
       onChange: (key, status) => {
         setOwBySet((prev) => { const m = new Map(prev); m.set(key, { ...(m.get(key) || { owned: 0, foil: 0 }), owned: status.displayed }); return m; });

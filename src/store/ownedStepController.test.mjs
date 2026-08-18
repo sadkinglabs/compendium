@@ -200,3 +200,64 @@ test('write REJECTED and reads exhausted is its own state - we never claim "rest
   assert.notEqual(c.getState().pendingDelta, 0, 'the unresolved delta is still on screen');
   assert.equal(c.getState().error, true);
 });
+
+/* ---------------- the cause travels with the failure ---------------- */
+
+test('notify receives the REJECTION, not just the fact of one', async () => {
+  // A device pass found the app reporting a refused write as "Couldn't save" - the same words it
+  // uses for a disk error. The controller had the rejection in hand and dropped it. It stays
+  // DOM-free and renders nothing; it just stops discarding what the message needs.
+  const refusal = Object.assign(new Error('refused'), { name: 'StorageConflict', detail: { filed: [{ qty: 3 }] } });
+  const seen = [];
+  const c = createOwnedStepController({
+    read: async () => 3,
+    write: async () => { throw refusal; },
+    notify: (reason, cause) => seen.push([reason, cause]),
+    schedule: (fn) => fn(),
+  });
+  c.init(3);
+  c.step(-1);
+  await flush(); await flush(); await flush();
+  assert.deepEqual(seen.map(([r]) => r), ['save-failed']);
+  assert.equal(seen[0][1], refusal, 'the same error object, so a caller can read its detail');
+});
+
+test('the FIRST rejection in a chain is the one reported', async () => {
+  // Later taps in a drained chain are usually the same refusal repeated; the first is the one the
+  // user actually caused.
+  const first = Object.assign(new Error('one'), { name: 'StorageConflict' });
+  const second = new Error('two');
+  let n = 0;
+  const seen = [];
+  const c = createOwnedStepController({
+    read: async () => 3,
+    write: async () => { throw (++n === 1 ? first : second); },
+    notify: (reason, cause) => seen.push(cause),
+    schedule: (fn) => fn(),
+  });
+  c.init(3);
+  c.step(-1);
+  c.step(-1);
+  await flush(); await flush(); await flush();
+  assert.equal(seen.length, 1, 'one notify per drained chain');
+  assert.equal(seen[0], first);
+});
+
+test('a chain that succeeds after a failure does not carry the stale cause into the next one', async () => {
+  const boom = Object.assign(new Error('nope'), { name: 'StorageConflict' });
+  let fail = true;
+  const seen = [];
+  const c = createOwnedStepController({
+    read: async () => 3,
+    write: async () => { if (fail) throw boom; },
+    notify: (reason, cause) => seen.push(cause),
+    schedule: (fn) => fn(),
+  });
+  c.init(3);
+  c.step(-1);
+  await flush(); await flush(); await flush();
+  fail = false;
+  c.step(1);
+  await flush(); await flush(); await flush();
+  assert.equal(seen.length, 1, 'the successful chain notifies nothing at all');
+});

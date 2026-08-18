@@ -13,6 +13,7 @@ import { activeProfileId } from '../store/profileRepository.js';
 import { stepBtn } from './ownedUi.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
+import { stepFailureMessage } from '../store/ownedStepMessage.js';
 
 // The optimistic ledger for one card's owned/foil/wanted counts: reads qtyFor,
 // writes setOwned/setFoil/setWanted (absolute + serialized), live-refreshes via
@@ -66,10 +67,10 @@ export function useOwnedLedger(cardId, set = null) {
     const mk = (field) => createOwnedStepController({
       read: async () => (await readAll())[field] || 0,
       write: (delta) => writeField(field, delta),
-      notify: (reason) => toast(
-        reason === 'unconfirmed' ? "Saved, but couldn't refresh - reopen to confirm"
-          : reason === 'save-failed-unresolved' ? "Couldn't save, and couldn't check - reopen to confirm"
-            : "Couldn't save; count restored", { tone: 'danger' }),
+      // A refusal is not a malfunction: stepFailureMessage tells a storage conflict apart from a
+      // failed write, because reporting the wall as a bug teaches distrust of a wall that is
+      // protecting the user's filing.
+      notify: (reason, cause) => { const m = stepFailureMessage(reason, cause); toast(m.text, { tone: m.tone }); },
       isAlive: () => aliveRef.current,
       onChange: () => rerender(),
     });
