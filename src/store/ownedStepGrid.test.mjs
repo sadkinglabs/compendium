@@ -5,21 +5,23 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createOwnedStepGrid } from './ownedStepGrid.js';
 
-function harness({ readImpl } = {}) {
+function harness({ readImpl, hold } = {}) {
   const writes = [];
   const notes = [];
   const changes = new Map();               // key -> last displayed value
   let store = new Map();                   // key -> authoritative qty
   const status = new Map();                // key -> last status the binding emitted
+  const asked = [];                        // every holdDelta question, in order
   const grid = createOwnedStepGrid({
     read: readImpl || (async (key) => store.get(key) ?? 0),
     write: (key, delta) => new Promise((resolve, reject) => writes.push({ key, delta, resolve, reject })),
     notify: (r) => notes.push(r),
     schedule: (fn) => timers.push(fn),
     onChange: (key, st) => { changes.set(key, st.displayed); status.set(key, st); },
+    ...(hold ? { holdDelta: (key, delta, shown) => { asked.push([key, delta, shown]); return hold(key, delta, shown); } } : {}),
   });
   const timers = [];
-  return { grid, writes, notes, changes, status, timers, store: () => store, setStore: (m) => { store = m; } };
+  return { grid, writes, notes, changes, status, timers, asked, store: () => store, setStore: (m) => { store = m; } };
 }
 const flush = () => new Promise((r) => setImmediate(r));
 
@@ -192,6 +194,50 @@ test('a failed chain publishes NO confirmation to credit', async () => {
   h.writes[0].reject(new Error('nope'));
   await flush(); await flush(); await flush();
   assert.equal(h.status.get('c1|001').confirmation, null, 'nothing for a consumer to credit');
+});
+
+/* ── Holding the optimism per ROW. The storage wall is a property of one owned row, so the grid
+   has to ask its question with the row in hand and must never let one row's prediction touch
+   another's. See ownedStepController for why a held tap still writes. ── */
+
+test('a HELD tile tap paints nothing, still writes, and is asked with THAT row\'s count', () => {
+  const h = harness({ hold: (key, delta) => key === 'c1|001' && delta < 0 });
+  h.grid.step('c1|001', 1, -1);
+  assert.equal(h.changes.get('c1|001'), 1, 'the tile count never moved');
+  assert.equal(h.grid.state('c1|001').heldDelta, -1, 'accounted for, not forgotten');
+  assert.equal(h.writes.length, 1, 'the durable write still went out');
+  assert.equal(h.grid.pending('c1|001'), 1);
+  assert.deepEqual(h.asked, [['c1|001', -1, 1]], 'the key rides in front, and the count is the pre-tap one');
+});
+
+test('a held tile refusal moves nothing and toasts once; a neighbouring row is untouched', async () => {
+  const refusal = Object.assign(new Error('refused'), { name: 'StorageConflict' });
+  const h = harness({ hold: (key) => key === 'a|001' });
+  h.store().set('a|001', 1); h.store().set('b|001', 5);
+  h.grid.step('a|001', 1, -1);
+  h.grid.step('b|001', 5, -1);
+  assert.equal(h.changes.get('a|001'), 1, 'held row does not paint');
+  assert.equal(h.changes.get('b|001'), 4, 'the row nobody predicted about is as optimistic as ever');
+  h.writes[0].reject(refusal);
+  h.store().set('b|001', 4);
+  h.writes[1].resolve();
+  await flush(); await flush(); await flush();
+  assert.equal(h.changes.get('a|001'), 1, 'no movement at any point on the refused row');
+  assert.equal(h.status.get('a|001').ok, 0, 'and it never claims success');
+  assert.deepEqual(h.notes, ['save-failed'], 'exactly one report, for the row that failed');
+  assert.equal(h.changes.get('b|001'), 4);
+  assert.equal(h.status.get('b|001').ok, 1, 'the other row confirmed independently');
+});
+
+test('a held tile tap that unexpectedly succeeds settles from the store, crediting the chain', async () => {
+  const h = harness({ hold: () => true });
+  h.grid.step('c1|001', 3, -1);
+  assert.equal(h.changes.get('c1|001'), 3, 'nothing provisional');
+  h.store().set('c1|001', 2);                 // the local prediction was stale
+  h.writes[0].resolve();
+  await flush(); await flush();
+  assert.equal(h.changes.get('c1|001'), 2, 'moved once, by the authoritative read');
+  assert.equal(h.status.get('c1|001').confirmation.appliedDelta, -1);
 });
 
 test('successive bursts publish increasing versions with their own deltas', async () => {

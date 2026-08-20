@@ -16,7 +16,10 @@ const RARITY_COLOR = { Ordinary: 'var(--ordinary)', Exceptional: 'var(--exceptio
 // it scales up and pins to the top (the text box drops below the frame); for a
 // Site the stored image is portrait (a landscape card rotated), so we rotate it
 // 90° clockwise back to true orientation before zooming.
-const artFit = (card) => card?.is_site
+// Exported because this IS the app's square card-thumb crop rule, not CardRow's private detail -
+// Storage's place contents reuse it for their own 34px thumb, and one copy is what stops the two
+// from drifting apart.
+export const artFit = (card) => card?.is_site
   ? { transform: 'rotate(90deg) scale(1.5)' }
   : { transformOrigin: '50% 30%', transform: 'scale(1.6)' };
 

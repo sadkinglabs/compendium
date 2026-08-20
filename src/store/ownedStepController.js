@@ -25,6 +25,28 @@
 //   isAlive(): boolean           false after unmount / card change, to drop a late reconcile
 //   onChange(state): void        re-render hook - called after every state mutation
 //   schedule(fn, ms):            timer seam, so the retry ladder is deterministic in tests
+//   holdDelta(delta, displayed): boolean - GATE THE OPTIMISM, NEVER THE WRITE. See below.
+//
+// HOLDING A TAP. Optimism is right for a write that will succeed and wrong for one the store is
+// going to refuse: the storage wall turned a minus into 1 -> 0 -> toast -> 1, so the user watched
+// the app do the thing and then undo it, which reads as a bug in behaviour that is working exactly
+// as designed. `holdDelta` lets a caller that can locally predict the refusal decline to paint.
+//
+// A HELD tap is IDENTICAL to any other in every respect except the provisional number: the version
+// bumps, pendingCount rises, the durable write is enqueued, and the chain reconciles and notifies
+// the same way. Only pendingDelta is left alone, so nothing moves on screen. That asymmetry is the
+// whole design: the store stays the only authority, local knowledge decides presentation alone.
+//   - predicted refusal that IS refused  -> no count movement at any point, one honest toast
+//   - predicted refusal that SUCCEEDS    -> the prediction was stale; the drain-time authoritative
+//     read moves the count once, correctly. A stale prediction costs a beat, never a lost write.
+// The hook defaults to never-hold, so every consumer that does not pass one behaves as before, and
+// a throwing hook is treated as "do not hold" - a broken prediction must degrade to today's paint,
+// not to a silent hold.
+//
+// Held deltas are tracked in their own accumulator rather than left implicit, because
+// confirmation.appliedDelta means "what this chain put into storage" and a held tap that succeeded
+// put copies there too. A confirmation is published ONLY when no write in the chain failed, so at
+// that moment every held write landed as well - which is what makes pendingDelta + heldDelta exact.
 //
 // RETRY_DELAYS is the ladder walked when the authoritative READ fails after a successful
 // write. Without it the row could sit provisional forever: the write's own broadcast is
@@ -33,10 +55,13 @@ const RETRY_DELAYS = [300, 900, 2500];
 
 export function createOwnedStepController({
   read, write, notify = () => {}, isAlive = () => true, onChange = () => {},
-  schedule = (fn, ms) => setTimeout(fn, ms),
+  schedule = (fn, ms) => setTimeout(fn, ms), holdDelta = () => false,
 }) {
   let confirmedQty = 0;
   let pendingDelta = 0;
+  // Deltas whose writes are in flight but which were deliberately NOT painted (see holdDelta).
+  // Kept apart from pendingDelta because that one is the display, and these must not touch it.
+  let heldDelta = 0;
   let pendingCount = 0;
   let error = false;
   let failedInChain = false;
@@ -52,7 +77,7 @@ export function createOwnedStepController({
   let confirmation = null;
 
   const displayed = () => Math.max(0, confirmedQty + pendingDelta);
-  const getState = () => ({ confirmedQty, pendingDelta, pendingCount, error, okVersion, confirmation, displayed: displayed() });
+  const getState = () => ({ confirmedQty, pendingDelta, heldDelta, pendingCount, error, okVersion, confirmation, displayed: displayed() });
   const emit = () => onChange(getState());
 
   async function reconcile(forVersion, attempt = 0) {
@@ -88,9 +113,15 @@ export function createOwnedStepController({
       return;
     }
 
-    const applied = pendingDelta;   // what this chain actually put into storage
+    // What this chain actually put into storage. HELD taps count: a confirmation is published only
+    // when nothing in the chain failed, so every held write in it landed too. Deriving this from the
+    // snapshot instead (snap - confirmedQty) was the obvious alternative and is worse - it would
+    // change the number for every existing consumer even with no hold in sight, silently folding in
+    // a clamped overshoot and any edit another surface made to the row mid-chain.
+    const applied = pendingDelta + heldDelta;
     confirmedQty = snap;
     pendingDelta = 0;
+    heldDelta = 0;
     if (failedInChain) { error = true; failedInChain = false; const cause = chainCause; chainCause = null; notify('save-failed', cause); }
     else {
       // The ONLY place success is declared - and it carries the chain's result, so no consumer
@@ -109,13 +140,22 @@ export function createOwnedStepController({
       if (pendingCount !== 0) return;
       confirmedQty = qty || 0;
       pendingDelta = 0;
+      heldDelta = 0;
       error = false;
       emit();
     },
-    /** A tap: record a provisional delta and queue the durable write. */
+    /**
+     * A tap: record a provisional delta and queue the durable write.
+     *
+     * The hold question is asked FIRST, before anything moves, because the prediction is about what
+     * the user can currently see - `displayed()` here is the pre-tap count, so a hook works out its
+     * target as `displayed + delta`.
+     */
     step(delta) {
+      let held = false;
+      try { held = !!holdDelta(delta, displayed()); } catch { held = false; }
       version++;
-      pendingDelta += delta;
+      if (held) heldDelta += delta; else pendingDelta += delta;
       pendingCount++;
       error = false; // a fresh tap clears the stale error flag
       emit();

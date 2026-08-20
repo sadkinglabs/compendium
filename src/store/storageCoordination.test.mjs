@@ -17,8 +17,9 @@ import {
   enqueueWrite, withExclusiveCollectionWrites, withProfileSwitchWriteBarrier, settleCollectionWrites,
 } from './collectionWrites.js';
 import {
-  planGlobalRemoval, planPlaceRemoval, removalStatements, clearAllocationsStatements,
-  clearAllocationsForManyStatements, createUnfiledStatements,
+  planGlobalRemoval, planPlaceRemoval, totalRemovalConflict, removalStatements,
+  clearAllocationsStatements, clearAllocationsForManyStatements, createUnfiledStatements,
+  predictGlobalRemovalRefusal, filedTotal,
 } from './storageRepository.js';
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
@@ -30,6 +31,7 @@ test('the core is coordination-free: every export is callable with no queue at a
   // is exactly how the deadlock would have shipped. Calling them bare is the assertion.
   assert.equal(planGlobalRemoval([{ id: 'u', container_id: 'u', qty: 2, is_system: 1 }], 1).conflict, null);
   assert.equal(planPlaceRemoval({ id: 'a', qty: 2 }, 1).conflict, null);
+  assert.equal(totalRemovalConflict([{ id: 'u', container_id: 'u', qty: 2, is_system: 1 }]), null);
   assert.equal(removalStatements({ conflict: null, taken: [{ id: 'a', take: 1, left: 1 }] }).length, 1);
   assert.equal(clearAllocationsStatements('o1').length, 1);
   assert.equal(clearAllocationsForManyStatements(['o1', 'o2', 'o1']).length, 1);
@@ -152,6 +154,77 @@ test('a GLOBAL removal takes from Unfiled ONLY, and conflicts rather than reachi
   assert.deepEqual(blocked.conflict.filed, [{ container_id: 'b', qty: 3 }],
     'and names where the copies actually are, so the UI can say it');
   assert.deepEqual(removalStatements(blocked), [], 'a rejected removal never half-applies');
+});
+
+test('a TOTAL removal is refused when anything is filed, and allowed when nothing is', () => {
+  // Owner ruling 2026-08-19, reversing the zero exemption. The count argument for the exemption -
+  // "when every copy leaves there is nothing to attribute" - was true and beside the point: it is
+  // the FILING that is destroyed, and the filing is user data.
+  const filed = totalRemovalConflict([
+    { id: 'binder', container_id: 'b', qty: 3, is_system: 0 },
+    { id: 'unfiled', container_id: 'u', qty: 2, is_system: 1 },
+  ]);
+  assert.equal(filed.requested, 5, 'every copy would have to leave');
+  assert.equal(filed.unfiled, 2);
+  assert.deepEqual(filed.filed, [{ container_id: 'b', qty: 3 }],
+    'the SAME shape the partial-decrease conflict carries, so one message function serves both');
+
+  // Unfiled-only, and no places at all: nothing filed, so nothing to lose.
+  assert.equal(totalRemovalConflict([{ id: 'unfiled', container_id: 'u', qty: 4, is_system: 1 }]), null);
+  assert.equal(totalRemovalConflict([]), null);
+  assert.equal(totalRemovalConflict(), null, 'a row the caller could not read places for is not a refusal');
+});
+
+/* ---------------- the optimistic predicate must not drift from the planners ---------------- */
+
+test('the refusal PREDICTION agrees with the planners on every cell of the grid', () => {
+  // The steppers ask predictGlobalRemovalRefusal whether to paint a provisional count. It restates a
+  // rule two planners already enforce, and a restated rule drifts - so this is the mitigation for
+  // that duplication rather than a nicety. It walks filed 0/some/all against unfiled some/none, and
+  // every legal target from total removal through partial to no-op, and demands one answer.
+  //
+  // WHICH planner a cell is checked against is not a choice either: it mirrors production. A target
+  // of zero goes through totalRemovalConflict (writeSetRow's q===0 path, assertNoFiledCopies,
+  // planAllocationChanges' zero branch); anything above zero goes through planGlobalRemoval.
+  const cases = [];
+  for (const filedParts of [[], [1], [3], [2, 1]]) {          // none, some, all-in-one, split across two places
+    for (const unfiled of [0, 2]) {
+      const places = [
+        ...filedParts.map((qty, i) => ({ id: `b${i}`, container_id: `b${i}`, qty, is_system: 0 })),
+        ...(unfiled > 0 ? [{ id: 'u', container_id: 'u', qty: unfiled, is_system: 1 }] : []),
+      ];
+      // By the defining equality the placements ARE the copies, so the row owns their sum.
+      const filed = filedTotal(places);
+      const total = filed + unfiled;
+      for (let target = 0; target < total; target++) {        // target === total is not a decrease
+        const refusedByPlanner = target === 0
+          ? !!totalRemovalConflict(places)
+          : !!planGlobalRemoval(places, total - target).conflict;
+        cases.push([
+          `filed ${filed} (${filedParts.join('+') || 'none'}) + unfiled ${unfiled} -> target ${target}`,
+          refusedByPlanner,
+          predictGlobalRemovalRefusal({ target, filed }),
+        ]);
+      }
+    }
+  }
+  assert.equal(cases.length, 22, 'the grid is the assertion - a shrunken grid proves less than it looks');
+  for (const [label, refusedByPlanner, predicted] of cases) assert.equal(predicted, refusedByPlanner, label);
+  // And the two halves of the grid are both actually represented, or agreement is vacuous.
+  assert.ok(cases.some(([, r]) => r === true) && cases.some(([, r]) => r === false));
+});
+
+test('the prediction never blocks what it cannot know, and clamps like the writers do', () => {
+  // Absent knowledge is not a refusal: a caller that could not read the places passes nothing and
+  // gets `false`, so the tap paints exactly as it does today and the store decides.
+  assert.equal(predictGlobalRemovalRefusal(), false);
+  assert.equal(predictGlobalRemovalRefusal({ target: 0, filed: null }), false);
+  // Both inputs clamp at zero, mirroring the Math.max(0, …) every ownership writer applies, so an
+  // overshooting decrease predicts what the write will actually attempt.
+  assert.equal(predictGlobalRemovalRefusal({ target: -4, filed: 0 }), false);
+  assert.equal(predictGlobalRemovalRefusal({ target: -4, filed: 2 }), true);
+  assert.equal(filedTotal([{ qty: 3, is_system: 1 }, { qty: 2, is_system: 0 }, { qty: 1, is_system: 0 }]), 3);
+  assert.equal(filedTotal(), 0);
 });
 
 test('a PLACE removal targets one named container, and over-removal conflicts rather than clamping', () => {

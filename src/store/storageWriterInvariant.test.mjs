@@ -152,10 +152,13 @@ test('a global decrease comes out of Unfiled, never out of a binder', async () =
 });
 
 test('setting a count to zero removes the row AND its places, leaving nothing stranded', async () => {
-  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });
+  // Unfiled-only, which is the case zero still clears. A filed row is refused - see the wall
+  // section at the foot of this file.
+  seedOwned('o1', 'sole1', '001', 3, { binder: 0 });
   await repo.setOwnedInSet('sole1', '001', 0);
   assert.deepEqual(brokenRows(), []);
   assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0);
+  assert.equal(rows("SELECT id FROM owned_cards WHERE id='o1';").length, 0);
 });
 
 test('a wishlist-only row has no places, and that satisfies the equality', async () => {
@@ -206,8 +209,8 @@ test('a resolved import onto an existing row places only the copies it adds', as
   assert.equal(at('b1', 'o2'), 2, 'the existing filing is untouched');
 });
 
-test('setOwnedItemsBulk to zero DELETES a row that still has places, rather than failing on RESTRICT', async () => {
-  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });
+test('setOwnedItemsBulk to zero DELETES an UNFILED row, rather than failing on RESTRICT', async () => {
+  seedOwned('o1', 'sole1', '001', 3, { binder: 0 });
   const r = await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID);
   assert.equal(r.removed, 1);
   assert.deepEqual(brokenRows(), []);
@@ -215,12 +218,61 @@ test('setOwnedItemsBulk to zero DELETES a row that still has places, rather than
 });
 
 test('setOwnedItemsBulk to zero on a WANTED row clears the places but keeps the row', async () => {
-  seedOwned('o1', 'sole1', '001', 2, { binder: 1 });
+  seedOwned('o1', 'sole1', '001', 2, { binder: 0 });
   sdb.run("UPDATE owned_cards SET qty_wanted=1 WHERE id='o1';");
   const r = await importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID);
   assert.equal(r.cleared, 1);
   assert.deepEqual(brokenRows(), [], 'a row at zero copies holds zero places');
   assert.equal(rows("SELECT qty_wanted FROM owned_cards WHERE id='o1';")[0].qty_wanted, 1, 'the want survives');
+});
+
+test('BULK SET-TO-0 REFUSES a filed row, and says how many items are in the way', async () => {
+  // Owner ruling 2026-08-19. This test asserted the OPPOSITE until that date: Set-to-0 deleted the
+  // row and its binder allocation outright, on the reading that total removal needs no attribution.
+  // It removes the user's filing record, which is user data, so it is now refused like any other
+  // decrease into filed copies.
+  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });
+  await assert.rejects(
+    () => importCmd.setOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, qty: 0 }], PID),
+    (e) => {
+      assert.equal(e.name, 'BulkWriteError');
+      assert.equal(e.phase, 'prewrite');
+      assert.equal(e.writeState, 'none', 'planning precedes any statement - nothing was written');
+      assert.equal(e.storageConflict.items.length, 1);
+      assert.equal(e.storageConflict.items[0].target, 0);
+      assert.deepEqual(e.storageConflict.items[0].filed, [{ container_id: 'b1', qty: 2 }]);
+      return true;
+    },
+  );
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3, 'the refused set wrote nothing');
+  assert.equal(at('b1', 'o1'), 2, 'and the filing is exactly as it was');
+  assert.deepEqual(brokenRows(), [], 'a refused zero leaves the equality intact');
+});
+
+test('BULK ADJUST down to zero rides the same wall, so the two commands cannot disagree', async () => {
+  // Adjust resolves `max(0, cur + delta)` inside the barrier, so an over-large negative delta lands
+  // on a target of 0 and must be refused by the same rule rather than falling through the old
+  // zero fast path.
+  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });
+  await assert.rejects(
+    () => importCmd.adjustOwnedItemsBulk([{ card_id: 'sole1', setCode: '001', foil: false, delta: -9 }], PID),
+    (e) => e.name === 'BulkWriteError' && e.storageConflict?.items?.length === 1,
+  );
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3);
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('a bulk selection that is PARTLY blocked writes nothing at all', async () => {
+  // Fails whole, unchanged by the ruling - but now reachable through a zero target, which it was
+  // not before. Half a collection filed away is worse than an explained refusal.
+  seedOwned('o1', 'sole1', '001', 3, { binder: 2 });   // blocked
+  seedOwned('o2', 'multi1', '001', 2, { binder: 0 });  // satisfiable
+  await assert.rejects(() => importCmd.setOwnedItemsBulk([
+    { card_id: 'sole1', setCode: '001', foil: false, qty: 0 },
+    { card_id: 'multi1', setCode: '001', foil: false, qty: 0 },
+  ], PID), { name: 'BulkWriteError' });
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o2';")[0].qty_owned, 2, 'the satisfiable item was not written either');
+  assert.deepEqual(brokenRows(), []);
 });
 
 test('setOwnedItemsBulk raising a count places the difference in Unfiled', async () => {
@@ -388,13 +440,21 @@ test('THE EQUALITY ASSERTION FIRES: a ledger that already disagrees with its pla
 // Written after a device pass, because I predicted this wrong and the app was right. Reasoning
 // about a stepper in the abstract is not the same as counting the taps.
 //
-// A single-step decrease conflicts only when it would leave a POSITIVE count that Unfiled cannot
-// fund. The last tap of all never can: its target is zero, which is total removal, which needs no
-// attribution. So a stepper can ALWAYS walk a card down to nothing, however it is filed - and the
-// wall it hits on the way is strictly mid-range. Both halves of that are the ruling working as
-// intended, and neither is obvious from the code.
+// AMENDED BY THE OWNER, 2026-08-19. This section previously recorded the opposite conclusion: that
+// a stepper could ALWAYS walk a card down to nothing however it was filed, because the last tap
+// targets zero, and total removal needs no attribution. That reasoning was about the COUNT and left
+// out the FILING. Reaching zero threw away the record that three copies were in the Beta binder,
+// which is user data in its own right - and an accidental last-copy minus is the single easiest way
+// to lose it, because re-adding the copies puts them all in Unfiled with nothing to restore from.
+//
+// So the wall now runs the whole way down. A decrease is refused whenever it would eat into filed
+// copies, whether the target is 2 or 0, and the tests below walk both halves of that.
+//
+// The old split was already inconsistent with itself, which is the strongest evidence it was wrong:
+// clearing a count to zero on a row that ALSO held a want went through planGlobalRemoval and
+// refused, while the identical gesture on a row without a want deleted the row and its filing.
 
-test('a stepper can always walk a filed card all the way to zero', async () => {
+test('a stepper walks a filed card down to its filed copies, and then stops', async () => {
   seedOwned('o1', 'sole1', '001', 4, { binder: 1 });     // 1 filed, 3 loose
   for (const target of [3, 2, 1]) {
     await repo.setOwnedInSet('sole1', '001', target);    // funded by Unfiled
@@ -403,20 +463,110 @@ test('a stepper can always walk a filed card all the way to zero', async () => {
   assert.equal(at(UNFILED, 'o1'), 0, 'Unfiled is exhausted');
   assert.equal(at('b1', 'o1'), 1, 'and the filed copy is still filed');
 
-  // The last tap targets ZERO, so it is total removal rather than an unfunded decrease.
-  await repo.setOwnedInSet('sole1', '001', 0);
-  assert.deepEqual(brokenRows(), []);
-  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0,
-    'the binder copy left with the row, because nothing had to be attributed');
+  // The last tap targets ZERO, and zero is no longer an exemption: the only copy left is in a
+  // binder, so removing it would discard the user's filing rather than merely their count.
+  await assert.rejects(() => repo.setOwnedInSet('sole1', '001', 0), (e) => {
+    assert.equal(e.name, 'StorageConflict');
+    assert.deepEqual(e.detail.filed, [{ container_id: 'b1', qty: 1 }]);
+    return true;
+  });
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 1, 'the refused tap wrote nothing');
+  assert.equal(at('b1', 'o1'), 1);
+  assert.deepEqual(brokenRows(), [], 'a refused zero leaves the equality intact');
 });
 
-test('the wall is mid-range: the same card refuses a step that would LEAVE filed copies', async () => {
+test('the wall runs all the way down: a fully filed card refuses BOTH a partial step and zero', async () => {
   seedOwned('o1', 'sole1', '001', 3, { binder: 3 });     // nothing loose
   await assert.rejects(() => repo.setOwnedInSet('sole1', '001', 2), { name: 'StorageConflict' });
   assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3, 'nothing moved');
 
-  // ...and yet zero is still reachable, which is the asymmetry the model intends.
+  await assert.rejects(() => repo.setOwnedInSet('sole1', '001', 0), { name: 'StorageConflict' });
+  assert.equal(rows("SELECT qty_owned FROM owned_cards WHERE id='o1';")[0].qty_owned, 3);
+  assert.equal(at('b1', 'o1'), 3, 'the binder is untouched by either refusal');
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('unfile the copies and the same zero goes through - the wall names its own exit', async () => {
+  // The refusal has to be actionable, not merely correct. Returning the copies to Unfiled is the
+  // fix the toast tells the user to make, so it must actually unblock the gesture.
+  seedOwned('o1', 'sole1', '001', 3, { binder: 3 });
+  await assert.rejects(() => repo.setOwnedInSet('sole1', '001', 0), { name: 'StorageConflict' });
+  sdb.run("UPDATE storage_allocations SET container_id=? WHERE owned_card_id='o1';", [UNFILED]);
   await repo.setOwnedInSet('sole1', '001', 0);
+  assert.equal(rows("SELECT id FROM owned_cards WHERE id='o1';").length, 0, 'the row is gone');
+  assert.equal(rows("SELECT id FROM storage_allocations WHERE owned_card_id='o1';").length, 0);
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('a zero on a row with NO places at all still deletes, because nothing is being discarded', async () => {
+  // A want-only row cleared to nothing, and the shape a broken ledger could also present. Neither
+  // has a filing to lose, so neither is the guard's business.
+  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('w1',?,'sole1','001',0,2,'','T','T');", [PID]);
+  await repo.setWantedForItem('sole1', { set: '001', foil: false }, 0, PID);
+  assert.equal(rows("SELECT id FROM owned_cards WHERE id='w1';").length, 0, 'a row holding neither copies nor wants is removed');
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('the card-level and FOIL steppers hit the same wall as the per-set one', async () => {
+  // Three separate delete branches in ownedRepository, three separate chances to forget the guard.
+  seedOwned('o1', 'sole1', 'uncategorised', 2, { binder: 2 });
+  seedOwned('o2', 'sole1', 'uncategorised:f', 1, { binder: 1 });
+  await assert.rejects(() => repo.setOwned('sole1', 0), { name: 'StorageConflict' });
+  await assert.rejects(() => repo.stepOwnedBucket('sole1', -2), { name: 'StorageConflict' });
+  await assert.rejects(() => repo.setFoil('sole1', 0), { name: 'StorageConflict' });
+  assert.equal(at('b1', 'o1'), 2);
+  assert.equal(at('b1', 'o2'), 1);
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('the WANT writers fail closed on a row that somehow still holds filed copies', async () => {
+  // The two want-writer delete branches fire only when the row ALREADY holds no copies, and by the
+  // defining equality a row with no copies has no places - so in a healthy ledger this guard can
+  // never trigger. That is an argument about arithmetic in another function, not a property of the
+  // delete, so the state is seeded here directly: qty_owned 0 with two copies in a binder. If the
+  // guard were absent, clearing the want would take the allocation with it and the only record of
+  // where those copies live would be gone. Refusing leaves the corruption visible and repairable.
+  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('x1',?,'sole1','001',0,1,'','T','T');", [PID]);
+  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('x1-b',?,'b1','x1',2,'T','T');", [PID]);
+
+  await assert.rejects(() => repo.setWantedForItem('sole1', { set: '001', foil: false }, 0, PID), { name: 'StorageConflict' });
+  await assert.rejects(() => repo.setWanted('sole1', 0, PID, { set: '001', foil: false }), { name: 'StorageConflict' });
+  assert.equal(at('b1', 'x1'), 2, 'the filing survived the refusal');
+  assert.equal(rows("SELECT id FROM owned_cards WHERE id='x1';").length, 1, 'and so did the row that names it');
+});
+
+/* ---------------- and WHO IS EXEMPT, which is a property, not an oversight ---------------- */
+//
+// The wall is on INTERACTIVE decreases. Two kinds of writer legitimately take a filed row to zero
+// and must keep doing so, or the ruling would break restore and boot instead of protecting them:
+//
+//   - import / restore reconciliation, which REPLACES the ledger authoritatively (the owner's
+//     earlier "restore = replace" ruling). It never asks the wall because it never subtracts from a
+//     surviving row: `planReplace` deletes every profile and re-inserts the archive's rows, and
+//     `importProfile` builds a fresh profile. Neither reaches `planAllocationChanges` at all.
+//   - triage and canonicalisation, whose drains are KEY MOVES: the source row hits zero only
+//     because its allocations were re-parented onto the destination first, so no filing is lost.
+//
+// A guard written one layer too low - in `clearAllocationsStatements`, say - would fire on all of
+// these. These tests are what would notice.
+
+test('EXEMPT: triage may still empty a FULLY filed row, because the places move with the copies', async () => {
+  seedOwned('o1', 'multi1', 'uncategorised', 3, { binder: 3 });   // nothing loose - a stepper would refuse
+  const r = await triage(filePlan('multi1', '002'));
+  assert.equal(r.confirmed, true);
+  assert.equal(rows("SELECT id FROM owned_cards WHERE id='o1';").length, 0, 'the drained source row is gone');
+  const dest = rows("SELECT id FROM owned_cards WHERE card_id='multi1' AND variant_slug='002';")[0].id;
+  assert.equal(at('b1', dest), 3, 'and every filed copy is still in the binder, under the right printing');
+  assert.deepEqual(brokenRows(), []);
+});
+
+test('EXEMPT: boot canonicalisation may still release a FULLY filed row', async () => {
+  sdb.run("INSERT INTO owned_cards(id,profile_id,card_id,variant_slug,qty_owned,qty_wanted,notes,created_at,updated_at) VALUES('L1',?,'sole1','',2,0,'','x','x');", [PID]);
+  sdb.run("INSERT INTO storage_allocations(id,profile_id,container_id,owned_card_id,qty,created_at,updated_at) VALUES('LA',?,'b1','L1',2,'x','x');", [PID]);
+  await canonicalise();
+  assert.equal(rows("SELECT id FROM owned_cards WHERE id='L1';").length, 0, 'the legacy row was released');
+  const dest = rows("SELECT id FROM owned_cards WHERE card_id='sole1' AND variant_slug='uncategorised';")[0].id;
+  assert.equal(at('b1', dest), 2, 'its filing came with it');
   assert.deepEqual(brokenRows(), []);
 });
 

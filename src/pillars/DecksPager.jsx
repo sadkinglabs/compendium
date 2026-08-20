@@ -7,12 +7,14 @@ import { createPortal } from 'react-dom';
 import {
   listDecks, getDeck, toggleStar, renameDeck, duplicateDeck, deleteDeck,
   historyCount, clearHistory, exportMarkdown, exportCuriosa, getDeckCards,
-  planDeckTextAdd, applyDeckAdds, setAvatar,
+  planDeckTextAdd, applyDeckAdds, setAvatar, reorderDecks,
 } from '../store/deckRepository.js';
+import DragReorderList, { DragReorderRow } from '../components/DragReorderList.jsx';
+import { librarySections, reorderInSection } from './librarySections.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import { deckMatchCount } from '../store/playRepository.js';
 import { DeckCard } from './Decks.jsx';
-import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState } from '../components/ui.jsx';
+import { Chip, ChipRow, SegTabs, IcList, IcStats, Loading, useSwipe, BlankState, SectionLabel } from '../components/ui.jsx';
 import { ShuffleIcon } from '../components/icons.jsx';
 import { ArtImg } from '../components/ArtImage.jsx';
 import { haptic, shareLink } from '../native.js';
@@ -175,6 +177,45 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
     || d.name.toLowerCase().includes(libQ.toLowerCase())
     || (d.avatar?.name || '').toLowerCase().includes(libQ.toLowerCase()));
 
+  // FAVOURITES AND MY DECKS. `listDecks` sorts `starred DESC, lib_order ASC`, so a favourite always
+  // outranks a plain deck. That boundary first shipped INVISIBLE - one flat list with a star badge
+  // in the corner - and the drag defended it with a clamp the user could feel but never see. Owner
+  // ruling 2026-08-21: the boundary is now STRUCTURAL. Each run gets the app's own section rubric
+  // (`SectionLabel`, the same one Storage's "Your Places" wears) and renders as its own list, and a
+  // section is drawn only when it has rows - no header over nothing, in either direction.
+  const sections = librarySections(libList);
+
+  // LONG-PRESS AND DRAG to arrange the Library (DESIGN_SYSTEM §Ordering, owner ruling 2026-08-20).
+  // `lib_order` has been in the schema since the start with nothing but insert-at-end writing it;
+  // this is what finally lets a person say what order their decks are in.
+  //
+  // NOT WHILE SEARCHING. A filtered list is a view of the library, not the library, so an order
+  // dropped on it would describe positions for the matches and say nothing about what the search
+  // hid. `reorderDecks` refuses a partial set outright; disabling the gesture is how the UI keeps
+  // the user from ever reaching that refusal.
+  //
+  // ONE DRAGGABLE LIST PER SECTION, NOT ONE LIST PLUS A CLAMP. Each section is its own
+  // `DragReorderList`, so a drag physically cannot leave the section it started in - there is no
+  // clamp to get wrong. It is also the measurement-correct arrangement: the section header sits
+  // BETWEEN the two runs rather than inside either one, so no row is ever measured against a
+  // neighbour on the far side of a rubric.
+  const canReorder = !libQ.trim();
+  // The indices are section-local and the write is global, so the mapping between them is a tested
+  // pure function rather than arithmetic inline here. It runs over `decks`, not `libList`: a commit
+  // can only happen while the search is empty, where the two hold the same decks in the same order.
+  const commitSection = (key) => async (from, to) => {
+    if (!decks) return;
+    const next = reorderInSection(decks, key, from, to);
+    if (next === decks) return;
+    // Optimistic, then reconciled: the card is already where the finger left it, so the list has
+    // to agree on the same frame or it would visibly snap back for the length of a transaction.
+    // The module cache is updated with it, or a pillar remount would repaint the old order.
+    setDecks(next);
+    try { deckListCache = { pid: activeProfileId(), decks: next }; } catch { /* pre-init: not cached */ }
+    try { await reorderDecks(next.map((d) => d.id)); }
+    catch { toast('Could not save that order.', { tone: 'danger' }); refresh(); }
+  };
+
   // Native feel: swipe across the Library ⇄ My Deck (List ⇄ Stats) chain.
   // Return true when the pager consumes the swipe (paged an inner view); at an edge
   // return falsy so the gesture bubbles up to the app-level cross-pillar swipe.
@@ -219,7 +260,28 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
               : libList.length === 0 ? (
                 <BlankState hue="160,140,192" title={decks.length === 0 ? 'No Decks Yet' : 'No matches'}
                   body={decks.length === 0 ? <>Build or import a deck<br />to start your collection.</> : null} />
-              ) : libList.map((d) => <DeckCard key={d.id} deck={d} onClick={() => openDeck(d)} />)}
+              ) : sections.map((s, si) => (
+                <React.Fragment key={s.key}>
+                  {/* Padding only, deliberately - no bottom margin. SectionLabel's own 12px below
+                      collapses through this wrapper and meets `.dli`'s 12px above, so the rubric
+                      sits one card-gap off its section instead of two. The horizontal padding lines
+                      the label up with the deck cards' outer edge. */}
+                  <div style={{ padding: `${si === 0 ? 6 : 22}px 12px 0` }}>
+                    <SectionLabel label={s.label} count={s.rows.length} />
+                  </div>
+                  {/* The drag wrapper carries the transform; the card keeps its own chrome. Nothing
+                      here may gain `overflow` - a transform and a scroll container on one element is
+                      the WebView blanking bug documented in GothicSheet.jsx. */}
+                  <DragReorderList ids={s.rows.map((d) => d.id)} disabled={!canReorder}
+                    onReorder={commitSection(s.key)}>
+                    {s.rows.map((d) => (
+                      <DragReorderRow key={d.id} id={d.id}>
+                        <DeckCard deck={d} onClick={() => openDeck(d)} />
+                      </DragReorderRow>
+                    ))}
+                  </DragReorderList>
+                </React.Fragment>
+              ))}
           </div>
           <SearchPill value={libQ} onChange={setLibQ} onClear={() => setLibQ('')} placeholder="Search decks…" />
         </div>

@@ -65,7 +65,7 @@ export async function listProfiles() {
   return query('SELECT * FROM profiles ORDER BY created_at ASC;');
 }
 
-/** Cross-profile digest for the profile picker (decks · matches per profile). */
+/** Cross-profile digest for the profile picker and its destructive confirmation. */
 export async function profileStats(id) {
   const decks = (await query('SELECT COUNT(*) c FROM decks WHERE profile_id=?;', [id]))[0].c;
   const matches = (await query('SELECT COUNT(*) c FROM matches WHERE profile_id=?;', [id]))[0].c;
@@ -73,7 +73,11 @@ export async function profileStats(id) {
   // Deleting a profile cascades its collection too, so the delete confirmation must be
   // able to say how much collection is at stake - not just decks and matches.
   const cards = (await query('SELECT COALESCE(SUM(qty_owned),0) n FROM owned_cards WHERE profile_id=?;', [id]))[0].n;
-  return { decks, matches, cards };
+  // Unfiled is system infrastructure rather than a place the person created. Q29 asks the
+  // confirmation to enumerate Storage, so count the named places whose deletion would otherwise
+  // be invisible behind the collection total.
+  const places = (await query('SELECT COUNT(*) c FROM storage_containers WHERE profile_id=? AND is_system=0;', [id]))[0].c;
+  return { decks, matches, cards, places };
 }
 
 export async function getActiveProfile() {

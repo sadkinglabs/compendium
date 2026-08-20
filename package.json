@@ -1,7 +1,7 @@
 {
   "name": "compendium",
   "version": "1.1.0-alpha",
-  "build": 285,
+  "build": 301,
   "private": true,
   "type": "module",
   "description": "Compendium — offline-first Sorcery TCG companion (Home · Codex · Collection · Decks · Play)",
@@ -48,6 +48,9 @@
     "@capacitor/preferences": "^8.0.1",
     "@capacitor/share": "^8.0.1",
     "@capacitor/status-bar": "^8.0.3",
+    "@dnd-kit/core": "6.3.1",
+    "@dnd-kit/modifiers": "9.0.0",
+    "@dnd-kit/sortable": "10.0.0",
     "@radix-ui/react-dialog": "^1.1.23",
     "fflate": "^0.8.3",
     "qrcode-generator": "^2.0.4",

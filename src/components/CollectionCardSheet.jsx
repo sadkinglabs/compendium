@@ -6,7 +6,7 @@
 // (wishlist heart · add-to-list). No rule text; no decorative
 // glyphs but the Foil ✦. Behaviour (open/close, hardware-back, drag-to-dismiss,
 // the ledger writes) is unchanged - this is a presentational restructure.
-import React, { useEffect, useState, useRef, useReducer } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useReducer } from 'react';
 import GothicSheet from './GothicSheet.jsx';
 import { Loading, ThresholdPips, SegTabs } from './ui.jsx';
 import CardArt from './CardArt.jsx';
@@ -26,8 +26,21 @@ import { enqueueWrite } from '../store/collectionWrites.js';
 import { activeProfileId } from '../store/profileRepository.js';
 import WantPrintingSheet from './WantPrintingSheet.jsx';
 import { toast } from '../feedback.js';
+import { itemStorage, itemFiledAny, setItemContainerQty, storageWriteMessage } from '../store/storageDirectory.js';
+import { PlaysetSeal, FiledSeal } from './CollectionCardViews.jsx';
+import { playsetOf } from '../store/playset.js';
+import { filedTotal } from '../store/storageRepository.js';
+import { containerColourVar, UNFILED_NAME } from '../store/storageVocabulary.js';
+import { applyLedgerTarget } from './storageLedgerState.js';
 
 const jp = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
+
+// Two vaul snap stops for the editable card sheet: peek (through the Owned steppers) and expanded
+// (reveals the storage ledger + Wishlist + Add to list). Vaul fractions are EXACT fractions of the
+// viewport that end up visible - GothicSheet makes the drawer container-height in snap mode, which
+// is the geometry vaul's snap math assumes. 0.58 is the device-approved peek landing; 0.88 matches
+// the 88dvh every non-snap sheet on this chassis expands to.
+const CARD_PEEK_SNAPS = [0.58, 0.88];
 
 // The card-face glow, tinted by the card's dominant affinity (falls back to a
 // neutral for colourless cards). rgba of the app-wide element colours.
@@ -76,6 +89,93 @@ export function StepBtn({ dir, onClick, disabled }) {
         backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', transition: 'background .12s, border-color .12s',
       }}>{dir > 0 ? '+' : '−'}</span>
     </button>
+  );
+}
+
+/**
+ * One collector item's places, LIFTED out of StorageLedger so the count stepper above it can share
+ * the same read.
+ *
+ * The stepper needs to know how many copies are FILED to predict the storage wall, and that is the
+ * very fact this read already carries - a second subscription for it would be a second poller for
+ * the same rows, refreshing on the same broadcast, able to disagree with the ledger drawn inches
+ * away. So it moves up one level and both consumers read one snapshot.
+ *
+ * `key` names the item the value belongs to, because a finish toggle changes the slug immediately
+ * while the read resolves a beat later - a caller must be able to tell "not loaded yet" from
+ * "loaded, for the other finish". `enabled` false (a read-only sheet, which has no steppers and no
+ * ledger) reads nothing at all, exactly as before.
+ */
+function useItemStorage(cardId, variantSlug, enabled) {
+  const [state, setState] = useState({ key: null, value: null });
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    // The previous value is deliberately NOT cleared while the new one loads: the ledger below
+    // holds its last drawn state rather than blinking out, which is the behaviour it always had.
+    const load = () => itemStorage(cardId, variantSlug).then((v) => { if (alive) setState({ key: `${cardId}|${variantSlug}`, value: v }); });
+    load();
+    const off = subscribeCollection(load);
+    return () => { alive = false; off(); };
+  }, [cardId, variantSlug, enabled]);
+  // The local commit the ledger's own steppers make, applied without disturbing whose value it is.
+  const commit = useCallback((fn) => setState((s) => ({ ...s, value: fn(s.value) })), []);
+  return [state, commit];
+}
+
+/** The primary Storage gesture (Q16): quantities per place, with Unfiled as the live remainder. */
+function StorageLedger({ cardId, variantSlug, owned, ledger, onCommit }) {
+  const [busy, setBusy] = useState(null);
+  if (!(owned > 0) || !ledger) return null;
+  const unfiled = ledger.places.find((p) => p.is_system);
+  const named = ledger.places.filter((p) => !p.is_system);
+  const available = Number(unfiled?.qty) || 0;
+  const step = async (place, delta) => {
+    if (busy) return;
+    setBusy(place.id);
+    const targetQty = Math.max(0, (Number(place.qty) || 0) + delta);
+    try {
+      await setItemContainerQty({ cardId, variantSlug, containerId: place.id, qty: targetQty });
+      // The collection broadcast starts an async refresh but does not await it. Commit the exact
+      // absolute target locally before unlocking, then derive Unfiled from the defining equality,
+      // so a second tap cannot use the pre-write quantity even on a slow device.
+      onCommit((current) => applyLedgerTarget(current, place.id, targetQty));
+      haptic('light');
+    } catch (e) {
+      const m = storageWriteMessage(e);
+      toast(m.text, { tone: m.tone });
+    } finally { setBusy(null); }
+  };
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--hair-12)' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+        <span style={{ font: "600 10px/1 var(--f-display)", letterSpacing: '.18em', color: 'var(--ink-muted)' }}>WHERE YOUR COPIES ARE</span>
+        <span style={{ font: "400 12px/1 var(--f-read)", color: 'var(--ink-faint)' }}>{ledger.total} total</span>
+      </div>
+      {unfiled && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 46, borderBottom: '1px solid var(--hair-12)' }}>
+          <span aria-hidden="true" style={{ width: 8, height: 26, borderRadius: 6, background: containerColourVar(unfiled.colour), opacity: .65 }} />
+          <span style={{ flex: 1, font: "600 15px/1.2 var(--f-read)", color: 'var(--ink-body)' }}>{UNFILED_NAME}</span>
+          <span style={{ font: "700 19px/1 var(--f-display)", color: available ? 'var(--gold-num)' : 'var(--ink-faint)', minWidth: 24, textAlign: 'center' }}>{available}</span>
+        </div>
+      )}
+      {named.length === 0 ? (
+        <div style={{ padding: '12px 0 2px', font: "italic 400 12.5px/1.45 var(--f-read)", color: 'var(--ink-faint)' }}>
+          Make a place in My Collection · Storage to start filing copies.
+        </div>
+      ) : named.map((place) => {
+        const n = Number(place.qty) || 0;
+        return (
+          <div key={place.id} style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 50, borderBottom: '1px solid var(--hair-12)' }}>
+            <span aria-hidden="true" style={{ width: 8, height: 28, borderRadius: 6, background: containerColourVar(place.colour) }} />
+            <span style={{ flex: 1, minWidth: 0, font: "600 14.5px/1.2 var(--f-read)", color: n ? 'var(--ink-body)' : 'var(--ink-muted)' }}>{place.name}</span>
+            <StepBtn dir={-1} disabled={busy != null || n <= 0} onClick={() => step(place, -1)} />
+            <span style={{ minWidth: 24, textAlign: 'center', font: "700 18px/1 var(--f-display)", color: n ? 'var(--gold-num)' : 'var(--ink-faint)' }}>{n}</span>
+            <StepBtn dir={1} disabled={busy != null || available <= 0} onClick={() => step(place, 1)} />
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -309,7 +409,6 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
   }, [ownedSets]);
   const sel = setState.display;
   const effSet = displaySetOf(setState, ranked[0]?.code ?? '');
-  const { qty, step } = useOwnedLedger(c.card_id, effSet);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
 
   // THE ACTIVE FINISH (Phase 6). One collector item at a time: a Standard/Foil toggle drives the
   // stepper, the heart, and the art together. `finishes` is display-safe - malformed variant metadata
@@ -325,6 +424,19 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
   const pendingFoil = useRef(initFoil);
   const [foil, setFoil] = useState(() => resolveFoil(initFoil));
   useEffect(() => { const w = pendingFoil.current; pendingFoil.current = undefined; setFoil(resolveFoil(w)); }, [effSet]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The active collector item's places, read ONCE for the two things that need them: the ledger
+  // below the count, and the count's own refusal prediction. The stepper has to come after the
+  // finish, because standard and foil are separate owned rows with separate filed totals.
+  const itemSlug = canonicalPrinting(effSet, foil);
+  const [storage, commitStorage] = useItemStorage(c.card_id, itemSlug, editable);
+  // Only a snapshot of THIS item counts. A stale one (mid-toggle, or an unreadable ledger) predicts
+  // nothing, which costs a decrease its instant paint and never costs it the write.
+  const filedHere = storage.key === `${c.card_id}|${itemSlug}` && storage.value
+    ? filedTotal(storage.value.places)
+    : null;
+  const filed = filedHere == null ? null : { [foil ? 'foil' : 'owned']: filedHere };
+  const { qty, step } = useOwnedLedger(c.card_id, effSet, filed);   // '' (Uncategorised) is a real bucket - do NOT `|| null`
 
   // THE HEART IS PER COLLECTOR ITEM, not per card.
   //
@@ -395,6 +507,23 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
     toast('The catalog does not list a printing for this card', { tone: 'warn' });
   };
 
+  // The two collector marks under the identity block. They answer different questions about the
+  // SAME (card, set), which is why both are read at this grain and neither follows the finish
+  // toggle: a playset is the two finishes together, and "filed" is true if either finish has copies
+  // in a named place. Reading them per finish would make a mark blink out on a toggle that changed
+  // nothing about the shelf the cards are on.
+  const playsetDone = playsetOf(c, (qty?.owned || 0) + (qty?.foil || 0)).complete;
+  const [itemFiled, setItemFiled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    // A failed read is "no mark", never a thrown sheet: the seal is a decoration over a fact the
+    // ledger below states in full.
+    const load = () => itemFiledAny(c.card_id, effSet).then((v) => { if (alive) setItemFiled(!!v); }).catch(() => { if (alive) setItemFiled(false); });
+    load();
+    const off = subscribeCollection(load);
+    return () => { alive = false; off(); };
+  }, [c.card_id, effSet]);
+
   // Art, artist, and origin follow the active printing AND finish through ONE selector, so a dual
   // Foil/Rainbow promo can never show Rainbow art credited to another variant's artist (Phase 6).
   const printing = selectPrinting(c, effSet, foil);
@@ -441,6 +570,14 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
           {printing.artist && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#a99a80' }}>Art · {printing.artist}</div>}
           {products.length > 0 && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#8a7a55' }}>{products.join(' · ')}</div>}
 
+          {/* The seal row: playset first, filed second, no labels - each seal carries its own
+              title/aria-label, and a wordmark beside a mark that already says it is noise. */}
+          {(playsetDone || itemFiled) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {playsetDone && <PlaysetSeal size={16} />}
+              {itemFiled && <FiledSeal size={16} />}
+            </div>
+          )}
         </div>
       </div>
 
@@ -457,6 +594,10 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
           </div>
         )}
         <CountRow label={foil ? 'Foil' : 'Owned'} foil={foil} field={foil ? 'foil' : 'owned'} qty={qty} step={step} editable={editable} />
+        {editable && (
+          <StorageLedger cardId={c.card_id} variantSlug={itemSlug} owned={foil ? qty?.foil : qty?.owned}
+            ledger={storage.value} onCommit={commitStorage} />
+        )}
       </div>
 
       {!editable && (
@@ -505,7 +646,11 @@ export default function CollectionCardSheet({ cardId, onClose, editable = false,
   const [picking, setPicking] = useState(false);
   useEffect(() => { if (cardId) { setC(null); setPicking(false); getCard(cardId).then(setC); } }, [cardId]);
   return (
-    <GothicSheet open={!!cardId} onClose={onClose} label="Card">
+    // PEEK on the editable collection sheet only (Q16): opens showing art + Standard/Foil + the Owned
+    // steppers, and a pull up reveals "where your copies are", Wishlist and Add to list. Read-only
+    // (Codex) sheets have no steppers, so they stay a normal full sheet. Snap heights are fractions of
+    // the viewport and are calibrated on device.
+    <GothicSheet open={!!cardId} onClose={onClose} label="Card" snapPoints={editable && !picking ? CARD_PEEK_SNAPS : null}>
       {!c ? <Loading /> : picking
         ? <ListPicker cardId={c.card_id} onBack={() => setPicking(false)} />
         : <CardBody c={c} onPick={() => setPicking(true)} editable={editable} set={set} foil={foil} />}

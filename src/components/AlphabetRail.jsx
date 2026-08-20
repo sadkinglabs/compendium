@@ -21,6 +21,7 @@
 // measured effectiveZoom. Interactive behaviour (WebView pointer streams, scroll fidelity, exact
 // geometry) is DEVICE-GATED; only the pure helpers it drives are unit-tested.
 import { useReducer, useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { RAIL_ORDER, firstPresent, lastPresent, stepLetter, activeLetterFor } from '../store/alphabetIndex.js';
 import { indexAtY, railBounds, railTopOffset, effectiveZoom } from '../store/railGeometry.js';
 import { resolveScrollRoot } from '../store/collectionAllModel.js';
@@ -275,7 +276,17 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
   const b = bounds || { top: headerHeight, bottom: 140 };       // safe fallback until the first measure
   const tabLetter = focusedLetter && present.has(focusedLetter) ? focusedLetter : firstPresent(present);
   const edge = side === 'left' ? { insetInlineStart: 0 } : { insetInlineEnd: 0 };
-  return (
+  // PORTAL TARGET `.cx-app`, for the same reason GothicSheet uses it: this nav is
+  // position:fixed against the VIEWPORT, and the Collection surface it is written
+  // inside is a `.cx-surface-enter` wrapper that holds a live transform for 200ms on
+  // every view/segment switch. A transformed ancestor becomes the containing block,
+  // which would resolve `top`/`bottom` against the (page-tall) wrapper and fling the
+  // rail off-screen until the animation ended. `.cx-app` is the root stacking context
+  // and carries the `zoom: --ui-scale` the geometry already corrects for, and the dock
+  // and nav are its children too - so z-45 keeps the same peer group it had before.
+  const root = typeof document !== 'undefined' ? (document.querySelector('.cx-app') || document.body) : null;
+  if (!root) return null;
+  return createPortal(
     <nav ref={navRef} aria-label="Alphabetical index" onKeyDown={onKeyDown}
       style={{ position: 'fixed', top: b.top, bottom: b.bottom, ...edge, zIndex: 45,
         display: 'flex', width: RAIL_WIDTH, pointerEvents: 'none', opacity: bounds ? 1 : 0 }}>
@@ -313,6 +324,7 @@ export default function AlphabetRail({ model, count, ensureRendered, signature, 
       <span aria-live="polite" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)' }}>
         {state.committedLetter ? `Jumped to ${state.committedLetter}` : ''}
       </span>
-    </nav>
+    </nav>,
+    root,
   );
 }

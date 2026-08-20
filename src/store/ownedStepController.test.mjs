@@ -243,6 +243,155 @@ test('the FIRST rejection in a chain is the one reported', async () => {
   assert.equal(seen[0], first);
 });
 
+/* ---------------- holding the optimism, never the write ---------------- */
+//
+// The storage wall refuses a decrease that would eat into filed copies, so the stepper painted
+// 1 -> 0, toasted, and snapped back to 1: the app appearing to undo itself over behaviour that is
+// working. `holdDelta` lets a caller that can predict the refusal decline to paint. Every test here
+// exists to hold the line that the prediction touches PRESENTATION ONLY.
+
+test('a HELD tap paints nothing but still enqueues the durable write', () => {
+  const { write, calls } = deferredWrites();
+  const asked = [];
+  const c = createOwnedStepController({
+    read: async () => 1, write,
+    holdDelta: (delta, shown) => { asked.push([delta, shown]); return delta < 0; },
+  });
+  c.init(1);
+  c.step(-1);
+  assert.equal(c.displayed(), 1, 'the count did not move');
+  assert.equal(c.getState().pendingDelta, 0, 'nothing provisional, so nothing to snap back later');
+  assert.equal(c.getState().heldDelta, -1, 'but the tap is accounted for rather than forgotten');
+  assert.equal(calls.length, 1, 'the write went out anyway - local knowledge never gates a write');
+  assert.equal(c.pending(), 1, 'and it is a normal member of the chain');
+  assert.deepEqual(asked, [[-1, 1]], 'asked with the PRE-tap count, so a hook can target displayed + delta');
+});
+
+test('a held tap that is REFUSED never moves the count, and reports exactly as it does today', async () => {
+  const refusal = Object.assign(new Error('refused'), { name: 'StorageConflict', detail: { filed: [{ qty: 1 }] } });
+  const shown = [];
+  const seen = [];
+  const c = createOwnedStepController({
+    read: async () => 1,
+    write: async () => { throw refusal; },
+    notify: (reason, cause) => seen.push([reason, cause]),
+    onChange: (s) => shown.push(s.displayed),
+    holdDelta: (delta) => delta < 0,
+    schedule: (fn) => fn(),
+  });
+  c.init(1);
+  c.step(-1);
+  await flush(); await flush(); await flush();
+  assert.deepEqual([...new Set(shown)], [1], '1 -> 0 -> toast -> 1 was the glitch; now nothing moves at any point');
+  assert.deepEqual(seen, [['save-failed', refusal]], 'the same honest failure, carrying the cause the toast needs');
+  assert.equal(c.getState().heldDelta, 0, 'the drained chain cleared its held accounting');
+  assert.equal(c.getState().confirmation, null, 'a refused chain credits nothing');
+});
+
+test('a held tap that unexpectedly SUCCEEDS moves the count once, at reconcile', async () => {
+  // The prediction is made from a local snapshot, so it can be stale. When it is, the write lands
+  // and the authoritative read is what moves the number - once, in the right direction. A stale
+  // prediction costs a beat of latency and never a lost write.
+  const { write, calls } = deferredWrites();
+  let authoritative = 1;
+  const c = createOwnedStepController({ read: async () => authoritative, write, holdDelta: (d) => d < 0 });
+  c.init(1);
+  c.step(-1);
+  assert.equal(c.displayed(), 1, 'nothing provisional while it is in flight');
+  authoritative = 0;                       // the filed snapshot was out of date; storage took the copy
+  calls[0].resolve();
+  await flush(); await flush();
+  assert.equal(c.displayed(), 0, 'the authoritative read moves it');
+  assert.equal(c.getState().confirmation.appliedDelta, -1, 'credited with what it actually put into storage');
+});
+
+test('MIXED chain, painted then held: one reconcile, one notify, and it lands on the store', async () => {
+  // Three copies with one filed. Two minuses are safely predictable and paint; the third would take
+  // the row below its filed total, so it holds - and it is the one the store refuses.
+  const { write, calls } = deferredWrites();
+  const notes = [];
+  const reads = [];
+  let authoritative = 3;
+  const c = createOwnedStepController({
+    read: async () => { reads.push(1); return authoritative; },
+    write, notify: (r) => notes.push(r),
+    holdDelta: (delta, shown) => shown + delta < 1,     // filed = 1
+  });
+  c.init(3);
+  c.step(-1); assert.equal(c.displayed(), 2, 'predicted-safe taps paint exactly as before');
+  c.step(-1); assert.equal(c.displayed(), 1);
+  c.step(-1); assert.equal(c.displayed(), 1, 'the tap into the filed copies paints nothing');
+  assert.equal(c.pending(), 3, 'three writes, all of them enqueued');
+  authoritative = 1;
+  calls[0].resolve(); calls[1].resolve();
+  calls[2].reject(Object.assign(new Error('refused'), { name: 'StorageConflict' }));
+  await flush(); await flush(); await flush();
+  assert.equal(reads.length, 1, 'one authoritative read for the whole chain');
+  assert.deepEqual(notes, ['save-failed'], 'one notify for the chain, per the existing contract');
+  assert.equal(c.getState().confirmedQty, 1);
+  assert.equal(c.displayed(), 1, 'the two that landed are shown; the refused one never was');
+  assert.equal(c.getState().pendingDelta, 0);
+  assert.equal(c.getState().heldDelta, 0);
+});
+
+test('MIXED chain, held then painted: appliedDelta credits BOTH kinds of tap', async () => {
+  // The interleaving is forced rather than predicted, because the accounting must hold for any
+  // order the hook produces - not only the ones a real predicate happens to make.
+  const { write, calls } = deferredWrites();
+  const script = [true, false, true];
+  let n = 0;
+  let authoritative = 5;
+  const c = createOwnedStepController({ read: async () => authoritative, write, holdDelta: () => script[n++] });
+  c.init(5);
+  c.step(-1); assert.equal(c.displayed(), 5, 'held');
+  c.step(+1); assert.equal(c.displayed(), 6, 'painted');
+  c.step(-1); assert.equal(c.displayed(), 6, 'held');
+  authoritative = 4;                       // 5 - 1 + 1 - 1, all three landed
+  calls.forEach((w) => w.resolve());
+  await flush(); await flush();
+  assert.equal(c.getState().confirmedQty, 4);
+  assert.equal(c.displayed(), 4, 'reconciled to the authoritative value regardless of what was painted');
+  assert.equal(c.getState().confirmation.appliedDelta, -1, 'the chain put one fewer copy in storage: +1 painted, -2 held');
+  assert.equal(c.getState().confirmation.version, 1, 'one confirmation for the chain');
+});
+
+test('the hold hook defaults to never-hold, and a throwing one paints rather than silently holding', () => {
+  const { write } = deferredWrites();
+  const a = createOwnedStepController({ read: async () => 3, write });
+  a.init(3); a.step(-1);
+  assert.equal(a.displayed(), 2, 'no hook at all - every existing consumer is untouched');
+  const b = createOwnedStepController({ read: async () => 3, write, holdDelta: () => { throw new Error('bad prediction'); } });
+  b.init(3); b.step(-1);
+  assert.equal(b.displayed(), 2, 'a broken prediction degrades to today, never to a tap that does nothing visible');
+  assert.equal(b.getState().heldDelta, 0);
+});
+
+test('init clears held accounting, so a recovered row cannot credit a previous chain', async () => {
+  // The one route by which held state outlives its own chain: a failed reconcile read deliberately
+  // keeps the chain's accounting (the provisional value is the best estimate of storage), and the
+  // recovery is an authoritative init from the collection broadcast. That init has to reset BOTH
+  // accumulators, or the next chain is credited with taps that already happened.
+  const { write, calls } = deferredWrites();
+  const timers = [];
+  let readOk = false;
+  const c = createOwnedStepController({
+    read: async () => { if (!readOk) throw new Error('db down'); return 9; },
+    write, holdDelta: () => true, schedule: (fn) => timers.push(fn),
+  });
+  c.init(4);
+  c.step(-1);                              // held, and the write itself lands
+  calls[0].resolve();
+  await flush(); await flush();
+  assert.equal(c.getState().heldDelta, -1, 'the failed reconcile leaves the chain unresolved');
+  readOk = true;
+  c.init(3);                               // the collection broadcast confirms the row instead
+  assert.equal(c.getState().heldDelta, 0);
+  c.step(+1);
+  calls[1].resolve();
+  await flush(); await flush();
+  assert.equal(c.getState().confirmation.appliedDelta, 1, 'credited with its own tap alone, not the previous chain');
+});
+
 test('a chain that succeeds after a failure does not carry the stale cause into the next one', async () => {
   const boom = Object.assign(new Error('nope'), { name: 'StorageConflict' });
   let fail = true;

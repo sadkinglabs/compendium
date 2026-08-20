@@ -46,7 +46,8 @@ export function createUnfiledStatements(profileId, id = uuid(), now = nowIso()) 
 
 /**
  * Statements placing `qty` copies of an owned row into a container, merging with whatever is
- * already there. Paired with a matching change to qty_owned by the caller - never on its own.
+ * already there. Paired either with the matching qty_owned increase or with a removal from another
+ * place in the same transaction - never issued alone.
  */
 export function placeStatements({ profileId, containerId, ownedCardId, qty, now = nowIso() }) {
   if (!(qty > 0)) return [];
@@ -88,6 +89,88 @@ export function planGlobalRemoval(placements, qty) {
 }
 
 /**
+ * Is a TOTAL removal - a decrease whose target is zero - refused, and why? Returns the same
+ * conflict shape planGlobalRemoval returns, or null when the row may legitimately be emptied.
+ *
+ * OWNER RULING, 2026-08-19. This used to be an unconditional fast path: a target of zero cleared
+ * every allocation and deleted the row however the copies were filed, on the argument that total
+ * removal needs no attribution - when every copy leaves there is nothing to guess. That argument
+ * was about the COUNT and forgot the FILING. Where a copy lives is user data in its own right: an
+ * accidental last-copy minus silently discarded the record that three copies were in the Beta
+ * binder, and re-adding them landed everything in Unfiled with no way back. So the rule is now the
+ * one the rest of the model already follows - any decrease that would eat into filed copies is
+ * refused and names the places - and zero is not exempt from it.
+ *
+ * The asymmetry this closes was already visible in the code: clearing a count to zero on a row that
+ * also carried a WANT went through planGlobalRemoval and refused, while the same gesture on a row
+ * without a want deleted the row and its filing outright. One of those two was wrong.
+ *
+ * A row whose copies are ALL in Unfiled, or which has no places at all, is emptied exactly as
+ * before - there is nothing filed to lose. This says nothing about the EXEMPT writers (import and
+ * restore reconciliation, boot canonicalisation, triage's cleanup of already-drained rows); they do
+ * not ask, because they either replace the whole ledger authoritatively or move the places with the
+ * copies rather than discarding them.
+ *
+ * Takes no quantity: a total removal removes whatever is there, so the placements themselves are
+ * the authoritative statement of how many copies would have to leave.
+ */
+export function totalRemovalConflict(placements = []) {
+  const filed = placements.filter((p) => !p.is_system);
+  if (!filed.length) return null;
+  return {
+    requested: placements.reduce((n, p) => n + (Number(p.qty) || 0), 0),
+    unfiled: placements.find((p) => p.is_system)?.qty || 0,
+    // The same field the partial-decrease conflict carries, so one message function serves both.
+    filed: filed.map((p) => ({ container_id: p.container_id, qty: p.qty })),
+  };
+}
+
+/**
+ * WILL a decrease to `target` be refused? The question the OPTIMISTIC steppers ask BEFORE they
+ * paint a provisional count - and nothing else. It is not a gate on the write.
+ *
+ * WHY IT EXISTS. A stepper shows the new count the instant you tap and reconciles against the store
+ * when the write lands. That is right for a write that succeeds and wrong for one the wall refuses:
+ * the count painted 1 -> 0, the refusal toast arrived, and the reconcile snapped it back to 1. The
+ * user saw the app do the thing and then undo it, which reads as a bug in a wall that is working.
+ * Asking here lets a tap that is going to be refused simply not paint - the toast is then the only
+ * thing that happens, and nothing moves.
+ *
+ * WHY ONE PREDICATE COVERS BOTH PLANNERS. Since the zero exemption was closed (owner ruling,
+ * 2026-08-19 - see totalRemovalConflict) the refusal rule is uniform, and the algebra says so.
+ * By the defining equality a row's copies are its placements, so `total = filed + unfiled`.
+ * planGlobalRemoval refuses when `before - target > unfiled`, i.e. `before - target > before - filed`,
+ * i.e. `target < filed`. totalRemovalConflict refuses when `filed > 0`, which at `target = 0` is the
+ * same inequality. One line states both.
+ *
+ * WHAT IT IS NOT. It is not authority and it never decides a write. A caller may only use it to
+ * decide whether to show a PROVISIONAL number; the write is enqueued either way, and the store's
+ * own refusal (or its unexpected success) is what the count ultimately follows. Local knowledge can
+ * be stale - the ledger read that feeds `filed` is a snapshot - and a stale prediction must cost at
+ * most a count that moves once at reconcile instead of instantly. It must never suppress a write.
+ *
+ * THE RISK, NAMED. This duplicates a rule the planners already enforce, and duplicated rules drift.
+ * The mitigation is the agreement test in storageCoordination.test.mjs, which walks a grid of
+ * (filed, unfiled, target) and asserts this function and the planners answer identically for every
+ * cell - so a change to either side that separates them fails rather than mispaints.
+ *
+ * Clamps both inputs at zero, mirroring the `Math.max(0, ...)` every ownership writer applies to a
+ * target before it plans anything.
+ *
+ * @param {{ target?: number|null, filed?: number|null }} [args] the decrease's target quantity and
+ *   the copies currently filed. Either missing means "not known", which never predicts a refusal.
+ * @returns {boolean} true when a caller may NOT paint this decrease optimistically.
+ */
+export function predictGlobalRemovalRefusal({ target, filed } = {}) {
+  return Math.max(0, Number(target) || 0) < Math.max(0, Number(filed) || 0);
+}
+
+/** The filed total the predicate above takes: copies in places that are not Unfiled. */
+export function filedTotal(placements = []) {
+  return (placements || []).reduce((n, p) => (p?.is_system ? n : n + (Number(p?.qty) || 0)), 0);
+}
+
+/**
  * Plan a removal from ONE NAMED container - removing a copy from inside the place it lives, which
  * is unambiguous and needs no attribution. Over-removal is a conflict, never a silent clamp.
  */
@@ -110,13 +193,21 @@ export function removalStatements(plan, now = nowIso()) {
 }
 
 /**
- * Statements clearing every allocation for an owned row, for the paths that DELETE the row itself
- * (a stepper reaching zero, bulk Set-to-0, an import reconciling a row away).
+ * Statements clearing every allocation for an owned row, for the paths that DELETE the row itself.
  *
  * Without this the delete fails outright: allocations reference owned rows with ON DELETE RESTRICT,
  * deliberately, so a user's filing can never be silently discarded as a side effect of a count
  * reaching zero. RESTRICT turns that from a silent loss into a loud one - which is only an
  * improvement if every legitimate delete clears its allocations first. This is that.
+ *
+ * WHICH DELETES ARE LEGITIMATE changed on 2026-08-19 (see totalRemovalConflict). This used to list
+ * "a stepper reaching zero, bulk Set-to-0, an import reconciling a row away" as its callers without
+ * qualification. Two of those are now conditional: an INTERACTIVE zero - the steppers and the bulk
+ * Set/Adjust commands - may only reach here once `totalRemovalConflict` has said the row holds
+ * nothing filed, because clearing a filed allocation is exactly the silent loss RESTRICT exists to
+ * prevent. Unconditional callers are the EXEMPT ones only: import/restore reconciliation, which
+ * replaces the ledger authoritatively, and boot canonicalisation, which re-parents the places it
+ * clears rather than discarding them.
  */
 export function clearAllocationsStatements(ownedCardId) {
   return [['DELETE FROM storage_allocations WHERE owned_card_id=?;', [ownedCardId]]];
@@ -162,6 +253,33 @@ export async function readPlacements(query, ownedCardId) {
       WHERE a.owned_card_id = ?;`,
     [ownedCardId],
   );
+}
+
+/**
+ * Refuse a TOTAL removal that would discard the user's filing - the guard every writer that DELETES
+ * an owned row outright must run before it composes a single statement.
+ *
+ * It exists as one function rather than five copies because the five delete sites in
+ * ownedRepository are the same decision wearing five conditions, and the one that gets forgotten is
+ * always the one nobody reasoned about. Two of the five (the want writers) cannot reach a filed row
+ * today - they delete only when the row ALREADY holds no copies, and by the defining equality a row
+ * with no copies has no places - but that safety lives in another function's arithmetic, one edit
+ * away from being untrue. Guarding all five makes "no interactive delete discards filing" provable
+ * by inspection instead of by argument, at the cost of one indexed read on a path that is taken
+ * only when a row is being removed.
+ *
+ * THROWS BEFORE ANYTHING IS WRITTEN, so a refused gesture leaves the ledger exactly as it was.
+ *
+ * The read is outside the transaction, like every other read in this module, and the coordination
+ * that closes the window is the caller's: the interactive writers all run inside the per-row
+ * `enqueueWrite` chain keyed on the collector item, which is the SAME chain the filing writers in
+ * storageDirectory use, and the multi-item filers hold the exclusive barrier. A copy therefore
+ * cannot be filed into a binder between this read and the delete it authorises.
+ */
+export async function assertNoFiledCopies(query, ownedCardId, action = 'storage') {
+  if (!ownedCardId) return;
+  const conflict = totalRemovalConflict(await readPlacements(query, ownedCardId));
+  if (conflict) throw new StorageConflict(conflict, action);
 }
 
 /**
@@ -309,13 +427,20 @@ export function assertEqualityStatements(profileId, keys, action = 'storage') {
  *
  * Conflicts are collected across every change and RETURNED, never thrown: whether an
  * unsatisfiable item fails one row or the whole command is the caller's policy, not this
- * function's. Bulk fails whole; undo drops the row.
+ * function's. Every caller today - bulk Set, bulk Adjust, the absolute import - fails the whole
+ * command, because a bulk write that files part of someone's collection is worse than one that
+ * explains itself. (The doc here used to add "undo drops the row". There is no bulk-ownership undo:
+ * `bulkOwnedRepository` was deleted on 2026-08-18 and the proposal's undo clause was struck with it.)
  *
- * Reaching zero is not a conflict. See planGlobalRemoval for why a partial decrease into filed
- * copies is ambiguous while total removal is not.
+ * REACHING ZERO IS A CONFLICT TOO when the row holds filed copies - owner ruling, 2026-08-19. The
+ * zero branch below used to be an unconditional clear, so a bulk Set-to-0 over a filed selection
+ * silently threw the user's filing away while a bulk Adjust that stopped one copy short of zero
+ * refused. See totalRemovalConflict for why that split was wrong.
  */
 export async function planAllocationChanges({ query, profileId, changes, now = nowIso(), chunk = 400 }) {
-  const decreasing = changes.filter((c) => c.after < c.before && c.after > 0 && c.rowId);
+  // Zero targets are IN this read. They were excluded while the zero branch was unconditional, and
+  // the exclusion was the bug: a row nobody read the places for is a row nobody can refuse.
+  const decreasing = changes.filter((c) => c.after < c.before && c.rowId);
   const byRow = new Map();
   const ids = decreasing.map((c) => c.rowId);
   for (let i = 0; i < ids.length; i += chunk) {
@@ -337,7 +462,11 @@ export async function planAllocationChanges({ query, profileId, changes, now = n
       // creates it is in the same transaction.
       post.push(...placeUnfiledByKeyStatements({ profileId, cardId: c.cardId, variantSlug: c.variantSlug, qty: c.after - c.before, now }));
     } else if (c.after === 0) {
-      if (c.rowId) pre.push(...clearAllocationsStatements(c.rowId));
+      // Total removal: allowed only when nothing is filed, and then the WHOLE row's places go -
+      // there is no quantity to plan, which is why this clears rather than composing a removal.
+      const conflict = totalRemovalConflict(byRow.get(c.rowId) || []);
+      if (conflict) conflicts.push({ cardId: c.cardId, variantSlug: c.variantSlug, target: 0, ...conflict });
+      else if (c.rowId) pre.push(...clearAllocationsStatements(c.rowId));
     } else {
       const plan = planGlobalRemoval(byRow.get(c.rowId) || [], c.before - c.after);
       if (plan.conflict) conflicts.push({ cardId: c.cardId, variantSlug: c.variantSlug, target: c.after, ...plan.conflict });

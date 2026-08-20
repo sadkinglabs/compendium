@@ -62,7 +62,7 @@ import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, B
 import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
 import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
 import CollectionCardSheet, { StepBtn } from '../components/CollectionCardSheet.jsx';
-import { StorageIndex, StorageDetail } from './CollectionStorage.jsx';
+import { StorageIndex, StorageDetail, FileSelectionSheet } from './CollectionStorage.jsx';
 import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
@@ -158,12 +158,34 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
   const surface = collectionSurface({ view, setDrill, listOpen, placeOpen, cardsMode });
 
   return (
-    <div style={{ padding: '4px 0 26px', animation: 'cxfade .2s ease' }}>
+    <div style={{ padding: '4px 0 26px' }}>
       {pillSlot ? createPortal(pills, pillSlot) : pills}
       {/* WHICH surface is a pure decision (collectionRoute.js), characterized by tests before
           this file was split. It carries two rules that a nested ternary made easy to lose:
           a stale `setDrill` must not resurrect the drill from another view, and likewise
           `listOpen`. Both are real states - the nav cache survives an unmount. */}
+      {/* ALL - SETS - STORAGE, in the owner's order: three lenses on the same owned cards - every
+          card flat, the sets the game defines, and the places you keep them in.
+
+          THE CONTROL LIVES OUTSIDE THE SURFACES IT SWITCHES. It used to sit inside the setsHome
+          block, which meant choosing Storage unmounted the very control you would use to leave it -
+          a one-way door, found by driving the build. It renders for both index surfaces and NOT for
+          the deeper layers (a set drill, an open place), which carry their own back. It also sits
+          OUTSIDE the .cx-surface-enter wrapper below, so the control you just tapped stays put
+          while the surface under it arrives - only the content moves. */}
+      {(surface === 'setsHome' || surface === 'storageIndex') && (
+        <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
+          <SegTabs ariaLabel="Show all cards, sets, or storage" value={cardsMode} onChange={goMode}
+            options={[{ key: 'all', label: 'All' }, { key: 'sets', label: 'Sets' }, { key: 'storage', label: 'Storage' }]} />
+        </div>
+      )}
+      {/* THE shared page/section transition (tokens.css .cx-surface-enter). One wrapper, KEYED on
+          the surface identity, so React remounts it and the fade-rise replays on every swap the
+          user can make down here - the view chips above, the ALL/SETS/STORAGE segments, and the
+          three drills. cardsMode is in the key because `setsHome` covers both ALL and SETS.
+          Not a scroll container (the pillar's scroller is #cx-pillar-scroll, above this), and it
+          holds no transform once the 200ms is up - see the rules recorded on the class. */}
+      <div key={`${surface}:${cardsMode}`} className="cx-surface-enter">
       {surface === 'overview' && (
         <Overview onGoCards={() => go('cards')} onAddCards={goAdd} onGoDecks={onGoDecks} onGoLists={() => go('lists')} onPeek={peek}
           onOpenCodex={(id, name) => onOpen('card', id, name)} rev={rev} />
@@ -171,19 +193,6 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       {surface === 'setDrill' && (
         <Cards onOpen={onOpen} onPeek={peek} onOpenCodex={(id, name) => onOpen('card', id, name)}
           setDrill={setDrill} drillInfo={drillInfo} onBack={closeSet} />
-      )}
-      {/* ALL - SETS - STORAGE, in the owner's order: three lenses on the same owned cards - every
-          card flat, the sets the game defines, and the places you keep them in.
-
-          THE CONTROL LIVES OUTSIDE THE SURFACES IT SWITCHES. It used to sit inside the setsHome
-          block, which meant choosing Storage unmounted the very control you would use to leave it -
-          a one-way door, found by driving the build. It renders for both index surfaces and NOT for
-          the deeper layers (a set drill, an open place), which carry their own back. */}
-      {(surface === 'setsHome' || surface === 'storageIndex') && (
-        <div style={{ display: 'flex', justifyContent: 'center', margin: '2px 0 14px' }}>
-          <SegTabs ariaLabel="Show all cards, sets, or storage" value={cardsMode} onChange={goMode}
-            options={[{ key: 'all', label: 'All' }, { key: 'sets', label: 'Sets' }, { key: 'storage', label: 'Storage' }]} />
-        </div>
       )}
       {surface === 'setsHome' && (
         <>
@@ -207,6 +216,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
       {surface === 'storageDetail' && (
         <StorageDetail place={placeOpen} onBack={() => setPlaceOpen(null)} onChanged={onChanged} onPeek={peek} />
       )}
+      </div>
       {/* The sheet's open card is KEPT in state across a pillar unmount (a Codex hand-off
           from the scanner), so Back lands right back on this sheet - where the user left. */}
       <CollectionCardSheet cardId={sheetCard} set={sheetSet} foil={sheetFoil} onClose={() => { setSheetCard(null); setSheetSet(null); setSheetFoil(undefined); }} editable />
@@ -803,10 +813,17 @@ const setRank = (code) => (code in SET_RANK ? SET_RANK[code] : 5.5);
 // While cards are being multi-selected the docked search bar becomes a selection action bar. It
 // portals into the SAME dock slot as SearchPill (#cx-dock-search), so it swaps in place - no layout
 // shift, one keyboard-aware container.
-// The dock is PURELY actions now - Edit copies / New list / Add to list, three equal-width buttons plus
-// the cancel. The running selected count (and any hidden-by-filter count) lives on the header row where
-// the Select / Deselect-all pill is: context up top, actions at the thumb.
-function SelectionBar({ onAdd, onCreate, onAddToList, onCancel, disabled = false }) {
+// The dock is PURELY actions now - Edit copies / New list / Add to list / File in…, four equal-width
+// buttons plus the cancel. The running selected count (and any hidden-by-filter count) lives on the
+// header row where the Select / Deselect-all pill is: context up top, actions at the thumb.
+//
+// "File in…" is the SAME action, worded the same way, as the bulk File inside a place
+// (StorageSelectBar) - Q14's "select all, put in Beta binder", reached from the grid where the cards
+// actually are. It is on this bar rather than on one of the two grids because the bar IS the shared
+// one: the set drill and the ALL grid select at the same card+set grain over the same owned rows, so
+// an action correct on one is correct on the other, and a bar that changed shape between two
+// otherwise identical surfaces would be teaching a distinction that does not exist.
+function SelectionBar({ onAdd, onCreate, onAddToList, onFileIn, onCancel, disabled = false }) {
   const [slot, setSlot] = useState(() => (typeof document !== 'undefined' ? document.getElementById('cx-dock-search') : null));
   useEffect(() => { if (!slot) setSlot(document.getElementById('cx-dock-search')); });
   if (!slot) return null;
@@ -826,6 +843,7 @@ function SelectionBar({ onAdd, onCreate, onAddToList, onCancel, disabled = false
       <button onClick={fire(onAdd)} disabled={disabled} style={btn}>Edit copies</button>
       <button onClick={fire(onCreate)} disabled={disabled} style={btn}>New list</button>
       <button onClick={fire(onAddToList)} disabled={disabled} style={btn}>Add to list</button>
+      <button onClick={fire(onFileIn)} disabled={disabled} style={btn}>File in…</button>
     </div>,
     slot,
   );
@@ -911,6 +929,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
   const [qtyOpen, setQtyOpen] = useState(false);               // Add-copies stepper modal
   const [createOpen, setCreateOpen] = useState(false);         // Create-list (name + type) sheet
   const [addToListOpen, setAddToListOpen] = useState(false);   // Add-to-existing-list picker
+  const [fileOpen, setFileOpen] = useState(false);             // File-the-selection-into-a-place picker
   // The canonical, UNFILTERED roster for this set - loaded once per drill. The grid comes
   // from the filtered pool; the completion denominator and the "missing" export come from
   // here, so neither can be moved by a filter the user happens to have on.
@@ -1060,7 +1079,7 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
                   {section.cards.map((r) => (
                     <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={drillName}
-                      owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek} anchorLetter={drillAnchorOf.get(r.card.card_id + '|' + r.set)}
+                      owned={r.owned} foil={r.foil} filed={!!r.filed} onStep={stepSet} onPeek={onPeek} anchorLetter={drillAnchorOf.get(r.card.card_id + '|' + r.set)}
                       addStatus={addStatus.get(r.card.card_id + '|' + r.set)}
                       selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                   ))}
@@ -1079,7 +1098,8 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
           portal into the same #cx-dock-search slot, so it swaps in place). */}
       {selectMode ? (
         <SelectionBar disabled={!sel.count}
-          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)} onCancel={cancelSelect} />
+          onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)}
+          onFileIn={() => setFileOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder={`Search ${drillName}…`} ariaLabel="Search cards" />
       )}
@@ -1090,6 +1110,10 @@ function Cards({ onOpen, onPeek, onOpenCodex, setDrill, drillInfo, onBack }) {
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
       <AddToListSheet open={addToListOpen} count={selected.size} onClose={() => setAddToListOpen(false)}
         onPick={(id, name) => addToListFromSelection(id, name)} />
+      {/* Keep the selection when NOTHING moved - the user picked cards with no unfiled copies and the
+          next thing they want is to adjust the picks, not to start again. */}
+      <FileSelectionSheet open={fileOpen} selected={selected} onClose={() => setFileOpen(false)}
+        onFiled={(r) => { if (r.copies > 0) cancelSelect(); }} />
 
       {/* Filter FAB - the docked spot beside the search bar. Above it, the ADD tools
           (camera + text) search can't do. They are ALWAYS available now: adding is a place,
@@ -1135,6 +1159,7 @@ function AllCards({ onPeek, onOpenCodex }) {
   const [qtyOpen, setQtyOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [addToListOpen, setAddToListOpen] = useState(false);
+  const [fileOpen, setFileOpen] = useState(false);   // File-the-selection-into-a-place picker
   const [importOpen, setImportOpen] = useState(false);
   const { bulkEditCopies, createListFromSelection, addToListFromSelection } = useCollectionBulkActions({
     selected, cancelSelect, closeEdit: () => setQtyOpen(false), closeCreate: () => setCreateOpen(false),
@@ -1212,7 +1237,7 @@ function AllCards({ onPeek, onOpenCodex }) {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: section.label ? 0 : 12 }}>
                 {section.cards.map((r) => (
                   <BinderTile key={r.card.card_id + '|' + r.set} card={r.card} set={r.set} setLabel={SET_LABEL[r.set] || r.set}
-                    owned={r.owned} foil={r.foil} onStep={stepSet} onPeek={onPeek}
+                    owned={r.owned} foil={r.foil} filed={!!r.filed} onStep={stepSet} onPeek={onPeek}
                     addStatus={addStatus.get(r.card.card_id + '|' + r.set)} anchorLetter={anchorOf.get(r.card.card_id + '|' + r.set)}
                     selectMode={selectMode} checked={selected.has(r.card.card_id + '|' + r.set)} onToggle={toggleSel} />
                 ))}
@@ -1240,7 +1265,8 @@ function AllCards({ onPeek, onOpenCodex }) {
       )}
 
       {selectMode ? (
-        <SelectionBar disabled={!sel.count} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)} onAddToList={() => setAddToListOpen(true)} onCancel={cancelSelect} />
+        <SelectionBar disabled={!sel.count} onAdd={() => setQtyOpen(true)} onCreate={() => setCreateOpen(true)}
+          onAddToList={() => setAddToListOpen(true)} onFileIn={() => setFileOpen(true)} onCancel={cancelSelect} />
       ) : (
         <SearchPill value={q} onChange={setQ} onClear={() => setQ('')} placeholder="Search all cards…" ariaLabel="Search cards" />
       )}
@@ -1251,6 +1277,10 @@ function AllCards({ onPeek, onOpenCodex }) {
         onClose={() => setCreateOpen(false)} onSubmit={(nm, desc, kind) => createListFromSelection(nm, desc, kind)} />
       <AddToListSheet open={addToListOpen} count={selected.size} onClose={() => setAddToListOpen(false)}
         onPick={(id, name) => addToListFromSelection(id, name)} />
+      {/* Keep the selection when NOTHING moved - the user picked cards with no unfiled copies and the
+          next thing they want is to adjust the picks, not to start again. */}
+      <FileSelectionSheet open={fileOpen} selected={selected} onClose={() => setFileOpen(false)}
+        onFiled={(r) => { if (r.copies > 0) cancelSelect(); }} />
 
       {!selectMode && <Fab variant="deck" label="Filter cards" icon={<FabGlyph kind="filters" />} badge={activeCount} onClick={() => setFilterOpen(true)} />}
       {!selectMode && (

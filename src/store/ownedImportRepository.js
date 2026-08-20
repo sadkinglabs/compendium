@@ -32,7 +32,7 @@ import { canonicalPrinting } from './printings.js';
 import { printingFinishes } from './printingRows.js';
 import { uuid as newId, nowIso as newNow } from './ids.js';
 import { bulkWriteError, MAX_ITEM_QTY, MAX_BATCH_ITEMS } from './bulkWriteContract.js';
-import { planAllocationChanges, placeUnfiledByKeyStatements, assertEqualityStatements, StorageConflict } from './storageRepository.js';
+import { planAllocationChanges, placeUnfiledByKeyStatements, assertEqualityStatements } from './storageRepository.js';
 
 // The largest total the ledger can safely STORE. MAX_ITEM_QTY (999) is only an input/delta limit;
 // the ledger itself has no 999 cap (two 999 imports legitimately total 1998 - see the data model), so
@@ -304,9 +304,17 @@ export function createOwnedImportCommand({ exclusive, query, tx, notify, uuid = 
         if (conflicts.length) {
           // Same policy as bulk: an absolute import is one atomic command, so a selection it
           // cannot satisfy fails whole rather than filing part of someone's collection.
-          const e = new StorageConflict(conflicts[0], 'ownedImport');
-          e.detail = { items: conflicts };
-          e.message = `ownedImport: ${conflicts.length} items hold copies outside Unfiled`;
+          //
+          // Raised as a BulkWriteError rather than a StorageConflict because that is what leaves
+          // this function - the catch below classified the StorageConflict and dropped its detail
+          // on the floor, so every refusal reached the user as the generic "Couldn't update those
+          // cards", indistinguishable from a disk failure. It is prewrite/none by construction:
+          // planning happens before a single statement is dispatched, so nothing was written and
+          // the selection is safe to keep. The conflicts ride along so the surface can say WHY,
+          // the way the stepper's wall already does.
+          const e = bulkWriteError('prewrite', 'none',
+            `ownedImport: ${conflicts.length} item${conflicts.length === 1 ? '' : 's'} hold copies outside Unfiled`);
+          e.storageConflict = { items: conflicts };
           throw e;
         }
         ranTransaction = true;

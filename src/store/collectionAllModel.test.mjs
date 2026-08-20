@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   poolArgs, rowsForScope, renderSignature, arrangeSections, visibleSections, resolveScrollRoot, effectiveCount,
+  filedKeysOf, withFiled,
 } from './collectionAllModel.js';
 
 const cardOf = (r) => r.card;
@@ -42,6 +43,41 @@ test('rowsForScope: ALL flattens every group, including the recovered Uncategori
   const rows = rowsForScope(groups, { kind: 'all' });
   assert.equal(rows.length, 4);
   assert.deepEqual(rows.map((r) => r.card.card_id), ['a', 'b', 'c', 'd']);
+});
+
+/* ---------------- the filed mark on a tile ---------------- */
+
+test('filedKeysOf: either finish counts, and a drained entry is not filed', () => {
+  const keys = filedKeysOf(new Map([
+    ['a|001', { owned: 2, foil: 0 }],
+    ['b|002', { owned: 0, foil: 1 }],      // foil-only is filed
+    ['c|003', { owned: 0, foil: 0 }],      // an allocation that has been emptied
+  ]));
+  assert.deepEqual([...keys].sort(), ['a|001', 'b|002']);
+  assert.equal(filedKeysOf(new Map()).size, 0);
+  assert.equal(filedKeysOf(null).size, 0, 'a read that has not landed yet marks nothing');
+});
+
+test('withFiled: stamps only the named rows, and leaves the others by reference', () => {
+  const rows = [row(AIR_A, '001'), row(FIRE_B, '002')];
+  const out = withFiled(rows, new Set(['a|001']));
+  assert.equal(out[0].filed, true);
+  assert.equal(out[0].card, AIR_A, 'the card is carried through, not rebuilt');
+  assert.equal(out[1].filed, undefined);
+  assert.equal(out[1], rows[1], 'an unfiled row keeps its identity so the tile memo short-circuits');
+  assert.equal(rows[0].filed, undefined, 'the input row is copied, never mutated');
+});
+
+test('withFiled: an empty key set is the identity, so the common case costs nothing', () => {
+  const rows = [row(AIR_A, '001')];
+  assert.equal(withFiled(rows, new Set()), rows);
+  assert.equal(withFiled(rows, null), rows);
+});
+
+test('withFiled: the key is card AND set - the same card in another set is not filed', () => {
+  const out = withFiled([row(AIR_A, '001'), row(AIR_A, '002')], new Set(['a|002']));
+  assert.equal(out[0].filed, undefined);
+  assert.equal(out[1].filed, true);
 });
 
 test('renderSignature: stable across fresh-but-equal inputs, ignores derived row objects', () => {

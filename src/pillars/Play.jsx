@@ -111,7 +111,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
   };
 
   return (
-    <div className="cx-match-history" style={{ padding: '14px 20px 26px', animation: 'cxfade .2s ease' }}>
+    <div className="cx-match-history" style={{ padding: '14px 20px 26px' }}>
       {ongoing && (
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 18 }}>
           <button className="cx-return-btn" onClick={onResume}>
@@ -120,6 +120,11 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
           </button>
         </div>
       )}
+      {/* The shared page/section transition (tokens.css .cx-surface-enter), KEYED on the
+          opponent drill - tapping an opponent bar swaps the whole record for that one
+          head-to-head, which is a surface swap and now arrives like every other. The
+          Return-to-Match banner above is persistent chrome and stays outside it. */}
+      <div key={oppFilter || 'all'} className="cx-surface-enter">
       {matches.length === 0 ? (
         <BlankState hue="143,211,168" minHeight="46vh" title="No Matches Yet"
           body={<>Start a match to track life<br />and record the result.</>} />
@@ -199,6 +204,7 @@ export default function Play({ onStart, ongoing, onResume, onOpenDeck, rev, onCh
           {matchSheet}
         </>
       )}
+      </div>
 
       {/* The + is the single entry point: start a live match (New = tracked, with
           avatars & deck; Quick = counter only), or add to history (record by hand

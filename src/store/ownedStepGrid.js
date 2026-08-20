@@ -13,6 +13,10 @@
 //   write(key, delta):   Promise          the durable, profile-bound write for one tap
 //   notify(reason):      void             surface a failure to the user
 //   isAlive():           boolean          false after unmount, to drop a late reconcile
+//   holdDelta(key, delta, displayed): boolean - the controller's optimism gate, per row. A grid
+//       predicts per ROW because the storage wall is per owned row, so the key rides in front of
+//       the controller's own arguments exactly as it does for read and write. Defaults to
+//       never-hold, so a caller that does not pass one is unchanged. See ownedStepController.
 //   onChange(key, status): void          re-render hook, per row. `status` is
 //       { pending, ok, confirmation, error, displayed }. `ok` is the controller's
 //       reconciled-success counter - it moves ONLY after a successful authoritative read with
@@ -21,7 +25,7 @@
 //       Never infer success from `pending` going false: that is emitted before reconcile runs.
 import { createOwnedStepController } from './ownedStepController.js';
 
-export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = () => true, onChange = () => {}, schedule }) {
+export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = () => true, onChange = () => {}, schedule, holdDelta = () => false }) {
   const ctls = new Map();   // rowKey -> controller
 
   const controllerFor = (key, seedQty) => {
@@ -30,6 +34,7 @@ export function createOwnedStepGrid({ read, write, notify = () => {}, isAlive = 
       c = createOwnedStepController({
         read: () => read(key),
         write: (delta) => write(key, delta),
+        holdDelta: (delta, shown) => holdDelta(key, delta, shown),
         notify,
         isAlive,
         ...(schedule ? { schedule } : {}),

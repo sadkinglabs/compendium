@@ -444,6 +444,36 @@ input, textarea { -webkit-user-select: text; user-select: text; }
 @keyframes cxPillarR { from { opacity: 0; } to { opacity: 1; } }
 @keyframes cxPillarL { from { opacity: 0; } to { opacity: 1; } }
 
+/* THE page/section transition - one motion for every surface swap BELOW the pillar.
+   A pillar's view chips (Collection Overview / My Collection / Lists), a segmented
+   control (All / Sets / Storage, Codex List / Card, the deck editor's List / Card),
+   and the in-place drills that replace the body (a set, a list, a place, a Codex
+   entry) all use this and nothing else. Fade plus a 6px rise, 200ms, house decelerate
+   - opacity and transform only, so the compositor carries it without a repaint.
+   Before this, each of those surfaces carried its own inline `cxfade .2s` (or none at
+   all), which is why a chip swap and a segment swap did not feel like one app.
+
+   RULES THIS ENCODES - all device-earned, do not "simplify" them away:
+   - The class belongs on a plain CONTENT wrapper that is KEYED on the surface
+     identity. React remounts the wrapper, so the animation replays on every switch
+     with no animation library, no timers and no exit state to unwind.
+   - NEVER on a scroll container. A transform animation plus `overflow` on one element
+     is the WebView blanking bug documented in GothicSheet.jsx, and it is also why this
+     is not used for the tab pages INSIDE a sheet - the sheet chassis owns that motion.
+   - No `animation-fill-mode`: the wrapper must hold NO transform once the animation
+     ends, because a transformed ancestor becomes the containing block for every
+     position:fixed descendant. The transform IS live for those 200ms, so fixed
+     children must portal out of the subtree - Fab (#cx-dock-fab), SearchPill and the
+     Collection SelectionBar (#cx-dock-search), the sheets and AlphabetRail (.cx-app)
+     all do. Anything new that is position:fixed inside a wired surface must too.
+   - Reduced motion lands on the end state in one frame (the app-wide neutraliser above
+     already shortens it; these two rules delete it outright, which is the honest read
+     of the preference for a purely decorative entrance). */
+.cx-surface-enter { animation: cxSurfaceEnter .2s cubic-bezier(.2,.9,.3,1); }
+@keyframes cxSurfaceEnter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .cx-surface-enter { animation: none; } }
+body.reduce-motion .cx-surface-enter { animation: none; }
+
 /* Codex Cards: List / Card (art grid) toggle - parity with the deckbuilder. */
 /* Cards List/Card toggle - gothic segmented pill (matches the deck editor). */
 /* View toggle retired - now the shared SegTabs component (ui.jsx). */
@@ -582,6 +612,13 @@ input, textarea { -webkit-user-select: text; user-select: text; }
    measured - 50px was ~half, which drifted the scrollbar on first scroll. */
 .cx-az-list > .cx-row { content-visibility: auto; contain-intrinsic-size: auto 88px; }
 
+/* Opacity-only crossfade, kept for the two jobs a page transition must not take:
+   OVERLAYS arriving over the app (the dialog scrim, .cx-picker-modal, .vc-modal-overlay,
+   the boot splash, the counter's coach line) and an IN-PLACE image swap (CodexDetail's
+   printing crossfade). It is deliberately NOT a surface transition any more - every
+   page/section swap moved to .cx-surface-enter above, so there is one motion for that
+   job rather than an inline `cxfade .2s` per pillar. Do not reach for this for a view,
+   segment or drill swap. */
 @keyframes cxfade { from { opacity: 0; } to { opacity: 1; } }
 
 /* Gold glimmer for display text - a highlight sweeping across the letterforms, matching the

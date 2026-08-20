@@ -123,11 +123,13 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
   };
 
   return (
-    <div style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
+    <div style={{ padding: '6px 20px 26px' }}>
       {marginalia ? (
-        <>
+        // The shared page/section transition - the scope bar swapping Rules/Cards/Marginalia
+        // is a surface swap like any other, so it arrives the same way the rest of the app does.
+        <div className="cx-surface-enter">
           <MarginaliaView onOpen={onOpen} rev={rev} />
-        </>
+        </div>
       ) : (
       <>
 
@@ -175,6 +177,11 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
         </div>
       )}
 
+      {/* The shared page/section transition (tokens.css .cx-surface-enter), KEYED on the two
+          things that swap this surface: the scope (Rules/Cards) and the List/Card segment.
+          The control itself is above the wrapper so it does not ride the motion, and the
+          filter sheets + FAB are outside it because they portal and must not remount here. */}
+      <div key={`${sc}:${cardView}`} className="cx-surface-enter">
       {entries == null ? (
         <Skeleton />
       ) : entries.length === 0 ? (
@@ -184,6 +191,7 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
       ) : (
         <AzList entries={entries} onOpen={onOpen} />
       )}
+      </div>
 
       {/* Codex FAB - opens the scope's filter sheet; badge = active filter count */}
       <Fab variant="deck" icon={<FabGlyph kind="filters" />} label="Filters" badge={activeCount} onClick={() => setFilterSheet(true)} />

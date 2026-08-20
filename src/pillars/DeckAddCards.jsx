@@ -132,7 +132,12 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
       </div>
 
       {/* No cap: the whole pool renders. content-visibility on the rows/tiles keeps
-          off-screen ones free, so the full library stays smooth without windowing. */}
+          off-screen ones free, so the full library stays smooth without windowing.
+
+          The shared page/section transition (tokens.css .cx-surface-enter), KEYED on the
+          segment so List <-> Card arrives exactly like every other surface swap in the app.
+          The screen's own entrance (cxDeckRise on the root) is the drill push and stays. */}
+      <div key={view} className="cx-surface-enter">
       {view === 'grid' ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 16 }}>
           {pool.map((c) => (
@@ -148,6 +153,7 @@ export default function DeckAddCards({ deckId, q, setQ, filterOpen, setFilterOpe
           ))}
         </div>
       )}
+      </div>
 
       <CardSheet cardId={sheetCardId} deckId={deckId} onClose={() => setSheetCardId(null)} onChange={afterChange}
         onChangeAvatar={() => setAvatarOpen(true)} />

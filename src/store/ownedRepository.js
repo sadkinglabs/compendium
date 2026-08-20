@@ -22,7 +22,7 @@ import {
 import { activeProfileId } from './profileRepository.js';
 import {
   clearAllocationsStatements, reconcileOwnedStatements, placeUnfiledByKeyStatements,
-  assertEqualityStatements,
+  assertEqualityStatements, assertNoFiledCopies,
 } from './storageRepository.js';
 import { uuid, nowIso } from './ids.js';
 import { compareRequirements } from './compareEngine.js';
@@ -111,7 +111,13 @@ async function writeQty(cardId, { owned, wanted }, pid = activeProfileId()) {
   const o = Math.max(0, owned != null ? owned : (cur?.qty_owned || 0));
   const w = Math.max(0, wanted != null ? wanted : (cur?.qty_wanted || 0));
   if (o === 0 && w === 0) {
-    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    // THE ROW GOES, so its places go with it - and that is only allowed while nothing is filed
+    // (owner ruling 2026-08-19; see storageRepository.totalRemovalConflict). This is the card-level
+    // stepper's last tap, the single most likely way to lose a filing by accident.
+    if (cur) {
+      await assertNoFiledCopies(query, cur.id, 'setOwned');
+      await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    }
   } else if (cur) {
     // The places move in the SAME transaction as the count. Separately, a crash between them
     // leaves a durable ledger that contradicts itself, and the equality is not a nicety - it is
@@ -210,7 +216,15 @@ async function writeQtyAt(cardId, slug, wanted, pid) {
   const w = Math.max(0, wanted | 0);
   const o = cur?.qty_owned || 0;
   if (w === 0 && o === 0) {
-    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    // `o` is the row's CURRENT ownership, so this branch only ever deletes a row that already holds
+    // no copies - and by the defining equality a row with no copies has no places. The guard is
+    // therefore expected never to fire here; it is present because that safety is an argument about
+    // another function's arithmetic rather than a property of this line, and a want writer quietly
+    // discarding a filing is exactly the failure nobody would look for.
+    if (cur) {
+      await assertNoFiledCopies(query, cur.id, 'setWanted');
+      await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    }
   } else if (cur) {
     // Rewrites the key too, so editing a legacy row converts it rather than leaving a twin.
     await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, w, now, cur.id]);
@@ -281,7 +295,11 @@ export async function setFoil(cardId, qty, pid = activeProfileId()) {
   );
   const cur = found.find((r) => r.variant_slug === UNCATEGORISED_FOIL) || found[0];
   if (q === 0) {
-    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    // The foil stepper's last tap. Same wall as every other decrease into filed copies.
+    if (cur) {
+      await assertNoFiledCopies(query, cur.id, 'setFoil');
+      await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    }
   } else if (cur) {
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action: 'setFoil', now });
     await tx([['UPDATE owned_cards SET variant_slug=?, qty_owned=?, updated_at=? WHERE id=?;', [UNCATEGORISED_FOIL, q, now, cur.id]], ...places,
@@ -448,8 +466,14 @@ async function writeSetRow(cardId, set, foil, qty, pid = activeProfileId()) {
   const q = Math.max(0, qty | 0);
   const cur = (await query('SELECT id, qty_owned FROM owned_cards WHERE profile_id=? AND card_id=? AND variant_slug=?;', [pid, cardId, slug]))[0];
   const action = foil ? 'setFoilInSet' : 'setOwnedInSet';
-  if (q === 0) { if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]); }
-  else if (cur) {
+  // The per-set stepper's last tap - My Collection's grid, the card sheet's set rows, the Refine
+  // grid. The busiest zero path in the app, and the one a Storage user is most likely to file from.
+  if (q === 0) {
+    if (cur) {
+      await assertNoFiledCopies(query, cur.id, action);
+      await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    }
+  } else if (cur) {
     const places = await reconcileOwnedStatements({ query, profileId: pid, ownedCardId: cur.id, before: cur.qty_owned || 0, after: q, action, now });
     await tx([['UPDATE owned_cards SET qty_owned=?, updated_at=? WHERE id=?;', [q, now, cur.id]], ...places,
       ...assertEqualityStatements(pid, [{ cardId, variantSlug: slug }], action)]);
@@ -562,7 +586,13 @@ async function writeWantedRow(cardId, set, foil, qty, pid) {
   const cur = await resolveItemRow(cardId, set, foil, pid);
   const o = cur?.qty_owned || 0;
   if (qty === 0 && o === 0) {
-    if (cur) await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    // Same shape as writeQtyAt: `o` is the CURRENT ownership, so this deletes only a row that
+    // already holds no copies and therefore no places. Guarded for the same reason - the property
+    // is true by arithmetic elsewhere, not by anything visible here.
+    if (cur) {
+      await assertNoFiledCopies(query, cur.id, 'setWantedForItem');
+      await tx([...clearAllocationsStatements(cur.id), ['DELETE FROM owned_cards WHERE id=?;', [cur.id]]]);
+    }
   } else if (cur) {
     await run('UPDATE owned_cards SET variant_slug=?, qty_wanted=?, updated_at=? WHERE id=?;', [slug, qty, now, cur.id]);
   } else {

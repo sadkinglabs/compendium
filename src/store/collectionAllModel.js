@@ -16,6 +16,36 @@ export function rowsForScope(groups, scope) {
   return groups.flatMap((g) => g.rows);
 }
 
+/**
+ * The tiles that should wear the filed mark, as a Set of "cardId|set" keys, from `filedBySet`'s map.
+ *
+ * BOTH finishes count and the amount does not: the mark says "some of these are in a place", so a
+ * card with one foil in a binder is filed exactly as much as one with four standards in a box. An
+ * entry that sums to zero is NOT filed - `filedBySet` groups over allocations, and an allocation can
+ * legitimately sit at zero after its copies move out.
+ */
+export function filedKeysOf(filed) {
+  const keys = new Set();
+  for (const [key, v] of (filed || new Map())) {
+    if (((v?.owned || 0) + (v?.foil || 0)) > 0) keys.add(key);
+  }
+  return keys;
+}
+
+/**
+ * Stamp `filed` onto the rows the key set names, so a tile re-renders on the ownership broadcast
+ * rather than reading a ref nothing subscribes to.
+ *
+ * Rows are COPIED rather than mutated because they are memoised derived objects shared with the
+ * arrangement and the A-Z rail; mutating one in place would change a value those have already read.
+ * An unfiled row is returned UNCHANGED (same reference) so the common case costs no allocation and
+ * BinderTile's memo compare still short-circuits on it.
+ */
+export function withFiled(rows, filedKeys) {
+  if (!filedKeys || filedKeys.size === 0) return rows;
+  return rows.map((r) => (filedKeys.has(`${r.card?.card_id}|${r.set}`) ? { ...r, filed: true } : r));
+}
+
 /** A STRUCTURED render signature (JSON, so field order/escaping can't collide). It captures ONLY the
  *  things that reshape the result - scope + filters + sort + group - never the derived row objects,
  *  so a quick-add / ledger broadcast (fresh rows, same signature) must not reset progressive render. */

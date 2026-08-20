@@ -19,6 +19,8 @@ import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
 import CollectionPicker from '../components/CollectionPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
+import { cardStorageSummary } from '../store/storageDirectory.js';
+import { UNFILED_NAME } from '../store/storageVocabulary.js';
 
 const jp = (s, d) => { try { return JSON.parse(s); } catch { return d; } };
 // Never render an em dash, even from reference data - swap for a spaced hyphen.
@@ -65,6 +67,15 @@ const CollectionSummary = ({ qty }) => {
   return <>{parts.flatMap((p, i) => (i === 0 ? [p] : [dot('d' + i), p]))}</>;
 };
 
+const StorageSummary = ({ places = [] }) => {
+  if (!places.length) return <span style={{ font: "400 14.5px/1.4 var(--f-read)", color: '#5c554b' }}>No owned copies</span>;
+  return (
+    <span style={{ font: "400 13.5px/1.4 var(--f-read)", color: '#8a8175', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {places.map((p) => `${p.name || UNFILED_NAME} ${p.qty}`).join(' · ')}
+    </span>
+  );
+};
+
 export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOpenDeck, onChanged }) {
   const [data, setData] = useState(null);
   const [composer, setComposer] = useState(false);
@@ -78,11 +89,11 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
     if (kind === 'card') {
       const c = await getCard(id);
       if (!c) return setData({ missing: true });
-      const [doc, appearsIn, faqs, notes, links, inDecks, qty] = await Promise.all([
-        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), linksFor(id), decksWithCard(id), qtyFor(id),
+      const [doc, appearsIn, faqs, notes, links, inDecks, qty, storage] = await Promise.all([
+        getDoc('card', id), relatedFor('card', id, c.name), faqsForCard(id), notesFor(id), linksFor(id), decksWithCard(id), qtyFor(id), cardStorageSummary(id),
       ]);
       const faqDocs = await getFaqs(faqs.map((f) => f.faq_id));
-      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, links, inDecks, qty });
+      setData({ kind, card: c, doc, appearsIn, faqs, faqDocs, notes, links, inDecks, qty, storage });
     } else {
       const r = await getRule(id);
       if (!r) return setData({ missing: true });
@@ -164,7 +175,10 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
   };
 
   return (
-    <div style={{ padding: '18px 22px 30px', animation: 'cxfade .2s ease' }}>
+    // The shared page/section transition (tokens.css .cx-surface-enter), KEYED on the entry
+    // so following a link from one Codex entry to the next replays it - the body swaps under
+    // a header that stays put, which is the same surface-swap this app does everywhere else.
+    <div key={`${k}:${id}`} className="cx-surface-enter" style={{ padding: '18px 22px 30px' }}>
       {k === 'card' ? <CardBody key={data.card.card_id} card={data.card} doc={data.doc} faqs={data.faqs} faqDocs={data.faqDocs} onOpenLink={openLink} />
                     : <RuleBody doc={data.doc} subs={data.subs} subDocs={data.subDocs} onOpenLink={openLink} />}
 
@@ -246,6 +260,9 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
           <SectionLabel label="IN YOUR COMPENDIUM" />
           <LedgerRow label="Collection" onClick={() => setSheetCard(data.card.card_id)}>
             <CollectionSummary qty={data.qty} />
+          </LedgerRow>
+          <LedgerRow label="Storage">
+            <StorageSummary places={data.storage} />
           </LedgerRow>
           {data.inDecks.length > 0 ? data.inDecks.map((d) => (
             <LedgerRow key={d.id + d.zone} label={d.name} onClick={() => onOpenDeck?.(d.id, d.name)}>

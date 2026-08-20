@@ -925,8 +925,9 @@ function ProfileSheet({ open, active, rev, onClose, onSwitch, onChanged, onSetti
     const s = stats[p.id];
     const owns = s
       ? `${s.decks} deck${s.decks === 1 ? '' : 's'}, ${s.cards} collected card${s.cards === 1 ? '' : 's'}, `
-        + `${s.matches} match${s.matches === 1 ? '' : 'es'}, and every list, note and mark of marginalia in it`
-      : 'its decks, its collection, its matches, and its marginalia';
+        + `${s.places} storage place${s.places === 1 ? '' : 's'}, ${s.matches} match${s.matches === 1 ? '' : 'es'}, `
+        + 'and every list, note and mark of marginalia in it'
+      : 'its decks, its collection and storage places, its matches, and its marginalia';
     const body = `This removes the profile and everything it owns - ${owns}. `
       + (heir ? `“${heir.name}” becomes the default. ` : '')
       + 'This can’t be undone.';

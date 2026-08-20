@@ -62,7 +62,12 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, 
     </div>
   );
   return (
-    <div {...swipe} style={{ padding: '6px 20px 26px', animation: 'cxfade .2s ease' }}>
+    // No entrance animation on this root: the pillar arrival is already carried by
+    // .cx-pillar-slide (App.jsx, keyed on tab) and the pane switch by .cx-swipe-pane
+    // below - a third `cxfade` here was stacking on both. The Overview/Dashboard pane
+    // deliberately does NOT take the shared .cx-surface-enter: it is swipe-paged, and
+    // its transform was removed by owner ruling (see .cx-swipe-pane in tokens.css).
+    <div {...swipe} style={{ padding: '6px 20px 26px' }}>
       {pillSlot ? createPortal(pillRow, pillSlot) : pillRow}
       <div key={tab} className="cx-swipe-pane">
         {tab === 'overview'

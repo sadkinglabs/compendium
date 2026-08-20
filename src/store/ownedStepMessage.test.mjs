@@ -29,7 +29,14 @@ test('a REFUSAL says the copies are filed, not that saving failed', () => {
   const m = stepFailureMessage('save-failed', conflict([{ container_id: 'b1', qty: 3 }]));
   assert.doesNotMatch(m.text, /Couldn't save/, 'nothing malfunctioned, so do not say it did');
   assert.match(m.text, /3 copies are filed away/);
-  assert.match(m.text, /remove them where they are stored/, 'it must say what to do about it');
+  assert.match(m.text, /return them to Unfiled to lower this/, 'it must say what to do about it');
+});
+
+test('a resolved place phrase names WHERE the copies are filed (the wall no longer just says away)', () => {
+  const m = stepFailureMessage('save-failed', conflict([{ container_id: 'b1', qty: 2 }, { container_id: 'b2', qty: 1 }]), 'Beta binder (2), Bulk box (1)');
+  assert.match(m.text, /3 copies are filed in Beta binder \(2\), Bulk box \(1\)/, 'names the places');
+  assert.match(m.text, /return them to Unfiled to lower this/);
+  assert.equal(m.tone, 'danger');
 });
 
 test('one filed copy reads as one copy', () => {

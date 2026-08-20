@@ -10,10 +10,11 @@ import { qtyFor, setWanted, setFoil, stepOwnedBucket, qtyForInSet, setOwnedInSet
 import { enqueueWrite } from '../store/collectionWrites.js';
 import { createOwnedStepController } from '../store/ownedStepController.js';
 import { activeProfileId } from '../store/profileRepository.js';
+import { predictGlobalRemovalRefusal } from '../store/storageRepository.js';
 import { stepBtn } from './ownedUi.js';
 import { haptic } from '../native.js';
 import { toast } from '../feedback.js';
-import { stepFailureMessage } from '../store/ownedStepMessage.js';
+import { showStepFailure } from './stepFailureToast.js';
 
 // The optimistic ledger for one card's owned/foil/wanted counts: reads qtyFor,
 // writes setOwned/setFoil/setWanted (absolute + serialized), live-refreshes via
@@ -21,11 +22,24 @@ import { stepFailureMessage } from '../store/ownedStepMessage.js';
 // render. Returns { qty, step }: qty is {owned, foil, wanted} (null until first
 // read; steppers should stay inert until then), step(field, delta) mutates -
 // field is 'owned' (regular copies), 'foil', or 'wanted'.
-export function useOwnedLedger(cardId, set = null) {
+//
+// `filed` is OPTIONAL and presentation-only: { owned?, foil? } - how many copies of that finish
+// live in a named place rather than Unfiled. Given it, a decrease the storage wall is going to
+// refuse does not paint a provisional count, so the wall stops looking like a bug that undoes the
+// tap (1 -> 0 -> toast -> 1). The write is enqueued regardless and the store still decides; a
+// finish with no number here simply predicts nothing and behaves exactly as before. Standard and
+// foil are SEPARATE owned rows with separate filed totals, hence a field per finish rather than one
+// number - and the wishlist has no storage at all, so it is never held.
+export function useOwnedLedger(cardId, set = null, filed = null) {
   const [loaded, setLoaded] = useState(false);      // steppers stay inert until the real count is read
   const [, rerender] = useReducer((n) => n + 1, 0);
   const aliveRef = useRef(true);
   const ctlsRef = useRef(null);
+  // Read at TAP time, never captured: the controllers are built once per card/set, while the filed
+  // totals refresh on every collection broadcast. A ref is what keeps the prediction current
+  // without rebuilding a controller and discarding its in-flight chain.
+  const filedRef = useRef(filed);
+  filedRef.current = filed;
 
   // Scoped to a PRINTING when `set` is given: owned/foil are that (card, set)'s -
   // so Alpha and Beta are edited independently. Wishlist stays card-level (the
@@ -67,10 +81,19 @@ export function useOwnedLedger(cardId, set = null) {
     const mk = (field) => createOwnedStepController({
       read: async () => (await readAll())[field] || 0,
       write: (delta) => writeField(field, delta),
+      // GATE THE OPTIMISM, NEVER THE WRITE. The rule is the store's own
+      // (predictGlobalRemovalRefusal, tested against the planners that enforce it); all this does
+      // is decide whether to show a provisional number. Unknown filing predicts nothing, so a
+      // surface that never passes `filed` - and the wishlist, which has none - is unchanged.
+      holdDelta: (delta, shown) => {
+        if (delta >= 0) return false;
+        const f = filedRef.current?.[field];
+        return typeof f === 'number' && predictGlobalRemovalRefusal({ target: shown + delta, filed: f });
+      },
       // A refusal is not a malfunction: stepFailureMessage tells a storage conflict apart from a
       // failed write, because reporting the wall as a bug teaches distrust of a wall that is
       // protecting the user's filing.
-      notify: (reason, cause) => { const m = stepFailureMessage(reason, cause); toast(m.text, { tone: m.tone }); },
+      notify: (reason, cause) => { void showStepFailure(reason, cause); },
       isAlive: () => aliveRef.current,
       onChange: () => rerender(),
     });

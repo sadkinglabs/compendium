@@ -40,10 +40,14 @@ export function artForSet(card, set) {
   return img ? { ...card, image_slug: img } : card;
 }
 
-const setPillStyle = {
+// The quiet gold set capsule. Exported as SET_PILL because it is the app's ONE set-pill recipe -
+// the list rows in Collection.jsx spell the identical values as `listSetPill`, and Storage's place
+// rows now consume this constant rather than growing a third copy of it.
+export const SET_PILL = {
   display: 'inline-block', font: "600 9.5px/1 var(--f-display)", letterSpacing: '.1em', textTransform: 'uppercase',
   color: 'var(--gold-leaf)', padding: '4px 9px', borderRadius: 999, border: '1px solid var(--hair-16)', background: 'rgba(10,9,7,.5)',
 };
+const setPillStyle = SET_PILL;
 
 // A flat frosted-glass round button (steppers + the missing-card quick add): a
 // 31px rose-glass circle inside a >=44px hit area, with a pressed/hover lift.
@@ -145,6 +149,31 @@ export function PlaysetSeal({ size = 16 }) {
   );
 }
 
+// A small gold archive box - the FILED mark, meaning this collector item (card + set) has copies in
+// a named place, either finish, any amount. Deliberately the geometric sibling of the jade playset
+// diamond: same 24 viewBox, same minimal geometry, same wash-plus-hairline treatment, so the two
+// read as one family of seals and never as two unrelated icons. Gold, because filing is a
+// collection fact rather than a completion one, and the jade is spoken for.
+//
+// Three elements, no more: a LID that overhangs the BODY on both sides, and a label SLOT on the
+// body front. The overhang is the whole idea - a lid flush with the body is a crate, and anything
+// arcing above the top edge is a briefcase handle. The lid's bottom edge and the body's top edge
+// are the same line (y=9.5) so the two strokes double into a lip rather than leaving a float gap,
+// which at 16px is the difference between a filing box and two stacked bars.
+export function FiledSeal({ size = 16 }) {
+  const gold = 'var(--gold-leaf, #cba75f)';
+  const wash = 'rgba(203,167,95,.16)';
+  return (
+    <span title="Filed in storage" aria-label="Filed in storage" style={{ display: 'inline-flex', flex: 'none' }}>
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+        <rect x="3" y="4.5" width="18" height="5" rx="1" fill={wash} stroke={gold} strokeWidth="1.6" strokeLinejoin="round" />
+        <rect x="5" y="9.5" width="14" height="10.5" rx="1.5" fill={wash} stroke={gold} strokeWidth="1.6" strokeLinejoin="round" />
+        <path d="M9.5 14 H14.5" fill="none" stroke={gold} strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 // Playset tracking for the rail: pips (one per legal copy) while collecting, the
 // jade seal once complete. Nothing for a card you don't own / with no limit.
 export function PlaysetProgress({ limit, total, complete }) {
@@ -233,7 +262,7 @@ const chipDark = {
   padding: '3px 7px', borderRadius: 8, background: 'rgba(8,6,4,.82)', border: '1px solid rgba(203,167,95,.3)',
 };
 
-export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, onStep, onPeek, addStatus, selectMode = false, checked = false, onToggle, anchorLetter }) {
+export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, owned = 0, foil = 0, wanted = 0, filed = false, onStep, onPeek, addStatus, selectMode = false, checked = false, onToggle, anchorLetter }) {
   const [glimmer, setGlimmer] = useState(0);   // bumped by a CONFIRMED quick-add; keys the gilding sweep
   const total = owned + foil;
   const artCard = artForSet(card, set);
@@ -292,6 +321,16 @@ export const BinderTile = React.memo(function BinderTile({ card, set, setLabel, 
       {complete && !selectMode && (
         <span title="Playset collected" style={{ position: 'absolute', top: 6, right: 6, width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(10,20,16,.82)' }}>
           <PlaysetSeal size={18} />
+        </span>
+      )}
+      {/* Filed mark: the gold deck box on a warm-dark disc (the playset disc is jade-dark), in the
+          SECOND corner slot. Deliberately fixed at the second slot whether or not the playset seal
+          is present - a badge that hops up into the first slot the moment a playset completes would
+          make an unrelated event look like this one moved. Hidden in select mode with the playset
+          seal, because that corner becomes the checkbox. */}
+      {filed && !missing && !selectMode && (
+        <span title="Filed in storage" style={{ position: 'absolute', top: 36, right: 6, width: 26, height: 26, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(20,15,8,.82)' }}>
+          <FiledSeal size={18} />
         </span>
       )}
       {/* Selection tick (select mode): the top-right slot becomes a checkbox. */}

@@ -109,6 +109,52 @@ export async function toggleStar(id) {
   const d = (await query('SELECT starred FROM decks WHERE id=? AND profile_id=?;', [id, activeProfileId()]))[0];
   await touch(id, 'starred=?', [d?.starred ? 0 : 1]);
 }
+/**
+ * Write the Library's manual order (long-press and drag - DESIGN_SYSTEM §Ordering, owner ruling
+ * 2026-08-20). `lib_order` has existed since the schema was written but until now nothing ever set
+ * it except insert-at-end, so every library was in creation order and could not be arranged.
+ *
+ * THE STARRED CLAMP, and why it is enforced HERE and not only in the gesture. `listDecks` orders by
+ * `starred DESC, lib_order ASC, name ASC`, so a favourite outranks lib_order no matter what number
+ * it carries. An arrangement that puts a plain deck above a favourite is therefore an order the
+ * query CANNOT reproduce: it would be written, read back rearranged, and the drag would look like
+ * it silently failed. The UI clamps each drag to the run of decks sharing its starred value; this
+ * refuses the arrangement outright if that clamp is ever missing or wrong, because a UI guard alone
+ * is not a data guarantee.
+ *
+ * REFUSES RATHER THAN PARTIALLY APPLIES, like `reorderContainers`: `orderedIds` must be exactly the
+ * profile's decks - same members, no duplicates, nothing missing. A filtered list (the Library has a
+ * search field) would otherwise renumber the matches and silently demote everything the query hid.
+ *
+ * NO BROADCAST, deliberately: nothing in this repository publishes deck changes and the Decks pillar
+ * refreshes its own list after every write it makes. Inventing a subscription for one write would be
+ * a new pattern with one consumer - the caller re-reads, as it does after rename, star and delete.
+ */
+export async function reorderDecks(orderedIds, pid = activeProfileId()) {
+  const ids = [...(orderedIds || [])];
+  const decks = await query('SELECT id, starred FROM decks WHERE profile_id=?;', [pid]);
+  const starredOf = new Map(decks.map((d) => [d.id, d.starred ? 1 : 0]));
+  const unique = new Set(ids);
+  if (ids.length !== decks.length || unique.size !== ids.length || ids.some((id) => !starredOf.has(id))) {
+    throw Object.assign(
+      new Error('That ordering does not match your library any more - reopen the Library and try again.'),
+      { name: 'InvalidDeckOrder' },
+    );
+  }
+  // Favourites first, and contiguous. Checking the sequence rather than counting groups also
+  // catches a favourite stranded in the middle of the plain decks.
+  let sawPlain = false;
+  for (const id of ids) {
+    if (starredOf.get(id)) { if (sawPlain) throw Object.assign(new Error('Favourite decks always sort above the rest.'), { name: 'InvalidDeckOrder' }); }
+    else sawPlain = true;
+  }
+  const ts = nowIso();
+  // `AND profile_id=?` is unreachable given the membership check above and no test can kill it -
+  // it is kept because every write in this module is scoped at the statement (invariant 2: a
+  // caller-supplied id must not be able to bypass the profile boundary), not because it is live.
+  await tx(ids.map((id, i) => ['UPDATE decks SET lib_order=?, updated_at=? WHERE id=? AND profile_id=?;', [i + 1, ts, id, pid]]));
+}
+
 // setRecord removed: a deck's W-L is derived solely from its matches (see
 // playRepository.syncDeckRecord). There is no manual override any more.
 export async function deleteDeck(id) {

@@ -11,7 +11,7 @@ import { MIGRATIONS, SCHEMA_VERSION } from './schema.js';
 import { __setBackendForTests, __resetWriteGateForTests } from './db.js';
 import {
   __setActiveIdForTests, activeProfileId, getActiveProfile, initProfiles, listProfiles,
-  setPrimary, deleteProfile, deleteProfileTransferringPrimary,
+  setPrimary, deleteProfile, deleteProfileTransferringPrimary, profileStats,
 } from './profileRepository.js';
 
 const require = createRequire(import.meta.url);
@@ -219,6 +219,17 @@ test('the sole remaining profile still cannot be deleted, by either path', async
   await assert.rejects(deleteProfile('p-one'), /only profile/);
   await assert.rejects(deleteProfileTransferringPrimary('p-one', 'p-two'), /only profile/);
   assert.equal(rows('SELECT COUNT(*) c FROM profiles;')[0].c, 1);
+});
+
+test('profileStats enumerates named Storage places but not the system Unfiled place', async () => {
+  const place = (id, name, system) => sdb.run(
+    'INSERT INTO storage_containers(id,profile_id,kind,name,description,colour,sort_order,is_system,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?);',
+    [id, 'p-one', system ? 'unfiled' : 'binder', name, '', 'gold', system ? -1 : 0, system, 'x', 'x'],
+  );
+  place('unfiled', 'Unfiled', 1);
+  place('binder', 'Beta Binder', 0);
+
+  assert.deepEqual(await profileStats('p-one'), { decks: 0, matches: 0, cards: 0, places: 1 });
 });
 
 /* ------------------------------------------------------------------ */
