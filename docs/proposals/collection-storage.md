@@ -197,7 +197,8 @@ idempotent on re-run. The backfill follows that pattern rather than inventing on
 - **Repositories:** new `storageRepository.js`; a new ownership-mutation boundary six modules route
   through; `profileTransfer.js` and `importBoundary.js` extended.
 - **UI:** Storage section in My Collection; container detail; card-sheet ledger; Codex read-only
-  line; bulk Put Away inside Storage's own selection context.
+  line; bulk Put Away inside Storage's own selection context, and (owner amendment, see increment 5)
+  a **File in…** action on the Collection grids' existing selection bar.
 - **Native/web:** DDL-only migration plus a JS backfill; native FK enforcement verified on device.
 
 **Invariants engaged** (§3): profile isolation (composite profile-consistent FKs *and* repository
@@ -341,13 +342,37 @@ Responsibilities:
    items are satisfiable and some are not fails whole; a bulk command that half-applies is worse
    than one that explains itself.
 
-   **Set-to-zero is the exception, by owner ruling (2026-08-18), amending revision 4.** This
+   ~~**Set-to-zero is the exception, by owner ruling (2026-08-18), amending revision 4.** This
    clause originally read "Set-to-zero is the same rule with a target of 0" - reject if any copy
    is filed. It is not. The wall exists because a quantity model cannot know WHICH physical copy
    left; when EVERY copy leaves there is nothing to attribute and no guess to make. A partial
    decrease into filed copies is ambiguous; total removal is not. So a target of 0 succeeds and
-   takes the filing with it, which is also what the increment-1 delete paths already do on device.
-   Implemented in `planAllocationChanges` and asserted by `storageWriterInvariant.test.mjs`.
+   takes the filing with it, which is also what the increment-1 delete paths already do on device.~~
+
+   **REVERSED by the owner, 2026-08-19.** Revision 4's original rule stands: **any interactive
+   decrease that would eat into filed copies is refused, and zero is not exempt.** The 2026-08-18
+   exemption reasoned about the COUNT and left out the FILING. It is true that when every copy
+   leaves there is nothing to attribute - and beside the point, because the record of *where those
+   copies were* is user data in its own right. An accidental last-copy minus silently discarded
+   "three in the Beta binder", and re-adding the copies put them all in Unfiled with nothing to
+   restore from. The exemption was also inconsistent with itself: clearing a count to zero on a row
+   that *also* carried a want went through `planGlobalRemoval` and refused, while the identical
+   gesture on a row without a want deleted the row and its filing outright.
+
+   A zero on a row whose copies are all in Unfiled, or which has no places at all, still proceeds
+   exactly as before - there is nothing filed to lose.
+
+   **The exemptions are the non-interactive writers, and they are unchanged.** Import and restore
+   reconciliation replace the ledger authoritatively (the owner's "restore = replace" ruling) and
+   never subtract from a surviving row; boot canonicalisation and triage re-parent allocations onto
+   the destination before the source row hits zero, so no filing is lost. Triage's cleanup of
+   already-drained rows is untouched.
+
+   Implemented as `totalRemovalConflict` in `storageRepository.js`, applied by
+   `planAllocationChanges` (bulk Set / Adjust / absolute import) and by `assertNoFiledCopies` at the
+   five direct delete branches in `ownedRepository.js`. Asserted by `storageCoordination.test.mjs`
+   (the pure rule) and `storageWriterInvariant.test.mjs` (every walled writer, both allowed-zero
+   shapes, and the two exempt writers emptying a fully filed row).
 6. **Undo** - **STRUCK, 2026-08-18.** There is no bulk-ownership undo in the app and there never
    was. This clause specified it against `bulkOwnedRepository`, a module built 20 July as the bulk
    protocol and superseded three days later by the Set-to-N / Adjust-by-N surface in
@@ -467,6 +492,16 @@ from the actually shipped predecessor - not from a version that exists only in a
 4. **Card-sheet ledger + Codex line.**
 5. **Bulk Put Away, inside Storage's own selection context** - no change to `AddToListSheet`, no
    dock reshuffle in existing surfaces.
+   *Owner amendment, 2026-08-19 (parity item "bulk assign-to-place from the grid"): filing is
+   **also** reachable from the Collection grids' own selection bar, which adds a fourth action -
+   **File in…** - beside Edit copies / New list / Add to list on BOTH the ALL grid and the set
+   drill. This deliberately supersedes the "no dock reshuffle in existing surfaces" restriction
+   above, and only that restriction: `AddToListSheet` is still untouched, the grid's selection
+   controller is unchanged, and the write is the same `bulkMoveAllocations` transaction Storage's
+   own bulk File uses. It is the reuse **Q14's amendment** asks for ("reuse the existing select and
+   bulk-edit implementation wherever possible") reached from where the cards actually are. The grid
+   files only what is **unfiled**, because a grid selection names cards rather than a place, and
+   raiding a binder the user never opened would be a move they did not ask for.*
 6. **Docs**, including adding storage to the delete-profile confirmation **(Q29)**.
 
 Increments 1 and 2 ship together or not at all: a UI over an unexported table produces data a
@@ -701,8 +736,12 @@ being hit repeatedly means removal-at-a-place is not discoverable.
   row, exactly one Unfiled per profile) or boot would have rolled back; and canonicalisation found
   no allocation on a row holding no copies. Repo gates: `test:query` 1116/1116, `test:ui`,
   `test:app`, `check:types/cycles/source/docs`, `build`.
-- Increments 2-6 (UI, bulk, docs) not started. The diff still requires the mandatory checkpoint and
-  a final Codex review before merge.
+- **Increment 2 COMPLETE**: profile/whole-app export and import carry and validate the storage graph;
+  older bundles backfill to Unfiled. **Increments 3-6 IMPLEMENTED in the successor working diff**:
+  the All · Sets · Storage surface, container detail chassis, per-card live ledger, direct and scoped
+  bulk filing, Codex read-only summary, delete-profile enumeration and source-of-truth docs. Automated
+  repository/UI/app/type/cycle/source/docs/build gates are green. The owner-run installed-app 1/2/1
+  filing acceptance pass and mandatory independent final diff review remain before merge.
 
 
 ---

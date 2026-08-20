@@ -7,6 +7,14 @@ Compiled 2026-08-18 from the design session transcript
 Scope: **increment 3, the first UI**. Increments 1 and 2 (data layer, export/import) are separately
 reviewed, gated and device-verified, and nothing below touches them.
 
+> **Resolution, 2026-08-18.** This is the forensic ledger for builds 283-285, not the current UI
+> contract. The owner subsequently amended placement to the third **All · Sets · Storage** segment
+> inside My Collection (recorded in the proposal Appendix A). The replacement implementation keeps
+> the reviewed store, restores the list-detail chassis, and completes the per-card ledger, direct
+> filing, inline return to Unfiled, scoped bulk filing, Codex read-only summary and profile-delete
+> enumeration. The obsolete correction steps below remain as evidence of what those builds got
+> wrong; they are not instructions to restore the superseded below-Sets layout.
+
 ---
 
 ## The root cause

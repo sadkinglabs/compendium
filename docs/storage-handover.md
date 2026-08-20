@@ -7,6 +7,14 @@ Read this, then `docs/storage-decision-ledger.md`, then Appendix A of
 `docs/proposals/collection-storage.md`. In that order. The third one is the reason the second one
 exists.
 
+> **Successor update, 2026-08-18.** Sections 4, 5 and 9 below describe the state received at build
+> 285. The replacement working diff has since fixed the empty-detail crash (the missing `EmptyCta`
+> import), completed the card ledger, direct filing, inline return to Unfiled, scoped bulk filing,
+> Codex read-only summary, delete-profile enumeration and documentation, while leaving the reviewed
+> storage core intact. The automated 1/2/1 acceptance fixture and repository/UI/app/type/cycle/source/
+> docs/build gates pass. An installed-app owner pass and independent final diff review are still
+> required; until those happen this addendum records implementation, not release approval.
+
 ---
 
 ## 1. The one thing to understand before touching anything
@@ -74,20 +82,20 @@ foreign-key error before `db4c3ae`.
 
 ---
 
-## 4. What is NOT done
+## 4. What was NOT done at handover (closed in the successor diff)
 
-- **Increment 4, the per-card ledger.** This is the feature. Q16: steppers in the card sheet against
+- **Received gap — Increment 4, the per-card ledger.** This is the feature. Q16: steppers in the card sheet against
   a live remainder. Until it exists, a user cannot put a card into a place at all — the current UI
   only browses places. `placeStatements` and `planPlaceRemoval` are built, tested, and have no caller.
-- **Increment 5, bulk Put Away** from Unfiled (Q14).
-- **Increment 6, docs**, including storage in the delete-profile confirmation (Q29).
+- **Received gap — Increment 5, bulk Put Away** from Unfiled (Q14).
+- **Received gap — Increment 6, docs**, including storage in the delete-profile confirmation (Q29).
 - The two behaviours that most need device time and have never had it: a decrease **refusing**
   because copies are filed, and triage preserving containers, both unreachable on the owner's own
   profile because it has no binders until increment 4 exists.
 
 ---
 
-## 5. The open crash — start here
+## 5. The crash received at handover (closed: missing `EmptyCta` import)
 
 **Tapping a place row on the Storage surface crashed the app** (owner, build 285). Not diagnosed.
 
@@ -183,7 +191,7 @@ Review artefacts (`CODEX-*.md`, `docs/*.diff`) are deliberately untracked; do no
 
 ---
 
-## 9. If it were me
+## 9. Outgoing recommendation at handover (historical)
 
 Reproduce the crash on an idle device first — it is the only unknown that blocks everything else.
 Then decide whether to keep `CollectionStorage.jsx` or rewrite it against §6; it is roughly 400 lines

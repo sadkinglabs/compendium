@@ -333,7 +333,7 @@ number that can disagree with the first.
 storage_containers(
   id TEXT PRIMARY KEY,
   profile_id REFERENCES profiles(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,                   -- unfiled | binder | box | deckbox | other
+  kind TEXT NOT NULL,                   -- unfiled | binder | box | deck | other
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   colour TEXT NOT NULL DEFAULT 'gold',
@@ -374,7 +374,8 @@ allocations first and say so.
 
 **Unfiled.** Every profile has exactly one system container. The partial unique index guarantees
 *at most* one; calling `createUnfiledStatements` at every profile-creation path guarantees *at
-least* one. `sort_order -1` pins it above user containers. For a profile with no containers -
+least* one. `sort_order -1` pins it above user containers - user places are renumbered from 1, so
+Unfiled can never tie with one and fall to the alphabetical tie-break. For a profile with no containers -
 which is every profile until someone makes one - everything is Unfiled, so every stepper, bulk
 edit and import behaves exactly as it did in v11.
 
@@ -398,10 +399,32 @@ say "cannot". An earlier design took from Unfiled and then from the fullest cont
 app inventing a fact about the user's shelf, because a quantity model cannot know which physical
 copy left.
 
-**Total removal is the exception, and deliberately so** (owner ruling, amending the proposal's
-section 5). Setting a count to zero succeeds even when copies are filed, and takes the filing with
-it. When every copy leaves there is nothing to attribute and no guess to make; only a *partial*
-decrease is ambiguous.
+**Total removal is not an exception** (owner ruling, 2026-08-19, reversing a one-day exemption).
+Setting a count to zero is refused exactly like any other decrease when the row holds copies in a
+named container, and the conflict names those containers. Reaching zero destroys the record of
+*where* the copies were, and that record is user data: an accidental last-copy minus is the easiest
+way to lose it, because re-adding the copies files them all to Unfiled. A zero on a row whose copies
+are all in Unfiled, or which has no places, still removes the row and its allocation.
+
+**The refusal is PREDICTED before it is painted, and never before it is written.** The count
+steppers are optimistic - they show the new number on tap and reconcile when the write lands - which
+turned a refusal into `1 -> 0 -> toast -> 1`: the app appearing to undo itself over behaviour that is
+working. Because the rule above is uniform, it is also locally predictable, so
+`predictGlobalRemovalRefusal` decides whether a tap may show a provisional number at all. It is one
+line - `target < filed` - which is the single algebraic form of both planners (by the defining
+equality, `unfiled = total - filed`, so "more than Unfiled holds" and "zero with anything filed" are
+the same inequality); an agreement test walks a grid of (filed, unfiled, target) and holds the
+predicate and the planners to one answer, because a duplicated rule drifts. The prediction decides
+nothing else: the write is enqueued either way, the store's refusal - or its unexpected success - is
+still authoritative, and a stale prediction costs at most a count that moves once at reconcile
+instead of instantly. The filed totals come from reads the surfaces already do: `itemStorage` for the
+card sheet's ledger, `filedBySet` for the grids, both refreshed by the ordinary collection broadcast
+rather than by a poller of their own.
+
+**The non-interactive writers are exempt, by their mechanics rather than by permission.** Import and
+restore reconciliation replace the ledger authoritatively and never subtract from a surviving row;
+triage and canonicalisation re-parent a row's allocations onto its destination *before* it reaches
+zero, so the copies keep their containers and nothing is discarded.
 
 **Bulk commands fail whole.** A mixed selection in which some items are satisfiable and some are
 not writes nothing at all. A bulk command that half-applies is worse than one that explains
@@ -434,6 +457,7 @@ leaves a durable ledger that contradicts itself.
 | `ownedImportRepository.js` | the absolute row batch, and the read-free resolved import |
 | `triageRepository.js` | the key move, which re-parents rather than re-places |
 | `wantedBulkRepository.js` | none - a want holds no copies, so it holds no places |
+| `storageDirectory.js` | one-item filing between places on the collector-item queue; scoped multi-item filing behind the exclusive barrier, including the Collection grid's File-from-Unfiled, which resolves a card+set selection to collector-item rows in BOTH finishes (every slug `printingSlugs` names) and then files through that same barrier |
 
 Statement ORDER inside the transaction is a correctness property: **clears and removals, then the
 counts, then the places.** A clear must precede the row DELETE it enables under `RESTRICT`, and a
@@ -486,7 +510,7 @@ Storage invariants:
 
 Collection invariants:
 
-- Ownership is a ledger, not an allocator; decks never reserve cards.
+- Ownership is a location ledger; decks never reserve or consume its copies.
 - Negative quantities are normalized away by the repository.
 - Rows with zero owned and zero wanted quantity are removed rather than retained as empty state.
 - Buildability and wanted-list progress are derived reads.
@@ -512,7 +536,7 @@ decks(
   wins INTEGER DEFAULT 0,
   losses INTEGER DEFAULT 0,
   starred INTEGER DEFAULT 0,
-  lib_order INTEGER DEFAULT 0,
+  lib_order INTEGER DEFAULT 0,   -- manual Library order; see the note below
   created_at TEXT,
   updated_at TEXT
 )
@@ -532,6 +556,15 @@ deck_history(id PRIMARY KEY, deck_id REFERENCES decks(id) ON DELETE CASCADE, ts,
 Deck legality, copy limits, special-avatar rules, and zone constraints are domain logic derived from catalog data. They are not encoded as per-card SQL constraints.
 
 `decks.wins` and `decks.losses` are synchronized derivatives of linked matches. Matches are the source of truth for the record. Deck history is bounded by repository logic.
+
+**Manual Library order.** `lib_order` is written by insert-at-end on create and by `reorderDecks`,
+which takes the whole arrangement and renumbers from 1 in one transaction. The Library query is
+`ORDER BY starred DESC, lib_order ASC, name ASC`, so `starred` outranks `lib_order`: an arrangement
+placing a plain deck above a favourite is one the query cannot reproduce, and `reorderDecks` refuses
+it rather than writing an order that would read back rearranged. The write also refuses an
+`orderedIds` set that is not exactly the profile's decks, so a filtered list can never renumber the
+matches and silently demote what the filter hid. The same whole-order, exact-set, refuse-rather-than-
+partially-apply contract governs `reorderContainers` for storage places.
 
 ## 8. Codex personal data
 
