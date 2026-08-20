@@ -22,7 +22,7 @@ npm run test:ui      # src/pillars/**     - pure UI state (e.g. avatar picker se
 npm run test:app     # src/*.test.mjs     - App-shell logic (hardware-back precedence, back registry)
 npm run check:types  # tsc --noEmit       - fail-closed type gate over the match-view typed boundaries
 npm run check:cycles # src/**             - fail-closed circular-import gate
-npm run check:source # src/**             - fail-closed source guard: canvas-method corruption + art-seam bypass
+npm run check:source # src/**             - fail-closed source guard: canvas-method corruption + art-seam bypass + unbound JSX component
 npm run check:smoke  # installed APK      - drives a device, asserts each route rendered
 ```
 

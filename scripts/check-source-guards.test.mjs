@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scanSource, stripComments, scanTree } from './check-source-guards.mjs';
+import { scanSource, stripComments, scanTree, unboundComponents } from './check-source-guards.mjs';
 
 const rules = (rel, src) => scanSource(rel, stripComments(src)).map((v) => v.rule);
 
@@ -55,6 +55,53 @@ test('flags artUrl used outside cardArt.js / artCacheInstance.js', () => {
 
 test('artUrl wired in the boundary instance is allowed', () => {
   assert.deepEqual(rules('src/store/artCacheInstance.js', 'const io = { remoteUrl: artUrl };'), []);
+});
+
+// --- Unbound JSX component (the build-293 black screen) -----------------------------------------
+//
+// The regression these pin: StorageDetail rendered `<FileCopiesSheet/>` while the component had
+// been lost from the working tree. Every gate was green - `<Foo/>` is `jsx(Foo, …)`, Rollup assumed
+// a global and emitted the name unmangled - and tapping ANY place row threw ReferenceError during
+// render. With no ErrorBoundary in the app, React unmounted the root and the screen went black.
+
+test('flags a JSX component the module never binds - the build-293 defect verbatim', () => {
+  const src = [
+    "import { BottomSheet } from '../components/ui.jsx';",
+    'export function StorageDetail() {',
+    '  return <FileCopiesSheet open={true} onClose={close} />;',
+    '}',
+  ].join('\n');
+  assert.deepEqual(rules('src/pillars/CollectionStorage.jsx', src), ['unbound-jsx-component']);
+  assert.deepEqual(unboundComponents(src), [{ name: 'FileCopiesSheet', line: 3 }]);
+});
+
+test('the same file WITH the component present is clean (mutation counterfactual)', () => {
+  const src = [
+    "import { BottomSheet } from '../components/ui.jsx';",
+    'function FileCopiesSheet({ open }) { return <BottomSheet open={open} />; }',
+    'export function StorageDetail() { return <FileCopiesSheet open={true} />; }',
+  ].join('\n');
+  assert.deepEqual(rules('src/pillars/CollectionStorage.jsx', src), []);
+});
+
+test('every way of binding a name counts - import, declaration, destructured prop, namespace', () => {
+  assert.deepEqual(unboundComponents("import Fab from './Fab.jsx';\nconst a = <Fab />;"), []);
+  assert.deepEqual(unboundComponents("import { Loading as L } from './ui.jsx';\nconst a = <L />;"), []);
+  assert.deepEqual(unboundComponents('const f = ({ Icon }) => <Icon size={2} />;'), []);
+  assert.deepEqual(unboundComponents("import * as Ns from './x.js';\nconst a = <Ns.Thing />;"), []);
+  assert.deepEqual(unboundComponents('const a = <><span /></>;'), [], 'fragments and host tags are not components');
+});
+
+test('a numeric comparison is not a JSX tag', () => {
+  assert.deepEqual(unboundComponents('const ok = a<B && c>d;'), []);
+  assert.deepEqual(unboundComponents('const ok = count<MAX;'), []);
+});
+
+test('a component named only inside a comment is stripped, not counted as a binding', () => {
+  // The reverse failure: a doc comment mentioning the name must not SATISFY the guard, or a
+  // component deleted but still described in prose would pass.
+  const src = '// FileCopiesSheet used to live here\nconst a = <FileCopiesSheet />;';
+  assert.deepEqual(rules('src/pillars/CollectionStorage.jsx', src), ['unbound-jsx-component']);
 });
 
 // --- stripComments does not eat a URL's // ------------------------------------------------------

@@ -1,4 +1,4 @@
-// Static source guards for two failure classes the type checker and build cannot see:
+// Static source guards for three failure classes the type checker and build cannot see:
 //
 //  1. CANVAS-METHOD CORRUPTION - a find/replace once rewrote real canvas calls (`x.arcTo(...)`)
 //     into a nonexistent `x.cx-decksTo(...)`. It compiles and only throws when the poster is drawn
@@ -11,7 +11,17 @@
 //     `cardImageUrl`, or `artUrl` used outside the cache-composition boundary. It also asserts the
 //     bundle directory itself (`public/cards`) is absent, so no build can re-ship it.
 //
-// Both scans run over COMMENT-STRIPPED source so a doc comment naming the pattern is not a false
+//  3. UNBOUND JSX COMPONENT - `<Foo/>` compiles to `jsx(Foo, …)`, so a component the module never
+//     binds is a FREE IDENTIFIER, not a syntax error. Rollup cannot resolve it, assumes a global,
+//     and emits the name into the bundle intact while every real local is mangled. So the build
+//     stays green, `check:types` (a 28-file closure) never sees the file, no test renders it, and
+//     the defect surfaces only when a person taps the screen: ReferenceError during render, no
+//     ErrorBoundary anywhere in this app, React unmounts the root, black screen. That is exactly
+//     how Collection > Storage shipped in build 293 - StorageDetail rendered `<FileCopiesSheet/>`
+//     and the component had been lost from the working tree, so every place row blanked the app.
+//     Same lesson as `check:cycles`: passing gates did not prove the app rendered.
+//
+// Every scan runs over COMMENT-STRIPPED source so a doc comment naming the pattern is not a false
 // positive, while a string/template that actually builds the path still is (that is the point).
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -40,6 +50,34 @@ const BUNDLED_CARDS = /cards\/\$\{|\}cards\/|['"`]cards\//;
 const DELETED_CARDIMAGEURL = /\bcardImageUrl\b/;
 const ARTURL_TOKEN = /\bartUrl\b/;
 
+// A JSX element naming a COMPONENT: capitalised, and rooted at the namespace for `<Ns.Thing/>`.
+// The lookbehind keeps `a<B` (a comparison) out; the lookahead keeps `a < B` out by requiring the
+// name to be followed by what a tag is followed by - an attribute, `>`, `/>` or a member `.`.
+const JSX_COMPONENT = /(?<![A-Za-z0-9_$])<\/?([A-Z][A-Za-z0-9_$]*)(?=[\s/>.])/g;
+
+/**
+ * Component tags whose name appears NOWHERE else in the module - see failure class 3 above.
+ *
+ * Deliberately crude, and that is exactly what makes it false-positive-free rather than clever: an
+ * import, a declaration, a destructured prop and a parameter ALL leave a non-tag occurrence of the
+ * name behind, so a name that only ever appears in TAG POSITION cannot be bound by any means. It
+ * needs no scope analysis, so it cannot disagree with the linker in the subtle direction (a false
+ * alarm on legitimate code); it can only under-report, which a reviewer notices and a black screen
+ * does not. Measured over the whole tree it flags the real defect and nothing else.
+ *
+ * Returns [{ name, line }] for the FIRST use of each unbound name.
+ */
+export function unboundComponents(stripped) {
+  const elsewhere = stripped.replace(JSX_COMPONENT, '<');
+  const found = new Map();
+  for (const m of stripped.matchAll(JSX_COMPONENT)) {
+    const name = m[1];
+    if (found.has(name) || new RegExp(`\\b${name}\\b`).test(elsewhere)) continue;
+    found.set(name, stripped.slice(0, m.index).split('\n').length);
+  }
+  return [...found].map(([name, line]) => ({ name, line }));
+}
+
 // Returns [{ rule, line, snippet }] for one file's stripped source.
 export function scanSource(rel, stripped) {
   const out = [];
@@ -51,6 +89,10 @@ export function scanSource(rel, stripped) {
     if (BUNDLED_CARDS.test(ln)) push('bundled-cards-path-bypass', i);   // Phase 5: no sanctioned bundled path
     if (ARTURL_TOKEN.test(ln) && !ALLOW_ARTURL.has(rel)) push('artUrl-outside-boundary', i);
   });
+  // Whole-file, not per-line: a component is bound somewhere ELSE in the module than where it is used.
+  for (const { name, line } of unboundComponents(stripped)) {
+    out.push({ rule: 'unbound-jsx-component', line, snippet: `<${name}> - never imported or declared in this file` });
+  }
   return out;
 }
 
@@ -83,9 +125,9 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     process.exit(1);
   }
   if (violations.length) {
-    console.error(`check:source FAILED - ${violations.length} art-seam / canvas-corruption violation(s):`);
+    console.error(`check:source FAILED - ${violations.length} source-guard violation(s):`);
     for (const v of violations) console.error(`  [${v.rule}] ${v.file}:${v.line}  ${v.snippet}`);
     process.exit(1);
   }
-  console.log('check:source OK - no canvas-method corruption, no art-seam bypass, no bundled card art.');
+  console.log('check:source OK - no canvas-method corruption, no art-seam bypass, no bundled card art, no unbound JSX component.');
 }
