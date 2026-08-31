@@ -1312,12 +1312,14 @@ const SHEET_INPUT = {
 
 // Section header for the lists index. Creation lives on the FAB now, not here: one
 // obvious "+" beats a button per section, and it matches every other pillar.
-function Section({ title, hint, children }) {
+//
+// The rubric itself is the app-wide gold SectionLabel, not a Lists-only ruby dialect: Storage's
+// "YOUR PLACES" and this surface's sections are the same kind of header, so they read the same and
+// carry the same count. Only the italic hint below it is local.
+function Section({ title, hint, count, children }) {
   return (
     <div style={{ marginBottom: 26 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '4px 0 5px' }}>
-        <span style={{ font: "600 14px/1 var(--f-display)", letterSpacing: '.22em', color: 'var(--accent-ruby)', textTransform: 'uppercase' }}>{title}</span>
-      </div>
+      <SectionLabel label={title} count={count} />
       {hint && <div style={{ font: "italic 400 15.5px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginBottom: 14 }}>{hint}</div>}
       {children}
     </div>
@@ -1790,11 +1792,12 @@ function ListsIndex({ onOpenList, rev }) {
   );
   return (
     <div style={{ padding: '2px 20px' }}>
+      <SectionLabel label="PINNED" />
       <WishlistCard summary={wl} onClick={() => onOpenList(wishlistRef())} />
-      <Section title="Wanted Lists" hint="Named goals - Collection tracks your progress as you acquire cards.">
+      <Section title="WANTED LISTS" count={wanted.length || undefined} hint="Named goals - Collection tracks your progress as you acquire cards.">
         {wanted.length ? wanted.map(card) : <Empty text="No wanted lists yet - set a goal and watch it fill in." />}
       </Section>
-      <Section title="Card Lists" hint="Custom groupings - a trade binder, a cube, cards to sell.">
+      <Section title="CARD LISTS" count={custom.length || undefined} hint="Custom groupings - a trade binder, a cube, cards to sell.">
         {custom.length ? custom.map(card) : <Empty text="No card lists yet." />}
       </Section>
       <Fab variant="lib" label="Create a list" icon={<FabGlyph kind="add" />} items={[

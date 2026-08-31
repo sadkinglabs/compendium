@@ -93,6 +93,41 @@ function PlaceGlyph({ colour, kind, size = 30 }) {
   );
 }
 
+// The pinned Unfiled card - the same gilt chassis the Wishlist wears on Lists, so the app has ONE
+// grammar for "system-owned, always present, not one of yours": gold circle + display title + gold
+// numeral under a PINNED rubric. Q13/Q15: always visible, always first, a stable destination - now
+// visibly a different class, not the first of the user's places. No drag binding and no menu:
+// Unfiled is not part of the user's order and is not the user's to rename or delete.
+function PinnedPlaceCard({ place, onClick }) {
+  return (
+    <div onClick={onClick} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      style={{ display: 'flex', gap: 14, alignItems: 'center', width: '100%', boxSizing: 'border-box', cursor: 'pointer', marginBottom: 22, padding: '16px 20px', borderRadius: 19, border: '1px solid rgba(227,197,137,.42)', background: 'linear-gradient(180deg, rgba(203,167,95,.07), rgba(203,167,95,.02))' }}>
+      {/* The open tray, gold rather than a place colour: the pinned element is chrome, not one of
+          the user's coloured shelves. Same glyph the row wore, drawn larger for the card. */}
+      <span aria-hidden="true" style={{
+        width: 54, height: 54, flex: 'none', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        border: '1px solid rgba(203,167,95,.45)', background: 'rgba(203,167,95,.12)', color: 'var(--gold-leaf)',
+      }}>
+        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 9h16v10H4z" /><path d="M7 5h10l3 4H4z" /><path d="M9 13h6" />
+        </svg>
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ minWidth: 0, font: "700 21px/1.15 var(--f-display)", color: '#f4ecdc', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{place.name}</span>
+        </div>
+        <div style={{ font: "400 14px/1.4 var(--f-read)", color: 'var(--ink-muted-warm)', marginTop: 6 }}>
+          Cards you own that you have not filed yet
+        </div>
+      </div>
+      <span style={{ flex: 'none', whiteSpace: 'nowrap' }}>
+        <span style={{ font: "600 24px/1 var(--f-display)", color: 'var(--gold-num)' }}>{place.copies}</span>
+      </span>
+    </div>
+  );
+}
+
 /* ---------------- create / edit ---------------- */
 
 // One sheet for both. `existing` changes the copy and nothing else: per Q8 the KIND stays editable
@@ -224,9 +259,8 @@ export function StorageIndex({ onOpenPlace, rev }) {
     <ListRow
       icon={<PlaceGlyph colour={p.colour} kind={p.kind} />}
       title={p.name}
-      sub={p.is_system
-        ? 'Cards you own that you have not filed yet'
-        : [KIND_LABEL[p.kind] || 'Place', p.description || null, `${p.cards || 0} ${(p.cards || 0) === 1 ? 'card' : 'cards'}`].filter(Boolean).join(' · ')}
+      // Only the user's own places flow through here now: Unfiled wears the pinned card above.
+      sub={[KIND_LABEL[p.kind] || 'Place', p.description || null, `${p.cards || 0} ${(p.cards || 0) === 1 ? 'card' : 'cards'}`].filter(Boolean).join(' · ')}
       // NO menu button here. ListRow is a clickable div, so a button nested inside it never gets
       // the tap - the row's own handler fires first and navigates. It was also the only row in the
       // app carrying an overflow: everywhere else that control lives in a HEADER.
@@ -253,10 +287,13 @@ export function StorageIndex({ onOpenPlace, rev }) {
           {mine.length > 1 && ' Hold a place and drag it to change the order.'}
         </div>
       </div>
+      {unfiled && (
+        <>
+          <SectionLabel label="PINNED" />
+          <PinnedPlaceCard place={unfiled} onClick={() => onOpenPlace(unfiled)} />
+        </>
+      )}
       <SectionLabel label="YOUR PLACES" count={mine.length || undefined} />
-      {/* Q13/Q15: always visible, always first, so it is a stable destination rather than something
-          that appears and vanishes. No drag binding: Unfiled is not part of the user's order. */}
-      {unfiled && <div key={unfiled.id}>{row(unfiled)}</div>}
       {/* Q30: empty with a prompt, not with starter containers nobody asked for. EmptyCta is the
           app's empty-state shape; the ACTION is the FAB below, because that is how every create in
           Collection works - an inline button here matched nothing else in the app. */}
@@ -544,7 +581,10 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
           title and a trailing overflow. Q21 said same chassis; this is it. */}
       <AppBar variant="sub" sticky announce
         onBack={onBack} backLabel="Back to My Collection"
-        eyebrow={meta.is_system ? UNFILED_NAME.toUpperCase() : (KIND_LABEL[meta.kind] || 'Place')}
+        // Class over instance: the eyebrow names what KIND of thing this is and the title names
+        // which one, so Unfiled reads PINNED / Unfiled rather than the same word twice. AppBar's
+        // sub variant upper-cases the eyebrow itself, so this is written like the KIND_LABELs.
+        eyebrow={meta.is_system ? 'Pinned' : (KIND_LABEL[meta.kind] || 'Place')}
         eyebrowColor={containerColourVar(meta.colour)}
         title={meta.name}
         // The copies count is a QUIET SUBTITLE, not a headline. AppBar already owns a subtitle slot
