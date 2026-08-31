@@ -249,7 +249,7 @@ body.grain-off .half-grain { display: none; }
    divider in its own coordinate space too. Keyed on the band actually being
    rendered (`.band-wrap` only exists when Advanced is on and the roll-off is over),
    so a Basic match keeps the badge tight to the divider as before. */
-.cx-life-tracker:has(.band-wrap) .status-badges { top: 56px; }
+.cx-life-tracker:has(.band-wrap) .status-badges { top: 60px; }
 
 /* â”€â”€ Turn-order roll-off â”€â”€ */
 .life-number.roll-win {
@@ -307,11 +307,14 @@ body.roll-active #match-clock { display: none !important; }
   display: flex; flex-direction: column; align-items: center;
   border-radius: 999px;
 }
+/* Doubled (owner request 2026-08-30): players were ignoring the pill outright and
+   leaving it parked over the match. At this size it reads as a decision to make -
+   roll, or dismiss - not furniture. */
 #roll-pill.armed #roll-pill-body {
   background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.8), rgba(14,11,8,.92));
   backdrop-filter: blur(8px);
   border: 1px solid rgba(var(--sk),.5);
-  padding: 12px 22px; border-radius: 24px;
+  padding: 24px 44px; border-radius: 48px;
   box-shadow: 0 10px 26px -8px rgba(0,0,0,.7), 0 0 20px rgba(var(--sk),.28), inset 0 1px 0 rgba(255,255,255,.05);
 }
 #roll-pill.armed:active #roll-pill-body { transform: scale(.96); }
@@ -320,21 +323,21 @@ body.roll-active #match-clock { display: none !important; }
 #roll-pill.roll-exit { animation: roll-pill-out .34s cubic-bezier(.4,0,.2,1) forwards; pointer-events: none; }
 @keyframes roll-pill-out { to { opacity: 0; transform: translate(-50%, calc(-50% - 16px)); } }
 #roll-pill .roll-pill-go { display: none; }
-#roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 10px; color: rgb(var(--sk)); }
+#roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 16px; color: rgb(var(--sk)); }
 #roll-pill .roll-pill-go svg { color: rgb(var(--sk)); filter: drop-shadow(0 0 8px rgba(var(--sk),.28)); }
-#roll-pill .rp-label { font: 700 13px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
+#roll-pill .rp-label { font: 700 26px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
 /* Dismiss the offer without rolling - a small X clinging to the pill's corner. */
 .roll-pill-dismiss {
-  position: absolute; top: -9px; right: -9px;
-  width: 26px; height: 26px; padding: 0; border-radius: 50%;
+  position: absolute; top: -12px; right: -12px;
+  width: 36px; height: 36px; padding: 0; border-radius: 50%;
   display: grid; place-items: center; pointer-events: auto; cursor: pointer;
   background: rgba(14,11,8,.94); border: 1px solid rgba(var(--sk),.5);
   color: rgb(var(--sk));
   box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 12px rgba(var(--sk),.2);
 }
-/* Keep the 26px badge but extend the tap target to ~46px (easy to dismiss). */
-.roll-pill-dismiss::before { content: ''; position: absolute; inset: -10px; }
-.roll-pill-dismiss svg { width: 13px; height: 13px; }
+/* Keep the 36px badge but extend the tap target to ~52px (easy to dismiss). */
+.roll-pill-dismiss::before { content: ''; position: absolute; inset: -8px; }
+.roll-pill-dismiss svg { width: 18px; height: 18px; }
 .roll-pill-dismiss:active { transform: scale(.9); }
 /* ONE AXIS, read both ways: monochrome = life has not arrived Â· colour = life is here
    Â· Death's Door takes it away again. Nobody is dying in the opening ash, because
@@ -854,14 +857,20 @@ body.kb-open #picker-screen .picker-footer { display: none; }
 /* The strip IS the outer gilt keyline: its fill shows only through the 1px ring
    the inset .band-fill leaves uncovered. Pointed-hexagon cartouche via clip-path. */
 .cx-life-tracker .band-strip {
-  position: absolute; left: 0; right: 0; height: 38px; pointer-events: auto;
+  position: absolute; left: 0; right: 0; height: 42px; pointer-events: auto;
   background: rgba(220,184,111,.35);
   clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%);
+  /* Birth-aware, same axis as the halves (owner request 2026-08-30): the band renders
+     while the roll pill still sits armed, and a gold cartouche over an ash table broke
+     the monochrome-until-life-arrives language. Only the pill speaks in colour before
+     birth; the band floods in with everything else on the same clock. */
+  filter: grayscale(calc(1 - var(--birth))) brightness(calc(.55 + .45 * var(--birth)));
+  transition: filter var(--birth-ms) var(--birth-ease);
 }
 .cx-life-tracker .band-strip.player { top: calc(100% + 6px); }
 .cx-life-tracker .band-strip.opp { bottom: calc(100% + 6px); }
 .cx-life-tracker .band-fill { position: absolute; inset: 1px; background: rgba(20,15,9,.72); clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 10px 100%, 0 50%); }
-.cx-life-tracker .band-grid { position: absolute; inset: 0; display: grid; grid-template-columns: 56px repeat(4, 1fr); padding: 0 12px; }
+.cx-life-tracker .band-grid { position: absolute; inset: 0; display: grid; grid-template-columns: 62px repeat(4, 1fr); padding: 0 13px; }
 /* A figure is a real <button>; its hit box extends 14px past the 38px strip (66px
    effective, over the 44px floor) without moving a pixel of the visual. touch-action
    none: the horizontal step-drag must never negotiate with the browser. */
@@ -870,8 +879,8 @@ body.kb-open #picker-screen .picker-footer { display: none; }
 .cx-life-tracker .band-fig-rot { display: flex; align-items: center; }
 .cx-life-tracker .band-fig-rot.rot { transform: rotate(180deg); }
 .cx-life-tracker .band-fig-stamp { position: relative; display: flex; align-items: center; gap: 4px; }
-.cx-life-tracker .band-mana { min-width: 26px; height: 26px; padding: 0 6px; box-sizing: border-box; border: 1px solid rgba(220,184,111,.55); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font: 600 16px/1 var(--f-display); color: #e3c589; font-variant-numeric: tabular-nums; }
-.cx-life-tracker .band-thr { font: 600 20px/1 var(--f-display); color: #f1e8d0; font-variant-numeric: tabular-nums; }
+.cx-life-tracker .band-mana { min-width: 29px; height: 29px; padding: 0 7px; box-sizing: border-box; border: 1px solid rgba(220,184,111,.55); border-radius: 999px; display: inline-flex; align-items: center; justify-content: center; font: 600 17.5px/1 var(--f-display); color: #e3c589; font-variant-numeric: tabular-nums; }
+.cx-life-tracker .band-thr { font: 600 22px/1 var(--f-display); color: #f1e8d0; font-variant-numeric: tabular-nums; }
 /* Ghost = the prospective value riding an armed drag: 62%, mint up / warm red down. */
 .cx-life-tracker .band-mana.ghost-up, .cx-life-tracker .band-thr.ghost-up { color: #a8f5c8; opacity: .62; }
 .cx-life-tracker .band-mana.ghost-down, .cx-life-tracker .band-thr.ghost-down { color: #ff9d8b; opacity: .62; }

@@ -595,7 +595,10 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
   // ── end match → full-screen decision modal (Play) ──
   function triggerEnd(winner) {
     const p = pRef.current, e = eRef.current;
-    const w = winner || (p.life <= 0 ? 'opponent' : e.life <= 0 ? 'player' : p.life === e.life ? 'draw' : p.life > e.life ? 'player' : 'opponent');
+    // Tie first: with BOTH sides at zero, a life-based guess has no way to know who
+    // struck the final blow (the pills pass the winner explicitly for that reason),
+    // so an ambiguous FAB end at 0-0 is a draw, never silently a loss.
+    const w = winner || (p.life === e.life ? 'draw' : p.life <= 0 ? 'opponent' : e.life <= 0 ? 'player' : p.life > e.life ? 'player' : 'opponent');
     setFabP(false); setFabE(false); setSheet(null);
     setEndInfo({ winner: w, pLife: p.life, eLife: e.life, durationSec: elapsedSec(), recorded: recordedRef.current });
   }
@@ -671,7 +674,7 @@ export default function LifeCounter({ settings, mode, players = /** @type {{ you
       : phase === DD.REARMING ? ' dd-armed dd-rearming' : '';
     return (
       <button type="button" className={`dd-pill${cls}`} disabled={phase !== DD.ARMED}
-        onClick={() => triggerEnd(null)}
+        onClick={() => triggerEnd(who === 'player' ? 'opponent' : 'player')}
         aria-label={who === 'player' ? 'End match - you are at Death’s Door' : 'End match - opponent at Death’s Door'}>
         <span className="dd-pill-body">{DDSvg}End Match</span>
       </button>
@@ -1172,5 +1175,5 @@ const CheckSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 const PlusSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12l7-7 7 7" /></svg>;
 const ExitSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>;
 // Roll-pill glyphs: a hex die (turn roll) and a close X (dismiss the offer).
-const RollHexSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" style={{ width: 16, height: 16 }} aria-hidden="true"><path d="M12 2.6 20.5 7v10L12 21.4 3.5 17V7z" /><path d="M12 2.6V21.4M3.5 7l8.5 5 8.5-5" /></svg>;
+const RollHexSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" style={{ width: 32, height: 32 }} aria-hidden="true"><path d="M12 2.6 20.5 7v10L12 21.4 3.5 17V7z" /><path d="M12 2.6V21.4M3.5 7l8.5 5 8.5-5" /></svg>;
 const CloseSvg = <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>;
