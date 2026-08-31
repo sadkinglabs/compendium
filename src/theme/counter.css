@@ -307,14 +307,14 @@ body.roll-active #match-clock { display: none !important; }
   display: flex; flex-direction: column; align-items: center;
   border-radius: 999px;
 }
-/* Doubled (owner request 2026-08-30): players were ignoring the pill outright and
-   leaving it parked over the match. At this size it reads as a decision to make -
-   roll, or dismiss - not furniture. */
+/* Enlarged about 20 percent over the original (owner request 2026-08-30, sized down
+   from a doubled first cut that wrapped to two lines): players were ignoring the pill
+   and leaving it parked over the match. One line, always - the label never wraps. */
 #roll-pill.armed #roll-pill-body {
   background: radial-gradient(120% 120% at 50% 0%, rgba(24,20,13,.8), rgba(14,11,8,.92));
   backdrop-filter: blur(8px);
   border: 1px solid rgba(var(--sk),.5);
-  padding: 24px 44px; border-radius: 48px;
+  padding: 14px 26px; border-radius: 29px;
   box-shadow: 0 10px 26px -8px rgba(0,0,0,.7), 0 0 20px rgba(var(--sk),.28), inset 0 1px 0 rgba(255,255,255,.05);
 }
 #roll-pill.armed:active #roll-pill-body { transform: scale(.96); }
@@ -323,21 +323,21 @@ body.roll-active #match-clock { display: none !important; }
 #roll-pill.roll-exit { animation: roll-pill-out .34s cubic-bezier(.4,0,.2,1) forwards; pointer-events: none; }
 @keyframes roll-pill-out { to { opacity: 0; transform: translate(-50%, calc(-50% - 16px)); } }
 #roll-pill .roll-pill-go { display: none; }
-#roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 16px; color: rgb(var(--sk)); }
+#roll-pill.armed  .roll-pill-go   { display: inline-flex; align-items: center; gap: 12px; white-space: nowrap; color: rgb(var(--sk)); }
 #roll-pill .roll-pill-go svg { color: rgb(var(--sk)); filter: drop-shadow(0 0 8px rgba(var(--sk),.28)); }
-#roll-pill .rp-label { font: 700 26px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
+#roll-pill .rp-label { font: 700 16px/1 var(--f-ui); letter-spacing: .05em; color: rgb(var(--sk)); }
 /* Dismiss the offer without rolling - a small X clinging to the pill's corner. */
 .roll-pill-dismiss {
-  position: absolute; top: -12px; right: -12px;
-  width: 36px; height: 36px; padding: 0; border-radius: 50%;
+  position: absolute; top: -10px; right: -10px;
+  width: 30px; height: 30px; padding: 0; border-radius: 50%;
   display: grid; place-items: center; pointer-events: auto; cursor: pointer;
   background: rgba(14,11,8,.94); border: 1px solid rgba(var(--sk),.5);
   color: rgb(var(--sk));
   box-shadow: 0 4px 12px rgba(0,0,0,.6), 0 0 12px rgba(var(--sk),.2);
 }
-/* Keep the 36px badge but extend the tap target to ~52px (easy to dismiss). */
-.roll-pill-dismiss::before { content: ''; position: absolute; inset: -8px; }
-.roll-pill-dismiss svg { width: 18px; height: 18px; }
+/* Keep the 30px badge but extend the tap target to ~48px (easy to dismiss). */
+.roll-pill-dismiss::before { content: ''; position: absolute; inset: -9px; }
+.roll-pill-dismiss svg { width: 15px; height: 15px; }
 .roll-pill-dismiss:active { transform: scale(.9); }
 /* ONE AXIS, read both ways: monochrome = life has not arrived Â· colour = life is here
    Â· Death's Door takes it away again. Nobody is dying in the opening ash, because
