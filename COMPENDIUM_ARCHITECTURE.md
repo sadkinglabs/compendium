@@ -65,7 +65,7 @@ The following capabilities define the responsibility of each pillar. `COMPENDIUM
 
 **Home (cross-pillar workspace)**
 - Resume / jump-back-in.
-- **Dashboard** sub-page: customisable widgets (Saved, Collection, Recent Duels, Random Card, Notes, Your Decks) with edit mode — resize ½/full, remove, add, reorder.
+- **Dashboard** sub-page: customisable widgets (Saved, Folios, Recent Duels, Random Card, Notes, Your Decks) with edit mode — resize ½/full, remove, add, reorder.
 - Overview: live match, decks rail, notes.
 
 **Cross-cutting (across all five pillars)**
@@ -173,7 +173,7 @@ Card art resolves only through the art boundary (`useArtSource` / `CardArt` / `A
 **A. Profile as the top-level partition.**
 - One device holds **N profiles**. A profile is the unit of identity, export, and isolation — *not* a cloud account (there is no server).
 - Every domain record (owned/wanted card entry, card list, deck, note/marginalia, saved item, match, dashboard layout, settings) is owned by exactly one `profileId`.
-- The **reference data** (rules glossary, card catalogue) is **shared and read-only across profiles** — it is content, not user data. Card ownership, wanted quantities, card lists, Codex marginalia/collections, decks, and matches are per-profile.
+- The **reference data** (rules glossary, card catalogue) is **shared and read-only across profiles** — it is content, not user data. Card ownership, wanted quantities, card lists, Codex marginalia/folios, decks, and matches are per-profile.
 
 **B. Storage shape.**
 ```
@@ -198,7 +198,7 @@ device
 └─ app.json                    # activeProfileId, lastBackupAt, globalSchemaVersion
 ```
 
-`owned_cards` is the Collection pillar's profile-scoped materialised ownership total. Its grain is the **collector item** - card, set, and finish - so Alpha, Alpha foil, Beta, and Beta foil are four distinct rows, and a want is a property of one of them rather than of the card (see the key space in `COMPENDIUM_DATA_MODEL.md`). `storage_allocations` is the authoritative location ledger beneath that total: every owned copy is in exactly one `storage_container`, including Unfiled, and sanctioned writers maintain `qty_owned = SUM(storage_allocations.qty)` transactionally. `card_lists` contains custom groupings and wanted-card goals. None is the deck `collection` zone or a Codex named collection; those are separate domain concepts with separate persistence contracts. The concrete relational schema is defined in `COMPENDIUM_DATA_MODEL.md`.
+`owned_cards` is the Collection pillar's profile-scoped materialised ownership total. Its grain is the **collector item** - card, set, and finish - so Alpha, Alpha foil, Beta, and Beta foil are four distinct rows, and a want is a property of one of them rather than of the card (see the key space in `COMPENDIUM_DATA_MODEL.md`). `storage_allocations` is the authoritative location ledger beneath that total: every owned copy is in exactly one `storage_container`, including Unfiled, and sanctioned writers maintain `qty_owned = SUM(storage_allocations.qty)` transactionally. `card_lists` contains custom groupings and wanted-card goals. None is the deck `collection` zone or a Codex folio; those are separate domain concepts with separate persistence contracts. The concrete relational schema is defined in `COMPENDIUM_DATA_MODEL.md`.
 
 **Collection write integrity.** Every *interactive* mutation of `owned_cards`, its `storage_allocations`, or `card_list_entries` is serialized through a store-layer per-row write queue (`src/store/collectionWrites.js`) and bound to the profile captured when the edit was scheduled; `switchProfile` drains that queue before changing the active profile. Filing one collector item uses the same key as its ownership stepper, so ownership and location cannot overtake each other. Multi-item filing takes the exclusive barrier. This ordering point lives in the **store** layer (the shared write chain moved out of `src/components`) so `switchProfile` never depends on a UI module. Batch/atomic writers (scanner, resolved import, boot canonicalisation, triage resolution) are single-profile-bound and transactional and stay outside it. See `docs/proposals/collection-write-integrity.md` and `docs/proposals/collection-storage.md`.
 
@@ -282,7 +282,7 @@ These screen contracts define responsibility and interaction intent. Detailed ca
 
 - **What:** Overview, My Collection, and Lists surfaces. My Collection carries a **Sets | All** toggle: **Sets** is a sets-completion landing drilling into a per-set card grid; **All** is a single flat grid of every collector item across every set (one tile per printing). Both surfaces run the same refine engine and the same bulk-selection controller (`useCollectionRefine.js` / `useCollectionSelection.js`); ALL renders a progressive prefix (bounded first paint, grown by a viewport sentinel with a Show-more fallback) that governs DOM presentation only, never the selection scope - Select-all always spans the complete filtered result. Both surfaces mount an **A-Z jump rail** (`AlphabetRail.jsx`) reading the same canonical arranged order (`alphabetIndex.js` model + `railGeometry.js` bounds + a pure jump-coordinator reducer); it shows only when the order is globally alphabetical and fails closed (ducks) when the ASCII buckets and the locale sort disagree, and a jump on ALL grows the progressive prefix to the target before scrolling. Per-set owned quantities (opened from inside a set, the card sheet is locked to that printing), a wishlist toggle, filters, bulk import, and camera-assisted entry. Tapping card art raises a full-screen viewer with a finger-tracked 3D tilt. Lists provide named card and wanted lists with progress, in three distinct grammars (wishlist heart · goal bar · fanned thumbs). Deck buildability compares owned cards with deck requirements without reserving cards.
 - **How:** all ownership data is profile-scoped through `ownedRepository`. Card definitions remain in the shared catalogue. Ruby is the Collection wayfinding accent; shared card presentation, refine controls, sheets, and zero-image fallbacks remain consistent with the rest of Compendium.
-- **Why:** Collection answers a different question from Codex and Decks: “what do I own or want?” Keeping ownership as a first-class pillar makes collection state reusable by Home and Decks without confusing it with the deck `collection` zone or named Codex collections.
+- **Why:** Collection answers a different question from Codex and Decks: “what do I own or want?” Keeping ownership as a first-class pillar makes collection state reusable by Home and Decks without confusing it with the deck `collection` zone or Codex folios.
 
 ### 7.5 Decks — library, detail (Cards/Stats), edit
 - **What:** library of deck cards (art, archetype, threshold pips, record). Detail leads with **Cards / Stats / Edit Deck** chips *above* the deck name, then the hero, then content. Stats = counts + mana curve. Edit Deck → the add/edit flow.

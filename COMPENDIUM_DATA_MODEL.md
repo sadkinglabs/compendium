@@ -32,7 +32,7 @@ Everything a user creates, records, arranges, or marks belongs to exactly one pr
 - owned and wanted cards;
 - custom and wanted card lists;
 - decks and deck history;
-- saved references, notes, links, and named Codex collections;
+- saved references, notes, links, and Codex folios;
 - matches and match-log entries;
 - Dashboard blocks, layouts, and resume state;
 - settings.
@@ -45,7 +45,7 @@ profiles
 ├─ card_lists ── card_list_entries
 ├─ decks ─────── deck_entries
 │                deck_history
-├─ collections ─ collection_items
+├─ collections ─ collection_items   (Folios - UI name; table rename deferred)
 ├─ matches ───── match_log_entries
 ├─ saved / notes / links
 ├─ dashboard_blocks / dashboard_layouts / resume
@@ -516,7 +516,7 @@ Collection invariants:
 - Buildability and wanted-list progress are derived reads.
 - Token cards do not count toward collectible ownership totals.
 - `owned_cards` is unrelated to the deck zone named `collection`.
-- `card_lists` is unrelated to Codex `collections`.
+- `card_lists` is unrelated to Codex folios.
 - Ownership and its places change in one transaction; the equality above holds at every commit.
 
 ## 7. Deck data
@@ -532,7 +532,7 @@ decks(
   avatar_slug TEXT,
   cover_slug TEXT,
   notes TEXT,
-  curiosa_url TEXT,
+  curiosa_url TEXT,              -- historical column name; see the note below
   wins INTEGER DEFAULT 0,
   losses INTEGER DEFAULT 0,
   starred INTEGER DEFAULT 0,
@@ -556,6 +556,12 @@ deck_history(id PRIMARY KEY, deck_id REFERENCES decks(id) ON DELETE CASCADE, ts,
 Deck legality, copy limits, special-avatar rules, and zone constraints are domain logic derived from catalog data. They are not encoded as per-card SQL constraints.
 
 `decks.wins` and `decks.losses` are synchronized derivatives of linked matches. Matches are the source of truth for the record. Deck history is bounded by repository logic.
+
+**Saved deck source URL.** `curiosa_url` is a historical column name and holds a sorcerytcg.com deck
+URL. The deck platform moved from curiosa.io to sorcerytcg.com and the column was deliberately not
+renamed: a rename is a schema migration that buys no behaviour. Rows written before the move may
+still hold a curiosa.io URL and keep working, because curiosa.io redirects to the same deck id and
+the id extraction is host-agnostic.
 
 **Manual Library order.** `lib_order` is written by insert-at-end on create and by `reorderDecks`,
 which takes the whole arrangement and renumbers from 1 in one transaction. The Library query is
@@ -586,7 +592,7 @@ canonical character offset could not be kept correct as the catalog was rephrase
 content update orphaned highlights wholesale. Notes, links, and bookmarks - which attach
 to a whole reference target rather than a text offset - are unaffected and remain.
 
-### Named Codex collections
+### Folios
 
 ```sql
 collections(id, profile_id, name, created_at)
@@ -594,7 +600,24 @@ collection_items(id, collection_id REFERENCES collections(id) ON DELETE CASCADE,
                  target_type, target_id, added_at)
 ```
 
-These collections group reference targets. They do not represent physical ownership or Collection pillar lists.
+Folios group reference targets. They do not represent physical ownership or Collection pillar lists.
+
+**Folio is the product name; the tables are not.** `collections` and `collection_items` keep their v1
+names, so every folio read and write still goes through those tables and `collection_id`. The rename
+to `folios` / `folio_items` is designed as a schema v13 migration shaped as copy-then-drop: create
+the new tables, `INSERT ... SELECT` the rows across, then drop the old ones. The shape is forced by
+the retry contract in `runMigrations` (`src/store/db.js`), which re-runs a migration that crashed
+between its DDL and its version bump and tolerates only `duplicate column` / `already exists`. An
+`ALTER TABLE ... RENAME TO` fails its second run with `no such table`, which is not tolerated, so a
+retried boot would abort rather than finish - copy-then-drop is what keeps the rename retry-safe.
+Scheduling it is an owner call, not a design gap: the design is held for a flagged follow-up so this
+release ships no migration and the export/backup format stays byte-identical.
+
+**Recorded deviation.** `decks.curiosa_url` sets the precedent that a historical storage name is kept
+rather than migrated for cosmetics. Folios are the deliberate exception, because this collision is
+self-inflicted rather than inherited from an outside platform: "collection" already names the
+Collection pillar, the deck `collection` zone, and these tables. The surface name is fixed now and
+the storage name is scheduled to follow it, so the two are knowingly out of step until v13 lands.
 
 ## 9. Play data
 
@@ -720,7 +743,15 @@ Dashboard blocks store type-specific JSON configuration and ordering. Named layo
 
 ### Decks and lists
 
-- Curiosa URL import resolves supported deck data into one profile-owned deck and its three zones.
+- SorceryTCG URL import (sorcerytcg.com) resolves supported deck data into one profile-owned deck and
+  its three zones. A single `deck.get` fetch returns the whole remote decklist; the Avatar board
+  becomes the deck avatar, and the Main and Collection boards become the Spellbook, Atlas, and
+  Collection entries.
+- The remote Maybeboard is rendered into a managed, delimited section of `decks.notes` rather than
+  into `deck_entries`: `Nx Name` lines between `--- Maybeboard (synced from SorceryTCG) ---` and
+  `--- end Maybeboard ---`. Import writes the block inside the same transaction as the zone entries.
+  Re-sync rewrites only that block, so user text outside the delimiters is never modified, and a
+  remote Maybeboard that is empty removes the block and its delimiters entirely.
 - Text import supports the documented deck formats and reports unresolved cards.
 - Deck exports are derived from authoritative `deck_entries` and catalog data.
 - Collection/list exports are derived from the ownership and list repositories.
@@ -748,8 +779,11 @@ a phantom item:
   until Confirm; Cancel, backdrop and hardware Back are all zero writes.
 
 Collection and list exports serialise their items back to text lines through the same ownership and
-list repositories. Per-item art is never part of the data: `printingRows.js` (`printingArt` /
-`selectPrinting`) returns a content-addressed **key**, never a URL — the art boundary
+list repositories. A wanted list can additionally export **missing only**
+(`ownedRepository.exportMissingListText`), emitting the REMAINING quantity per card - the target less
+the copies already owned - in that same `N Name` grammar and through those same profile-scoped
+repositories, so the result re-imports like any other paste. Per-item art is never part of the data:
+`printingRows.js` (`printingArt` / `selectPrinting`) returns a content-addressed **key**, never a URL — the art boundary
 (`useArtSource`/`ArtImage`) resolves it through the on-device cache, then the CDN, then the deterministic
 placeholder (no bundled art since Phase 5), and honours zero-image mode.
 

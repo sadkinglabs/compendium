@@ -21,7 +21,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 1. **Five pillars, one application.** Home, Codex, Collection, Decks, and Play share one shell, profile system, persistence layer, component language, and design system.
 2. **Universal profiles.** Every user-created or marked record belongs to exactly one profile. Catalog content is shared and read-only.
 3. **Offline-first durability.** SQLite is authoritative on device. The browser uses sql.js with IndexedDB persistence. Transient component state and `localStorage` are not authoritative profile stores.
-4. **Collection is first-class.** Owned cards, wanted quantities, card lists, and buildability belong to Collection. They are distinct from the deck `collection` zone and Codex named collections.
+4. **Collection is first-class.** Owned cards, wanted quantities, card lists, and buildability belong to Collection. They are distinct from the deck `collection` zone and Codex folios.
 5. **Decks do not reserve cards.** Buildability compares each deck independently with the ownership ledger.
 6. **Images are optional.** Missing art, avatars, and covers must not remove information, actions, or layout stability.
 7. **Imports are untrusted.** Profile, deck, collection, and match imports are validated before profile-owned data is committed.
@@ -32,7 +32,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Pillar | Owns | Primary implementation |
 |---|---|---|
 | **Home** | Resume, Overview, Dashboard, saved layouts, and cross-pillar summaries | `src/pillars/Home.jsx`, `src/store/homeRepository.js` |
-| **Codex** | Rules, cards, FAQs, search/browse, reference reading, saved items, marginalia notes, links, and named reference collections | `src/pillars/Codex*.jsx`, `src/store/codexRepository.js` |
+| **Codex** | Rules, cards, FAQs, search/browse, reference reading, saved items, marginalia notes, links, and folios | `src/pillars/Codex*.jsx`, `src/store/codexRepository.js` |
 | **Collection** | Owned and wanted cards, per-set quantities, custom/wanted lists, bulk and camera entry, and buildability | `src/pillars/Collection.jsx`, `src/store/ownedRepository.js` |
 | **Decks** | Deck library, three-zone construction, validation, analysis, sharing, imports, and exports | `src/pillars/Deck*.jsx`, `src/store/deckRepository.js` |
 | **Play** | Match setup, life tracking, in-match log, completed-match journal, history, and match sharing | `src/pillars/Play.jsx`, `src/pillars/LifeCounter.jsx`, `src/store/playRepository.js` |
@@ -54,7 +54,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Saved references | Save and remove cards, rules, and supported targets for the active profile | `saved` | **Implemented** |
 | Marginalia | Create, edit, and delete profile-owned notes and links on supported reference targets | `notes`, `links` | **Implemented** |
 | Reference links | Create and manage supported relationships between cards and articles | `links` | **Implemented** |
-| Named Codex collections | Organize saved reference targets into profile-owned named groups | `collections`, `collection_items` | **Implemented** |
+| Folios (named reference sets) | Organize saved reference targets into profile-owned folios; always-visible FOLIOS section in Marginalia and an Add to Folio action on every entry | `collections`, `collection_items` (table rename deferred) | **Implemented** |
 | Cross-pillar handoff | Open a catalog card from Collection, Decks, Home, or search without duplicating card-detail logic | Shared catalog identifiers | **Implemented** |
 
 ### 2.2 Invariants
@@ -62,7 +62,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 - Catalog rows never acquire `profile_id`.
 - User notes and links always resolve through the active-profile repository boundary.
 - Catalog identifiers, not display names, are the durable reference keys.
-- Codex named collections never represent physical card ownership.
+- Codex folios never represent physical card ownership.
 
 ---
 
@@ -92,8 +92,8 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Camera-assisted entry | Scan cards, resolve candidates, and require a deliberate ownership update | `owned_cards` | **Implemented** |
 | Bulk selection (scoped) | On EITHER Collection surface - inside a set OR the ALL grid: scope the grid (search/refine), the header **Select** pill enters selection mode and morphs in place into Select all / Deselect all; the docked search bar becomes an action bar of four actions - **Edit copies**, **New list**, **Add to list** (add the selected cards, deduped to card grain, to an existing list; entries already present are skipped) and **File in…** (file every unfiled copy of the picked cards, both finishes, into one storage place - see Physical Storage) - while the running selected + hidden count moves to the header row. **Select all covers the COMPLETE filtered result, never merely the rendered prefix**; the selection is a snapshot keyed `card_id\|set`, so a later filter that hides some picks keeps them selected and shows a hidden-selected count, and Select-all UNIONS into (never replaces) earlier picks. Hardware Back exits selection first; switching Sets/All, leaving Collection, or switching profiles clears it. A payload over 2,000 items is refused whole (never split or partially applied) with the selection kept and a Refine-to-2,000 message; New list dedups printings to card grain before the guard. **File in…** carries the tighter storage cap instead - 500 resolved collector items, refused whole with the picker left open. Edit copies has two modes: **Adjust** (raise or lower each card by N against its present count - Remove floors at 0, never negative; N is a per-request input limit of 999, never a stored-total cap, so a total already above 999 adjusts arithmetically) and **Set** (write an absolute 0..999 count; 0 removes while keeping any wishlist want), each with a Standard/Foil finish. The confirmation reports the authoritative copies moved, not the number requested. Selection captures each printing at pick time; a card lacking the chosen finish is skipped and reported. Each write is one barrier-guarded transaction with a single broadcast | `owned_cards`, `card_lists`, `ownedImportRepository.js` (`adjustOwnedItemsBulk`, `setOwnedItemsBulk`, `createListWithEntries`, `addEntriesToList`), `storageDirectory.js` (`bulkFileFromUnfiled`) | **Implemented** |
 | Custom lists | Create, rename, duplicate, populate, export, and delete named card lists | `card_lists`, `card_list_entries` | **Implemented** |
-| List arrange | Group a list by Set (printing-faithful), Rarity, or Element with anchored section headers - one grouping level, because grouping sections a view and sorting orders it. **Sort within a group is an ordered STACK**: tap Name / Element / Rarity / Recently added to add a key, tap again to remove, tap order sets priority, and each key flips direction independently, so "Group by Set · Element → Rarity → Name" reads like a binder. Each key declares the direction it starts in (`sortOptions.js`), so "Recently added" opens newest-first rather than being assumed ascending. Ordering is total: selected keys, then implicit Name ascending, then the row's own identity. Opened from a stacked filter FAB in the refine-sheet language | Session-scoped presentation state (no writes) | **Implemented** |
-| Wanted lists | Track target quantities and acquisition progress against owned quantities | `card_lists`, `card_list_entries`, `owned_cards` | **Implemented** |
+| List arrange | Group a list by **Progress**, Set (printing-faithful), Rarity, or Element with anchored section headers - one grouping level, because grouping sections a view and sorting orders it. **Progress is offered on wanted lists only, where it is also the default**: picking Set, Rarity or Element REPLACES it rather than nesting under it, and Wishlist and custom lists never see the mode. Arrange state is session-global, so a stored Progress arriving at a list that cannot show it resolves to None for that list WITHOUT overwriting the stored choice. **Sort within a group is an ordered STACK**: tap Name / Element / Rarity / Recently added to add a key, tap again to remove, tap order sets priority, and each key flips direction independently, so "Group by Set · Element → Rarity → Name" reads like a binder. Each key declares the direction it starts in (`sortOptions.js`), so "Recently added" opens newest-first rather than being assumed ascending. Ordering is total: selected keys, then implicit Name ascending, then the row's own identity. Opened from a stacked filter FAB in the refine-sheet language | Session-scoped presentation state (no writes), `collectionGrouping.js` (`effectiveListGroup`) | **Implemented** |
+| Wanted lists | Track target quantities and acquisition progress against owned quantities. A wanted list is a shrinking shopping list, so it reads as one: its rows sit in anchored **Missing (N)** / **Complete (N)** sections computed live from the same goal model the rows use, Missing first, an empty section omitted. Membership is live rather than a snapshot - stepping owned copies to the target moves that row across immediately, and a partial (2 of a wanted 4) stays Missing. Export gains a **Whole list \| Missing only** scope, where missing lines carry the REMAINING quantity per card (wanting 4 while owning 2 emits `2 Clairvoyant`) in the same import-compatible `N Name` grammar, so re-exporting for a second marketplace asks only for what is still outstanding. **Add missing to Wishlist** sits in the list overflow and keeps the v11 honest-reprint contract: a card with several printings is reported unresolved, never guessed. Progress stays computed and is never stored. The shared missing sheet is now decks-only; the lists index still shows each list's progress bar, and its View missing button opens the list, which already leads with Missing | `card_lists`, `card_list_entries`, `owned_cards`, `listGoalModel.js` (`goalRowState`, `missingGoalLines`), `ownedRepository.js` (`exportMissingListText`, `addMissingToWishlist`, `listProgressBulk`) | **Implemented** |
 | Deck buildability | Report completeness and per-card shortfalls without reserving inventory | Derived from `owned_cards`, `deck_entries` | **Implemented** |
 
 > **Ownership granularity is per collector item — card + set + finish (schema v11).** Alpha non-foil, Alpha foil, Beta non-foil and Beta foil are four distinct items; the catalog's three finish labels normalise to a binary store (`Standard` → non-foil, `Foil` or `Rainbow` → foil — see `COMPENDIUM_DATA_MODEL.md` §"The collector item"). What is still NOT distinguished is two printings that share one set AND finish: 22 cards have multiple distinct printings within a single set (for example, Avatar of Fire has two Alpha printings; Sorcerer has three Promotional printings), which collapse to one item and show one representative art per set — a known, documented limitation. Deck-building and play are unaffected, since they compare by card rather than printing.
@@ -103,7 +103,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 - Token cards are excluded from collectible ownership totals.
 - Ownership is a ledger, not an allocation system.
 - `owned_cards` is separate from the deck `collection` zone.
-- `card_lists` is separate from Codex `collections`.
+- `card_lists` is separate from Codex folios.
 - Quantities cannot become negative, and invalid imports cannot partially mutate the ledger.
 
 ---
@@ -116,7 +116,7 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 |---|---|---|---|
 | Deck library | Create, open, search, favorite, rename, duplicate, and delete decks | `decks` | **Implemented** |
 | Library manual order | Long-press a deck card and drag it to arrange the Library (DESIGN_SYSTEM §5 Manual ordering). The whole arrangement is written to `decks.lib_order` in one transaction and refused unless it names exactly the profile's decks, so a search-filtered list can never renumber the matches and demote what it hid - the gesture is disabled while the Library search has text for the same reason. Favourites outrank `lib_order` in the query, so the Library is SECTIONED - "Favourites" and "My Decks", each headed by the section rubric with its count, each shown only when it has rows (owner ruling 2026-08-21, replacing an invisible clamp inside one flat list). Each section drags independently and a drop is mapped back into the global order, so a deck can never be dragged across the boundary and the write refuses any arrangement the query could not reproduce. Touch/pointer only; no keyboard or screen-reader equivalent | `decks.lib_order`, `deckRepository.reorderDecks`, `DragReorderList.jsx` (+ `dnd-kit`), `reorderModel.js`, `librarySections.js` | **Implemented** |
-| Deck identity | Store name, archetype, avatar, cover, notes, Curiosa URL, record, and favorite state | `decks` | **Implemented** |
+| Deck identity | Store name, archetype, avatar, cover, notes, SorceryTCG URL, record, and favorite state | `decks` | **Implemented** |
 | Three-zone model | Maintain Spellbook, Atlas, and Collection entries independently | `deck_entries.zone` | **Implemented** |
 | Scoped editing | Every add/remove action identifies the open deck and target zone | `deck_entries` | **Implemented** |
 | Quantity and legality rules | Enforce copy limits, zone constraints, avatar rules, and supported exceptions from catalog data | Catalog + deck validation | **Implemented** |
@@ -124,10 +124,10 @@ Status is evidence, not aspiration. A capability may move to **Implemented** onl
 | Card presentation | Provide list and card views with quantities, art fallback, and shared card detail | Shared catalog + `deck_entries` | **Implemented** |
 | Deck analysis | Show mana curve, composition, power curve, Spellbook odds, Atlas analysis, match record, and buildability | Derived from deck, match, and ownership data | **Implemented** |
 | Play tools | Draw/redraw a hand and draw supported zone cards without mutating the saved deck | Derived transient state | **Implemented** |
-| Deck notes and history | Persist notes, Curiosa URL, and bounded change history | `decks`, `deck_history` | **Implemented** |
-| Import | Import Curiosa URLs and supported text formats; preserve unresolved entries visibly | `decks`, `deck_entries` | **Implemented** |
-| Curiosa re-sync | Re-poll a deck's saved Curiosa URL, show an add/remove/quantity/avatar/name diff, and apply the confirmed one-way sync in one transaction with a deck-log entry; the name follows Curiosa (profile-unique dedup), notes are never modified | `deck_entries`, `decks`, `deck_history` | **Implemented** |
-| Export and sharing | Produce readable and Curiosa-compatible text plus supported deck sharing formats | Derived from deck data | **Implemented** |
+| Deck notes and history | Persist notes, SorceryTCG URL, and bounded change history | `decks`, `deck_history` | **Implemented** |
+| Import | Import SorceryTCG URLs and supported text formats; preserve unresolved entries visibly | `decks`, `deck_entries` | **Implemented** |
+| SorceryTCG re-sync | Re-poll a deck's saved SorceryTCG URL, show an add/remove/quantity/avatar/name diff, and apply the confirmed one-way sync in one transaction with a deck-log entry; the name follows SorceryTCG (profile-unique dedup); the remote Maybeboard maintains a managed block in the deck's notes, and user notes outside the block are never modified | `deck_entries`, `decks`, `deck_history` | **Implemented** |
+| Export and sharing | Produce readable and SorceryTCG-compatible text plus supported deck sharing formats | Derived from deck data | **Implemented** |
 | Deck poster | Generate and share a visual deck summary with graceful art fallback | Derived from deck data | **Implemented** |
 
 ### 4.2 Invariants
@@ -226,7 +226,7 @@ The two **Partial** capabilities require continuing release-level verification a
 | Collection ownership | `owned_cards` | Collection |
 | Collection lists | `card_lists`, `card_list_entries` | Collection |
 | Decks | `decks`, `deck_entries`, `deck_history` | Decks |
-| Codex personal data | `saved`, `notes`, `collections`, `collection_items`, `links` | Codex |
+| Codex personal data | `saved`, `notes`, `collections`, `collection_items` (Folios), `links` | Codex |
 | Matches | `matches`, `match_log_entries` | Play |
 | Home | `dashboard_blocks`, `dashboard_layouts`, `resume` | Home |
 | Settings | `settings` | Application shell and consuming pillars |
