@@ -251,16 +251,16 @@ function CuriosaSyncSheet({ plan, busy, onClose, onConfirm }) {
     </div>
   );
   const d = plan?.diff;
-  const canCommit = !!plan && (!d.isEmpty || plan.duplicateGroups > 0);
+  const canCommit = !!plan && (!d.isEmpty || plan.duplicateGroups > 0 || plan.maybeboardChanged);
   return (
     // Non-dismissible while the commit runs (Codex review 2026-08-14): a scrim
     // tap / drag / hardware back mid-transaction would LOOK like a cancel while
     // the write completes anyway.
-    <Sheet open={!!plan} title="Sync from Curiosa" onClose={onClose} dismissible={!busy} ariaBusy={busy}>
+    <Sheet open={!!plan} title="Sync from SorceryTCG" onClose={onClose} dismissible={!busy} ariaBusy={busy}>
       {plan && (
         <div style={{ padding: '0 16px' }}>
           <p style={{ font: "400 13px/1.55 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 14px' }}>
-            One-way sync: confirming makes this deck match the Curiosa list{plan.remoteName ? <> for <b style={{ color: 'var(--ink-body)' }}>{plan.remoteName}</b></> : ''}. Your notes stay as they are.
+            One-way sync: confirming makes this deck match the SorceryTCG list{plan.remoteName ? <> for <b style={{ color: 'var(--ink-body)' }}>{plan.remoteName}</b></> : ''}. Your own notes stay as they are - only the managed Maybeboard section changes.
           </p>
           {d.name && (
             <Section label="Name" color="#dcb86f">
@@ -296,7 +296,7 @@ function CuriosaSyncSheet({ plan, busy, onClose, onConfirm }) {
           {plan.overLimit?.length > 0 && (
             <Section label={`Over the copy limit · ${plan.overLimit.length}`} color="#e0623f">
               {plan.overLimit.map((o) => <Line key={o.cardId} name={o.name} note={`${o.qty}× · max ${o.limit}`} />)}
-              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '8px 0 0' }}>Curiosa allows this - the sync keeps it as written. The editor won't add more.</p>
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '8px 0 0' }}>SorceryTCG allows this - the sync keeps it as written. The editor won't add more.</p>
             </Section>
           )}
           {plan.duplicateGroups > 0 && (
@@ -306,11 +306,18 @@ function CuriosaSyncSheet({ plan, busy, onClose, onConfirm }) {
           )}
           {plan.placeholderCount > 0 && (
             <Section label={`Unrecognised rows kept · ${plan.placeholderCount}`} color="#8a8175">
-              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '0' }}>{plan.placeholderCount} row{plan.placeholderCount === 1 ? '' : 's'} from an older import can't be identified and stay{plan.placeholderCount === 1 ? 's' : ''} untouched, so this deck keeps them beyond the Curiosa list.</p>
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '0' }}>{plan.placeholderCount} row{plan.placeholderCount === 1 ? '' : 's'} from an older import can't be identified and stay{plan.placeholderCount === 1 ? 's' : ''} untouched, so this deck keeps them beyond the SorceryTCG list.</p>
+            </Section>
+          )}
+          {plan.maybeboardChanged && (
+            <Section label="Maybeboard notes" color="#cba75f">
+              <p style={{ font: "italic 400 12px/1.5 var(--f-read)", color: '#8a8175', margin: '0' }}>{plan.remoteTarget?.maybeboard?.length
+                ? 'The Maybeboard section in this deck’s notes will be updated to match SorceryTCG.'
+                : 'The Maybeboard section in this deck’s notes will be removed.'}</p>
             </Section>
           )}
           {d.isEmpty && (
-            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px' }}>Everything this catalog recognises already matches Curiosa.</div>
+            <div style={{ font: "italic 400 14px/1.5 var(--f-read)", color: '#8a8175', margin: '4px 0 14px' }}>Everything this catalog recognises already matches SorceryTCG.</div>
           )}
           <div style={{ display: 'flex', gap: 10, margin: '14px 0 4px' }}>
             <button onClick={onClose} disabled={busy} style={{ ...BTN_GHOST, flex: 1, opacity: busy ? .55 : 1 }}>Cancel</button>
@@ -342,18 +349,18 @@ function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
     setSyncing(true);
     try {
       const p = await planCuriosaSync(deckId);
-      if (p.diff.isEmpty && !p.unknown.length && !p.duplicateGroups) {
-        await logCuriosaChecked(deckId);           // breadcrumb: the log shows when Curiosa was last polled
+      if (p.diff.isEmpty && !p.unknown.length && !p.duplicateGroups && !p.maybeboardChanged) {
+        await logCuriosaChecked(deckId);           // breadcrumb: the log shows when the remote list was last polled
         // Qualified when placeholder rows survive: "in sync" would overclaim -
         // anonymous rows from an older import deliberately stay beyond the list.
         onToast?.(p.placeholderCount
-          ? `In sync with Curiosa · ${p.placeholderCount} unrecognised row${p.placeholderCount === 1 ? '' : 's'} kept`
-          : 'Already in sync with Curiosa');
+          ? `In sync with SorceryTCG · ${p.placeholderCount} unrecognised row${p.placeholderCount === 1 ? '' : 's'} kept`
+          : 'Already in sync with SorceryTCG');
         onSynced?.();
       } else {
         setPlan(p);
       }
-    } catch (e) { onToast?.(e?.friendly ? e.message : "Couldn't sync from Curiosa."); }
+    } catch (e) { onToast?.(e?.friendly ? e.message : "Couldn't sync from SorceryTCG."); }
     setSyncing(false);
   }
   async function confirmSync() {
@@ -366,7 +373,7 @@ function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
       if (r.removes) bits.push(`-${r.removes}`);
       if (r.changes) bits.push(`~${r.changes}`);
       if (r.duplicates) bits.push(`${r.duplicates} tidied`);
-      onToast?.(r.applied ? `Synced from Curiosa${bits.length ? ' · ' + bits.join(' ') : ''}` : 'Already in sync with Curiosa');
+      onToast?.(r.applied ? `Synced from SorceryTCG${bits.length ? ' · ' + bits.join(' ') : ''}` : 'Already in sync with SorceryTCG');
       setPlan(null);
       onSynced?.();
     } catch (e) { onToast?.(e?.friendly ? e.message : "Couldn't apply the sync."); }
@@ -376,14 +383,14 @@ function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
     <>
     <div className="mx-sec">
       <div className="mx-hdr">
-        <span className="mf-sec-name">Curiosa URL</span>
+        <span className="mf-sec-name">SorceryTCG URL</span>
         <span className="mf-sec-rule" />
         {!editing && hasUrl && <button className="dealt-pill" onClick={sync} style={{ marginRight: 6, opacity: syncing ? .6 : 1 }}>↻ {syncing ? 'Checking…' : 'Sync'}</button>}
         {!editing && <button className="dealt-pill" onClick={() => { setDraft(url); setEditing(true); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>{hasUrl ? <EditIcon width={12} height={12} /> : <PlusIcon width={12} height={12} />}{hasUrl ? 'Edit' : 'Add'}</button>}
       </div>
       {editing ? (
         <>
-          <input type="url" className="mx-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://curiosa.io/decks/…" autoFocus />
+          <input type="url" className="mx-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="https://sorcerytcg.com/decks/…" autoFocus />
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <button className="dealt-pill" onClick={() => setEditing(false)}>Cancel</button>
             <button className="dealt-pill" onClick={save}>Save</button>
@@ -397,7 +404,7 @@ function CuriosaUrlCard({ deckId, initial, onToast, onSynced }) {
       ) : hasUrl ? (
         <div className="mx-empty">Saved link isn’t a valid web URL.</div>
       ) : (
-        <div className="mx-empty">No URL saved - tap ＋ Add to link this deck on Curiosa.</div>
+        <div className="mx-empty">No URL saved - tap ＋ Add to link this deck on SorceryTCG.</div>
       )}
     </div>
     <CuriosaSyncSheet plan={plan} busy={applying} onClose={() => setPlan(null)} onConfirm={confirmSync} />
@@ -440,7 +447,7 @@ function NotesCard({ deckId, initial }) {
         <span className="mf-sec-name">Notes</span>
         <span className="mf-sec-rule" />
       </div>
-      <textarea className="mx-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+      <textarea className={`mx-notes${notes.trim() ? ' mx-notes-filled' : ''}`} value={notes} onChange={(e) => setNotes(e.target.value)}
         onBlur={() => setDeckNotes(deckId, notes)} placeholder="Strategy notes, sideboard ideas, matchup tips…" />
     </div>
   );

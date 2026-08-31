@@ -318,7 +318,7 @@ export default function DecksPager({ onNew, onImport, onImportMatch, onAddCards,
             onOpenDeck: (id, name) => { onChanged?.(); onOpenDeck({ id, name }); },
             onOpenCard: onOpenCodex, onImportMatch,
           }) },
-          { label: 'Import from Curiosa', icon: CuriosaSvg, onClick: () => onImport('url') },
+          { label: 'Import from SorceryTCG', icon: CuriosaSvg, onClick: () => onImport('url') },
           { label: 'Import from text', icon: TextImportSvg, onClick: () => onImport('text') },
         ]} />
       )}
@@ -503,7 +503,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
       <div className="es-format-row">
         <div className="es-format-wrap">
           <button className={`es-format-btn${fmt === 'markdown' ? ' on' : ''}`} onClick={() => setFmt('markdown')}>Markdown</button>
-          <button className={`es-format-btn${fmt === 'curiosa' ? ' on' : ''}`} onClick={() => setFmt('curiosa')}>Curiosa</button>
+          <button className={`es-format-btn${fmt === 'curiosa' ? ' on' : ''}`} onClick={() => setFmt('curiosa')}>SorceryTCG</button>
           <button className={`es-format-btn${fmt === 'compendium' ? ' on' : ''}`} onClick={() => setFmt('compendium')}>Compendium</button>
         </div>
       </div>
@@ -521,7 +521,7 @@ function ExportSheet({ open, deckId, onClose, flash }) {
         </div>
       ) : (
         <>
-          <div className="es-hint">{fmt === 'curiosa' ? 'Flat “qty name” list for curiosa.io import.' : 'Readable list grouped by zone and type.'}</div>
+          <div className="es-hint">{fmt === 'curiosa' ? 'Flat “qty name” list for sorcerytcg.com import.' : 'Readable list grouped by zone and type.'}</div>
           <textarea className="es-area" readOnly value={text} onFocus={(e) => e.target.select()} />
         </>
       )}

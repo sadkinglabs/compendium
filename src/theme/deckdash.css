@@ -142,6 +142,10 @@
 .cx-decks .mx-count { font: 500 11px/1 var(--f-mono); color: #6b6254; flex-shrink: 0; }
 .cx-decks .mx-notes { width: 100%; box-sizing: border-box; min-height: 96px; background: rgba(20,16,10,.4); border: 1px solid rgba(203,167,95,.22); border-radius: 12px; padding: 12px; color: #e9dcc0; font: 400 15px/1.5 var(--f-read); resize: vertical; outline: none; transition: border-color .15s; }
 .cx-decks .mx-notes:focus { border-color: rgba(203,167,95,.45); }
+/* Notes that HOLD text open at double height (owner request 2026-08-30): the resting
+   96px was too small to scroll or even to notice content - a Maybeboard block alone
+   overflows it. Empty stays compact; resize: vertical still allows more. */
+.cx-decks .mx-notes-filled { min-height: 192px; }
 .cx-decks .mx-input { width: 100%; box-sizing: border-box; background: rgba(20,16,10,.4); border: 1px solid rgba(203,167,95,.22); border-radius: 12px; padding: 11px 12px; color: #e9dcc0; font: 400 13.5px/1.4 var(--f-mono); outline: none; }
 .cx-decks .mx-input:focus { border-color: rgba(203,167,95,.45); }
 .cx-decks .mx-link { display: flex; align-items: center; gap: 8px; color: #cbb890; text-decoration: none; font: 500 13.5px/1.35 var(--f-read); word-break: break-all; }

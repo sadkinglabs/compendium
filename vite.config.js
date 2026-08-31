@@ -41,14 +41,17 @@ export default defineConfig({
   server: {
     port: 5000,
     host: true,   // bind 0.0.0.0 so the dev server is reachable over Tailscale/LAN
-    // Dev-only: lets the browser preview reach Curiosa's API (CORS-blocked otherwise).
-    // On device, the app uses CapacitorHttp instead and never hits this.
+    // Dev-only: lets the browser preview reach SorceryTCG's API (CORS-blocked
+    // otherwise). On device, the app uses CapacitorHttp instead and never hits this.
+    // The `/curiosa` path key is kept deliberately - it matches the internal names
+    // in deckRepository.js and the decks.curiosa_url column, which outlived the
+    // platform's move from curiosa.io to sorcerytcg.com.
     proxy: {
       '/curiosa': {
-        target: 'https://curiosa.io',
+        target: 'https://sorcerytcg.com',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/curiosa/, ''),
-        headers: { Origin: 'https://curiosa.io', Referer: 'https://curiosa.io/', 'User-Agent': 'Mozilla/5.0' },
+        headers: { Origin: 'https://sorcerytcg.com', Referer: 'https://sorcerytcg.com/', 'User-Agent': 'Mozilla/5.0' },
       },
     },
   },

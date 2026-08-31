@@ -60,11 +60,11 @@ export function ImportUrlSheet({ open, onClose, onImportUrl }) {
     try { await onImportUrl(url.trim()); } catch (e) { setErr(e.message || 'Import failed'); } finally { setBusy(false); }
   }
   return (
-    <Sheet open={open} title="Import from Curiosa" onClose={onClose}>
+    <Sheet open={open} title="Import from SorceryTCG" onClose={onClose}>
       <div style={{ padding: '0 16px' }}>
-      <div style={{ font: "400 13px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 12px' }}>Paste a Curiosa deck URL to import it.</div>
+      <div style={{ font: "400 13px/1.5 var(--f-read)", color: 'var(--ink-muted)', margin: '2px 0 12px' }}>Paste a SorceryTCG deck URL to import it.</div>
       <input value={url} autoFocus onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
-        placeholder="https://curiosa.io/decks/…" style={S.input} />
+        placeholder="https://sorcerytcg.com/decks/…" style={S.input} />
       {err && <div style={{ font: "400 12px/1.4 var(--f-read)", color: 'var(--destructive)', marginTop: 8 }}>{err}</div>}
       <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
         <button onClick={onClose} style={{ ...S.ghost, flex: 1 }}>Cancel</button>

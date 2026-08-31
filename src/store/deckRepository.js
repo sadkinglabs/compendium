@@ -7,6 +7,7 @@ import { activeProfileId } from './profileRepository.js';
 import { uuid, nowIso, slugify } from './ids.js';
 import { RARITY_LIMITS, isUnlimited } from './playset.js';
 import { computeCuriosaDiff, overLimitEntries } from './curiosaDiff.js';
+import { applyMaybeboardBlock } from './maybeboardBlock.js';
 
 export const ZONES = ['spellbook', 'atlas', 'collection'];
 export { RARITY_LIMITS, isUnlimited };   // re-exported from the leaf playset module (unchanged public API)
@@ -593,7 +594,16 @@ export async function addScannedToDeck(deckId, cardId, qty = 1) {
   return changeQty(deckId, card.is_site ? 'atlas' : 'spellbook', card, Math.max(1, qty | 0));
 }
 
-/* ---- Curiosa URL import ---- */
+/* ---- SorceryTCG URL import ---- */
+
+// The platform behind these functions moved from curiosa.io to sorcerytcg.com
+// (August 2026); curiosa.io 308-redirects there and keeps the same deck ids. The
+// internal names, the `decks.curiosa_url` column and the `/curiosa` proxy key are
+// deliberately unchanged - renaming them would migrate stored data for cosmetics.
+// Endpoint knowledge is confined to curiosaQuery + fetchRemoteDeck, so a future
+// re-point is two functions. NOTE: api.sorcerytcg.com is a separate, paused
+// deployment - never call it. Card image URLs in the payload are never read
+// either; art comes from our own catalog/R2.
 
 // Only a real device build can bypass CORS with CapacitorHttp. On web (incl. the
 // dev preview), Capacitor's web shim would do a CORS-blocked direct fetch, so we
@@ -605,15 +615,16 @@ function nativeHttp() {
 }
 
 // One tRPC query. Native: CapacitorHttp (bypasses CORS). Web: the Vite dev proxy
-// at /curiosa (which injects the spoofed Origin/Referer). Returns the unwrapped json.
+// at /curiosa (which points at sorcerytcg.com and injects the spoofed
+// Origin/Referer). Returns the unwrapped json.
 async function curiosaQuery(proc, id) {
-  const input = encodeURIComponent(JSON.stringify({ 0: { json: { id } } }));
+  const input = encodeURIComponent(JSON.stringify({ 0: { json: { id, collectionTracking: false } } }));
   const path = `/api/trpc/${proc}?batch=1&input=${input}`;
   const http = nativeHttp();
   let data;
   if (http) {
-    const headers = { Origin: 'https://curiosa.io', Referer: `https://curiosa.io/decks/${id}`, 'User-Agent': 'Mozilla/5.0' };
-    const resp = await http.get({ url: 'https://curiosa.io' + path, headers });
+    const headers = { Origin: 'https://sorcerytcg.com', Referer: `https://sorcerytcg.com/decks/${id}`, 'User-Agent': 'Mozilla/5.0' };
+    const resp = await http.get({ url: 'https://sorcerytcg.com' + path, headers });
     // CapacitorHttp resolves on any status - classify here or a 404 surfaces as
     // a TypeError deep in the unwrap below.
     if (resp.status && (resp.status < 200 || resp.status >= 300)) throw new Error('HTTP ' + resp.status);
@@ -627,61 +638,127 @@ async function curiosaQuery(proc, id) {
   const item = Array.isArray(data) ? data[0] : null;
   if (item?.error) throw new Error('HTTP ' + (item.error?.json?.data?.httpStatus || 500));
   const json = item?.result?.data?.json;
-  if (json === undefined) throw new Error("Couldn't read Curiosa's response.");
+  if (json === undefined) throw new Error("Couldn't read SorceryTCG's response.");
   return json;
+}
+
+/** Boards a deck entry may declare. An unknown one aborts the read (see below). */
+const REMOTE_BOARDS = new Set(['Avatar', 'Main', 'Collection', 'Maybeboard']);
+/** Main-board card category -> our zone. A Map, so no prototype key can resolve. */
+const MAIN_ZONE = new Map([['Spell', 'spellbook'], ['Site', 'atlas']]);
+
+/**
+ * Read one deck from SorceryTCG and normalise it to
+ * `{ name, avatarName, entries: [{zone, name, qty}], maybeboard: [{name, qty}] }`,
+ * or null when there is no such deck (deleted or private - each caller phrases
+ * that for its own surface).
+ *
+ * FAIL CLOSED, and that is the point of the function. A row this reader skipped
+ * would simply be absent from the target list, and an absent row reads as a
+ * REMOVAL on sync - upstream shape drift would quietly delete cards from a local
+ * deck. So anything unexpected aborts the WHOLE read: a non-array decklist, an
+ * entry with no object card, a card with no usable name, a quantity that is not a
+ * finite count, a board outside the four known values, or a Main-board card whose
+ * category is neither Spell nor Site.
+ *
+ * The avatar is a decklist entry with board "Avatar" (there is no meta.avatars
+ * list any more), and a card's category now lives at `card.engine.category`.
+ */
+async function fetchRemoteDeck(id) {
+  const deck = await curiosaQuery('deck.get', id);
+  if (!deck) return null;
+  const bad = () => new Error("Couldn't read SorceryTCG's response.");
+  if (!Array.isArray(deck.decklist)) throw bad();
+
+  const entries = [];
+  const maybeboard = [];
+  let avatarName = null;
+  for (const e of deck.decklist) {
+    const card = e && typeof e === 'object' ? e.card : null;
+    if (!card || typeof card !== 'object') throw bad();
+    const name = card.name;
+    if (typeof name !== 'string' || !name.trim()) throw bad();
+    if (e.quantity != null && !(Number.isFinite(e.quantity) && e.quantity >= 0)) throw bad();
+    if (!REMOTE_BOARDS.has(e.board)) throw bad();
+    const qty = Math.max(1, e.quantity | 0);   // nullish and 0 both become 1 copy
+    if (e.board === 'Avatar') { avatarName ??= name; continue; }        // first one wins
+    if (e.board === 'Maybeboard') { maybeboard.push({ name, qty }); continue; }   // names verbatim: no catalog resolution
+    if (e.board === 'Collection') { entries.push({ zone: 'collection', name, qty }); continue; }
+    const zone = MAIN_ZONE.get(card.engine?.category);
+    if (!zone) throw bad();
+    entries.push({ zone, name, qty });
+  }
+  return { name: typeof deck.name === 'string' ? deck.name : '', avatarName, entries, maybeboard };
+}
+
+/** The user-facing message for a failed remote read. Shared by import and sync so
+ *  the two sheets say the same thing about the same failure. The parse-failure
+ *  branch matches on a MARKER inside the message, so this regex and the string
+ *  thrown above must change together. */
+function classifyFetchError(e) {
+  const msg = String(e?.message || '');
+  const code = /HTTP (\d+)/.exec(msg)?.[1];
+  if (code && +code >= 400 && +code < 500) return 'SorceryTCG has no deck at this link any more - it may be deleted or private.';
+  if (code) return `SorceryTCG returned an error (HTTP ${code}). Try again later.`;
+  if (/SorceryTCG's response/.test(msg)) return "Couldn't read SorceryTCG's response.";
+  return "Couldn't reach SorceryTCG - check your connection.";
 }
 
 const resolveCardId = async (name) =>
   (await query('SELECT card_id FROM cards WHERE lower(name)=? LIMIT 1;', [String(name || '').toLowerCase()]))[0]?.card_id || null;
 
-/** Import a Curiosa deck URL into a NEW deck. Maps Spell→spellbook, Site→atlas,
- *  sideboard→collection. Unresolved cards → warnings (kept as
- *  placeholders so nothing is lost). Returns { id, name, warnings }. */
+/** Import a SorceryTCG deck URL into a NEW deck. fetchRemoteDeck has already
+ *  placed every row in its zone (Main/Spell→spellbook, Main/Site→atlas,
+ *  Collection→collection); the remote Maybeboard, which our schema has no zone
+ *  for, is written into the deck's notes as the managed block. Unresolved cards →
+ *  warnings, kept as placeholder rows so nothing is lost. Returns
+ *  { id, name, warnings }. */
 export async function importCuriosaUrl(rawUrl) {
   const id = curiosaIdFrom(rawUrl);
-  if (!id) throw new Error('Could not find a Curiosa deck id in that URL.');
+  if (!id) throw new Error('Could not find a SorceryTCG deck id in that URL.');
 
-  const meta = await curiosaQuery('deck.getById', id);
-  // A nonexistent/private deck is NOT an HTTP error: Curiosa answers 200 with a
-  // null deck and an empty decklist (device-verified 2026-08-14). Without this
-  // check a dead URL imports as an empty deck.
-  if (!meta) throw new Error('Curiosa has no deck at this URL - it may be deleted or private.');
-  const main = await curiosaQuery('deck.getDecklistById', id);
-  let side = [];
-  try { side = await curiosaQuery('deck.getSideboardById', id); } catch { /* no sideboard */ }
+  let remote;
+  try { remote = await fetchRemoteDeck(id); }
+  catch (e) { throw new Error(classifyFetchError(e)); }
+  // A deleted or private deck may answer with a null deck rather than a 404
+  // (a dead id 404s, but private decks are unprobed). Without this check such a
+  // URL would import as an empty deck.
+  if (!remote) throw new Error('SorceryTCG has no deck at this URL - it may be deleted or private.');
 
   const warnings = [];
-  const avName = meta?.avatars?.[0]?.card?.name || null;
+  const avName = remote.avatarName;
   const avatarId = avName ? await resolveCardId(avName) : null;
   if (avName && !avatarId) warnings.push(avName);
 
-  const name = await uniqueDeckName(meta?.name || 'Imported Deck');
+  const name = await uniqueDeckName(remote.name || 'Imported Deck');
   const deckId = await createDeck(name, { avatarCardId: avatarId });
 
   const stmts = [];
-  const add = async (arr, zone, cat) => {
-    for (const e of arr || []) {
-      if (cat && (e.card?.category) !== cat) continue;
-      const nm = e.card?.name;
-      const cid = await resolveCardId(nm);
-      if (!cid && nm) warnings.push(nm);
-      stmts.push(['INSERT INTO deck_entries(id,deck_id,zone,card_id,quantity,variant_slug) VALUES(?,?,?,?,?,?);',
-        [uuid(), deckId, zone, cid, e.quantity || 1, '']]);
-    }
-  };
-  await add(main, 'spellbook', 'Spell');
-  await add(main, 'atlas', 'Site');
-  await add(side, 'collection', null);
+  for (const e of remote.entries) {
+    const cid = await resolveCardId(e.name);
+    if (!cid) warnings.push(e.name);
+    stmts.push(['INSERT INTO deck_entries(id,deck_id,zone,card_id,quantity,variant_slug) VALUES(?,?,?,?,?,?);',
+      [uuid(), deckId, e.zone, cid, e.qty, '']]);
+  }
+  // The Maybeboard block rides the SAME transaction as the entries (constitution:
+  // transactional user-data operations) - a crash can't leave a deck whose notes
+  // claim cards its zones never got.
+  if (remote.maybeboard.length) {
+    stmts.push(['UPDATE decks SET notes=? WHERE id=? AND profile_id=?;',
+      [applyMaybeboardBlock('', remote.maybeboard), deckId, activeProfileId()]]);
+  }
   if (stmts.length) await tx(stmts);
 
-  await touch(deckId, 'curiosa_url=?', [`https://curiosa.io/decks/${id}`]);
-  await logHistory(deckId, 'Imported from Curiosa');
+  await touch(deckId, 'curiosa_url=?', [`https://sorcerytcg.com/decks/${id}`]);
+  await logHistory(deckId, 'Imported from SorceryTCG');
   return { id: deckId, name, warnings: [...new Set(warnings)] };
 }
 
-/* ---- Curiosa re-sync (docs/proposals/curiosa-resync.md) ---- */
+/* ---- SorceryTCG re-sync (docs/proposals/curiosa-resync.md) ---- */
 
-/** Deck id from a curiosa.io URL or a bare id; null when neither matches. */
+/** Deck id from a sorcerytcg.com (or legacy curiosa.io) URL or a bare id; null
+ *  when neither matches. Host-agnostic on purpose: the platform move kept deck
+ *  ids, so URLs saved against the old host still resolve. */
 function curiosaIdFrom(raw) {
   const m = /\/decks\/([a-z0-9]+)/i.exec(raw || '');
   return m ? m[1] : (/^[a-z0-9]{16,}$/i.test(raw || '') ? raw : null);
@@ -691,49 +768,31 @@ function curiosaIdFrom(raw) {
 // safe to toast verbatim; anything else gets a generic message in the UI.
 function syncError(message) { const e = new Error(message); e.friendly = true; return e; }
 
-/** Read-only sync plan: fetch the deck's saved Curiosa URL and diff the remote
+/** Read-only sync plan: fetch the deck's saved SorceryTCG URL and diff the remote
  *  list against the local entries. Writes NOTHING. Remote names the catalog
  *  can't resolve go to `unknown` (shown, never applied - anonymous placeholder
  *  rows can't be reconciled on a later sync); existing placeholder rows are
- *  counted and left alone. Returns
- *  { diff, remoteTarget, unknown, overLimit, placeholderCount, duplicateGroups, remoteName }. */
+ *  counted and left alone. The remote Maybeboard is compared against the managed
+ *  block in the deck's notes, so the sheet can say whether confirming will touch
+ *  them. Returns { diff, remoteTarget, unknown, overLimit, placeholderCount,
+ *  duplicateGroups, remoteName, maybeboardChanged }. */
 export async function planCuriosaSync(deckId) {
-  const deck = (await query('SELECT name, curiosa_url, avatar_card_id FROM decks WHERE id=? AND profile_id=?;', [deckId, activeProfileId()]))[0];
+  const deck = (await query('SELECT name, notes, curiosa_url, avatar_card_id FROM decks WHERE id=? AND profile_id=?;', [deckId, activeProfileId()]))[0];
   if (!deck) throw syncError('This deck no longer exists.');
   const id = curiosaIdFrom(deck.curiosa_url);
-  if (!id) throw syncError("The saved link isn't a Curiosa deck URL.");
+  if (!id) throw syncError("The saved link isn't a SorceryTCG deck URL.");
 
-  let meta, main, side;
-  try {
-    meta = await curiosaQuery('deck.getById', id);
-    main = await curiosaQuery('deck.getDecklistById', id);
-    // The sideboard fetch gets NO lenient fallback (Codex review 2026-08-14): a
-    // read failure substituted as [] becomes an authoritative empty sideboard,
-    // and confirming would delete the whole local Collection. Curiosa's real
-    // no-sideboard contract is a 200 with an empty ARRAY (probed on a deck with
-    // no sideboard) - anything else is a failure and aborts the plan below.
-    side = await curiosaQuery('deck.getSideboardById', id);
-  } catch (e) {
-    const code = /HTTP (\d+)/.exec(String(e?.message || ''))?.[1];
-    if (code && +code >= 400 && +code < 500) throw syncError('Curiosa has no deck at this link any more - it may be deleted or private.');
-    if (code) throw syncError(`Curiosa returned an error (HTTP ${code}). Try again later.`);
-    if (/Curiosa's response/.test(String(e?.message || ''))) throw syncError("Couldn't read Curiosa's response.");
-    throw syncError("Couldn't reach Curiosa - check your connection.");
-  }
-  // A nonexistent/private deck is NOT an HTTP error: Curiosa answers 200 with a
-  // null deck and an empty decklist (device-verified 2026-08-14). Without this
-  // check an absent deck reads as an EMPTY deck and the diff proposes removing
-  // every card in the local one.
-  if (!meta) throw syncError('Curiosa has no deck at this link any more - it may be deleted or private.');
-  // Shape validation, fail closed: a row whose name/quantity shape drifted, or a
-  // main-list category we can't place, must abort rather than be skipped -
-  // skipping means the sync would REMOVE that card locally.
-  const shapeOk = (e) => !!(e && e.card && typeof e.card.name === 'string' && e.card.name.trim()
-    && (e.quantity == null || (Number.isFinite(e.quantity) && e.quantity >= 0)));
-  if (!Array.isArray(main) || !Array.isArray(side) || ![...main, ...side].every(shapeOk)
-    || !main.every((e) => e.card.category === 'Spell' || e.card.category === 'Site')) {
-    throw syncError("Couldn't read Curiosa's response.");
-  }
+  // One request carries the whole deck, so the property the old three-call read
+  // had to defend by hand - a failed read must never masquerade as an
+  // authoritative empty list, or confirming would delete the local Collection -
+  // is now structural: fetchRemoteDeck either validates every row or throws.
+  let remote;
+  try { remote = await fetchRemoteDeck(id); }
+  catch (e) { throw syncError(classifyFetchError(e)); }
+  // A deleted or private deck may answer with a null deck rather than a 404.
+  // Without this check an absent deck reads as an EMPTY deck and the diff
+  // proposes removing every card in the local one.
+  if (!remote) throw syncError('SorceryTCG has no deck at this link any more - it may be deleted or private.');
 
   const cat = await getCatalog();
   const byName = new Map(cat.map((c) => [c._nameLc, c]));
@@ -742,23 +801,14 @@ export async function planCuriosaSync(deckId) {
   const unknown = [];
   const remoteEntries = [];
   const limitByCardId = new Map();
-  const push = (arr, zone, category) => {
-    for (const e of arr || []) {
-      if (category && e?.card?.category !== category) continue;
-      const nm = e?.card?.name;
-      if (!nm) continue;
-      const qty = Math.max(1, e.quantity | 0);
-      const card = byName.get(lc(nm));
-      if (!card) { unknown.push({ name: nm, qty, zone }); continue; }
-      limitByCardId.set(card.card_id, copyLimit(card));
-      remoteEntries.push({ zone, cardId: card.card_id, name: card.name, qty });
-    }
-  };
-  push(main, 'spellbook', 'Spell');
-  push(main, 'atlas', 'Site');
-  push(side, 'collection', null);
+  for (const { zone, name, qty } of remote.entries) {
+    const card = byName.get(lc(name));
+    if (!card) { unknown.push({ name, qty, zone }); continue; }
+    limitByCardId.set(card.card_id, copyLimit(card));
+    remoteEntries.push({ zone, cardId: card.card_id, name: card.name, qty });
+  }
 
-  const avName = meta?.avatars?.[0]?.card?.name || null;
+  const avName = remote.avatarName;
   const avCard = avName ? byName.get(lc(avName)) : null;
   if (avName && !avCard) unknown.push({ name: avName, qty: 1, zone: 'avatar' });
   const remoteAvatar = avCard ? { cardId: avCard.card_id, name: avCard.name } : null;
@@ -778,12 +828,12 @@ export async function planCuriosaSync(deckId) {
     if (n === 2) duplicateGroups++;
   }
 
-  // Name follows Curiosa (owner amendment 2026-08-14: versioned upstream names flow
-  // through). The EFFECTIVE name is resolved here, profile-unique via the app-wide
-  // dedup rule (excluding this deck) - so a "(1)" suffix that lands back on the
-  // current name reads as in-sync rather than proposing the same rename forever.
+  // Name follows the remote (owner amendment 2026-08-14: versioned upstream names
+  // flow through). The EFFECTIVE name is resolved here, profile-unique via the
+  // app-wide dedup rule (excluding this deck) - so a "(1)" suffix that lands back
+  // on the current name reads as in-sync rather than proposing the same rename forever.
   let effectiveName = null;
-  const remoteNameRaw = String(meta?.name || '').trim();
+  const remoteNameRaw = String(remote.name || '').trim();
   if (remoteNameRaw && remoteNameRaw !== deck.name) {
     const candidate = await uniqueDeckName(remoteNameRaw, deckId);
     if (candidate !== deck.name) effectiveName = candidate;
@@ -793,11 +843,15 @@ export async function planCuriosaSync(deckId) {
   // Copy-limit breaches in the INCOMING list. Written verbatim (one-way sync,
   // consistent with import; owner decision 2026-08-14) - surfaced, not enforced.
   const overLimit = overLimitEntries(remoteEntries, (id) => limitByCardId.get(id));
+  // Does confirming rewrite the managed Maybeboard block? Asked of the same
+  // function the commit will run, so "no change" here means the commit really is
+  // a no-op - the block's deterministic render is what makes that true.
+  const maybeboardChanged = applyMaybeboardBlock(deck.notes, remote.maybeboard) !== (deck.notes || '');
   // remoteTarget carries the RAW upstream name; the suffixed effective name is
   // display-only (diff.name). Commit re-dedups the raw name against fresh state,
   // so a collision that disappears between plan and commit settles in ONE sync
   // (Codex review 2026-08-14).
-  return { diff, remoteTarget: { avatar: remoteAvatar, entries: remoteEntries, rawName: remoteNameRaw || null }, unknown, overLimit, placeholderCount, duplicateGroups, remoteName: remoteNameRaw || null };
+  return { diff, remoteTarget: { avatar: remoteAvatar, entries: remoteEntries, rawName: remoteNameRaw || null, maybeboard: remote.maybeboard }, unknown, overLimit, placeholderCount, duplicateGroups, remoteName: remoteNameRaw || null, maybeboardChanged };
 }
 
 /** Apply a sync plan's remote target. Re-reads current entries and re-diffs, so
@@ -806,12 +860,15 @@ export async function planCuriosaSync(deckId) {
  *  in ONE tx() (constitution: transactional user-data operations): quantity
  *  updates keep each row's variant_slug, duplicate rows for one (zone, card)
  *  collapse into the first, placeholder rows (card_id null) are untouched, and
- *  the history entry + trim ride the same transaction. The deck name follows
- *  Curiosa (re-deduped here against fresh state, excluding this deck); notes are
- *  never modified. Returns { applied, adds, removes, changes, avatarChanged, renamedTo }. */
+ *  the history entry + trim ride the same transaction. The deck name follows the
+ *  remote (re-deduped here against fresh state, excluding this deck). Notes are
+ *  touched ONLY inside the managed Maybeboard block, and only when the target
+ *  actually carries a `maybeboard` array - a target without that field (an older
+ *  plan, or any caller that never asked for one) leaves notes alone entirely.
+ *  Returns { applied, adds, removes, changes, avatarChanged, maybeboardChanged, renamedTo }. */
 export async function commitCuriosaSync(deckId, remoteTarget) {
   const pid = activeProfileId();
-  const deck = (await query('SELECT name, avatar_card_id FROM decks WHERE id=? AND profile_id=?;', [deckId, pid]))[0];
+  const deck = (await query('SELECT name, notes, avatar_card_id FROM decks WHERE id=? AND profile_id=?;', [deckId, pid]))[0];
   if (!deck) throw syncError('This deck no longer exists.');
 
   const rows = await query('SELECT id, zone, card_id, quantity FROM deck_entries WHERE deck_id=?;', [deckId]);
@@ -866,8 +923,16 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
   }
   const nameChanged = !!toName;
 
-  if (!adds && !removes && !changes && !duplicates && !avatarChanged && !nameChanged) {
-    return { applied: false, adds, removes, changes, duplicates, avatarChanged, renamedTo: null };
+  // Notes surgery only when the target carries a maybeboard array: a missing
+  // field means "this caller has nothing to say about notes", not "empty".
+  // applyMaybeboardBlock copies every byte outside the managed block through, so
+  // the user's own notes cannot be reworded, reordered or lost here.
+  let nextNotes = null;
+  if (Array.isArray(remoteTarget?.maybeboard)) nextNotes = applyMaybeboardBlock(deck.notes, remoteTarget.maybeboard);
+  const notesChanged = nextNotes !== null && nextNotes !== (deck.notes || '');
+
+  if (!adds && !removes && !changes && !duplicates && !avatarChanged && !nameChanged && !notesChanged) {
+    return { applied: false, adds, removes, changes, duplicates, avatarChanged, maybeboardChanged: false, renamedTo: null };
   }
 
   const ts = nowIso();
@@ -875,6 +940,9 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
   const setParams = [ts];
   if (nameChanged) { sets.unshift('name=?', 'slug=?'); setParams.unshift(toName, slugify(toName)); }
   if (avatarChanged) { sets.unshift('avatar_card_id=?'); setParams.unshift(toAvatar); }
+  // Joins the deck row's ONE update rather than opening a second transaction:
+  // notes and entries must land together or not at all.
+  if (notesChanged) { sets.unshift('notes=?'); setParams.unshift(nextNotes); }
   stmts.push([`UPDATE decks SET ${sets.join(', ')} WHERE id=? AND profile_id=?;`, [...setParams, deckId, pid]]);
   const parts = [];
   if (adds) parts.push(`+${adds}`);
@@ -882,22 +950,23 @@ export async function commitCuriosaSync(deckId, remoteTarget) {
   if (changes) parts.push(`~${changes}`);
   if (duplicates) parts.push(`tidied ${duplicates} duplicate${duplicates === 1 ? '' : 's'}`);
   if (avatarChanged) parts.push('avatar');
+  if (notesChanged) parts.push('maybeboard');
   if (nameChanged) parts.push(`renamed to ${toName}`);
-  stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);', [uuid(), deckId, ts, `Synced from Curiosa (${parts.join(' / ')})`]]);
+  stmts.push(['INSERT INTO deck_history(id,deck_id,ts,text) VALUES(?,?,?,?);', [uuid(), deckId, ts, `Synced from SorceryTCG (${parts.join(' / ')})`]]);
   stmts.push(trimHistorySql(deckId));
   await tx(stmts);
-  return { applied: true, adds, removes, changes, duplicates, avatarChanged, renamedTo: nameChanged ? toName : null };
+  return { applied: true, adds, removes, changes, duplicates, avatarChanged, maybeboardChanged: notesChanged, renamedTo: nameChanged ? toName : null };
 }
 
 /** Deck-log breadcrumb for an "already in sync" check, so the log shows when
- *  Curiosa was last polled even when nothing changed. Profile-guarded INSERT …
+ *  SorceryTCG was last polled even when nothing changed. Profile-guarded INSERT …
  *  SELECT in one tx (Codex review 2026-08-14): a deck outside the active profile
  *  matches no row, so nothing is inserted - the repository boundary refuses the
  *  cross-profile write instead of trusting the caller's deck id. */
 export async function logCuriosaChecked(deckId) {
   await tx([
     ['INSERT INTO deck_history(id,deck_id,ts,text) SELECT ?, id, ?, ? FROM decks WHERE id=? AND profile_id=?;',
-      [uuid(), nowIso(), 'Checked Curiosa - already in sync', deckId, activeProfileId()]],
+      [uuid(), nowIso(), 'Checked SorceryTCG - already in sync', deckId, activeProfileId()]],
     trimHistorySql(deckId),
   ]);
 }
