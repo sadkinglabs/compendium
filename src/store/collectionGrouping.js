@@ -16,6 +16,31 @@ import { RARITY_ORDER } from './rarity.js';
 
 export const GROUP_MODES = ['none', 'element', 'rarity', 'set'];
 
+// Collection LISTS arrange by their own vocabulary, deliberately not the grid's GROUP_MODES:
+// the grid has no notion of a goal to be met, and only a list offers 'set'. 'progress' is
+// meaningful on a WANTED list alone - a custom list or the binary Wishlist has no per-row
+// target to be short of - so it is offered there and nowhere else, and it replaces the chosen
+// grouping rather than nesting inside it.
+export const LIST_GROUP_MODES = ['none', 'set', 'rarity', 'element'];
+export const WANTED_GROUP_MODES = ['progress', ...LIST_GROUP_MODES];
+
+/**
+ * Resolve the group mode a list actually renders with.
+ * @param stored the arrange choice already made, or undefined for "never chosen". Arrange state
+ *        is session-global and shared by every list, so a 'progress' left behind by a wanted
+ *        list can arrive on a custom list; it resolves to the default there and is NOT written
+ *        back, which would destroy the wanted list's choice on the way past.
+ * @param kind the list kind ('wanted' | 'wishlist' | anything custom).
+ * @returns a mode allowed for that kind: the stored one when it is, otherwise the default -
+ *          'progress' for a wanted list, 'none' for every other kind. Pure; mutates nothing.
+ */
+export function effectiveListGroup(stored, kind) {
+  const isWanted = kind === 'wanted';
+  const allowed = isWanted ? WANTED_GROUP_MODES : LIST_GROUP_MODES;
+  if (allowed.includes(stored)) return stored;
+  return isWanted ? 'progress' : 'none';
+}
+
 // Callers hold different shapes: the sets home has bare catalog cards, the set drill has
 // {card, set, owned, foil} ownership rows. An accessor keeps this module working on both
 // without either side reshaping data purely to satisfy it - reshaping would detach the
@@ -59,6 +84,26 @@ export function groupCards(cards, mode = 'none', cardOf = identity, comparator =
     return [...buckets.keys()]
       .sort((a, b) => (rank(a) - rank(b)) || String(label(a)).localeCompare(String(label(b))))
       .map((k) => ({ key: k, label: label(k), cards: buckets.get(k) }));
+  }
+  // 'progress' grouping (wanted lists): whether a row's goal is met is the CALLER's call.
+  // It is read from the live optimistic owned/target maps the list screen holds, which this
+  // leaf module must not know about, so it arrives as opts.goalMetOf(row) -> boolean - the
+  // same caller-supplied-vocabulary shape the 'set' branch uses. Partly owned is not met, so a
+  // row wanting 4 with 2 in hand stays under Missing; the shopping list is not done with it.
+  if (mode === 'progress') {
+    // No accessor supplied means nothing is known to be met, which reads as an all-Missing
+    // list rather than an empty one. Silently dropping rows would be the worse failure.
+    const goalMetOf = opts.goalMetOf || (() => false);
+    const missing = [];
+    const complete = [];
+    for (const c of list) (goalMetOf(c) ? complete : missing).push(c);
+    // Missing leads: a wanted list is a shrinking shopping list, so what is still needed
+    // belongs on top. Empty sections are omitted like everywhere else here, so a finished list
+    // shows only Complete and an untouched one only Missing - no header over nothing.
+    const out = [];
+    if (missing.length) out.push({ key: 'missing', label: 'Missing', cards: missing });
+    if (complete.length) out.push({ key: 'complete', label: 'Complete', cards: complete });
+    return out;
   }
   if (mode !== 'element' && mode !== 'rarity') {
     return [{ key: 'all', label: '', cards: list }];

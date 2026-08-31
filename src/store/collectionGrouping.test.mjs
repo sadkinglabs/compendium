@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { groupCards, GROUP_MODES } from './collectionGrouping.js';
+import {
+  groupCards, GROUP_MODES, LIST_GROUP_MODES, WANTED_GROUP_MODES, effectiveListGroup,
+} from './collectionGrouping.js';
 import { rarityRank, RARITY_ORDER } from './rarity.js';
 
 const card = (name, extra = {}) => ({ name, rarity: 'Ordinary', elements: ['Fire'], ...extra });
@@ -122,4 +124,82 @@ test('set grouping respects a custom comparator inside sections', () => {
   const rows = [{ name: 'A', set: 's', n: 2 }, { name: 'B', set: 's', n: 1 }];
   const out = groupCards(rows, 'set', (x) => x, (a, b) => a.n - b.n, { setOf: (r) => r.set });
   assert.deepEqual(out[0].cards.map((c) => c.name), ['B', 'A']);
+});
+
+// --- 'progress' mode (wanted lists): caller-supplied goal state ---
+
+// A wanted-list row as the list screen holds it: how many are wanted, how many are in hand.
+// goalMet is the CALLER's verdict, so the fixtures carry the numbers and the tests pass the
+// predicate - exactly how the list screen reads its live optimistic maps.
+const wantRow = (name, owned, target) => ({ name, owned, target });
+const metOf = (r) => r.target > 0 && r.owned >= r.target;
+
+test('progress grouping puts Missing first and Complete second', () => {
+  const out = groupCards([
+    wantRow('Owned', 3, 3),
+    wantRow('Needed', 0, 2),
+  ], 'progress', (x) => x, null, { goalMetOf: metOf });
+  assert.deepEqual(out.map((s) => s.key), ['missing', 'complete'], 'what is still needed leads');
+  assert.deepEqual(out.map((s) => s.label), ['Missing', 'Complete']);
+  assert.deepEqual(out[0].cards.map((c) => c.name), ['Needed']);
+  assert.deepEqual(out[1].cards.map((c) => c.name), ['Owned']);
+});
+
+test('progress grouping: an all-owned list shows Complete alone, not an empty Missing header', () => {
+  const out = groupCards([wantRow('A', 2, 2), wantRow('B', 5, 1)], 'progress', (x) => x, null, { goalMetOf: metOf });
+  assert.deepEqual(out.map((s) => s.key), ['complete']);
+  assert.deepEqual(out[0].cards.map((c) => c.name), ['A', 'B']);
+});
+
+test('progress grouping: a list with nothing owned shows Missing alone', () => {
+  const out = groupCards([wantRow('A', 0, 2), wantRow('B', 1, 4)], 'progress', (x) => x, null, { goalMetOf: metOf });
+  assert.deepEqual(out.map((s) => s.key), ['missing']);
+  assert.deepEqual(out[0].cards.map((c) => c.name), ['A', 'B']);
+});
+
+test('progress grouping keeps the comparator order inside each section', () => {
+  // A deliberately non-alphabetical comparator: sectioning must not quietly re-sort by name.
+  const rows = [
+    wantRow('Aardvark', 0, 3), wantRow('Zephyr', 0, 1),
+    wantRow('Ancient', 2, 2), wantRow('Zealot', 1, 1),
+  ];
+  const byNameDesc = (a, b) => b.name.localeCompare(a.name);
+  const out = groupCards(rows, 'progress', (x) => x, byNameDesc, { goalMetOf: metOf });
+  assert.deepEqual(out[0].cards.map((c) => c.name), ['Zephyr', 'Aardvark'], 'Missing in comparator order');
+  assert.deepEqual(out[1].cards.map((c) => c.name), ['Zealot', 'Ancient'], 'Complete in comparator order');
+});
+
+test('progress grouping: a partly owned row stays Missing', () => {
+  // Own 2 of a wanted 4. The shopping list is not done with this card, so it must not drift
+  // into Complete the moment the first copy lands.
+  const out = groupCards([wantRow('Clairvoyant', 2, 4)], 'progress', (x) => x, null, { goalMetOf: metOf });
+  assert.deepEqual(out.map((s) => s.key), ['missing']);
+  assert.equal(out[0].cards[0].owned, 2, 'the row survived intact, not just its name');
+});
+
+test('progress is a LIST mode only, never offered to the grid', () => {
+  assert.ok(!GROUP_MODES.includes('progress'), 'the grid has no goals to be short of');
+  assert.ok(!LIST_GROUP_MODES.includes('progress'), 'custom lists and the Wishlist have none either');
+  assert.deepEqual(WANTED_GROUP_MODES, ['progress', ...LIST_GROUP_MODES], 'wanted lists lead with it');
+});
+
+// --- effectiveListGroup: session-global arrange state, per-kind defaults ---
+
+test('effectiveListGroup defaults Progress on wanted lists and None elsewhere', () => {
+  assert.equal(effectiveListGroup(undefined, 'wanted'), 'progress');
+  assert.equal(effectiveListGroup(undefined, 'custom'), 'none');
+  assert.equal(effectiveListGroup(undefined, 'wishlist'), 'none');
+});
+
+test('effectiveListGroup honours a stored choice that the kind allows', () => {
+  assert.equal(effectiveListGroup('set', 'wanted'), 'set');
+  assert.equal(effectiveListGroup('progress', 'wanted'), 'progress');
+});
+
+test('effectiveListGroup resolves a foreign stored mode to the kind default', () => {
+  // Arrange state is session-global: a wanted list's 'progress' arrives on the next list
+  // opened. It resolves away there rather than being written back over the real choice.
+  assert.equal(effectiveListGroup('progress', 'custom'), 'none');
+  assert.equal(effectiveListGroup('progress', 'wishlist'), 'none');
+  assert.equal(effectiveListGroup('bogus', 'wanted'), 'progress');
 });

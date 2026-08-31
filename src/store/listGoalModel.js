@@ -31,6 +31,28 @@ export function goalTotals(qty, ownQty) {
 }
 
 /**
+ * The shortfall per card, in the shape `addMissingToWishlist` consumes: `[{ card_id, missing }]`.
+ * Same capping rule as goalTotals, so an over-owned card is simply absent rather than emitting a
+ * negative or zero line. Entries with target <= 0 are ignored (a removed goal), and a card the
+ * owned map has never heard of counts as owned 0. The target guard and the cap mirror goalTotals
+ * for readability; here the `missing <= 0` filter already subsumes both, so no fixture can tell
+ * them apart. Do not read their presence as tested behavior.
+ * @param {Map<string, number>} qty     card_id -> wanted target
+ * @param {Map<string, number>} ownQty  card_id -> live owned count (read-only)
+ * @returns {{ card_id:string, missing:number }[]}
+ */
+export function missingGoalLines(qty, ownQty) {
+  const lines = [];
+  for (const [id, t] of qty) {
+    if (t <= 0) continue;
+    const missing = t - Math.min(ownQty.get(id) || 0, t);
+    if (missing <= 0) continue;
+    lines.push({ card_id: id, missing });
+  }
+  return lines;
+}
+
+/**
  * One card row's goal state. Only 'wanted' lists (isWanted) show completion; custom lists track
  * copies without a goal, so `goalMet` is always false for them.
  * @param {{ owned:number, target:number, isWanted:boolean }} row

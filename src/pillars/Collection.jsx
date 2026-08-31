@@ -40,16 +40,16 @@ import {
   ownedMap, collectionStats, recentlyAdded, setWanted, wishlistCards, wishlistExportText,
   uncategorisedRows, cardSetsFor,
   ownedBySet, qtyForInSet, setOwnedInSet,
-  deckBuildabilityBulk, subscribeCollection, previewCollectionText, exportListText,
+  deckBuildabilityBulk, subscribeCollection, previewCollectionText, exportListText, exportMissingListText,
   listCardLists, createList, renameList, duplicateList, deleteList,
   setListEntry, stepWanted, stepListEntry, ownedRowKey, listRowKey, queueWantWrite,
   stepWantedForItem, setWantedForItem,
-  listProgress, listProgressBulk, listCards, listThumbsBulk,
+  listProgressBulk, listCards, listThumbsBulk, addMissingToWishlist,
 } from '../store/ownedRepository.js';
 import { SET_LABEL, SET_RANK, setRank as catalogSetRank } from '../store/sets.js';
 import { groupCollection } from '../store/collectionGroups.js';
 import { rowComparator, stackComparator, normaliseSort } from '../store/collectionFilter.js';
-import { groupCards } from '../store/collectionGrouping.js';
+import { groupCards, effectiveListGroup } from '../store/collectionGrouping.js';
 import { ElementPip } from '../components/ElementPip.jsx';
 import { planCollectionImport, buildImportItems, importTallies, itemKey } from '../store/importPlan.js';
 import { importCollectionResolved, setOwnedItemsBulk, adjustOwnedItemsBulk, createListWithEntries } from '../store/ownedImportRepository.js';
@@ -57,7 +57,7 @@ import { bulkWriteFailure } from '../store/bulkWriteOutcome.js';
 import { resolveWantList, hasReviewContent } from '../store/wantImport.js';
 import { planWantDraft, applySetForAll } from '../store/batchWantPlan.js';
 import { addWantedItemsBulk } from '../store/wantedBulkRepository.js';
-import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
+import { goalTotals, goalRowState, missingGoalLines, listRowsNeedLedgerRefresh, canApplyExternalRows } from '../store/listGoalModel.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, Loading, BottomSheet, BTN_GOLD, BTN_GHOST, SortRow } from '../components/ui.jsx';
 import { toggleSort, flipSort, sortIndex, inertSortKey, effectiveSort } from '../components/sortStack.js';
 import { LIST_SORT_OPTIONS } from '../store/sortOptions.js';
@@ -67,7 +67,6 @@ import CollectionRefineSheet from '../components/CollectionRefineSheet.jsx';
 import { LedgerRow, BinderTile, Frost, GILT, GILT_BRIGHT, GLOW, GLOW_BRIGHT, artForSet } from '../components/CollectionCardViews.jsx';
 import CardArt from '../components/CardArt.jsx';
 import SearchPill from '../components/SearchPill.jsx';
-import MissingSheet from '../components/MissingSheet.jsx';
 import { enqueueWrite } from '../store/collectionWrites.js';
 import { createOwnedStepGrid } from '../store/ownedStepGrid.js';
 import { activeProfileId } from '../store/profileRepository.js';
@@ -209,7 +208,7 @@ export default function Collection({ pillSlot, onOpen, onGoDecks, rev, onChanged
         </>
       )}
       {surface === 'listDetail' && (
-        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onOpen={onOpen} onPeek={peek} onChanged={onChanged} />
+        <ListDetail list={listOpen} onBack={() => setListOpen(null)} onPeek={peek} onChanged={onChanged} />
       )}
       {surface === 'listsIndex' && <ListsIndex onOpenList={setListOpen} rev={rev} />}
       {surface === 'storageIndex' && <StorageIndex onOpenPlace={setPlaceOpen} rev={rev} />}
@@ -1329,30 +1328,63 @@ function Empty({ text }) {
   return <div style={{ padding: '6px 0 4px', font: "italic 400 15px/1.5 var(--f-read)", color: 'var(--ink-muted-warm)' }}>{text}</div>;
 }
 
+// What a WANTED list can be exported as. "Missing only" emits the REMAINING quantity per card
+// (want 4, own 2 -> `2 Clairvoyant`) in the same import-compatible grammar, so a second trip to a
+// marketplace does not re-ask for what has already been found.
+const EXPORT_SCOPES = [
+  { key: 'all', label: 'Whole list', empty: 'This list is empty.' },
+  { key: 'missing', label: 'Missing only', empty: 'You own every card here.' },
+];
+
 // Export a list as flat "qty name" text - the Curiosa deck-export format, so it
 // round-trips into Curiosa, Decks > Import from text, or Collection's own bulk
 // import on another profile/device.
-function ExportListSheet({ open, fetchText, listName, onClose }) {
-  const [text, setText] = useState(null);
+//
+// `scopes` is optional: without it the sheet exports the one thing it always has (no picker at
+// all, so the Wishlist and card lists are unchanged). With it, `fetchText(scope)` is asked for the
+// chosen slice and each scope carries its own empty-state line, because "the list is empty" and
+// "you own every card here" are different facts.
+function ExportListSheet({ open, fetchText, listName, scopes = null, onClose }) {
+  // One fetch per OPEN, covering every scope at once - switching the picker is then a plain
+  // lookup into this map, so the sheet never flickers back through Loading on a toggle.
+  const [texts, setTexts] = useState(null);   // { [scopeKey || '']: text } once loaded
+  const [scope, setScope] = useState(() => scopes?.[0]?.key ?? null);
+  // Every open starts on the first scope: an export is a one-off errand, and a picker still set
+  // to "Missing only" from last time silently exports the wrong thing.
+  useEffect(() => { if (open) setScope(scopes?.[0]?.key ?? null); /* eslint-disable-next-line */ }, [open]);
   useEffect(() => {
     if (!open || !fetchText) return;
     let alive = true;
-    setText(null);
-    Promise.resolve(fetchText()).then((t) => alive && setText(t));
+    setTexts(null);
+    const keys = scopes ? scopes.map((s) => s.key) : [null];
+    Promise.all(keys.map((k) => Promise.resolve(fetchText(k)))).then((vals) => {
+      if (!alive) return;
+      const m = {};
+      keys.forEach((k, i) => { m[k ?? ''] = vals[i]; });
+      setTexts(m);
+    });
     return () => { alive = false; };
-  }, [open, fetchText]);
+  }, [open, fetchText, scopes]);
+  const text = texts ? texts[scope ?? ''] : null;
   async function copy() {
     if (!text) return;
     try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); }
     catch { toast('Copy failed', { tone: 'danger' }); }
   }
+  const emptyText = scopes?.find((s) => s.key === scope)?.empty || 'This list is empty.';
   return (
     <BottomSheet open={open} title="EXPORT LIST" onClose={onClose}>
       <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-muted)', textAlign: 'center', marginBottom: 12 }}>
-        “{listName}” as plain text - pastes into Curiosa, a deck’s Import from text, or another Collection.
+        “{listName}” as plain text - pastes into SorceryTCG, a deck’s Import from text, or another Collection.
       </div>
+      {scopes && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+          <SegTabs ariaLabel="What to export" value={scope} onChange={setScope}
+            options={scopes.map((s) => ({ key: s.key, label: s.label }))} />
+        </div>
+      )}
       {text == null ? <Loading /> : (
-        <textarea readOnly value={text || 'This list is empty.'} rows={8} onFocus={(e) => e.target.select()}
+        <textarea readOnly value={text || emptyText} rows={8} onFocus={(e) => e.target.select()}
           style={{ ...SHEET_INPUT, height: 'auto', padding: '11px 14px', resize: 'none', font: "400 13.5px/1.5 var(--f-mono)" }} />
       )}
       <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
@@ -1750,9 +1782,11 @@ function ListsIndex({ onOpenList, rev }) {
   if (lists == null) return <Loading />;
   const wanted = lists.filter((l) => l.kind === 'wanted');
   const custom = lists.filter((l) => l.kind === 'custom');
+  // "View missing ›" just opens the list: a wanted list arranges by Progress, so what is still
+  // short is already the first section. No separate sheet, and nothing to scroll to.
   const card = (l) => (
     <ListRowCard key={l.id} list={l} progress={progress.get(l.id)} thumbs={thumbs.get(l.id)}
-      onClick={() => onOpenList(l)} onViewMissing={() => onOpenList({ ...l, openMissing: true })} />
+      onClick={() => onOpenList(l)} onViewMissing={() => onOpenList(l)} />
   );
   return (
     <div style={{ padding: '2px 20px' }}>
@@ -1797,6 +1831,9 @@ const LABEL_RANK = new Map(Object.entries(SET_LABEL).map(([code, label]) => [lab
 // several printings is honestly bucketed rather than guessed.
 const LIST_MULTI = '~multi', LIST_UNCAT = '~uncat';
 const ARRANGE_ELEMENTS = new Set(['Air', 'Earth', 'Fire', 'Water']);
+// The Group by chips every list offers. A wanted list prepends Progress (see the Arrange sheet);
+// the keys mirror LIST_GROUP_MODES in collectionGrouping.js, which is what actually validates them.
+const LIST_GROUP_CHIPS = [['none', 'None'], ['set', 'Set'], ['rarity', 'Rarity'], ['element', 'Element']];
 
 // One card on a list detail. A full-width hairline row (never a rounded card): a
 // gilt-framed 5:7 thumb that lights up as you own copies toward the goal, the
@@ -1923,7 +1960,7 @@ function ListCardRow({ card, owned, target, isWanted, editable, onStep, onPeek, 
   );
 }
 
-function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
+function ListDetail({ list, onBack, onPeek, onChanged }) {
   const isWishlist = list.kind === 'wishlist';   // the virtual, un-deletable Wishlist (qty_wanted ledger)
   const isWanted = list.kind === 'wanted';
   // Progress (owned-vs-goal bar + "X of Y" figure) is a WANTED-LIST idea - a goal you close in on.
@@ -1950,7 +1987,6 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   const [exportOpen, setExportOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [rename, setRename] = useState(false);
-  const [missing, setMissing] = useState(null);    // report for MissingSheet
   const [removeCard, setRemoveCard] = useState(null); // card pending removal confirm
   // ROW IDENTITY. The Wishlist is per COLLECTOR ITEM now, so two rows can share a card_id -
   // an Alpha want and a Beta want are different things to display and to edit. Custom lists
@@ -1988,8 +2024,6 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       isAlive: () => !cancelled,
     });
     load();
-    // Arriving via a "View missing ›" tap on the index opens straight to the list.
-    if (list.openMissing) listProgress(list.id).then(setMissing);
     // Owned counts are read-only here: they redraw live as the collection grows.
     const off = subscribeCollection(() => {
       ownedMap().then(setOwnQty);
@@ -2032,15 +2066,22 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
   // arrangement (and, crucially, keeps 'added' meaning newest-first).
   const [arrange, setArrange] = useState(() => {
     const prev = collectionSession().listArrange;
-    return { group: prev?.group || 'none', sort: normaliseSort(prev?.sort) };
+    // `group` stays undefined until the user picks one: the DEFAULT is a render-time decision
+    // (Progress on a wanted list, None elsewhere), so it must never be written into the session
+    // as though it had been chosen. See effectiveListGroup.
+    return { group: prev?.group, sort: normaliseSort(prev?.sort) };
   });
   useEffect(() => { collectionSession().listArrange = arrange; }, [arrange]);
   const [arrOpen, setArrOpen] = useState(false);
+  // The mode this list actually renders with. Arrange state is session-global and shared by every
+  // list, so a wanted list's 'progress' can arrive on a custom list or the Wishlist; it resolves to
+  // their default here WITHOUT being written back, which would destroy the wanted list's choice.
+  const group = effectiveListGroup(arrange.group, list.kind);
   // Grouping and sorting share a vocabulary, so grouping by rarity makes the rarity SORT key inert -
   // every row in a section already carries that rarity. The key stays in state (change the grouping
   // and it comes back) but it is dropped from the comparator, the numbering and the badge, so the
   // panel stops claiming an effect it does not have.
-  const inertKey = inertSortKey(arrange.group, LIST_SORT_OPTIONS);
+  const inertKey = inertSortKey(group, LIST_SORT_OPTIONS);
   const liveSort = useMemo(() => effectiveSort(arrange.sort, inertKey), [arrange.sort, inertKey]);
   // One comparator for the whole stack: selected keys in priority order, then implicit Name
   // ascending, then the row's own identity so the order is total. rowKey is that identity -
@@ -2056,12 +2097,17 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     if (sole) return sole;
     try { return JSON.parse(r.sets || '[]').length > 1 ? LIST_MULTI : LIST_UNCAT; } catch { return LIST_UNCAT; }
   };
-  const listSections = useMemo(() => groupCards(listRows, arrange.group, (x) => x, listComparator, {
+  // 'progress' sections read the LIVE optimistic maps, so a row crosses from Missing to Complete
+  // the instant the owned count reaches its goal. `ownQty` is therefore a real dependency: without
+  // it the rows still re-render (owned is read per row) but the buckets never rebuild, and the
+  // moved row sits under the wrong header until something else invalidates the memo.
+  const listSections = useMemo(() => groupCards(listRows, group, (x) => x, listComparator, {
     setOf: setKeyOf,
     setRank: (k) => (k === LIST_MULTI ? 98 : k === LIST_UNCAT ? 99 : (isWishlist ? setRank(k) : (LABEL_RANK.get(k) ?? 50))),
     setLabel: (k) => (k === LIST_MULTI ? 'Several printings' : k === LIST_UNCAT ? UNCATEGORISED_LABEL : (isWishlist ? (SET_LABEL[k] || k) : k)),
+    goalMetOf: (r) => goalRowState({ owned: ownQty.get(rowKey(r)) || 0, target: qty.get(rowKey(r)) || 0, isWanted: true }).goalMet,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [listRows, arrange.group, listComparator, isWishlist]);
+  }), [listRows, group, listComparator, isWishlist, ownQty, qty]);
 
   const targetOf = (id) => qty.get(id) || 0;
   // What a wishlist row is FOR - the set and finish it wants. Without this the surface stores
@@ -2227,8 +2273,29 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
     return m;
   }, [qty, isWishlist]);
 
-  const openMissing = async () => setMissing(await listProgress(list.id));
-  const exportText = useCallback(() => (isWishlist ? wishlistExportText() : exportListText(list.id)), [isWishlist, list.id]);
+  // The Wishlist has its own item-grain grammar and no scope picker, so the scope is ignored there.
+  const exportText = useCallback((scope) => {
+    if (isWishlist) return wishlistExportText();
+    return scope === 'missing' ? exportMissingListText(list.id) : exportListText(list.id);
+  }, [isWishlist, list.id]);
+  // Wishlist the shortfall of every row that is still short. The LIVE maps are the right source
+  // here (unlike the export, which reads the repo): addMissingToWishlist takes MAX of what is
+  // already wanted, so an optimistic count that is a beat ahead self-heals rather than overshooting.
+  const wishMissing = async () => {
+    // v11: a want names its collector item, so a reprint cannot be wishlisted from a card-grain
+    // list - which printing is wanted is not knowable here, and guessing is the defect the schema
+    // change removed. Those come back unresolved and are reported rather than silently dropped.
+    const { added, unresolved } = await addMissingToWishlist(missingGoalLines(qty, ownQty));
+    if (added) toast(`Added ${added} card${added === 1 ? '' : 's'} to your Wishlist`);
+    if (unresolved.length) {
+      toast(
+        `${unresolved.length} reprint${unresolved.length === 1 ? '' : 's'} need a printing chosen - add ${unresolved.length === 1 ? 'it' : 'them'} from the card`,
+        { tone: 'warn' },
+      );
+    }
+    if (!added && !unresolved.length) toast('Nothing to add');
+    onChanged?.();
+  };
 
   return (
     <div style={{ padding: '0 20px' }}>
@@ -2255,6 +2322,9 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             isWishlist ? null : { label: 'Edit list', icon: <MenuGlyph kind="edit" />, onClick: () => setRename(true) },
             isWishlist ? null : { label: 'Duplicate list', icon: <MenuGlyph kind="duplicate" />, onClick: async () => { await duplicateList(list.id); toast('List duplicated'); onBack(); } },
             { label: 'Export as text', icon: <MenuGlyph kind="export" />, onClick: () => setExportOpen(true) },
+            // The old View missing sheet's one irreplaceable action, kept where managing the list
+            // lives. Offered only while something is actually short.
+            (isWanted && totals.missing > 0) ? { label: 'Add missing to Wishlist', icon: <MenuGlyph kind="missing" />, onClick: wishMissing } : null,
             isWishlist ? null : { label: 'Delete list', icon: <MenuGlyph kind="delete" />, danger: true, onClick: () => setConfirmDel(true) },
           ]} />
         </>} />
@@ -2262,7 +2332,8 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       {meta.description && <div style={{ font: "italic 400 15px/1.45 var(--f-read)", color: 'var(--ink-muted-warm)', margin: '0 2px 14px' }}>{meta.description}</div>}
 
       {/* Progress bar (wanted only): fills rose as the collection acquires copies,
-          turning gold at 100%. "View missing ›" filters to what is still short. */}
+          turning gold at 100%. What is still short is named by the list's own Missing
+          section, so the bar states the figure and sends you nowhere. */}
       {isWanted && totals.req > 0 && (
         <div style={{ marginBottom: 18 }}>
           <div style={{ height: 6, borderRadius: 3, background: 'var(--track-neutral)', overflow: 'hidden' }}>
@@ -2272,9 +2343,6 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             <span style={{ font: "400 12.5px/1 var(--f-read)", color: 'var(--ink-muted-warm)' }}>
               {totals.complete ? 'Every card collected' : `${totals.missing} missing`}
             </span>
-            {isWanted && totals.missing > 0 && (
-              <button onClick={openMissing} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, font: "600 12.5px/1 var(--f-ui)", color: 'var(--accent-ruby)' }}>View missing ›</button>
-            )}
           </div>
         </div>
       )}
@@ -2311,7 +2379,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
                 // device-verified) so the current group stays named mid-scroll. Opaque
                 // frost, glass per the owner ruling; bleeds to the screen edges.
                 <div style={{ position: 'sticky', top: 68, zIndex: 4, display: 'flex', alignItems: 'center', gap: 10, margin: '14px -20px 8px', padding: '8px 20px', background: 'rgba(0,0,0,.92)', backdropFilter: 'blur(12px)' }}>
-                  {arrange.group === 'element' && ARRANGE_ELEMENTS.has(sec.key) && (
+                  {group === 'element' && ARRANGE_ELEMENTS.has(sec.key) && (
                     <ElementPip el={String(sec.key).toLowerCase()} color={`var(--el-${String(sec.key).toLowerCase()})`} size={14} />
                   )}
                   <span style={{ font: "700 11.5px/1 var(--f-display)", letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--ink-head)' }}>{sec.label}</span>
@@ -2334,7 +2402,7 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       )}
 
       {/* The + FAB is ADD-only: the ways cards come INTO this list. Export moved to the overflow (it
-          is a manage action, not an add), and "Get missing" lives on the progress bar's "View missing".
+          is a manage action, not an add), and so did "Add missing to Wishlist".
           Add-from-camera is deferred until the scanner learns a list target (it only knows
           collection/deck today) - scanning now would add to the collection, not this list. */}
       <Fab variant="lib" label="List actions" icon={<FabGlyph kind="add" />} items={[
@@ -2343,19 +2411,23 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
       ]} />
       {/* Arrange opener (owner ruling): the stacked filter FAB above the + FAB - the same
           pair My Collection's edit mode ships, the same filter glyph as every Collection
-          refine entry. Badge counts active arrangement choices. */}
+          refine entry. Badge counts active arrangement choices - a wanted list opens on Progress,
+          so it legitimately starts at 1: that grouping IS in effect. */}
       {loaded && listRows.length > 0 && (
         <Fab className="fab-stacked" variant="deck" label="Arrange list" icon={<FabGlyph kind="filters" />}
           onClick={() => setArrOpen(true)} active={arrOpen}
-          badge={(arrange.group !== 'none' ? 1 : 0) + liveSort.length} />
+          badge={(group !== 'none' ? 1 : 0) + liveSort.length} />
       )}
 
       {/* The Arrange sheet - the Refine language's Arrange page, alone (docs/proposals/list-arrange.md). */}
       <BottomSheet open={arrOpen} title="ARRANGE" onClose={() => setArrOpen(false)}>
         <SectionLabel label="Group by" />
+        {/* Progress leads on a WANTED list and appears nowhere else: only a goal can be short.
+            It replaces the chosen grouping rather than nesting inside it, so it is one chip
+            among the rest. */}
         <ChipRow style={{ margin: '10px 0 18px' }}>
-          {[['none', 'None'], ['set', 'Set'], ['rarity', 'Rarity'], ['element', 'Element']].map(([k, l]) => (
-            <Chip key={k} label={l} active={arrange.group === k} onClick={() => setArrange((a) => ({ ...a, group: k }))} />
+          {(isWanted ? [['progress', 'Progress'], ...LIST_GROUP_CHIPS] : LIST_GROUP_CHIPS).map(([k, l]) => (
+            <Chip key={k} label={l} active={group === k} onClick={() => setArrange((a) => ({ ...a, group: k }))} />
           ))}
         </ChipRow>
         <SectionLabel label="Sort" />
@@ -2394,7 +2466,10 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
         </div>
       </BottomSheet>
 
-      <ExportListSheet open={exportOpen} fetchText={exportText} listName={meta.name} onClose={() => setExportOpen(false)} />
+      {/* Only a wanted list has a shortfall to narrow the export to; the Wishlist and card lists
+          get the sheet exactly as it was, picker and all absent. */}
+      <ExportListSheet open={exportOpen} fetchText={exportText} listName={meta.name}
+        scopes={isWanted ? EXPORT_SCOPES : null} onClose={() => setExportOpen(false)} />
 
       <ListNameSheet open={rename} kind={isWanted ? 'wanted' : 'custom'} title="RENAME LIST"
         initialName={meta.name} initialDesc={meta.description || ''} submitLabel="Save"
@@ -2434,9 +2509,6 @@ function ListDetail({ list, onBack, onOpen, onPeek, onChanged }) {
             toast(`Added ${copies} cop${copies === 1 ? 'y' : 'ies'} to ${meta.name}`);
           }} />
       )}
-
-      <MissingSheet open={!!missing} report={missing} title={`Missing for ${meta.name}`}
-        onOpenCard={(id) => onOpen('card', id)} onClose={() => setMissing(null)} onChanged={() => onChanged?.()} />
     </div>
   );
 }

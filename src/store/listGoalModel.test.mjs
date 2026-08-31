@@ -6,7 +6,7 @@
 // requires a non-empty list fully owned. This drives every wishlist/list bar and the COMPLETE chip.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { goalTotals, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from './listGoalModel.js';
+import { goalTotals, missingGoalLines, goalRowState, listRowsNeedLedgerRefresh, canApplyExternalRows } from './listGoalModel.js';
 
 const m = (obj) => new Map(Object.entries(obj));
 
@@ -44,6 +44,33 @@ test('an unowned list is 0% with full missing', () => {
 test('percent rounds to the nearest whole (1 of 3 -> 33%)', () => {
   const t = goalTotals(m({ a: 3 }), m({ a: 1 }));
   assert.equal(t.percent, 33);
+});
+
+// --- missingGoalLines -----------------------------------------------------------
+// The output feeds addMissingToWishlist, which keeps only lines where `card_id && missing > 0`
+// (ownedRepository.js:875). Anything this emits with a zero or negative shortfall would be
+// silently dropped there, so the assertions below lock the REMAINING quantity, not just membership.
+
+test('a partially-owned goal reports the remaining copies', () => {
+  assert.deepEqual(missingGoalLines(m({ a: 4 }), m({ a: 2 })), [{ card_id: 'a', missing: 2 }]);
+});
+
+test('met and over-owned cards are excluded entirely', () => {
+  // a is exactly met, b is over-owned; neither may emit a line (a 0 or negative missing would
+  // be dropped downstream anyway, but an over-owned card must never reach the wishlist writer).
+  assert.deepEqual(missingGoalLines(m({ a: 2, b: 1 }), m({ a: 2, b: 5 })), []);
+});
+
+test('targets <= 0 are ignored (a removed goal is not a shortfall)', () => {
+  assert.deepEqual(missingGoalLines(m({ a: 0, b: 3 }), m({ b: 1 })), [{ card_id: 'b', missing: 2 }]);
+});
+
+test('a card absent from the owned map counts as owned 0', () => {
+  assert.deepEqual(missingGoalLines(m({ a: 3 }), new Map()), [{ card_id: 'a', missing: 3 }]);
+});
+
+test('an empty list yields no lines', () => {
+  assert.deepEqual(missingGoalLines(new Map(), new Map()), []);
 });
 
 // --- goalRowState ---------------------------------------------------------------

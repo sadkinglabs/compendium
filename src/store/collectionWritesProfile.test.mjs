@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 import { MIGRATIONS } from './schema.js';
 import { __setBackendForTests, query } from './db.js';
 import { __setActiveIdForTests, activeProfileId, switchProfile } from './profileRepository.js';
-import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey , listCards, listEntries, exportListText, listProgress, listProgressBulk, listThumbsBulk } from './ownedRepository.js';
+import { stepWanted, stepOwnedBucket, setFoil, setOwnedInSet, setFoilInSet, setListEntry, stepListEntry, ownedRowKey, listRowKey , listCards, listEntries, exportListText, exportMissingListText, listProgress, listProgressBulk, listThumbsBulk } from './ownedRepository.js';
 import { enqueueWrite, __resetCollectionWritesForTests } from './collectionWrites.js';
 
 const require = createRequire(import.meta.url);
@@ -225,6 +225,7 @@ test("another profile's list id returns NOTHING through every read path", async 
   assert.deepEqual(await listCards('LA'), [], 'listCards must not read across profiles');
   assert.deepEqual(await listEntries('LA'), [], 'listEntries must not read across profiles');
   assert.equal(await exportListText('LA'), '', 'export must produce nothing for a foreign list');
+  assert.equal(await exportMissingListText('LA'), '', 'the missing-only export must not leak a foreign list either');
 
   const prog = await listProgress('LA');
   assert.equal(prog.totalRequired ?? 0, 0, 'progress must not compute from a foreign list');
@@ -282,5 +283,51 @@ test('bulk progress captures one profile the same way', async () => {
   const out = await pending;
   assert.equal(out.get('LA')?.totalRequired, 2);
   assert.ok(out.get('LA')?.complete);
+  __setActiveIdForTests('A');
+});
+
+/* ---------------- missing-only export (the shrinking shopping list) ---------------- */
+
+test('the missing-only export emits the REMAINING quantity, not the target', async () => {
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 4, 'A');       // want 4
+  await setOwnedInSet('c', '001', 2, 'A');     // own 2 -> 2 still to find
+  assert.equal(await exportMissingListText('LA'), '2 Test Card');
+});
+
+test('a fully-owned entry drops out while its unmet neighbours remain', async () => {
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 2, 'A');       // want 2, owned below
+  await setListEntry('LA', 'cardX', 3, 'A');   // want 3, own none
+  await setOwnedInSet('c', '001', 5, 'A');     // over-owned: 5 covers the 2, and does not go negative
+  assert.equal(await exportMissingListText('LA'), '3 cardX', 'only the outstanding row survives the filter');
+  assert.equal(
+    await exportListText('LA'), '2 Test Card\n3 cardX',
+    'and the whole-list export is unchanged by any of this',
+  );
+});
+
+test('a list you already own in full exports as empty text', async () => {
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 2, 'A');
+  await setOwnedInSet('c', '001', 2, 'A');     // exactly met
+  assert.equal(await exportMissingListText('LA'), '', 'nothing left to shop for');
+});
+
+test('the missing export captures ONE profile even if the active id switches between its reads', async () => {
+  // Same gap as listProgress: targets are read, then ownership, with an await between. The
+  // profile is captured SYNCHRONOUSLY as a default parameter, so flipping right after the
+  // call lands squarely in that gap. If ownership re-resolved the active id, B owns nothing
+  // and every wanted copy would be reported as still missing.
+  __setActiveIdForTests('A');
+  await setListEntry('LA', 'c', 4, 'A');
+  await setOwnedInSet('c', '001', 2, 'A');
+
+  const pending = exportMissingListText('LA');   // captures A here, before any await resolves
+  __setActiveIdForTests('B');                    // switch inside the operation
+  const text = await pending;
+
+  assert.equal(activeProfileId(), 'B', 'the active profile really did change mid-operation');
+  assert.equal(text, '2 Test Card', "targets and ownership both came from A");
   __setActiveIdForTests('A');
 });

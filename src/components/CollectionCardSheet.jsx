@@ -571,13 +571,14 @@ function CardBody({ c, onPick, editable, set, foil: initFoil }) {
           {products.length > 0 && <div style={{ font: "400 12.5px/1.35 var(--f-read)", color: '#8a7a55' }}>{products.join(' · ')}</div>}
 
           {/* The seal row: playset first, filed second, no labels - each seal carries its own
-              title/aria-label, and a wordmark beside a mark that already says it is noise. */}
-          {(playsetDone || itemFiled) && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {playsetDone && <PlaysetSeal size={16} />}
-              {itemFiled && <FiledSeal size={16} />}
-            </div>
-          )}
+              title/aria-label, and a wordmark beside a mark that already says it is noise.
+              Space for BOTH seals is reserved unconditionally (owner request 2026-08-30): a seal
+              popping in - a stepper tap crossing the playset line, a filing landing - must never
+              reflow the art above it. The only thing that moves is the seal itself appearing. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 16 }}>
+            <span style={{ display: 'inline-flex', width: 16, height: 16, visibility: playsetDone ? 'visible' : 'hidden' }}><PlaysetSeal size={16} /></span>
+            <span style={{ display: 'inline-flex', width: 16, height: 16, visibility: itemFiled ? 'visible' : 'hidden' }}><FiledSeal size={16} /></span>
+          </div>
         </div>
       </div>
 

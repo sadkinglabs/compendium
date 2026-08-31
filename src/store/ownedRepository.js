@@ -1108,6 +1108,33 @@ export async function exportListText(listId) {
   return rows.map((r) => `${r.quantity} ${r.name}`).join('\n');
 }
 
+// The same grammar, narrowed to what is still OUTSTANDING - a wanted list is a shrinking
+// shopping list, so re-exporting after acquiring two copies must not re-ask for them. Each
+// line carries the REMAINING quantity (want 4, own 2 -> `2 Clairvoyant`), fully-owned rows
+// drop out, and a list with nothing left produces ''. A foreign list produces '' too, since
+// both reads are joined on the same profile (listCards refuses it outright).
+//
+// CAPTURE THE PROFILE ONCE, exactly as listProgress does: pid is resolved synchronously as a
+// default parameter and handed to BOTH reads, so a profile switch landing in the await gap
+// cannot pair one profile's targets with another's ownership.
+//
+// Accepted staleness: this reads repo state while the list's sections read the live optimistic
+// maps, so an export fired on the same beat as an un-drained write can be one write behind.
+// The queue settles in milliseconds; do not grow a live-map export path to chase it.
+export async function exportMissingListText(listId, pid = activeProfileId()) {
+  const rows = await listCards(listId, pid);
+  const owned = await ownedMap(rows.map((r) => r.card_id), pid);
+  return rows
+    .map((r) => {
+      const target = r.quantity || 0;
+      const have = owned.get(r.card_id) || 0;
+      return { name: r.name, remaining: target - Math.min(have, target) };
+    })
+    .filter((r) => r.remaining > 0)
+    .map((r) => `${r.remaining} ${r.name}`)
+    .join('\n');
+}
+
 // Item-grain export for the Wishlist (qty_wanted ledger) - take it to a shop. Emits the collector-item
 // grammar `N Card [Set] [Foil]` (optional tags), so a wishlist round-trips back through the bulk
 // importer to the same printings: `1 Lone Wolves [Alpha] [Foil]`. A set-less (uncategorised) want
