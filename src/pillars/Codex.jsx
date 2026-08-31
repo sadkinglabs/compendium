@@ -1,11 +1,11 @@
 // Codex browse - an A–Z divided list with note-indicator dots. The scope
 // (Rules / Cards / Marginalia) is chosen by the shared control in the app
 // contextHeader (App.CodexScopeBar) and passed in as `scope`; the Marginalia
-// scope gathers the whole personal layer (notes, links, collections).
+// scope gathers the whole personal layer (notes, links, folios).
 import React, { useEffect, useState, useMemo } from 'react';
 import {
   getCodexEntries, getCodexCards, marginaliaAll, deleteNote, deleteLink, toggleSaved,
-  listCollections, createCollection, renameCollection, deleteCollection, collectionItems, toggleCollectionItem,
+  listFolios, createFolio, renameFolio, deleteFolio, folioItems, toggleFolioItem,
 } from '../store/codexRepository.js';
 import { getSets, getArtists } from '../store/deckRepository.js';
 import { Chip, ChipRow, SectionLabel, SegTabs, IcList, IcGrid, IconButton, Loading } from '../components/ui.jsx';
@@ -205,10 +205,10 @@ export default function Codex({ scope, onOpen, preset, onPresetApplied, rev }) {
    user enters Edit mode; then delete/rename affordances appear. ── */
 function MarginaliaView({ onOpen, rev }) {
   const [d, setD] = useState(null);
-  const [cols, setCols] = useState(null);
+  const [folios, setFolios] = useState(null);
   const [edit, setEdit] = useState(false);                     // edit mode gates all destructive affordances
-  const [openCols, setOpenCols] = useState(() => new Set());   // expanded collections
-  const [items, setItems] = useState({});                      // collectionId → items
+  const [openFolios, setOpenFolios] = useState(() => new Set()); // expanded folios
+  const [items, setItems] = useState({});                      // folioId → items
   const [editing, setEditing] = useState(null);                // {id, name} - inline rename
   // Collapsible categories - with 100+ entries each, users need to fold sections
   // away. Persisted (which sections are closed) so a curated view survives.
@@ -216,47 +216,47 @@ function MarginaliaView({ onOpen, rev }) {
   const [closed, setClosed] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem(MARG_KEY) || '[]')); } catch { return new Set(); } });
   const toggleSection = (id) => setClosed((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); try { localStorage.setItem(MARG_KEY, JSON.stringify([...n])); } catch { /* private mode */ } return n; });
 
-  const [newCol, setNewCol] = useState('');
+  const [newFolio, setNewFolio] = useState('');
   async function load() {
-    const [m, c] = await Promise.all([marginaliaAll(), listCollections()]);
-    setD(m); setCols(c);
+    const [m, f] = await Promise.all([marginaliaAll(), listFolios()]);
+    setD(m); setFolios(f);
     const it = {};
-    for (const id of openCols) it[id] = await collectionItems(id);
+    for (const id of openFolios) it[id] = await folioItems(id);
     setItems(it);
   }
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [rev]);
-  async function addCollection() {
-    const n = newCol.trim();
+  async function addFolio() {
+    const n = newFolio.trim();
     if (!n) return;
-    await createCollection(n); setNewCol(''); load();
+    await createFolio(n); setNewFolio(''); load();
   }
 
-  async function toggleCol(id) {
-    const n = new Set(openCols);
+  async function toggleFolio(id) {
+    const n = new Set(openFolios);
     if (n.has(id)) n.delete(id);
-    else { n.add(id); if (!items[id]) setItems({ ...items, [id]: await collectionItems(id) }); }
-    setOpenCols(n);
+    else { n.add(id); if (!items[id]) setItems({ ...items, [id]: await folioItems(id) }); }
+    setOpenFolios(n);
   }
   async function saveRename() {
     const nn = editing?.name.trim();
-    if (nn) await renameCollection(editing.id, nn);
+    if (nn) await renameFolio(editing.id, nn);
     setEditing(null); load();
   }
-  async function removeCol(c) {
-    if (!(await confirmAction({ title: `Delete “${c.name}”?`, body: `Its ${c.count} item${c.count === 1 ? '' : 's'} stay in the catalogue - only the collection is removed.`, confirmLabel: 'Delete collection', danger: true }))) return;
-    await deleteCollection(c.id); load(); toast('Collection deleted');
+  async function removeFolio(f) {
+    if (!(await confirmAction({ title: `Delete “${f.name}”?`, body: `Its ${f.count} item${f.count === 1 ? '' : 's'} stay in the catalogue - only the folio is removed.`, confirmLabel: 'Delete folio', danger: true }))) return;
+    await deleteFolio(f.id); load(); toast('Folio deleted');
   }
 
-  if (!d || !cols) return <Loading />;
-  const empty = d.saved.length + d.notes.length + d.links.length + cols.length === 0;
+  if (!d || !folios) return <Loading />;
+  const empty = d.saved.length + d.notes.length + d.links.length + folios.length === 0;
   const on = (t) => <span style={{ display: 'block', font: "500 10px/1 var(--f-ui)", color: 'var(--ink-muted)', marginTop: 5 }}>on {t}</span>;
   const openS = (id) => !closed.has(id);
   // A collapsible category header (label + count + Material chevron). Kept as a
-  // render function, not a component, so the collections input isn't remounted.
+  // render function, not a component, so the folios input isn't remounted.
   const secHead = (id, label) => (
     <div className="cx-marg-head" onClick={() => toggleSection(id)} role="button" aria-expanded={openS(id)}>
       <span style={{ font: "600 11px/1 var(--f-display)", letterSpacing: '.16em', color: 'var(--gold-leaf)' }}>{label}</span>
-      <span className="cx-marg-count">{id === 'collections' ? cols.length : d[id].length}</span>
+      <span className="cx-marg-count">{id === 'folios' ? folios.length : d[id].length}</span>
       <span style={{ flex: 1 }} />
       <span className="cx-sub-chevron" data-open={openS(id) ? 'true' : 'false'} style={{ flex: 'none' }}>
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
@@ -274,7 +274,7 @@ function MarginaliaView({ onOpen, rev }) {
       </div>
       {empty && !edit && (
         <div style={{ padding: '40px 20px', textAlign: 'center', font: "400 15px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>
-          Your marginalia lives here - notes, links and collections you add across the Codex. Tap <span style={{ fontStyle: 'normal', color: 'var(--gold-leaf)' }}>Edit</span> to start a collection.
+          Your marginalia lives here - notes, links and folios you add across the Codex. Name your first folio below, or bookmark and annotate anything as you read.
         </div>
       )}
 
@@ -346,61 +346,60 @@ function MarginaliaView({ onOpen, rev }) {
         </div>
       )}
 
-      {(cols.length > 0 || edit) && (
-        <div style={{ marginBottom: 10 }}>
-          {secHead('collections', 'COLLECTIONS')}
-          {openS('collections') && (<>
-          {edit && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-              <input value={newCol} onChange={(e) => setNewCol(e.target.value)} placeholder="New collection…"
-                onKeyDown={(e) => { if (e.key === 'Enter') addCollection(); }}
-                style={{ flex: 1, height: 40, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 12px', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
-              <button onClick={addCollection} style={{ padding: '0 16px', borderRadius: 10, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: 'var(--gold-leaf)', font: "700 12px/1 var(--f-ui)", cursor: 'pointer' }}>Add</button>
-            </div>
-          )}
-          {cols.length === 0 && edit && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No collections yet - name one above, then collect cards & rules into it from their pages.</div>}
-          {cols.map((c) => (
-            <div key={c.id} style={{ borderBottom: '1px solid var(--hair-12)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 2px' }}>
-                {edit && editing?.id === c.id ? (
-                  <>
-                    <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') { e.preventDefault(); setEditing(null); } }}
-                      style={{ flex: 1, height: 36, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 12px', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
-                    <IconButton glyph="✓" size={26} onClick={saveRename} title="Save name" />
-                  </>
-                ) : (
-                  <>
-                    <span onClick={() => toggleCol(c.id)} className="cx-row" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                      <span style={{ font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
-                      <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)', flex: 'none' }}>{c.count}</span>
-                      <span className="cx-sub-chevron" data-open={openCols.has(c.id) ? 'true' : 'false'} style={{ flex: 'none' }}>
-                        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-                      </span>
+      {/* FOLIOS always renders, with its naming input outside Edit: the section
+          was invisible until you entered Edit mode, which hid the feature from
+          anyone who never pressed Edit. Edit still gates rename/delete/remove. */}
+      <div style={{ marginBottom: 10 }}>
+        {secHead('folios', 'FOLIOS')}
+        {openS('folios') && (<>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <input value={newFolio} onChange={(e) => setNewFolio(e.target.value)} placeholder="New folio…" aria-label="New folio name"
+            onKeyDown={(e) => { if (e.key === 'Enter') addFolio(); }}
+            style={{ flex: 1, height: 40, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 12px', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
+          <button onClick={addFolio} style={{ padding: '0 16px', borderRadius: 10, background: 'rgba(18,16,13,.85)', border: '1px solid rgba(220,184,111,.45)', color: 'var(--gold-leaf)', font: "700 12px/1 var(--f-ui)", cursor: 'pointer' }}>Add</button>
+        </div>
+        {folios.length === 0 && <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic', marginBottom: 8 }}>No folios yet - name one above, then add cards & rules from their pages with Add to Folio.</div>}
+        {folios.map((f) => (
+          <div key={f.id} style={{ borderBottom: '1px solid var(--hair-12)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 2px' }}>
+              {edit && editing?.id === f.id ? (
+                <>
+                  <input value={editing.name} autoFocus onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') { e.preventDefault(); setEditing(null); } }}
+                    style={{ flex: 1, height: 36, background: 'var(--surface-well)', border: '1px solid var(--hair-22)', borderRadius: 10, padding: '0 12px', color: 'var(--ink-body)', font: "400 14px/1 var(--f-read)" }} />
+                  <IconButton glyph="✓" size={26} onClick={saveRename} title="Save name" />
+                </>
+              ) : (
+                <>
+                  <span onClick={() => toggleFolio(f.id)} className="cx-row" style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <span style={{ font: "600 15px/1 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                    <span style={{ font: "500 11px/1 var(--f-mono)", color: 'var(--ink-faint)', flex: 'none' }}>{f.count}</span>
+                    <span className="cx-sub-chevron" data-open={openFolios.has(f.id) ? 'true' : 'false'} style={{ flex: 'none' }}>
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
                     </span>
-                    {edit && <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: c.id, name: c.name })} title="Rename collection" />}
-                    {edit && <IconButton glyph="✕" tone="danger" size={26} onClick={() => removeCol(c)} title="Delete collection" />}
-                  </>
-                )}
-              </div>
-              {openCols.has(c.id) && (
-                <div style={{ padding: '0 0 10px 14px' }}>
-                  {(items[c.id] || []).length === 0
-                    ? <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>Empty collection.</div>
-                    : (items[c.id] || []).map((it) => (
-                      <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 0' }}>
-                        <span style={{ color: 'var(--gold)', width: 15, textAlign: 'center', fontSize: 12 }}>{it.target_type === 'card' ? '◈' : '§'}</span>
-                        <span onClick={() => onOpen(it.target_type, it.target_id, it.name)} className="cx-row" style={{ flex: 1, minWidth: 0, font: "500 13.5px/1.25 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{it.name}</span>
-                        {edit && <IconButton glyph="✕" tone="danger" size={20} onClick={async () => { await toggleCollectionItem(c.id, it.target_type, it.target_id); setItems({ ...items, [c.id]: await collectionItems(c.id) }); load(); }} title="Remove from collection" />}
-                      </div>
-                    ))}
-                </div>
+                  </span>
+                  {edit && <IconButton glyph="✎" tone="muted" size={26} onClick={() => setEditing({ id: f.id, name: f.name })} title="Rename folio" />}
+                  {edit && <IconButton glyph="✕" tone="danger" size={26} onClick={() => removeFolio(f)} title="Delete folio" />}
+                </>
               )}
             </div>
-          ))}
-          </>)}
-        </div>
-      )}
+            {openFolios.has(f.id) && (
+              <div style={{ padding: '0 0 10px 14px' }}>
+                {(items[f.id] || []).length === 0
+                  ? <div style={{ font: "400 12.5px/1.5 var(--f-read)", color: 'var(--ink-faint)', fontStyle: 'italic' }}>Empty folio.</div>
+                  : (items[f.id] || []).map((it) => (
+                    <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 0' }}>
+                      <span style={{ color: 'var(--gold)', width: 15, textAlign: 'center', fontSize: 12 }}>{it.target_type === 'card' ? '◈' : '§'}</span>
+                      <span onClick={() => onOpen(it.target_type, it.target_id, it.name)} className="cx-row" style={{ flex: 1, minWidth: 0, font: "500 13.5px/1.25 var(--f-read)", color: 'var(--ink-body)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}>{it.name}</span>
+                      {edit && <IconButton glyph="✕" tone="danger" size={20} onClick={async () => { await toggleFolioItem(f.id, it.target_type, it.target_id); setItems({ ...items, [f.id]: await folioItems(f.id) }); load(); }} title="Remove from folio" />}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        ))}
+        </>)}
+      </div>
     </div>
   );
 }

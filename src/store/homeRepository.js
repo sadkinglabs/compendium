@@ -1,5 +1,5 @@
 // Home / Dashboard data - customisable widget blocks (the Codex dashboard,
-// re-homed) + cross-pillar data providers (Saved, Notes, Collections,
+// re-homed) + cross-pillar data providers (Saved, Notes, Folios,
 // Stats, Resume, Errata, Random, and the new Decks/Duels widgets). Profile-scoped.
 import { query, run, tx } from './db.js';
 import { activeProfileId } from './profileRepository.js';
@@ -206,14 +206,16 @@ export async function widgetData(block, ctx = {}) {
     const items = rows.map((r) => { const t = resolved.get(r.target_type + ':' + r.target_id); return { body: r.body, on: t?.name || '', type: r.target_type, id: r.target_id }; });
     return { count, items, quotes: true, empty: 'No marginalia yet.' };
   }
-  if (k === 'collections') {
-    const cols = await query('SELECT id,name FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
-    if (cols.length) {
-      const counts = await query(`SELECT collection_id, COUNT(*) n FROM collection_items WHERE collection_id IN (${cols.map(() => '?').join(',')}) GROUP BY collection_id;`, cols.map((c) => c.id));
+  // Folios - the user-facing name. The tables keep their v1 names
+  // collections/collection_items; the rename is deferred (see codexRepository).
+  if (k === 'folios') {
+    const folios = await query('SELECT id,name FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
+    if (folios.length) {
+      const counts = await query(`SELECT collection_id, COUNT(*) n FROM collection_items WHERE collection_id IN (${folios.map(() => '?').join(',')}) GROUP BY collection_id;`, folios.map((f) => f.id));
       const byId = new Map(counts.map((r) => [r.collection_id, r.n]));
-      for (const c of cols) c.n = byId.get(c.id) || 0;
+      for (const f of folios) f.n = byId.get(f.id) || 0;
     }
-    return { count: cols.length, items: cols.map((c) => ({ name: c.name, meta: `${c.n} item${c.n === 1 ? '' : 's'}`, iconType: 'collection' })), empty: 'No collections yet.' };
+    return { count: folios.length, items: folios.map((f) => ({ name: f.name, meta: `${f.n} item${f.n === 1 ? '' : 's'}`, iconType: 'folio' })), empty: 'No folios yet.' };
   }
   if (k === 'note') return { text: block.config?.text || '' };
   if (k === 'links') return { links: block.config?.links || [] };
@@ -236,12 +238,12 @@ export function sampleData(kind) {
     case 'featuredCard': return { card: { name: 'Avatar of Fire', type: 'Avatar', cost: 0, image: null, rarity: 'Elite' } };
     case 'cardOfDay': return { card: { name: 'Wildfire', type: 'Magic', cost: 3, image: null } };
     case 'notes': return { quotes: true, items: [{ body: 'Rush lets a minion attack the turn it enters play.', on: 'Rush' }, { body: 'Genesis triggers when the card enters.', on: 'Genesis' }] };
-    case 'collections': return { items: [{ name: 'Fire staples', meta: '12 items', iconType: 'collection' }, { name: 'Want list', meta: '5 items', iconType: 'collection' }] };
+    case 'folios': return { items: [{ name: 'Fire staples', meta: '12 items', iconType: 'folio' }, { name: 'Want list', meta: '5 items', iconType: 'folio' }] };
     case 'collectionStats': return { owned: 342, unique: 168, wishlist: 12, buildable: 3, decks: 5 };
     case 'randomRule': return { rule: { name: 'Deathrite' } };
     case 'pinned': return { items: [{ name: 'Sparkmage', meta: 'Card', type: 'card' }, { name: 'Charge', meta: 'Keyword', type: 'rule' }, { name: 'Aggro Flare', meta: 'Deck', type: 'deck' }] };
     case 'note': return { text: 'Playtest: side in extra removal vs aggro. Watch the water matchup.' };
-    case 'links': return { links: [{ label: 'Curiosa deck', url: 'https://curiosa.io' }, { label: 'Rules PDF', url: 'https://sorcerytcg.com' }] };
+    case 'links': return { links: [{ label: 'SorceryTCG deck', url: 'https://sorcerytcg.com' }, { label: 'Rules PDF', url: 'https://sorcerytcg.com' }] };
     case 'title': return { text: 'My Layout' };
     case 'separator': return {};
     default: return {};
@@ -279,7 +281,9 @@ export async function overview() {
     score: `${m.player_final_life}–${m.opponent_final_life}`,
   }));
   const cnt = async (t) => (await query(`SELECT COUNT(*) c FROM ${t} WHERE profile_id=?;`, [pid]))[0].c;
-  const [savedN, notesN, linksN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('links')]);
+  // `collections` is the folios table under its v1 name - the MARGINALIA glance
+  // counts folios alongside notes and links, so a folios-only reader is not told 0.
+  const [savedN, notesN, linksN, foliosN] = await Promise.all([cnt('saved'), cnt('notes'), cnt('links'), cnt('collections')]);
   // Total copies owned (not distinct cards) - the "Cards collected" glance figure.
   const cardsCollected = (await query('SELECT COALESCE(SUM(qty_owned),0) n FROM owned_cards WHERE profile_id=?;', [pid]))[0].n;
   const noteRows = await query('SELECT body,target_type,target_id FROM notes WHERE profile_id=? ORDER BY updated_at DESC LIMIT ?;', [pid, OV_NOTES]);
@@ -298,7 +302,7 @@ export async function overview() {
       duels: stats.total,
       winPct: stats.winPct,           // null until a game is decided
       saved: savedN,
-      marginalia: notesN + linksN,
+      marginalia: notesN + linksN + foliosN,
       cardsCollected,
     },
     decks: { total: allDecks.length, items: allDecks.slice(0, OV_DECKS) },

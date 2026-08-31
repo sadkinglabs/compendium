@@ -1,5 +1,5 @@
 // Codex data - catalog reads (shared) + the profile-scoped personal layer
-// (saved, marginalia notes, collections). Every profile-scoped read
+// (saved, marginalia notes, folios). Every profile-scoped read
 // and write passes through activeProfileId(), so isolation is structural.
 import { query, run } from './db.js';
 import { getCatalog, getFaqs } from './catalogCache.js';
@@ -464,19 +464,24 @@ export async function marginaliaAll() {
   return { saved, notes, links: linkRows };
 }
 
-/* collections */
-export async function listCollections() {
+/* folios - Folio is the user-facing name. Tables keep their v1 names
+   collections/collection_items - the v13 rename is designed (retry-safe
+   copy-then-drop) and deferred; see COMPENDIUM_DATA_MODEL Folios section.
+   Every path below is gated on the active profile, the child-table ones
+   through their parent folio, so a foreign folio id reads empty and
+   writes nothing. Contract exercised by folioRepository.test.mjs. */
+export async function listFolios() {
   const pid = activeProfileId();
-  const cols = await query('SELECT * FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
-  if (cols.length) {
-    const counts = await query(`SELECT collection_id, COUNT(*) n FROM collection_items WHERE collection_id IN (${cols.map(() => '?').join(',')}) GROUP BY collection_id;`, cols.map((c) => c.id));
+  const folios = await query('SELECT * FROM collections WHERE profile_id=? ORDER BY created_at DESC;', [pid]);
+  if (folios.length) {
+    const counts = await query(`SELECT collection_id, COUNT(*) n FROM collection_items WHERE collection_id IN (${folios.map(() => '?').join(',')}) GROUP BY collection_id;`, folios.map((f) => f.id));
     const byId = new Map(counts.map((r) => [r.collection_id, r.n]));
-    for (const c of cols) c.count = byId.get(c.id) || 0;
+    for (const f of folios) f.count = byId.get(f.id) || 0;
   }
-  return cols;
+  return folios;
 }
 
-export async function createCollection(name) {
+export async function createFolio(name) {
   const id = uuid();
   await run('INSERT INTO collections(id,profile_id,name,created_at) VALUES(?,?,?,?);', [
     id, activeProfileId(), name, nowIso(),
@@ -484,7 +489,9 @@ export async function createCollection(name) {
   return id;
 }
 
-export async function collectionsForTarget(targetId) {
+/** Every folio of the active profile, each flagged with whether this target is
+ *  already in it - the Add to Folio picker's one read. */
+export async function foliosForTarget(targetId) {
   return query(
     `SELECT c.id, c.name, EXISTS(
         SELECT 1 FROM collection_items ci WHERE ci.collection_id=c.id AND ci.target_id=?
@@ -494,34 +501,62 @@ export async function collectionsForTarget(targetId) {
   );
 }
 
-export async function renameCollection(id, name) {
+export async function renameFolio(id, name) {
   await run('UPDATE collections SET name=? WHERE id=? AND profile_id=?;', [name, id, activeProfileId()]);
 }
 
-export async function deleteCollection(id) {
-  await run('DELETE FROM collection_items WHERE collection_id=?;', [id]);   // explicit - don't rely on FK cascade
+export async function deleteFolio(id) {
+  // Explicit - don't rely on FK cascade. The IN-subquery carries the profile gate
+  // down to the child rows, so a foreign folio id clears nothing at either level.
+  await run(
+    'DELETE FROM collection_items WHERE collection_id IN (SELECT id FROM collections WHERE id=? AND profile_id=?);',
+    [id, activeProfileId()]
+  );
   await run('DELETE FROM collections WHERE id=? AND profile_id=?;', [id, activeProfileId()]);
 }
 
-/** A collection's items, resolved to names for display. */
-export async function collectionItems(collectionId) {
-  const rows = await query('SELECT id, target_type, target_id FROM collection_items WHERE collection_id=? ORDER BY added_at DESC;', [collectionId]);
+/** A folio's items, resolved to names for display. Joined to the parent folio on
+ *  profile_id, so a folio outside the active profile reads empty. */
+export async function folioItems(folioId) {
+  const rows = await query(
+    `SELECT ci.id, ci.target_type, ci.target_id
+       FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+      WHERE ci.collection_id=? AND c.profile_id=? ORDER BY ci.added_at DESC;`,
+    [folioId, activeProfileId()]
+  );
   const names = await namesFor(rows.map((r) => ({ type: r.target_type, id: r.target_id })));
   for (const r of rows) r.name = nameFrom(names, r.target_type, r.target_id);
   return rows;
 }
 
-export async function toggleCollectionItem(collectionId, targetType, targetId) {
+export async function toggleFolioItem(folioId, targetType, targetId) {
+  const pid = activeProfileId();
+  // The probe joins the parent folio, so a foreign folio never matches and the
+  // toggle falls through to the equally-gated insert rather than deleting a row
+  // the active profile does not own.
+  //
+  // QUIRK, pinned not fixed: the dedup key is (collection_id, target_id) and
+  // ignores target_type, so a card and an article sharing an id count as the
+  // same entry. Pinned by folioRepository.test.mjs.
   const exists = await query(
-    'SELECT id FROM collection_items WHERE collection_id=? AND target_id=? LIMIT 1;',
-    [collectionId, targetId]
+    `SELECT ci.id FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+      WHERE ci.collection_id=? AND ci.target_id=? AND c.profile_id=? LIMIT 1;`,
+    [folioId, targetId, pid]
   );
   if (exists.length) {
     await run('DELETE FROM collection_items WHERE id=?;', [exists[0].id]);
     return false;
   }
-  await run('INSERT INTO collection_items(id,collection_id,target_type,target_id,added_at) VALUES(?,?,?,?,?);', [
-    uuid(), collectionId, targetType, targetId, nowIso(),
-  ]);
+  // Guarded INSERT ... SELECT (logCuriosaChecked precedent, deckRepository.js): a
+  // folio outside the active profile matches no row, so nothing is inserted - the
+  // repository boundary refuses the cross-profile write instead of trusting the
+  // caller's folio id.
+  await run(
+    'INSERT INTO collection_items(id,collection_id,target_type,target_id,added_at) SELECT ?, id, ?, ?, ? FROM collections WHERE id=? AND profile_id=?;',
+    [uuid(), targetType, targetId, nowIso(), folioId, pid]
+  );
+  // QUIRK, pinned not fixed: true means "the target is now in the folio, as far as
+  // this caller is concerned". A refused cross-profile insert still returns true,
+  // because the guard lives in the statement and the row count is not read back.
   return true;
 }

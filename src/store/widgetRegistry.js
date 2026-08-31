@@ -20,7 +20,7 @@ export const WIDGETS = [
   { kind: 'featuredCard', title: 'Random Card', pillar: 'codex', rollable: true, blurb: 'A card to discover - roll for more' },
   { kind: 'cardOfDay', title: 'Card of the Day', pillar: 'codex', blurb: 'A daily card pick' },
   { kind: 'notes', title: 'Notes & Rulings', pillar: 'codex', blurb: 'Your latest marginalia' },
-  { kind: 'collections', title: 'Collections', pillar: 'codex', blurb: 'Your curated card lists' },
+  { kind: 'folios', title: 'Folios', pillar: 'codex', blurb: 'Named sets of cards & rules' },
   { kind: 'randomRule', title: 'Random Article', pillar: 'codex', rollable: true, blurb: 'An article to revisit - roll for more' },
   // Collection
   { kind: 'collectionStats', title: 'Card Collection', pillar: 'collect', blurb: 'Owned, unique, wishlist & buildable decks' },
@@ -39,10 +39,13 @@ export const pillarOf = (k) => widgetMeta(k).pillar || null;
 
 // Old Codex-era kinds → their nearest new widget, so dashboards saved before
 // this rewrite keep rendering (remapped at read time, DB left untouched).
+// normalizeKind resolves in a SINGLE pass, so every entry must point at a LIVE
+// widget kind - never at another alias. When a kind is renamed (collections →
+// folios), re-point the old aliases at the new target rather than chaining.
 const ALIAS = {
   saved: 'pinned', duels: 'recentMatches', decks: 'yourDecks', random: 'featuredCard',
   randomArticle: 'randomRule', text: 'note', urls: 'links', stats: 'winRate',
-  resume: 'recentMatches', collection: 'collections',
+  resume: 'recentMatches', collection: 'folios', collections: 'folios',
   // removed widgets fold into a nearby survivor so old dashboards keep rendering
   errata: 'notes', elementAffinity: 'yourDecks',
 };

@@ -1,6 +1,6 @@
 // Codex detail - rule (drop-cap reading + related + sub-entries) or card
 // (art hero, stat boxes, rules, FAQs), plus the per-profile personal layer:
-// save/star, marginalia notes, collections.
+// save/star, marginalia notes, folios.
 import React, { useEffect, useState, useRef } from 'react';
 import {
   getCard, getRule, relatedFor, mentions, faqsForCard,
@@ -16,7 +16,7 @@ import { getDoc, getDocs, getFaqs } from '../store/codexDoc.js';
 import { Chip, ChipRow, IconButton, SectionLabel, ThresholdPips, BottomSheet, RuleArticle, InlineText, Loading, SegTabs, BTN_GOLD, BTN_GHOST } from '../components/ui.jsx';
 import CardArt from '../components/CardArt.jsx';
 import CollectionCardSheet from '../components/CollectionCardSheet.jsx';
-import CollectionPicker from '../components/CollectionPicker.jsx';
+import FolioPicker from '../components/FolioPicker.jsx';
 import Fab, { FabGlyph } from '../components/Fab.jsx';
 import SearchPill from '../components/SearchPill.jsx';
 import { cardStorageSummary } from '../store/storageDirectory.js';
@@ -278,7 +278,7 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
 
       <MarginaliaComposer open={composer} onClose={() => setComposer(false)}
         noteText={noteText} setNoteText={setNoteText} onSaveNote={saveNote} onSaveLink={saveLink} selfId={entryId} />
-      <CollectionPicker open={picker} targetType={targetType} targetId={entryId} onClose={() => { setPicker(false); load(); }} />
+      <FolioPicker open={picker} targetType={targetType} targetId={entryId} onClose={() => { setPicker(false); load(); }} />
       {/* The card's ownership sheet (owned / foil / wishlist steppers) - the one
           place counts are edited; reloads the ledger summary on close. */}
       <CollectionCardSheet cardId={sheetCard} onClose={() => { setSheetCard(null); load(); }} />
@@ -286,10 +286,10 @@ export default function CodexDetail({ kind, id, target, onOpen, onOpenName, onOp
         <AddToDeckSheet open={deckAdd} card={data.card} onClose={() => { setDeckAdd(false); load(); onChanged?.(); }} />
       )}
 
-      {/* Bookmarking lives in the header ribbon toggle. Collect / Add-to-deck live
-          in a FAB (consistent app-wide), not inline buttons. */}
+      {/* Bookmarking lives in the header ribbon toggle. Add to Folio / Add-to-deck
+          live in a FAB (consistent app-wide), not inline buttons. */}
       <Fab variant="deck" icon={<FabGlyph kind="dots" />} label="Entry options" items={[
-        { label: 'Collect', onClick: () => setPicker(true) },
+        { label: 'Add to Folio', onClick: () => setPicker(true) },
         ...(k === 'card' && !data.card.is_avatar ? [{ label: 'Add to a deck', onClick: () => setDeckAdd(true) }] : []),
       ]} />
     </div>

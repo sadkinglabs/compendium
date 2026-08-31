@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isSupportedWidget, filterImportedBlocks, filterLayoutBlocks, shouldMarkDashboardSeeded,
+  normalizeKind,
 } from './widgetRegistry.js';
 
 // The dashboard ingress guard: retired widget types (e.g. 'highlights' after v10) must be
@@ -26,6 +27,19 @@ test('an aliased legacy kind resolves to its survivor and is supported', () => {
   assert.equal(isSupportedWidget('errata'), true);   // ALIAS: errata -> notes
   assert.equal(isSupportedWidget('saved'), true);    // ALIAS: saved -> pinned
   assert.equal(isSupportedWidget('urls'), true);     // ALIAS: urls -> links
+});
+
+// The Collections widget became Folios. normalizeKind resolves in ONE pass, so both the
+// original 'collection' alias and the now-retired 'collections' kind must point straight
+// at 'folios' - a chain ('collection' -> 'collections' -> 'folios') would silently strand
+// every dashboard row still stored under the old kind.
+test('the retired collections kinds resolve DIRECTLY to folios', () => {
+  assert.equal(normalizeKind('collections'), 'folios');
+  assert.equal(normalizeKind('collection'), 'folios');
+  assert.equal(normalizeKind('folios'), 'folios');
+  assert.equal(isSupportedWidget('folios'), true);
+  assert.equal(isSupportedWidget('collections'), true);
+  assert.equal(isSupportedWidget('collection'), true);
 });
 
 test('an unknown kind is NOT supported', () => {

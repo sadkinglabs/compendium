@@ -72,7 +72,7 @@ export default function Home({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, 
       <div key={tab} className="cx-swipe-pane">
         {tab === 'overview'
           ? <Overview onOpen={onOpen} ongoing={ongoing} onResume={onResume} onGoTab={onGoTab} onGoLibrary={onGoLibrary} onAllNotes={onAllNotes} onMarginalia={onMarginalia} onStartMatch={onStartMatch} profile={profile} rev={rev} />
-          : <Dashboard onOpen={onOpen} onGoTab={onGoTab} edit={edit} rev={rev} />}
+          : <Dashboard onOpen={onOpen} onGoTab={onGoTab} onMarginalia={onMarginalia} edit={edit} rev={rev} />}
       </div>
       {/* Offline card scanner - hidden in Dashboard edit mode (where the add-widget
           FAB takes the slot). Native only; on web it shows an "installed app" hint. */}
@@ -278,7 +278,7 @@ function Overview({ onOpen, ongoing, onResume, onGoTab, onGoLibrary, onAllNotes,
 }
 
 /* ---------------- Dashboard ---------------- */
-function Dashboard({ onOpen, onGoTab, edit, rev }) {
+function Dashboard({ onOpen, onGoTab, onMarginalia, edit, rev }) {
   const [blocks, setBlocks] = useState(null);
   const [data, setData] = useState({});
   const [picker, setPicker] = useState(false);
@@ -387,7 +387,7 @@ function Dashboard({ onOpen, onGoTab, edit, rev }) {
               style={{ width: full ? '100%' : 'calc(50% - 6px)' }}>
               {isStructural(b.type)
                 ? <StructuralBlock {...common} />
-                : <WidgetFrame {...common} data={data[b.id]} onOpen={onOpen} onGoTab={onGoTab} onRoll={() => roll(b)} />}
+                : <WidgetFrame {...common} data={data[b.id]} onOpen={onOpen} onGoTab={onGoTab} onMarginalia={onMarginalia} onRoll={() => roll(b)} />}
             </div>
           );
         })}
@@ -443,7 +443,7 @@ const EditBar = ({ block, onResize, onConfig, onRemove }) => (
   </div>
 );
 
-function WidgetFrame({ block, data, edit, onOpen, onGoTab, onRoll, onResize, onRemove, onConfig, preview }) {
+function WidgetFrame({ block, data, edit, onOpen, onGoTab, onMarginalia, onRoll, onResize, onRemove, onConfig, preview }) {
   const meta = widgetMeta(block.type);
   const title = block.config?.name || meta.title;
   return (
@@ -455,7 +455,7 @@ function WidgetFrame({ block, data, edit, onOpen, onGoTab, onRoll, onResize, onR
           <button className="dw-roll" onClick={onRoll} aria-label="Roll again"><IcoRoll size={12} />Roll</button>
         )}
       </div>
-      <div className="dw-body"><WidgetBody block={block} data={data} onOpen={onOpen} onGoTab={onGoTab} preview={preview} /></div>
+      <div className="dw-body"><WidgetBody block={block} data={data} onOpen={onOpen} onGoTab={onGoTab} onMarginalia={onMarginalia} preview={preview} /></div>
       {edit && <EditBar block={block} onResize={onResize} onConfig={onConfig} onRemove={onRemove} />}
     </div>
   );
@@ -492,12 +492,13 @@ function ArtHero({ image, name, sub, badge, onClick, tall, deck }) {
   );
 }
 
-function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
+function WidgetBody({ block, data, onOpen, onGoTab, onMarginalia, preview }) {
   const k = block.type;
   if (!data) return null;
   const empty = (t) => <div className="dw-empty">{t}</div>;
   const open = preview ? () => {} : (onOpen || (() => {}));
   const go = preview ? () => {} : (onGoTab || (() => {}));
+  const toMarginalia = preview ? null : (onMarginalia || null);
 
   if (k === 'featuredCard' || k === 'cardOfDay') return data.card
     ? <ArtHero image={preview ? null : data.card.image} name={data.card.name}
@@ -579,12 +580,15 @@ function WidgetBody({ block, data, onOpen, onGoTab, preview }) {
     );
   }
 
-  // list widgets - pinned, collections
+  // list widgets - pinned, folios. Folio rows carry no target of their own (the
+  // items inside them do), so a tap opens Codex > Marginalia, where the folio can
+  // be expanded - rather than sitting inert as it did before.
+  const rowTap = (it) => (it.type ? () => open(it.type, it.id, it.name) : (k === 'folios' && toMarginalia ? toMarginalia : undefined));
   return data.items?.length
-    ? data.items.slice(0, 5).map((it, i) => (
-        <div key={i} className={`dw-row${it.type ? ' tap' : ''}`} onClick={it.type ? () => open(it.type, it.id, it.name) : undefined}>
+    ? data.items.slice(0, 5).map((it, i) => { const tap = rowTap(it); return (
+        <div key={i} className={`dw-row${tap ? ' tap' : ''}`} onClick={tap}>
           <span className="gl"><RowIcon t={it.type || it.iconType} /></span><span className="nm">{it.name}</span>{it.meta && <span className="mt">{it.meta}</span>}
-        </div>))
+        </div>); })
     : empty(data.empty || '-');
 }
 
@@ -607,7 +611,7 @@ function Picker({ open, onClose, onPick }) {
                     ? <div className="dw"><div className="dw-body"><div className="dw-titlecard"><span className="t">My Layout</span></div></div></div>
                     : w.kind === 'separator'
                       ? <div className="dw"><div className="dw-body"><div className="dw-sep"><span className="ln" /><span className="dia" /><span className="ln" /></div></div></div>
-                      : <WidgetFrame block={sample} data={sampleData(w.kind)} edit={false} preview onOpen={() => {}} onGoTab={() => {}} />}
+                      : <WidgetFrame block={sample} data={sampleData(w.kind)} edit={false} preview onOpen={() => {}} onGoTab={() => {}} onMarginalia={() => {}} />}
                 </div>
                 <div className="dw-pick-foot">
                   <span className={`pl ${w.pillar || ''}`} />
@@ -697,7 +701,7 @@ const IcoLayers = (p) => <Svg {...p}><polygon points="12 2 2 7 12 12 22 7 12 2" 
 const IcoExternal = (p) => <Svg {...p}><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><polyline points="15 3 21 3 21 9" /><line x1="10" y1="14" x2="21" y2="3" /></Svg>;
 const IcoRoll = (p) => <Svg {...p}><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></Svg>;
 // List-row markers reuse the shared entity-icon set (CodexGlyph): card / rule /
-// deck read the same everywhere. Collections keep their bookmark shape.
-const RowIcon = ({ t }) => t === 'collection'
+// deck read the same everywhere. Folios keep their bookmark shape.
+const RowIcon = ({ t }) => t === 'folio'
   ? <Svg size={13}><path d="M4 4h16v14l-8-4-8 4Z" /></Svg>
   : <CodexGlyph kind={t === 'deck' ? 'deck' : t === 'rule' ? 'rule' : 'card'} size={13} />;
