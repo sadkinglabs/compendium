@@ -695,9 +695,11 @@ function Overview({ onGoCards, onGoDecks, onGoLists, onPeek, onOpenCodex, rev })
     const off = subscribeCollection(load);
     return () => { alive = false; off(); };
   }, [rev]);
-  if (!stats) return <Loading />;
+  // Entrance replay, gated on a real Loading frame - see the note in CollectionStorage StorageIndex.
+  const sawLoading = useRef(false);
+  if (!stats) { sawLoading.current = true; return <Loading />; }
   return (
-    <div style={{ padding: '2px 20px' }}>
+    <div className={sawLoading.current ? 'cx-surface-enter' : undefined} style={{ padding: '2px 20px' }}>
       {/* Every ADD lives on a FAB now: a docked camera + a stacked "Import from text" (below). Text
           import is deliberately NOT set-scoped - a paste spanning many sets must stay one paste, so it
           lives here on Overview rather than inside a set. */}
@@ -1781,7 +1783,9 @@ function ListsIndex({ onOpenList, rev }) {
     return () => { alive = false; off(); };
   }, [rev]);
 
-  if (lists == null) return <Loading />;
+  // Entrance replay, gated on a real Loading frame - see the note in CollectionStorage StorageIndex.
+  const sawLoading = useRef(false);
+  if (lists == null) { sawLoading.current = true; return <Loading />; }
   const wanted = lists.filter((l) => l.kind === 'wanted');
   const custom = lists.filter((l) => l.kind === 'custom');
   // "View missing ›" just opens the list: a wanted list arranges by Progress, so what is still
@@ -1791,7 +1795,7 @@ function ListsIndex({ onOpenList, rev }) {
       onClick={() => onOpenList(l)} onViewMissing={() => onOpenList(l)} />
   );
   return (
-    <div style={{ padding: '2px 20px' }}>
+    <div className={sawLoading.current ? 'cx-surface-enter' : undefined} style={{ padding: '2px 20px' }}>
       <SectionLabel label="PINNED" />
       <WishlistCard summary={wl} onClick={() => onOpenList(wishlistRef())} />
       <Section title="WANTED LISTS" count={wanted.length || undefined} hint="Named goals - Collection tracks your progress as you acquire cards.">

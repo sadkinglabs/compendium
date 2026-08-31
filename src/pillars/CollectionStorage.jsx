@@ -21,7 +21,7 @@
 // detail header (the same chassis list detail uses), OverflowMenu, SearchPill, SortRow with
 // LIST_SORT_OPTIONS and stackComparator for arrange, ListRow, SectionLabel, Fab, BottomSheet,
 // SET_LABEL for set names. New only where the proposal asked for something new: SwatchPicker.
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BottomSheet, SectionLabel, Loading, EmptyCta, SegTabs, ListRow, SortRow,
@@ -253,7 +253,14 @@ export function StorageIndex({ onOpenPlace, rev }) {
     catch (err) { toastStorageError(err); setPlaces(await listContainers()); }
   };
 
-  if (places == null) return <Loading />;
+  // ENTRANCE REPLAY. The outer surface wrapper in Collection.jsx already wears .cx-surface-enter,
+  // so when this content mounts on the first render it has ALREADY been animated. But when the
+  // query has not answered yet, the wrapper animates the SPINNER instead and the real content
+  // pops in with no motion behind it. The ref records that a Loading frame actually happened, and
+  // only then does the content root replay the shared fade-rise. Animating both would double the
+  // rise, which is why this is gated rather than unconditional.
+  const sawLoading = useRef(false);
+  if (places == null) { sawLoading.current = true; return <Loading />; }
 
   const row = (p) => (
     <ListRow
@@ -274,7 +281,7 @@ export function StorageIndex({ onOpenPlace, rev }) {
   const totalCopies = shownPlaces.reduce((n, p) => n + (Number(p.copies) || 0), 0);
 
   return (
-    <div style={{ padding: '2px 20px' }}>
+    <div className={sawLoading.current ? 'cx-surface-enter' : undefined} style={{ padding: '2px 20px' }}>
       {/* The SAME header chassis All and Sets use, not a bespoke headline. Storage is the third
           lens on My Collection, so it wears the same eyebrow/title/tally band its two peers do -
           the old "Every copy has a place." block was the only headline of its kind in the pillar.
@@ -544,7 +551,9 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
     return [...matched].sort(cmp);
   }, [rows, q, arrange]);
 
-  if (rows == null || !meta) return <Loading />;
+  // Entrance replay, gated on a real Loading frame - see the note in StorageIndex above.
+  const sawLoading = useRef(false);
+  if (rows == null || !meta) { sawLoading.current = true; return <Loading />; }
   const copies = rows.reduce((n, r) => n + (Number(r.qty) || 0), 0);
   // Bulk select is only worth offering when there is somewhere for a File to go. Unfiled always
   // exists, so any user place already has a target; Unfiled itself needs at least one user place.
@@ -576,7 +585,7 @@ export function StorageDetail({ place, onBack, onPeek, onChanged }) {
   };
 
   return (
-    <div style={{ padding: '2px 20px' }}>
+    <div className={sawLoading.current ? 'cx-surface-enter' : undefined} style={{ padding: '2px 20px' }}>
       {/* The SAME header chassis list detail uses - sub AppBar with a back label, an eyebrow, the
           title and a trailing overflow. Q21 said same chassis; this is it. */}
       <AppBar variant="sub" sticky announce

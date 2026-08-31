@@ -6,7 +6,7 @@
 // over the WHOLE catalog (buildSetCompletion), non-foil only, independent of any search or
 // filter in the drill. Text + vector carry the meaning, so a heroless/zero-image tile stays
 // legible via an engraved initial.
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { getCatalog } from '../store/catalogCache.js';
 import { ownedBySet, subscribeCollection } from '../store/ownedRepository.js';
 import { buildSetCompletion } from '../store/setCompletion.js';
@@ -115,12 +115,14 @@ export default function SetsHome({ onOpenSet, rev }) {
     return { owned, total, pct: total ? owned / total : 0 };
   }, [completion]);
 
-  if (completion == null) return <Loading />;
+  // Entrance replay, gated on a real Loading frame - see the note in CollectionStorage StorageIndex.
+  const sawLoading = useRef(false);
+  if (completion == null) { sawLoading.current = true; return <Loading />; }
 
   // No docked FAB or search pill on this landing, so it needs no deep bottom reserve - the
   // 150px it used to carry made the page scroll even when the tiles already fitted.
   return (
-    <div style={{ padding: '0 20px 24px' }}>
+    <div className={sawLoading.current ? 'cx-surface-enter' : undefined} style={{ padding: '0 20px 24px' }}>
       {/* The SAME shared sub-header as the All grid - identical size + colour so toggling Sets/All
           doesn't shift anything. */}
       <CollectionSubHeader title="Sets" tally={`${fmt(totals.owned)} / ${fmt(totals.total)} non-foil owned`} />
